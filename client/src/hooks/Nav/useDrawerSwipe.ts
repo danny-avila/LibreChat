@@ -23,6 +23,40 @@ const SETTLE_BUFFER_MS = 80;
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
 
+let drawerAnimator: ((next: boolean) => void) | null = null;
+
+/**
+ * Starts the drawer/pane slide imperatively and owns WHEN the caller's state
+ * flip runs. Wrapping the flip in `startTransition` is not enough: Recoil
+ * notifies subscribers outside the transition scope, so the commit — which a
+ * large conversation stretches to hundreds of ms of context re-renders plus
+ * the pane's `inert` recalc — flushes synchronously inside the tap's task and
+ * delays the slide's first frame (measured ~250ms on a 60-message thread at
+ * 4× throttle).
+ *
+ * So: start the slide imperatively, then run `applyState` three frames
+ * later — the animator writes the target transforms in frame 1, frame 2
+ * paints the first interpolated position, and by frame 3 the transform
+ * animation is compositor-driven (`willChange` is set in the tap's task), so
+ * the commit lands mid-slide without stuttering or delaying it. When the
+ * swipe hook is not active — desktop, logged out — `applyState` runs
+ * immediately and React animates the layout as before.
+ */
+export function kickDrawerAnimation(next: boolean, applyState: () => void): void {
+  if (drawerAnimator == null) {
+    applyState();
+    return;
+  }
+  drawerAnimator(next);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        applyState();
+      });
+    });
+  });
+}
+
 /**
  * Walks from `start` up to `boundary` looking for a horizontal scroller that
  * can still consume a pan in `direction` (1 = finger moving right, which
@@ -187,6 +221,16 @@ export default function useDrawerSwipe({
       gestureRef.current = null;
     };
 
+    /** Arms the inline-style handoff: after the shared transition has played
+     * out, every transient property returns to what React/classes render. */
+    const scheduleRelease = (drawerEl: HTMLElement, paneEl: HTMLElement, next: boolean) => {
+      const id = setTimeout(() => {
+        settleRef.current = null;
+        releaseInlineStyles(drawerEl, paneEl, next);
+      }, TRANSITION_MS + SETTLE_BUFFER_MS);
+      settleRef.current = { id, target: next, drawer: drawerEl, pane: paneEl };
+    };
+
     /** Animates both elements to `next`, flips state, then returns ownership
      * of every inline property to what React/classes render for that state. */
     const settle = (gesture: Gesture, next: boolean) => {
@@ -215,17 +259,64 @@ export default function useDrawerSwipe({
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
-      const id = setTimeout(() => {
-        settleRef.current = null;
-        drawerEl.style.transform = '';
-        drawerEl.style.willChange = '';
-        drawerEl.style.transition = SIDEBAR_TRANSITION;
-        paneEl.style.transform = next ? 'translateX(100%)' : 'none';
-        paneEl.style.willChange = '';
-        paneEl.style.transition = SIDEBAR_TRANSITION;
-      }, TRANSITION_MS + SETTLE_BUFFER_MS);
-      settleRef.current = { id, target: next, drawer: drawerEl, pane: paneEl };
+      scheduleRelease(drawerEl, paneEl, next);
     };
+
+    /** Imperative slide for button/keyboard toggles: same transforms and
+     * release lifecycle as a gesture settle, but the CALLER owns the state
+     * flip — nothing here calls `onOpenChange`. A drag in progress owns the
+     * inline styles, so it wins; an in-flight settle already heading to
+     * `next` needs no second start. */
+    const animateTo = (next: boolean) => {
+      if (next === open || gestureRef.current != null) {
+        return;
+      }
+      const pending = settleRef.current;
+      if (pending != null) {
+        if (pending.target === next) {
+          return;
+        }
+        clearTimeout(pending.id);
+        settleRef.current = null;
+      }
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        /** Snap: suppress the shared transition through the state flip the
+         * caller is about to make, then hand it back once committed. */
+        drawer.style.transition = 'none';
+        pane.style.transition = 'none';
+        const id = setTimeout(() => {
+          settleRef.current = null;
+          drawer.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transition = SIDEBAR_TRANSITION;
+        }, SETTLE_BUFFER_MS);
+        settleRef.current = { id, target: next, drawer, pane };
+        return;
+      }
+      drawer.style.willChange = 'transform';
+      pane.style.willChange = 'transform';
+      /** Armed BEFORE the frame below so the staged write can verify its
+       * target is still wanted — a retarget or a reconciliation cancel in
+       * between clears/replaces the settle and thereby voids the write. */
+      scheduleRelease(drawer, pane, next);
+      /** The transforms are written in a FRESH frame task, not the tap's own
+       * task: a transition armed inside the click task is not reliably
+       * created for the offscreen drawer (observed via `transitionrun`
+       * firing only after the state-flip commit, ~270ms late, even with a
+       * forced reflow in-task), while the same write from a clean task
+       * starts interpolating by the following frame. The reflow then pins
+       * the transition-start recalc to this frame instead of 2–3 later. */
+      requestAnimationFrame(() => {
+        if (settleRef.current?.target !== next) {
+          return;
+        }
+        drawer.style.transition = SIDEBAR_TRANSITION;
+        pane.style.transition = SIDEBAR_TRANSITION;
+        drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+        pane.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
+        void drawer.getBoundingClientRect();
+      });
+    };
+    drawerAnimator = animateTo;
 
     const onTouchStart = (event: TouchEvent) => {
       if (gestureRef.current != null || settleRef.current != null || event.touches.length !== 1) {
@@ -377,6 +468,7 @@ export default function useDrawerSwipe({
     surface.addEventListener('touchend', onTouchEnd, { passive: true });
     surface.addEventListener('touchcancel', onTouchCancel, { passive: true });
     return () => {
+      drawerAnimator = null;
       surface.removeEventListener('touchstart', onTouchStart);
       surface.removeEventListener('touchmove', onTouchMove);
       surface.removeEventListener('touchend', onTouchEnd);

@@ -1,5 +1,8 @@
 import { renderHook } from '@testing-library/react';
-import useDrawerSwipe, { findHorizontalScrollBlocker } from '../useDrawerSwipe';
+import useDrawerSwipe, {
+  findHorizontalScrollBlocker,
+  kickDrawerAnimation,
+} from '../useDrawerSwipe';
 import { MOBILE_DRAWER_ID } from '~/components/UnifiedSidebar/constants';
 
 const DRAWER_WIDTH = 375;
@@ -428,6 +431,124 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
       { x: 220, y: 100, t: 250 },
     ]);
     expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    harness.unmount();
+  });
+});
+
+describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
+  it('slides both elements before the state flip runs, then hands off to classes', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    /** The sync rAF mock collapses the two-frame deferral, so capturing the
+     *  transform inside `applyState` proves the slide started first. */
+    const transformAtApply: string[] = [];
+    kickDrawerAnimation(true, () => {
+      transformAtApply.push(harness.drawer.style.transform);
+    });
+
+    expect(transformAtApply).toEqual(['translate3d(0, 0, 0)']);
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.drawer.style.willChange).toBe('transform');
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+
+    harness.rerender({ open: true, enabled: true });
+    expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
+
+    jest.runAllTimers();
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.drawer.style.willChange).toBe('');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('applies state immediately when the hook is disabled (desktop width animation)', () => {
+    const harness = setup(false);
+    harness.rerender({ open: false, enabled: false });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    expect(harness.drawer.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  it('applies state immediately after unmount', () => {
+    const harness = setup(false);
+    harness.unmount();
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+  });
+
+  it('retargets an in-flight slide when the user toggles back', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+
+    kickDrawerAnimation(true, jest.fn());
+    harness.rerender({ open: true, enabled: true });
+    kickDrawerAnimation(false, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
+    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+
+    harness.rerender({ open: false, enabled: true });
+    jest.runAllTimers();
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.pane.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('does not re-start a slide already heading to the same target', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+
+    kickDrawerAnimation(true, jest.fn());
+    harness.drawer.style.transform = 'translate3d(-10px, 0, 0)';
+    kickDrawerAnimation(true, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-10px, 0, 0)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('defers to a drag that owns the inline styles but still applies state', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 120, y: 104, t: 50 },
+      ],
+      false,
+    );
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(harness.pane.style.transform).toBe('translate3d(100px, 0, 0)');
+    expect(applyState).toHaveBeenCalledTimes(1);
+    harness.pane.dispatchEvent(touchEvent('touchend', [], 400));
+    harness.unmount();
+  });
+
+  it('snaps without a transition under reduced motion', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, true);
+
+    kickDrawerAnimation(true, jest.fn());
+
+    expect(harness.drawer.style.transition).toBe('none');
+    expect(harness.drawer.style.transform).toBe('');
+
+    harness.rerender({ open: true, enabled: true });
+    jest.runAllTimers();
+    expect(harness.drawer.style.transition).not.toBe('none');
+    jest.useRealTimers();
     harness.unmount();
   });
 });

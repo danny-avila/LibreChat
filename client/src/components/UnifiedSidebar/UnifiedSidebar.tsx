@@ -14,6 +14,7 @@ import {
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import { kickDrawerAnimation } from '~/hooks/Nav/useDrawerSwipe';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
@@ -51,14 +52,22 @@ function UnifiedSidebar() {
   const links = useUnifiedSidebarLinks();
 
   const handleCollapse = useCallback(() => {
-    startTransition(() => {
-      setExpanded(false);
+    /** Slide first, render second — on mobile the swipe hook animates the
+     * drawer imperatively and defers the state flip past the first frame;
+     * on desktop it applies immediately and the width transition animates
+     * as before. */
+    kickDrawerAnimation(false, () => {
+      startTransition(() => {
+        setExpanded(false);
+      });
     });
   }, [setExpanded]);
 
   const handleExpand = useCallback(() => {
-    startTransition(() => {
-      setExpanded(true);
+    kickDrawerAnimation(true, () => {
+      startTransition(() => {
+        setExpanded(true);
+      });
     });
   }, [setExpanded]);
 

@@ -2,12 +2,21 @@ import { startTransition } from 'react';
 import { useSetRecoilState } from 'recoil';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
+import { kickDrawerAnimation } from '~/hooks/Nav/useDrawerSwipe';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
+
+/**
+ * Shared look for the sidebar toggle wherever it appears — the chat header's
+ * open button and the drawer header's close button — so the control reads as
+ * one persistent button that flips state rather than two different affordances.
+ */
+export const SIDEBAR_TOGGLE_CLASSES =
+  'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt';
 
 /**
  * `testId` exists because the sidebar rail publishes `open-sidebar-button` for its own
@@ -27,8 +36,12 @@ export default function OpenSidebar({
   const ariaKey = useShortcutAriaKey('toggleSidebar');
 
   const handleClick = () => {
-    startTransition(() => {
-      setSidebarExpanded(true);
+    /** Slide first, render second: the drawer must move on the next frame,
+     * not after a commit that can run long on large conversations. */
+    kickDrawerAnimation(true, () => {
+      startTransition(() => {
+        setSidebarExpanded(true);
+      });
     });
     setTimeout(() => {
       document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
@@ -48,10 +61,7 @@ export default function OpenSidebar({
           aria-expanded={false}
           aria-controls="chat-history-nav"
           aria-keyshortcuts={ariaKey}
-          className={cn(
-            'rounded-xl bg-presentation duration-0 hover:bg-surface-active-alt',
-            className,
-          )}
+          className={cn(SIDEBAR_TOGGLE_CLASSES, className)}
           onClick={handleClick}
         >
           <Sidebar className="icon-md" aria-hidden="true" />
