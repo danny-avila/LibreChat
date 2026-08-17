@@ -544,6 +544,9 @@ export type TConfig = {
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
+  statefulCodeSessions?: {
+    allowedEnvironments: StatefulCodeEnvironment[];
+  };
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;

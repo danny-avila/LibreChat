@@ -62,7 +62,11 @@ jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
   isFatalAgentInitializationError: (error) =>
-    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+    [
+      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      'resource_recovery_required',
+      'stateful_code_environment_not_allowed',
+    ].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -857,6 +861,42 @@ describe('initializeClient — subagent loading', () => {
      *  graph would treat them as a parallel/handoff node. */
     expect(agentClientArgs.agentConfigs).toBeDefined();
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
+  });
+
+  it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Disallowed Stateful Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      stateful_code_environment: 'conversation',
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.statefulCodeSessions = { allowedEnvironments: ['user'] };
+
+    await expect(
+      initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    });
+
+    expect(agentClientArgs).toBeUndefined();
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
   it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {

@@ -503,6 +503,9 @@ endpoints:
   #   # The following capabilities are opt-in and must be added explicitly:
   #   # "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
   #   # "stateful_code_sessions" is highly experimental and may change substantially.
+  #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
+  #   statefulCodeSessions:
+  #     allowedEnvironments: ["user", "agent-user", "conversation"]
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.

@@ -1,9 +1,16 @@
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
+import type { StatefulCodeEnvironment } from '../stateful-code';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
+export {
+  STATEFUL_CODE_ENVIRONMENTS,
+  resolveStatefulCodeEnvironment,
+  resolveAllowedStatefulCodeEnvironments,
+} from '../stateful-code';
+export type { StatefulCodeEnvironment } from '../stateful-code';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -537,9 +544,6 @@ export enum AnnotationTypes {
   FILE_CITATION = 'file_citation',
   FILE_PATH = 'file_path',
 }
-
-export const STATEFUL_CODE_ENVIRONMENTS = ['user', 'agent-user', 'conversation'] as const;
-export type StatefulCodeEnvironment = (typeof STATEFUL_CODE_ENVIRONMENTS)[number];
 
 export enum StepStatus {
   IN_PROGRESS = 'in_progress',

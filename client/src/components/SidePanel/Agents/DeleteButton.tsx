@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { resolveStatefulCodeEnvironment } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -12,9 +13,9 @@ import {
 } from '@librechat/client';
 import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { useAuthContext, useGetAgentsConfig, useLocalize } from '~/hooks';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
-import { useAuthContext, useLocalize } from '~/hooks';
 import { isEphemeralAgent } from '~/common';
 import store from '~/store';
 
@@ -29,6 +30,7 @@ function DeleteButton({
 }) {
   const localize = useLocalize();
   const { user } = useAuthContext();
+  const { agentsConfig } = useGetAgentsConfig();
   const { reset } = useFormContext();
   const { showToast } = useToastContext();
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
@@ -54,7 +56,14 @@ function DeleteButton({
       const firstAgent = updatedList[0] as Agent | undefined;
       if (!firstAgent) {
         setCurrentAgentId(undefined);
-        reset(getDefaultAgentFormValues(user?.personalization?.statefulCodeEnvironment ?? 'user'));
+        reset(
+          getDefaultAgentFormValues(
+            resolveStatefulCodeEnvironment(
+              user?.personalization?.statefulCodeEnvironment ?? 'user',
+              agentsConfig?.statefulCodeSessions?.allowedEnvironments,
+            ) ?? 'user',
+          ),
+        );
         setConversation((prev) => (prev ? { ...prev, agent_id: '' } : prev));
         return;
       }

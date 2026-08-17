@@ -1,8 +1,12 @@
 import { logger } from '@librechat/data-schemas';
-import { STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
+import {
+  STATEFUL_CODE_ENVIRONMENTS,
+  resolveAllowedStatefulCodeEnvironments,
+} from 'librechat-data-provider';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
 
 interface UserPreferencesBody {
   statefulCodeEnvironment?: string;
@@ -12,7 +16,8 @@ function isStatefulCodeEnvironment(value: string): value is StatefulCodeEnvironm
   return STATEFUL_CODE_ENVIRONMENTS.some((environment) => environment === value);
 }
 
-type UserPreferencesRequest = Request<unknown, unknown, UserPreferencesBody> & {
+type UserPreferencesRequest = Omit<ServerRequest, 'body' | 'user'> & {
+  body: UserPreferencesBody;
   user?: IUser;
 };
 
@@ -36,6 +41,15 @@ export function createUserPreferencesHandler(
     if (typeof environment !== 'string' || !isStatefulCodeEnvironment(environment)) {
       return res.status(400).json({
         message: `statefulCodeEnvironment must be one of: ${STATEFUL_CODE_ENVIRONMENTS.join(', ')}`,
+      });
+    }
+
+    const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(
+      req.config?.endpoints?.agents?.statefulCodeSessions?.allowedEnvironments,
+    );
+    if (!allowedEnvironments.includes(environment)) {
+      return res.status(403).json({
+        message: `statefulCodeEnvironment is not allowed by this deployment: ${environment}`,
       });
     }
 

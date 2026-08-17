@@ -7,18 +7,34 @@ import {
   SelectTrigger,
   useToastContext,
 } from '@librechat/client';
-
+import {
+  STATEFUL_CODE_ENVIRONMENTS,
+  resolveAllowedStatefulCodeEnvironments,
+  resolveStatefulCodeEnvironment,
+} from 'librechat-data-provider';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import { useGetUserQuery, useUpdateUserPreferencesMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useGetAgentsConfig, useLocalize } from '~/hooks';
 
 const FALLBACK_ENVIRONMENT: StatefulCodeEnvironment = 'user';
+const ENVIRONMENT_LABELS = {
+  user: 'com_ui_stateful_code_environment_user',
+  'agent-user': 'com_ui_stateful_code_environment_agent_user',
+  conversation: 'com_ui_stateful_code_environment_conversation',
+} as const;
 
 export default function StatefulWorkspaceDefault() {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data: user } = useGetUserQuery();
-  const savedEnvironment = user?.personalization?.statefulCodeEnvironment ?? FALLBACK_ENVIRONMENT;
+  const { agentsConfig } = useGetAgentsConfig();
+  const configuredEnvironments = agentsConfig?.statefulCodeSessions?.allowedEnvironments;
+  const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(configuredEnvironments);
+  const savedPreference = user?.personalization?.statefulCodeEnvironment;
+  const savedEnvironment =
+    savedPreference ??
+    resolveStatefulCodeEnvironment(FALLBACK_ENVIRONMENT, configuredEnvironments) ??
+    FALLBACK_ENVIRONMENT;
   const [environment, setEnvironment] = useState<StatefulCodeEnvironment>(savedEnvironment);
 
   useEffect(() => {
@@ -36,6 +52,9 @@ export default function StatefulWorkspaceDefault() {
 
   const handleChange = (value: string) => {
     const statefulCodeEnvironment = value as StatefulCodeEnvironment;
+    if (!allowedEnvironments.includes(statefulCodeEnvironment)) {
+      return;
+    }
     setEnvironment(statefulCodeEnvironment);
     mutation.mutate({ statefulCodeEnvironment });
   };
@@ -61,13 +80,18 @@ export default function StatefulWorkspaceDefault() {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="user">{localize('com_ui_stateful_code_environment_user')}</SelectItem>
-          <SelectItem value="agent-user">
-            {localize('com_ui_stateful_code_environment_agent_user')}
-          </SelectItem>
-          <SelectItem value="conversation">
-            {localize('com_ui_stateful_code_environment_conversation')}
-          </SelectItem>
+          {STATEFUL_CODE_ENVIRONMENTS.filter(
+            (candidate) =>
+              allowedEnvironments.includes(candidate) || candidate === savedEnvironment,
+          ).map((candidate) => (
+            <SelectItem
+              key={candidate}
+              value={candidate}
+              disabled={!allowedEnvironments.includes(candidate)}
+            >
+              {localize(ENVIRONMENT_LABELS[candidate])}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>

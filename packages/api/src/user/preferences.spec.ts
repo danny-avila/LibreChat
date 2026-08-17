@@ -69,6 +69,27 @@ describe('createUserPreferencesHandler', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('rejects a valid scope excluded by deployment policy', async () => {
+    const updateStatefulCodeEnvironment = jest.fn();
+    const handler = createUserPreferencesHandler({ updateStatefulCodeEnvironment });
+    const response = createResponse();
+    const request = createRequest({ statefulCodeEnvironment: 'conversation' }) as Parameters<
+      typeof handler
+    >[0];
+    request.config = {
+      endpoints: {
+        agents: {
+          statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+        },
+      },
+    } as NonNullable<typeof request.config>;
+
+    await handler(request, response as Response);
+
+    expect(updateStatefulCodeEnvironment).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(403);
+  });
+
   it('requires an authenticated user', async () => {
     const updateStatefulCodeEnvironment = jest.fn();
     const handler = createUserPreferencesHandler({ updateStatefulCodeEnvironment });

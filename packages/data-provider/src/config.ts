@@ -9,6 +9,7 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
+import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
@@ -1004,6 +1005,13 @@ export const agentsEndpointSchema = baseEndpointSchema
         .array(z.nativeEnum(AgentCapabilities))
         .optional()
         .default(defaultAgentCapabilities),
+      /** Controls which workspace-sharing scopes users may select for stateful code sessions.
+       *  Omit this block to preserve the legacy behavior of allowing every scope. */
+      statefulCodeSessions: z
+        .object({
+          allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
@@ -2722,6 +2730,10 @@ export enum ErrorTypes {
    * Required CodeAPI resources could not be restored before model invocation.
    */
   RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
+  /**
+   * Agent selected a stateful Code API workspace scope disabled by the deployment.
+   */
+  STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
   /**
    * Invalid Agent Provider (excluded by Admin)
    */
