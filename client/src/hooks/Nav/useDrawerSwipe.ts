@@ -25,6 +25,20 @@ const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]
 
 let drawerAnimator: ((next: boolean) => void) | null = null;
 
+/** How a kicked toggle was handled: no animator (desktop/logged out — state
+ * applied immediately), reduced-motion snap (applied immediately, no slide
+ * frames), or a deferred slide. */
+export type DrawerKickMode = 'none' | 'snap' | 'slide';
+
+/** Target of a slide whose state flip is still deferred, or null when no
+ * flip is pending. Lets rapid toggles invert the LATEST intent instead of
+ * the stale committed atom value. */
+let pendingFlipTarget: boolean | null = null;
+
+export function getPendingDrawerFlip(): boolean | null {
+  return pendingFlipTarget;
+}
+
 /**
  * Starts the drawer/pane slide imperatively and owns WHEN the caller's state
  * flip runs. Wrapping the flip in `startTransition` is not enough: Recoil
@@ -42,15 +56,15 @@ let drawerAnimator: ((next: boolean) => void) | null = null;
  * swipe hook is not active — desktop, logged out — `applyState` runs
  * immediately and React animates the layout as before.
  *
- * Returns whether the drawer animator handled the slide, so callers can keep
- * affordances that only make sense outside the drawer (e.g. the desktop
- * focus timer) off the animated path.
+ * Returns how the toggle was handled, so callers can keep affordances off
+ * the paths where they do not apply — e.g. the desktop focus timer only
+ * runs on 'none', and follow-up work defers only on 'slide'.
  */
-export function kickDrawerAnimation(next: boolean, applyState: () => void): boolean {
+export function kickDrawerAnimation(next: boolean, applyState: () => void): DrawerKickMode {
   const animator = drawerAnimator;
   if (animator == null) {
     applyState();
-    return false;
+    return 'none';
   }
   animator(next);
   /** Reduced motion snaps — there are no slide frames to protect, and
@@ -60,11 +74,15 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): bool
    * cannot preempt. */
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     applyState();
-    return true;
+    return 'snap';
   }
+  pendingFlipTarget = next;
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        /** Cleared unconditionally — a dropped flip is no longer pending
+         * either. */
+        pendingFlipTarget = null;
         /** A teardown or re-register during the deferral — breakpoint
          * cross, logout, route change — makes the captured intent stale:
          * the new world owns the state, and a straggler flip could toggle
@@ -76,7 +94,7 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): bool
       });
     });
   });
-  return true;
+  return 'slide';
 }
 
 /**
@@ -294,14 +312,16 @@ export default function useDrawerSwipe({
      * inline styles, so it wins; an in-flight settle already heading to
      * `next` needs no second start. */
     const animateTo = (next: boolean) => {
-      if (next === open || gestureRef.current != null) {
+      /** The committed `open` goes stale while a flip is deferred — a rapid
+       * second toggle must compare against the in-flight settle's target or
+       * it early-returns and the visual never retargets (the state would
+       * still alternate, then snap at release). */
+      const effectiveTarget = settleRef.current?.target ?? open;
+      if (next === effectiveTarget || gestureRef.current != null) {
         return;
       }
       const pending = settleRef.current;
       if (pending != null) {
-        if (pending.target === next) {
-          return;
-        }
         if (pending.id != null) {
           clearTimeout(pending.id);
         }

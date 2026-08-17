@@ -31,7 +31,7 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const setSidebarOpen = useSidebarToggle();
+  const { setSidebarOpen } = useSidebarToggle();
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
@@ -98,14 +98,24 @@ const ConversationsSection = memo(() => {
     [pinnedData?.conversations, conversations],
   );
 
-  const toggleNav = useCallback(() => {
-    if (isSmallScreen) {
-      /** Selecting a conversation is the most common close path — it must
-       * take the animated route or the drawer stalls on the new
-       * conversation's commit before it starts sliding. */
-      setSidebarOpen(false);
-    }
-  }, [isSmallScreen, setSidebarOpen]);
+  /**
+   * Selecting a conversation is the most common close path — it must take
+   * the animated route or the drawer stalls on the new conversation's
+   * commit before it starts sliding. `afterSlide` carries that navigation:
+   * run synchronously it would flush the conversation switch in the tap's
+   * task and stall the slide anyway; deferred, it lands mid-slide. Desktop
+   * runs it immediately (nothing slides).
+   */
+  const toggleNav = useCallback(
+    (afterSlide?: () => void) => {
+      if (isSmallScreen) {
+        setSidebarOpen(false, afterSlide);
+        return;
+      }
+      afterSlide?.();
+    },
+    [isSmallScreen, setSidebarOpen],
+  );
 
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {

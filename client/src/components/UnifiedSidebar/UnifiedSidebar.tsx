@@ -45,7 +45,7 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 function UnifiedSidebar() {
   const localize = useLocalize();
   const { isSmallScreen, expanded } = useSidebarState();
-  const setSidebarOpen = useSidebarToggle();
+  const { setSidebarOpen } = useSidebarToggle();
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);

@@ -502,7 +502,7 @@ export function useShortcutActions(): ShortcutAction[] {
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
-  const setSidebarOpen = useSidebarToggle();
+  const { setSidebarOpen, toggleSidebar } = useSidebarToggle();
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
   const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
@@ -533,9 +533,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarOpen(!sidebarExpanded);
+    toggleSidebar();
     return true;
-  }, [sidebarExpanded, setSidebarOpen]);
+  }, [toggleSidebar]);
 
   const handleOpenModelSelector = useCallback(
     () => clickElement('[data-testid="model-selector-button"]'),
@@ -568,10 +568,17 @@ export function useShortcutActions(): ShortcutAction[] {
     }
 
     if (!sidebarExpanded) {
-      setSidebarOpen(true);
+      /** The focus rides `afterSlide` + a zero timer: it must queue behind
+       * the deferred flip's commit (which un-inerts the drawer), where a
+       * fixed 350ms guess could fire into the still-inert drawer and be
+       * silently ignored. */
+      setSidebarOpen(true, () => {
+        setTimeout(focusSearchInput, 0);
+      });
+      return true;
     }
 
-    if (!sidebarExpanded || switchedPanel) {
+    if (switchedPanel) {
       setTimeout(focusSearchInput, 350);
       return true;
     }
@@ -798,8 +805,12 @@ export function useShortcutActions(): ShortcutAction[] {
       }
 
       if (!sidebarExpanded) {
-        setSidebarOpen(true);
-        setTimeout(activatePanel, 350);
+        /** Queued behind the deferred flip's commit, like the search focus
+         * above — the panel button is unreachable while the drawer is
+         * inert. */
+        setSidebarOpen(true, () => {
+          setTimeout(activatePanel, 0);
+        });
         return true;
       }
 

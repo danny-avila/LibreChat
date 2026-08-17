@@ -19,13 +19,13 @@ export default function OpenSidebar({
   testId?: string;
 }) {
   const localize = useLocalize();
-  const setSidebarOpen = useSidebarToggle();
+  const { setSidebarOpen } = useSidebarToggle();
   const tooltipDescription = useShortcutHint('toggleSidebar', localize('com_nav_open_sidebar'));
   const ariaKey = useShortcutAriaKey('toggleSidebar');
 
   const handleClick = () => {
-    const animated = setSidebarOpen(true);
-    if (!animated) {
+    const mode = setSidebarOpen(true);
+    if (mode === 'none') {
       /** Desktop only: the expanded panel claims `CLOSE_SIDEBAR_ID` and has
        * no commit-driven handoff of its own. The mobile drawer focuses its
        * toggle from the commit itself — a second timer there would steal
