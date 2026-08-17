@@ -20,6 +20,8 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   createStatefulCodeEnvironmentPolicyError,
+  createSubagentThreadTaskStore,
+  buildSubagentThreadTaskConfig,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -64,6 +66,14 @@ const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
+/** Durable logical threads backed by normal LibreChat conversations/messages;
+ * active execution leases and controls remain bounded to this process. */
+const subagentThreadTaskStore = createSubagentThreadTaskStore({
+  getConvo: db.getConvo,
+  getMessages: db.getMessages,
+  saveConvo: db.saveConvo,
+  saveMessage: db.saveMessage,
+});
 
 /**
  * Creates a tool loader function for the agent.
@@ -389,25 +399,6 @@ const initializeClient = async ({
   const contextUsageSink = { latest: null, count: 0 };
   /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
   const usageEmitSink = [];
-
-  const eventHandlers = getDefaultHandlers({
-    res,
-    contentParts,
-    stepMap,
-    toolInputValidationErrors,
-    toolExecuteOptions,
-    summarizationOptions,
-    aggregateContent,
-    toolEndCallback,
-    collectedUsage,
-    collectedThoughtSignatures,
-    streamId,
-    jobCreatedAt,
-    subagentAggregatorsByToolCallId,
-    usageCost,
-    contextUsageSink,
-    usageEmitSink,
-  });
 
   const [
     memoryAvailable,
@@ -1212,6 +1203,38 @@ const initializeClient = async ({
     await resolveGraphSubagentsFor(config);
   }
 
+  /** Enable detached execution only when this request has an attributable
+   * owner/thread and at least one outer agent can actually spawn a child.
+   * The SDK receives only this trusted host scope; models can select a child
+   * `threadId`, never the owner or parent-thread namespace. */
+  const hasSpawnableSubagent = rootSubagentConfigs.some(
+    (config) =>
+      config.subagents?.enabled === true &&
+      (config.subagents.allowSelf !== false ||
+        (config.subagentAgentConfigs?.length ?? 0) > 0 ||
+        (config.lazySubagentConfigs?.length ?? 0) > 0 ||
+        (config.subagentGraphConfigs?.length ?? 0) > 0),
+  );
+  const subagentTasks =
+    backgroundToolsAvailable &&
+    subagentsCapabilityEnabled &&
+    hasSpawnableSubagent &&
+    typeof req.user?.id === 'string' &&
+    req.user.id !== '' &&
+    typeof conversationId === 'string' &&
+    conversationId !== ''
+      ? buildSubagentThreadTaskConfig(subagentThreadTaskStore, {
+          userId: req.user.id,
+          parentConversationId: conversationId,
+          ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+            ? { tenantId: req.user.tenantId }
+            : {}),
+        })
+      : undefined;
+  if (subagentTasks != null) {
+    toolExecuteOptions.subagentTasks = subagentTasks;
+  }
+
   primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
 
   /** If the capability is off at the endpoint level, strip `subagents` on
@@ -1306,6 +1329,25 @@ const initializeClient = async ({
       fallback: usageCost.endpointTokenConfig,
     });
 
+  const eventHandlers = getDefaultHandlers({
+    res,
+    contentParts,
+    stepMap,
+    toolInputValidationErrors,
+    toolExecuteOptions,
+    summarizationOptions,
+    aggregateContent,
+    toolEndCallback,
+    collectedUsage,
+    collectedThoughtSignatures,
+    streamId,
+    jobCreatedAt,
+    subagentAggregatorsByToolCallId,
+    usageCost,
+    contextUsageSink,
+    usageEmitSink,
+  });
+
   const client = new AgentClient({
     req,
     res,
@@ -1330,6 +1372,7 @@ const initializeClient = async ({
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
     subagentAggregatorsByToolCallId,
+    subagentTasks,
     /** Resolved endpoint token/pricing config so spending and cost reflect
      *  configured rates for custom-endpoint agents instead of defaults. */
     endpointTokenConfig: primaryConfig.endpointTokenConfig,

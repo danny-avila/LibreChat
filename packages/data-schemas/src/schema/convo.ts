@@ -29,6 +29,20 @@ const convoSchema: Schema<IConversation> = new Schema(
     agent_id: {
       type: String,
     },
+    subagentThread: {
+      type: {
+        rootConversationId: { type: String, required: true },
+        parentConversationId: { type: String, required: true },
+        parentMessageId: { type: String, required: true },
+        parentToolCallId: { type: String, required: true },
+        parentAgentId: { type: String },
+        subagentType: { type: String, required: true },
+        subagentKind: { type: String, enum: ['agent', 'graph'], required: true },
+        depth: { type: Number, min: 1, required: true },
+      },
+      _id: false,
+      default: undefined,
+    },
     tags: {
       type: [String],
       default: [],

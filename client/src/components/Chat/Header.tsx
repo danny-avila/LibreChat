@@ -5,6 +5,7 @@ import { OpenSidebar, PresetsMenu, NewChat, HeaderMenu } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
+import SubagentThreadLink from './SubagentThreadLink';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
 import AddMultiConvo from './AddMultiConvo';
@@ -20,7 +21,7 @@ const defaultInterface = getConfigDefaults().interface;
  * reordering. Branching is CSS-only — `useMediaQuery` resolves after paint and
  * would pop the row a frame late on every mount.
  */
-function Header() {
+function Header({ parentConversationId }: { parentConversationId?: string }) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
 
@@ -59,6 +60,13 @@ function Header() {
           hiddenBehindNav,
         )}
       >
+        {parentConversationId != null && (
+          <SubagentThreadLink
+            threadId={parentConversationId}
+            relation="parent"
+            labelClassName="hidden lg:inline"
+          />
+        )}
         <ModelSelector startupConfig={startupConfig} />
         {interfaceConfig.presets === true && interfaceConfig.modelSelect === true && (
           <PresetsMenu />

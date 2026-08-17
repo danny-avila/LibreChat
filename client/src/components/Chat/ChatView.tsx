@@ -116,6 +116,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       : undefined;
   const pageHeading =
     isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
+  const parentConversationId =
+    chatHelpers.conversation?.conversationId === conversationId
+      ? chatHelpers.conversation?.subagentThread?.parentConversationId
+      : undefined;
 
   return (
     <ChatFormProvider {...methods}>
@@ -124,7 +128,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
               <h1 className="sr-only">{pageHeading}</h1>
-              <Header />
+              <Header parentConversationId={parentConversationId} />
               <>
                 <div
                   className={cn(

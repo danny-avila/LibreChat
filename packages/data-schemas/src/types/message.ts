@@ -42,6 +42,12 @@ export interface IMessage extends Document {
   iconURL?: string;
   addedConvo?: boolean;
   metadata?: Record<string, unknown>;
+  /** Server-private canonical message delta for durable subagent-thread continuation. */
+  subagentTranscript?: {
+    taskId: string;
+    mode: 'append' | 'replace';
+    messagesJson: string;
+  };
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;

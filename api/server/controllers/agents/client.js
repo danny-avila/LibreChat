@@ -3181,6 +3181,7 @@ class AgentClient extends BaseClient {
             this.collectedUsage,
             this.buildSubagentUsageEmitter(appConfig),
           ),
+          subagentTasks: this.options.subagentTasks,
         }).then((createdRun) => {
           if (!createdRun) {
             throw new Error('Failed to create run');
@@ -3569,6 +3570,7 @@ class AgentClient extends BaseClient {
           this.collectedUsage,
           this.buildSubagentUsageEmitter(appConfig),
         ),
+        subagentTasks: this.options.subagentTasks,
       });
 
       if (!run) {

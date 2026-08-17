@@ -30,6 +30,7 @@ export * from './responses';
 export * from './skills';
 export * from './phases';
 export * from './startup';
+export * from './subagentThreads';
 export * from './skillConfigurable';
 export * from './skillFiles';
 export * from './codeFilesSession';

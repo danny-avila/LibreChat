@@ -714,6 +714,49 @@ describe('initializeClient — subagent loading', () => {
     return agent;
   };
 
+  it('creates one trusted durable thread scope for detached subagents', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(agentClientArgs.subagentTasks.store.supportsThreadContinuation).toBe(true);
+    expect(JSON.parse(agentClientArgs.subagentTasks.scopeId)).toEqual({
+      version: 1,
+      userId: testUser._id.toString(),
+      parentConversationId: 'conv_sub',
+    });
+  });
+
+  it('keeps detached subagents disabled without the admin background capability', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+  });
+
   it('defers pure-subagent MCP initialization until the descriptor is selected', async () => {
     const subAgent = await createAgent({
       id: SUBAGENT_ID,
@@ -1210,8 +1253,10 @@ describe('initializeClient — subagent loading', () => {
       Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : memberConfigs.get(agent.id)),
     );
 
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
     const { userMCPAuthMap } = await initializeClient({
-      req: makeSubagentReq(),
+      req,
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
@@ -1224,6 +1269,7 @@ describe('initializeClient — subagent loading', () => {
       },
     ]);
     expect(memberIds.every((id) => !agentClientArgs.agentConfigs.has(id))).toBe(true);
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
     expect(userMCPAuthMap).toEqual({
       server_0: { token: 'token_0' },
       server_1: { token: 'token_1' },

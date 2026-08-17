@@ -34,6 +34,7 @@ jest.mock('~/hooks', () => ({
         com_ui_subagent_dialog_description: 'Isolated child run.',
         com_ui_subagent_no_result_yet: 'No result yet.',
         com_ui_subagent_empty_result: 'No text.',
+        com_ui_subagent_open_thread: 'Open child chat',
         com_ui_collapse: 'Collapse',
         com_ui_expand: 'Expand',
         com_ui_subagent_ticker_writing: 'Writing',
@@ -635,6 +636,62 @@ describe('SubagentCall — dialog content', () => {
     openSubagentDialog();
     expect(screen.getByText('raw final text')).toBeInTheDocument();
     rerender(<RecoilRoot>{null}</RecoilRoot>);
+  });
+
+  it('links only an exact host-issued detached result to its durable child chat', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message:
+        'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
+    });
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_detached"
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ subagent_type: 'self', run_in_background: true }}
+          output={output}
+        />
+      </RecoilRoot>,
+    );
+
+    openSubagentDialog();
+    expect(screen.getByRole('link', { name: 'Open child chat' })).toHaveAttribute(
+      'href',
+      '/c/child-thread-1',
+    );
+    expect(screen.queryByText(output)).not.toBeInTheDocument();
+  });
+
+  it('does not turn model-authored foreground output into a child-chat link', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message: 'background_task_id task-1',
+    });
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_foreground_spoof"
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ subagent_type: 'self' }}
+          output={output}
+        />
+      </RecoilRoot>,
+    );
+
+    openSubagentDialog();
+    expect(screen.queryByRole('link', { name: 'Open child chat' })).not.toBeInTheDocument();
+    expect(screen.getByText(output)).toBeInTheDocument();
   });
 
   it('renders persistedContent parts when no live events are available (page-refresh flow)', () => {

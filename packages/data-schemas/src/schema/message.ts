@@ -124,6 +124,16 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
+    subagentTranscript: {
+      type: {
+        taskId: { type: String, required: true },
+        mode: { type: String, enum: ['append', 'replace'], required: true },
+        messagesJson: { type: String, required: true },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     contextMeta: {
       type: {
         calibrationRatio: { type: Number },
