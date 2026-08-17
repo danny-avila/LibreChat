@@ -9,6 +9,40 @@ import logger from '~/config/winston';
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Exclusion projection for message reads that feed the chat client (the
+ * conversation GET and shared-link reads). Every excluded field is either
+ * server-internal (ids, replay signatures, legacy summarization state) or a
+ * web_search SERP vertical no citation marker or UI can address: markers
+ * resolve `search|image|news|video|ref|file` through organic/images/
+ * topStories/videos/references (all kept — `news` markers read topStories,
+ * never the `news` collection). The JSON export mirrors this cache, so
+ * fields removed here also leave user exports.
+ */
+export const CLIENT_MESSAGE_SELECT: string = [
+  '-_id',
+  '-__v',
+  '-user',
+  '-clientId',
+  '-invocationId',
+  '-conversationSignature',
+  '-summary',
+  '-summaryTokenCount',
+  '-contextMeta',
+  '-langfuseSampled',
+  '-langfuseDestinationIds',
+  '-metadata.thoughtSignatures',
+  '-attachments.web_search.knowledgeGraph',
+  '-attachments.web_search.peopleAlsoAsk',
+  '-attachments.web_search.relatedSearches',
+  '-attachments.web_search.shopping',
+  '-attachments.web_search.places',
+  '-attachments.web_search.news',
+  '-attachments.web_search.organic.sitelinks',
+  '-attachments.web_search.organic.highlights',
+  '-attachments.web_search.topStories.highlights',
+].join(' ');
+
 interface MessageQueryOptions {
   limit?: number;
   sort?: Record<string, 1 | -1> | false;
@@ -41,6 +75,7 @@ export interface MessageMethods {
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    markBackgrounded?: boolean;
   }): Promise<{ matched: boolean; unfinished: boolean }>;
   updateMessage(
     userId: string,
@@ -298,6 +333,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     agentId,
     output,
     attachments,
+    markBackgrounded,
   }: {
     userId: string;
     messageId: string;
@@ -309,6 +345,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    /**
+     * Stamps `backgrounded: true` onto the patched tool call. Replacing the
+     * dispatch-handle output with the settled task's stdout destroys the only
+     * signal renderers had that this call ran detached (the handle JSON and
+     * the live status-marker attachment are both transient), so the patch
+     * that erases it must persist a durable one alongside.
+     */
+    markBackgrounded?: boolean;
   }): Promise<{ matched: boolean; unfinished: boolean }> {
     const stages: Record<string, unknown>[] = [];
     if (output !== undefined) {
@@ -341,7 +385,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                       '$$part',
                       {
                         tool_call: {
-                          $mergeObjects: ['$$part.tool_call', { output: { $literal: output } }],
+                          $mergeObjects: [
+                            '$$part.tool_call',
+                            {
+                              output: { $literal: output },
+                              ...(markBackgrounded === true ? { backgrounded: true } : {}),
+                            },
+                          ],
                         },
                       },
                     ],

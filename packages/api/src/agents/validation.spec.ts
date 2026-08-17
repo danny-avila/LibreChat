@@ -99,6 +99,26 @@ describe('agentCreateSchema with subagents', () => {
   });
 });
 
+describe('stateful code environments', () => {
+  it.each(['user', 'agent-user', 'conversation'])('accepts %s', (environment) => {
+    const result = agentCreateSchema.safeParse({
+      provider: 'openAI',
+      model: 'gpt-4o-mini',
+      tools: [],
+      stateful_code_sessions: true,
+      stateful_code_environment: environment,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects unknown environment scopes', () => {
+    const result = agentUpdateSchema.safeParse({
+      stateful_code_environment: 'agent',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
 describe('agentUpdateSchema with subagents', () => {
   it('accepts a partial update with only the disabled flag set', () => {
     const result = agentUpdateSchema.safeParse({

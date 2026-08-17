@@ -7,6 +7,7 @@ import {
   LocalStorageKeys,
   PermissionTypes,
   Permissions,
+  resolveModelSpecEndpoint,
 } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
@@ -77,6 +78,7 @@ export default function useAppStartup({
 
     setDefaultPreset({
       ...defaultSpec.preset,
+      endpoint: resolveModelSpecEndpoint(defaultSpec) ?? null,
       iconURL: defaultSpec.iconURL,
       spec: defaultSpec.name,
     });

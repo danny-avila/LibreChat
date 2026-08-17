@@ -18,6 +18,7 @@ import {
   appendAppliedSteerIds,
   carriedSteerContext,
   clearAllDrafts,
+  getPendingDraftId,
   insertQueuedOrigin,
 } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -625,13 +626,14 @@ export default function useSteering({
    *  a steer or queued item. The composer clears via the form's `reset()`,
    *  which is programmatic and never fires the `input` event `useAutoSave`
    *  listens on — so the draft would outlive the submit. It is keyed under
-   *  `PENDING_CONVO` here (every caller is gated on `duringRunActive`, which
-   *  requires `isSubmitting` and rules out the answer-mode draft key), and
-   *  run end migrates a surviving pending draft onto the conversation and
-   *  restores it — resurfacing text the user already sent. */
+   *  this pane's pending draft key here (every caller is gated on
+   *  `duringRunActive`, which requires `isSubmitting` and rules out the
+   *  answer-mode draft key), and run end migrates a surviving pending draft
+   *  onto the conversation and restores it: resurfacing text the user already
+   *  sent. */
   const takeComposerDraft = useCallback(() => {
-    clearAllDrafts(Constants.PENDING_CONVO);
-  }, []);
+    clearAllDrafts(getPendingDraftId(index));
+  }, [index]);
 
   const removeQueued = useRecoilCallback(
     ({ set }) =>

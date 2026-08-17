@@ -29,6 +29,7 @@ export interface AssistantToolDefinitionsParams {
 export interface AssistantToolCatalogSnapshot {
   tools: LCAvailableTools | null;
   publicationGeneration?: string;
+  publicationRevision?: string;
 }
 
 export interface AssistantToolDefinitionsDeps {
@@ -60,6 +61,7 @@ export interface AssistantToolDefinitionsDeps {
     serverTools: LCAvailableTools;
     serverConfig: ParsedServerConfig;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }) => Promise<void>;
 }
 
@@ -134,6 +136,7 @@ async function loadServerCatalog(
         serverTools: snapshot.tools,
         serverConfig,
         publicationGeneration: snapshot.publicationGeneration,
+        publicationRevision: snapshot.publicationRevision,
       })
       .catch((error) =>
         logger.error(

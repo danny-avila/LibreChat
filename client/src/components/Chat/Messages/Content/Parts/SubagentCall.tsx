@@ -9,7 +9,13 @@ import {
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import type { Agents, TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  Agents,
+  TAttachment,
+  TMessage,
+  TMessageContentParts,
+  PartMetadata,
+} from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
@@ -36,6 +42,9 @@ interface SubagentCallProps {
    *  tool_call's `progress` and any terminal subagent envelope — to decide
    *  whether the subagent is `running`, `cancelled`, or `finished`. */
   isSubmitting?: boolean;
+  /** Terminal lifecycle status from `on_run_step_closed`, when the run
+   *  emitted one. Authoritative over the `isSubmitting` inference. */
+  runStepStatus?: PartMetadata['runStepStatus'];
   args?: string | Record<string, unknown>;
   output?: string | null;
   attachments?: TAttachment[];
@@ -165,6 +174,7 @@ export default function SubagentCall({
   toolCallId,
   initialProgress,
   isSubmitting = false,
+  runStepStatus,
   args,
   output,
   attachments,
@@ -198,9 +208,25 @@ export default function SubagentCall({
    * - `running`: the parent is still streaming and no terminal signal has
    *   arrived yet.
    */
-  const hasError = progress?.status === 'error';
-  const finished = initialProgress >= 1 || progress?.status === 'stop' || hasError;
-  const cancelled = !isSubmitting && !finished;
+  /**
+   * A closed run step resolves the tri-state directly. It is the only signal
+   * that distinguishes "this subagent was stopped" from "the parent stream
+   * ended for some other reason", which the `!isSubmitting` inference below
+   * cannot tell apart. That inference stays as the fallback for messages
+   * saved before `on_run_step_closed` and endpoints that do not emit it.
+   */
+  const isClosed = runStepStatus != null;
+  /**
+   * An explicit `cancelled` close outranks a live `error` phase: aborting a
+   * child can surface through its execution as an error, and the run's own
+   * status is the authority on why it stopped.
+   */
+  const hasError =
+    (progress?.status === 'error' || runStepStatus === 'failed') && runStepStatus !== 'cancelled';
+  const finished = isClosed
+    ? runStepStatus !== 'cancelled'
+    : initialProgress >= 1 || progress?.status === 'stop' || hasError;
+  const cancelled = isClosed ? runStepStatus === 'cancelled' : !isSubmitting && !finished;
   const running = !finished && !cancelled;
 
   /**

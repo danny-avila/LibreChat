@@ -10,12 +10,14 @@ import { isImageURL } from '~/utils/icons';
 interface SpecIconProps {
   currentSpec: TModelSpec;
   endpointsConfig: TEndpointsConfig;
+  /** Avatar of the agent this spec targets, used when the spec defines no icon of its own. */
+  agentAvatarURL?: string;
 }
 
 type IconType = (props: IconMapProps) => React.JSX.Element;
 
-const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig }) => {
-  const iconURL = getModelSpecIconURL(currentSpec);
+const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig, agentAvatarURL }) => {
+  const iconURL = getModelSpecIconURL(currentSpec, agentAvatarURL);
   const endpoint = currentSpec.preset?.endpoint;
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });

@@ -214,7 +214,7 @@ test.describe('parent activity phases', () => {
     const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
     expect(finalTextIndex).toBe(phasePart?.activity_end_index);
 
-    const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
+    const parent = messagesView(page).getByRole('button', { name: PARENT_LABEL, exact: true });
     await expect(parent).toBeVisible({ timeout: 30000 });
     await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 30000 });
     await parent.click();
@@ -241,7 +241,10 @@ test.describe('parent activity phases', () => {
     ).toBe(true);
 
     await page.reload();
-    const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
+    const reloadedParent = messagesView(page).getByRole('button', {
+      name: PARENT_LABEL,
+      exact: true,
+    });
     await expect(reloadedParent).toBeVisible({ timeout: 30000 });
     await expect(messagesView(page).getByText(finalText)).toBeVisible();
     await reloadedParent.click();

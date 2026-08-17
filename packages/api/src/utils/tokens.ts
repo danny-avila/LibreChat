@@ -87,6 +87,11 @@ const mistralModels = {
   'mistral-nemo': 131000,
   'pixtral-large': 131000,
   codestral: 256000,
+  'mistral-medium-3': 131000,
+  'mistral-medium-3.5': 262144,
+  'mistral-medium-3-5': 262144,
+  'ministral-8b-2512': 262144,
+  'ministral-14b-2512': 262144,
 };
 
 const cohereModels = {
@@ -97,6 +102,8 @@ const cohereModels = {
   'command-text': 4086, // -10 from max
   'command-r': 127500, // -500 from max
   'command-r-plus': 127500, // -500 from max
+  'command-a': 255500, // -500 from max
+  'command-a-plus': 127500, // -500 from max
 };
 
 const googleModels = {
@@ -220,6 +227,12 @@ const deepseekModels = {
   'deepseek.r1': 128000,
   'deepseek-r1': 128000,
   'deepseek-reasoner': 128000,
+  'deepseek-v3.1': 163840,
+  'deepseek-v3.2': 163840,
+  'deepseek-v3.2-speciale': 131072,
+  'deepseek-v4': 1048576,
+  'deepseek-v4-flash': 1048576,
+  'deepseek-v4-pro': 1048576,
 };
 
 const moonshotModels = {
@@ -249,6 +262,9 @@ const moonshotModels = {
   'kimi-k2-thinking': 262144,
   'kimi-k2-thinking-turbo': 262144,
   'kimi-k2.5': 262144,
+  'kimi-k2.6': 262144,
+  'kimi-k2.7': 262144,
+  'kimi-k3': 1048576,
   // Bedrock moonshot models
   'moonshot.kimi-k2-0711': 131072,
   'moonshot.kimi': 262144,
@@ -257,6 +273,8 @@ const moonshotModels = {
   'moonshotai.kimi': 262144,
   'moonshot.kimi-k2.5': 262144,
   'moonshotai.kimi-k2.5': 262144,
+  'moonshot.kimi-k3': 1048576,
+  'moonshotai.kimi-k3': 1048576,
 };
 
 const metaModels = {
@@ -302,13 +320,28 @@ const metaModels = {
   'llama-3.2-3b': 127500,
   'llama-3.2-11b': 127500,
   'llama-3.2-90b': 127500,
-  // Llama 3.3 (newest)
+  // Llama 3.3
   'llama3.3': 127500,
   'llama3-3': 127500,
   'llama-3.3': 127500,
   'llama3.3:70b': 127500,
   'llama3-3-70b': 127500,
   'llama-3.3-70b': 127500,
+  /* Llama 4. Scout's native ceiling is 10M, but no host serves anywhere near it,
+     so capping at 1M keeps pruning useful instead of never firing. */
+  llama4: 1048576,
+  'llama-4': 1048576,
+  'llama4-scout': 1048576,
+  'llama-4-scout': 1048576,
+  'llama4-maverick': 1048576,
+  'llama-4-maverick': 1048576,
+  // Muse (newest)
+  musespark: 1000000,
+  'muse-spark': 1000000,
+  'muse-spark-1.1': 1000000,
+  'muse-spark-1.2': 1000000,
+  'muse-glimmer': 131072,
+  'muse-glimmer-30b': 131072,
 };
 
 const qwenModels = {
@@ -335,6 +368,21 @@ const qwenModels = {
   'qwen3-coder-plus': 128000,
   'qwen3-coder-flash': 128000,
   'qwen3-next-80b-a3b': 262144,
+  'qwen3-coder-next': 262144,
+  /* Qwen3.5 onward: every open-weight size ships a 262K native window, while the
+     hosted plus/flash tiers serve 1M. */
+  'qwen3.5': 262144,
+  'qwen3.5-plus': 1000000,
+  'qwen3.5-flash': 1000000,
+  'qwen3.6': 262144,
+  'qwen3.6-plus': 1000000,
+  'qwen3.6-flash': 1000000,
+  'qwen3.7': 262144,
+  'qwen3.7-plus': 1000000,
+  'qwen3.7-flash': 1000000,
+  'qwen3.8': 262144,
+  'qwen3.8-plus': 1000000,
+  'qwen3.8-flash': 1000000,
 };
 
 const ai21Models = {
@@ -354,6 +402,8 @@ const amazonModels = {
   'nova-lite': 295000, // -5000 from max
   'nova-pro': 295000, // -5000 from max
   'nova-premier': 995000, // -5000 from max
+  'nova-2-lite': 995000, // -5000 from max
+  'nova-2-pro': 995000, // -5000 from max
 };
 
 const openAIBedrockModels = {
@@ -391,6 +441,10 @@ const xAIModels = {
   'grok-4': 256000, // 256K context
   'grok-4-fast': 2000000, // 2M context
   'grok-4-1-fast': 2000000, // 2M context (covers reasoning & non-reasoning variants)
+  'grok-4.5': 500000,
+  'grok-4-5': 500000,
+  'grok-4.6': 500000,
+  'grok-4-6': 500000,
 };
 
 const aggregateModels = {
@@ -402,6 +456,17 @@ const aggregateModels = {
   'glm-4.5-air': 131000,
   'glm-4.5v': 66000,
   'glm-4.6': 200000,
+  'glm-4.7': 204800,
+  'glm-4.7-flash': 202752,
+  'glm-5': 204800,
+  'glm-5.1': 204800,
+  'glm-5.2': 1048576,
+  'glm-5.3': 1048576,
+  // MiniMax
+  'minimax-m1': 1000000,
+  'minimax-m2': 204800,
+  'minimax-m2.7': 204800,
+  'minimax-m3': 1048576,
   // GPT-OSS
   'gpt-oss': 131000,
   'gpt-oss:20b': 131000,
@@ -500,13 +565,15 @@ export const maxOutputTokensMap: Record<string, Record<string, number>> = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
-/** Finds the longest matching key in the tokens map via substring match. */
-export function findMatchingPattern(
-  modelName: string,
-  tokensMap: Record<string, number> | EndpointTokenConfig,
-): string | null {
+/**
+ * Any model-keyed map. Matching reads keys only and never inspects a value, so
+ * the value type is deliberately open rather than a union that every caller has
+ * to cast into.
+ */
+type ModelKeyedMap = Readonly<Record<string, unknown>>;
+
+function findLongestKey(lowerModelName: string, tokensMap: ModelKeyedMap): string | null {
   const keys = Object.keys(tokensMap);
-  const lowerModelName = modelName.toLowerCase();
   let bestMatch: string | null = null;
   let bestLength = 0;
   for (let i = keys.length - 1; i >= 0; i--) {
@@ -522,6 +589,31 @@ export function findMatchingPattern(
   }
 
   return bestMatch;
+}
+
+/**
+ * Finds the longest matching key in the tokens map via substring match.
+ *
+ * A vendor prefix can outrank the id it precedes: `moonshotai/kimi-k2` matched
+ * `moonshot` (8) over `kimi-k2` (7) and reported half the real window. When the
+ * whole id resolves to a prefix-only match, retry against the model segment.
+ *
+ * A key that carries the vendor itself is already the most specific answer and
+ * is kept. `EndpointTokenConfig` is an arbitrary record, and one built from
+ * OpenRouter is keyed by `org/model`, so those must still beat a bare `model`.
+ */
+export function findMatchingPattern(modelName: string, tokensMap: ModelKeyedMap): string | null {
+  const lowerModelName = modelName.toLowerCase();
+  const slashIndex = lowerModelName.lastIndexOf('/');
+  if (slashIndex === -1) {
+    return findLongestKey(lowerModelName, tokensMap);
+  }
+
+  const fullMatch = findLongestKey(lowerModelName, tokensMap);
+  if (fullMatch != null && fullMatch.includes('/')) {
+    return fullMatch;
+  }
+  return findLongestKey(lowerModelName.slice(slashIndex + 1), tokensMap) ?? fullMatch;
 }
 
 /**

@@ -49,8 +49,9 @@ function ModelSelectorContent() {
         selectedValues,
         modelSpecs,
         endpointsConfig,
+        agentsMap,
       }),
-    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
+    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig, agentsMap],
   );
   const selectedDisplayValue = useMemo(
     () =>
@@ -72,7 +73,7 @@ function ModelSelectorContent() {
         <button
           data-testid="model-selector-button"
           aria-keyshortcuts={modelSelectorAriaKey}
-          className="my-1 flex h-9 w-full max-w-[70vw] items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
+          className="my-1 flex h-9 max-w-full items-center gap-2 rounded-xl border border-border-light bg-presentation px-3 py-2 text-sm text-text-primary hover:bg-surface-active-alt"
           aria-label={localize('com_ui_select_model')}
         >
           {selectedIcon && React.isValidElement(selectedIcon) && (
@@ -80,14 +81,14 @@ function ModelSelectorContent() {
               {selectedIcon}
             </div>
           )}
-          <span className="flex-grow truncate text-left">{selectedDisplayValue}</span>
+          <span className="truncate text-left">{selectedDisplayValue}</span>
         </button>
       }
     />
   );
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-2">
+    <div className="relative flex min-w-0 max-w-[60vw] flex-col items-center gap-2 sm:max-w-xs">
       <Menu
         values={selectedValues}
         onValuesChange={(values: Record<string, any>) => {

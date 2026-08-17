@@ -1,6 +1,7 @@
 import { Keyv } from 'keyv';
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import {
@@ -44,11 +45,11 @@ function resolveServerSource(
  * same-name base entry. The base's source is normally inherited so downstream
  * recovery routes to the base's storage tier.
  *
- * SECURITY INVARIANT — a `'plugin'` base is the exception: its no-resolve
+ * SECURITY INVARIANT — a remote `'plugin'` base is the exception: its no-resolve
  * provenance must never transfer to an operator-authored override, or
  * `processMCPEnv` would stop resolving the operator's own `${VAR}` placeholders.
- * The override supersedes the plugin (operator config outranks a plugin server),
- * so it keeps its own trusted source instead.
+ * The override supersedes a remote plugin server, so it keeps its own trusted
+ * source instead. Process-backed base entries never reach this overlay path.
  */
 function overlaySource(
   base: t.ParsedServerConfig,
@@ -304,10 +305,11 @@ export class MCPServersRegistry {
    * getAllServerConfigs so list views and single-server lookups agree on
    * the same name:
    *   1. user-tier base entry wins absolutely over a config-tier candidate
-   *   2. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
-   *   3. healthy candidate overlays its fields onto the base, preserving the
+   *   2. process-backed base entries win absolutely over a config-tier candidate
+   *   3. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   4. healthy candidate overlays its fields onto the base, preserving the
    *      base entry's source tag so downstream recovery routes correctly
-   *   4. with no base, the candidate is returned as-is (config-only server)
+   *   5. with no base, the candidate is returned as-is (config-only server)
    *
    * readThroughCache memoizes only the global YAML/DB lookup; the per-call
    * configServers candidate is tenant-scoped and is never cached, so a
@@ -337,6 +339,7 @@ export class MCPServersRegistry {
 
     if (!candidate) return base;
     if (base?.source === 'user') return base;
+    if (isProcessMCPServerConfig(base)) return base;
     if (candidate.inspectionFailed) return base ?? candidate;
     return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
   }
@@ -355,10 +358,11 @@ export class MCPServersRegistry {
    * and User-DB entries.
    *
    * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
-   * Two guards keep the merge safe:
+   * Three guards keep the merge safe:
    *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
    *      base entry; the healthy base is preserved for the duration of the retry window.
    *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
+   *   3. Process-backed base entries are never replaced by Config-tier overlays.
    * On a successful overlay the base entry's `source` field is preserved so downstream
    * recovery logic routes to the correct storage location — except a `'plugin'` base,
    * whose no-resolve provenance must not transfer to the operator override (see
@@ -377,6 +381,10 @@ export class MCPServersRegistry {
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {
         logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        continue;
+      }
+      if (isProcessMCPServerConfig(result[name])) {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by process-backed entry`);
         continue;
       }
       if (override.inspectionFailed && result[name]) continue;

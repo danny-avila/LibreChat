@@ -3,6 +3,7 @@ const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema, aclEntrySchema, fileSchema, userSchema } = require('@librechat/data-schemas');
 const {
+  Tools,
   FileSources,
   PermissionBits,
   PrincipalModel,
@@ -181,6 +182,28 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
   });
 
   describe('createAgentHandler', () => {
+    test('rejects a stateful environment excluded by deployment policy', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { allowedEnvironments: ['user'] },
+          },
+        },
+      };
+      mockReq.body = {
+        name: 'Disallowed Stateful Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(await Agent.countDocuments()).toBe(0);
+    });
+
     test('should create agent with allowed fields only', async () => {
       const validData = {
         name: 'Test Agent',
@@ -799,6 +822,83 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
+    });
+
+    test('rejects selecting a stateful environment excluded by deployment policy', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { allowedEnvironments: ['user'] },
+          },
+        },
+      };
+      mockReq.body = {
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.stateful_code_sessions).not.toBe(true);
+    });
+
+    test('allows unrelated edits to an existing scope after policy is tightened', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { stateful_code_sessions: true, stateful_code_environment: 'conversation' },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { allowedEnvironments: ['user'] },
+          },
+        },
+      };
+      mockReq.body = {
+        name: 'Still editable',
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(403);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.name).toBe('Still editable');
+      expect(agentInDb.stateful_code_environment).toBe('conversation');
+    });
+
+    test('rejects reactivating code execution with a retained disallowed scope', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          tools: [],
+          stateful_code_sessions: true,
+          stateful_code_environment: 'conversation',
+        },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { allowedEnvironments: ['user'] },
+          },
+        },
+      };
+      mockReq.body = { tools: [Tools.execute_code] };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).not.toContain(Tools.execute_code);
     });
 
     test('should sanitize corrupt numeric model_parameters on update', async () => {

@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 
 /**
@@ -40,6 +41,7 @@ export interface CodeHarvestDeps {
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    markBackgrounded?: boolean;
   }) => Promise<{ matched: boolean; unfinished: boolean }>;
   /** Host file service: downloads and persists one code output file. */
   processCodeOutput: (params: {
@@ -52,6 +54,8 @@ export interface CodeHarvestDeps {
     agentId?: string;
     session_id?: string;
     freshClaimAfter?: number;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<ProcessedCodeOutput | null>;
   /** Host file service: runs the deferred office-preview extraction. */
   runPreviewFinalize: (params: {
@@ -75,6 +79,7 @@ export interface CodeHarvestParams {
   dispatchedAt?: number;
   output?: string;
   artifact?: unknown;
+  codeExecutionContext?: CodeExecutionContext;
   attachments?: unknown[];
   reapply?: boolean;
 }
@@ -111,6 +116,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     dispatchedAt,
     output,
     artifact,
+    codeExecutionContext,
     attachments: knownAttachments,
     reapply,
   }) => {
@@ -128,6 +134,9 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         agentId,
         output,
         attachments: knownAttachments ?? [],
+        /** The heal path must re-stamp the marker too: the full-row save it
+         *  repairs reverted the whole patched part, marker included. */
+        markBackgrounded: true,
       });
       if (!reapplied.matched) {
         logger.debug(
@@ -161,6 +170,8 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
           agentId,
           session_id: file.storage_session_id ?? codeArtifact.session_id,
           freshClaimAfter,
+          codeApiBaseUrl: codeExecutionContext?.baseUrl,
+          executionProfile: codeExecutionContext?.executionProfile,
         });
         if (result?.file) {
           attachments.push(result.file);
@@ -187,6 +198,10 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         agentId,
         output,
         attachments,
+        /** This patch replaces the dispatch-handle output — the client's only
+         *  transient signal that the call ran detached — so it persists the
+         *  durable `backgrounded` marker in the same atomic write. */
+        markBackgrounded: true,
       });
       patched = result.matched;
       /** An `unfinished` match is a mid-turn partial save (client disconnect):

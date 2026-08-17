@@ -9,8 +9,8 @@ import {
   actionDomainSeparator,
   splitToolCallName,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
-import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
+import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { useToolCallIntent } from './Parts/intent';
@@ -32,6 +32,8 @@ export default function ToolCall({
   auth,
   hideAttachments = false,
   onExpand,
+  runStepStatus,
+  runStepDurationMs,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -44,12 +46,15 @@ export default function ToolCall({
   auth?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(showInfo);
 
   useEffect(() => {
     if (autoExpand && hasOutput) {
@@ -137,8 +142,23 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const hasError = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
+  const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
+  /**
+   * The step's own terminal status wins when the run emitted one. The
+   * `isSubmitting` heuristic below it is a whole-message inference: it cannot
+   * tell which step actually stopped, so it holds every unfinished call in a
+   * running state until the entire response ends and then flips them all to
+   * cancelled at once. Retained as the fallback for messages saved before
+   * `on_run_step_closed` and for endpoints that do not emit it.
+   *
+   * The status is authoritative on its own terms — deliberately not gated on
+   * `hasError`, so output parsing cannot demote a stopped step back into an
+   * in-flight state.
+   */
+  const isClosed = runStepStatus != null;
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && initialProgress < 1 && !hasError;
   const errorState = hasError;
 
   const args = useMemo(() => {
@@ -165,10 +185,17 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  const progress = useProgress(initialProgress);
+  /**
+   * Both halves are load-bearing: passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, and masking the result makes the terminal value
+   * observable on the same render rather than after the hook settles.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const showCancelled = cancelled || (errorState && !output);
 
   const handleToggleInfo = useCallback(() => {
+    mountBody();
     setShowInfo((prev) => {
       const next = !prev;
       if (next) {
@@ -176,7 +203,7 @@ export default function ToolCall({
       }
       return next;
     });
-  }, [onExpand]);
+  }, [mountBody, onExpand]);
 
   const subtitle = useMemo(() => {
     if (isMCPToolCall && mcpServerName) {
@@ -196,6 +223,16 @@ export default function ToolCall({
   const getFinishedText = () => {
     if (cancelled) {
       return localize('com_ui_cancelled');
+    }
+    /**
+     * Announced before the completion strings below: a terminal step that
+     * errored must not reach the live region as "completed", which would tell
+     * a screen-reader user the opposite of what the card shows.
+     */
+    if (errorState) {
+      return function_name
+        ? `${localize('com_ui_failed')}: ${function_name}`
+        : localize('com_ui_failed');
     }
     if (intent != null) {
       return intent;
@@ -248,6 +285,7 @@ export default function ToolCall({
           }
           finishedText={getFinishedText()}
           subtitle={subtitle}
+          durationMs={runStepDurationMs}
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon
@@ -261,9 +299,13 @@ export default function ToolCall({
           error={showCancelled}
         />
       </div>
-      <div style={expandStyle} data-tool-call-output-id={toolCallId}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        data-tool-call-output-id={toolCallId}
+      >
         <div className="overflow-hidden" ref={expandRef}>
-          {hasInfo && (
+          {hasInfo && shouldRenderBody && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
             </div>

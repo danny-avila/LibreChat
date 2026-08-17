@@ -290,6 +290,7 @@ function buildAgentToolContext({ agent, config }) {
     accessibleSkillIds: config.accessibleSkillIds,
     activeSkillNames: config.activeSkillNames,
     codeEnvAvailable: config.codeEnvAvailable,
+    codeExecutionContext: config.codeExecutionContext,
     skillAuthoringAvailable: config.skillAuthoringAvailable,
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:

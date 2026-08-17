@@ -1827,7 +1827,7 @@ export function createSkillMethods(
           author: row.author,
           tenantId: row.tenantId,
         },
-        $unset: { content: '', isBinary: '', codeEnvRef: '' },
+        $unset: { content: '', isBinary: '', codeEnvRef: '', codeEnvRefs: '' },
       },
       { new: true, upsert: true, includeResultMetadata: true },
     ).lean()) as unknown as SkillFileUpsertResult;
@@ -1883,12 +1883,20 @@ export function createSkillMethods(
   ): Promise<{ matchedCount: number; modifiedCount: number }> {
     if (updates.length === 0) return { matchedCount: 0, modifiedCount: 0 };
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const ops = updates.map((u) => ({
-      updateOne: {
-        filter: { skillId: u.skillId, relativePath: u.relativePath },
-        update: { $set: { codeEnvRef: u.codeEnvRef } },
-      },
-    }));
+    const ops = updates.map((u) => {
+      const profile = u.codeEnvRef.executionProfile ?? 'default';
+      return {
+        updateOne: {
+          filter: { skillId: u.skillId, relativePath: u.relativePath },
+          update: {
+            $set: {
+              codeEnvRef: u.codeEnvRef,
+              [`codeEnvRefs.${profile}`]: u.codeEnvRef,
+            },
+          },
+        },
+      };
+    });
 
     /**
      * The returned `{matchedCount, modifiedCount}` lets callers warn on

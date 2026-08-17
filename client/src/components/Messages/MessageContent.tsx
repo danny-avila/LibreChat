@@ -35,7 +35,7 @@ function MessageContent(props: TMessageProps) {
 
   return (
     <MessageContainer handleScroll={handleScroll}>
-      <div className="m-auto justify-center px-4 py-3 md:px-6">
+      <div className="m-auto justify-center px-4 py-3 sm:px-0">
         <ContentRender {...props} isSubmitting={effectiveIsSubmitting} chatContext={chatContext} />
       </div>
     </MessageContainer>

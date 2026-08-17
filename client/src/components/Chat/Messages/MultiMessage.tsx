@@ -5,6 +5,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
 import MessageContent from '~/components/Messages/MessageContent';
+import { useRowMountWindow } from '~/hooks/Messages';
 import MessageParts from './MessageParts';
 import Message from './Message';
 import store from '~/store';
@@ -21,6 +22,7 @@ function MultiMessage({
   setCurrentEditId,
 }: TMessageProps) {
   const [siblingIdx, setSiblingIdx] = useRecoilState(store.messagesSiblingIdxFamily(messageId));
+  const mountWindow = useRowMountWindow();
 
   const setSiblingIdxRev = useCallback(
     (value: number) => {
@@ -165,8 +167,17 @@ function MultiMessage({
     setSiblingIdx: setSiblingIdxRev,
   };
 
-  let row: ReactElement;
-  if (isAssistantsEndpoint(message.endpoint) && message.content) {
+  /** A row outside the progressive mount window renders nothing while the
+   *  recursion continues, so descendants keep their atoms, effects, and
+   *  streaming spine; the window only ever widens, so rows never unmount. */
+  const rowMounted =
+    mountWindow == null ||
+    ((message.depth ?? 0) >= mountWindow.start && (message.depth ?? 0) <= mountWindow.end);
+
+  let row: ReactElement | null = null;
+  if (!rowMounted) {
+    row = null;
+  } else if (isAssistantsEndpoint(message.endpoint) && message.content) {
     row = <MessageParts {...sharedProps} />;
   } else if (message.content) {
     row = <MessageContent {...sharedProps} />;

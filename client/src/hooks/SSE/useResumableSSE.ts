@@ -12,7 +12,9 @@ import {
   apiBaseUrl,
   SteerEvents,
   dataService,
+  ContentTypes,
   ActivityLabelEvents,
+  ReasoningLabelEvents,
   UsageEvents,
   createPayload,
   ApprovalEvents,
@@ -30,6 +32,7 @@ import type {
   TSteerAppliedEvent,
   TSteerUpdatedEvent,
   TActivityLabelEvent,
+  TReasoningLabelEvent,
 } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
@@ -38,15 +41,17 @@ import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import {
   logger,
-  clearAllDrafts,
+  clearComposerDrafts,
   applySteerPart,
   applyPendingAction,
   carriedSteerContext,
   resolveRunEndTarget,
   findSteerMessageIndex,
   applyActivityLabelPart,
+  applyReasoningLabel,
   offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
+  findReasoningLabelMessageIndex,
   appendAppliedSteerIds,
   collectAppliedSteerIds,
   removeConvoFromAllQueries,
@@ -1037,6 +1042,7 @@ export default function useResumableSSE(
     getMessages,
     setCompleted,
     isAddedRequest,
+    runIndex,
     setConversation,
     setIsSubmitting,
     newConversation,
@@ -1413,6 +1419,61 @@ export default function useResumableSSE(
         }
       };
 
+      /** Patches a generated title onto its existing reasoning part. */
+      const applyReasoningLabelToMessages = (event: TReasoningLabelEvent, attempt = 0) => {
+        if (!isCurrentSubscription()) {
+          return;
+        }
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            const frameId = requestAnimationFrame(() => {
+              activityLabelRetryFramesRef.current.delete(frameId);
+              if (isCurrentSubscription()) {
+                applyReasoningLabelToMessages(event, attempt + 1);
+              }
+            });
+            activityLabelRetryFramesRef.current.add(frameId);
+          }
+        };
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const messageIndex = findReasoningLabelMessageIndex(messages, event);
+        if (messageIndex < 0) {
+          retryNextFrame();
+          return;
+        }
+        const prefixLength =
+          currentSubmission.editedContent != null && !editPrefixClearedRef.current
+            ? (currentSubmission.editPrefixLength ??
+              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
+              0)
+            : 0;
+        let contentIndex = event.index + prefixLength;
+        if (
+          prefixLength > 0 &&
+          event.index === 0 &&
+          editPrefixFirstPartFoldedRef.current &&
+          messages[messageIndex]?.content?.[contentIndex - 1]?.type === ContentTypes.THINK
+        ) {
+          contentIndex -= 1;
+        }
+        const updated = applyReasoningLabel(messages[messageIndex], {
+          ...event,
+          index: contentIndex,
+        });
+        if (updated === messages[messageIndex]) {
+          const part = messages[messageIndex]?.content?.[contentIndex];
+          if (part?.type !== ContentTypes.THINK && attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            retryNextFrame();
+          }
+          return;
+        }
+        const nextMessages = [...messages];
+        nextMessages[messageIndex] = updated;
+        setMessages(nextMessages);
+        syncStepMessage(updated);
+      };
+
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const query = new URLSearchParams();
       if (isResume) {
@@ -1501,10 +1562,13 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearAllDrafts(currentSubmission.conversation?.conversationId);
-            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
-              clearAllDrafts(Constants.NEW_CONVO);
-            }
+            clearComposerDrafts(runIndex, currentSubmission.conversation?.conversationId, {
+              includeNewChatDraft:
+                !currentSubmission.conversation?.conversationId ||
+                currentSubmission.conversation.conversationId === Constants.NEW_CONVO ||
+                optimisticStreamIdsRef.current.has(currentStreamId) ||
+                isInitialNewConversation(currentSubmission),
+            });
             // A steer-applied event may still be waiting for its next-frame
             // message target when FINAL arrives. Reconcile directly from the
             // authoritative final message before converting leftovers so a
@@ -1659,6 +1723,15 @@ export default function useResumableSSE(
 
           if (data.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
             applyActivityLabelToMessages(data.data as TActivityLabelEvent);
+            return;
+          }
+
+          if (data.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+            applyReasoningLabelToMessages(data.data as TReasoningLabelEvent);
+            return;
+          }
+
+          if (data.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
             return;
           }
 
@@ -1868,6 +1941,10 @@ export default function useResumableSSE(
                   updateSteerChips(replayEvent.data as TSteerUpdatedEvent);
                 } else if (replayEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
                   applyActivityLabelToMessages(replayEvent.data as TActivityLabelEvent);
+                } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+                  applyReasoningLabelToMessages(replayEvent.data as TReasoningLabelEvent);
+                } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
+                  // Durable provider-call budget reservations never render.
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1901,6 +1978,10 @@ export default function useResumableSSE(
                   updateSteerChips(pendingEvent.data as TSteerUpdatedEvent);
                 } else if (pendingEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
                   applyActivityLabelToMessages(pendingEvent.data as TActivityLabelEvent);
+                } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+                  applyReasoningLabelToMessages(pendingEvent.data as TReasoningLabelEvent);
+                } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
+                  // Durable provider-call budget reservations never render.
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -2240,6 +2321,10 @@ export default function useResumableSSE(
           if (!isCurrentSubscription()) {
             return;
           }
+          await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
+          if (!isCurrentSubscription()) {
+            return;
+          }
         } catch (error) {
           if (!isCurrentSubscription()) {
             return;
@@ -2348,7 +2433,13 @@ export default function useResumableSSE(
         resetLive({ ...currentSubmission, userMessage });
         removeActiveJob(currentStreamId);
         clearAttachedGenerationCreatedAt();
-        clearAllDrafts(reconciliationConvoId);
+        clearComposerDrafts(runIndex, reconciliationConvoId, {
+          includeNewChatDraft:
+            !reconciliationConvoId ||
+            reconciliationConvoId === Constants.NEW_CONVO ||
+            optimisticStreamIdsRef.current.has(currentStreamId) ||
+            isInitialNewConversation(currentSubmission),
+        });
         setIsSubmitting(false);
         setShowStopButton(false);
         if (event.reconcileReason === 'abort_persistence_failed') {
@@ -2429,10 +2520,13 @@ export default function useResumableSSE(
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
           resetLive({ ...currentSubmission, userMessage });
-          clearAllDrafts(convoId);
-          if (optimisticStreamIdsRef.current.has(currentStreamId)) {
-            clearAllDrafts(Constants.NEW_CONVO);
-          }
+          clearComposerDrafts(runIndex, convoId, {
+            includeNewChatDraft:
+              !convoId ||
+              convoId === Constants.NEW_CONVO ||
+              optimisticStreamIdsRef.current.has(currentStreamId) ||
+              isInitialNewConversation(currentSubmission),
+          });
           clearStepMaps();
           let persistedMessages: TMessage[] | undefined;
           if (convoId) {
@@ -2621,6 +2715,7 @@ export default function useResumableSSE(
               // existed (the winner died before persisting). Don't guess: reconcile against
               // the server so a real conversation stays and a phantom is dropped.
               queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
             } else {
               // Fresh optimistic stream that never started: prune immediately.
               removeConvoFromAllQueries(queryClient, currentStreamId);
@@ -3129,6 +3224,7 @@ export default function useResumableSSE(
       }
     },
     [
+      runIndex,
       token,
       setAbortScroll,
       setActiveRunId,
@@ -3578,6 +3674,10 @@ export default function useResumableSSE(
                 if (!isCurrentEffect()) {
                   return;
                 }
+                await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
+                if (!isCurrentEffect()) {
+                  return;
+                }
               } catch (error) {
                 if (!isCurrentEffect()) {
                   return;
@@ -3641,6 +3741,10 @@ export default function useResumableSSE(
                   return;
                 }
                 await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+                if (!isCurrentEffect()) {
+                  return;
+                }
+                await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
                 if (!isCurrentEffect()) {
                   return;
                 }
@@ -3783,6 +3887,10 @@ export default function useResumableSSE(
                 return;
               }
               await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              if (!isCurrentEffect()) {
+                return;
+              }
+              await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
               if (!isCurrentEffect()) {
                 return;
               }

@@ -10,6 +10,7 @@ const {
   imageExtRegex,
   EModelEndpoint,
   EToolResources,
+  mergeCodeEnvRef,
   mergeFileConfig,
   AgentCapabilities,
   checkOpenAIStorage,
@@ -69,7 +70,8 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   };
 };
 
-const hasCodeEnvRef = (file) => file?.metadata?.codeEnvRef != null;
+const hasCodeEnvRef = (file) =>
+  file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -727,14 +729,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * `fileIdentifier` key would be silently dropped by mongoose strict
      * mode and the file would lose its sandbox reference on subsequent
      * priming turns. */
-    fileInfoMetadata = {
-      codeEnvRef: {
-        kind: codeKind,
-        id: codeId,
-        storage_session_id: uploaded.storage_session_id,
-        file_id: uploaded.file_id,
-      },
-    };
+    fileInfoMetadata = mergeCodeEnvRef(undefined, {
+      kind: codeKind,
+      id: codeId,
+      storage_session_id: uploaded.storage_session_id,
+      file_id: uploaded.file_id,
+      executionProfile: 'default',
+    });
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
     if (!isFileSearchEnabled) {

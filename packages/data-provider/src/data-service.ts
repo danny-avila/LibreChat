@@ -172,6 +172,12 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function updateUserPreferences(
+  preferences: t.TUpdateUserPreferencesRequest,
+): Promise<t.TUpdateUserPreferencesResponse> {
+  return request.patch(endpoints.userPreferences(), preferences);
+}
+
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
@@ -890,6 +896,10 @@ export function archiveConversation(
   payload: t.TArchiveConversationRequest,
 ): Promise<t.TArchiveConversationResponse> {
   return request.post(endpoints.archiveConversation(), { arg: payload });
+}
+
+export function archiveAllConversations(): Promise<t.TArchiveAllConversationsResponse> {
+  return request.post(endpoints.archiveAllConversations(), {});
 }
 
 export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectListResponse> {

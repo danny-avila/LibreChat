@@ -501,7 +501,7 @@ describe('MCPServerInspector', () => {
     });
   });
 
-  describe('getToolFunctions()', () => {
+  describe('getToolCatalog()', () => {
     it('should convert MCP tools to LibreChat tool functions format', async () => {
       mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         complete: true,
@@ -528,7 +528,10 @@ describe('MCPServerInspector', () => {
         ],
       });
 
-      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'my_server',
+        mockConnection,
+      );
 
       expect(result).toEqual({
         file_read_mcp_my_server: {
@@ -564,7 +567,10 @@ describe('MCPServerInspector', () => {
         .fn()
         .mockResolvedValue({ tools: [], complete: true });
 
-      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'my_server',
+        mockConnection,
+      );
 
       expect(result).toEqual({});
     });
@@ -581,7 +587,10 @@ describe('MCPServerInspector', () => {
         ],
       });
 
-      const result = await MCPServerInspector.getToolFunctions('My Server', mockConnection);
+      const { tools: result } = await MCPServerInspector.getToolCatalog(
+        'My Server',
+        mockConnection,
+      );
 
       const key = 'file_read_mcp_My_Server';
       expect(Object.keys(result)).toEqual([key]);
@@ -594,9 +603,9 @@ describe('MCPServerInspector', () => {
         complete: false,
       });
 
-      await expect(
-        MCPServerInspector.getToolFunctions('my_server', mockConnection),
-      ).rejects.toThrow('Incomplete tools/list snapshot for MCP server my_server');
+      await expect(MCPServerInspector.getToolCatalog('my_server', mockConnection)).rejects.toThrow(
+        'Incomplete tools/list snapshot for MCP server my_server',
+      );
     });
   });
 });

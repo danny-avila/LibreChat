@@ -57,7 +57,7 @@ const DuringRunSendButton = React.memo(
     const localize = useLocalize();
     const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
     const enterToSend = useRecoilValue(store.enterToSend);
-    const { submitOverride, yieldedChords } = useComposerBindings();
+    const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
     const { steering } = props;
     const data = useWatch({ control: props.control });
     const content = data?.text?.trim();
@@ -80,6 +80,7 @@ const DuringRunSendButton = React.memo(
         isSubmitting: true,
         allowSubmitWhileGenerating: true,
         hasDuringRunModifier: true,
+        shortcutsEnabled,
         enterToSend,
         submitOverride,
         yieldedChords,
@@ -96,7 +97,7 @@ const DuringRunSendButton = React.memo(
         modShiftEnter: chord({ ...mod, shiftKey: true }),
         altEnter: chord({ altKey: true }),
       };
-    }, [enterToSend, submitOverride, yieldedChords]);
+    }, [enterToSend, shortcutsEnabled, submitOverride, yieldedChords]);
 
     /**
      * With the preference on, plain Enter routes through `submitDuringRun`,

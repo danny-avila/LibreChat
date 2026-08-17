@@ -39,6 +39,8 @@ export enum StepEvents {
   ON_REASONING_DELTA = 'on_reasoning_delta',
   ON_RUN_STEP_DELTA = 'on_run_step_delta',
   ON_RUN_STEP_COMPLETED = 'on_run_step_completed',
+  /** Terminal signal for a run step: closed with a status and timestamps. */
+  ON_RUN_STEP_CLOSED = 'on_run_step_closed',
   ON_SUMMARIZE_START = 'on_summarize_start',
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
@@ -90,6 +92,49 @@ export enum SteerEvents {
 export enum ActivityLabelEvents {
   ON_ACTIVITY_LABEL = 'on_activity_label',
 }
+
+/** Live title updates for an existing reasoning content part. */
+export enum ReasoningLabelEvents {
+  ON_REASONING_LABEL = 'on_reasoning_label',
+  /** Internal durable budget reservation; clients intentionally do not render it. */
+  ON_REASONING_LABEL_ATTEMPT = 'on_reasoning_label_attempt',
+}
+
+type TReasoningLabelEventBase = {
+  /** Completion-local content index of the reasoning part being updated. */
+  index: number;
+  stepId: string;
+  responseMessageId?: string;
+  conversationId?: string;
+};
+
+/** Payload of the `on_reasoning_label` SSE event. */
+export type TReasoningLabelEvent = TReasoningLabelEventBase &
+  (
+    | {
+        /** Clears a snapshot title when its THINK slot changed during the resume gap. */
+        reset: true;
+        /** Step identity observed in the snapshot and exclusively eligible for this reset. */
+        previousStepId: string;
+        /** Latest run-global call-budget high-water, when present on fresh content. */
+        attempts?: number;
+      }
+    | {
+        reset?: false;
+        /** Run-unique provider-call revision; may contain gaps after unsuccessful attempts. */
+        revision: number;
+        label: string;
+        status: 'streaming' | 'complete';
+      }
+  );
+
+/** Durable run-cumulative call-budget reservation, attributed to one reasoning step. */
+export type TReasoningLabelAttemptEvent = {
+  index: number;
+  stepId: string;
+  attempts: number;
+  submittedChars: number;
+};
 
 /** Payload of the `on_activity_label` SSE event. */
 export type TActivityLabelEvent = {
@@ -236,8 +281,15 @@ export type TTokenUsageEvent = {
   /** Non-primary buckets fold into session cost/totals but not the live
    *  context gauge: hidden sequential-agent calls (`sequential`), summary
    *  passes (`summarization`), isolated subagent runs (`subagent`), and
-   *  fast-model activity headers (`activity-label`, `activity-phase`) */
-  usage_type?: 'summarization' | 'subagent' | 'sequential' | 'activity-label' | 'activity-phase';
+   *  fast-model activity headers (`activity-label`, `activity-phase`), and
+   *  live reasoning titles (`reasoning-label`) */
+  usage_type?:
+    | 'summarization'
+    | 'subagent'
+    | 'sequential'
+    | 'activity-label'
+    | 'activity-phase'
+    | 'reasoning-label';
   runId?: string;
   /** Per-run emission sequence; keeps identical payloads from distinct model calls unique */
   seq?: number;

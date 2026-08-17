@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   OGDialog,
   OGDialogTemplate,
   Button,
+  FieldMessage,
   Label,
   Input,
   Spinner,
@@ -11,6 +12,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
+import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
@@ -50,41 +52,19 @@ export default function MemoryEditDialog({
   });
 
   const { mutate: updateMemory, isLoading } = useUpdateMemoryMutation({
-    onMutate: () => {
-      onOpenChange(false);
-      setTimeout(() => {
-        triggerRef?.current?.focus();
-      }, 0);
-    },
     onSuccess: () => {
       showToast({
         message: localize('com_ui_saved'),
         status: 'success',
       });
+      onOpenChange(false);
+      setTimeout(() => {
+        triggerRef?.current?.focus();
+      }, 0);
     },
     onError: (error: Error) => {
-      let errorMessage = localize('com_ui_error');
-
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as any;
-        if (axiosError.response?.data?.error) {
-          errorMessage = axiosError.response.data.error;
-
-          // Check for duplicate key error
-          if (axiosError.response?.status === 409 || errorMessage.includes('already exists')) {
-            errorMessage = localize('com_ui_memory_key_exists');
-          }
-          // Check for key validation error (lowercase and underscores only)
-          else if (errorMessage.includes('lowercase letters and underscores')) {
-            errorMessage = localize('com_ui_memory_key_validation');
-          }
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
       showToast({
-        message: errorMessage,
+        message: getMemoryApiErrorMessage(error, localize('com_ui_error')),
         status: 'error',
       });
     },
@@ -93,25 +73,38 @@ export default function MemoryEditDialog({
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [originalKey, setOriginalKey] = useState('');
+  const [touched, setTouched] = useState({ key: false, value: false });
+  const [prevMemory, setPrevMemory] = useState<TUserMemory | null>(null);
 
-  useEffect(() => {
+  if (memory !== prevMemory) {
+    setPrevMemory(memory);
     if (memory) {
       setKey(memory.key);
       setValue(memory.value);
       setOriginalKey(memory.key);
+      setTouched({ key: false, value: false });
     }
-  }, [memory]);
+  }
+
+  const keyError = getMemoryKeyError({
+    key,
+    memories: memData?.memories,
+    agentId: memory?.agentId,
+    originalKey,
+  });
+  const valueError = getMemoryValueError(value);
+  const hasErrors = keyError != null || valueError != null;
+  /** Stay quiet on a pristine empty field; validate live once there is something to judge. */
+  const showKeyError = hasUpdateAccess && (touched.key || key !== '');
+  const showValueError = hasUpdateAccess && (touched.value || value !== '');
 
   const handleSave = () => {
     if (!hasUpdateAccess || !memory) {
       return;
     }
 
-    if (!key.trim() || !value.trim()) {
-      showToast({
-        message: localize('com_ui_field_required'),
-        status: 'error',
-      });
+    if (keyError || valueError) {
+      setTouched({ key: true, value: true });
       return;
     }
 
@@ -189,10 +182,19 @@ export default function MemoryEditDialog({
                 id="memory-key"
                 value={key}
                 onChange={(e) => hasUpdateAccess && setKey(e.target.value)}
+                onBlur={() => setTouched((prev) => ({ ...prev, key: true }))}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_key')}
                 className="w-full"
                 disabled={!hasUpdateAccess}
+                aria-invalid={showKeyError && keyError != null}
+                aria-describedby="memory-key-message"
+              />
+              <FieldMessage
+                id="memory-key-message"
+                message={showKeyError && keyError ? localize(keyError) : null}
+                hint={localize('com_ui_memory_key_hint')}
+                lines={2}
               />
             </div>
 
@@ -205,11 +207,18 @@ export default function MemoryEditDialog({
                 id="memory-value"
                 value={value}
                 onChange={(e) => hasUpdateAccess && setValue(e.target.value)}
+                onBlur={() => setTouched((prev) => ({ ...prev, value: true }))}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
                 className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy disabled:cursor-not-allowed disabled:opacity-50"
                 rows={4}
                 disabled={!hasUpdateAccess}
+                aria-invalid={showValueError && valueError != null}
+                aria-describedby="memory-value-message"
+              />
+              <FieldMessage
+                id="memory-value-message"
+                message={showValueError && valueError ? localize(valueError) : null}
               />
             </div>
           </div>
@@ -221,7 +230,7 @@ export default function MemoryEditDialog({
               variant="submit"
               onClick={handleSave}
               aria-label={localize('com_ui_save')}
-              disabled={isLoading || !key.trim() || !value.trim()}
+              disabled={isLoading || hasErrors}
             >
               {isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
             </Button>

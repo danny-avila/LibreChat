@@ -37,6 +37,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   hide_sequential_outputs?: boolean;
   end_after_tools?: boolean;
   stateful_code_sessions?: boolean;
+  stateful_code_environment?: 'user' | 'agent-user' | 'conversation';
   /** @deprecated Use edges instead */
   agent_ids?: string[];
   edges?: GraphEdge[];

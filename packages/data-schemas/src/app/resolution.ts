@@ -3,6 +3,7 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
+  isProcessMCPServerConfig,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
@@ -86,6 +87,32 @@ function deletePath<T extends AnyObject>(target: T, path: string): T {
 
   delete cursor[segments[segments.length - 1]];
   return result as T;
+}
+
+function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
+  const [section, serverName] = path.split('.');
+  if (section !== 'mcpConfig') {
+    return deletePath(target, path);
+  }
+
+  const mcpConfig = target.mcpConfig;
+  if (mcpConfig == null || typeof mcpConfig !== 'object' || Array.isArray(mcpConfig)) {
+    return deletePath(target, path);
+  }
+
+  const servers = mcpConfig as AnyObject;
+  if (serverName != null) {
+    return isProcessMCPServerConfig(servers[serverName]) ? target : deletePath(target, path);
+  }
+
+  const processServers = Object.fromEntries(
+    Object.entries(servers).filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig)),
+  );
+  if (Object.keys(processServers).length === 0) {
+    return deletePath(target, path);
+  }
+
+  return { ...target, mcpConfig: processServers } as T;
 }
 
 function mergeArrayByKey(
@@ -181,6 +208,43 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
   return result as T;
 }
 
+function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const currentServers =
+    current != null && typeof current === 'object' && !Array.isArray(current)
+      ? (current as AnyObject)
+      : {};
+  const filtered: AnyObject = {};
+
+  for (const [serverName, serverOverride] of Object.entries(value)) {
+    const currentServer = currentServers[serverName];
+    if (
+      serverOverride == null ||
+      typeof serverOverride !== 'object' ||
+      Array.isArray(serverOverride)
+    ) {
+      if (!isProcessMCPServerConfig(currentServer)) {
+        filtered[serverName] = serverOverride;
+      }
+      continue;
+    }
+
+    const baseServer =
+      currentServer != null && typeof currentServer === 'object' && !Array.isArray(currentServer)
+        ? (currentServer as AnyObject)
+        : {};
+    const resolved = deepMerge(baseServer, serverOverride as AnyObject);
+    if (!isProcessMCPServerConfig(resolved)) {
+      filtered[serverName] = serverOverride;
+    }
+  }
+
+  return filtered;
+}
+
 /**
  * Merge DB config overrides into a base AppConfig.
  *
@@ -203,7 +267,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           typeof path === 'string' &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          merged = deletePath(merged, remapOverridePath(path));
+          merged = deleteConfigPath(merged, remapOverridePath(path));
         }
       }
     }
@@ -218,7 +282,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           continue;
         }
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
-        if (
+        if (mappedKey === 'mcpConfig') {
+          remapped[mappedKey] = filterMCPServerOverrides(
+            value,
+            (merged as unknown as AnyObject)[mappedKey],
+          );
+        } else if (
           key === 'interface' &&
           value != null &&
           typeof value === 'object' &&
