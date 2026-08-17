@@ -86,13 +86,3 @@ export function resolveToolCallPhase({
   }
   return displayProgress < 1 ? 'running' : 'completed';
 }
-
-/** Whether the card should present this phase as an error to the reader. */
-export function isFailedPhase(phase: ToolCallPhase): boolean {
-  return phase === 'failed';
-}
-
-/** Whether the card is still in flight — drives shimmer, pulse and tickers. */
-export function isRunningPhase(phase: ToolCallPhase): boolean {
-  return phase === 'running';
-}

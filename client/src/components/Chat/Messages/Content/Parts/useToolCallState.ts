@@ -81,8 +81,9 @@ export default function useToolCallState({
   }, [onExpand]);
 
   /**
-   * One resolution, from the raw progress the legacy heuristic was written
-   * against. Everything the card shows is a read of this value.
+   * One resolution; everything the card shows is a read of this value. The
+   * two progress inputs are deliberately distinct — see `resolveToolCallPhase`
+   * for why the cancellation inference must not read the animated one.
    */
   const phase = resolveToolCallPhase({
     runStepStatus,
