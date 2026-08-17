@@ -50,7 +50,7 @@ jobs:
             exit 0
           fi
 
-          echo "$RESP" | jq -r '
+          TABLE=$(echo "$RESP" | jq -r '
             "graph `\(.gate.head[0:12] // "?")` · \(.engine) · \(.mode) · \(.ms)ms · reached \(.reached)",
             "",
             "| workspace | decision |",
@@ -62,11 +62,20 @@ jobs:
             "",
             "matrix: " + ([.matrix | to_entries[] | .key as $wf | .value | to_entries[] |
               "\($wf)/\(.key)=" + (if .value then "run" else "SKIP" end)] | join("  ")),
-            (if .shards then "shards: " + (.shards | to_json) else empty end),
-            (if .lock_workspaces then "lockfile → " + (.lock_workspaces | to_json) else empty end),
+            (if .shards then "shards: " + (.shards | tojson) else empty end),
+            (if .lock_workspaces then "lockfile → " + (.lock_workspaces | tojson) else empty end),
             (if .e2e and (.e2e.error | not) then
               "e2e tiers: must \(.e2e.must_run | length) · floor \(.e2e.floor | length) · skippable \(.e2e.skippable | length)" +
               (if (.e2e.must_run | length) > 0 then " — must: " + (.e2e.must_run[:4] | join(", ")) else "" end)
             else empty end)
-          ' >> "$GITHUB_STEP_SUMMARY"
+          ' 2>render.err)
+          if [ -n "$TABLE" ]; then
+            echo "$TABLE" >> "$GITHUB_STEP_SUMMARY"
+          else
+            note "_summary render failed: $(head -c 200 render.err 2>/dev/null)_"
+            note '~~~'
+            note "${RESP:0:600}"
+            note '~~~'
+          fi
+          echo "rendered summary: ${#TABLE} chars"
           exit 0
