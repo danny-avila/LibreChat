@@ -402,6 +402,27 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           return true;
         }
         const scheduledFor = schedule.nextRunAt ?? new Date();
+        /**
+         * Advances this claimed occurrence without preserving a superseded holder.
+         * Owner edits rotate the token/next occurrence but intentionally leave the old
+         * lease in place; a fenced miss therefore releases only this worker's unique
+         * holder. Infrastructure errors keep the lease as retry backoff, as before.
+         */
+        const advanceClaim = async (nextRunAt: Date | null): Promise<void> => {
+          try {
+            const advanced = await deps.methods.advanceSchedule(
+              schedule.id,
+              nextRunAt,
+              scheduledFor,
+              schedule.claimToken,
+            );
+            if (!advanced && schedule.leaseBy != null) {
+              await deps.methods.releaseLeaseByHolder(schedule.id, schedule.leaseBy);
+            }
+          } catch {
+            // Leave the claim lease as bounded backoff for transient storage failures.
+          }
+        };
         // Use the CLAIM's clock for the misfire cutoff: the claim wrote
         // leaseUntil = now + LEASE_MS from the claiming worker's clock, so
         // leaseUntil - LEASE_MS is that worker's "now" at claim — usually this very
@@ -440,9 +461,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
           // next FUTURE occurrence. Without it nextRunAt keeps pointing at the stale
           // one, so every later tick reclaims and skips the same occurrence forever and
           // a schedule overdue past an outage never fires again.
-          await deps.methods
-            .advanceSchedule(schedule.id, next, scheduledFor, schedule.claimToken)
-            .catch(() => undefined);
+          await advanceClaim(next);
           logger.info(`[schedules] skipped stale occurrence for ${schedule.id} (misfire grace)`);
           return false;
         }
@@ -492,9 +511,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               .then(() => true)
               .catch(() => false);
             if (disabled) {
-              await deps.methods
-                .advanceSchedule(schedule.id, null, scheduledFor, schedule.claimToken)
-                .catch(() => undefined);
+              await advanceClaim(null);
             }
           }
         }

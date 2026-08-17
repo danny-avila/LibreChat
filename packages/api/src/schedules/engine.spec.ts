@@ -49,6 +49,7 @@ function makeMethods(schedule: FireableSchedule) {
     advanceSchedule: jest.fn(
       async (_id: string, _next: Date | null, _from?: Date, _token?: string) => true,
     ),
+    releaseLeaseByHolder: jest.fn(async () => undefined),
     disableSchedule: jest.fn(async (_id: string, _reason: string, _token?: string) => undefined),
     releaseLease: jest.fn(async () => true),
     holdsLease: jest.fn(async () => true),
@@ -133,6 +134,18 @@ describe('runTick misfire skip-forward', () => {
     // Being overdue is not a fault: the schedule stays enabled and is not fired.
     expect(methods.disableSchedule).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('releases its old holder when an owner edit fences the misfire advance', async () => {
+    const schedule = makeClaimedSchedule({ nextRunAt: staleAt() });
+    const methods = makeMethods(schedule);
+    // The edit rotated claimToken/nextRunAt after this worker claimed but preserved
+    // its unique lease holder, so the token-fenced advance no longer matches.
+    methods.advanceSchedule.mockResolvedValueOnce(false);
+
+    await tickOnce(makeDeps(methods));
+
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
   });
 
   it('disables and clears a stale occurrence whose cadence is uncomputable', async () => {
