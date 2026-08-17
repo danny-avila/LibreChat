@@ -145,6 +145,18 @@ describe('applyPendingPastesToDraft', () => {
     ).toBe('XhelloPASTE');
   });
 
+  it('rebases an insert past a prefix the user duplicated', () => {
+    expect(
+      applyPendingPasteToDraft('aabc', {
+        text: 'PASTE',
+        selectionStart: 1,
+        replacedApplied: true,
+        anchorBefore: 'a',
+        anchorAfter: 'bc',
+      }),
+    ).toBe('aaPASTEbc');
+  });
+
   it('rebases an insert when both sides of the original caret were edited', () => {
     expect(
       applyPendingPasteToDraft('XhelloWORLDY', {
@@ -280,5 +292,38 @@ describe('resolvePendingPasteInsertStart', () => {
         anchorAfter: 'WORLD',
       }),
     ).toBe(6);
+  });
+
+  it('picks the junction the anchors still meet at when an edit duplicates the prefix', () => {
+    expect(
+      resolvePendingPasteInsertStart('aabc', {
+        text: 'PASTE',
+        selectionStart: 1,
+        anchorBefore: 'a',
+        anchorAfter: 'bc',
+      }),
+    ).toBe(2);
+  });
+
+  it('keeps the duplicated prefix junction when the tail was edited too', () => {
+    expect(
+      resolvePendingPasteInsertStart('aabcX', {
+        text: 'PASTE',
+        selectionStart: 1,
+        anchorBefore: 'a',
+        anchorAfter: 'bc',
+      }),
+    ).toBe(2);
+  });
+
+  it('holds the captured caret when a duplicated prefix leaves the junction ambiguous', () => {
+    expect(
+      resolvePendingPasteInsertStart('helloXhello', {
+        text: 'PASTE',
+        selectionStart: 5,
+        anchorBefore: 'hello',
+        anchorAfter: '',
+      }),
+    ).toBe(5);
   });
 });
