@@ -21,6 +21,7 @@ export interface AgentTriggerEvent {
   type: string;
   /** Unix time in milliseconds recorded by the source. */
   occurredAt: number;
+  /** Sanitized source data; adapters must omit credentials and transport secrets. */
   payload?: JsonValue;
   source: AgentTriggerSource;
 }

@@ -82,8 +82,7 @@ export function cloneJsonValue<T>(
 
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
-      const typeName = value.constructor?.name ?? 'object';
-      throw createError(`${path} contains a non-plain ${typeName} value`);
+      throw createError(`${path} contains a non-plain object value`);
     }
 
     const cloned: { [key: string]: unknown } = {};

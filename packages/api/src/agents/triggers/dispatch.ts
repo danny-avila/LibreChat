@@ -10,23 +10,27 @@ export interface AgentTriggerDispatchContext {
   signal?: AbortSignal;
 }
 
-export interface AgentTriggerDispatchHandlers<Result> {
+/**
+ * Host-owned execution adapters. Each handler must enforce current authorization,
+ * limits, persistence, and the supplied idempotency identity before accepting work.
+ */
+export interface AgentTriggerDispatchHandlers<FireResult, SteerResult> {
   fire: (
     envelope: AgentFireTriggerEnvelope,
     context: AgentTriggerDispatchContext,
-  ) => Promise<Result>;
+  ) => Promise<FireResult>;
   steer: (
     envelope: AgentSteerTriggerEnvelope,
     context: AgentTriggerDispatchContext,
-  ) => Promise<Result>;
+  ) => Promise<SteerResult>;
 }
 
 /** Routes a normalized trigger without coupling its source to an execution transport. */
-export function dispatchAgentTrigger<Result>(
+export function dispatchAgentTrigger<FireResult, SteerResult>(
   envelope: AgentTriggerEnvelope,
-  handlers: AgentTriggerDispatchHandlers<Result>,
+  handlers: AgentTriggerDispatchHandlers<FireResult, SteerResult>,
   options?: { signal?: AbortSignal },
-): Promise<Result> {
+): Promise<FireResult | SteerResult> {
   const context: AgentTriggerDispatchContext = {
     idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
     ...(options?.signal != null && { signal: options.signal }),
