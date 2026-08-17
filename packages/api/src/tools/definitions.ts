@@ -29,6 +29,7 @@ export interface MCPServerTool {
     description?: string;
     parameters?: JsonSchemaType;
   };
+  serverToolName?: string;
 }
 
 export type MCPServerTools = Record<string, MCPServerTool>;
@@ -253,7 +254,9 @@ export async function loadToolDefinitions(
      *  a pre-strip persisted key (`acme_search_mcp_acme`) must also try its
      *  stripped spelling or the agent fails initialization with its expected
      *  tools "unavailable". The definition keeps the PERSISTED name so it
-     *  matches the runtime instance `createMCPTool` builds for the same key. */
+     *  matches the runtime instance `createMCPTool` builds for the same key,
+     *  and the stripped entry is accepted only when its recorded raw name
+     *  PROVES the same upstream identity. */
     const findToolDef = (tools: Record<string, MCPServerTool>): MCPServerTool | undefined => {
       const direct = tools[toolName];
       if (direct?.function) {
@@ -265,7 +268,8 @@ export async function loadToolDefinitions(
       if (strippedPart === toolPart) {
         return undefined;
       }
-      return tools[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
+      const entry = tools[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
+      return entry?.serverToolName === toolPart ? entry : undefined;
     };
 
     const selectedToolMissing = isMCPAllPlaceholder(toolName)

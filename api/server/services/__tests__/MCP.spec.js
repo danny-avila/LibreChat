@@ -406,7 +406,9 @@ describe('healMcpToolNames', () => {
     mockRegistry.ensureConfigServers.mockResolvedValue({});
     mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
     const strippedKey = `search${Constants.mcp_delimiter}acme`;
-    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
 
     const healed = await healMcpToolNames({
       req,
@@ -425,7 +427,9 @@ describe('healMcpToolNames', () => {
     mockRegistry.ensureConfigServers.mockResolvedValue({});
     mockRegistry.getAllServerConfigs.mockResolvedValue({ 'My Server': {} });
     const strippedKey = `search${Constants.mcp_delimiter}My_Server`;
-    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'my_server_search' },
+    };
 
     const healed = await healMcpToolNames({
       req,
@@ -444,7 +448,9 @@ describe('healMcpToolNames', () => {
     mockRegistry.ensureConfigServers.mockResolvedValue({});
     mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
     const strippedKey = `search${Constants.mcp_delimiter}acme`;
-    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
 
     const healed = await healMcpToolNames({
       req,
@@ -453,6 +459,24 @@ describe('healMcpToolNames', () => {
     });
 
     expect(healed).toEqual([strippedKey]);
+  });
+
+  it('does not heal a stale key onto a sibling that lacks matching upstream identity', async () => {
+    /** With `acme_acme_foo` removed upstream while `acme_foo` kept its raw
+     *  name, the stale key's stripped spelling exists but belongs to a
+     *  DIFFERENT tool — the identity check must reject the rewrite. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const staleKey = `acme_acme_foo${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [`acme_foo${Constants.mcp_delimiter}acme`]: { type: 'function' },
+      [`foo${Constants.mcp_delimiter}acme`]: { type: 'function', serverToolName: 'acme_foo' },
+    };
+
+    const healed = await healMcpToolNames({ req, tools: [staleKey], toolDefinitions });
+
+    expect(healed).toEqual([staleKey]);
   });
 
   it('fails closed on a normalized-suffix key whose slot is CONTESTED', async () => {

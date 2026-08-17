@@ -267,6 +267,15 @@ describe('stripServerNamePrefixes', () => {
     expect(map.get('acme_trace')).toBe('trace');
   });
 
+  it('reserves every sibling raw name, even when that sibling itself strips', () => {
+    /** Keys persisted BEFORE stripping embed raw names: if `acme_acme_foo`
+     *  stripped to `acme_foo`, a pre-rollout reference to the REAL `acme_foo`
+     *  would exact-match the wrong tool in the same snapshot. */
+    const map = stripServerNamePrefixes(['acme_foo', 'acme_acme_foo'], 'acme');
+    expect(map.get('acme_foo')).toBe('foo');
+    expect(map.get('acme_acme_foo')).toBe('acme_acme_foo');
+  });
+
   it('resolves secondary collisions introduced by a fallback to a raw name', () => {
     /** `acme_foo` falls back to raw because of the bare `foo`, which then
      *  collides with `acme_acme_foo`'s stripped result — the guard must

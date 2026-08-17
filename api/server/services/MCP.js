@@ -15,6 +15,7 @@ const {
   buildServerNameAliases,
   findShadowedServerNames,
   getAssistantToolDefinitions: loadAssistantToolDefinitions,
+  toProviderToolDefinition,
   resolveMCPServerContext,
   normalizeJsonSchema,
   GenerationJobManager,
@@ -332,7 +333,13 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
           const [healedToolName] = splitMCPToolKey(healed, [keyServerName]);
           const strippedName = stripServerNamePrefix(healedToolName, keyServerName);
           const strippedKey = `${strippedName}${Constants.mcp_delimiter}${keyServerName}`;
-          if (strippedName !== healedToolName && toolDefinitions[strippedKey] != null) {
+          /** Rewrite only when the stripped entry PROVES the same upstream
+           *  identity — a stale key for a removed tool must not be healed
+           *  onto a different sibling that kept its raw name. */
+          if (
+            strippedName !== healedToolName &&
+            toolDefinitions[strippedKey]?.serverToolName === healedToolName
+          ) {
             healedTool = strippedKey;
           }
         }
@@ -1005,10 +1012,18 @@ async function createMCPTool({
   const findToolEntry = (tools) => {
     for (const key of candidateToolKeys) {
       const entry = tools?.[key];
-      if (entry?.function) {
-        matchedToolKey = key;
-        return entry;
+      if (!entry?.function) {
+        continue;
       }
+      /** The stripped-spelling candidate is only a legacy match when the
+       *  entry PROVES the same upstream identity — without this, a stale
+       *  reference to a removed tool could strip onto a DIFFERENT sibling
+       *  that kept its raw name and silently call the wrong tool. */
+      if (key === strippedToolKey && entry.serverToolName !== toolName) {
+        continue;
+      }
+      matchedToolKey = key;
+      return entry;
     }
     return undefined;
   };
@@ -1505,6 +1520,7 @@ async function getServerConnectionStatus(
 module.exports = {
   createMCPTool,
   createMCPTools,
+  toProviderToolDefinition,
   createMCPPermissionContext,
   userCanUseMCPServers,
   getMCPSetupData,

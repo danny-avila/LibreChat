@@ -6,7 +6,7 @@ import {
   splitMCPToolKey,
 } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
-import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
+import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from '~/mcp/types';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { findShadowedServerNames } from '~/mcp/utils';
 
@@ -182,21 +182,26 @@ export async function getAssistantToolDefinitions(
       (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps, recover),
     ),
   );
-  return Object.assign({}, params.staticTools, ...serverCatalogs.map(toProviderToolDefinitions));
+  /** Entries keep `serverToolName` here: the assistants heal verifies legacy
+   *  key rewrites against that upstream identity. The controllers sanitize
+   *  through {@link toProviderToolDefinition} at the submission boundary. */
+  return Object.assign({}, params.staticTools, ...serverCatalogs);
 }
 
 /**
- * Assistant writers submit these entries VERBATIM as provider tool definitions
+ * Assistant writers submit tool entries VERBATIM as provider tool definitions
  * (`assistantData.tools` in the v1/v2 controllers), and providers reject
  * unknown fields — the internal `serverToolName` mapping must never leave the
- * catalog. Entries without it pass through by reference; the cached catalog
- * keeps the mapping for the runtime call path.
+ * catalog. Strings and entries without the mapping pass through by reference;
+ * the cached catalog keeps the mapping for the runtime call path.
  */
-function toProviderToolDefinitions(catalog: LCAvailableTools): LCAvailableTools {
-  const sanitized: LCAvailableTools = {};
-  for (const [key, entry] of Object.entries(catalog)) {
-    sanitized[key] =
-      entry.serverToolName == null ? entry : { type: entry.type, ['function']: entry['function'] };
+export function toProviderToolDefinition<T>(tool: T): T | LCFunctionTool {
+  if (tool == null || typeof tool !== 'object') {
+    return tool;
   }
-  return sanitized;
+  const entry = tool as Partial<LCFunctionTool>;
+  if (entry.serverToolName == null || entry.type !== 'function' || entry['function'] == null) {
+    return tool;
+  }
+  return { type: entry.type, ['function']: entry['function'] };
 }

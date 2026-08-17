@@ -3139,8 +3139,16 @@ export function stripServerNamePrefixes(
   toolNames: readonly string[],
   normalizedServerName: string,
 ): Map<string, string> {
+  const rawNames = new Set(toolNames);
   const finalNames = new Map<string, string>(
-    toolNames.map((name) => [name, stripServerNamePrefix(name, normalizedServerName)]),
+    toolNames.map((name) => {
+      const stripped = stripServerNamePrefix(name, normalizedServerName);
+      /** Every sibling's RAW name is reserved even when that sibling itself
+       *  strips away: keys persisted BEFORE stripping embed raw names, so a
+       *  stripped result landing on another sibling's raw name would route
+       *  that sibling's legacy references to the wrong upstream tool. */
+      return [name, stripped !== name && rawNames.has(stripped) ? name : stripped];
+    }),
   );
   /** Reverting a collider to its raw name can itself collide with ANOTHER
    *  sibling's stripped result (`foo` / `acme_foo` / `acme_acme_foo`), so the

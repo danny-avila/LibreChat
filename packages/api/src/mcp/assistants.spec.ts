@@ -1,7 +1,7 @@
 import { Constants } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { AssistantToolDefinitionsDeps } from './assistants';
-import { getAssistantToolDefinitions } from './assistants';
+import { getAssistantToolDefinitions, toProviderToolDefinition } from './assistants';
 
 const serverConfig: ParsedServerConfig = {
   type: 'streamable-http',
@@ -54,9 +54,11 @@ describe('getAssistantToolDefinitions', () => {
     expect(deps.getMCPServerTools).toHaveBeenCalledWith('user-1', 'app-server', serverConfig);
   });
 
-  it('strips the internal serverToolName mapping from provider-facing definitions', async () => {
-    /** Assistant writers submit these entries verbatim as provider tool
-     *  definitions; an unknown top-level field fails the create/update. */
+  it('retains serverToolName for the heal; toProviderToolDefinition strips it at submission', async () => {
+    /** The heal verifies legacy rewrites against the recorded upstream
+     *  identity, so the loader keeps the field; assistant writers submit
+     *  entries verbatim, so the controllers sanitize each entry through
+     *  toProviderToolDefinition before the provider sees it. */
     const strippedKey = `search${Constants.mcp_delimiter}app-server`;
     const strippedCatalog: LCAvailableTools = {
       [strippedKey]: {
@@ -73,11 +75,18 @@ describe('getAssistantToolDefinitions', () => {
 
     const result = await getAssistantToolDefinitions(params, deps);
 
-    expect(result[strippedKey]).toEqual({
+    expect(result[strippedKey]?.serverToolName).toBe('app-server_search');
+
+    const sanitized = toProviderToolDefinition(result[strippedKey]);
+    expect(sanitized).toEqual({
       type: 'function',
       ['function']: strippedCatalog[strippedKey]['function'],
     });
-    expect(result[strippedKey]).not.toHaveProperty('serverToolName');
+    expect(sanitized).not.toHaveProperty('serverToolName');
+    expect(toProviderToolDefinition('code_interpreter')).toBe('code_interpreter');
+    expect(toProviderToolDefinition(params.staticTools.code_interpreter)).toBe(
+      params.staticTools.code_interpreter,
+    );
   });
 
   it('reconnects a user server when neither cache nor local snapshot has a catalog', async () => {

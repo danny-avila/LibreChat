@@ -7,7 +7,11 @@ const validateAuthor = require('~/server/middleware/assistants/validateAuthor');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { deleteAssistantActions } = require('~/server/services/ActionService');
 const { getOpenAIClient, fetchAssistants } = require('./helpers');
-const { healMcpToolNames, getAssistantToolDefinitions } = require('~/server/services/MCP');
+const {
+  healMcpToolNames,
+  getAssistantToolDefinitions,
+  toProviderToolDefinition,
+} = require('~/server/services/MCP');
 const { manifestToolMap, isAgentsOnlyTool } = require('~/app/clients/tools');
 
 /**
@@ -59,7 +63,8 @@ const createAssistant = async (req, res) => {
         return toolDef;
       })
       .filter((tool) => tool)
-      .flat();
+      .flat()
+      .map(toProviderToolDefinition);
 
     let azureModelIdentifier = null;
     if (openai.locals?.azureOptions) {
@@ -174,7 +179,8 @@ const patchAssistant = async (req, res) => {
         return toolDef;
       })
       .filter((tool) => tool)
-      .flat();
+      .flat()
+      .map(toProviderToolDefinition);
 
     if (openai.locals?.azureOptions && updateData.model) {
       updateData.model = openai.locals.azureOptions.azureOpenAIApiDeploymentName;

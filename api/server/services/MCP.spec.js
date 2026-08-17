@@ -1782,6 +1782,38 @@ describe('User parameter passing tests', () => {
       expect(mockReinitMCPServer).not.toHaveBeenCalled();
     });
 
+    it('rejects a stripped-spelling entry without matching upstream identity', async () => {
+      /** A stale key for a removed tool must degrade to the unavailable stub,
+       *  not resolve onto a DIFFERENT sibling whose key coincides with the
+       *  stripped spelling. */
+      const mockUser = { id: 'stale-identity-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      mockReinitMCPServer.mockResolvedValue(null);
+
+      const staleKey = `acme_acme_foo${D}acme`;
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: staleKey,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`acme_foo${D}acme`]: {
+            function: {
+              name: `acme_foo${D}acme`,
+              description: 'Different tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      expect(mockReinitMCPServer).toHaveBeenCalled();
+      expect(mcpTool.description).toBe(
+        "This tool's MCP server is temporarily unavailable. Please try again shortly.",
+      );
+    });
+
     it('sends the raw upstream tool name when the key stripped a redundant server-name prefix', async () => {
       const mockUser = { id: 'stripped-prefix-user', role: 'USER' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
