@@ -420,6 +420,44 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   );
 };
 
+/** Moves a text draft between keys, reporting whether there was one to move. */
+export const migrateTextDraft = (fromId: string, toId: string): boolean => {
+  const key = `${LocalStorageKeys.TEXT_DRAFT}${fromId}`;
+  const draftText = getLocalStorageItem(key);
+  removeLocalStorageItem(key);
+  if (!draftText) {
+    return false;
+  }
+
+  setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${toId}`, draftText);
+  return true;
+};
+
+/**
+ * Moves a files draft between keys without ever holding two copies: a pending long paste can be
+ * most of the storage budget on its own, so writing the destination while the source still exists
+ * is what trips quota. Returns the id the record ended up under, so a caller that failed to move
+ * it can still recover from the key that kept it.
+ */
+export const migrateFilesDraft = (fromId: string, toId: string): string => {
+  const key = `${LocalStorageKeys.FILES_DRAFT}${fromId}`;
+  const record = getLocalStorageItem(key);
+  if (!record) {
+    return toId;
+  }
+
+  removeLocalStorageItem(key);
+  try {
+    localStorage.setItem(`${LocalStorageKeys.FILES_DRAFT}${toId}`, record);
+    return toId;
+  } catch {
+    /** Storage cannot hold the record even with the source freed, so put it back rather than
+     * dropping attachments that recovery can still read from the key it came from. */
+    setLocalStorageItem(key, record);
+    return fromId;
+  }
+};
+
 export const setPendingTextAttachmentDraft = ({
   id,
   fileId,

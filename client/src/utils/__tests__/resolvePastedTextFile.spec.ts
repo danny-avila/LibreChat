@@ -41,6 +41,7 @@ const baseCtx = (over: Partial<PasteAsFileContext> = {}): PasteAsFileContext => 
   uploadsDisabled: false,
   isAssistants: false,
   attachedFilenames: new Set<string>(),
+  configPending: false,
   getOptions: realOptions(),
   ...over,
 });
@@ -121,6 +122,28 @@ describe('resolvePastedTextFile', () => {
     });
 
     expect(resolvePastedTextFile(longText, baseCtx({ getOptions }))).toBeNull();
+  });
+
+  it('routes a long paste while the file config has not arrived', () => {
+    const loading = realOptions({ fileConfig: null });
+    /** The MIME lists live in that config, so nothing is viable until it lands */
+    expect(loading([new File(['x'], 'notes.txt', { type: 'text/plain' })])).toEqual([]);
+
+    const attachment = resolvePastedTextFile(
+      longText,
+      baseCtx({ configPending: true, getOptions: loading }),
+    );
+
+    expect(attachment?.file.name).toBe(PASTED_TEXT_FILENAME);
+    expect(attachment?.toolResource).toBe(EToolResources.context);
+  });
+
+  it('leaves the paste inline once a loaded config offers no context destination', () => {
+    const getOptions = realOptions({ fileConfig: null });
+
+    expect(
+      resolvePastedTextFile(longText, baseCtx({ configPending: false, getOptions })),
+    ).toBeNull();
   });
 
   it('skips option resolution for assistants, which route their own uploads', () => {

@@ -501,6 +501,8 @@ export type PasteAsFileContext = {
   isAssistants: boolean;
   /** Names already attached to the composer, used to keep successive pastes distinct. */
   attachedFilenames: Set<string>;
+  /** The file config the destination check reads has not arrived yet. */
+  configPending: boolean;
   getOptions: (files: File[]) => (EToolResources | undefined)[];
 };
 
@@ -546,9 +548,13 @@ export const resolvePastedTextFile = (
   }
 
   /** `context` is the only automatic non-assistant destination because retrieval-based routes
-   * can change what the model sees. Pasting text must never pop a destination picker. */
-  const options = ctx.getOptions([file]);
-  if (!options.includes(EToolResources.context)) {
+   * can change what the model sees. Pasting text must never pop a destination picker.
+   *
+   * That check reads MIME lists that arrive with the file config, so declining while the config
+   * is still in flight would quietly ignore the setting on a slow first load. Routing the paste
+   * instead hands the decision to the upload, which waits for the same config and restores the
+   * text inline if it turns out the destination is unavailable. */
+  if (!ctx.configPending && !ctx.getOptions([file]).includes(EToolResources.context)) {
     return null;
   }
 

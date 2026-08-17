@@ -65,7 +65,11 @@ export default function useTextarea({
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
   const { showToast } = useToastContext();
-  const { getOptions: getUploadOptions, uploadsDisabled } = useUploadOptions();
+  const {
+    getOptions: getUploadOptions,
+    uploadsDisabled,
+    isConfigPending: isUploadConfigPending,
+  } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
   const assistantMap = useAssistantsMapContext();
@@ -352,6 +356,7 @@ export default function useTextarea({
         uploadsDisabled,
         isAssistants: isAssistantsEndpoint(conversation?.endpoint),
         attachedFilenames,
+        configPending: isUploadConfigPending,
         getOptions: getUploadOptions,
       });
       if (!attachment) {
@@ -501,6 +506,7 @@ export default function useTextarea({
       getUploadOptions,
       pasteLongTextAsFile,
       routeClipboardFiles,
+      isUploadConfigPending,
       answerModeActive,
       isSubmitting,
       saveDrafts,

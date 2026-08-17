@@ -30,9 +30,16 @@ export default function useUploadOptions() {
     ephemeralAgentByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
   const { provider, tools } = useAgentToolPermissions(agentId, ephemeralAgent);
-  const { data: fileConfig = null } = useGetFileConfig({
+  const {
+    data: fileConfig = null,
+    isError: isFileConfigError,
+    isPaused: isFileConfigPaused,
+    isSuccess: isFileConfigLoaded,
+  } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
+  /** Destination checks read this config, so callers can tell "not viable" from "not known yet". */
+  const isConfigPending = !isFileConfigLoaded && !isFileConfigError && !isFileConfigPaused;
 
   /**
    * Tools are offerable unless a saved agent omits them; in direct/ephemeral chats selecting
@@ -76,5 +83,5 @@ export default function useUploadOptions() {
     ],
   );
 
-  return { getOptions, uploadsDisabled };
+  return { getOptions, uploadsDisabled, isConfigPending };
 }

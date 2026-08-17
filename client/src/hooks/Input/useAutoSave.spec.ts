@@ -453,6 +453,48 @@ describe('useAutoSave — side-by-side pending drafts', () => {
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
   });
 
+  it('recovers a pending paste the destination key has no room for', () => {
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          index: 1,
+          isSubmitting,
+          conversationId: 'convo-side',
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    setFilesDraft(pane1PendingId, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 0 },
+      },
+    });
+
+    const realSetItem = Storage.prototype.setItem;
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === `${LocalStorageKeys.FILES_DRAFT}convo-side`) {
+        throw new Error('quota exceeded');
+      }
+      realSetItem.call(this, key, value);
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    setItem.mockRestore();
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
+    expect(getFilesDraft(pane1PendingId)).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
   it('restores only this pane idle unsaved file draft', () => {
     mockGetDraft.mockImplementation((id: string) =>
       id === `${Constants.NEW_CONVO}:1` ? 'pane 1 draft' : 'pane 0 draft',

@@ -11,6 +11,8 @@ import {
   getNewConversationDraftToken,
   getPendingDraftId,
   isNewConversationDraftId,
+  migrateFilesDraft,
+  migrateTextDraft,
   renewNewConversationDraftToken,
   setDraft,
   setFilesDraft,
@@ -242,6 +244,87 @@ describe('clearComposerDrafts', () => {
   });
 });
 
+describe('migrateFilesDraft', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('moves the record to the destination key', () => {
+    setFilesDraft('pending', {
+      fileIds: ['file-1'],
+      pendingPastes: { 'file-1': { text: 'pasted', selectionStart: 0 } },
+    });
+
+    expect(migrateFilesDraft('pending', 'convo-1')).toBe('convo-1');
+    expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe('pasted');
+    expect(getFilesDraft('pending')).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('never holds the record under both keys at once', () => {
+    setFilesDraft('pending', { fileIds: ['file-1'], pendingPastes: {} });
+    const realSetItem = Storage.prototype.setItem;
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === `${LocalStorageKeys.FILES_DRAFT}convo-1`) {
+        expect(localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}pending`)).toBeNull();
+      }
+      realSetItem.call(this, key, value);
+    });
+
+    expect(migrateFilesDraft('pending', 'convo-1')).toBe('convo-1');
+    setItem.mockRestore();
+  });
+
+  it('leaves the record where it was when the destination write fails', () => {
+    setFilesDraft('pending', {
+      fileIds: ['file-1'],
+      pendingPastes: { 'file-1': { text: 'pasted', selectionStart: 0 } },
+    });
+    const realSetItem = Storage.prototype.setItem;
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === `${LocalStorageKeys.FILES_DRAFT}convo-1`) {
+        throw new Error('quota exceeded');
+      }
+      realSetItem.call(this, key, value);
+    });
+
+    expect(migrateFilesDraft('pending', 'convo-1')).toBe('pending');
+    setItem.mockRestore();
+    expect(getFilesDraft('pending').pendingPastes['file-1']?.text).toBe('pasted');
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('reports the destination when there is nothing to move', () => {
+    expect(migrateFilesDraft('pending', 'convo-1')).toBe('convo-1');
+  });
+});
+
+describe('migrateTextDraft', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('moves the draft and reports that it did', () => {
+    setDraft({ id: 'pending', value: 'carried over' });
+
+    expect(migrateTextDraft('pending', 'convo-1')).toBe(true);
+    expect(getDraft('convo-1')).toBe('carried over');
+    expect(getDraft('pending')).toBe('');
+  });
+
+  it('reports nothing moved when the source is empty', () => {
+    expect(migrateTextDraft('pending', 'convo-1')).toBe(false);
+    expect(getDraft('convo-1')).toBe('');
+  });
+});
+
 describe('setDraft persistExact', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -359,6 +442,19 @@ describe('resolvePendingPasteInsertStart', () => {
         anchorAfter: 'WORLD',
       }),
     ).toBe(2);
+  });
+
+  it('stays at the captured caret when an edit duplicates both anchors', () => {
+    /** `abcabc` is what both prepending and appending `abc` to `abc` produce, so the junction
+     * could be 1 or 4 and nothing in the saved state says which. The caret is the tiebreak. */
+    expect(
+      resolvePendingPasteInsertStart('abcabc', {
+        text: 'PASTE',
+        selectionStart: 1,
+        anchorBefore: 'a',
+        anchorAfter: 'bc',
+      }),
+    ).toBe(1);
   });
 
   it('falls back to the captured caret when both anchors were empty', () => {

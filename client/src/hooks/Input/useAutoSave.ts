@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
@@ -14,6 +14,8 @@ import {
   getPendingDraftId,
   isAskAnswerDraftId,
   isNewConversationDraftId,
+  migrateFilesDraft,
+  migrateTextDraft,
   setDraft,
   setFilesDraft,
 } from '~/utils';
@@ -217,6 +219,10 @@ export const useAutoSave = ({
     // clear attachment files when switching conversation
     setFiles(new Map());
 
+    /** The key the attachments live under once the pending draft has been moved. A move that
+     * storage refuses leaves them behind, and recovery has to read them where they still are. */
+    let filesDraftId = conversationId;
+
     try {
       // Check for transition from PENDING_CONVO to a valid conversationId.
       // An ask-answer key is excluded: it is a temporary overlay, not the
@@ -229,34 +235,17 @@ export const useAutoSave = ({
         !isNewConversationDraftId(conversationId) &&
         conversationId.length > 3
       ) {
-        const pendingDraft = localStorage.getItem(
-          `${LocalStorageKeys.TEXT_DRAFT}${pendingDraftId}`,
-        );
-
-        // Clear the pending text draft, if it exists, and save the current draft to the new conversationId;
-        // otherwise, save the current text area value to the new conversationId
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${pendingDraftId}`);
-        if (pendingDraft) {
-          localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
-        } else if (textAreaRef?.current?.value) {
+        // Move the pending text draft to the new conversationId, falling back to the current
+        // text area value when there was no pending draft to carry over
+        if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
           setDraft({ id: conversationId, value: textAreaRef.current.value });
         }
-        const pendingFileDraft = localStorage.getItem(
-          `${LocalStorageKeys.FILES_DRAFT}${pendingDraftId}`,
-        );
-
-        if (pendingFileDraft) {
-          localStorage.setItem(
-            `${LocalStorageKeys.FILES_DRAFT}${conversationId}`,
-            pendingFileDraft,
-          );
-          localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${pendingDraftId}`);
-        }
+        filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
-      const pendingPastes = restoreFiles(conversationId);
+      const pendingPastes = restoreFiles(filesDraftId);
       restoreText(conversationId, pendingPastes);
     } catch (e) {
       console.error(e);
