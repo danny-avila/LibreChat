@@ -953,7 +953,7 @@ describe('scheduled resume capacity', () => {
 
   it('normalizes an exhausted slot-collision retry to public capacity conflict', async () => {
     const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
-    methods.markRunResumeClaimed.mockResolvedValue({ conflict: 'slot-taken' });
+    methods.markRunResumeClaimed.mockResolvedValue({ conflict: 'slot-taken' } as never);
 
     await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
       conflict: 'capacity',
