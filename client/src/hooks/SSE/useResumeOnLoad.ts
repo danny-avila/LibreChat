@@ -116,15 +116,11 @@ function buildSubmissionFromResumeState(
     (m) => m.isCreatedByUser && m.messageId === userMessageData?.messageId,
   );
 
-  // Try to find existing response message in the messages array (from database).
-  // Regeneration can expose the in-flight placeholder id with trailing underscores
-  // while the persisted sibling uses the unpadded id. Prefer both exact identities
-  // before falling back to the shared parent, where several branch siblings can match.
-  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  const existingResponseMessage =
-    messages.find((m) => !m.isCreatedByUser && m.messageId === responseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.parentMessageId === userMessageData?.messageId);
+  // A trailing underscore distinguishes an in-flight regeneration from the persisted
+  // response it replaces. Only the exact response id proves generation ownership.
+  const existingResponseMessage = messages.find(
+    (m) => !m.isCreatedByUser && m.messageId === responseMessageId,
+  );
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -179,12 +175,8 @@ function buildSubmissionFromResumeState(
   // `userMessage` / `initialResponse` (and the resume final event's request/response
   // messages) re-supply. Strip them so createdHandler/finalHandler — which build
   // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
-  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
   const dedupedMessages = messages.filter(
-    (m) =>
-      m.messageId !== userMessage.messageId &&
-      m.messageId !== initialResponse.messageId &&
-      m.messageId !== pausedResponseIdUnpadded,
+    (m) => m.messageId !== userMessage.messageId && m.messageId !== initialResponse.messageId,
   );
 
   return {

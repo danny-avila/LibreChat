@@ -475,6 +475,54 @@ describe('useResumeOnLoad', () => {
     ]);
   });
 
+  it('does not claim an older sibling when resume state omits the response ID', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    const userMessage = buildUserMessage(CONVERSATION_ID);
+    const olderSibling = {
+      messageId: 'older-sibling-response',
+      parentMessageId: userMessage.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Older sibling',
+      isCreatedByUser: false,
+    } as TMessage;
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Active branch streaming' }],
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: userMessage.messageId,
+            parentMessageId: userMessage.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: userMessage.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [userMessage, olderSibling],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.initialResponse?.messageId).toBe(`${userMessage.messageId}_`);
+    expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      olderSibling.messageId,
+    ]);
+  });
+
   it('restores the branch that owns a pending OAuth resume user message', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const branchOneResponse = {
@@ -538,7 +586,7 @@ describe('useResumeOnLoad', () => {
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
 
-  it('restores the assistant sibling selected by a pending regenerate response', async () => {
+  it('restores the regenerate branch without claiming its older response', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const olderResponse = {
       messageId: 'older-response',
@@ -594,9 +642,10 @@ describe('useResumeOnLoad', () => {
 
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(0);
     const submission = observedSubmissions[observedSubmissions.length - 1];
-    expect(submission?.initialResponse?.messageId).toBe(olderResponse.messageId);
+    expect(submission?.initialResponse?.messageId).toBe(`${olderResponse.messageId}_`);
     expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
       newerResponse.messageId,
+      olderResponse.messageId,
     ]);
   });
 
