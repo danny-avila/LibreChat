@@ -11,6 +11,7 @@ import type {
   TContextUsageEvent,
   TTransactionsConfig,
 } from 'librechat-data-provider';
+import type { SubagentUsageEvent as AgentsSubagentUsageEvent } from '@librechat/agents';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -689,29 +690,8 @@ export async function recordCollectedUsage(
   };
 }
 
-/**
- * Structural mirror of the agents SDK's `SubagentUsageEvent` (added after
- * `@librechat/agents` 3.2.33). Defined locally so type-checking does not
- * depend on the unreleased SDK — replace with
- * `import type { SubagentUsageEvent } from '@librechat/agents'` once the
- * dependency is bumped.
- */
-export interface SubagentUsageEvent {
-  /** Usage metadata reported by the child's model call. */
-  usage: UsageMetadata;
-  /** Model that produced this usage (per-call, falls back to the child config's model). */
-  model?: string;
-  /** Provider enum value of the subagent's configured agent. */
-  provider?: string;
-  /** Subagent `type` identifier from the SubagentConfig. */
-  subagentType: string;
-  /** Child run ID (unique per subagent execution). */
-  subagentRunId: string;
-  /** Child agent ID assigned to this subagent execution. */
-  subagentAgentId: string;
-  /** Parent run ID under which the subagent was spawned. */
-  runId: string;
-}
+/** SDK-owned usage envelope re-exported for host billing consumers. */
+export type SubagentUsageEvent = AgentsSubagentUsageEvent;
 
 /**
  * Builds the host-side `subagentUsageSink` for `Run.create`. Subagent child
@@ -741,8 +721,12 @@ export function createSubagentUsageSink(
     /** Tag the child's agent id so the host can price this usage with the
      *  subagent's own endpoint token config (its endpoint may differ from the
      *  parent's). The same tagged object is pushed AND handed to `onUsage`. */
-    if (event.subagentAgentId != null && event.subagentAgentId !== '') {
-      usage.agentId = event.subagentAgentId;
+    const billingAgentId =
+      event.memberAgentId != null && event.memberAgentId !== ''
+        ? event.memberAgentId
+        : event.subagentAgentId;
+    if (billingAgentId != null && billingAgentId !== '') {
+      usage.agentId = billingAgentId;
     }
     collectedUsage.push(usage);
     /** Lets the host stream the billed child usage to the client (tagged

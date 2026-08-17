@@ -489,6 +489,39 @@ export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
   );
 }
 
+/** Builds the existing-memory system context for an inline-memory agent. */
+export async function buildInlineMemoryContext({
+  agent,
+  req,
+  userId,
+  memoryAvailable,
+  getFormattedMemories,
+}: {
+  agent: InlineMemoryAgent;
+  req: ServerRequest;
+  userId: string | ObjectId;
+  memoryAvailable: boolean;
+  getFormattedMemories: MemoryMethods['getFormattedMemories'];
+}): Promise<string> {
+  if (!memoryAvailable || !agentHasInlineMemoryTools(agent)) {
+    return '';
+  }
+  try {
+    const memories = await getRequestMemories({
+      req,
+      userId,
+      agentId: getMemoryAgentId(agent),
+      getFormattedMemories,
+    });
+    return memories.withKeys
+      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${memories.withKeys}`
+      : '';
+  } catch (error) {
+    logger.error('[memory] Error loading inline agent memory context', error);
+    return '';
+  }
+}
+
 /**
  * Request-scoped cache so that multiple memory-enabled agents in one run (and
  * the run's memory context load) share a single `getFormattedMemories` call

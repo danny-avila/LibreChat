@@ -18,6 +18,7 @@ import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 export {
   MAX_SUBAGENTS,
+  MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
 } from './limits';

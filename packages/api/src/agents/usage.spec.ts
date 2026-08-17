@@ -1482,6 +1482,30 @@ describe('createSubagentUsageSink', () => {
     expect(emitted[0].agentId).toBe('agent_xyz');
   });
 
+  it('prices graph usage with the member agent instead of the synthetic execution subject', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(
+      makeEvent({
+        subagentKind: 'graph',
+        subagentAgentId: 'graph:research_team',
+        memberAgentId: 'agent_writer',
+      }),
+    );
+
+    expect(collectedUsage[0].agentId).toBe('agent_writer');
+  });
+
+  it('falls back to the execution subject when the member agent id is empty', () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const sink = createSubagentUsageSink(collectedUsage);
+
+    sink(makeEvent({ subagentAgentId: 'agent_researcher', memberAgentId: '' }));
+
+    expect(collectedUsage[0].agentId).toBe('agent_researcher');
+  });
+
   it('preserves cache token details from the child call', () => {
     const collectedUsage: UsageMetadata[] = [];
     const sink = createSubagentUsageSink(collectedUsage);
