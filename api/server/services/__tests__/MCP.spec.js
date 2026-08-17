@@ -417,6 +417,25 @@ describe('healMcpToolNames', () => {
     expect(healed).toEqual([strippedKey]);
   });
 
+  it('heals a pre-strip key whose server suffix is already normalized', async () => {
+    /** Keys persisted after server-name normalization carry the NORMALIZED
+     *  suffix, which the raw config names cannot match — the strip heal must
+     *  resolve the boundary against both spellings. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'My Server': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'My Server': {} });
+    const strippedKey = `search${Constants.mcp_delimiter}My_Server`;
+    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`my_server_search${Constants.mcp_delimiter}My_Server`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
   it('keeps a prefixed key whose stripped spelling is not in the loaded definitions', async () => {
     /** When the catalog kept the raw name (bare-sibling collision), the
      *  prefixed key IS canonical and must not be rewritten into a key owned

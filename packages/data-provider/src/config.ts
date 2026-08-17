@@ -3114,7 +3114,13 @@ export function stripServerNamePrefix(toolName: string, normalizedServerName: st
   if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
     return toolName;
   }
-  return toolName.slice(prefixLength);
+  const stripped = toolName.slice(prefixLength);
+  /** A remainder equal to a synthetic marker would turn a real upstream tool
+   *  into the server-wide wildcard or the UI pin placeholder. */
+  if (stripped === Constants.mcp_all || stripped === Constants.mcp_server) {
+    return toolName;
+  }
+  return stripped;
 }
 
 /**
@@ -3131,16 +3137,29 @@ export function stripServerNamePrefixes(
   toolNames: readonly string[],
   normalizedServerName: string,
 ): Map<string, string> {
-  const stripped = toolNames.map(
-    (name) => [name, stripServerNamePrefix(name, normalizedServerName)] as const,
+  const finalNames = new Map<string, string>(
+    toolNames.map((name) => [name, stripServerNamePrefix(name, normalizedServerName)]),
   );
-  const counts = new Map<string, number>();
-  for (const [, result] of stripped) {
-    counts.set(result, (counts.get(result) ?? 0) + 1);
+  /** Reverting a collider to its raw name can itself collide with ANOTHER
+   *  sibling's stripped result (`foo` / `acme_foo` / `acme_acme_foo`), so the
+   *  guard iterates to a fixpoint. Each pass converts at least one stripped
+   *  result back to its unique raw name, so it terminates within the catalog
+   *  size. */
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const counts = new Map<string, number>();
+    finalNames.forEach((result) => {
+      counts.set(result, (counts.get(result) ?? 0) + 1);
+    });
+    finalNames.forEach((result, raw) => {
+      if (result !== raw && (counts.get(result) ?? 0) > 1) {
+        finalNames.set(raw, raw);
+        changed = true;
+      }
+    });
   }
-  return new Map(
-    stripped.map(([raw, result]) => [raw, (counts.get(result) ?? 0) > 1 ? raw : result]),
-  );
+  return finalNames;
 }
 
 export function splitMCPToolKey(

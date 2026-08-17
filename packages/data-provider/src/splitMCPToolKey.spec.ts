@@ -266,4 +266,27 @@ describe('stripServerNamePrefixes', () => {
     const map = stripServerNamePrefixes(['search', 'acme_search', 'acme_trace'], 'acme');
     expect(map.get('acme_trace')).toBe('trace');
   });
+
+  it('resolves secondary collisions introduced by a fallback to a raw name', () => {
+    /** `acme_foo` falls back to raw because of the bare `foo`, which then
+     *  collides with `acme_acme_foo`'s stripped result — the guard must
+     *  iterate until no two final names coincide. */
+    const map = stripServerNamePrefixes(['foo', 'acme_foo', 'acme_acme_foo'], 'acme');
+    expect(map.get('foo')).toBe('foo');
+    expect(map.get('acme_foo')).toBe('acme_foo');
+    expect(map.get('acme_acme_foo')).toBe('acme_acme_foo');
+    expect(new Set(map.values()).size).toBe(3);
+  });
+
+  it('never strips a remainder that equals a synthetic MCP marker', () => {
+    /** `sys__all__sys` keys expand to every server tool and `sys__server__sys`
+     *  keys are skipped as UI placeholders — a real upstream tool must not be
+     *  renamed onto either. */
+    expect(stripServerNamePrefix(`acme_${Constants.mcp_all}`, 'acme')).toBe(
+      `acme_${Constants.mcp_all}`,
+    );
+    expect(stripServerNamePrefix(`acme_${Constants.mcp_server}`, 'acme')).toBe(
+      `acme_${Constants.mcp_server}`,
+    );
+  });
 });

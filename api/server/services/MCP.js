@@ -278,6 +278,12 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     return list;
   }
   const shadowed = findShadowedServerNames(audit.names);
+  /** A pre-strip key persisted AFTER server-name normalization carries the
+   *  NORMALIZED suffix, which the raw config names cannot match — the
+   *  boundary must resolve against both spellings and map back to the raw
+   *  name for the shadow and membership guards. */
+  const serverNameAliases = buildServerNameAliases(rawServerNames);
+  const boundaryNames = [...new Set([...rawServerNames, ...serverNameAliases.keys()])];
   const seen = new Set();
   const healedList = [];
   for (const tool of list) {
@@ -287,12 +293,14 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
       tool.includes(Constants.mcp_delimiter) &&
       toolDefinitions[tool] == null
     ) {
-      const [, parsedServerName] = splitMCPToolKey(tool, rawServerNames);
-      if (
-        parsedServerName != null &&
-        rawServerNames.includes(parsedServerName) &&
-        !shadowed.has(parsedServerName)
-      ) {
+      const [, parsedServerName] = splitMCPToolKey(tool, boundaryNames);
+      let rawServerName;
+      if (parsedServerName != null) {
+        rawServerName = rawServerNames.includes(parsedServerName)
+          ? parsedServerName
+          : serverNameAliases.get(parsedServerName);
+      }
+      if (rawServerName != null && !shadowed.has(rawServerName)) {
         const healed = normalizeMCPToolKey(tool, rawServerNames);
         if (toolDefinitions[healed] != null) {
           healedTool = healed;
@@ -303,7 +311,7 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
            *  assistant. The rewrite only lands when the stripped key actually
            *  exists in the loaded definitions, so an unstripped catalog
            *  (collision guard kept the raw name) never heals into a phantom. */
-          const keyServerName = normalizeServerName(parsedServerName);
+          const keyServerName = normalizeServerName(rawServerName);
           const [healedToolName] = splitMCPToolKey(healed, [keyServerName]);
           const strippedName = stripServerNamePrefix(healedToolName, keyServerName);
           const strippedKey = `${strippedName}${Constants.mcp_delimiter}${keyServerName}`;
