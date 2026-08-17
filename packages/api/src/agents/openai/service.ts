@@ -20,6 +20,7 @@
  */
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -155,6 +156,8 @@ interface InitializeAgentParams {
    * in-repo controllers; absent / `undefined` disables the feature.
    */
   statefulSessionsAvailable?: boolean;
+  /** Deployment allowlist carried explicitly because this route's Request has no req.config. */
+  allowedStatefulCodeEnvironments?: readonly StatefulCodeEnvironment[];
   /**
    * Whether the admin-level `run_in_background` capability is enabled.
    * Gates `applyBackgroundToolCalls` in `initializeAgent` (the injected
@@ -475,6 +478,16 @@ export async function createAgentChatCompletion(
      *  also carries each agent's trusted stateful endpoint/profile selection
      *  into tool loading and prewarming. */
     const statefulSessionsAvailable = capabilityEnabled(AgentCapabilities.stateful_code_sessions);
+    const allowedStatefulCodeEnvironments =
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? (
+            agentsConfig as {
+              statefulCodeSessions?: {
+                allowedEnvironments?: readonly StatefulCodeEnvironment[];
+              };
+            }
+          ).statefulCodeSessions?.allowedEnvironments
+        : undefined;
     /** Same gate as the in-repo controllers: without it, agents that opted
      *  tools in via tool_options.run_in_background silently lose the
      *  background param + poll tool on this route. */
@@ -498,6 +511,7 @@ export async function createAgentChatCompletion(
       isInitialAgent: true,
       codeEnvAvailable,
       statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
       toolIntentsAvailable,
     });

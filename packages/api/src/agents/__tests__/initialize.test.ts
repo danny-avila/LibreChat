@@ -110,6 +110,7 @@ jest.mock('../resources', () => ({
 }));
 
 import { initializeAgent } from '../initialize';
+import { isFatalAgentInitializationError } from '../errors';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -1795,8 +1796,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
       },
     } as NonNullable<typeof req.config>;
 
-    await expect(
-      initializeAgent(
+    let error;
+    try {
+      await initializeAgent(
         {
           req,
           res,
@@ -1809,8 +1811,43 @@ describe('initializeAgent — execute_code capability expansion', () => {
           statefulSessionsAvailable: true,
         },
         db,
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      message: 'Stateful code environment is not allowed by this deployment: conversation',
+    });
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
+  it('uses an explicit stateful environment allowlist when req.config is unavailable', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = undefined;
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+          allowedStatefulCodeEnvironments: ['user'],
+        },
+        db,
       ),
-    ).rejects.toThrow('Stateful code environment is not allowed by this deployment: conversation');
+    ).rejects.toMatchObject({ code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED });
     expect(loadTools).not.toHaveBeenCalled();
   });
 

@@ -2731,6 +2731,10 @@ export enum ErrorTypes {
    */
   RESOURCE_RECOVERY_REQUIRED = 'resource_recovery_required',
   /**
+   * Agent selected a stateful Code API workspace scope disabled by the deployment.
+   */
+  STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED = 'stateful_code_environment_not_allowed',
+  /**
    * Invalid Agent Provider (excluded by Admin)
    */
   INVALID_AGENT_PROVIDER = 'invalid_agent_provider',

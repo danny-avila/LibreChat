@@ -140,4 +140,25 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     });
     expect(runArgs.appConfig).not.toHaveProperty('interfaceConfig');
   });
+
+  it('forwards the stateful environment allowlist from appConfig to agent initialization', async () => {
+    deps.appConfig = {
+      endpoints: {
+        agents: {
+          capabilities: ['execute_code', 'stateful_code_sessions'],
+          statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+        },
+      },
+    } as never;
+
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codeEnvAvailable: true,
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user', 'agent-user'],
+      }),
+    );
+  });
 });

@@ -714,28 +714,37 @@ const updateAgentHandler = async (req, res) => {
     const updateData = removeNullishValues(rest);
     let existingAgent;
 
-    const changesStatefulConfiguration =
+    const includesStatefulConfiguration =
       updateData.stateful_code_sessions !== undefined ||
       updateData.stateful_code_environment !== undefined;
-    if (changesStatefulConfiguration) {
+    if (includesStatefulConfiguration) {
       existingAgent = await db.getAgent({ id });
       if (!existingAgent) {
         return res.status(404).json({ error: 'Agent not found' });
       }
 
-      const effectiveStatefulSessions =
-        updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
-      const effectiveStatefulEnvironment =
-        updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
-      if (
-        !validateStatefulCodeEnvironment(
-          req,
-          res,
-          effectiveStatefulSessions,
-          effectiveStatefulEnvironment,
-        )
-      ) {
-        return;
+      const statefulConfigurationChanged =
+        (updateData.stateful_code_sessions !== undefined &&
+          (updateData.stateful_code_sessions === true) !==
+            (existingAgent.stateful_code_sessions === true)) ||
+        (updateData.stateful_code_environment !== undefined &&
+          (updateData.stateful_code_environment ?? 'user') !==
+            (existingAgent.stateful_code_environment ?? 'user'));
+      if (statefulConfigurationChanged) {
+        const effectiveStatefulSessions =
+          updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
+        const effectiveStatefulEnvironment =
+          updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
+        if (
+          !validateStatefulCodeEnvironment(
+            req,
+            res,
+            effectiveStatefulSessions,
+            effectiveStatefulEnvironment,
+          )
+        ) {
+          return;
+        }
       }
     }
 

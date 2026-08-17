@@ -859,7 +859,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           },
         },
       };
-      mockReq.body = { name: 'Still editable' };
+      mockReq.body = {
+        name: 'Still editable',
+        stateful_code_sessions: true,
+        stateful_code_environment: 'conversation',
+      };
 
       await updateAgentHandler(mockReq, mockRes);
 

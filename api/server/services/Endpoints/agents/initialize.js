@@ -20,6 +20,7 @@ const {
   buildAgentContextAttachmentsByAgentId,
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
+  createStatefulCodeEnvironmentPolicyError,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -34,6 +35,7 @@ const {
   MAX_SUBAGENT_GRAPH_NODES,
   MAX_SUBAGENT_RUN_CONFIGS,
   isEphemeralAgentId,
+  resolveAllowedStatefulCodeEnvironments,
 } = require('librechat-data-provider');
 const {
   createToolEndCallback,
@@ -193,6 +195,9 @@ const initializeClient = async ({
   const toolIntentsAvailable = enabledCapabilities.has(AgentCapabilities.tool_intents);
   const statefulSessionsAvailable = enabledCapabilities.has(
     AgentCapabilities.stateful_code_sessions,
+  );
+  const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
   );
   const ephemeralSkillsToggle = req.body?.ephemeralAgent?.skills === true;
   const skillDbMethods = getSkillDbMethods();
@@ -807,26 +812,36 @@ const initializeClient = async ({
       ),
     );
 
-  const toLazySubagentMetadata = (agent) => ({
-    id: agent.id,
-    name: agent.name,
-    description: agent.description,
-    provider: agent.provider,
-    model: agent.model,
-    model_parameters: { model: agent.model_parameters?.model },
-    recursion_limit: agent.recursion_limit,
-    subagents: agent.subagents,
-    configId: getLazySubagentConfigId(agent),
-    codeEnvAvailable:
-      codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true,
-    statefulCodeSessions:
+  const toLazySubagentMetadata = (agent) => {
+    const statefulCodeSessions =
       statefulSessionsAvailable === true &&
       codeEnvAvailable === true &&
       agent.stateful_code_sessions === true &&
-      agent.tools?.includes(Tools.execute_code) === true,
-    statefulCodeEnvironment: agent.stateful_code_environment,
-    includeReasoningHistory: getIncludeReasoningHistory(agent),
-  });
+      agent.tools?.includes(Tools.execute_code) === true;
+    const statefulCodeEnvironment = agent.stateful_code_environment ?? 'user';
+    if (
+      statefulCodeSessions &&
+      !allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)
+    ) {
+      throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
+    }
+    return {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      provider: agent.provider,
+      model: agent.model,
+      model_parameters: { model: agent.model_parameters?.model },
+      recursion_limit: agent.recursion_limit,
+      subagents: agent.subagents,
+      configId: getLazySubagentConfigId(agent),
+      codeEnvAvailable:
+        codeEnvAvailable === true && agent.tools?.includes(Tools.execute_code) === true,
+      statefulCodeSessions,
+      statefulCodeEnvironment,
+      includeReasoningHistory: getIncludeReasoningHistory(agent),
+    };
+  };
 
   const loadSubagentMetadata = async (agentId) => {
     if (skippedAgentIds.has(agentId)) return null;

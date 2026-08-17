@@ -21,6 +21,7 @@ import type {
   TFile,
   Agent,
   TUser,
+  StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -68,9 +69,12 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import {
+  createStatefulCodeEnvironmentPolicyError,
+  isFatalAgentInitializationError,
+} from './errors';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
-import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -479,6 +483,8 @@ export interface InitializeAgentParams {
   toolIntentsAvailable?: boolean;
   /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
   statefulSessionsAvailable?: boolean;
+  /** Explicit deployment allowlist for request types that do not carry LibreChat config on req. */
+  allowedStatefulCodeEnvironments?: readonly StatefulCodeEnvironment[];
   /** Whether inline memory tools are available (memory capability enabled, memory
    *  configured, and the user permitted). When true and the agent lists the `memory`
    *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
@@ -726,12 +732,11 @@ export async function initializeAgent(
   const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
   if (effectiveStatefulSessions) {
     const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
-      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+      params.allowedStatefulCodeEnvironments ??
+        req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
     );
     if (!allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)) {
-      throw new Error(
-        `Stateful code environment is not allowed by this deployment: ${statefulCodeEnvironment}`,
-      );
+      throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
     }
   }
   const codeExecutionContext = resolveCodeExecutionContext({
