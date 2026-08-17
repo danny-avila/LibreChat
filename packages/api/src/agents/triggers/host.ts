@@ -113,6 +113,7 @@ export interface AgentTriggerExecutionHost {
 
 interface AbortScope {
   signal: AbortSignal;
+  abort: () => void;
   cleanup: () => void;
   timedOut: () => boolean;
 }
@@ -152,6 +153,7 @@ function abortScope(parent: AbortSignal | undefined, timeoutMs: number): AbortSc
   }, timeoutMs);
   return {
     signal: controller.signal,
+    abort: () => controller.abort(),
     timedOut: () => timeoutReached,
     cleanup: () => {
       clearTimeout(timeout);
@@ -323,7 +325,7 @@ function isDefiniteConnectFailure(error: unknown): boolean {
 }
 
 function isRetryableStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+  return status === 401 || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 function isRetryableSteerRejection(status: number, code: string): boolean {
@@ -435,22 +437,24 @@ async function fire(
 ): Promise<AgentTriggerFireResult> {
   const scope = abortScope(context.signal, timeoutMs);
   try {
-    const token = requireToken(
-      await setupValue(
+    const [token, timezone, baseUrl] = await Promise.all([
+      setupValue(
         () => deps.mintToken(envelope.principal, envelope),
         'fire',
         scope,
         context.signal,
+      ).then((value) => requireToken(value, 'fire')),
+      setupValue(
+        () => deps.getTimezone?.(envelope.principal, envelope),
+        'fire',
+        scope,
+        context.signal,
       ),
-      'fire',
-    );
-    const timezone = await setupValue(
-      () => deps.getTimezone?.(envelope.principal, envelope),
-      'fire',
-      scope,
-      context.signal,
-    );
-    const baseUrl = await setupValue(() => deps.getBaseUrl(), 'fire', scope, context.signal);
+      setupValue(() => deps.getBaseUrl(), 'fire', scope, context.signal),
+    ]).catch((error: unknown) => {
+      scope.abort();
+      throw error;
+    });
     const url = fireUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
@@ -622,16 +626,18 @@ async function steer(
 ): Promise<AgentTriggerSteerResult> {
   const scope = abortScope(context.signal, timeoutMs);
   try {
-    const token = requireToken(
-      await setupValue(
+    const [token, baseUrl] = await Promise.all([
+      setupValue(
         () => deps.mintToken(envelope.principal, envelope),
         'steer',
         scope,
         context.signal,
-      ),
-      'steer',
-    );
-    const baseUrl = await setupValue(() => deps.getBaseUrl(), 'steer', scope, context.signal);
+      ).then((value) => requireToken(value, 'steer')),
+      setupValue(() => deps.getBaseUrl(), 'steer', scope, context.signal),
+    ]).catch((error: unknown) => {
+      scope.abort();
+      throw error;
+    });
     const url = steerUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;

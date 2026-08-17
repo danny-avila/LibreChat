@@ -211,6 +211,22 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     });
   });
 
+  it('retries an expired delivery token so the next attempt can remint it', async () => {
+    expect.hasAssertions();
+    const fetcher = fetchMock(async () => response({ code: 'UNAUTHORIZED' }, { status: 401 }));
+    const host = createAgentTriggerExecutionHost(deps(fetcher));
+
+    await host.dispatch(createFireEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'UNAUTHORIZED',
+        status: 401,
+      });
+    });
+  });
+
   it('treats malformed success as ambiguous because the generation may have started', async () => {
     expect.hasAssertions();
     const fetcher = fetchMock(async () => response({ status: 'started' }));
@@ -277,6 +293,46 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it('starts independent token, timezone, and origin setup concurrently', async () => {
+    let resolveToken!: (value: string) => void;
+    let resolveTimezone!: (value: string) => void;
+    const token = new Promise<string>((resolve) => {
+      resolveToken = resolve;
+    });
+    const timezone = new Promise<string>((resolve) => {
+      resolveTimezone = resolve;
+    });
+    const mintToken = jest.fn(() => token);
+    const getTimezone = jest.fn(() => timezone);
+    const getBaseUrl = jest.fn(() => 'http://127.0.0.1:3080');
+    const fetcher = fetchMock(async () =>
+      response({
+        status: 'started',
+        streamId: 'stream-1',
+        conversationId: 'conversation-1',
+      }),
+    );
+    const host = createAgentTriggerExecutionHost({
+      mintToken,
+      getTimezone,
+      getBaseUrl,
+      fetch: fetcher,
+    });
+
+    const pending = host.dispatch(createFireEnvelope());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mintToken).toHaveBeenCalledTimes(1);
+    expect(getTimezone).toHaveBeenCalledTimes(1);
+    expect(getBaseUrl).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+
+    resolveToken('signed-token');
+    resolveTimezone('UTC');
+    await expect(pending).resolves.toMatchObject({ mode: 'fire', status: 'started' });
+  });
+
   it('observes caller cancellation while asynchronous setup is pending', async () => {
     expect.hasAssertions();
     const fetcher = fetchMock(async () => response({}));
@@ -303,6 +359,7 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     const fetcher = fetchMock(async () => response({}));
     const host = createAgentTriggerExecutionHost(
       deps(fetcher, {
+        mintToken: () => new Promise<string>(() => undefined),
         getTimezone: async () => Promise.reject(new Error('timezone store unavailable')),
       }),
     );
