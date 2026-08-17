@@ -56,7 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: sync-translations
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
@@ -89,13 +90,20 @@ jobs:
             --base-dir "$RUNNER_TEMP/locize-locale-baseline" \
             --current-dir client/src/locales
 
-      # 3. Create a Pull Request using a dedicated fine-grained PAT so this
-      # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
+      - name: Upload Validated Translations
+        uses: actions/upload-artifact@v4
+        with:
+          name: locize-locales-${{ github.run_id }}
+          path: client/src/locales
+          if-no-files-found: error
+          retention-days: 1
+
+      # 3. Create a Pull Request using this workflow's scoped token.
       - name: Create Pull Request
         id: create-pull-request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.LOCIZE_PR_TOKEN }}
+          token: ${{ github.token }}
           add-paths: |
             client/src/locales/**
           commit-message: "🌍 i18n: Update translation.json with latest translations"
@@ -112,7 +120,7 @@ jobs:
       - name: Request Reviewer
         if: ${{ steps.create-pull-request.outputs.pull-request-number != '' }}
         env:
-          GH_TOKEN: ${{ secrets.LOCIZE_PR_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.create-pull-request.outputs.pull-request-number }}
           REVIEWER: danny-avila
         run: |
