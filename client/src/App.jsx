@@ -1,31 +1,23 @@
 import { useEffect } from 'react';
-import { useAtomValue } from 'jotai';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
-import {
-  Toast,
-  ThemeProvider,
-  ToastProvider,
-  useInputModality,
-  applyUiScale,
-} from '@librechat/client';
+import { Toast, ThemeProvider, ToastProvider, useInputModality } from '@librechat/client';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
+import UiScaleSync from '~/components/System/UiScaleSync';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
-import { uiScaleValueAtom } from '~/store/uiScale';
 import { initializeFontSize } from '~/store/fontSize';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
 const App = () => {
   const { setError } = useApiErrorBoundary();
-  const uiScale = useAtomValue(uiScaleValueAtom);
   useInputModality();
 
   const queryClient = new QueryClient({
@@ -52,12 +44,6 @@ const App = () => {
     initializeFontSize();
   }, []);
 
-  /** Covers cross-tab updates, which reach the atom through a storage event
-   *  rather than through this tab's own write. */
-  useEffect(() => {
-    applyUiScale(uiScale);
-  }, [uiScale]);
-
   // Load theme from environment variables if available
   const envTheme = getThemeFromEnv();
 
@@ -65,6 +51,7 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LanguageSync />
+        <UiScaleSync />
         <LiveAnnouncer>
           <ThemeProvider
             // Only pass initialTheme and themeRGB if environment theme exists
