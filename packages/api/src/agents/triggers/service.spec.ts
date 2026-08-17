@@ -56,7 +56,7 @@ describe('createAgentTriggerService', () => {
       async () => accepted(),
     );
     const service = createAgentTriggerService({ fetch: fetcher });
-    service.initialize({ address: { address: '::', family: 'IPv6', port: 4123 } });
+    await service.initialize({ address: { address: '::', family: 'IPv6', port: 4123 } });
 
     await expect(service.dispatch(envelope())).resolves.toMatchObject({
       mode: 'fire',

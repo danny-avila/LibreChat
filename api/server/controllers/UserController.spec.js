@@ -29,6 +29,7 @@ jest.mock('~/models', () => {
     deleteUserById: jest.fn().mockResolvedValue(undefined),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
     deleteUserSkills: jest.fn().mockResolvedValue(undefined),
+    deleteAgentTriggerDeliveriesByUser: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -117,7 +118,7 @@ const {
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos, acceptTerms } = require('~/models');
+const { deleteConvos, acceptTerms, deleteAgentTriggerDeliveriesByUser } = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
@@ -321,6 +322,7 @@ describe('deleteUserController', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
+    expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(userId.toString());
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

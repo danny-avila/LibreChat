@@ -394,6 +394,7 @@ const deleteUserController = async (req, res) => {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
     await deleteUserPluginAuth(user.id, null, true);
+    await db.deleteAgentTriggerDeliveriesByUser(user.id);
     await db.deleteUserById(user.id);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);

@@ -27,6 +27,7 @@ const {
   Transaction,
   Conversation,
   ConversationTag,
+  AgentTriggerDelivery,
 } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, silentExit } = require('./helpers');
@@ -84,6 +85,7 @@ async function gracefulExit(code = 0) {
     Assistant.deleteMany({ user: uid }),
     Balance.deleteMany({ user: uid }),
     ConversationTag.deleteMany({ user: uid }),
+    AgentTriggerDelivery.deleteMany({ user: uid }),
     Conversation.deleteMany({ user: uid }),
     Message.deleteMany({ user: uid }),
     File.deleteMany({ user: uid }),

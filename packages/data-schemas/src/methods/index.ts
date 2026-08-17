@@ -93,6 +93,11 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import {
+  createAgentTriggerDeliveryMethods,
+  AgentTriggerDeliveryConflictError,
+  type AgentTriggerDeliveryMethods,
+} from './triggerDelivery';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
 import type {
   SkillSyncStatusInput,
@@ -147,6 +152,7 @@ export {
 };
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
+export { AgentTriggerDeliveryConflictError };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -182,6 +188,7 @@ export type AllMethods = UserMethods &
   PromptMethods &
   SkillMethods &
   SkillSyncMethods &
+  AgentTriggerDeliveryMethods &
   AgentMethods &
   ConfigMethods &
   MCPAuthorityMethods;
@@ -318,6 +325,7 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
+    ...createAgentTriggerDeliveryMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -375,6 +383,7 @@ export type {
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
+  AgentTriggerDeliveryMethods,
   AgentMethods,
   ConfigMethods,
   MCPAuthorityMethods,
