@@ -960,6 +960,8 @@ export const subagentThreadLineageSchema = z.object({
   subagentType: z.string().min(1),
   subagentKind: z.enum(['agent', 'graph']),
   depth: z.number().int().positive(),
+  /** Whether this child has a standalone saved-agent identity that the UI may execute. */
+  userRunnable: z.boolean().default(false),
 });
 
 export type TSubagentThreadLineage = z.infer<typeof subagentThreadLineageSchema>;

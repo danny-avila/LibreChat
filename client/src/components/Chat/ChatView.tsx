@@ -116,10 +116,17 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       : undefined;
   const pageHeading =
     isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
-  const parentConversationId =
+  const activeSubagentThread =
     chatHelpers.conversation?.conversationId === conversationId
-      ? chatHelpers.conversation?.subagentThread?.parentConversationId
+      ? chatHelpers.conversation?.subagentThread
       : undefined;
+  const parentConversationId = activeSubagentThread?.parentConversationId;
+  /** Only saved-agent children have enough standalone identity for an ordinary
+   * user turn. Graph and ephemeral/self children remain navigable, while their
+   * parent agent continues them through the durable thread id. Missing flags
+   * fail closed for any pre-release child records. */
+  const isSubagentThreadReadOnly =
+    activeSubagentThread != null && activeSubagentThread.userRunnable !== true;
 
   return (
     <ChatFormProvider {...methods}>
@@ -128,7 +135,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
           <Presentation>
             <div className="relative flex h-full w-full flex-col">
               <h1 className="sr-only">{pageHeading}</h1>
-              <Header parentConversationId={parentConversationId} />
+              <Header
+                parentConversationId={parentConversationId}
+                readOnly={isSubagentThreadReadOnly}
+              />
               <>
                 <div
                   className={cn(
@@ -147,11 +157,20 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                     )}
                   >
                     {isLandingPage && <ConversationStarters />}
-                    <ChatForm
-                      index={index}
-                      placeholder={chatFormPlaceholder}
-                      project={isProjectLandingPage ? project : undefined}
-                    />
+                    {isSubagentThreadReadOnly ? (
+                      <div
+                        className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
+                        role="note"
+                      >
+                        {localize('com_ui_subagent_thread_read_only')}
+                      </div>
+                    ) : (
+                      <ChatForm
+                        index={index}
+                        placeholder={chatFormPlaceholder}
+                        project={isProjectLandingPage ? project : undefined}
+                      />
+                    )}
                     {!isLandingPage && <Footer />}
                   </div>
                 </div>

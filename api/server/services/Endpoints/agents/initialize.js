@@ -158,6 +158,16 @@ const initializeClient = async ({
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  /** The normal controller resolves this once for timestamp anchoring. Reuse
+   * that trusted document for child-thread execution policy; resume and direct
+   * callers fall back to the same owner-scoped lookup. */
+  const conversationId = req.body?.conversationId;
+  let requestConversationPromise = Promise.resolve(null);
+  if (Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+    requestConversationPromise = Promise.resolve(req.resolvedConversation);
+  } else if (typeof conversationId === 'string' && conversationId !== '') {
+    requestConversationPromise = db.getConvo(req.user.id, conversationId);
+  }
   const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
@@ -407,6 +417,7 @@ const initializeClient = async ({
     skillCreateAllowed,
     { skillStates, defaultActiveOnShare },
     { primaryAgent, modelsConfig },
+    requestConversation,
   ] = await Promise.all([
     memoryAvailablePromise,
     accessibleSkillIdsPromise,
@@ -414,8 +425,21 @@ const initializeClient = async ({
     skillCreateAllowedPromise,
     skillStatesPromise,
     validatedPrimaryAgentPromise,
+    requestConversationPromise,
   ]);
   delete endpointOption.agent;
+
+  if (
+    requestConversation?.subagentThread != null &&
+    requestConversation.subagentThread.userRunnable !== true
+  ) {
+    throw Object.assign(
+      new Error(
+        'This child thread is view-only. Continue it from its parent agent using the saved thread history.',
+      ),
+      { status: 409 },
+    );
+  }
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
@@ -424,8 +448,6 @@ const initializeClient = async ({
   const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
-  /** @type {string} */
-  const conversationId = req.body.conversationId;
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
   /**
@@ -684,7 +706,10 @@ const initializeClient = async ({
   // spawn tool, not handoff edges. Explicit children are advertised as inert,
   // VIEW-checked descriptors; model, tool, MCP, file, and skill initialization
   // happens only when the SDK selects one.
+  const atSubagentThreadDepthLimit =
+    (requestConversation?.subagentThread?.depth ?? 0) >= MAX_SUBAGENT_DEPTH;
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  const subagentsAvailableForRun = subagentsCapabilityEnabled && !atSubagentThreadDepthLimit;
   /** Track skipped ids locally so repeated failures short-circuit within
    *  the subagent loading loop. Seeded from the discovery helper's skip
    *  list so agents that already failed handoff loading don't get retried. */
@@ -988,7 +1013,7 @@ const initializeClient = async ({
   };
 
   const buildLazySubagentDescriptors = async (agent, depth = 0, ancestors = new Set()) => {
-    if (!subagentsCapabilityEnabled || !agent.subagents?.enabled) {
+    if (!subagentsAvailableForRun || !agent.subagents?.enabled) {
       return [];
     }
     if (agent.subagents.allowSelf !== false) {
@@ -1156,7 +1181,7 @@ const initializeClient = async ({
   async function resolveGraphSubagentsFor(config, graphSignal = signal) {
     throwIfAborted(graphSignal);
     const definitions =
-      subagentsCapabilityEnabled && config.subagents?.enabled === true
+      subagentsAvailableForRun && config.subagents?.enabled === true
         ? (config.subagents.graphs ?? [])
         : [];
     const resolvedGraphs = [];
@@ -1217,7 +1242,7 @@ const initializeClient = async ({
   );
   const subagentTasks =
     backgroundToolsAvailable &&
-    subagentsCapabilityEnabled &&
+    subagentsAvailableForRun &&
     hasSpawnableSubagent &&
     typeof req.user?.id === 'string' &&
     req.user.id !== '' &&
@@ -1235,15 +1260,14 @@ const initializeClient = async ({
     toolExecuteOptions.subagentTasks = subagentTasks;
   }
 
-  primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
+  primaryConfig.subagents = subagentsAvailableForRun ? primaryConfig.subagents : undefined;
 
-  /** If the capability is off at the endpoint level, strip `subagents` on
-   *  every loaded config — not just the primary. `run.ts` calls
+  /** If the capability is off or this durable child is at the depth limit,
+   *  strip `subagents` on every loaded config — not just the primary. `run.ts` calls
    *  `buildSubagentConfigs` for every agent in the array, so a handoff
    *  agent with `subagents.enabled: true` persisted on its document would
-   *  otherwise still expose self-spawn at runtime even though the admin
-   *  has disabled the capability globally. */
-  if (!subagentsCapabilityEnabled) {
+   *  otherwise still expose self-spawn at runtime. */
+  if (!subagentsAvailableForRun) {
     primaryConfig.lazySubagentConfigs = undefined;
     primaryConfig.subagentGraphConfigs = undefined;
     for (const config of agentConfigs.values()) {

@@ -139,6 +139,7 @@ describe('SubagentThreadTaskStore', () => {
         subagentType: 'researcher-agent',
         subagentKind: 'agent',
         depth: 1,
+        userRunnable: true,
       },
     });
     const messages = await methods.getMessages(
@@ -205,9 +206,38 @@ describe('SubagentThreadTaskStore', () => {
         subagentType: 'research_team',
         subagentKind: 'graph',
         depth: 1,
+        userRunnable: false,
       },
     });
     expect(conversation?.agent_id).toBeUndefined();
+  });
+
+  it('marks an ephemeral self child as view-only for ordinary user turns', async () => {
+    const userId = 'user-ephemeral-self';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        parentAgentId: 'openAI__gpt-5___GPT-5',
+        subagentKind: 'agent',
+        subagentType: 'self',
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    if (!started.accepted) return;
+
+    const conversation = await methods.getConvo(userId, requireThreadId(started));
+    expect(conversation).toMatchObject({
+      agent_id: 'openAI__gpt-5___GPT-5',
+      subagentThread: {
+        subagentKind: 'agent',
+        subagentType: 'self',
+        userRunnable: false,
+      },
+    });
   });
 
   it('inherits tenant isolation and rejects a cross-tenant thread selector', async () => {
@@ -358,12 +388,50 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     await waitForSettled(store, config.scopeId, continued);
+    if (!continued.accepted) return;
 
     expect(restored.map((message) => message.content)).toEqual([
       'Investigate the issue.',
       'Completed the investigation.',
       'A human continued this child chat.',
       'The child answered the human.',
+    ]);
+
+    const afterFirstContinuation = await methods.getMessages(
+      { user: userId, conversationId: first.task.threadId },
+      '+subagentTranscript',
+    );
+    expect(
+      afterFirstContinuation[afterFirstContinuation.length - 1]?.subagentTranscript?.mode,
+    ).toBe('replace');
+
+    let restoredAgain: BaseMessage[] = [];
+    const continuedAgain = store.start(
+      taskRequest(config.scopeId, {
+        threadId: first.task.threadId,
+        input: 'One more follow-up.',
+        run: async (_runtime, initialMessages = []) => {
+          restoredAgain = initialMessages;
+          return {
+            content: 'Follow-up complete.',
+            messages: [
+              ...initialMessages,
+              new HumanMessage('One more follow-up.'),
+              new AIMessage('Follow-up complete.'),
+            ],
+          };
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, continuedAgain);
+
+    expect(restoredAgain.map((message) => message.content)).toEqual([
+      'Investigate the issue.',
+      'Completed the investigation.',
+      'A human continued this child chat.',
+      'The child answered the human.',
+      'Return to the parent task.',
+      'Returned.',
     ]);
   });
 
@@ -629,6 +697,7 @@ describe('SubagentThreadTaskStore', () => {
         subagentType: 'researcher-agent',
         subagentKind: 'agent',
         depth: 1,
+        userRunnable: true,
       },
     });
     const store = new SubagentThreadTaskStore(methods);

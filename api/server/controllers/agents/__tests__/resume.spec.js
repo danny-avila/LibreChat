@@ -272,6 +272,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         files: req.body.files,
         isTemporary: req.body.isTemporary,
         conversationCreatedAt: req.conversationCreatedAt,
+        resolvedConversation: req.resolvedConversation,
         timezone: req.body.timezone,
         checkpointNamespace,
       };
@@ -307,12 +308,14 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   describe('temporal context restore', () => {
     it('restores req.conversationCreatedAt from the convo before initializeClient', async () => {
       // Temporal prompt vars must resolve against the paused anchor, not resume wall-clock.
-      mockGetConvo.mockResolvedValue({ createdAt: new Date('2020-01-02T03:04:05.000Z') });
+      const conversation = { createdAt: new Date('2020-01-02T03:04:05.000Z') };
+      mockGetConvo.mockResolvedValue(conversation);
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const res = await post(approveBody());
       expect(res.status).toBe(200);
       await settled;
       expect(capturedInit.conversationCreatedAt).toBe('2020-01-02T03:04:05.000Z');
+      expect(capturedInit.resolvedConversation).toBe(conversation);
     });
 
     /**

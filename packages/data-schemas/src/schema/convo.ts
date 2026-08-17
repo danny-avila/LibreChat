@@ -39,6 +39,7 @@ const convoSchema: Schema<IConversation> = new Schema(
         subagentType: { type: String, required: true },
         subagentKind: { type: String, enum: ['agent', 'graph'], required: true },
         depth: { type: Number, min: 1, required: true },
+        userRunnable: { type: Boolean, default: false },
       },
       _id: false,
       default: undefined,

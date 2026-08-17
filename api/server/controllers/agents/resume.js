@@ -888,6 +888,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // that here. (The original `timezone` is replayed onto req.body via RESUME_CONTEXT_KEYS.)
   try {
     const resumedConvo = await getConvo(userId, conversationId);
+    /** Reuse the owner-scoped document during initialization for child-thread
+     * execution policy as well as timestamp anchoring. */
+    req.resolvedConversation = resumedConvo ?? null;
     const createdAt = resumedConvo?.createdAt ? new Date(resumedConvo.createdAt) : null;
     if (createdAt && !Number.isNaN(createdAt.getTime())) {
       req.conversationCreatedAt = createdAt.toISOString();

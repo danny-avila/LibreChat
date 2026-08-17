@@ -633,10 +633,19 @@ describe('subagentThreadLineageSchema', () => {
     subagentType: 'researcher',
     subagentKind: 'agent',
     depth: 1,
+    userRunnable: true,
   };
 
   it('accepts durable child-thread lineage', () => {
     expect(subagentThreadLineageSchema.parse(lineage)).toEqual(lineage);
+  });
+
+  it('defaults pre-flag child threads to view-only', () => {
+    const { userRunnable: _userRunnable, ...legacyLineage } = lineage;
+    expect(subagentThreadLineageSchema.parse(legacyLineage)).toEqual({
+      ...legacyLineage,
+      userRunnable: false,
+    });
   });
 
   it('rejects non-positive depth and unknown execution shapes', () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { InMemorySubagentTaskStore } from '@librechat/agents';
-import { EModelEndpoint, Constants } from 'librechat-data-provider';
+import { EModelEndpoint, Constants, isEphemeralAgentId } from 'librechat-data-provider';
 import {
   AIMessage,
   HumanMessage,
@@ -50,7 +50,13 @@ interface PreparedThread {
   conversation: IConversation;
   initialMessages: BaseMessage[];
   initialStoredMessages: StoredMessage[];
+  forceTranscriptReplacement: boolean;
   userMessageId: string;
+}
+
+interface RestoredThreadMessages {
+  messages: BaseMessage[];
+  hasVisibleTail: boolean;
 }
 
 type ThreadMessage = Pick<
@@ -147,7 +153,7 @@ function parseStoredMessages(value: string): StoredMessage[] {
   return parsed as StoredMessage[];
 }
 
-function restoreThreadMessages(branch: ThreadMessage[]): BaseMessage[] {
+function restoreThreadMessages(branch: ThreadMessage[]): RestoredThreadMessages {
   let storedMessages: StoredMessage[] = [];
   let lastTranscriptIndex = -1;
   for (let index = 0; index < branch.length; index += 1) {
@@ -161,11 +167,13 @@ function restoreThreadMessages(branch: ThreadMessage[]): BaseMessage[] {
   }
 
   const restored = mapStoredMessagesToChatMessages(storedMessages);
+  let hasVisibleTail = false;
   for (let index = lastTranscriptIndex + 1; index < branch.length; index += 1) {
     const message = branch[index];
     if (message.text == null || message.text === '') {
       continue;
     }
+    hasVisibleTail = true;
     restored.push(
       message.isCreatedByUser
         ? new HumanMessage(message.text)
@@ -175,7 +183,7 @@ function restoreThreadMessages(branch: ThreadMessage[]): BaseMessage[] {
           }),
     );
   }
-  return restored;
+  return { messages: restored, hasVisibleTail };
 }
 
 function isStoredPrefix(prefix: StoredMessage[], messages: StoredMessage[]): boolean {
@@ -194,6 +202,7 @@ function serializeTranscript(
   taskId: string,
   initialMessages: StoredMessage[],
   resultMessages: BaseMessage[] | undefined,
+  forceReplacement: boolean,
 ): IMessage['subagentTranscript'] {
   if (resultMessages == null) {
     return undefined;
@@ -205,7 +214,11 @@ function serializeTranscript(
       'Subagent thread transcript is too large to persist safely.',
     );
   }
-  const append = isStoredPrefix(initialMessages, storedResult);
+  /** Visible human-driven turns are restored after the last canonical transcript.
+   * Persist a full replacement after consuming such a tail: an append segment
+   * would move the transcript cursor past those visible rows and make them
+   * disappear from every later continuation. */
+  const append = !forceReplacement && isStoredPrefix(initialMessages, storedResult);
   const messages = append ? storedResult.slice(initialMessages.length) : storedResult;
   if (messages.length === 0) {
     return undefined;
@@ -234,6 +247,19 @@ function childAgentId(request: SubagentTaskStartRequest): string | undefined {
     return request.parentAgentId;
   }
   return request.subagentType;
+}
+
+function isUserRunnableChild(
+  request: SubagentTaskStartRequest,
+  agentId: string | undefined,
+): boolean {
+  if (request.subagentKind === 'graph' || agentId == null) {
+    return false;
+  }
+  /** Explicit agent children come from the host's saved-agent descriptors.
+   * Only `self` can inherit the synthetic identity of an ephemeral/model-spec
+   * parent, which cannot be reconstructed from the child conversation alone. */
+  return request.subagentType !== 'self' || !isEphemeralAgentId(agentId);
 }
 
 function publicFailureDetail(error: unknown): string {
@@ -418,6 +444,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             subagentType: request.subagentType,
             subagentKind: request.subagentKind,
             depth,
+            userRunnable: isUserRunnableChild(request, agentId),
           },
         },
         { context: 'SubagentThreadTaskStore.prepareThread' },
@@ -435,7 +462,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       { sort: { createdAt: 1, _id: 1 } },
     )) as ThreadMessage[];
     const branch = selectLatestBranch(allMessages);
-    const initialMessages = restoreThreadMessages(branch);
+    const restored = restoreThreadMessages(branch);
+    const initialMessages = restored.messages;
     const userMessageId = `${taskId}:user`;
     const parentMessageId = branch[branch.length - 1]?.messageId ?? Constants.NO_PARENT;
     const savedUserMessage = await this.methods.saveMessage(
@@ -459,6 +487,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       conversation,
       initialMessages,
       initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
+      forceTranscriptReplacement: restored.hasVisibleTail,
       userMessageId,
     };
   }
@@ -503,6 +532,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       taskId,
       prepared.initialStoredMessages,
       result.messages,
+      prepared.forceTranscriptReplacement,
     );
     const savedAssistantMessage = await this.methods.saveMessage(
       { userId: scope.userId },

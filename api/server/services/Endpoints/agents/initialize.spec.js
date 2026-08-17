@@ -138,6 +138,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   const makeReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_1', files: [] },
+    resolvedConversation: null,
     config: { endpoints: {} },
     _resumableStreamId: null,
   });
@@ -645,6 +646,7 @@ describe('initializeClient — subagent loading', () => {
   const makeSubagentReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_sub', files: [] },
+    resolvedConversation: null,
     config: {
       endpoints: {
         agents: {
@@ -737,6 +739,54 @@ describe('initializeClient — subagent loading', () => {
       userId: testUser._id.toString(),
       parentConversationId: 'conv_sub',
     });
+  });
+
+  it('disables every nested subagent path at the durable child-thread depth limit', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    req.resolvedConversation = {
+      conversationId: 'conv_sub',
+      subagentThread: { depth: MAX_SUBAGENT_DEPTH, userRunnable: true },
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+  });
+
+  it('rejects an ordinary turn in a child without a standalone execution identity', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({ subagents: { enabled: true, allowSelf: true, agent_ids: [] } }),
+    );
+    const req = makeSubagentReq();
+    req.resolvedConversation = {
+      conversationId: 'conv_sub',
+      subagentThread: { depth: 1, userRunnable: false },
+    };
+
+    await expect(
+      initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: expect.stringContaining('view-only'),
+    });
+    expect(agentClientArgs).toBeUndefined();
   });
 
   it('keeps detached subagents disabled without the admin background capability', async () => {

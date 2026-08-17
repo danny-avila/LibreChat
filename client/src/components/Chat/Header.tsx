@@ -21,7 +21,13 @@ const defaultInterface = getConfigDefaults().interface;
  * reordering. Branching is CSS-only — `useMediaQuery` resolves after paint and
  * would pop the row a frame late on every mount.
  */
-function Header({ parentConversationId }: { parentConversationId?: string }) {
+function Header({
+  parentConversationId,
+  readOnly = false,
+}: {
+  parentConversationId?: string;
+  readOnly?: boolean;
+}) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
 
@@ -67,8 +73,8 @@ function Header({ parentConversationId }: { parentConversationId?: string }) {
             labelClassName="hidden lg:inline"
           />
         )}
-        <ModelSelector startupConfig={startupConfig} />
-        {interfaceConfig.presets === true && interfaceConfig.modelSelect === true && (
+        {!readOnly && <ModelSelector startupConfig={startupConfig} />}
+        {!readOnly && interfaceConfig.presets === true && interfaceConfig.modelSelect === true && (
           <PresetsMenu />
         )}
         {hasAccessToBookmarks === true && (
