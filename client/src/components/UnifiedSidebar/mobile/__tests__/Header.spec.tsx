@@ -13,6 +13,7 @@ jest.mock('@librechat/client', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
     <button {...props}>{children}</button>
   ),
+  Sidebar: (props: React.ComponentProps<'svg'>) => <svg data-testid="sidebar-icon" {...props} />,
   Skeleton: () => <div data-testid="skeleton" />,
 }));
 
@@ -28,6 +29,7 @@ jest.mock('~/components/Nav/AccountSettings', () => ({
 
 jest.mock('~/components/Chat/Menus/OpenSidebar', () => ({
   CLOSE_SIDEBAR_ID: 'close-sidebar-button',
+  SIDEBAR_TOGGLE_CLASSES: 'sidebar-toggle-classes',
 }));
 
 import Header from '../Header';
@@ -69,5 +71,19 @@ describe('mobile drawer header', () => {
     render(<Header links={links} expanded={false} onClose={jest.fn()} />);
 
     expect(screen.getByLabelText('com_nav_close_sidebar')).toHaveAttribute('tabindex', '-1');
+  });
+
+  /**
+   * The toggle mirrors the chat header's OpenSidebar — same icon, same shared
+   * classes, same far-left slot — so the drawer reads as the one persistent
+   * control flipping state rather than a new X appearing elsewhere.
+   */
+  it('leads the row with the shared sidebar-toggle look', () => {
+    const { container } = render(<Header links={links} expanded={true} onClose={jest.fn()} />);
+
+    const toggle = screen.getByTestId('close-sidebar-button');
+    expect(container.firstElementChild?.firstElementChild).toBe(toggle);
+    expect(toggle.className).toContain('sidebar-toggle-classes');
+    expect(toggle.querySelector('[data-testid="sidebar-icon"]')).not.toBeNull();
   });
 });

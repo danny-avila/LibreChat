@@ -1,18 +1,21 @@
 import { memo, lazy, Suspense } from 'react';
-import { X } from 'lucide-react';
-import { Button, Skeleton } from '@librechat/client';
+import { Button, Sidebar, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
-import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { CLOSE_SIDEBAR_ID, SIDEBAR_TOGGLE_CLASSES } from '~/components/Chat/Menus/OpenSidebar';
 import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Switcher from './Switcher';
+import { cn } from '~/utils';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
 /**
  * At full width there is nothing beside the drawer left to tap, so this close
- * button is the primary dismissal. It keeps `CLOSE_SIDEBAR_ID` because
- * `OpenSidebar` focuses that id shortly after opening.
+ * button is the primary dismissal. It mirrors the chat header's `OpenSidebar`
+ * toggle — same icon, same look, same far-left slot — so opening the drawer
+ * reads as the one persistent control flipping state, not a new X appearing
+ * elsewhere. It keeps `CLOSE_SIDEBAR_ID` because `OpenSidebar` focuses that id
+ * shortly after opening.
  */
 function Header({
   links,
@@ -28,10 +31,6 @@ function Header({
 
   return (
     <div className="flex h-14 flex-shrink-0 items-center gap-2 border-b border-border-light px-2">
-      <Switcher links={links} />
-      <Suspense fallback={<Skeleton className="size-9 rounded-lg" />}>
-        <AccountSettings collapsed />
-      </Suspense>
       <Button
         /**
          * The drawer stays mounted while closed so it can slide, and a
@@ -42,17 +41,22 @@ function Header({
         id={expanded ? CLOSE_SIDEBAR_ID : undefined}
         data-testid={expanded ? 'close-sidebar-button' : undefined}
         size="icon"
-        variant="ghost"
+        variant="outline"
         aria-label={localize('com_nav_close_sidebar')}
         aria-expanded={expanded}
+        aria-controls="chat-history-nav"
         /** The only close control while open, so its binding must be discoverable here. */
         aria-keyshortcuts={toggleSidebarAriaKey}
         tabIndex={expanded ? 0 : -1}
-        className="size-10 flex-shrink-0 rounded-lg"
+        className={cn('flex-shrink-0', SIDEBAR_TOGGLE_CLASSES)}
         onClick={onClose}
       >
-        <X className="size-5 text-text-primary" aria-hidden="true" />
+        <Sidebar className="icon-md" aria-hidden="true" />
       </Button>
+      <Switcher links={links} />
+      <Suspense fallback={<Skeleton className="size-9 rounded-lg" />}>
+        <AccountSettings collapsed />
+      </Suspense>
     </div>
   );
 }
