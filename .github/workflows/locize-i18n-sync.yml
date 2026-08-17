@@ -84,6 +84,9 @@ jobs:
             --base-dir "$RUNNER_TEMP/locize-locale-baseline" \
             --current-dir client/src/locales
 
+      - name: Restore Repository English Source
+        run: cp "$RUNNER_TEMP/locize-locale-baseline/en/translation.json" client/src/locales/en/translation.json
+
       - name: Validate Downloaded Translations
         run: |
           node scripts/validate-locize-download.mjs \
