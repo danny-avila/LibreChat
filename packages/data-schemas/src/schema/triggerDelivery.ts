@@ -29,13 +29,14 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     deliveryKey: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, maxlength: 128 },
     orderingKey: { type: String, required: true, maxlength: 128 },
-    laneSequence: { type: Number, required: true, min: 1 },
+    // Zero is reserved for a staging row that is visible before sequence allocation.
+    laneSequence: { type: Number, required: true, min: 0 },
     envelope: { type: Schema.Types.Mixed, required: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     tenantId: { type: String, index: true },
     status: {
       type: String,
-      enum: ['pending', 'leased', 'succeeded', 'dead'],
+      enum: ['staging', 'pending', 'leased', 'succeeded', 'dead'],
       required: true,
       default: 'pending',
     },

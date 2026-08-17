@@ -12,6 +12,7 @@ import type {
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
+import logger from '~/config/winston';
 
 const DUPLICATE_KEY = 11000;
 const LEASE_SKEW_MARGIN_MS = 30_000;
@@ -102,6 +103,8 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     now: Date,
   ) => Promise<number>;
+  recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     user: string | Types.ObjectId,
     fenceStartedAt: Date,
@@ -187,39 +190,119 @@ export function createAgentTriggerDeliveryMethods(
     ]);
   }
 
-  async function nextLaneSequence(input: EnqueueAgentTriggerDeliveryInput): Promise<number> {
-    const sequence = await LaneSequence()
-      .findOneAndUpdate(
-        { _id: input.orderingKey },
-        {
-          $inc: { value: 1 },
-          $setOnInsert: {
-            user: input.user,
-            ...(input.tenantId != null && { tenantId: input.tenantId }),
-          },
-        },
-        { new: true, upsert: true, setDefaultsOnInsert: true },
-      )
-      .lean<IAgentTriggerLaneSequence>();
-    if (sequence == null || !Number.isSafeInteger(sequence.value) || sequence.value <= 0) {
-      throw new Error('Failed to allocate an agent trigger ordering sequence');
+  async function recoverLanePublisher(lane: IAgentTriggerLaneSequence): Promise<boolean> {
+    const publisherDeliveryId = lane.publisherDeliveryId;
+    if (publisherDeliveryId == null) {
+      return false;
     }
-    return sequence.value;
+    if (!Number.isSafeInteger(lane.value) || lane.value <= 0) {
+      throw new Error('Agent trigger lane publisher has an invalid sequence');
+    }
+
+    const published = await Delivery().updateOne(
+      { _id: publisherDeliveryId, status: 'staging' },
+      { $set: { status: 'pending', laneSequence: lane.value } },
+    );
+    if (published.modifiedCount === 0) {
+      const current = await Delivery()
+        .findById(publisherDeliveryId)
+        .select('status')
+        .lean<Pick<IAgentTriggerDelivery, 'status'>>();
+      if (current?.status === 'staging') {
+        throw new Error('Failed to publish the reserved agent trigger delivery');
+      }
+    }
+
+    const released = await LaneSequence().updateOne(
+      {
+        _id: lane._id,
+        value: lane.value,
+        publisherDeliveryId,
+      },
+      { $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 } },
+    );
+    return published.modifiedCount === 1 || released.modifiedCount === 1;
+  }
+
+  async function publishStagedDelivery(
+    delivery: IAgentTriggerDelivery,
+    input: EnqueueAgentTriggerDeliveryInput,
+  ): Promise<IAgentTriggerDelivery> {
+    if (delivery._id == null) {
+      throw new Error('Staged agent trigger delivery is missing its identity');
+    }
+    const deliveryId = delivery._id;
+
+    for (;;) {
+      const lane = await LaneSequence()
+        .findById(input.orderingKey)
+        .lean<IAgentTriggerLaneSequence>();
+      if (lane?.publisherDeliveryId != null) {
+        const ownsPublication = String(lane.publisherDeliveryId) === String(deliveryId);
+        await recoverLanePublisher(lane);
+        if (ownsPublication) {
+          const current = await Delivery().findById(deliveryId).lean<IAgentTriggerDelivery>();
+          if (current == null || current.status === 'staging') {
+            throw new Error('Failed to recover the staged agent trigger delivery');
+          }
+          return current;
+        }
+        continue;
+      }
+
+      let acquired: IAgentTriggerLaneSequence | null = null;
+      try {
+        acquired = await LaneSequence()
+          .findOneAndUpdate(
+            { _id: input.orderingKey, publisherDeliveryId: { $exists: false } },
+            {
+              $inc: { value: 1 },
+              $set: {
+                tailDeliveryId: deliveryId,
+                publisherDeliveryId: deliveryId,
+                publisherStartedAt: new Date(),
+              },
+              $unset: { cleanupRequestedAt: 1 },
+              $setOnInsert: {
+                user: input.user,
+                ...(input.tenantId != null && { tenantId: input.tenantId }),
+              },
+            },
+            { new: true, upsert: true, setDefaultsOnInsert: true },
+          )
+          .lean<IAgentTriggerLaneSequence>();
+      } catch (error) {
+        if ((error as DuplicateKeyError)?.code !== DUPLICATE_KEY) {
+          throw error;
+        }
+      }
+      if (acquired == null) {
+        continue;
+      }
+
+      await recoverLanePublisher(acquired);
+      const current = await Delivery().findById(deliveryId).lean<IAgentTriggerDelivery>();
+      if (current == null || current.status === 'staging') {
+        throw new Error('Failed to publish the staged agent trigger delivery');
+      }
+      return current;
+    }
   }
 
   async function enqueueAgentTriggerDelivery(
     input: EnqueueAgentTriggerDeliveryInput,
   ): Promise<{ delivery: AgentTriggerDeliveryRecord; replayed: boolean }> {
+    let staged: IAgentTriggerDelivery;
+    let replayed = false;
     try {
-      const laneSequence = await nextLaneSequence(input);
       const created = await Delivery().create({
         ...input,
-        laneSequence,
-        status: 'pending',
+        laneSequence: 0,
+        status: 'staging',
         attempts: 0,
         requeueCount: 0,
       });
-      return { delivery: toRecord(created.toObject()), replayed: false };
+      staged = created.toObject();
     } catch (error) {
       if ((error as DuplicateKeyError)?.code !== DUPLICATE_KEY) {
         throw error;
@@ -233,8 +316,85 @@ export function createAgentTriggerDeliveryMethods(
       if (existing.fingerprint !== input.fingerprint) {
         throw new AgentTriggerDeliveryConflictError(input.deliveryKey);
       }
-      return { delivery: toRecord(existing), replayed: true };
+      if (existing.status !== 'staging') {
+        return { delivery: toRecord(existing), replayed: true };
+      }
+      staged = existing;
+      replayed = true;
     }
+
+    const published = await publishStagedDelivery(staged, input);
+    return { delivery: toRecord(published), replayed };
+  }
+
+  /** Publishes rows left between sequence reservation and queue visibility by a crashed writer. */
+  async function recoverAgentTriggerLanePublications(
+    limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+  ): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new TypeError('Agent trigger lane recovery limit must be a positive integer');
+    }
+    const lanes = await LaneSequence()
+      .find({ publisherDeliveryId: { $exists: true } })
+      .sort({ publisherStartedAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .lean<IAgentTriggerLaneSequence[]>();
+    let recovered = 0;
+    for (const lane of lanes) {
+      if (await recoverLanePublisher(lane)) {
+        recovered += 1;
+      }
+    }
+    return recovered;
+  }
+
+  async function reclaimLaneIfInactive(orderingKey: string): Promise<boolean> {
+    const lane = await LaneSequence().findById(orderingKey).lean<IAgentTriggerLaneSequence>();
+    if (lane?.cleanupRequestedAt == null) {
+      return false;
+    }
+    const stillRetained = await Delivery().exists({
+      orderingKey,
+      status: { $in: ['staging', 'pending', 'leased', 'dead'] },
+    });
+    if (stillRetained != null) {
+      await LaneSequence().updateOne(
+        { _id: orderingKey, cleanupRequestedAt: lane.cleanupRequestedAt },
+        { $unset: { cleanupRequestedAt: 1 } },
+      );
+      return false;
+    }
+    const deleted = await LaneSequence().deleteOne({
+      _id: orderingKey,
+      ...(lane.tailDeliveryId == null
+        ? { tailDeliveryId: { $exists: false } }
+        : { tailDeliveryId: lane.tailDeliveryId }),
+      cleanupRequestedAt: lane.cleanupRequestedAt,
+      publisherDeliveryId: { $exists: false },
+    });
+    return deleted.deletedCount === 1;
+  }
+
+  /** Bounds high-cardinality ordering metadata after the final retained job settles. */
+  async function reclaimInactiveAgentTriggerLanes(
+    limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+  ): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new TypeError('Agent trigger lane reclamation limit must be a positive integer');
+    }
+    const lanes = await LaneSequence()
+      .find({ cleanupRequestedAt: { $exists: true } })
+      .sort({ cleanupRequestedAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .select('_id')
+      .lean<Array<Pick<IAgentTriggerLaneSequence, '_id'>>>();
+    let reclaimed = 0;
+    for (const lane of lanes) {
+      if (await reclaimLaneIfInactive(lane._id)) {
+        reclaimed += 1;
+      }
+    }
+    return reclaimed;
   }
 
   async function claimNextAgentTriggerDelivery(input: {
@@ -344,29 +504,53 @@ export function createAgentTriggerDeliveryMethods(
       settledAt: Date;
     },
   ): Promise<boolean> {
-    const result = await Delivery().updateOne(fence(input), {
-      $set: {
-        status: 'succeeded',
-        result: input.result,
-        settledAt: input.settledAt,
-        expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
-      },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
-      $push: {
-        history: {
-          $each: [
-            {
-              attempt: input.attempt,
-              outcome: 'succeeded',
-              at: input.settledAt,
-              workerId: input.workerId,
+    const completed = await Delivery()
+      .findOneAndUpdate(
+        fence(input),
+        {
+          $set: {
+            status: 'succeeded',
+            result: input.result,
+            settledAt: input.settledAt,
+            expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+          },
+          $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
+          $push: {
+            history: {
+              $each: [
+                {
+                  attempt: input.attempt,
+                  outcome: 'succeeded',
+                  at: input.settledAt,
+                  workerId: input.workerId,
+                },
+              ],
+              $slice: -HISTORY_LIMIT,
             },
-          ],
-          $slice: -HISTORY_LIMIT,
+          },
         },
-      },
-    });
-    return result.modifiedCount === 1;
+        { new: true },
+      )
+      .select('_id orderingKey')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey'>>();
+    if (completed?._id == null) {
+      return false;
+    }
+
+    try {
+      await LaneSequence().updateOne(
+        { _id: completed.orderingKey },
+        { $set: { cleanupRequestedAt: input.settledAt } },
+      );
+      await reclaimLaneIfInactive(completed.orderingKey);
+    } catch (error) {
+      // Delivery success is authoritative; counter reclamation is safe to retry later.
+      logger.warn('[agent-triggers] failed to reclaim an inactive ordering lane', {
+        orderingKey: completed.orderingKey,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return true;
   }
 
   async function retryAgentTriggerDelivery(
@@ -586,6 +770,8 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
     countActiveAgentTriggerDeliveriesByUser,
+    recoverAgentTriggerLanePublications,
+    reclaimInactiveAgentTriggerLanes,
     prepareAgentTriggerUserPurge,
     cancelAgentTriggerUserPurge,
     recoverAgentTriggerUserPurges,

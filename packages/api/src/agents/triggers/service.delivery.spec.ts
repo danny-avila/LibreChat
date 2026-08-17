@@ -77,6 +77,8 @@ function deliveryMethods(
     getAgentTriggerDeadLetters: jest.fn(async () => []),
     requeueAgentTriggerDelivery: jest.fn(async () => null),
     countActiveAgentTriggerDeliveriesByUser: jest.fn(async () => 0),
+    recoverAgentTriggerLanePublications: jest.fn(async () => 0),
+    reclaimInactiveAgentTriggerLanes: jest.fn(async () => 0),
     prepareAgentTriggerUserPurge: jest.fn(async () => undefined),
     cancelAgentTriggerUserPurge: jest.fn(async () => true),
     recoverAgentTriggerUserPurges: jest.fn(async () => 0),

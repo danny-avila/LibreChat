@@ -25,7 +25,7 @@ export class AgentTriggerDeliveryDeferredError extends Error {
   }
 }
 
-export type AgentTriggerDeliveryStatus = 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
   code: string;

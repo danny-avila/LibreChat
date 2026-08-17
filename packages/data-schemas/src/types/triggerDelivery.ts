@@ -1,6 +1,6 @@
 import type { Document, Types } from 'mongoose';
 
-export type AgentTriggerDeliveryStatus = 'pending' | 'leased' | 'succeeded' | 'dead';
+export type AgentTriggerDeliveryStatus = 'staging' | 'pending' | 'leased' | 'succeeded' | 'dead';
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerDeliveryFailure {
@@ -25,7 +25,7 @@ export interface IAgentTriggerDelivery {
   deliveryKey: string;
   fingerprint: string;
   orderingKey: string;
-  /** Monotonic sequence allocated atomically within one ordering lane. */
+  /** Monotonic sequence allocated while holding the lane publication fence. */
   laneSequence: number;
   envelope: unknown;
   user: Types.ObjectId;
@@ -61,6 +61,12 @@ export interface IAgentTriggerLaneSequence {
   value: number;
   user: Types.ObjectId;
   tenantId?: string;
+  /** Latest delivery admitted to this lane. Used to reclaim inactive lane counters safely. */
+  tailDeliveryId?: Types.ObjectId;
+  /** Delivery currently owning the serialized sequence/publication step. */
+  publisherDeliveryId?: Types.ObjectId;
+  publisherStartedAt?: Date;
+  cleanupRequestedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

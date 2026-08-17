@@ -47,8 +47,11 @@ await enqueueAgentTrigger(
   identity, so ambiguous retries do not duplicate accepted work.
 - Retryable failures use bounded exponential backoff and honor `Retry-After`. Invalid envelopes,
   permanent authorization failures, and exhausted retries become durable dead letters.
-- Matching ordering lanes use a Mongo-atomic per-lane sequence, so replicas cannot reorder events
-  whose timestamps tie. Dead letters are terminal and do not block later work.
+- Matching ordering lanes serialize sequence allocation and queue publication behind a
+  Mongo-fenced publisher. A staging row is durable before taking that fence, and any replica can
+  finish an abandoned publication before allocating the next sequence, so a later delivery can
+  never overtake the invisible gap. Dead letters are terminal and do not block later work;
+  inactive lane counters are reclaimed once no staging, queued, leased, or dead delivery remains.
 - Successful records expire after 90 days. Dead letters remain until explicitly requeued or
   removed. Account deletion first fences admission and drains active leases without destroying
   queued work. A delivery deferred by that fence releases its lease and restores the attempt it

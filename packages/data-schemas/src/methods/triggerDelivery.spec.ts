@@ -138,6 +138,68 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it('publishes an abandoned lane owner before allocating the next sequence', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'publication-race';
+    const firstInput = enqueueInput({ user, orderingKey, availableAt: START });
+    const first = await Delivery.create({
+      ...firstInput,
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    await LaneSequence.create({
+      _id: orderingKey,
+      value: 1,
+      user,
+      tailDeliveryId: first._id,
+      publisherDeliveryId: first._id,
+      publisherStartedAt: START,
+    });
+
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey, availableAt: START }),
+    );
+
+    await expect(Delivery.findById(first._id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      laneSequence: 1,
+    });
+    expect(second.delivery).toMatchObject({ status: 'pending', laneSequence: 2 });
+    await expect(methods.findEarlierAgentTriggerDelivery(second.delivery)).resolves.toEqual({
+      availableAt: START,
+    });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({ value: 2 });
+    expect((await LaneSequence.findById(orderingKey).lean())?.publisherDeliveryId).toBeUndefined();
+  });
+
+  it('resumes its own abandoned publication without allocating a second sequence', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'publication-replay';
+    const input = enqueueInput({ user, orderingKey, availableAt: START });
+    const staged = await Delivery.create({
+      ...input,
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    await LaneSequence.create({
+      _id: orderingKey,
+      value: 1,
+      user,
+      tailDeliveryId: staged._id,
+      publisherDeliveryId: staged._id,
+      publisherStartedAt: START,
+    });
+
+    const replay = await methods.enqueueAgentTriggerDelivery(input);
+
+    expect(replay).toMatchObject({ replayed: true, delivery: { laneSequence: 1 } });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({ value: 1 });
+  });
+
   it('orders a lane by its atomic sequence instead of tied timestamps or process ObjectIds', async () => {
     const user = new mongoose.Types.ObjectId();
     const common = {
@@ -316,6 +378,36 @@ describe('agent trigger delivery methods', () => {
     expect(stored?.expiresAt?.getTime()).toBe(
       new Date(START.getTime() + 2_000).getTime() + 90 * 24 * 60 * 60_000,
     );
+  });
+
+  it('reclaims an inactive high-cardinality lane after its tail succeeds', async () => {
+    const orderingKey = 'one-shot-resource-lane';
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ orderingKey }));
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+
+    await expect(
+      methods.completeAgentTriggerDelivery({
+        id: claimed!.id,
+        workerId: 'worker-1',
+        claimToken: 'claim-1',
+        attempt: attempt!,
+        result: { ok: true },
+        settledAt: START,
+      }),
+    ).resolves.toBe(true);
+
+    expect(await LaneSequence.countDocuments({ _id: orderingKey })).toBe(0);
   });
 
   it('restores the retry budget when dispatch is deferred before execution', async () => {

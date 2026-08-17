@@ -99,6 +99,8 @@ export interface AgentTriggerDeliveryPersistence {
     availableAt: Date,
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
+  recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
+  reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     userId: string,
     fenceStartedAt: Date,
@@ -269,13 +271,24 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     const methods = deps.methods;
     const current = runAsSystem(async () => {
-      const recovered = await methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit);
-      if (recovered > 0) {
-        logger.info('[agent-triggers] recovered deleted-user payload purges', { recovered });
+      const [purgedUsers, publishedLanes, reclaimedLanes] = await Promise.all([
+        methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit),
+        methods.recoverAgentTriggerLanePublications(purgeRecoveryLimit),
+        methods.reclaimInactiveAgentTriggerLanes(purgeRecoveryLimit),
+      ]);
+      if (publishedLanes > 0) {
+        deliveryEngine?.wake();
+      }
+      if (purgedUsers > 0 || publishedLanes > 0 || reclaimedLanes > 0) {
+        logger.info('[agent-triggers] recovered durable delivery maintenance', {
+          purgedUsers,
+          publishedLanes,
+          reclaimedLanes,
+        });
       }
     })
       .catch((error) => {
-        logger.error('[agent-triggers] deleted-user purge recovery failed:', error);
+        logger.error('[agent-triggers] durable delivery maintenance failed:', error);
       })
       .finally(() => {
         if (purgeRecoveryPromise === current) {
