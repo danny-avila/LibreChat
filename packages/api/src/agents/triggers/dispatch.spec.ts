@@ -83,4 +83,20 @@ describe('dispatchAgentTrigger', () => {
     expect(fire).not.toHaveBeenCalled();
     expect(steer).not.toHaveBeenCalled();
   });
+
+  it('rejects unknown envelope versions before deriving identity or calling a handler', () => {
+    const fire = jest.fn(async () => 'fire');
+    const steer = jest.fn(async () => 'steer');
+    const envelope = {
+      ...fireEnvelope(),
+      version: 2,
+      target: undefined,
+    } as unknown as AgentTriggerEnvelope;
+
+    expect(() => dispatchAgentTrigger(envelope, { fire, steer })).toThrow(
+      new AgentTriggerDispatchError('Unsupported agent trigger envelope version: 2'),
+    );
+    expect(fire).not.toHaveBeenCalled();
+    expect(steer).not.toHaveBeenCalled();
+  });
 });

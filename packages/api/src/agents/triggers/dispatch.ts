@@ -3,7 +3,7 @@ import type {
   AgentSteerTriggerEnvelope,
   AgentTriggerEnvelope,
 } from './envelope';
-import { getAgentTriggerIdempotencyKey } from './envelope';
+import { AGENT_TRIGGER_ENVELOPE_VERSION, getAgentTriggerIdempotencyKey } from './envelope';
 
 export interface AgentTriggerDispatchContext {
   idempotencyKey: string;
@@ -38,6 +38,12 @@ export function dispatchAgentTrigger<FireResult, SteerResult>(
   handlers: AgentTriggerDispatchHandlers<FireResult, SteerResult>,
   options?: { signal?: AbortSignal },
 ): Promise<FireResult | SteerResult> {
+  const receivedVersion: unknown = (envelope as { version?: unknown }).version;
+  if (receivedVersion !== AGENT_TRIGGER_ENVELOPE_VERSION) {
+    throw new AgentTriggerDispatchError(
+      `Unsupported agent trigger envelope version: ${String(receivedVersion)}`,
+    );
+  }
   const receivedMode: unknown = (envelope as { mode?: unknown }).mode;
   if (receivedMode !== 'fire' && receivedMode !== 'steer') {
     throw new AgentTriggerDispatchError(`Unsupported agent trigger mode: ${String(receivedMode)}`);
