@@ -35,6 +35,45 @@ export interface ToolDefinition {
   serverName?: string;
   /** Raw upstream tool name when the model-facing key stripped a redundant server-name prefix */
   serverToolName?: string;
+  /** Current catalog tool name when a LEGACY persisted key kept its pre-strip spelling */
+  currentToolName?: string;
+}
+
+/** An MCP tool name plus its OTHER spelling (legacy for stripped instances, current for legacy-named ones). */
+export interface MCPToolAlias {
+  name: string;
+  aliasName: string;
+}
+
+/**
+ * Collects both directions of identity aliases from MCP tool definitions, so
+ * approval policies and hook matchers written against EITHER spelling keep
+ * applying: a stripped instance aliases its pre-strip name, and a
+ * legacy-named instance (persisted key retained) aliases its current catalog
+ * name. Works in both loading modes because both funnel their definitions
+ * through {@link buildToolClassification}.
+ */
+export function collectMCPToolAliases(mcpToolDefs: ToolDefinition[]): MCPToolAlias[] {
+  const aliases: MCPToolAlias[] = [];
+  for (const def of mcpToolDefs) {
+    if (!def.serverName) {
+      continue;
+    }
+    const keySuffix = `${Constants.mcp_delimiter}${normalizeServerName(def.serverName)}`;
+    if (def.serverToolName) {
+      const aliasName = `${def.serverToolName}${keySuffix}`;
+      if (aliasName !== def.name) {
+        aliases.push({ name: def.name, aliasName });
+      }
+    }
+    if (def.currentToolName) {
+      const aliasName = `${def.currentToolName}${keySuffix}`;
+      if (aliasName !== def.name) {
+        aliases.push({ name: def.name, aliasName });
+      }
+    }
+  }
+  return aliases;
 }
 
 /**
@@ -139,6 +178,8 @@ interface MCPToolInstance {
   mcpRawServerName?: string;
   /** Raw upstream tool name when the instance name stripped a redundant server-name prefix */
   mcpServerToolName?: string;
+  /** Current catalog tool name when a legacy persisted key kept its pre-strip spelling */
+  mcpCurrentToolName?: string;
 }
 
 /**
@@ -166,6 +207,10 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
 
   if (tool.mcpServerToolName) {
     def.serverToolName = tool.mcpServerToolName;
+  }
+
+  if (tool.mcpCurrentToolName) {
+    def.currentToolName = tool.mcpCurrentToolName;
   }
 
   return def;
@@ -253,6 +298,8 @@ export interface BuildToolClassificationResult {
   additionalTools: GenericTool[];
   /** Whether any tools have defer_loading enabled (precomputed for efficiency) */
   hasDeferredTools: boolean;
+  /** Both-direction identity aliases for MCP tools whose key spelling changed (see {@link collectMCPToolAliases}) */
+  mcpToolAliases: MCPToolAlias[];
 }
 
 /**
@@ -321,10 +368,12 @@ export async function buildToolClassification(
       toolDefinitions: [],
       toolRegistry: undefined,
       hasDeferredTools: false,
+      mcpToolAliases: [],
     };
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
+  const mcpToolAliases = collectMCPToolAliases(mcpToolDefs);
   aliasLegacyMCPToolOptions(mcpToolDefs, agentToolOptions);
   const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
 
@@ -358,7 +407,13 @@ export async function buildToolClassification(
     logger.debug(
       `[buildToolClassification] Agent ${agentId} has no programmatic or deferred tools, skipping PTC/ToolSearch`,
     );
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools: false };
+    return {
+      toolRegistry,
+      toolDefinitions,
+      additionalTools,
+      hasDeferredTools: false,
+      mcpToolAliases,
+    };
   }
 
   /** Tool search uses local mode (no API key needed) */
@@ -397,7 +452,7 @@ export async function buildToolClassification(
   }
 
   if (!hasProgrammaticTools) {
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
   }
 
   /** In definitions-only mode, add PTC definition without creating the tool instance */
@@ -414,7 +469,7 @@ export async function buildToolClassification(
     logger.debug(
       `[buildToolClassification] PTC definition added for agent ${agentId} (definitions only)`,
     );
-    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+    return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
   }
 
   try {
@@ -448,5 +503,5 @@ export async function buildToolClassification(
     logger.error('[buildToolClassification] Error creating PTC tool:', error);
   }
 
-  return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools };
+  return { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases };
 }

@@ -7,6 +7,7 @@ import {
   aliasLegacyMCPToolOptions,
   agentHasProgrammaticTools,
   buildToolClassification,
+  collectMCPToolAliases,
   getServerNameFromTool,
   agentHasDeferredTools,
 } from './classification';
@@ -26,6 +27,40 @@ describe('classification.ts', () => {
     it('should handle multiple delimiters', () => {
       const result = getServerNameFromTool('some_tool_mcp_Server_Name');
       expect(result).toBe('Server_Name');
+    });
+  });
+
+  describe('collectMCPToolAliases', () => {
+    it('collects both alias directions from definitions', () => {
+      const defs = [
+        { name: 'search_mcp_acme', serverName: 'acme', serverToolName: 'acme_search' },
+        {
+          name: 'acme_list_mcp_acme',
+          serverName: 'acme',
+          serverToolName: 'acme_list',
+          currentToolName: 'list',
+        },
+        { name: 'plain_mcp_acme', serverName: 'acme' },
+      ];
+
+      expect(collectMCPToolAliases(defs)).toEqual([
+        { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+        { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
+      ]);
+    });
+
+    it('normalizes the server name when reconstructing alias keys', () => {
+      const defs = [
+        {
+          name: 'search_mcp_My_Server',
+          serverName: 'My Server',
+          serverToolName: 'my_server_search',
+        },
+      ];
+
+      expect(collectMCPToolAliases(defs)).toEqual([
+        { name: 'search_mcp_My_Server', aliasName: 'my_server_search_mcp_My_Server' },
+      ]);
     });
   });
 

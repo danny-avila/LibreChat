@@ -1091,6 +1091,7 @@ async function createMCPTool({
     serverToolName:
       toolEntry.serverToolName ??
       (matchedToolKey === strippedToolKey ? strippedToolName : toolName),
+    currentToolName: matchedToolKey === strippedToolKey ? strippedToolName : undefined,
     serverName,
     serverConfig,
     toolDefinition: toolEntry['function'],
@@ -1107,6 +1108,7 @@ function createToolInstance({
   requestScopedConnections: capturedRequestScopedConnections,
   toolName,
   serverToolName = toolName,
+  currentToolName,
   serverName,
   serverConfig: capturedServerConfig,
   toolDefinition,
@@ -1264,6 +1266,12 @@ function createToolInstance({
     /** Upstream identity for stripped keys — lets the options aliasing in
      *  `buildToolClassification` heal legacy `tool_options` spellings. */
     toolInstance.mcpServerToolName = serverToolName;
+  }
+  if (currentToolName != null && currentToolName !== toolName) {
+    /** Current catalog spelling for a LEGACY-named instance, so approval
+     *  policies and hook matchers written against the current name still
+     *  reach it (see `collectMCPToolAliases`). */
+    toolInstance.mcpCurrentToolName = currentToolName;
   }
   // Ephemeral request-scoped servers (runtime body placeholders) tear their
   // connection down at request end, so they must never be backgrounded. A

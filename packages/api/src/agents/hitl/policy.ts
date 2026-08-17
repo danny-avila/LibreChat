@@ -1,13 +1,8 @@
 import { randomUUID, createHash } from 'crypto';
-import {
-  Constants,
-  openAIBaseSchema,
-  googleBaseSchema,
-  anthropicBaseSchema,
-  normalizeServerName,
-} from 'librechat-data-provider';
+import { openAIBaseSchema, googleBaseSchema, anthropicBaseSchema } from 'librechat-data-provider';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
+import type { MCPToolAlias } from '~/tools/classification';
 
 /**
  * Default decisions offered to the user for a paused tool call.
@@ -92,49 +87,6 @@ export function isHITLEnabled(policy: TToolApprovalPolicy | undefined): boolean 
  * defaults apply). The `enabled` field is LibreChat-only and stripped here —
  * it's consumed separately via {@link isHITLEnabled} to gate the SDK opt-out.
  */
-/** The MCP identity fields `createToolInstance` attaches to loaded tool instances. */
-interface PolicyMCPToolInstance {
-  name?: string;
-  mcp?: boolean;
-  mcpServerToolName?: string;
-  mcpRawServerName?: string;
-}
-
-/**
- * Collects identity aliases from loaded MCP tool instances whose model-facing
- * name stripped a redundant server-name prefix, reconstructing the pre-strip
- * spelling the same way the instance name was built.
- */
-export function collectMCPToolPolicyAliases(
-  tools: ReadonlyArray<object | undefined> | undefined,
-): MCPToolPolicyAlias[] {
-  const aliases: MCPToolPolicyAlias[] = [];
-  for (const tool of tools ?? []) {
-    const instance = tool as PolicyMCPToolInstance | undefined;
-    if (
-      instance?.mcp !== true ||
-      !instance.name ||
-      !instance.mcpServerToolName ||
-      !instance.mcpRawServerName
-    ) {
-      continue;
-    }
-    aliases.push({
-      name: instance.name,
-      legacyName: `${instance.mcpServerToolName}${Constants.mcp_delimiter}${normalizeServerName(instance.mcpRawServerName)}`,
-    });
-  }
-  return aliases;
-}
-
-/** A loaded MCP tool whose model-facing name stripped a redundant server-name prefix. */
-export interface MCPToolPolicyAlias {
-  /** Current model-facing tool name (the name the SDK matches patterns against) */
-  name: string;
-  /** Pre-strip spelling a pattern author may have targeted */
-  legacyName: string;
-}
-
 /** Anchored-glob matcher mirroring the SDK's `createToolPolicyHook` semantics exactly. */
 function globToRegex(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
@@ -142,17 +94,19 @@ function globToRegex(pattern: string): RegExp {
 }
 
 /**
- * Extends each `toolApproval` pattern list with the CURRENT names of tools
- * whose LEGACY (pre-strip) spelling matches, so admin YAML written against
- * upstream tool naming keeps applying after redundant-prefix stripping — a
- * non-matching `deny` would otherwise FAIL OPEN. Healing is list-level
- * (literal names appended, patterns never rewritten), so `deny`/`ask`/`allow`
- * precedence semantics are unchanged, and a name already matched by its own
- * list is skipped.
+ * Extends each `toolApproval` pattern list with the names of tools whose
+ * OTHER spelling matches, so admin YAML keeps applying when a tool's key
+ * spelling changed in either direction: patterns written against pre-strip
+ * upstream naming reach the stripped instances (a non-matching `deny` would
+ * otherwise FAIL OPEN), and patterns written against the current catalog
+ * naming reach legacy-named instances retained by unedited agents. Healing
+ * is list-level (literal names appended, patterns never rewritten), so
+ * `deny`/`ask`/`allow` precedence semantics are unchanged, and a name
+ * already matched by its own list is skipped.
  */
 export function healToolApprovalPolicy(
   policy: TToolApprovalPolicy | undefined,
-  aliases: readonly MCPToolPolicyAlias[],
+  aliases: readonly MCPToolAlias[],
 ): TToolApprovalPolicy | undefined {
   if (!policy || aliases.length === 0) {
     return policy;
@@ -163,11 +117,11 @@ export function healToolApprovalPolicy(
     }
     const regexes = patterns.map(globToRegex);
     const appended: string[] = [];
-    for (const { name, legacyName } of aliases) {
-      if (name === legacyName || regexes.some((regex) => regex.test(name))) {
+    for (const { name, aliasName } of aliases) {
+      if (name === aliasName || regexes.some((regex) => regex.test(name))) {
         continue;
       }
-      if (regexes.some((regex) => regex.test(legacyName))) {
+      if (regexes.some((regex) => regex.test(aliasName))) {
         appended.push(name);
       }
     }
@@ -179,6 +133,45 @@ export function healToolApprovalPolicy(
     deny: healList(policy.deny),
     ask: healList(policy.ask),
   };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Names whose OTHER spelling matches a programmatic hook's regex matcher
+ * while their own name does not — the hook must also fire for these or its
+ * argument-, user-, or tenant-specific deny/ask decisions are silently
+ * skipped for renamed tools. Mirrors the SDK's unanchored `new RegExp(pattern)`
+ * matcher semantics; an invalid pattern matches nothing there, so it aliases
+ * nothing here.
+ */
+export function collectAliasMatcherNames(
+  matcher: string | undefined,
+  aliases: readonly MCPToolAlias[],
+): string[] {
+  if (!matcher || aliases.length === 0) {
+    return [];
+  }
+  let regex: RegExp;
+  try {
+    regex = new RegExp(matcher);
+  } catch {
+    return [];
+  }
+  const names: string[] = [];
+  for (const { name, aliasName } of aliases) {
+    if (name !== aliasName && !regex.test(name) && regex.test(aliasName)) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/** Anchored exact-name pattern for the alias-matched names of one hook matcher. */
+export function buildAliasMatcherPattern(names: readonly string[]): string {
+  return `^(?:${names.map(escapeRegExp).join('|')})$`;
 }
 
 export function mapToolApprovalPolicy(

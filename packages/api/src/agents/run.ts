@@ -41,20 +41,20 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
+import type { MCPToolAlias } from '~/tools/classification';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
-import {
-  resolveToolApprovalPolicy,
-  healToolApprovalPolicy,
-  collectMCPToolPolicyAliases,
-  exemptAskUserQuestionFromApproval,
-} from '~/agents/hitl/policy';
 import {
   CHECK_BACKGROUND_TASK_NAME,
   registerBackgroundTaskTool,
   stripBackgroundFromToolRegistry,
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
+import {
+  resolveToolApprovalPolicy,
+  healToolApprovalPolicy,
+  exemptAskUserQuestionFromApproval,
+} from '~/agents/hitl/policy';
 import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
@@ -379,6 +379,8 @@ type RunAgent = Omit<Agent, 'tools'> & {
   toolDefinitions?: LCTool[];
   /** Precomputed flag indicating if any tools have defer_loading enabled */
   hasDeferredTools?: boolean;
+  /** Both-direction identity aliases for MCP tools whose key spelling changed */
+  mcpToolAliases?: MCPToolAlias[];
   /** Names of tools injected with the `run_in_background` param (excluded from eager execution). */
   backgroundToolNames?: string[];
   /** Names of tools with the host-injected `intent` param (stripped from self-spawn inputs). */
@@ -1694,19 +1696,20 @@ export async function createRun({
   // would pause with no approval surface or resume endpoint, and the route would emit a
   // normal final response / `[DONE]` with the tool call dangling. Only AgentClient (chat +
   // resume) passes `hitlCapable`; without it the run is identical to the no-HITL path.
+  /** Both-direction key-spelling aliases collected at tool classification —
+   *  identical in instance and event-driven loading modes. */
+  const mcpToolAliases = agents.flatMap((agent) => agent.mcpToolAliases ?? []);
   const hitl = hitlCapable
     ? buildHITLRunWiring(
         // The ask tool is exempt from the approval prompt (unless explicitly
         // listed by the admin) — approving the right to ask a question is a
         // pure double-pause; the tool has no side effects to gate. Pattern
-        // lists are healed against pre-strip tool spellings first, so admin
-        // globs written for prefixed upstream names keep applying (a
-        // non-matching deny would fail OPEN).
+        // lists are healed against the tools' other key spellings first, so
+        // admin globs written for pre-strip upstream names keep applying (a
+        // non-matching deny would fail OPEN), and rules written against
+        // current catalog names reach legacy-named instances.
         exemptAskUserQuestionFromApproval(
-          healToolApprovalPolicy(
-            toolApprovalPolicy,
-            collectMCPToolPolicyAliases(agents.flatMap((agent) => agent.tools ?? [])),
-          ),
+          healToolApprovalPolicy(toolApprovalPolicy, mcpToolAliases),
           ASK_USER_QUESTION_TOOL_NAME,
         ),
         {
@@ -1715,6 +1718,7 @@ export async function createRun({
           tenantId: tenantId ?? user?.tenantId,
           appConfig,
         },
+        mcpToolAliases,
       )
     : undefined;
   /**

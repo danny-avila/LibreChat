@@ -3,7 +3,8 @@ import {
   resolveToolApprovalPolicy,
   isHITLEnabled,
   healToolApprovalPolicy,
-  collectMCPToolPolicyAliases,
+  collectAliasMatcherNames,
+  buildAliasMatcherPattern,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
@@ -778,8 +779,8 @@ describe('exemptAskUserQuestionFromApproval', () => {
 
 describe('healToolApprovalPolicy', () => {
   const aliases = [
-    { name: 'delete_thing_mcp_acme', legacyName: 'acme_delete_thing_mcp_acme' },
-    { name: 'search_mcp_acme', legacyName: 'acme_search_mcp_acme' },
+    { name: 'delete_thing_mcp_acme', aliasName: 'acme_delete_thing_mcp_acme' },
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
   ];
 
   it('appends current names to lists whose patterns match only the legacy spelling', () => {
@@ -817,37 +818,45 @@ describe('healToolApprovalPolicy', () => {
   });
 });
 
-describe('collectMCPToolPolicyAliases', () => {
-  it('collects identity aliases from stripped MCP instances only', () => {
-    const tools = [
-      {
-        name: 'search_mcp_acme',
-        mcp: true,
-        mcpServerToolName: 'acme_search',
-        mcpRawServerName: 'acme',
-      },
-      { name: 'plain_mcp_acme', mcp: true, mcpRawServerName: 'acme' },
-      { name: 'web_search' },
-      undefined,
-    ];
+describe('healToolApprovalPolicy reverse direction', () => {
+  it('appends a legacy-named instance when the pattern targets the current catalog name', () => {
+    /** An unedited agent retains the pre-strip instance name — a deny written
+     *  against the current catalog name must still reach it. */
+    const aliases = [{ name: 'acme_search_mcp_acme', aliasName: 'search_mcp_acme' }];
+    const healed = healToolApprovalPolicy(
+      { enabled: true, mode: 'bypass', deny: ['search_mcp_acme'] },
+      aliases,
+    );
 
-    expect(collectMCPToolPolicyAliases(tools)).toEqual([
-      { name: 'search_mcp_acme', legacyName: 'acme_search_mcp_acme' },
+    expect(healed?.deny).toEqual(['search_mcp_acme', 'acme_search_mcp_acme']);
+  });
+});
+
+describe('collectAliasMatcherNames', () => {
+  const aliases = [
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+    { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
+  ];
+
+  it('returns names whose alias matches the regex while the name does not', () => {
+    expect(collectAliasMatcherNames('^acme_search_mcp_acme$', aliases)).toEqual([
+      'search_mcp_acme',
     ]);
+    expect(collectAliasMatcherNames('^list_mcp_acme$', aliases)).toEqual(['acme_list_mcp_acme']);
   });
 
-  it('reconstructs the legacy spelling with the normalized server name', () => {
-    const tools = [
-      {
-        name: 'search_mcp_My_Server',
-        mcp: true,
-        mcpServerToolName: 'my_server_search',
-        mcpRawServerName: 'My Server',
-      },
-    ];
+  it('skips names the matcher already matches and invalid patterns', () => {
+    expect(collectAliasMatcherNames('_mcp_acme$', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames('(unclosed', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames(undefined, aliases)).toEqual([]);
+  });
 
-    expect(collectMCPToolPolicyAliases(tools)).toEqual([
-      { name: 'search_mcp_My_Server', legacyName: 'my_server_search_mcp_My_Server' },
-    ]);
+  it('builds an anchored exact-name pattern with escaped names', () => {
+    const pattern = buildAliasMatcherPattern(['a.b_mcp_acme', 'c_mcp_acme']);
+    const regex = new RegExp(pattern);
+    expect(regex.test('a.b_mcp_acme')).toBe(true);
+    expect(regex.test('axb_mcp_acme')).toBe(false);
+    expect(regex.test('c_mcp_acme')).toBe(true);
+    expect(regex.test('xc_mcp_acme')).toBe(false);
   });
 });
