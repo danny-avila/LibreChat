@@ -436,6 +436,25 @@ describe('healMcpToolNames', () => {
     expect(healed).toEqual([strippedKey]);
   });
 
+  it('heals a pre-strip key for a USER-OWNED server absent from the operator config', async () => {
+    /** Assistants reference user DB servers too — the definitions loader
+     *  resolves them, so the heal's audit must include them or the legacy
+     *  key stays unhealed and the controllers drop the tool on edit. */
+    getAppConfig.mockResolvedValue({ mcpConfig: {} });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
   it('fails closed on a normalized-suffix key whose slot is CONTESTED', async () => {
     /** `My Server` and `My_Server!` both normalize to `My_Server`, so a
      *  normalized-suffix reference is ambiguous between them — rewriting

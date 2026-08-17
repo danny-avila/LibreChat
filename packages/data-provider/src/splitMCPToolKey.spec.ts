@@ -279,14 +279,16 @@ describe('stripServerNamePrefixes', () => {
   });
 
   it('never strips a remainder that equals a synthetic MCP marker', () => {
-    /** `sys__all__sys` keys expand to every server tool and `sys__server__sys`
-     *  keys are skipped as UI placeholders — a real upstream tool must not be
-     *  renamed onto either. */
+    /** `sys__all__sys` keys expand to every server tool, `sys__server__sys`
+     *  keys are skipped as UI placeholders, and `oauth${mcp_delimiter}` names
+     *  get OAuth-only handling in the client stream handlers — a real
+     *  upstream tool must not be renamed onto any of them. */
     expect(stripServerNamePrefix(`acme_${Constants.mcp_all}`, 'acme')).toBe(
       `acme_${Constants.mcp_all}`,
     );
     expect(stripServerNamePrefix(`acme_${Constants.mcp_server}`, 'acme')).toBe(
       `acme_${Constants.mcp_server}`,
     );
+    expect(stripServerNamePrefix('acme_oauth', 'acme')).toBe('acme_oauth');
   });
 });

@@ -217,8 +217,10 @@ async function resolveMcpServerContext(req) {
  */
 /**
  * Names of every MCP server the user can reach (operator config + user DB),
- * for the legacy-key heal's collision detection in `initializeAgent`. Only
- * consulted when a configured server name needs normalization.
+ * for legacy-key healing: collision detection in `initializeAgent` (consulted
+ * when a configured server name needs normalization) and the assistants heal
+ * in `healMcpToolNames` (always, since assistants reference user-owned
+ * servers too).
  * @param {string} [userId]
  * @param {string} [role]
  * @returns {Promise<string[]>}
@@ -266,24 +268,29 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
   const rawServerNames = await resolveMcpConfigNames(req);
   /** Cross-tier shadowing (DB `foo` vs operator `foo!`) is invisible to
    *  operator names alone — the shadow set must come from the FULL
-   *  accessible audit. Every rewrite candidate here is normalization-
-   *  sensitive by construction, so an incomplete audit skips healing
-   *  entirely (the raw key stays raw and fails closed). */
-  const audit = await resolveCollisionAuditNames({
-    rawServerNames,
-    userId: req.user?.id,
-    role: req.user?.role,
-  });
-  if (!audit.complete) {
+   *  accessible audit. The audit is ALWAYS the full accessible set here:
+   *  assistants reference user-owned servers too (the definitions loader
+   *  resolves them), so their pre-strip keys must heal against the same
+   *  catalog. When the audit cannot complete, healing is skipped entirely
+   *  (the raw key stays raw and fails closed). */
+  let accessibleServerNames;
+  try {
+    accessibleServerNames = await getAccessibleMcpServerNames(req.user?.id, req.user?.role);
+  } catch (error) {
+    logger.warn(
+      '[healMcpToolNames] Accessible-server audit unavailable; skipping legacy-key healing:',
+      error,
+    );
     return list;
   }
-  const shadowed = findShadowedServerNames(audit.names);
+  const auditNames = [...new Set([...accessibleServerNames, ...rawServerNames])];
+  const shadowed = findShadowedServerNames(auditNames);
   /** A pre-strip key persisted AFTER server-name normalization carries the
    *  NORMALIZED suffix, which the raw config names cannot match — the
    *  boundary must resolve against both spellings and map back to the raw
    *  name for the shadow and membership guards. */
-  const serverNameAliases = buildServerNameAliases(rawServerNames);
-  const boundaryNames = [...new Set([...rawServerNames, ...serverNameAliases.keys()])];
+  const serverNameAliases = buildServerNameAliases(auditNames);
+  const boundaryNames = [...new Set([...auditNames, ...serverNameAliases.keys()])];
   const seen = new Set();
   const healedList = [];
   for (const tool of list) {
@@ -295,7 +302,7 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     ) {
       const [, parsedServerName] = splitMCPToolKey(tool, boundaryNames);
       let rawServerName;
-      if (parsedServerName != null && rawServerNames.includes(parsedServerName)) {
+      if (parsedServerName != null && auditNames.includes(parsedServerName)) {
         rawServerName = parsedServerName;
       } else if (parsedServerName != null) {
         const aliased = serverNameAliases.get(parsedServerName);
@@ -305,13 +312,13 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
          *  guard, rather than bind the reference to the winner. */
         const contested =
           aliased != null &&
-          rawServerNames.some(
+          auditNames.some(
             (name) => name !== aliased && normalizeServerName(name) === parsedServerName,
           );
         rawServerName = contested ? undefined : aliased;
       }
       if (rawServerName != null && !shadowed.has(rawServerName)) {
-        const healed = normalizeMCPToolKey(tool, rawServerNames);
+        const healed = normalizeMCPToolKey(tool, auditNames);
         if (toolDefinitions[healed] != null) {
           healedTool = healed;
         } else {
