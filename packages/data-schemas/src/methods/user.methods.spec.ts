@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
 import balanceSchema from '~/schema/balance';
-import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
 
 /** Mocking crypto for generateToken */
@@ -660,6 +660,38 @@ describe('User Methods - Database Tests', () => {
         'missing',
       );
       await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+    });
+
+    test('atomically takes over an abandoned deletion fence without releasing the successor', async () => {
+      const user = await User.create({
+        name: 'Stale Trigger Fence',
+        email: 'stale-trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const abandonedAt = new Date('2026-08-17T12:00:00.000Z');
+      const takeoverAt = new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS + 1);
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.beginAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        false,
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('rejects invalid deletion-fence timestamps', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('startedAt must be a valid Date');
     });
   });
 

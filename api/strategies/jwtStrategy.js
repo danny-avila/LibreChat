@@ -4,21 +4,42 @@ const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
 
+const AGENT_TRIGGER_ADMISSION_PATHS = ['/api/agents/chat/agents', '/api/agents/chat/steer/deliver'];
+
+/** A trigger-scoped bearer is deliberately useless outside the two internal
+ * admission routes that the execution host calls. */
+function isAgentTriggerAdmissionRequest(req) {
+  if (req?.method !== 'POST' || req?.headers?.['x-lc-agent-trigger'] !== '1') {
+    return false;
+  }
+  try {
+    const pathname = new URL(req.originalUrl ?? req.url ?? '', 'http://localhost').pathname;
+    return AGENT_TRIGGER_ADMISSION_PATHS.some((path) => pathname.endsWith(path));
+  } catch {
+    return false;
+  }
+}
+
 // JWT strategy
 const jwtLogin = () =>
   new JwtStrategy(
     {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: process.env.JWT_SECRET,
+      passReqToCallback: true,
     },
-    async (payload, done) => {
+    async (req, payload, done) => {
       try {
+        if (payload?.scope === AGENT_TRIGGER_SCOPE && !isAgentTriggerAdmissionRequest(req)) {
+          done(null, false, { message: 'Agent trigger token is not valid for this endpoint' });
+          return;
+        }
         const user = await getUserById(
           payload?.id,
           '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
         );
-        if (payload?.scope === AGENT_TRIGGER_SCOPE && user?.agentTriggerDeletionStartedAt != null) {
-          done(null, false, { message: 'Agent trigger principal is being deleted' });
+        if (user?.agentTriggerDeletionStartedAt != null) {
+          done(null, false, { message: 'Account deletion is in progress' });
           return;
         }
         if (user) {

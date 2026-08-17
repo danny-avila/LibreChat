@@ -624,10 +624,9 @@ describe('ResumableAgentController resume metadata', () => {
     });
   });
 
-  it('rejects a trigger fenced after authentication before generation execution starts', async () => {
+  it('rejects any session fenced after authentication before generation execution starts', async () => {
     mockIsAgentTriggerPrincipalActive.mockResolvedValue(false);
     const req = {
-      _isAgentTrigger: true,
       user: { id: 'user-123' },
       body: {
         text: 'Run after a slow trigger admission.',
@@ -648,11 +647,11 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockIsAgentTriggerPrincipalActive.mock.invocationCallOrder[0],
     );
-    expect(res.status).toHaveBeenCalledWith(410);
+    expect(res.status).toHaveBeenCalledWith(409);
     expect(res.json).toHaveBeenCalledWith({
-      status: 410,
-      code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
-      error: 'Agent trigger principal is no longer active',
+      status: 409,
+      code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      error: 'Account deletion is in progress',
       generationProtocolVersion: 1,
     });
     expect(initializeClient).not.toHaveBeenCalled();
@@ -660,9 +659,9 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
       JSON.stringify({
-        status: 410,
-        code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
-        error: 'Agent trigger principal is no longer active',
+        status: 409,
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+        error: 'Account deletion is in progress',
       }),
       1000,
     );

@@ -1,8 +1,10 @@
 const { SystemRoles } = require('librechat-data-provider');
 
 let capturedVerifyCallback;
+let capturedStrategyOptions;
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
+    capturedStrategyOptions = opts;
     capturedVerifyCallback = verifyCallback;
     return { name: 'jwt' };
   }),
@@ -27,9 +29,18 @@ jest.mock('~/models', () => ({
 const jwtLogin = require('./jwtStrategy');
 const { getUserById, updateUser } = require('~/models');
 
-function invokeVerify(payload) {
+function request(overrides = {}) {
+  return {
+    method: 'GET',
+    originalUrl: '/api/user',
+    headers: {},
+    ...overrides,
+  };
+}
+
+function invokeVerify(payload, req = request()) {
   return new Promise((resolve, reject) => {
-    capturedVerifyCallback(payload, (err, user, info) => {
+    capturedVerifyCallback(req, payload, (err, user, info) => {
       if (err) {
         return reject(err);
       }
@@ -55,6 +66,7 @@ describe('jwtStrategy', () => {
 
     expect(user.id).toBe('user-1');
     expect(user.idOnTheSource).toBeNull();
+    expect(capturedStrategyOptions.passReqToCallback).toBe(true);
   });
 
   it('preserves a stored idOnTheSource for federated users', async () => {
@@ -77,17 +89,71 @@ describe('jwtStrategy', () => {
     expect(user).toBe(false);
   });
 
-  it('rejects a scoped trigger token while account deletion is fenced', async () => {
+  it('accepts a scoped trigger token only on an exact marked admission route', async () => {
+    getUserById.mockResolvedValue({
+      _id: { toString: () => 'user-3' },
+      role: SystemRoles.USER,
+    });
+
+    const { user } = await invokeVerify(
+      { id: 'user-3', scope: 'agent_trigger' },
+      request({
+        method: 'POST',
+        originalUrl: '/trusted/base/api/agents/chat/agents?source=delivery',
+        headers: { 'x-lc-agent-trigger': '1' },
+      }),
+    );
+
+    expect(user.id).toBe('user-3');
+  });
+
+  it.each([
+    ['an unrelated route', request({ method: 'POST', originalUrl: '/api/user' })],
+    [
+      'a missing transport marker',
+      request({ method: 'POST', originalUrl: '/api/agents/chat/agents' }),
+    ],
+    [
+      'a non-POST request',
+      request({
+        method: 'GET',
+        originalUrl: '/api/agents/chat/steer/deliver',
+        headers: { 'x-lc-agent-trigger': '1' },
+      }),
+    ],
+  ])('rejects a scoped trigger token on %s', async (_label, req) => {
+    const { user, info } = await invokeVerify({ id: 'user-3', scope: 'agent_trigger' }, req);
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Agent trigger token is not valid for this endpoint' });
+    expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it('rejects ordinary and trigger-scoped tokens while account deletion is fenced', async () => {
     getUserById.mockResolvedValue({
       _id: { toString: () => 'user-3' },
       role: SystemRoles.USER,
       agentTriggerDeletionStartedAt: new Date('2026-08-17T12:00:00.000Z'),
     });
 
-    const { user, info } = await invokeVerify({ id: 'user-3', scope: 'agent_trigger' });
+    const ordinary = await invokeVerify({ id: 'user-3' });
+    const trigger = await invokeVerify(
+      { id: 'user-3', scope: 'agent_trigger' },
+      request({
+        method: 'POST',
+        originalUrl: '/api/agents/chat/steer/deliver',
+        headers: { 'x-lc-agent-trigger': '1' },
+      }),
+    );
 
-    expect(user).toBe(false);
-    expect(info).toEqual({ message: 'Agent trigger principal is being deleted' });
+    expect(ordinary).toEqual({
+      user: false,
+      info: { message: 'Account deletion is in progress' },
+    });
+    expect(trigger).toEqual({
+      user: false,
+      info: { message: 'Account deletion is in progress' },
+    });
     expect(getUserById).toHaveBeenCalledWith(
       'user-3',
       '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',

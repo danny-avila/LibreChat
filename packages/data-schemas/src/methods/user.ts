@@ -12,6 +12,9 @@ import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
+/** A crashed account-deletion attempt can be taken over after this interval.
+ * Exact-token release prevents the abandoned owner from clearing its successor's fence. */
+export const USER_DELETION_FENCE_STALE_MS: number = 15 * 60_000;
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
@@ -387,9 +390,19 @@ export function createUserMethods(
     userId: string,
     startedAt: Date,
   ): Promise<'acquired' | 'in_progress' | 'missing'> {
+    if (!(startedAt instanceof Date) || !Number.isFinite(startedAt.getTime())) {
+      throw new TypeError('startedAt must be a valid Date');
+    }
     const User = mongoose.models.User;
+    const staleBefore = new Date(startedAt.getTime() - USER_DELETION_FENCE_STALE_MS);
     const result = await User.updateOne(
-      { _id: userId, agentTriggerDeletionStartedAt: { $exists: false } },
+      {
+        _id: userId,
+        $or: [
+          { agentTriggerDeletionStartedAt: { $exists: false } },
+          { agentTriggerDeletionStartedAt: { $lte: staleBefore } },
+        ],
+      },
       { $set: { agentTriggerDeletionStartedAt: startedAt } },
     );
     if (result.modifiedCount === 1) {

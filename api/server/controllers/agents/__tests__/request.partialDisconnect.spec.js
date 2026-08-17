@@ -17,6 +17,7 @@ const mockTenantStorageRun = jest.fn(async (context, callback) => {
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockIsAgentTriggerPrincipalActive = jest.fn();
 const mockFilterPersistableAbortContent = jest.fn((content) => content);
 const mockCheckAndIncrementPendingRequest = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
@@ -100,6 +101,7 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
 }));
 
 const AgentController = require('../request');
@@ -112,6 +114,7 @@ describe('ResumableAgentController tenant context', () => {
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-07-31T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockGenerationJobManager.completeJob.mockResolvedValue(undefined);

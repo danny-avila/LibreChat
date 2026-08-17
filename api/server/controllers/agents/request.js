@@ -904,16 +904,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
     jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
 
-    /** Authentication can precede a slow admission path by longer than the
-     * delivery host's HTTP timeout. Recheck the durable account-deletion fence
-     * after the job is committed but before execution starts. This ordering
-     * closes both sides of the race: a fence that wins first rejects this run;
-     * a fence that starts after this read must observe the already-created job
+    /** Authentication can precede a slow admission path. Recheck the durable
+     * account-deletion fence after the job is committed but before execution
+     * starts. This ordering closes both sides of the race for ordinary and
+     * trigger-scoped sessions: a fence that wins first rejects this run; a
+     * fence that starts after this read must observe the already-created job
      * in account deletion's active-generation drain. */
-    if (req._isAgentTrigger === true && !(await isAgentTriggerPrincipalActive(userId))) {
-      throw Object.assign(new Error('Agent trigger principal is no longer active'), {
-        code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
-        status: 410,
+    if (!(await isAgentTriggerPrincipalActive(userId))) {
+      throw Object.assign(new Error('Account deletion is in progress'), {
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+        status: 409,
       });
     }
 
