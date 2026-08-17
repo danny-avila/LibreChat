@@ -9,11 +9,9 @@ import {
   isLangfuseTracingEnabled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
-import {
-  allowsLangfuseCustomHeaders,
-  resolveLangfuseTenantDestination,
-} from './tenantDestinations';
 import { normalizeBoolean, resolveLangfuseHeaders, resolveTenantCredentials } from './utils';
+import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import { scopeHeadersToDestination } from './destinations';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
 
@@ -93,13 +91,12 @@ function applyCustomHeaders(
   langfuse: LangfuseRunConfigWithTraceAttributes,
   additionalHeaders?: Record<string, string>,
 ): LangfuseRunConfigWithTraceAttributes {
-  if (
-    additionalHeaders != null &&
-    langfuse.enabled !== false &&
-    langfuse.baseUrl != null &&
-    allowsLangfuseCustomHeaders(langfuse.baseUrl)
-  ) {
-    langfuse.additionalHeaders = additionalHeaders;
+  if (langfuse.enabled === false || langfuse.baseUrl == null) {
+    return langfuse;
+  }
+  const scoped = scopeHeadersToDestination(additionalHeaders, langfuse.baseUrl);
+  if (scoped) {
+    langfuse.additionalHeaders = scoped;
   }
   return langfuse;
 }

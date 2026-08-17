@@ -2051,10 +2051,13 @@ export const langfuseConfigSchema = z.object({
    * infrastructure secret, or carrying an invalid HTTP field name are dropped
    * with a warning rather than sent.
    *
-   * These reach whatever endpoint LibreChat exports to directly. In fanout
-   * deployments that endpoint is the collector, and the gateway forwards only
-   * `Authorization` upstream — so a *tenant* Langfuse behind its own proxy
-   * needs the collector to relay these too, which it does not yet do.
+   * Sent only when the deployment configures exactly one Langfuse origin, and
+   * only to that origin. The map cannot say which endpoint it authenticates
+   * to, so with several configured origins any choice of recipient would risk
+   * disclosing a gateway credential to the others; a warning is logged instead.
+   * Multi-destination deployments need per-destination headers, which this
+   * schema does not yet express — and note the fanout collector forwards only
+   * `Authorization` upstream regardless.
    */
   headers: z.record(z.string()).optional(),
 });

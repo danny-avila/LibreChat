@@ -19,9 +19,9 @@ import {
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
 import { getLangfuseDestinationId, scopeHeadersToDestination } from '~/langfuse/destinations';
+import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
-import { resolveLangfuseHeaders } from '~/langfuse/utils';
 import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;
@@ -148,6 +148,7 @@ async function verifyLangfuseCredentials(
     const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
       headers: mergeHeaders(headers, { Authorization: `Basic ${auth}` }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!secretResponse.ok) {
       return {
@@ -193,6 +194,7 @@ async function verifyLangfuseCredentials(
       }),
       body: JSON.stringify({ batch: [] }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!publicResponse.ok) {
       return {

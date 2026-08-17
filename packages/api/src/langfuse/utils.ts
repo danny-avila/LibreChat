@@ -7,7 +7,6 @@ import { normalizeString } from '~/utils/text';
 
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
 
-const ENV_PLACEHOLDER_PATTERN = /\$\{([^}]+)\}/g;
 /** RFC 7230 token characters — the only bytes legal in an HTTP field name. */
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 /** Legal field-value bytes: visible ASCII, space/tab, and obs-text. A newline,
@@ -15,6 +14,25 @@ const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
  *  vector, so such a value is dropped rather than sanitized. */
 
 const HEADER_VALUE_PATTERN = /^[\t\x20-\x7e\x80-\xff]*$/;
+
+/**
+ * Names that break the request rather than travel with it. `fetch` throws on
+ * `Transfer-Encoding`, and a fixed `Content-Length` misdescribes the body as
+ * soon as this shared map is reused on a request with a different one. Since
+ * the map is attached to export, verification, lookup, and feedback alike, one
+ * such entry disables the whole integration instead of being ignored.
+ */
+const FORBIDDEN_HEADER_NAMES = new Set([
+  'connection',
+  'content-length',
+  'expect',
+  'host',
+  'keep-alive',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
 
 /** Header names already reported, so a per-run resolution cannot spam the log.
  *  Bounded by the deployment's configured header names. */
@@ -41,13 +59,30 @@ function warnDroppedHeader(name: string, reason: string): void {
  */
 function unresolvableEnvRefs(configuredValue: string): string[] {
   const unresolved: string[] = [];
-  for (const match of configuredValue.matchAll(ENV_PLACEHOLDER_PATTERN)) {
+  for (const match of configuredValue.matchAll(/\$\{([^}]+)\}/g)) {
     const name = match[1].trim();
     if (isSensitiveEnvVar(name) || !normalizeString(process.env[name])) {
       unresolved.push(name);
     }
   }
   return unresolved;
+}
+
+/**
+ * Substitutes every `${VAR}` reference, which callers must have already checked
+ * with `unresolvableEnvRefs`.
+ *
+ * Done here rather than left to `extractEnvVariable` because its whole-string
+ * branch is anchored (`^\${(.+)}$`) and greedy, so a value composed of two
+ * references — `${CLIENT_ID}:${CLIENT_SECRET}` — parses as one variable named
+ * `CLIENT_ID}:${CLIENT_SECRET`, resolves to nothing, and the raw template is
+ * sent as the credential.
+ */
+function expandEnvRefs(configuredValue: string): string {
+  return configuredValue.replace(
+    /\$\{([^}]+)\}/g,
+    (fullMatch, rawName: string) => process.env[rawName.trim()] ?? fullMatch,
+  );
 }
 
 /** Names already reported as duplicate spellings, keyed by lowercase name. */
@@ -84,6 +119,20 @@ function collapseHeaderNameVariants(headers: Record<string, string>): Record<str
 
 export function toBasicAuthorization(publicKey: string, secretKey: string): string {
   return `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString('base64')}`;
+}
+
+/**
+ * Refuses redirects on requests carrying custom headers.
+ *
+ * Node strips `Authorization` when a redirect crosses origins but keeps
+ * arbitrary headers, so following one would hand the gateway credential to a
+ * host that passed no origin check. Requests without custom headers keep the
+ * default follow behavior, so this changes nothing for existing deployments.
+ */
+export function redirectPolicyFor(headers?: Record<string, string>): {
+  redirect?: RequestRedirect;
+} {
+  return headers != null && Object.keys(headers).length > 0 ? { redirect: 'error' } : {};
 }
 
 /**
@@ -124,6 +173,10 @@ export function resolveLangfuseHeaders(
       warnDroppedHeader(rawName, 'it is not a valid HTTP header name.');
       continue;
     }
+    if (FORBIDDEN_HEADER_NAMES.has(name.toLowerCase())) {
+      warnDroppedHeader(name, 'it controls request framing and cannot be set on a fetch request.');
+      continue;
+    }
     declared[name] = value;
   }
   if (Object.keys(declared).length === 0) {
@@ -131,14 +184,21 @@ export function resolveLangfuseHeaders(
   }
 
   const collapsed = collapseHeaderNameVariants(declared);
-  const resolved = resolveHeaders({ headers: collapsed, stripUnresolved: true });
-  const entries: Array<[string, string]> = [];
-  for (const [name, value] of Object.entries(resolved)) {
-    const unresolved = unresolvableEnvRefs(collapsed[name] ?? '');
+  /** References are expanded here so only fully literal values reach
+   *  `resolveHeaders`, which still strips `{{...}}` placeholders. */
+  const expanded: Record<string, string> = {};
+  for (const [name, value] of Object.entries(collapsed)) {
+    const unresolved = unresolvableEnvRefs(value);
     if (unresolved.length > 0) {
       warnDroppedHeader(name, `${unresolved.join(', ')} is not set in the environment.`);
       continue;
     }
+    expanded[name] = expandEnvRefs(value);
+  }
+
+  const resolved = resolveHeaders({ headers: expanded, stripUnresolved: true });
+  const entries: Array<[string, string]> = [];
+  for (const [name, value] of Object.entries(resolved)) {
     /** Trimmed because a credential read from a file or `$(...)` commonly
      *  carries a trailing newline, which would otherwise fail validation. */
     const trimmed = value.trim();

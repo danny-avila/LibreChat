@@ -959,6 +959,11 @@ describe('createAdminLangfuseHandlers', () => {
     });
 
     it('sends the deployment headers on both verification requests', async () => {
+      /** Single-tenant topology with one configured Langfuse origin — the
+       *  self-hosted-behind-a-proxy case — so the header map is unambiguous. */
+      delete process.env.TENANT_ISOLATION_STRICT;
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
       process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
       global.fetch = jest
         .fn()
@@ -982,6 +987,31 @@ describe('createAdminLangfuseHandlers', () => {
       const [, ingestionInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
       expect(ingestionInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
       expect(ingestionInit.headers.Authorization).toBe('Bearer pk');
+      delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
+    });
+
+    it('withholds deployment headers when several Langfuse origins are configured', async () => {
+      /** The collector from `beforeEach` plus an explicit tenant URL: the map
+       *  does not say which of them it authenticates to, so neither gets it. */
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'ambiguous-token' } } },
+        }),
+        res,
+      );
+
+      expect(JSON.stringify((global.fetch as unknown as jest.Mock).mock.calls)).not.toContain(
+        'ambiguous-token',
+      );
       delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
     });
 
@@ -1017,6 +1047,9 @@ describe('createAdminLangfuseHandlers', () => {
         const { handlers } = createHandlers();
         const res = mockRes();
 
+        delete process.env.TENANT_ISOLATION_STRICT;
+        delete process.env.LANGFUSE_FANOUT_ENABLED;
+        delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
         process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
         await handlers.testConnection(
           mockReq({

@@ -10,12 +10,14 @@ import {
 } from './policy';
 import {
   normalizeBoolean,
+  redirectPolicyFor,
   resolveLangfuseHeaders,
   resolveTenantCredentials,
   toBasicAuthorization,
 } from './utils';
 import {
   allowsLangfuseCustomHeaders,
+  hasAmbiguousLangfuseOrigins,
   resolveLangfuseTenantDestination,
 } from './tenantDestinations';
 import { mergeHeaders } from '~/utils/headers';
@@ -51,9 +53,11 @@ export type LangfuseScoreDestinationOptions = {
   centralTraceExportEnabled?: boolean;
 };
 
-/** Drops the deployment's headers unless this destination is an origin the
- *  operator explicitly configured — a run can resolve to several destinations,
- *  and only the intended one should receive the gateway credential. */
+let warnedAmbiguousOrigins = false;
+
+/** Drops the deployment's headers unless this destination is the one configured
+ *  Langfuse origin — a run can resolve to several destinations, and only the
+ *  intended one may receive the gateway credential. */
 export function scopeHeadersToDestination(
   headers: Record<string, string> | undefined,
   baseUrl: string,
@@ -61,7 +65,16 @@ export function scopeHeadersToDestination(
   if (headers == null) {
     return undefined;
   }
-  return allowsLangfuseCustomHeaders(baseUrl) ? headers : undefined;
+  if (allowsLangfuseCustomHeaders(baseUrl)) {
+    return headers;
+  }
+  if (hasAmbiguousLangfuseOrigins() && !warnedAmbiguousOrigins) {
+    warnedAmbiguousOrigins = true;
+    logger.warn(
+      '[langfuse] Not sending langfuse.headers: this deployment configures more than one Langfuse origin, and the headers do not say which one they authenticate to.',
+    );
+  }
+  return undefined;
 }
 
 export function getLangfuseDestinationId(baseUrl: string, projectId: string): string {
@@ -111,6 +124,7 @@ async function resolveCentralProjectId(
             Authorization: toBasicAuthorization(publicKey, secretKey),
           }),
           signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
+          ...redirectPolicyFor(headers),
         });
         if (!response.ok) {
           logger.warn(

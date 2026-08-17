@@ -137,16 +137,31 @@ function getConfiguredLangfuseOrigins(): Set<string> {
 /**
  * Whether custom Langfuse headers may be sent to `baseUrl`.
  *
- * A deployment configures one header map, but a run can resolve to several
- * destinations (central plus tenant under fanout). Broadcasting the map would
- * disclose a credential meant for an internal gateway to whatever unrelated
- * origin the other destination points at — Langfuse Cloud, typically. Sending
- * only to explicitly configured origins keeps the credential where it was
- * aimed while leaving the single-destination self-hosted case unaffected.
+ * `langfuse.headers` is a single map with no way to say *which* endpoint it
+ * authenticates to, so it is only unambiguous when the deployment configured
+ * exactly one Langfuse origin. With several — a collector plus a self-hosted
+ * central, say — any rule for picking recipients is a guess, and guessing wrong
+ * discloses a gateway credential to the other origin. So the headers are sent
+ * only when there is one configured origin and this is it.
+ *
+ * That covers the self-hosted-behind-a-proxy case this feature exists for.
+ * Multi-destination deployments need per-destination header configuration,
+ * which the schema does not yet express.
  */
 export function allowsLangfuseCustomHeaders(baseUrl: string): boolean {
+  const configured = getConfiguredLangfuseOrigins();
+  if (configured.size !== 1) {
+    return false;
+  }
   const origin = originOf(baseUrl);
-  return origin != null && getConfiguredLangfuseOrigins().has(origin);
+  return origin != null && configured.has(origin);
+}
+
+/** True when headers were configured but the deployment has several possible
+ *  Langfuse origins, so none can be given the map. Callers use this to explain
+ *  the silence rather than leaving an operator debugging a missing header. */
+export function hasAmbiguousLangfuseOrigins(): boolean {
+  return getConfiguredLangfuseOrigins().size > 1;
 }
 
 export function resolveLangfuseTenantDestination(

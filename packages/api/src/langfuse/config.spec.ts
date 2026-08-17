@@ -787,6 +787,64 @@ describe('buildLangfuseConfig', () => {
     expect(() => new Headers(built.additionalHeaders)).not.toThrow();
   });
 
+  it('expands a value built from several env references', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_CLIENT_ID = 'client-id';
+    process.env.LANGFUSE_CLIENT_SECRET = 'client-secret';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Pair': '${LANGFUSE_CLIENT_ID}:${LANGFUSE_CLIENT_SECRET}',
+            'X-Suffixed': 'Bearer ${LANGFUSE_CLIENT_SECRET}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** `extractEnvVariable`'s anchored branch is greedy, so a value that both
+     *  starts and ends with a reference parses as one variable named
+     *  `LANGFUSE_CLIENT_ID}:${LANGFUSE_CLIENT_SECRET` and is sent raw. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Pair': 'client-id:client-secret',
+      'X-Suffixed': 'Bearer client-secret',
+    });
+    delete process.env.LANGFUSE_CLIENT_ID;
+    delete process.env.LANGFUSE_CLIENT_SECRET;
+  });
+
+  it('drops headers that control request framing', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'Transfer-Encoding': 'chunked',
+            'content-length': '42',
+            Host: 'elsewhere.example',
+            'X-Valid': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** One of these on the shared map breaks every request the map is attached
+     *  to, rather than being ignored for that header. */
+    expect(built.additionalHeaders).toEqual({ 'X-Valid': 'kept' });
+  });
+
   it('omits headers entirely when none are configured', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';

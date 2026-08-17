@@ -1310,6 +1310,38 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
+  it('refuses redirects on requests carrying custom headers', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'X-Proxy-Token': 'proxy-token' },
+      }),
+    });
+
+    /** Node drops `Authorization` across a cross-origin redirect but keeps
+     *  arbitrary headers, so following one would hand the gateway credential
+     *  to a host that passed no origin check. */
+    const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(init.redirect).toBe('error');
+  });
+
+  it('keeps default redirect handling when no custom headers are configured', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({}),
+    });
+
+    const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(init.redirect).toBeUndefined();
+  });
+
   it('withholds configured headers from an unconfigured origin', async () => {
     const { sendFeedbackScore } = await loadFeedback();
 
