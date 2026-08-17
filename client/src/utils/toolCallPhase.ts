@@ -21,8 +21,19 @@ export interface ToolCallPhaseInput {
    * is what the heuristic below is for.
    */
   runStepStatus?: PartMetadata['runStepStatus'];
-  /** Streaming progress; `>= 1` means the card has settled. */
-  progress: number;
+  /**
+   * The animated value from `useProgress` — what the card is showing right
+   * now. Drives `running` vs `completed` so the label and shimmer follow the
+   * animation rather than snapping.
+   */
+  displayProgress: number;
+  /**
+   * The progress the stream actually reported, before display animation.
+   * Kept separate because `useProgress` holds below 1 for ~200ms after a call
+   * reports completion (it emits `0.99`, then `1` on a timeout), and the
+   * cancellation inference must not read that lag as an unfinished call.
+   */
+  reportedProgress: number;
   /** Whether the whole message is still streaming — a message-level fact. */
   isSubmitting: boolean;
   /**
@@ -47,11 +58,16 @@ export interface ToolCallPhaseInput {
  *   cancellation**, because that inference reads "not submitting and not
  *   finished" as a stop, which a genuine failure also satisfies. Applying the
  *   explicit-close precedence there relabelled real failures as user stops.
- * - **A closed step is never `running`**, whatever `progress` says.
+ * - **A closed step is never `running`**, whatever progress says.
+ * - **Cancellation is inferred from reported progress, never from the
+ *   animation.** `useProgress` lags a completed call by ~200ms; reading that
+ *   lag would label — and announce — a successful call as cancelled whenever
+ *   submission ended inside the window.
  */
 export function resolveToolCallPhase({
   runStepStatus,
-  progress,
+  displayProgress,
+  reportedProgress,
   isSubmitting,
   hasError,
 }: ToolCallPhaseInput): ToolCallPhase {
@@ -65,10 +81,10 @@ export function resolveToolCallPhase({
   if (hasError) {
     return 'failed';
   }
-  if (!isSubmitting && progress < 1) {
+  if (!isSubmitting && reportedProgress < 1) {
     return 'cancelled';
   }
-  return progress < 1 ? 'running' : 'completed';
+  return displayProgress < 1 ? 'running' : 'completed';
 }
 
 /** Whether the card should present this phase as an error to the reader. */

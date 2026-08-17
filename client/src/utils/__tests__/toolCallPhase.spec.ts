@@ -3,7 +3,8 @@ import { resolveToolCallPhase } from '../toolCallPhase';
 
 const resolve = (overrides: Partial<ToolCallPhaseInput> = {}) =>
   resolveToolCallPhase({
-    progress: 1,
+    displayProgress: 1,
+    reportedProgress: 1,
     isSubmitting: false,
     hasError: false,
     ...overrides,
@@ -29,10 +30,17 @@ describe('resolveToolCallPhase', () => {
      * in-flight state.
      */
     it('never returns running for a closed step, whatever progress says', () => {
-      expect(resolve({ runStepStatus: 'completed', progress: 0.4 })).toBe('completed');
-      expect(resolve({ runStepStatus: 'cancelled', progress: 0.1, isSubmitting: true })).toBe(
-        'cancelled',
-      );
+      expect(
+        resolve({ runStepStatus: 'completed', displayProgress: 0.4, reportedProgress: 0.4 }),
+      ).toBe('completed');
+      expect(
+        resolve({
+          runStepStatus: 'cancelled',
+          displayProgress: 0.1,
+          reportedProgress: 0.1,
+          isSubmitting: true,
+        }),
+      ).toBe('cancelled');
     });
 
     /** Explicit cancellation outranks a failure-shaped result. */
@@ -49,17 +57,23 @@ describe('resolveToolCallPhase', () => {
 
   describe('under the legacy heuristic', () => {
     it('reports an in-flight call as running', () => {
-      expect(resolve({ progress: 0.4, isSubmitting: true })).toBe('running');
+      expect(resolve({ displayProgress: 0.4, reportedProgress: 0.4, isSubmitting: true })).toBe(
+        'running',
+      );
     });
 
     it('reports a settled call as completed', () => {
-      expect(resolve({ progress: 1, isSubmitting: true })).toBe('completed');
+      expect(resolve({ displayProgress: 1, reportedProgress: 1, isSubmitting: true })).toBe(
+        'completed',
+      );
     });
 
     /** Unfinished progress with the message no longer streaming is the only
      *  signal the pre-`on_run_step_closed` path had for a stop. */
     it('infers cancellation from an unfinished call once submission ends', () => {
-      expect(resolve({ progress: 0.4, isSubmitting: false })).toBe('cancelled');
+      expect(resolve({ displayProgress: 0.4, reportedProgress: 0.4, isSubmitting: false })).toBe(
+        'cancelled',
+      );
     });
 
     /**
@@ -69,11 +83,55 @@ describe('resolveToolCallPhase', () => {
      * failures as user stops on historical messages.
      */
     it('lets failure outrank the cancellation inference', () => {
-      expect(resolve({ progress: 0.4, isSubmitting: false, hasError: true })).toBe('failed');
+      expect(
+        resolve({
+          displayProgress: 0.4,
+          reportedProgress: 0.4,
+          isSubmitting: false,
+          hasError: true,
+        }),
+      ).toBe('failed');
     });
 
     it('reports a failure even while the message is still streaming', () => {
-      expect(resolve({ progress: 0.4, isSubmitting: true, hasError: true })).toBe('failed');
+      expect(
+        resolve({
+          displayProgress: 0.4,
+          reportedProgress: 0.4,
+          isSubmitting: true,
+          hasError: true,
+        }),
+      ).toBe('failed');
+    });
+  });
+
+  describe('the useProgress settle window', () => {
+    /**
+     * `useProgress` holds below 1 for ~200ms after a call reports completion
+     * (it emits `0.99`, then `1` on a timeout). Inferring cancellation from
+     * that animated value labelled — and announced — a successful call as
+     * "Cancelled" whenever submission ended inside the window
+     * (Codex round 1 on #14934).
+     */
+    it('does not call a reported-complete call cancelled while the animation settles', () => {
+      expect(resolve({ displayProgress: 0.99, reportedProgress: 1, isSubmitting: false })).toBe(
+        'running',
+      );
+    });
+
+    /** The inference still fires for a call that genuinely never finished. */
+    it('still infers cancellation when the stream itself never reported completion', () => {
+      expect(resolve({ displayProgress: 0.99, reportedProgress: 0.4, isSubmitting: false })).toBe(
+        'cancelled',
+      );
+    });
+
+    /** Once the animation catches up the card settles, without a cancelled
+     *  frame in between. */
+    it('settles to completed once the animation catches up', () => {
+      expect(resolve({ displayProgress: 1, reportedProgress: 1, isSubmitting: false })).toBe(
+        'completed',
+      );
     });
   });
 
@@ -83,7 +141,12 @@ describe('resolveToolCallPhase', () => {
    * quietly unify them.
    */
   it('applies opposite precedence for an explicit close and the heuristic', () => {
-    const withError = { hasError: true, progress: 0.4, isSubmitting: false };
+    const withError = {
+      hasError: true,
+      displayProgress: 0.4,
+      reportedProgress: 0.4,
+      isSubmitting: false,
+    };
     expect(resolve({ ...withError, runStepStatus: 'cancelled' })).toBe('cancelled');
     expect(resolve(withError)).toBe('failed');
   });

@@ -196,7 +196,8 @@ export default function ToolCall({
    */
   const phase = resolveToolCallPhase({
     runStepStatus,
-    progress: rawProgress,
+    displayProgress: rawProgress,
+    reportedProgress: initialProgress,
     isSubmitting,
     hasError,
   });

@@ -365,7 +365,8 @@ export default function RetrievalCall({
    */
   const phase = resolveToolCallPhase({
     runStepStatus,
-    progress: rawProgress,
+    displayProgress: rawProgress,
+    reportedProgress: initialProgress,
     isSubmitting,
     hasError: typeof output === 'string' && isError(output),
   });
