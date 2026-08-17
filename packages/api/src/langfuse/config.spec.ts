@@ -568,6 +568,64 @@ describe('buildLangfuseConfig', () => {
     delete process.env.LANGFUSE_PROXY_TOKEN;
   });
 
+  it('collapses case-variant header names to a single spelling', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            authorization: 'Bearer first',
+            AUTHORIZATION: 'Bearer second',
+            'X-Other': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Two spellings surviving would let one slip past the single-key
+     *  displacement in `mergeHeaders` and be appended by fetch. */
+    expect(
+      Object.keys(built.additionalHeaders ?? {}).filter(
+        (key) => key.toLowerCase() === 'authorization',
+      ),
+    ).toHaveLength(1);
+    expect(built.additionalHeaders?.['X-Other']).toBe('kept');
+  });
+
+  it('encodes header values that fetch cannot transmit verbatim', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_TEAM_HEADER = 'Marić';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Latin1': 'José',
+            'X-Extended': 'Marić',
+            'X-FromEnv': '${LANGFUSE_TEAM_HEADER}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Characters above U+00FF throw in the `Headers` constructor, so they must
+     *  be encoded before they reach any request. Latin-1 passes through. */
+    expect(built.additionalHeaders?.['X-Latin1']).toBe('José');
+    expect(built.additionalHeaders?.['X-Extended']).toBe('b64:TWFyacSH');
+    expect(built.additionalHeaders?.['X-FromEnv']).toBe('b64:TWFyacSH');
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
+    delete process.env.LANGFUSE_TEAM_HEADER;
+  });
+
   it('omits headers entirely when none are configured', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';

@@ -1,8 +1,8 @@
 import { logger } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
+import { encodeHeaderValue, resolveHeaders } from '~/utils/env';
 import { decryptConfigSecret } from '~/admin/secrets';
 import { normalizeString } from '~/utils/text';
-import { resolveHeaders } from '~/utils/env';
 
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
 
@@ -18,6 +18,38 @@ function warnUnresolvedHeader(name: string): void {
   }
   unresolvedHeaderWarnings.add(name);
   logger.warn(`[langfuse] Dropping header "${name}": its \${...} environment variable is not set.`);
+}
+
+/** Names already reported as duplicate spellings, keyed by lowercase name. */
+const duplicateHeaderWarnings = new Set<string>();
+
+/**
+ * Collapses case-variant spellings of the same header name, keeping the last.
+ *
+ * HTTP header names are case-insensitive, but a config map can legally hold
+ * `authorization` and `AUTHORIZATION` as distinct keys. Downstream merging
+ * indexes one spelling per name and so can only displace one of them; the
+ * survivor would then be *appended* by `Headers` into a combined value,
+ * breaking the very credential it was meant to set.
+ */
+function collapseHeaderNameVariants(headers: Record<string, string>): Record<string, string> {
+  const byLowerName = new Map<string, string>();
+  for (const name of Object.keys(headers)) {
+    const lower = name.toLowerCase();
+    const existing = byLowerName.get(lower);
+    if (existing != null && !duplicateHeaderWarnings.has(lower)) {
+      duplicateHeaderWarnings.add(lower);
+      logger.warn(
+        `[langfuse] Header "${name}" duplicates "${existing}" (names are case-insensitive); using "${name}".`,
+      );
+    }
+    byLowerName.set(lower, name);
+  }
+
+  if (byLowerName.size === Object.keys(headers).length) {
+    return headers;
+  }
+  return Object.fromEntries([...byLowerName.values()].map((name) => [name, headers[name]]));
 }
 
 export function toBasicAuthorization(publicKey: string, secretKey: string): string {
@@ -56,20 +88,28 @@ export function resolveLangfuseHeaders(
     return undefined;
   }
 
-  const resolved = resolveHeaders({ headers: declared, stripUnresolved: true });
-  const entries = Object.entries(resolved).filter(([name, value]) => {
+  const resolved = resolveHeaders({
+    headers: collapseHeaderNameVariants(declared),
+    stripUnresolved: true,
+  });
+  const entries: Array<[string, string]> = [];
+  for (const [name, value] of Object.entries(resolved)) {
     if (value.trim() === '') {
-      return false;
+      continue;
     }
     /** `stripUnresolved` clears `{{...}}` placeholders but leaves `${VAR}`
      *  literal when the variable is unset, and forwarding that to a gateway
      *  reads as a wrong credential rather than a missing one. */
     if (UNRESOLVED_ENV_PATTERN.test(value)) {
       warnUnresolvedHeader(name);
-      return false;
+      continue;
     }
-    return true;
-  });
+    /** `resolveHeaders` only encodes values it substitutes a user field into,
+     *  and no user is supplied here — so a literal or interpolated character
+     *  above U+00FF would reach `Headers` unencoded and throw, taking down
+     *  export, verification, and feedback alike. */
+    entries.push([name, encodeHeaderValue(value)]);
+  }
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 

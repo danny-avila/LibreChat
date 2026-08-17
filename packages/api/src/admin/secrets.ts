@@ -782,16 +782,56 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
 }
 
 /**
+ * Config paths holding a *map* of sensitive values rather than one scalar.
+ * `CONFIG_SECRET_FIELDS` cannot describe these — it keys off a single path and
+ * a `<path>Preview` companion — so they are masked on read instead.
+ *
+ * These are yaml-only (admin writes are rejected), which is what makes masking
+ * safe: a masked read can never be round-tripped back over the real values.
+ */
+const CONFIG_SECRET_MAP_FIELDS: readonly string[] = ['langfuse.headers'];
+const MASKED_MAP_VALUE = '***';
+
+/**
+ * Replaces every value of a registered secret map with a fixed mask, keeping
+ * the key names so an admin can still see *which* headers a deployment sets
+ * without receiving the gateway credentials themselves.
+ */
+function redactSecretMapFields(rootRecord: Record<string, unknown>): void {
+  for (const path of CONFIG_SECRET_MAP_FIELDS) {
+    const segments = path.split('.');
+    const parent = walkToParent(rootRecord, segments);
+    const key = segments[segments.length - 1];
+    const value = parent?.[key];
+    const map = getPlainRecord(value);
+    if (parent == null) {
+      continue;
+    }
+    if (map == null) {
+      /** A non-object here is malformed for this path; drop it rather than
+       *  risk serializing a raw string credential. */
+      if (value !== undefined) {
+        delete parent[key];
+      }
+      continue;
+    }
+    parent[key] = Object.fromEntries(Object.keys(map).map((name) => [name, MASKED_MAP_VALUE]));
+  }
+}
+
+/**
  * Deletes registered secret values from `root` in place so admin reads never
  * return them (encrypted or plaintext). Preview companions and plain
  * `${ENV_VAR}` references (for fields that allow them) are preserved.
- * The caller passes a cloned object.
+ * Secret *maps* are masked value-by-value. The caller passes a cloned object.
  */
 export function redactConfigSecrets<T>(root: T): T {
   const rootRecord = getPlainRecord(root);
   if (!rootRecord) {
     return root;
   }
+
+  redactSecretMapFields(rootRecord);
 
   for (const key of Object.keys(rootRecord)) {
     if (key.includes('.') && isConfigSecretRelatedPath(key)) {
