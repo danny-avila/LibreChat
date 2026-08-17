@@ -24,6 +24,7 @@ const mockSetActivePrompt = jest.fn();
 let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
 let mockIsSubmitting = false;
+let mockIsUploadConfigPending = false;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -90,6 +91,7 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
   default: jest.fn(() => ({
     getOptions: mockGetUploadOptions,
     uploadsDisabled: false,
+    isConfigPending: mockIsUploadConfigPending,
   })),
 }));
 
@@ -162,6 +164,7 @@ describe('useTextarea long-paste fallback', () => {
     localStorage.clear();
     mockIndex = 0;
     mockIsSubmitting = false;
+    mockIsUploadConfigPending = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
@@ -741,6 +744,46 @@ describe('useTextarea long-paste fallback', () => {
     expect(consoleError).toHaveBeenCalledWith('clipboard file routing error', error);
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('routes a paste to context while the file config is still pending', async () => {
+    mockIsUploadConfigPending = true;
+    mockGetUploadOptions.mockReturnValue([]);
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBe(EToolResources.context);
+    expect(mockGetUploadOptions).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_error_files_unsupported' }),
+    );
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a paste once the loaded config offers nothing', async () => {
+    mockGetUploadOptions.mockReturnValue([]);
+    const { result } = renderTextareaHook();
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_error_files_unsupported',
+        status: 'error',
+      }),
+    );
+    expect(mockRouteFiles).not.toHaveBeenCalled();
   });
 
   it('numbers a second paste made while the first is still queued', async () => {

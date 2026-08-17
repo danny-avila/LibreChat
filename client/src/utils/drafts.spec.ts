@@ -3,6 +3,8 @@ import {
   applyPendingPasteToDraft,
   applyPendingPastesToDraft,
   clearComposerDrafts,
+  decodeBase64,
+  encodeBase64,
   resolvePendingPasteInsertStart,
   getComposerDraftId,
   getDraft,
@@ -16,6 +18,7 @@ import {
   renewNewConversationDraftToken,
   setDraft,
   setFilesDraft,
+  setPendingTextAttachmentDraft,
 } from './drafts';
 
 describe('new-conversation draft tokens', () => {
@@ -241,6 +244,30 @@ describe('clearComposerDrafts', () => {
 
     expect(getDraft(`${Constants.NEW_CONVO}:1`)).toBe('unsent new chat');
     expect(getDraft('convo-side')).toBe('');
+  });
+});
+
+describe('pending paste encoding', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  /** Past the argument limit that a spread into String.fromCharCode blows */
+  const hugePaste = `${'a'.repeat(200000)} café 🧪`;
+
+  it('round-trips a paste far larger than the call argument limit', () => {
+    expect(decodeBase64(encodeBase64(hugePaste))).toBe(hugePaste);
+  });
+
+  it('stores and reads back a huge pending paste', () => {
+    setPendingTextAttachmentDraft({
+      id: 'convo-1',
+      fileId: 'file-1',
+      text: hugePaste,
+      selectionStart: 0,
+    });
+
+    expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(hugePaste);
   });
 });
 

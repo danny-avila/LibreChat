@@ -274,10 +274,28 @@ export default function useTextarea({
     ): Promise<boolean> => {
       setFilesLoading(true);
 
+      const upload = async (destination?: EToolResources): Promise<boolean> => {
+        /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
+         * reports only its own error instead of pairing it with a success message. */
+        const accepted = await routeFiles(clipboardFiles, destination, uploadLifecycle);
+        if (accepted && destination === EToolResources.context) {
+          showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+        }
+        return accepted;
+      };
+
       try {
         /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
         if (isAssistantsEndpoint(conversation?.endpoint)) {
-          return await routeFiles(clipboardFiles, undefined, uploadLifecycle);
+          return await upload();
+        }
+
+        /** Resolving options reads the file config, so until that lands the list is empty for
+         * reasons that have nothing to do with this file. A caller that already knows where the
+         * file belongs hands it to the upload instead, which waits for the same config and
+         * validates against it, rather than rejecting or re-routing on a stale answer here. */
+        if (preferred != null && isUploadConfigPending) {
+          return await upload(preferred);
         }
 
         const options = getUploadOptions(clipboardFiles);
@@ -294,21 +312,23 @@ export default function useTextarea({
           return false;
         }
 
-        const destination = usePreferred ? preferred : options[0];
-        /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
-         * reports only its own error instead of pairing it with a success message. */
-        const accepted = await routeFiles(clipboardFiles, destination, uploadLifecycle);
-        if (accepted && destination === EToolResources.context) {
-          showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
-        }
-        return accepted;
+        return await upload(usePreferred ? preferred : options[0]);
       } catch (error) {
         console.error('clipboard file routing error', error);
         setFilesLoading(false);
         return false;
       }
     },
-    [localize, showToast, openModal, routeFiles, conversation, setFilesLoading, getUploadOptions],
+    [
+      localize,
+      showToast,
+      openModal,
+      routeFiles,
+      conversation,
+      setFilesLoading,
+      getUploadOptions,
+      isUploadConfigPending,
+    ],
   );
 
   const handlePaste = useCallback(

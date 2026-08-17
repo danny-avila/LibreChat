@@ -305,10 +305,18 @@ export const clearComposerDrafts = (
   }
 };
 
+/** Spreading a whole paste into `String.fromCharCode` blows the argument limit, and the paste
+ * sizes this recovery exists for are exactly the ones that reach it. */
+const BINARY_STRING_CHUNK = 0x8000;
+
 export const encodeBase64 = (plainText: string): string => {
   try {
     const textBytes = new TextEncoder().encode(plainText);
-    return btoa(String.fromCharCode(...textBytes));
+    let binary = '';
+    for (let start = 0; start < textBytes.length; start += BINARY_STRING_CHUNK) {
+      binary += String.fromCharCode(...textBytes.subarray(start, start + BINARY_STRING_CHUNK));
+    }
+    return btoa(binary);
   } catch {
     return '';
   }
