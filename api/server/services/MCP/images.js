@@ -24,7 +24,12 @@ function getDependencies() {
         return { image_urls: [] };
       }
 
-      const { image_urls } = await encodeAndFormat(request, imageFiles, {}, VisionModes.mcp);
+      const { image_urls } = await encodeAndFormat(
+        request,
+        imageFiles,
+        { mcpImageSizeLimit: imageSizeLimit },
+        VisionModes.mcp,
+      );
       return { image_urls };
     },
   };

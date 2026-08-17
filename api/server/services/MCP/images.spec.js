@@ -74,7 +74,12 @@ describe('MCP uploaded-image encoding', () => {
     }
     expect(mockEncodeAndFormat).toHaveBeenCalledTimes(expectedEncodeCalls);
     if (expectedEncodeCalls === 1) {
-      expect(mockEncodeAndFormat).toHaveBeenCalledWith(request, [file], {}, VisionModes.mcp);
+      expect(mockEncodeAndFormat).toHaveBeenCalledWith(
+        request,
+        [file],
+        { mcpImageSizeLimit: fileSizeLimit === undefined ? 512 * mib : fileSizeLimit * mib },
+        VisionModes.mcp,
+      );
     }
   });
 });

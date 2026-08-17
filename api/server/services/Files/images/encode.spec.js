@@ -33,6 +33,24 @@ beforeEach(() => {
 });
 
 describe('encodeAndFormat - request memory guard', () => {
+  const mcpImageSizeLimit = 1024 * 1024;
+
+  function createLocalImage({ bytes, metadataBytes }) {
+    const file = {
+      source: FileSources.local,
+      height: 10,
+      width: 10,
+      type: 'image/png',
+      file_id: 'mcp-image',
+      filepath: 'local/mcp.png',
+      filename: 'mcp.png',
+      bytes: metadataBytes,
+    };
+    const imageContent = Buffer.alloc(bytes, 65).toString('base64');
+    mockPrepareImagePayload.mockResolvedValue([file, imageContent]);
+    return { file, imageContent };
+  }
+
   it('gates blob-storage byte pulls and returns [file, base64]', async () => {
     mockGetDownloadStream.mockResolvedValue(Readable.from([Buffer.from('blob-image-bytes')]));
     const file = {
@@ -129,6 +147,50 @@ describe('encodeAndFormat - request memory guard', () => {
       expect.objectContaining({
         file_id: file.file_id,
         image_url: { url: `data:image/png;base64,${localBase64}`, detail: 'auto' },
+      }),
+    ]);
+  });
+
+  it.each([
+    ['zero metadata', 0],
+    ['stale-low metadata', 1],
+  ])('rejects an actual over-limit local MCP image with %s', async (_name, metadataBytes) => {
+    const { file, imageContent } = createLocalImage({
+      bytes: mcpImageSizeLimit + 1,
+      metadataBytes,
+    });
+
+    const result = encodeAndFormat(makeReq(), [file], { mcpImageSizeLimit }, VisionModes.mcp);
+
+    await expect(result).rejects.toThrow('Image validation failed for mcp.png');
+    await result.catch((error) => expect(error.message).not.toContain(imageContent));
+  });
+
+  it('forwards a local MCP image at the configured actual-byte limit', async () => {
+    const { file, imageContent } = createLocalImage({
+      bytes: mcpImageSizeLimit,
+      metadataBytes: 0,
+    });
+
+    const result = await encodeAndFormat(makeReq(), [file], { mcpImageSizeLimit }, VisionModes.mcp);
+
+    expect(result.image_urls).toEqual([
+      expect.objectContaining({
+        file_id: file.file_id,
+        image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
+      }),
+    ]);
+  });
+
+  it('forwards an ordinary under-limit local MCP image', async () => {
+    const { file, imageContent } = createLocalImage({ bytes: 20, metadataBytes: 1 });
+
+    const result = await encodeAndFormat(makeReq(), [file], { mcpImageSizeLimit }, VisionModes.mcp);
+
+    expect(result.image_urls).toEqual([
+      expect.objectContaining({
+        file_id: file.file_id,
+        image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
       }),
     ]);
   });

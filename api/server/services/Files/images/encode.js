@@ -94,11 +94,12 @@ const blobStorageSources = new Set([
  * @param {object} params - Object containing provider/endpoint information
  * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
  * @param {string} [params.endpoint] - Optional: The endpoint for the image
+ * @param {number} [params.mcpImageSizeLimit] - Byte limit for uploaded MCP image payloads
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
 async function encodeAndFormat(req, files, params, mode) {
-  const { provider, endpoint } = params;
+  const { provider, endpoint, mcpImageSizeLimit } = params;
   const effectiveEndpoint = endpoint ?? provider;
   const promises = [];
   /** @type {Record<FileSources, Pick<ReturnType<typeof getStrategyFunctions>, 'prepareImagePayload' | 'getDownloadStream'>>} */
@@ -203,6 +204,14 @@ async function encodeAndFormat(req, files, params, mode) {
         : Buffer.from(imageContent, 'base64');
 
       if (imageBuffer) {
+        if (mode === VisionModes.mcp && imageBuffer.length > mcpImageSizeLimit) {
+          const imageSizeMB = Math.round(imageBuffer.length / (1024 * 1024));
+          const limitMB = Math.round(mcpImageSizeLimit / (1024 * 1024));
+          throw new Error(
+            `Image validation failed for ${file.filename}: Image file size (${imageSizeMB}MB) exceeds the ${limitMB}MB limit`,
+          );
+        }
+
         const validation = await validateImage(
           imageBuffer,
           imageBuffer.length,
