@@ -1,8 +1,8 @@
 import { resolveUploadedImageArguments } from './images';
 
-const first = { file_id: 'first', filepath: '/images/user-1/first.png' };
-const second = { file_id: 'second', filepath: '/images/user-1/second.jpg' };
-const third = { file_id: 'third', filepath: '/images/user-1/third.webp' };
+const first = { file_id: 'first', filepath: '/images/user-1/first.png', type: 'image/png' };
+const second = { file_id: 'second', filepath: '/images/user-1/second.jpg', type: 'image/jpeg' };
+const third = { file_id: 'third', filepath: '/images/user-1/third.webp', type: 'image/webp' };
 const imageUrls = {
   first: 'data:image/png;base64,Zmlyc3Q=',
   second: 'data:image/jpeg;base64,c2Vjb25k',
@@ -104,7 +104,7 @@ describe('resolveUploadedImageArguments', () => {
   });
 
   it('queries only referenced current-request image IDs and preserves foreign or sparse placeholders', async () => {
-    const owned = { file_id: 'owned', filepath: '/images/user-1/owned.png' };
+    const owned = { file_id: 'owned', filepath: '/images/user-1/owned.png', type: 'image/png' };
     const dependencies = createDependencies({
       findFiles: jest.fn().mockResolvedValue([owned]),
       encodeImages: jest.fn().mockResolvedValue({
@@ -207,4 +207,52 @@ describe('resolveUploadedImageArguments', () => {
       }),
     ).rejects.toThrow('encoder unavailable');
   });
+
+  it.each([
+    ['/mnt/data/0.png', 'image/png', 'image/png', imageUrls.first, imageUrls.first],
+    ['/mnt/data/0.jpg', 'image/jpg', 'image/jpeg', imageUrls.second, imageUrls.second],
+    ['/mnt/data/0.webp', 'image/webp', 'image/webp', imageUrls.third, imageUrls.third],
+    [
+      '/mnt/data/0.png',
+      'image/png',
+      'image/png',
+      'data:image/svg+xml;base64,c3Zn',
+      '/mnt/data/0.png',
+    ],
+    ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/gif;base64,Z2lm', '/mnt/data/0.png'],
+    ['/mnt/data/0.png', 'image/jpeg', 'image/png', imageUrls.first, '/mnt/data/0.png'],
+    ['/mnt/data/0.png', 'image/png', 'image/jpeg', imageUrls.first, '/mnt/data/0.png'],
+    ['/mnt/data/0.png', 'image/png', 'image/png', imageUrls.second, '/mnt/data/0.png'],
+    ['/mnt/data/0.png', 'image/png', 'image/png', imageUrls.third, '/mnt/data/0.png'],
+    ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/png;base64,', '/mnt/data/0.png'],
+    [
+      '/mnt/data/0.png',
+      'image/png',
+      'image/png',
+      'data:image/png;base64,not-base64!',
+      '/mnt/data/0.png',
+    ],
+  ])(
+    'replaces only matching supported MIME image data for %s',
+    async (placeholder, requestType, fileType, encodedUrl, expected) => {
+      const file = { file_id: 'image', type: fileType };
+      const dependencies = createDependencies({
+        findFiles: jest.fn().mockResolvedValue([file]),
+        encodeImages: jest.fn().mockResolvedValue({
+          image_urls: [{ file_id: file.file_id, image_url: { url: encodedUrl } }],
+        }),
+      });
+      const currentRequest = { body: { files: [{ file_id: file.file_id, type: requestType }] } };
+
+      await expect(
+        resolveUploadedImageArguments({
+          forwardUploadedImages: true,
+          toolArguments: { source: placeholder },
+          request: currentRequest,
+          user: { id: 'user-1' },
+          dependencies,
+        }),
+      ).resolves.toEqual({ source: expected });
+    },
+  );
 });

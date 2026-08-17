@@ -1,4 +1,7 @@
-const UPLOAD_PLACEHOLDER = /^\/mnt\/data\/(\d+)\.(?:png|jpe?g|webp)$/;
+const UPLOAD_PLACEHOLDER = /^\/mnt\/data\/(\d+)\.(png|jpe?g|webp)$/;
+const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+type SupportedImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
 
 type ToolArgumentValue =
   | string
@@ -25,6 +28,7 @@ export interface ImageToolUser {
 
 export interface ImageToolFile {
   file_id: string;
+  type?: string;
 }
 
 export interface ImageToolFileQuery {
@@ -68,7 +72,21 @@ function isPlainObject(value: ToolArgumentValue): value is Record<string, ToolAr
   return prototype === Object.prototype || prototype === null;
 }
 
-function getUploadPlaceholderIndex(value: ToolArgumentValue): number | undefined {
+function normalizeImageMimeType(value: unknown): SupportedImageMime | undefined {
+  switch (typeof value === 'string' ? value.toLowerCase() : undefined) {
+    case 'image/png':
+      return 'image/png';
+    case 'image/jpg':
+    case 'image/jpeg':
+      return 'image/jpeg';
+    case 'image/webp':
+      return 'image/webp';
+  }
+}
+
+function getUploadPlaceholder(
+  value: ToolArgumentValue,
+): { index: number; mimeType: SupportedImageMime } | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -79,49 +97,58 @@ function getUploadPlaceholderIndex(value: ToolArgumentValue): number | undefined
   }
 
   const index = Number(match[1]);
-  return Number.isSafeInteger(index) ? index : undefined;
+  const mimeType = normalizeImageMimeType(`image/${match[2]}`);
+  return Number.isSafeInteger(index) && mimeType ? { index, mimeType } : undefined;
 }
 
-function getRequestImageFileIds(request?: ImageToolRequest): string[] {
-  const files = request?.body?.files;
-  if (!files) {
-    return [];
-  }
-
-  return files
-    .filter((file) => file.type?.startsWith('image/') && typeof file.file_id === 'string')
-    .map((file) => file.file_id!);
+function getRequestImageFiles(request?: ImageToolRequest): Array<ImageToolRequestFile | undefined> {
+  return (request?.body?.files ?? []).map((file) =>
+    typeof file.file_id === 'string' && normalizeImageMimeType(file.type) ? file : undefined,
+  );
 }
 
-function collectReferencedIndexes(value: ToolArgumentValue, indexes: Set<number>): void {
-  const index = getUploadPlaceholderIndex(value);
-  if (index !== undefined) {
-    indexes.add(index);
+function collectReferencedPlaceholders(
+  value: ToolArgumentValue,
+  placeholders: Map<number, SupportedImageMime>,
+): void {
+  const placeholder = getUploadPlaceholder(value);
+  if (placeholder) {
+    placeholders.set(placeholder.index, placeholder.mimeType);
     return;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      collectReferencedIndexes(item, indexes);
+      collectReferencedPlaceholders(item, placeholders);
     }
   } else if (isPlainObject(value)) {
     for (const item of Object.values(value)) {
-      collectReferencedIndexes(item, indexes);
+      collectReferencedPlaceholders(item, placeholders);
     }
   }
 }
 
-function isImageDataUrl(value: unknown): value is string {
-  return typeof value === 'string' && /^data:image\/[^;,]+;base64,/.test(value);
+function parseImageDataUrl(
+  value: unknown,
+): { mimeType: SupportedImageMime; url: string } | undefined {
+  const match =
+    typeof value === 'string' ? /^data:(image\/[^;,]+);base64,(.*)$/i.exec(value) : null;
+  const mimeType = normalizeImageMimeType(match?.[1]);
+  const payload = match?.[2];
+  if (!mimeType || !payload || !BASE64_PAYLOAD.test(payload)) {
+    return undefined;
+  }
+
+  return { mimeType, url: `data:${mimeType};base64,${payload}` };
 }
 
 function replaceReferencedPlaceholders(
   value: ToolArgumentValue,
   imageUrlsByIndex: ReadonlyMap<number, string>,
 ): ToolArgumentValue {
-  const index = getUploadPlaceholderIndex(value);
-  if (index !== undefined) {
-    return imageUrlsByIndex.get(index) ?? value;
+  const placeholder = getUploadPlaceholder(value);
+  if (placeholder) {
+    return imageUrlsByIndex.get(placeholder.index) ?? value;
   }
 
   if (Array.isArray(value)) {
@@ -163,19 +190,26 @@ export async function resolveUploadedImageArguments({
     return toolArguments;
   }
 
-  const referencedIndexes = new Set<number>();
-  collectReferencedIndexes(toolArguments, referencedIndexes);
-  if (referencedIndexes.size === 0) {
+  const referencedPlaceholders = new Map<number, SupportedImageMime>();
+  collectReferencedPlaceholders(toolArguments, referencedPlaceholders);
+  if (referencedPlaceholders.size === 0) {
     return toolArguments;
   }
 
-  const fileIds = getRequestImageFileIds(request);
-  if (!user?.id || fileIds.length === 0) {
+  const requestImageFiles = getRequestImageFiles(request);
+  if (!user?.id || requestImageFiles.length === 0) {
     return toolArguments;
   }
 
   const referencedFileIds = [
-    ...new Set(fileIds.filter((_fileId, index) => referencedIndexes.has(index))),
+    ...new Set(
+      [...referencedPlaceholders.keys()]
+        .sort((left, right) => left - right)
+        .flatMap((index) => {
+          const fileId = requestImageFiles[index]?.file_id;
+          return fileId ? [fileId] : [];
+        }),
+    ),
   ];
   if (referencedFileIds.length === 0) {
     return toolArguments;
@@ -195,15 +229,23 @@ export async function resolveUploadedImageArguments({
 
   const { image_urls: imageUrls } = await dependencies.encodeImages(request, imageFiles);
   const imageUrlsByFileId = new Map(
-    (imageUrls ?? [])
-      .filter((image) => isImageDataUrl(image.image_url?.url))
-      .map((image) => [image.file_id, image.image_url!.url!] as const),
+    (imageUrls ?? []).flatMap((image) => {
+      const dataUrl = parseImageDataUrl(image.image_url?.url);
+      return dataUrl ? [[image.file_id, dataUrl] as const] : [];
+    }),
   );
   const imageUrlsByIndex = new Map(
-    [...referencedIndexes].flatMap((index) => {
-      const fileId = fileIds[index];
-      const url = fileId ? imageUrlsByFileId.get(fileId) : undefined;
-      return url ? [[index, url] as const] : [];
+    [...referencedPlaceholders].flatMap(([index, placeholderMimeType]) => {
+      const requestFile = requestImageFiles[index];
+      const fileId = requestFile?.file_id;
+      const file = fileId ? filesById.get(fileId) : undefined;
+      const requestMimeType = normalizeImageMimeType(requestFile?.type);
+      const dataUrl = fileId ? imageUrlsByFileId.get(fileId) : undefined;
+      return requestMimeType === placeholderMimeType &&
+        normalizeImageMimeType(file?.type) === placeholderMimeType &&
+        dataUrl?.mimeType === placeholderMimeType
+        ? [[index, dataUrl.url] as const]
+        : [];
     }),
   );
 
