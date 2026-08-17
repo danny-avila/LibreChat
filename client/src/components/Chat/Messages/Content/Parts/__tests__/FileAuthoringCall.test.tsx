@@ -279,3 +279,66 @@ describe('FileAuthoringCall', () => {
     expect(preview).toHaveTextContent('+second new');
   });
 });
+
+/**
+ * jsdom has no layout, so the capped pane's scroll geometry is stubbed:
+ * `scrollHeight` reads from mutable state (grown by the test as args
+ * stream) and every `scrollTop` write the component makes is recorded.
+ */
+const mockScrollMetrics = (el: HTMLElement, clientHeight: number) => {
+  const state = { scrollHeight: 0, scrollTop: 0, writes: [] as number[] };
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => state.scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight });
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    get: () => state.scrollTop,
+    set: (value: number) => {
+      state.scrollTop = value;
+      state.writes.push(value);
+    },
+  });
+  return state;
+};
+
+describe('FileAuthoringCall streaming follow-scroll', () => {
+  const streamingCreate = (content: string) => (
+    <FileAuthoringCall
+      toolName="create_file"
+      initialProgress={0.5}
+      isSubmitting={true}
+      args={`{"file_path":"skills/demo/SKILL.md","content":"${content}`}
+      output=""
+    />
+  );
+
+  it('pins the streaming create_file preview to the newest authored content', () => {
+    const { container, rerender } = render(streamingCreate('# Demo\\nline one'));
+    const pane = container.querySelector('.overflow-auto') as HTMLElement;
+    const state = mockScrollMetrics(pane, 300);
+    state.scrollHeight = 1200;
+
+    rerender(streamingCreate('# Demo\\nline one\\nline two of the streamed body'));
+
+    expect(state.scrollTop).toBe(1200);
+  });
+
+  it('leaves a finished create_file preview alone', () => {
+    const finishedCreate = (content: string) => (
+      <FileAuthoringCall
+        toolName="create_file"
+        initialProgress={1}
+        isSubmitting={false}
+        args={{ file_path: 'skills/demo/SKILL.md', content }}
+        output="Created skills/demo/SKILL.md (4096 chars)."
+      />
+    );
+    const { container, rerender } = render(finishedCreate('# Demo\nline one'));
+    const pane = container.querySelector('.overflow-auto') as HTMLElement;
+    const state = mockScrollMetrics(pane, 300);
+    state.scrollHeight = 1200;
+
+    rerender(finishedCreate('# Demo\nline one\nline two'));
+
+    expect(state.writes).toHaveLength(0);
+  });
+});

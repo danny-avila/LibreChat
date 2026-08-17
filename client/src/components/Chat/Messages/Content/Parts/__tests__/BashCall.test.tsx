@@ -1,6 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import BashCall from '../BashCall';
 
 jest.mock('~/hooks', () => ({
@@ -263,5 +263,81 @@ describe('BashCall backgrounded calls', () => {
     );
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Finished running');
     expect(screen.getByText('hi')).toBeInTheDocument();
+  });
+});
+
+/**
+ * jsdom has no layout, so the capped pane's scroll geometry is stubbed:
+ * `scrollHeight` reads from mutable state (grown by the test as args
+ * stream) and every `scrollTop` write the component makes is recorded.
+ * Direct mutations of the returned state bypass the element setter, so
+ * `writes` only ever contains scrolls the component itself performed.
+ */
+const mockScrollMetrics = (el: HTMLElement, clientHeight: number) => {
+  const state = { scrollHeight: 0, scrollTop: 0, writes: [] as number[] };
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => state.scrollHeight });
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight });
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    get: () => state.scrollTop,
+    set: (value: number) => {
+      state.scrollTop = value;
+      state.writes.push(value);
+    },
+  });
+  return state;
+};
+
+describe('BashCall streaming follow-scroll', () => {
+  const streamingArgs = (command: string) => `{"command":"${command}`;
+
+  const streamingCall = (command: string) => (
+    <RecoilRoot>
+      <BashCall initialProgress={0.1} isSubmitting={true} args={streamingArgs(command)} output="" />
+    </RecoilRoot>
+  );
+
+  it('pins the command box to the newest streamed args once content overflows the cap', () => {
+    const { container, rerender } = render(streamingCall('echo start'));
+    const box = container.querySelector('.overflow-auto') as HTMLElement;
+    const state = mockScrollMetrics(box, 300);
+    state.scrollHeight = 900;
+
+    rerender(streamingCall('echo start && echo a second streamed line'));
+
+    expect(state.scrollTop).toBe(900);
+  });
+
+  it('stops following when the user scrolls up to read, and resumes once they return to the bottom', () => {
+    const { container, rerender } = render(streamingCall('echo start'));
+    const box = container.querySelector('.overflow-auto') as HTMLElement;
+    const state = mockScrollMetrics(box, 300);
+    state.scrollHeight = 900;
+
+    state.scrollTop = 100;
+    fireEvent.scroll(box);
+    rerender(streamingCall('echo start && echo second'));
+    expect(state.writes).toHaveLength(0);
+
+    state.scrollTop = 580;
+    fireEvent.scroll(box);
+    rerender(streamingCall('echo start && echo second && echo third'));
+    expect(state.writes).toEqual([900]);
+  });
+
+  it('never scrolls a finished call', () => {
+    const finishedCall = (command: string) => (
+      <RecoilRoot>
+        <BashCall initialProgress={1} isSubmitting={false} args={{ command }} output="done" />
+      </RecoilRoot>
+    );
+    const { container, rerender } = render(finishedCall('echo done'));
+    const box = container.querySelector('.overflow-auto') as HTMLElement;
+    const state = mockScrollMetrics(box, 300);
+    state.scrollHeight = 900;
+
+    rerender(finishedCall('echo done && echo a longer settled command'));
+
+    expect(state.writes).toHaveLength(0);
   });
 });

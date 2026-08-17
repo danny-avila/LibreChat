@@ -8,6 +8,7 @@ import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
+import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
@@ -89,6 +90,11 @@ export default function ExecuteCode({
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!code, onExpand, runStepStatus);
 
+  const { ref: codePaneRef, onScroll: onCodePaneScroll } = useFollowScroll<HTMLPreElement>(
+    code ?? '',
+    progress < 1 && !cancelled,
+  );
+
   const highlighted = useLazyHighlight(code, lang);
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
@@ -157,7 +163,11 @@ export default function ExecuteCode({
           <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+              <pre
+                ref={codePaneRef}
+                onScroll={onCodePaneScroll}
+                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+              >
                 <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}
