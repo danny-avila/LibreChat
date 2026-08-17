@@ -63,6 +63,10 @@ jobs:
             "matrix: " + ([.matrix | to_entries[] | .key as $wf | .value | to_entries[] |
               "\($wf)/\(.key)=" + (if .value then "run" else "SKIP" end)] | join("  ")),
             (if .shards then "shards: " + (.shards | to_json) else empty end),
-            (if .lock_workspaces then "lockfile → " + (.lock_workspaces | to_json) else empty end)
+            (if .lock_workspaces then "lockfile → " + (.lock_workspaces | to_json) else empty end),
+            (if .e2e and (.e2e.error | not) then
+              "e2e tiers: must \(.e2e.must_run | length) · floor \(.e2e.floor | length) · skippable \(.e2e.skippable | length)" +
+              (if (.e2e.must_run | length) > 0 then " — must: " + (.e2e.must_run[:4] | join(", ")) else "" end)
+            else empty end)
           ' >> "$GITHUB_STEP_SUMMARY"
           exit 0
