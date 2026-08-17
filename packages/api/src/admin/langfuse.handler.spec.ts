@@ -957,5 +957,50 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body).toEqual({ success: false, errorCode: 'missing_secret' });
       expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('sends the deployment headers on both verification requests', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'proxy-client' } } },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({ success: true });
+      const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+      expect(projectsInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
+      expect(projectsInit.headers.Authorization).toMatch(/^Basic /);
+      const [, ingestionInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
+      expect(ingestionInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
+      expect(ingestionInit.headers.Authorization).toBe('Bearer pk');
+    });
+
+    it('keeps the Langfuse authorization when a deployment header collides', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { Authorization: 'Bearer proxy-token' } } },
+        }),
+        res,
+      );
+
+      const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+      expect(projectsInit.headers.Authorization).toMatch(/^Basic /);
+    });
   });
 });

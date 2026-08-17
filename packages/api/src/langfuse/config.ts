@@ -9,8 +9,8 @@ import {
   isLangfuseTracingEnabled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
+import { normalizeBoolean, resolveLangfuseHeaders, resolveTenantCredentials } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
-import { normalizeBoolean, resolveTenantCredentials } from './utils';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
 
@@ -18,6 +18,7 @@ type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
   mediaUploadEnabled?: boolean;
+  additionalHeaders?: Record<string, string>;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
 type LangfuseExportPlan =
@@ -166,6 +167,14 @@ export function buildLangfuseConfig({
     return langfuse;
   }
 
+  /** Applied before the export branches so every destination this config can
+   *  resolve to — central, tenant, or collector — carries the deployment's
+   *  proxy headers. Branches that end up disabling export leave them inert. */
+  const additionalHeaders = resolveLangfuseHeaders(config?.headers);
+  if (additionalHeaders) {
+    langfuse.additionalHeaders = additionalHeaders;
+  }
+
   const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) === true;
   if (!centralTraceExportEnabled) {
     disableCentralExport(langfuse);
@@ -217,9 +226,11 @@ export function buildLangfuseConfig({
           ...(!centralTraceExportEnabled ? [CENTRAL_MEDIA_DISABLED_SEGMENT] : []),
         ].join('/'),
       );
-      // TODO: Add support in @librechat/agents for Langfuse additionalHeaders and
-      // route by headers if we need multiple tenant Langfuse exports for one run.
-      // The destination-scoped URL is the current app-to-gateway routing contract.
+      // Fanout routing stays destination-scoped by URL. `additionalHeaders` is
+      // now available (and carries the deployment's proxy headers), but routing
+      // multiple tenant Langfuse exports for one run by header would need the
+      // collector to demultiplex them — the URL remains the app-to-gateway
+      // routing contract until that is required.
       langfuse.librechatTraceAttributes = {
         ...(langfuse.librechatTraceAttributes ?? {}),
         [TENANT_EXPORT_ATTRIBUTE]: 'true',

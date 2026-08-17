@@ -8,7 +8,12 @@ import {
   isLangfuseTraceSampled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
-import { normalizeBoolean, resolveTenantCredentials, toBasicAuthorization } from './utils';
+import {
+  normalizeBoolean,
+  resolveLangfuseHeaders,
+  resolveTenantCredentials,
+  toBasicAuthorization,
+} from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
@@ -28,6 +33,8 @@ export type LangfuseScoreDestination = {
   name: 'central' | 'tenant' | 'connection';
   baseUrl: string;
   authorization: string;
+  /** Deployment proxy/gateway headers, merged beneath `Authorization`. */
+  headers?: Record<string, string>;
 };
 
 export type LangfuseScoreDestinationOptions = {
@@ -60,14 +67,18 @@ async function resolveCentralProjectId(
   publicKey: string,
   secretKey: string,
   waitForLookup: boolean,
+  headers?: Record<string, string>,
 ): Promise<string | undefined> {
   const configuredProjectId = normalizeString(process.env.LANGFUSE_PROJECT_ID);
   if (configuredProjectId) {
     return configuredProjectId;
   }
 
+  /** Headers participate in the key so the header-less module warm-up below
+   *  cannot record a proxy rejection against the entry the request path
+   *  (which does send them) later reads. */
   const cacheKey = createHash('sha256')
-    .update(`${baseUrl}\n${publicKey}\n${secretKey}`)
+    .update(`${baseUrl}\n${publicKey}\n${secretKey}\n${JSON.stringify(headers ?? null)}`)
     .digest('hex');
   const cached = centralProjectIdCache.get(cacheKey) ?? { retryAt: 0 };
   centralProjectIdCache.set(cacheKey, cached);
@@ -79,7 +90,7 @@ async function resolveCentralProjectId(
     cached.lookup = (async () => {
       try {
         const response = await fetch(`${baseUrl}/api/public/projects`, {
-          headers: { Authorization: toBasicAuthorization(publicKey, secretKey) },
+          headers: { ...headers, Authorization: toBasicAuthorization(publicKey, secretKey) },
           signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
         });
         if (!response.ok) {
@@ -125,6 +136,7 @@ async function resolveCentralProjectId(
 
 async function getCentralScoreDestination(
   waitForProjectId: boolean,
+  headers?: Record<string, string>,
 ): Promise<LangfuseScoreDestination | undefined> {
   // Central feedback scores are sent directly by the app, not through the
   // collector, so they use LibreChat's normal central Langfuse credentials.
@@ -136,16 +148,26 @@ async function getCentralScoreDestination(
   }
 
   const baseUrl = getCentralEnvBaseUrl();
-  const projectId = await resolveCentralProjectId(baseUrl, publicKey, secretKey, waitForProjectId);
+  const projectId = await resolveCentralProjectId(
+    baseUrl,
+    publicKey,
+    secretKey,
+    waitForProjectId,
+    headers,
+  );
   return {
     id: projectId ? getLangfuseDestinationId(baseUrl, projectId) : undefined,
     name: 'central',
     baseUrl,
     authorization: toBasicAuthorization(publicKey, secretKey),
+    ...(headers ? { headers } : {}),
   };
 }
 
-function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestination | undefined {
+function getTenantScoreDestination(
+  appConfig?: AppConfig,
+  headers?: Record<string, string>,
+): LangfuseScoreDestination | undefined {
   if (!isLangfuseTenantExportEnabled()) {
     return undefined;
   }
@@ -178,11 +200,13 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
     name: 'tenant',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
+    ...(headers ? { headers } : {}),
   };
 }
 
 function getConfiguredScoreDestination(
   appConfig?: AppConfig,
+  headers?: Record<string, string>,
 ): LangfuseScoreDestination | undefined {
   const config = appConfig?.langfuse;
   if (normalizeBoolean(config?.enabled) !== true) {
@@ -202,6 +226,7 @@ function getConfiguredScoreDestination(
     name: 'connection',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),
+    ...(headers ? { headers } : {}),
   };
 }
 
@@ -227,6 +252,8 @@ export async function getScoreDestinations(
     return [];
   }
 
+  const headers = resolveLangfuseHeaders(appConfig?.langfuse?.headers);
+
   if (!usesLangfuseMultiTenantRouting()) {
     /** Mirrors `resolveLangfuseExportPlan`: without fanout there is no tenant
      *  route to fall back on, so suppressing central export disables the trace
@@ -236,19 +263,19 @@ export async function getScoreDestinations(
       return [];
     }
     return hasLangfuseEnvCredentials()
-      ? [await getCentralScoreDestination(waitForCentralProjectId)].filter(
+      ? [await getCentralScoreDestination(waitForCentralProjectId, headers)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         )
-      : [getConfiguredScoreDestination(appConfig)].filter(
+      : [getConfiguredScoreDestination(appConfig, headers)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         );
   }
 
   const destinations = [
     centralTraceExportEnabled
-      ? await getCentralScoreDestination(waitForCentralProjectId)
+      ? await getCentralScoreDestination(waitForCentralProjectId, headers)
       : undefined,
-    getTenantScoreDestination(appConfig),
+    getTenantScoreDestination(appConfig, headers),
   ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination));
   const unique = new Map<string, LangfuseScoreDestination>();
   for (const destination of destinations) {

@@ -475,4 +475,110 @@ describe('buildLangfuseConfig', () => {
       });
     },
   );
+
+  it('sends configured headers with env-credential central export', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: { headers: { 'CF-Access-Client-Id': 'proxy-client' } },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-env',
+      secretKey: 'sk-env',
+      baseUrl: 'https://langfuse.internal',
+      additionalHeaders: { 'CF-Access-Client-Id': 'proxy-client' },
+    });
+  });
+
+  it('sends configured headers with a stored tenant connection', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-stored',
+            secretKey: encryptV3('sk-stored'),
+            destination: 'us',
+            headers: { 'X-Proxy-Token': 'tenant-token' },
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-stored',
+      secretKey: 'sk-stored',
+      baseUrl: 'https://us.cloud.langfuse.com',
+      additionalHeaders: { 'X-Proxy-Token': 'tenant-token' },
+    });
+  });
+
+  it('sends configured headers to the fanout collector', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: { headers: { 'X-Gateway-Key': 'gateway' } },
+        } as unknown as AppConfig,
+      }),
+    ).toMatchObject({
+      baseUrl: 'http://collector:4318',
+      additionalHeaders: { 'X-Gateway-Key': 'gateway' },
+    });
+  });
+
+  it('interpolates env vars in headers and drops the unresolved', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_PROXY_TOKEN = 'resolved-token';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Missing': '${LANGFUSE_HEADER_NOT_SET}',
+            'X-Blank': '   ',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    expect(built.additionalHeaders).toEqual({ 'X-Proxy-Token': 'resolved-token' });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('omits headers entirely when none are configured', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: { langfuse: { headers: {} } } as unknown as AppConfig,
+      }),
+    ).not.toHaveProperty('additionalHeaders');
+  });
 });

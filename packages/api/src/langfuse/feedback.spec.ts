@@ -1284,4 +1284,96 @@ describe('Langfuse feedback scores', () => {
       }),
     );
   });
+
+  it('sends configured headers with score creation', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+  });
+
+  it('sends configured headers with score deletion', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: null,
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      expect.stringContaining('/api/public/scores/'),
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+        }),
+      }),
+    );
+  });
+
+  it('never lets a configured header displace the Langfuse authorization', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { Authorization: 'Bearer proxy-token' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/scores',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
+      }),
+    );
+  });
+
+  it('sends configured headers with the central project identity lookup', async () => {
+    delete process.env.LANGFUSE_PROJECT_ID;
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: 'discovered-project' }] }), { status: 200 }),
+    );
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://cloud.langfuse.com/api/public/projects',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+        }),
+      }),
+    );
+  });
 });

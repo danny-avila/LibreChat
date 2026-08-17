@@ -11,6 +11,21 @@ cache: true
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central
 # credentials and optional fanout routing are documented in .env.example.
+#
+# Self-hosted Langfuse behind an authenticating proxy or gateway can be given
+# custom request headers. They are sent on every outbound Langfuse request —
+# trace and media export, feedback scores, and credential verification.
+# Values support ${ENV_VAR} interpolation; a header whose variable is unset is
+# dropped with a warning rather than sent as a literal placeholder.
+#
+# These are deployment-level: trace export batches spans from every user through
+# a single exporter, so unlike endpoints.custom headers they cannot carry
+# per-user placeholders such as {{LIBRECHAT_USER_ID}}.
+#
+# langfuse:
+#   headers:
+#     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
+#     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)

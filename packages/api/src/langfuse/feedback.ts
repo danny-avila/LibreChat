@@ -61,7 +61,7 @@ async function deleteScore(destination: LangfuseScoreDestination, scoreId: strin
     `${destination.baseUrl}/api/public/scores/${encodeURIComponent(scoreId)}`,
     {
       method: 'DELETE',
-      headers: { Authorization: destination.authorization },
+      headers: { ...destination.headers, Authorization: destination.authorization },
     },
   );
   if (!res.ok && res.status !== 404) {
@@ -75,7 +75,11 @@ async function createScore(
 ): Promise<void> {
   const res = await fetch(`${destination.baseUrl}/api/public/scores`, {
     method: 'POST',
-    headers: { Authorization: destination.authorization, 'Content-Type': 'application/json' },
+    headers: {
+      ...destination.headers,
+      Authorization: destination.authorization,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
