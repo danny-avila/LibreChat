@@ -4,6 +4,7 @@ const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initalize');
 const { saveConvo } = require('~/models');
+const getLanguageName = require('~/server/utils/getLanguageName');
 
 /**
  * Generates a conversation title using OpenAI SDK
@@ -11,10 +12,11 @@ const { saveConvo } = require('~/models');
  * @param {OpenAI} params.openai - The OpenAI SDK client instance
  * @param {string} params.text - User's message text
  * @param {string} params.responseText - Assistant's response text
+ * @param {string} [params.languageName] - The language to generate the title in
  * @returns {Promise<string>}
  */
-const generateTitle = async ({ openai, text, responseText }) => {
-  const titlePrompt = `Please generate a concise title (max 40 characters) for a conversation that starts with:
+const generateTitle = async ({ openai, text, responseText, languageName = 'English' }) => {
+  const titlePrompt = `Please generate a concise title (max 40 characters) in the language "${languageName}" for a conversation that starts with:
 User: ${text}
 Assistant: ${responseText}
 
@@ -60,7 +62,8 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
 
   try {
     const { openai } = await initializeClient({ req });
-    const title = await generateTitle({ openai, text, responseText });
+    const languageName = getLanguageName(req);
+    const title = await generateTitle({ openai, text, responseText, languageName });
     await titleCache.set(key, title, 120000);
 
     const reqCtx = {
