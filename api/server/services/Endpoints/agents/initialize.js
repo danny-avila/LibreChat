@@ -155,6 +155,8 @@ const initializeClient = async ({
 
   /** @type {Array<UsageMetadata>} */
   const collectedUsage = [];
+  /** @type {Array<Object>} */
+  const collectedAnnotations = [];
   /**
    * Vertex Gemini 3 thought signatures captured from `chat_model_end` events,
    * keyed by `tool_call_id`. Persisted on
@@ -404,6 +406,7 @@ const initializeClient = async ({
     aggregateContent,
     toolEndCallback,
     collectedUsage,
+    collectedAnnotations,
     collectedThoughtSignatures,
     streamId,
     jobCreatedAt,
@@ -1155,6 +1158,7 @@ const initializeClient = async ({
     agentConfigs,
     eventHandlers,
     collectedUsage,
+    collectedAnnotations,
     collectedThoughtSignatures,
     aggregateContent,
     artifactPromises,
