@@ -127,6 +127,7 @@ class ImportBatchBuilder {
       ...this.getRetentionFields(),
     };
     convo._id && delete convo._id;
+    delete convo.subagentThread;
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };

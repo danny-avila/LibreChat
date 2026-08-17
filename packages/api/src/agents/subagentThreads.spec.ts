@@ -802,6 +802,8 @@ describe('SubagentThreadTaskStore', () => {
       },
     });
     const store = new SubagentThreadTaskStore(methods);
+    expect(store.canCreateChildThread(0)).toBe(true);
+    expect(store.canCreateChildThread(1)).toBe(false);
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
     const run = jest.fn(taskRequest(config.scopeId).run);
 

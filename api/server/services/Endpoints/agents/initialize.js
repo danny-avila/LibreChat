@@ -727,8 +727,9 @@ const initializeClient = async ({
   // spawn tool, not handoff edges. Explicit children are advertised as inert,
   // VIEW-checked descriptors; model, tool, MCP, file, and skill initialization
   // happens only when the SDK selects one.
-  const atSubagentThreadDepthLimit =
-    (requestConversation?.subagentThread?.depth ?? 0) >= MAX_SUBAGENT_DEPTH;
+  const atSubagentThreadDepthLimit = !subagentThreadTaskStore.canCreateChildThread(
+    requestConversation?.subagentThread?.depth ?? 0,
+  );
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
   const subagentsAvailableForRun = subagentsCapabilityEnabled && !atSubagentThreadDepthLimit;
   /** Track skipped ids locally so repeated failures short-circuit within

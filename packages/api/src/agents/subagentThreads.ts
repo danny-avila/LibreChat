@@ -437,6 +437,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return this.activeThreads.has(`${scopeId}\u0000${threadId}`);
   }
 
+  /** Whether a durable child may be created below the supplied conversation depth. */
+  canCreateChildThread(parentDepth: number): boolean {
+    return (
+      Number.isSafeInteger(parentDepth) && parentDepth >= 0 && parentDepth < this.maxThreadDepth
+    );
+  }
+
   private async prepareThread(
     scope: SubagentThreadScope,
     threadId: string,
@@ -458,12 +465,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       );
     }
     if (conversation == null) {
-      const depth = (parent.subagentThread?.depth ?? 0) + 1;
-      if (depth > this.maxThreadDepth) {
+      const parentDepth = parent.subagentThread?.depth ?? 0;
+      if (!this.canCreateChildThread(parentDepth)) {
         throw new SubagentThreadPublicError(
           `Subagent thread depth exceeds the configured limit of ${this.maxThreadDepth}.`,
         );
       }
+      const depth = parentDepth + 1;
       const agentId = childAgentId(request);
       const saved = await this.methods.saveConvo(
         { userId: scope.userId },

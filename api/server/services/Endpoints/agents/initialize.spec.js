@@ -750,7 +750,7 @@ describe('initializeClient — subagent loading', () => {
     req.config.endpoints.agents.capabilities.push('run_in_background');
     req.resolvedConversation = {
       conversationId: 'conv_sub',
-      subagentThread: { depth: MAX_SUBAGENT_DEPTH, userRunnable: true },
+      subagentThread: { depth: 1, userRunnable: true },
     };
 
     await initializeClient({
