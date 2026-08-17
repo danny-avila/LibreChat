@@ -299,6 +299,18 @@ if (cluster.isMaster) {
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
 
+    if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
+      logger.warn(
+        '[Security] TRUST_TENANT_HEADER is active. Ensure your reverse proxy strips and sets ' +
+          'X-Tenant-Id — untrusted clients must not be able to supply it directly.',
+      );
+    } else if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+      logger.warn(
+        '[Security] TENANT_ISOLATION_STRICT is active while TRUST_TENANT_HEADER is disabled. ' +
+          'Pre-authentication tenant headers will be ignored.',
+      );
+    }
+
     /** Seed database (idempotent) */
     await runAsSystem(seedDatabase);
 
@@ -421,8 +433,8 @@ if (cluster.isMaster) {
     app.use(capabilityContextMiddleware);
 
     /** Routes */
-    app.use('/oauth', routes.oauth);
-    app.use('/api/auth', routes.auth);
+    app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
+    app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/actions', routes.actions);
@@ -444,7 +456,7 @@ if (cluster.isMaster) {
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
     app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
-    app.use('/api/share', routes.share);
+    app.use('/api/share', preAuthTenantMiddleware, routes.share);
     app.use('/api/roles', routes.roles);
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);

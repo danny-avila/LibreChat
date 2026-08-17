@@ -249,6 +249,33 @@ const ProxyUrlSchema = z
     },
   );
 
+const PROCESS_MCP_SERVER_FIELDS = new Set(['command', 'args', 'env', 'cwd', 'stderr']);
+
+export function isProcessMCPServerField(field: string): boolean {
+  return PROCESS_MCP_SERVER_FIELDS.has(field);
+}
+
+export function isProcessMCPServerConfig(value: unknown): boolean {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const config = value as Record<string, unknown>;
+  if (config.type === 'stdio') {
+    return true;
+  }
+
+  return Object.keys(config).some(isProcessMCPServerField);
+}
+
+export function hasProcessMCPServerConfig(value: unknown): boolean {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.values(value).some(isProcessMCPServerConfig);
+}
+
 export const StdioOptionsSchema = BaseOptionsSchema.extend({
   type: z.literal('stdio').default('stdio'),
   obo: z.undefined().optional(),
