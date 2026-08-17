@@ -120,6 +120,7 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     expect(String(input)).toBe('https://chat.example.test/base/api/agents/chat/agents');
     const headers = new Headers(init?.headers);
     expect(headers.get('authorization')).toBe('Bearer signed-token');
+    expect(headers.get('x-lc-agent-trigger')).toBe('1');
     expect(headers.get('x-request-id')).toBe(idempotencyKey);
     expect(headers.get('x-librechat-generation-protocol')).toBe('2');
     expect(headers.get('user-agent')).toContain('LibreChat-Agent-Trigger/1');
@@ -499,6 +500,7 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
     expect(String(input)).toBe('https://chat.example.test/base/api/agents/chat/steer/deliver');
     const headers = new Headers(init?.headers);
     expect(headers.get('authorization')).toBe('Bearer signed-token');
+    expect(headers.get('x-lc-agent-trigger')).toBe('1');
     expect(headers.get('x-request-id')).toBe(idempotencyKey);
     expect(headers.get('x-librechat-generation-protocol')).toBe('2');
     expect(JSON.parse(String(init?.body))).toEqual({

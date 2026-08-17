@@ -13,6 +13,8 @@ const {
   attachAskUserQuestionAnswers,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
+  isAgentTriggerRequest,
+  exemptAgentTriggerFromIpLimiter,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -40,6 +42,10 @@ const { v1 } = require('./v1');
 const chat = require('./chat');
 
 const { LIMIT_MESSAGE_IP, LIMIT_MESSAGE_USER } = process.env ?? {};
+
+/** Applies `limiter` unless this trusted loopback request should skip it. */
+const unless = (isExempt, limiter) => (req, res, next) =>
+  isExempt(req) ? next() : limiter(req, res, next);
 
 /** Untenanted jobs (pre-multi-tenancy) remain accessible if the userId check passes. */
 function hasTenantMismatch(job, user) {
@@ -109,6 +115,12 @@ router.use('/v1/responses', responses);
 router.use('/v1', openai);
 
 router.use(requireJwtAuth);
+// Capture the short-lived trigger identity immediately after authentication. Downstream
+// middleware reads this stable decision instead of re-verifying an expired token.
+router.use((req, _res, next) => {
+  req._isAgentTrigger = isAgentTriggerRequest(req);
+  next();
+});
 router.use(checkBan);
 router.use(uaParser);
 
@@ -899,7 +911,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
  */
 const steerLimiters = [];
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  steerLimiters.push(messageIpLimiter);
+  steerLimiters.push(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
 }
 if (isEnabled(LIMIT_MESSAGE_USER)) {
   steerLimiters.push(messageUserLimiter);
@@ -961,7 +973,7 @@ const chatRouter = express.Router();
 chatRouter.use(configMiddleware);
 
 if (isEnabled(LIMIT_MESSAGE_IP)) {
-  chatRouter.use(messageIpLimiter);
+  chatRouter.use(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
 }
 
 if (isEnabled(LIMIT_MESSAGE_USER)) {
