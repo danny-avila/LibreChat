@@ -94,14 +94,16 @@ async function gracefulExit(code = 0) {
   await waitForKeyvRedisClient();
   const streamServices = createStreamServices();
   const hasSharedGenerationStore = streamServices.isRedis;
+  let allProcessesStopped = false;
   if (!hasSharedGenerationStore) {
     const confirmOffline = await askQuestion(
-      'Shared Redis generation coordination is unavailable. Confirm ALL LibreChat app and worker processes are stopped before continuing. (y/N)',
+      'Shared Redis generation coordination is unavailable. Confirm ALL LibreChat app, worker, and other deletion CLI processes are stopped before continuing. (y/N)',
     );
     if (confirmOffline.toLowerCase() !== 'y') {
       console.yellow('Aborted. Stop every LibreChat process or enable Redis stream coordination.');
       return gracefulExit(1);
     }
+    allProcessesStopped = true;
   } else {
     GenerationJobManager.configure({ ...streamServices, cleanupOnComplete: false });
     GenerationJobManager.initialize();
@@ -112,12 +114,33 @@ async function gracefulExit(code = 0) {
 
   try {
     deletionFence = new Date();
-    const fenceState = await runAsSystem(() =>
+    let fenceState = await runAsSystem(() =>
       methods.beginAgentTriggerUserDeletion(uid, deletionFence),
     );
     if (fenceState === 'in_progress') {
       deletionFence = undefined;
-      throw new Error('Account deletion is already in progress');
+      if (!allProcessesStopped) {
+        const confirmRecovery = await askQuestion(
+          'An account-deletion fence already exists. Confirm ALL LibreChat app, worker, and other deletion CLI processes are stopped to recover it only if stale. (y/N)',
+        );
+        if (confirmRecovery.toLowerCase() !== 'y') {
+          throw new Error('Account deletion is already in progress');
+        }
+        allProcessesStopped = true;
+      }
+
+      const recoveredAt = new Date();
+      fenceState = await runAsSystem(() =>
+        methods.recoverStaleAgentTriggerUserDeletion(uid, recoveredAt),
+      );
+      if (fenceState !== 'acquired') {
+        throw new Error(
+          fenceState === 'missing'
+            ? 'User disappeared before stale-fence recovery'
+            : 'Account deletion is active or its fence is not stale enough to recover',
+        );
+      }
+      deletionFence = recoveredAt;
     }
     if (fenceState === 'missing') {
       deletionFence = undefined;

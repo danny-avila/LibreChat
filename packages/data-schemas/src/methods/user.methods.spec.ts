@@ -662,7 +662,7 @@ describe('User Methods - Database Tests', () => {
       await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
     });
 
-    test('atomically takes over an abandoned deletion fence without releasing the successor', async () => {
+    test('requires explicit stale-fence recovery and preserves successor ownership', async () => {
       const user = await User.create({
         name: 'Stale Trigger Fence',
         email: 'stale-trigger-fence@example.com',
@@ -676,6 +676,15 @@ describe('User Methods - Database Tests', () => {
         'acquired',
       );
       await expect(methods.beginAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'in_progress',
+      );
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(
+          userId,
+          new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS - 1),
+        ),
+      ).resolves.toBe('in_progress');
+      await expect(methods.recoverStaleAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
         'acquired',
       );
       await expect(methods.cancelAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
@@ -692,6 +701,9 @@ describe('User Methods - Database Tests', () => {
       await expect(
         methods.beginAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
       ).rejects.toThrow('startedAt must be a valid Date');
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('recoveredAt must be a valid Date');
     });
   });
 

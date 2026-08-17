@@ -51,7 +51,9 @@ await enqueueAgentTrigger(
   whose timestamps tie. Dead letters are terminal and do not block later work.
 - Successful records expire after 90 days. Dead letters remain until explicitly requeued or
   removed. Account deletion first fences admission and drains active leases without destroying
-  queued work; payloads are purged only after the user deletion commits.
+  queued work; payloads are purged only after the user deletion commits. An abandoned deletion
+  fence can be recovered through `config/delete-user.js` only after an operator confirms every
+  competing app, worker, and deletion CLI process is stopped.
 
 `getAgentTriggerDeadLetters` and `requeueAgentTrigger` are intentionally trusted in-process
 operations. Exposing them through an admin API requires a separate authorization and audit layer.

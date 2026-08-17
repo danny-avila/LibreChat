@@ -12,8 +12,7 @@ import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
-/** A crashed account-deletion attempt can be taken over after this interval.
- * Exact-token release prevents the abandoned owner from clearing its successor's fence. */
+/** Minimum age before an explicitly offline operator may recover an abandoned deletion fence. */
 export const USER_DELETION_FENCE_STALE_MS: number = 15 * 60_000;
 
 interface UserMethodDeps {
@@ -123,6 +122,10 @@ export function createUserMethods(
   beginAgentTriggerUserDeletion: (
     userId: string,
     startedAt: Date,
+  ) => Promise<'acquired' | 'in_progress' | 'missing'>;
+  recoverStaleAgentTriggerUserDeletion: (
+    userId: string,
+    recoveredAt: Date,
   ) => Promise<'acquired' | 'in_progress' | 'missing'>;
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
@@ -394,16 +397,31 @@ export function createUserMethods(
       throw new TypeError('startedAt must be a valid Date');
     }
     const User = mongoose.models.User;
-    const staleBefore = new Date(startedAt.getTime() - USER_DELETION_FENCE_STALE_MS);
     const result = await User.updateOne(
-      {
-        _id: userId,
-        $or: [
-          { agentTriggerDeletionStartedAt: { $exists: false } },
-          { agentTriggerDeletionStartedAt: { $lte: staleBefore } },
-        ],
-      },
+      { _id: userId, agentTriggerDeletionStartedAt: { $exists: false } },
       { $set: { agentTriggerDeletionStartedAt: startedAt } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return 'acquired';
+    }
+    return (await User.exists({ _id: userId })) == null ? 'missing' : 'in_progress';
+  }
+
+  /** Replaces an abandoned fence only for an operator-confirmed offline deployment.
+   * Normal request paths must never call this: age alone cannot prove the prior owner died. */
+  async function recoverStaleAgentTriggerUserDeletion(
+    userId: string,
+    recoveredAt: Date,
+  ): Promise<'acquired' | 'in_progress' | 'missing'> {
+    if (!(recoveredAt instanceof Date) || !Number.isFinite(recoveredAt.getTime())) {
+      throw new TypeError('recoveredAt must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    const staleBefore = new Date(recoveredAt.getTime() - USER_DELETION_FENCE_STALE_MS);
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: { $lte: staleBefore } },
+      { $set: { agentTriggerDeletionStartedAt: recoveredAt } },
     );
     if (result.modifiedCount === 1) {
       await invalidateAuthUserDocCache(userId);
@@ -686,6 +704,7 @@ export function createUserMethods(
     getUserById,
     generateToken,
     beginAgentTriggerUserDeletion,
+    recoverStaleAgentTriggerUserDeletion,
     cancelAgentTriggerUserDeletion,
     isAgentTriggerPrincipalActive,
     deleteUserById,
