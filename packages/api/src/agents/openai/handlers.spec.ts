@@ -62,4 +62,31 @@ describe('OpenAI-compatible agent stream handlers', () => {
       },
     });
   });
+
+  it('streams the usage override instead of the tracker totals', () => {
+    const tracker = createOpenAIStreamTracker();
+    tracker.usage.promptTokens = 64;
+    tracker.usage.completionTokens = 3315;
+    tracker.usage.reasoningTokens = 641;
+
+    const writes: string[] = [];
+    const res = {
+      write: (chunk: string) => {
+        writes.push(chunk);
+      },
+    } as unknown as ServerResponse;
+
+    const usage = {
+      prompt_tokens: 964,
+      completion_tokens: 4015,
+      total_tokens: 4979,
+      primary: { prompt_tokens: 64, completion_tokens: 3315, total_tokens: 3379 },
+      subagent: { prompt_tokens: 900, completion_tokens: 700, total_tokens: 1600 },
+    };
+
+    sendFinalChunk({ context, tracker, res }, 'stop', usage);
+
+    const finalChunk = JSON.parse(writes[0].replace(/^data: /, '').trim());
+    expect(finalChunk.usage).toEqual(usage);
+  });
 });

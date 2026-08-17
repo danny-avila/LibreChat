@@ -34,6 +34,7 @@ const {
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
+  completionUsageBreakdown,
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
@@ -716,16 +717,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }
       }),
 
-      // Usage tracking
+      /* Usage tracking: `collectedUsage` is the single source for both billing
+         and the reported totals, so no separate tracker/aggregator counting. */
       on_chat_model_end: {
         handle: (_event, data, metadata) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const taggedUsage = markSummarizationUsage(usage, metadata);
-            collectedUsage.push(taggedUsage);
-            const target = isStreaming ? tracker : aggregator;
-            target.usage.promptTokens += taggedUsage.input_tokens ?? 0;
-            target.usage.completionTokens += taggedUsage.output_tokens ?? 0;
+            collectedUsage.push(markSummarizationUsage(usage, metadata));
           }
         },
       },
@@ -827,10 +825,15 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       logger.error('[OpenAI API] Error recording usage:', err);
     });
 
+    /* Reported from `collectedUsage` rather than the tracker/aggregator so
+       isolated subagent child runs — billed above, but never seen by
+       `on_chat_model_end` — are part of the totals the client receives. */
+    const usage = completionUsageBreakdown(collectedUsage);
+
     // Finalize response
     const duration = Date.now() - requestStartTime;
     if (isStreaming) {
-      sendFinalChunk(handlerConfig);
+      sendFinalChunk(handlerConfig, 'stop', usage);
       res.end();
       logger.debug(`[OpenAI API] Response ${responseId} completed in ${duration}ms (streaming)`);
 
@@ -848,19 +851,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         } catch (artifactError) {
           logger.warn('[OpenAI API] Error processing artifacts:', artifactError);
         }
-      }
-
-      // Build usage from aggregated data
-      const usage = {
-        prompt_tokens: aggregator.usage.promptTokens,
-        completion_tokens: aggregator.usage.completionTokens,
-        total_tokens: aggregator.usage.promptTokens + aggregator.usage.completionTokens,
-      };
-
-      if (aggregator.usage.reasoningTokens > 0) {
-        usage.completion_tokens_details = {
-          reasoning_tokens: aggregator.usage.reasoningTokens,
-        };
       }
 
       const response = buildNonStreamingResponse(

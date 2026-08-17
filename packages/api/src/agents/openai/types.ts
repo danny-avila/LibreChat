@@ -78,6 +78,15 @@ export interface ChatCompletionRequest {
 }
 
 /**
+ * Token totals for a single usage bucket of one turn
+ */
+export interface CompletionUsageTotals {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/**
  * Token usage information
  */
 export interface CompletionUsage {
@@ -88,6 +97,10 @@ export interface CompletionUsage {
   completion_tokens_details?: {
     reasoning_tokens?: number;
   };
+  /** LibreChat extension: primary graph totals, including handoffs and summarization */
+  primary?: CompletionUsageTotals;
+  /** LibreChat extension: totals of isolated subagent child runs billed with this turn */
+  subagent?: CompletionUsageTotals;
 }
 
 /**

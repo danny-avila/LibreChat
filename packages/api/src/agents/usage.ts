@@ -19,6 +19,7 @@ import type {
   TokenUsage,
   PricingFns,
 } from './transactions';
+import type { CompletionUsage, CompletionUsageTotals } from './openai/types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { EndpointTokenConfig } from '~/types/tokens';
 import {
@@ -750,4 +751,56 @@ export function createSubagentUsageSink(
      *  gauge) — child runs never reach ModelEndHandler's emit path. */
     onUsage?.(usage);
   };
+}
+
+function emptyUsageTotals(): CompletionUsageTotals {
+  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+}
+
+/**
+ * Folds every model call of a turn into the OpenAI-style `usage` returned by
+ * the Agents API. Isolated subagent child runs are reported through
+ * {@link createSubagentUsageSink} instead of the response's model-end handler,
+ * so summing `collectedUsage` — the same array {@link recordCollectedUsage}
+ * bills — is what keeps the reported totals equal to what the turn charged.
+ * Per-call amounts come from the billing split, so additive-provider cache
+ * tokens count toward the prompt total and undercounted output is repaired.
+ *
+ * The `primary` and `subagent` buckets are LibreChat extensions: parent,
+ * handoff, and summarization calls fold into `primary`; child runs into
+ * `subagent`. Unlike the parent message's `tokenCount`, both are included in
+ * the standard `prompt_tokens`/`completion_tokens`/`total_tokens` fields.
+ */
+export function completionUsageBreakdown(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined>,
+): CompletionUsage {
+  const primary = emptyUsageTotals();
+  const subagent = emptyUsageTotals();
+  let reasoningTokens = 0;
+
+  for (const usage of collectedUsage) {
+    if (usage == null) {
+      continue;
+    }
+    const { totalInput, completion } = splitUsage(usage);
+    const bucket = usage.usage_type === 'subagent' ? subagent : primary;
+    bucket.prompt_tokens += totalInput;
+    bucket.completion_tokens += completion;
+    bucket.total_tokens += totalInput + completion;
+    reasoningTokens += Number(usage.output_token_details?.reasoning) || 0;
+  }
+
+  const breakdown: CompletionUsage = {
+    prompt_tokens: primary.prompt_tokens + subagent.prompt_tokens,
+    completion_tokens: primary.completion_tokens + subagent.completion_tokens,
+    total_tokens: primary.total_tokens + subagent.total_tokens,
+    primary,
+    subagent,
+  };
+
+  if (reasoningTokens > 0) {
+    breakdown.completion_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
+  return breakdown;
 }
