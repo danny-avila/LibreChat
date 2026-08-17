@@ -16,20 +16,44 @@ import store from '~/store';
  * rather than an overlay, so the virtualized list shrinks around it and can
  * never be occluded.
  */
-function BottomBar({ links, onNewChat }: { links: NavLink[]; onNewChat: () => void }) {
+function BottomBar({
+  links,
+  onNewChat,
+}: {
+  links: NavLink[];
+  onNewChat: (afterSlide?: () => void) => void;
+}) {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
   const switchToHistory = useRecoilValue(store.newChatSwitchToHistory);
   const { active, setActive } = useActivePanel();
 
-  const handleNewChat = useCallback(() => {
-    if (switchToHistory) {
-      setActive(DEFAULT_PANEL);
-    }
-    onNewChat();
-  }, [switchToHistory, setActive, onNewChat]);
+  const { startNewChat } = useNewChat();
 
-  const { handleNewChatClick } = useNewChat({ onNewChat: handleNewChat });
+  /**
+   * Close first, reset second — inverted from `useNewChat`'s own click
+   * handler: `startNewChat` clears the message cache and resets the
+   * conversation, and run synchronously that commit stalls the drawer
+   * slide's first frame on large conversations. The reset (and the panel
+   * switch-back) ride the close's `afterSlide` instead, landing mid-slide.
+   * The modified-click guard mirrors `useNewChat.handleNewChatClick` so a
+   * ctrl/middle click still opens `/c/new` in a new tab.
+   */
+  const handleNewChatClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      onNewChat(() => {
+        if (switchToHistory) {
+          setActive(DEFAULT_PANEL);
+        }
+        startNewChat();
+      });
+    },
+    [onNewChat, switchToHistory, setActive, startNewChat],
+  );
   /** The shortcut fires globally; assistive tech needs it discoverable here too. */
   const newChatAriaKey = useShortcutAriaKey('newChat');
 

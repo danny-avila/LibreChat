@@ -52,9 +52,12 @@ function UnifiedSidebar() {
 
   const links = useUnifiedSidebarLinks();
 
-  const handleCollapse = useCallback(() => {
-    setSidebarOpen(false);
-  }, [setSidebarOpen]);
+  const handleCollapse = useCallback(
+    (afterSlide?: () => void) => {
+      setSidebarOpen(false, afterSlide);
+    },
+    [setSidebarOpen],
+  );
 
   const handleExpand = useCallback(() => {
     setSidebarOpen(true);

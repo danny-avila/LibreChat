@@ -80,16 +80,18 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): Draw
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        /** Cleared unconditionally — a dropped flip is no longer pending
-         * either. */
-        pendingFlipTarget = null;
-        /** A teardown or re-register during the deferral — breakpoint
-         * cross, logout, route change — makes the captured intent stale:
-         * the new world owns the state, and a straggler flip could toggle
-         * the DESKTOP sidebar or persist drawer state past logout. */
-        if (drawerAnimator !== animator) {
+        /** Applies only while still the LATEST un-superseded intent. A
+         * retarget hands the state to its own deferred flip — this one
+         * transiently committing the old direction would re-register the
+         * animator and get the newer flip judged stale. Teardown and
+         * re-registration (breakpoint cross, logout, route change) clear
+         * the pending target in the effect cleanup, so stale flips drop
+         * out here as well instead of toggling the DESKTOP sidebar or
+         * persisting drawer state past logout. */
+        if (pendingFlipTarget !== next) {
           return;
         }
+        pendingFlipTarget = null;
         applyState();
       });
     });
@@ -527,6 +529,11 @@ export default function useDrawerSwipe({
     surface.addEventListener('touchcancel', onTouchCancel, { passive: true });
     return () => {
       drawerAnimator = null;
+      /** A pending intent from the torn-down world must not leak into the
+       * next one — a desktop toggle right after a breakpoint cross has to
+       * invert the committed value, and the deferred flip that would have
+       * consumed this target now drops out of its superseded check. */
+      pendingFlipTarget = null;
       surface.removeEventListener('touchstart', onTouchStart);
       surface.removeEventListener('touchmove', onTouchMove);
       surface.removeEventListener('touchend', onTouchEnd);

@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import useDrawerSwipe, {
   findHorizontalScrollBlocker,
+  getPendingDrawerFlip,
   kickDrawerAnimation,
 } from '../useDrawerSwipe';
 import { MOBILE_DRAWER_ID } from '~/components/UnifiedSidebar/constants';
@@ -610,6 +611,51 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.pane.style.transform).toBe('translateX(100%)');
     jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** A superseded flip must never transiently commit the old direction —
+   *  its commit would re-register the animator and get the NEWER flip
+   *  dropped, stranding the drawer at the first intent. */
+  it('discards a superseded deferred flip so only the latest intent commits', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyOpen = jest.fn();
+    const applyClose = jest.fn();
+    kickDrawerAnimation(true, applyOpen);
+    kickDrawerAnimation(false, applyClose);
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyOpen).not.toHaveBeenCalled();
+    expect(applyClose).toHaveBeenCalledTimes(1);
+    jest.runAllTimers();
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** A desktop toggle right after a breakpoint cross must invert the
+   *  committed value, not a leftover mobile intent. */
+  it('clears the pending flip target when the animator tears down', () => {
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    kickDrawerAnimation(true, jest.fn());
+    expect(getPendingDrawerFlip()).toBe(true);
+    harness.rerender({ open: false, enabled: false });
+
+    expect(getPendingDrawerFlip()).toBeNull();
     harness.unmount();
   });
 
