@@ -186,18 +186,23 @@ export function resolveLangfuseHeaders(
   const collapsed = collapseHeaderNameVariants(declared);
   const entries: Array<[string, string]> = [];
   for (const [name, configured] of Object.entries(collapsed)) {
-    const unresolved = unresolvableEnvRefs(configured);
+    /**
+     * Every template operation runs on the operator's configured text, and the
+     * credential is substituted last and never touched again.
+     *
+     * Order matters in both directions: expanding first would let a strip or a
+     * second expansion reinterpret characters that came out of the secret, so a
+     * token containing `{{LIBRECHAT_USER_ID}}` would have that span deleted and
+     * one containing `${PATH}` would be rewritten. Gateway credentials are
+     * arbitrary strings; none of their bytes are template syntax.
+     */
+    const template = stripUnresolvedPlaceholders(configured);
+    const unresolved = unresolvableEnvRefs(template);
     if (unresolved.length > 0) {
       warnDroppedHeader(name, `${unresolved.join(', ')} is not set in the environment.`);
       continue;
     }
-
-    /** Expanded exactly once. Handing the result back to `resolveHeaders`
-     *  would run `extractEnvVariable` over the *credential*, so a token
-     *  containing `${PATH}` — a name that happens to be set — would be
-     *  silently rewritten. Only the user-placeholder strip is still wanted,
-     *  and no user is supplied, so it is applied directly. */
-    const value = stripUnresolvedPlaceholders(expandEnvRefs(configured));
+    const value = expandEnvRefs(template);
 
     /** Trimmed because a credential read from a file or `$(...)` commonly
      *  carries a trailing newline, which would otherwise fail validation. */

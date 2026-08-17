@@ -739,6 +739,35 @@ describe('buildLangfuseConfig', () => {
     delete process.env.LANGFUSE_PROXY_TOKEN;
   });
 
+  it('does not strip a user placeholder that a resolved credential contains', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc{{LIBRECHAT_USER_ID}}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Templated': 'keep{{LIBRECHAT_USER_ID}}me',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** The placeholder in the *configured* value is stripped; an identical span
+     *  that arrives inside the resolved credential is data, not syntax. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Proxy-Token': 'abc{{LIBRECHAT_USER_ID}}ghi',
+      'X-Templated': 'keepme',
+    });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
   it('does not re-expand a placeholder that a resolved credential contains', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
