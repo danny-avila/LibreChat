@@ -797,6 +797,25 @@ const MASKED_MAP_VALUE = '***';
  * the key names so an admin can still see *which* headers a deployment sets
  * without receiving the gateway credentials themselves.
  */
+/**
+ * Masks registered secret maps on a cloned config, for callers outside the
+ * admin read path that also serialize configuration — notably the startup
+ * "Custom config file loaded" log, which would otherwise copy every literal
+ * gateway credential into application logs.
+ *
+ * Only handles map-valued secrets; scalar secrets keep whatever handling the
+ * caller already applies.
+ */
+export function redactConfigSecretMaps<T>(root: T): T {
+  const clone = JSON.parse(JSON.stringify(root)) as T;
+  const rootRecord = getPlainRecord(clone);
+  if (!rootRecord) {
+    return clone;
+  }
+  redactSecretMapFields(rootRecord);
+  return clone;
+}
+
 function redactSecretMapFields(rootRecord: Record<string, unknown>): void {
   for (const path of CONFIG_SECRET_MAP_FIELDS) {
     const segments = path.split('.');

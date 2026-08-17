@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { isSensitiveEnvVar } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { encodeHeaderValue, resolveHeaders } from '~/utils/env';
 import { decryptConfigSecret } from '~/admin/secrets';
@@ -6,18 +7,42 @@ import { normalizeString } from '~/utils/text';
 
 type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
 
-const UNRESOLVED_ENV_PATTERN = /\$\{[^}]+\}/;
+const ENV_PLACEHOLDER_PATTERN = /\$\{([^}]+)\}/g;
+/** RFC 7230 token characters — the only bytes legal in an HTTP field name. */
+const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 /** Header names already reported, so a per-run resolution cannot spam the log.
  *  Bounded by the deployment's configured header names. */
-const unresolvedHeaderWarnings = new Set<string>();
+const droppedHeaderWarnings = new Set<string>();
 
-function warnUnresolvedHeader(name: string): void {
-  if (unresolvedHeaderWarnings.has(name)) {
+function warnDroppedHeader(name: string, reason: string): void {
+  const key = `${name}\n${reason}`;
+  if (droppedHeaderWarnings.has(key)) {
     return;
   }
-  unresolvedHeaderWarnings.add(name);
-  logger.warn(`[langfuse] Dropping header "${name}": its \${...} environment variable is not set.`);
+  droppedHeaderWarnings.add(key);
+  logger.warn(`[langfuse] Dropping header "${name}": ${reason}`);
+}
+
+/**
+ * Names of `${VAR}` references in a *configured* value that will not expand —
+ * either unset, or on the infrastructure denylist `extractEnvVariable` refuses
+ * to substitute.
+ *
+ * Deliberately inspects the pre-expansion text. Testing the resolved string for
+ * `${...}` cannot tell a failed substitution from a credential that merely
+ * contains those characters, and gateway tokens are arbitrary strings — a
+ * working `abc${def}ghi` token would be silently dropped.
+ */
+function unresolvableEnvRefs(configuredValue: string): string[] {
+  const unresolved: string[] = [];
+  for (const match of configuredValue.matchAll(ENV_PLACEHOLDER_PATTERN)) {
+    const name = match[1].trim();
+    if (isSensitiveEnvVar(name) || !normalizeString(process.env[name])) {
+      unresolved.push(name);
+    }
+  }
+  return unresolved;
 }
 
 /** Names already reported as duplicate spellings, keyed by lowercase name. */
@@ -79,29 +104,37 @@ export function resolveLangfuseHeaders(
   /** `TCustomConfig` is a `DeepPartial`, so record values arrive as
    *  `string | undefined` regardless of what the schema declares. */
   const declared: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) {
-    if (typeof value === 'string' && name.trim() !== '') {
-      declared[name] = value;
+  for (const [rawName, value] of Object.entries(headers)) {
+    if (typeof value !== 'string') {
+      continue;
     }
+    const name = rawName.trim();
+    if (name === '') {
+      continue;
+    }
+    /** An illegal field name (` X-Token`, `X Proxy Token`) is rejected by the
+     *  `Headers` constructor, which would throw on every export, verification,
+     *  lookup, and feedback request instead of failing this one header. */
+    if (!HEADER_NAME_PATTERN.test(name)) {
+      warnDroppedHeader(rawName, 'it is not a valid HTTP header name.');
+      continue;
+    }
+    declared[name] = value;
   }
   if (Object.keys(declared).length === 0) {
     return undefined;
   }
 
-  const resolved = resolveHeaders({
-    headers: collapseHeaderNameVariants(declared),
-    stripUnresolved: true,
-  });
+  const collapsed = collapseHeaderNameVariants(declared);
+  const resolved = resolveHeaders({ headers: collapsed, stripUnresolved: true });
   const entries: Array<[string, string]> = [];
   for (const [name, value] of Object.entries(resolved)) {
-    if (value.trim() === '') {
+    const unresolved = unresolvableEnvRefs(collapsed[name] ?? '');
+    if (unresolved.length > 0) {
+      warnDroppedHeader(name, `${unresolved.join(', ')} is not set in the environment.`);
       continue;
     }
-    /** `stripUnresolved` clears `{{...}}` placeholders but leaves `${VAR}`
-     *  literal when the variable is unset, and forwarding that to a gateway
-     *  reads as a wrong credential rather than a missing one. */
-    if (UNRESOLVED_ENV_PATTERN.test(value)) {
-      warnUnresolvedHeader(name);
+    if (value.trim() === '') {
       continue;
     }
     /** `resolveHeaders` only encodes values it substitutes a user field into,

@@ -22,6 +22,14 @@ cache: true
 # a single exporter, so unlike endpoints.custom headers they cannot carry
 # per-user placeholders such as {{LIBRECHAT_USER_ID}}.
 #
+# Values are masked in admin config reads and in the startup config log, but
+# prefer ${ENV_VAR} references over literal credentials here regardless.
+#
+# Note for fanout deployments: these headers reach the endpoint LibreChat
+# exports to, which in that topology is the collector. The gateway forwards only
+# Authorization upstream, so a tenant Langfuse behind its own proxy is not yet
+# covered.
+#
 # langfuse:
 #   headers:
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"

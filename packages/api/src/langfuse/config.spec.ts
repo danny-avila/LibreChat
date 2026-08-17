@@ -626,6 +626,79 @@ describe('buildLangfuseConfig', () => {
     delete process.env.LANGFUSE_TEAM_HEADER;
   });
 
+  it('drops header names that are not valid HTTP tokens', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X Proxy Token': 'spaces',
+            'X-Proxy-Token:': 'colon',
+            '  X-Padded  ': 'trimmed-to-valid',
+            'X-Valid': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** An invalid name throws in the `Headers` constructor, which would take
+     *  down every request rather than just this header. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Padded': 'trimmed-to-valid',
+      'X-Valid': 'kept',
+    });
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
+  });
+
+  it('keeps a resolved credential that itself contains ${...}', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc${def}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Missing': '${LANGFUSE_HEADER_NOT_SET}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Gateway tokens are arbitrary strings; testing the *resolved* text for
+     *  `${...}` cannot distinguish a failed substitution from a credential
+     *  that merely contains those characters. */
+    expect(built.additionalHeaders).toEqual({ 'X-Proxy-Token': 'abc${def}ghi' });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('drops headers referencing infrastructure secrets', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.JWT_SECRET = 'super-secret-jwt';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: { headers: { 'X-Leak': '${JWT_SECRET}' } },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    expect(built).not.toHaveProperty('additionalHeaders');
+    expect(JSON.stringify(built)).not.toContain('super-secret-jwt');
+  });
+
   it('omits headers entirely when none are configured', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';

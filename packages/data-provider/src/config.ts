@@ -2047,7 +2047,14 @@ export const langfuseConfigSchema = z.object({
    *
    * Deployment-level only. Trace export batches spans from every user through
    * one exporter, so unlike endpoint headers these cannot carry per-user
-   * placeholders; any that remain unresolved are dropped rather than sent.
+   * placeholders. Headers referencing an unset variable, naming an
+   * infrastructure secret, or carrying an invalid HTTP field name are dropped
+   * with a warning rather than sent.
+   *
+   * These reach whatever endpoint LibreChat exports to directly. In fanout
+   * deployments that endpoint is the collector, and the gateway forwards only
+   * `Authorization` upstream — so a *tenant* Langfuse behind its own proxy
+   * needs the collector to relay these too, which it does not yet do.
    */
   headers: z.record(z.string()).optional(),
 });
