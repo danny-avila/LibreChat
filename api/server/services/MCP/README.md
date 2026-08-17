@@ -6,10 +6,16 @@ call, LibreChat replaces only exact, full-string current-request placeholders su
 `/mnt/data/0.png` with validated `data:image/...;base64,...` URLs. This works for any
 tool name and any JSON argument position, including nested objects and arrays.
 
-LibreChat forwards only placeholders explicitly present in the tool arguments. It
-does not forward unrelated attachments, generated `/app/storage/...` paths, arbitrary
-paths, URLs, or non-image placeholders. Missing, unowned, and unencodable files stay
-unchanged.
+LibreChat forwards only placeholders explicitly present in the tool arguments. Unrelated
+attachments, unrelated paths, URLs, generated `/app/storage/...` paths, substrings, and
+non-image values stay unchanged. Servers that omit this setting or set it to `false` leave
+all argument values unchanged.
+
+When `forwardUploadedImages: true` is enabled, an exact current-request upload placeholder
+represents intent to forward that upload. If its image is missing, unowned, foreign,
+mismatched, unencodable, invalid, or oversized, LibreChat aborts the tool call before
+`mcpManager.callTool` and before the MCP server receives it. The resulting error is bounded
+and does not include image payload data.
 
 ## Privacy and deployment considerations
 
