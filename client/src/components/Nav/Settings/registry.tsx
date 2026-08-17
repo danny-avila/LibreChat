@@ -29,6 +29,7 @@ import ChatTitleInTab from '../SettingsTabs/General/ChatTitleInTab';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
 import DuringRunAction from '../SettingsTabs/Chat/DuringRunAction';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
+import StatefulWorkspaceDefault from './StatefulWorkspaceDefault';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
@@ -531,6 +532,16 @@ export const registry: SettingEntry[] = [
     keywords: ['memory', 'personalization'],
     show: (ctx) => ctx.hasMemoryOptOut,
     Component: MemoryToggle,
+  },
+  // Data controls · Code execution
+  {
+    id: 'defaultStatefulWorkspace',
+    tab: DATA,
+    section: 'codeExecution',
+    labelKey: 'com_ui_default_stateful_workspace',
+    keywords: ['agent', 'code', 'environment', 'sandbox', 'stateful', 'workspace'],
+    show: (ctx) => ctx.hasStatefulCodeSessions,
+    Component: StatefulWorkspaceDefault,
   },
   // Data controls · Your data
   {

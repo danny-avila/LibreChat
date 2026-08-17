@@ -10,7 +10,7 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
-import type { Agent, EToolResources } from './types/assistants';
+import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
@@ -293,9 +293,19 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   createdAt: string;
   updatedAt: string;
+};
+
+export type TUpdateUserPreferencesRequest = {
+  statefulCodeEnvironment: StatefulCodeEnvironment;
+};
+
+export type TUpdateUserPreferencesResponse = {
+  updated: boolean;
+  preferences: TUpdateUserPreferencesRequest;
 };
 
 export type TGetConversationsResponse = {

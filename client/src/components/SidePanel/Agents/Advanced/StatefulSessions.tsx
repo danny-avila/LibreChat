@@ -15,11 +15,12 @@ import {
 } from '@librechat/client';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
-import { useLocalize } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
 export default function StatefulSessions() {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const methods = useFormContext<AgentForm>();
   const { setValue, watch } = methods;
 
@@ -30,7 +31,11 @@ export default function StatefulSessions() {
   const handleChange = (value: boolean) => {
     setValue(AgentCapabilities.stateful_code_sessions, value, { shouldDirty: true });
     if (value && !watch('stateful_code_environment')) {
-      setValue('stateful_code_environment', 'user', { shouldDirty: true });
+      setValue(
+        'stateful_code_environment',
+        user?.personalization?.statefulCodeEnvironment ?? 'user',
+        { shouldDirty: true },
+      );
     }
   };
 

@@ -106,6 +106,27 @@ describe('User schema indexes', () => {
   });
 });
 
+describe('User personalization', () => {
+  test('defaults new users to the shared user workspace', async () => {
+    const user = await User.create({
+      email: 'stateful-default@example.com',
+      provider: 'local',
+    });
+
+    expect(user.personalization?.statefulCodeEnvironment).toBe('user');
+  });
+
+  test('rejects unsupported stateful workspace defaults', async () => {
+    await expect(
+      User.create({
+        email: 'invalid-stateful-default@example.com',
+        provider: 'local',
+        personalization: { statefulCodeEnvironment: 'agent' },
+      }),
+    ).rejects.toThrow();
+  });
+});
+
 describe('User Methods - Database Tests', () => {
   describe('findUser', () => {
     test('should find user by exact email', async () => {
@@ -823,6 +844,57 @@ describe('User Methods - Database Tests', () => {
       await methodsWithCache.toggleUserMemories(user._id?.toString() ?? '', false);
 
       expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+  });
+
+  describe('updateUserStatefulCodeEnvironment', () => {
+    test('updates the workspace default without changing memory preferences', async () => {
+      const user = await User.create({
+        email: 'stateful-preference@example.com',
+        provider: 'local',
+        personalization: { memories: false, statefulCodeEnvironment: 'user' },
+      });
+
+      const updated = await methods.updateUserStatefulCodeEnvironment(
+        user._id?.toString() ?? '',
+        'agent-user',
+      );
+
+      expect(updated?.personalization).toMatchObject({
+        memories: false,
+        statefulCodeEnvironment: 'agent-user',
+      });
+    });
+
+    test('returns null for a missing user', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.updateUserStatefulCodeEnvironment(userId, 'conversation'),
+      ).resolves.toBeNull();
+    });
+
+    test('invalidates cached auth user documents', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-stateful-preference@example.com',
+        provider: 'openid',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.updateUserStatefulCodeEnvironment(userId, 'conversation');
+
       expect(cache.get).toHaveBeenCalledWith(indexKey);
       expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
       expect(cache.delete).toHaveBeenCalledWith(indexKey);

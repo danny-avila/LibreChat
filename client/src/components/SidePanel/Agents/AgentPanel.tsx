@@ -286,6 +286,7 @@ export default function AgentPanel() {
     setCurrentAgentId,
     agent_id: current_agent_id,
   } = useAgentPanelContext();
+  const defaultStatefulCodeEnvironment = user?.personalization?.statefulCodeEnvironment ?? 'user';
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 
@@ -307,7 +308,7 @@ export default function AgentPanel() {
 
   const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
   const methods = useForm<AgentForm>({
-    defaultValues: getDefaultAgentFormValues(),
+    defaultValues: getDefaultAgentFormValues(defaultStatefulCodeEnvironment),
     mode: 'onChange',
   });
 
@@ -579,6 +580,7 @@ export default function AgentPanel() {
                 agentQuery={agentQuery}
                 setCurrentAgentId={setCurrentAgentId}
                 selectedAgentId={agentQuery.isInitialLoading ? null : (current_agent_id ?? null)}
+                defaultStatefulCodeEnvironment={defaultStatefulCodeEnvironment}
               />
             </div>
             {agent_id && (
@@ -588,7 +590,7 @@ export default function AgentPanel() {
                   variant="outline"
                   className="w-full justify-center"
                   onClick={() => {
-                    reset(getDefaultAgentFormValues());
+                    reset(getDefaultAgentFormValues(defaultStatefulCodeEnvironment));
                     setCurrentAgentId(undefined);
                   }}
                   disabled={agentQuery.isInitialLoading}

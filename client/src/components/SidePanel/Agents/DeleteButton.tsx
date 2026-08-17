@@ -14,8 +14,8 @@ import type { Agent, AgentCreateParams } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { logger, getDefaultAgentFormValues } from '~/utils';
 import { useDeleteAgentMutation } from '~/data-provider';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { isEphemeralAgent } from '~/common';
-import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 function DeleteButton({
@@ -28,6 +28,7 @@ function DeleteButton({
   createMutation: UseMutationResult<Agent, Error, AgentCreateParams>;
 }) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { reset } = useFormContext();
   const { showToast } = useToastContext();
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
@@ -53,7 +54,7 @@ function DeleteButton({
       const firstAgent = updatedList[0] as Agent | undefined;
       if (!firstAgent) {
         setCurrentAgentId(undefined);
-        reset(getDefaultAgentFormValues());
+        reset(getDefaultAgentFormValues(user?.personalization?.statefulCodeEnvironment ?? 'user'));
         setConversation((prev) => (prev ? { ...prev, agent_id: '' } : prev));
         return;
       }
