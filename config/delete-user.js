@@ -174,8 +174,15 @@ async function gracefulExit(code = 0) {
     }
 
     if (hasSharedGenerationStore) {
-      const activeAgentRuns = await GenerationJobManager.getActiveJobIdsForUser(uid, user.tenantId);
-      await Promise.all(activeAgentRuns.map((streamId) => GenerationJobManager.abortJob(streamId)));
+      const cleanupBlockingAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
+        uid,
+        user.tenantId,
+      );
+      await Promise.all(
+        cleanupBlockingAgentRuns.map((streamId) =>
+          GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+        ),
+      );
     }
 
     // 5) Build and run deletion tasks
