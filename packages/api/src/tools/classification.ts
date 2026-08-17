@@ -6,7 +6,7 @@
  */
 
 import { logger } from '@librechat/data-schemas';
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import {
   Providers,
   createToolSearch,
@@ -33,6 +33,8 @@ export interface ToolDefinition {
   parameters?: JsonSchemaType;
   /** MCP server name extracted from tool name */
   serverName?: string;
+  /** Raw upstream tool name when the model-facing key stripped a redundant server-name prefix */
+  serverToolName?: string;
 }
 
 /**
@@ -47,6 +49,37 @@ export function getServerNameFromTool(toolName: string): string | undefined {
     return parts[parts.length - 1];
   }
   return undefined;
+}
+
+/**
+ * Aliases persisted pre-strip `tool_options` keys onto the current instance
+ * names IN PLACE, so every downstream reader of `agent.tool_options` (the
+ * registry build for defer/programmatic, the background and intent passes)
+ * sees the healed keys in BOTH loading modes — wildcard-expanded catalogs
+ * rename tools without any `agent.tools` entry to preserve the spelling.
+ * Identity-gated: the alias only lands when the definition records the
+ * legacy raw name as its own upstream tool, and an explicit entry under the
+ * current name always wins.
+ */
+export function aliasLegacyMCPToolOptions(
+  mcpToolDefs: ToolDefinition[],
+  agentToolOptions?: AgentToolOptions,
+): void {
+  if (!agentToolOptions || Object.keys(agentToolOptions).length === 0) {
+    return;
+  }
+  for (const def of mcpToolDefs) {
+    if (!def.serverToolName || !def.serverName) {
+      continue;
+    }
+    const legacyKey = `${def.serverToolName}${Constants.mcp_delimiter}${normalizeServerName(def.serverName)}`;
+    if (legacyKey === def.name) {
+      continue;
+    }
+    if (agentToolOptions[def.name] == null && agentToolOptions[legacyKey] != null) {
+      agentToolOptions[def.name] = agentToolOptions[legacyKey];
+    }
+  }
 }
 
 /**
@@ -104,6 +137,8 @@ interface MCPToolInstance {
   mcpJsonSchema?: JsonSchemaType;
   /** Server this tool came from, carried from resolution instead of re-parsed */
   mcpRawServerName?: string;
+  /** Raw upstream tool name when the instance name stripped a redundant server-name prefix */
+  mcpServerToolName?: string;
 }
 
 /**
@@ -127,6 +162,10 @@ export function extractMCPToolDefinition(tool: MCPToolInstance): ToolDefinition 
   const serverName = tool.mcpRawServerName ?? getServerNameFromTool(tool.name);
   if (serverName) {
     def.serverName = serverName;
+  }
+
+  if (tool.mcpServerToolName) {
+    def.serverToolName = tool.mcpServerToolName;
   }
 
   return def;
@@ -286,6 +325,7 @@ export async function buildToolClassification(
   }
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
+  aliasLegacyMCPToolOptions(mcpToolDefs, agentToolOptions);
   const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */

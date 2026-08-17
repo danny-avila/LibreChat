@@ -292,6 +292,7 @@ export async function loadToolDefinitions(
             description: toolDef.function.description || undefined,
             parameters: buildMcpParameters(toolDef.function.parameters),
             serverName,
+            serverToolName: toolDef.serverToolName,
           });
           resolvedMCPToolCount++;
         }
@@ -306,6 +307,7 @@ export async function loadToolDefinitions(
         description: toolDef.function.description || undefined,
         parameters: buildMcpParameters(toolDef.function.parameters),
         serverName,
+        serverToolName: toolDef.serverToolName,
       });
       resolvedMCPToolCount++;
     }
@@ -326,6 +328,7 @@ export async function loadToolDefinitions(
     mcp: true as const,
     mcpJsonSchema: def.parameters,
     mcpRawServerName: def.serverName,
+    mcpServerToolName: def.serverToolName,
   })) as unknown as GenericTool[];
 
   const classificationResult = await buildToolClassification({

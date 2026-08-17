@@ -1260,6 +1260,11 @@ function createToolInstance({
   });
   toolInstance.mcp = true;
   toolInstance.mcpRawServerName = serverName;
+  if (serverToolName !== toolName) {
+    /** Upstream identity for stripped keys — lets the options aliasing in
+     *  `buildToolClassification` heal legacy `tool_options` spellings. */
+    toolInstance.mcpServerToolName = serverToolName;
+  }
   // Ephemeral request-scoped servers (runtime body placeholders) tear their
   // connection down at request end, so they must never be backgrounded. A
   // missing/stale config means the server's lifetime is unknowable, so fail

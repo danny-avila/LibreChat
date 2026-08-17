@@ -299,5 +299,10 @@ describe('stripServerNamePrefixes', () => {
       `acme_${Constants.mcp_server}`,
     );
     expect(stripServerNamePrefix('acme_oauth', 'acme')).toBe('acme_oauth');
+    /** The client reserves the WHOLE `oauth${mcp_delimiter}` prefix, so any
+     *  remainder inside that namespace stays raw too. */
+    expect(stripServerNamePrefix(`acme_oauth${Constants.mcp_delimiter}reset`, 'acme')).toBe(
+      `acme_oauth${Constants.mcp_delimiter}reset`,
+    );
   });
 });

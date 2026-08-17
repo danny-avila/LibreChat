@@ -3117,9 +3117,15 @@ export function stripServerNamePrefix(toolName: string, normalizedServerName: st
   const stripped = toolName.slice(prefixLength);
   /** A remainder equal to a synthetic marker would turn a real upstream tool
    *  into the server-wide wildcard, the UI pin placeholder, or a synthetic
-   *  OAuth call (`oauth${mcp_delimiter}` names get OAuth-only handling in the
-   *  client stream handlers). */
-  if (stripped === Constants.mcp_all || stripped === Constants.mcp_server || stripped === 'oauth') {
+   *  OAuth call — the client stream handlers reserve the ENTIRE
+   *  `oauth${mcp_delimiter}` prefix, not just the exact name, so any
+   *  remainder inside that namespace stays raw. */
+  if (
+    stripped === Constants.mcp_all ||
+    stripped === Constants.mcp_server ||
+    stripped === 'oauth' ||
+    stripped.startsWith(`oauth${Constants.mcp_delimiter}`)
+  ) {
     return toolName;
   }
   return stripped;
