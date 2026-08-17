@@ -1,5 +1,5 @@
 import { Spinner } from '@librechat/client';
-import { Check, PlugZap } from 'lucide-react';
+import { Check, PlugZap, Zap } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -80,6 +80,18 @@ export default function MCPStatusBadge({
         </div>
       );
     }
+    if (serverStatus.requiresRequestScope) {
+      // Request-scoped server — connects on demand per chat turn, so "disconnected" is the normal idle state
+      return (
+        <div
+          role="status"
+          className={cn(badgeBaseClass, 'bg-status-info-subtle text-status-info')}
+        >
+          <Zap className="size-3" aria-hidden="true" />
+          <span>{localize('com_nav_mcp_status_on_demand')}</span>
+        </div>
+      );
+    }
     // Simply disconnected - gray (neutral)
     return (
       <div
@@ -121,7 +133,7 @@ export default function MCPStatusBadge({
  *
  * Colors:
  * - Green: Connected
- * - Blue: Connecting/Initializing
+ * - Blue: Connecting/Initializing, or request-scoped (on-demand) while disconnected
  * - Amber: Needs action (OAuth required while disconnected)
  * - Gray: Disconnected (neutral)
  * - Red: Error
@@ -153,8 +165,11 @@ export function getStatusDotColor(
   }
 
   if (connectionState === 'disconnected') {
-    // Needs OAuth = amber, otherwise gray
-    return requiresOAuth ? 'bg-status-warning' : 'bg-status-neutral';
+    // Needs OAuth = amber, request-scoped = blue, otherwise gray
+    if (requiresOAuth) {
+      return 'bg-status-warning';
+    }
+    return serverStatus.requiresRequestScope ? 'bg-status-info' : 'bg-status-neutral';
   }
 
   return 'bg-status-neutral';

@@ -33,6 +33,7 @@ const {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
   hasRuntimeUrlPlaceholders,
+  hasRuntimeBodyPlaceholders,
   containsGraphTokenPlaceholder,
   isOAuthServer,
 } = require('@librechat/api');
@@ -1355,7 +1356,7 @@ function canDetectMCPRuntimeOAuth(config) {
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined>, loadMCPAllowlists?: () => Promise<{ allowedDomains?: string[] | null, allowedAddresses?: string[] | null }> }} [runtimeContext]
- * @returns {Object} Object containing requiresOAuth and connectionState
+ * @returns {Object} Object containing requiresOAuth, requiresRequestScope, connectionState, and authorizationState
  */
 async function getServerConnectionStatus(
   userId,
@@ -1372,6 +1373,7 @@ async function getServerConnectionStatus(
   const liveConnectionOAuth = connection?.usesOAuth?.() === true;
   const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
   const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
+  const requiresRequestScope = hasRuntimeBodyPlaceholders(config);
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
@@ -1416,6 +1418,7 @@ async function getServerConnectionStatus(
 
   return {
     requiresOAuth,
+    requiresRequestScope,
     connectionState: finalConnectionState,
     authorizationState,
   };
