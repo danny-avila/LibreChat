@@ -5,6 +5,7 @@ import { AlertCircle, Info, Search } from 'lucide-react';
 import { Button, Input, Spinner, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import {
   INSIGHTS_MAX_RANGE_DAYS,
+  INSIGHTS_SEARCH_MAX_LENGTH,
   INSIGHTS_SEARCH_MIN_LENGTH,
   SystemRoles,
 } from 'librechat-data-provider';
@@ -437,6 +438,7 @@ function LatestConversations({
           <Input
             aria-label={localize('com_insights_search_placeholder')}
             className="pl-9"
+            maxLength={INSIGHTS_SEARCH_MAX_LENGTH}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={localize('com_insights_search_placeholder')}
             value={search}
@@ -571,7 +573,7 @@ export default function InsightsView() {
   );
 
   useEffect(() => {
-    const trimmedSearch = searchInput.trim();
+    const trimmedSearch = searchInput.trim().slice(0, INSIGHTS_SEARCH_MAX_LENGTH);
     const nextSearch = trimmedSearch.length >= INSIGHTS_SEARCH_MIN_LENGTH ? trimmedSearch : '';
     if (nextSearch === search) {
       return;
