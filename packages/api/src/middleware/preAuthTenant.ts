@@ -1,7 +1,7 @@
 import { logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
-import { isEnabled } from '~/utils';
 import { buildRequestContext, runWithTenantContext } from './tenant';
+import { isEnabled } from '~/utils';
 
 /**
  * Pre-authentication tenant context middleware for unauthenticated routes.
