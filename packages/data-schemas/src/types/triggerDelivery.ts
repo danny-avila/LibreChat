@@ -67,9 +67,7 @@ export interface IAgentTriggerLaneSequence {
 
 export interface IAgentTriggerLaneSequenceDocument
   extends Omit<IAgentTriggerLaneSequence, '_id'>,
-    Document {
-  _id: string;
-}
+    Document<string> {}
 
 export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
   claimToken: string;
