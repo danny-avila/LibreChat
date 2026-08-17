@@ -61,6 +61,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
+const mockIsAgentTriggerPrincipalActive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
@@ -208,6 +209,7 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
+  isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
 }));
 
 const AgentController = require('../request');
@@ -245,6 +247,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
       metadata: { checkpointNamespace: '1000' },
@@ -619,6 +622,57 @@ describe('ResumableAgentController resume metadata', () => {
       status: 'started',
       generationProtocolVersion: 2,
     });
+  });
+
+  it('rejects a trigger fenced after authentication before generation execution starts', async () => {
+    mockIsAgentTriggerPrincipalActive.mockResolvedValue(false);
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run after a slow trigger admission.',
+        messageId: 'user-message',
+        clientRequestId: 'trigger-request',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
+    expect(mockIsAgentTriggerPrincipalActive).toHaveBeenCalledWith('user-123');
+    expect(mockGenerationJobManager.createJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockIsAgentTriggerPrincipalActive.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(410);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 410,
+      code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
+      error: 'Agent trigger principal is no longer active',
+      generationProtocolVersion: 1,
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(mockAcceptAgentStartupTelemetry).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 410,
+        code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
+        error: 'Agent trigger principal is no longer active',
+      }),
+      1000,
+    );
+    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
+      'user-123',
+      'trigger-request',
+      'conversation-123',
+      DEFAULT_OWNED_CLAIM,
+    );
+    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
   it('prefetches conversation state before admission and joins it with job metadata', async () => {

@@ -33,7 +33,7 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { logViolation } = require('~/cache');
-const { saveMessage, getMessages, getConvo } = require('~/models');
+const { saveMessage, getMessages, getConvo, isAgentTriggerPrincipalActive } = require('~/models');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -901,10 +901,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       },
     });
     startupTelemetry?.mark('job_created');
-    acceptAgentStartupTelemetry(req, streamId);
-    startupTelemetry?.mark('metadata_persisted');
     generationProtocolVersion = negotiateExistingGenerationProtocol(req, job);
     jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
+
+    /** Authentication can precede a slow admission path by longer than the
+     * delivery host's HTTP timeout. Recheck the durable account-deletion fence
+     * after the job is committed but before execution starts. This ordering
+     * closes both sides of the race: a fence that wins first rejects this run;
+     * a fence that starts after this read must observe the already-created job
+     * in account deletion's active-generation drain. */
+    if (req._isAgentTrigger === true && !(await isAgentTriggerPrincipalActive(userId))) {
+      throw Object.assign(new Error('Agent trigger principal is no longer active'), {
+        code: 'AGENT_TRIGGER_PRINCIPAL_INACTIVE',
+        status: 410,
+      });
+    }
+
+    acceptAgentStartupTelemetry(req, streamId);
+    startupTelemetry?.mark('metadata_persisted');
     req._resumableStreamId = streamId;
     getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
     let recoveredSteerCommitted = false;
