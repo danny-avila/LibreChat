@@ -3,8 +3,8 @@ import { useRecoilValue } from 'recoil';
 import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
 import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
-import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
+import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
 

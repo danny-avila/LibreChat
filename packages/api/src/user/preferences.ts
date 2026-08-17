@@ -1,8 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
-
-import type { IUser } from '@librechat/data-schemas';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
+import type { IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 
 interface UserPreferencesBody {
