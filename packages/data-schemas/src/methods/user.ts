@@ -12,6 +12,8 @@ import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
+/** Minimum age before an explicitly offline operator may recover an abandoned deletion fence. */
+export const USER_DELETION_FENCE_STALE_MS: number = 15 * 60_000;
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
@@ -117,6 +119,16 @@ export function createUserMethods(
   >;
   getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
   generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
+  beginAgentTriggerUserDeletion: (
+    userId: string,
+    startedAt: Date,
+  ) => Promise<'acquired' | 'in_progress' | 'missing'>;
+  recoverStaleAgentTriggerUserDeletion: (
+    userId: string,
+    recoveredAt: Date,
+  ) => Promise<'acquired' | 'in_progress' | 'missing'>;
+  cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
+  isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   updateUserPlugins: (
     userId: string,
@@ -376,6 +388,70 @@ export function createUserMethods(
     }
   }
 
+  /** Establishes the durable admission fence used while account deletion drains triggers. */
+  async function beginAgentTriggerUserDeletion(
+    userId: string,
+    startedAt: Date,
+  ): Promise<'acquired' | 'in_progress' | 'missing'> {
+    if (!(startedAt instanceof Date) || !Number.isFinite(startedAt.getTime())) {
+      throw new TypeError('startedAt must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: { $exists: false } },
+      { $set: { agentTriggerDeletionStartedAt: startedAt } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return 'acquired';
+    }
+    return (await User.exists({ _id: userId })) == null ? 'missing' : 'in_progress';
+  }
+
+  /** Replaces an abandoned fence only for an operator-confirmed offline deployment.
+   * Normal request paths must never call this: age alone cannot prove the prior owner died. */
+  async function recoverStaleAgentTriggerUserDeletion(
+    userId: string,
+    recoveredAt: Date,
+  ): Promise<'acquired' | 'in_progress' | 'missing'> {
+    if (!(recoveredAt instanceof Date) || !Number.isFinite(recoveredAt.getTime())) {
+      throw new TypeError('recoveredAt must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    const staleBefore = new Date(recoveredAt.getTime() - USER_DELETION_FENCE_STALE_MS);
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: { $lte: staleBefore } },
+      { $set: { agentTriggerDeletionStartedAt: recoveredAt } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return 'acquired';
+    }
+    return (await User.exists({ _id: userId })) == null ? 'missing' : 'in_progress';
+  }
+
+  /** Releases only the account-deletion attempt that owns this exact fence. */
+  async function cancelAgentTriggerUserDeletion(userId: string, startedAt: Date): Promise<boolean> {
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: startedAt },
+      { $unset: { agentTriggerDeletionStartedAt: 1 } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return true;
+    }
+    return false;
+  }
+
+  async function isAgentTriggerPrincipalActive(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    return (
+      (await User.exists({ _id: userId, agentTriggerDeletionStartedAt: { $exists: false } })) !=
+      null
+    );
+  }
+
   /**
    * Generates a JWT token for a given user.
    * @param user - The user object
@@ -627,6 +703,10 @@ export function createUserMethods(
     searchUsers,
     getUserById,
     generateToken,
+    beginAgentTriggerUserDeletion,
+    recoverStaleAgentTriggerUserDeletion,
+    cancelAgentTriggerUserDeletion,
+    isAgentTriggerPrincipalActive,
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
