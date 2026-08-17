@@ -91,8 +91,16 @@ async function gracefulExit(code = 0) {
 
   // The CLI can coordinate live generation aborts only through the shared
   // Redis stream store. Without it, require an explicit offline assertion.
-  await waitForKeyvRedisClient();
-  const streamServices = createStreamServices();
+  let streamServices;
+  try {
+    await waitForKeyvRedisClient();
+    streamServices = createStreamServices();
+  } catch (error) {
+    console.yellow(
+      `Shared Redis generation coordination is unreachable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    streamServices = createStreamServices({ useRedis: false });
+  }
   const hasSharedGenerationStore = streamServices.isRedis;
   let allProcessesStopped = false;
   if (!hasSharedGenerationStore) {
@@ -204,7 +212,7 @@ async function gracefulExit(code = 0) {
     await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
 
     // 7) Finally delete the user document itself
-    const deletedUser = await User.deleteOne({ _id: uid });
+    const deletedUser = await runAsSystem(() => methods.deleteUserById(uid));
     if (deletedUser.deletedCount !== 1) {
       throw new Error('User disappeared before account deletion could commit');
     }

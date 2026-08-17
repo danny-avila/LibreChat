@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
@@ -173,7 +173,7 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
-          if (!(await isAgentTriggerPrincipalActive(user.id))) {
+          if (!(await runAsSystem(() => isAgentTriggerPrincipalActive(user.id)))) {
             done(null, false, { message: 'Account deletion is in progress' });
             return;
           }

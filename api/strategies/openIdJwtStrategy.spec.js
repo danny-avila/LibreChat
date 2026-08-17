@@ -10,6 +10,7 @@ const mockAuthUserDocCacheStore = {
 };
 const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
 const mockGetTenantId = jest.fn();
+const mockRunAsSystem = jest.fn((callback) => callback());
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -29,6 +30,7 @@ jest.mock('https-proxy-agent', () => ({
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
   getTenantId: mockGetTenantId,
+  runAsSystem: mockRunAsSystem,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
@@ -88,6 +90,7 @@ function resetAuthUserDocCacheMocks() {
 
 beforeEach(() => {
   resetAuthUserDocCacheMocks();
+  mockRunAsSystem.mockClear();
   isAgentTriggerPrincipalActive.mockResolvedValue(true);
 });
 
@@ -471,6 +474,8 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       info: { message: 'Account deletion is in progress' },
     });
     expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(isAgentTriggerPrincipalActive).toHaveBeenCalledWith('cached-user');
     expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
