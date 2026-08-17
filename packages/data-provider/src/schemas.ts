@@ -933,7 +933,12 @@ export const coerceNumber = z.union([z.number(), z.string()]).transform((val) =>
 });
 
 type DocumentTypeValue =
-  null | boolean | number | string | DocumentTypeValue[] | { [key: string]: DocumentTypeValue };
+  | null
+  | boolean
+  | number
+  | string
+  | DocumentTypeValue[]
+  | { [key: string]: DocumentTypeValue };
 
 const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
   z.union([

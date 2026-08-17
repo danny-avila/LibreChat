@@ -1,5 +1,5 @@
-import type { Document, Types } from 'mongoose';
 import type { TSubagentThreadLineage } from 'librechat-data-provider';
+import type { Document, Types } from 'mongoose';
 
 // @ts-ignore
 export interface IConversation extends Document {

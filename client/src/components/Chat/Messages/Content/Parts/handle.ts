@@ -33,7 +33,8 @@ export function splitBackgroundAttachments(
   let backgroundStatus: string | undefined;
   const fileAttachments = attachments.filter((attachment) => {
     const marker = attachment as
-      { type?: string; status?: string; toolCallId?: string } | undefined;
+      | { type?: string; status?: string; toolCallId?: string }
+      | undefined;
     if (marker?.type !== BACKGROUND_STATUS_ATTACHMENT_TYPE) {
       return true;
     }
