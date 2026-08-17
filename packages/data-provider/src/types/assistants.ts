@@ -538,7 +538,8 @@ export enum AnnotationTypes {
   FILE_PATH = 'file_path',
 }
 
-export type StatefulCodeEnvironment = 'user' | 'agent-user' | 'conversation';
+export const STATEFUL_CODE_ENVIRONMENTS = ['user', 'agent-user', 'conversation'] as const;
+export type StatefulCodeEnvironment = (typeof STATEFUL_CODE_ENVIRONMENTS)[number];
 
 export enum StepStatus {
   IN_PROGRESS = 'in_progress',

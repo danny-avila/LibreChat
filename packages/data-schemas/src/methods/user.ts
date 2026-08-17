@@ -3,6 +3,7 @@ import {
   AUTH_USER_DOC_BY_ID_PREFIX,
   CacheKeys,
   type RefillIntervalUnit,
+  type StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import type { CacheStore } from '~/types';
@@ -93,6 +94,7 @@ export function createUserMethods(
       termsAccepted?: boolean;
       personalization?: {
         memories?: boolean;
+        statefulCodeEnvironment?: import('librechat-data-provider').StatefulCodeEnvironment;
       };
       favorites?: import('librechat-data-provider').TUserFavorite[];
       skillStates?: Record<string, boolean>;
@@ -123,6 +125,10 @@ export function createUserMethods(
     action: 'install' | 'uninstall',
   ) => Promise<IUser | null>;
   toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
+  updateUserStatefulCodeEnvironment: (
+    userId: string,
+    environment: StatefulCodeEnvironment,
+  ) => Promise<IUser | null>;
 } {
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
@@ -427,6 +433,22 @@ export function createUserMethods(
     return updated;
   }
 
+  async function updateUserStatefulCodeEnvironment(
+    userId: string,
+    environment: StatefulCodeEnvironment,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { $set: { 'personalization.statefulCodeEnvironment': environment } },
+      { new: true, runValidators: true },
+    ).lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
+  }
+
   /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
@@ -484,6 +506,7 @@ export function createUserMethods(
       termsAccepted?: boolean;
       personalization?: {
         memories?: boolean;
+        statefulCodeEnvironment?: import('librechat-data-provider').StatefulCodeEnvironment;
       };
       favorites?: import('librechat-data-provider').TUserFavorite[];
       skillStates?: Record<string, boolean>;
@@ -607,6 +630,7 @@ export function createUserMethods(
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
+    updateUserStatefulCodeEnvironment,
   };
 }
 

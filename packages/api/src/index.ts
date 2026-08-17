@@ -58,6 +58,8 @@ export * from './projects';
 /* Skills */
 export * from './skills';
 export * from './favorites';
+/* User */
+export * from './user';
 /* Agent Plugins */
 export * from './plugins';
 /* Endpoints */

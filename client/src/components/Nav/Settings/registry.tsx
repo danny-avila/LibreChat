@@ -45,6 +45,7 @@ import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
+import StatefulWorkspaceDefault from './StatefulWorkspaceDefault';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
@@ -517,6 +518,16 @@ export const registry: SettingEntry[] = [
     keywords: ['memory', 'personalization'],
     show: (ctx) => ctx.hasMemoryOptOut,
     Component: MemoryToggle,
+  },
+  // Data controls · Code execution
+  {
+    id: 'defaultStatefulWorkspace',
+    tab: DATA,
+    section: 'codeExecution',
+    labelKey: 'com_ui_default_stateful_workspace',
+    keywords: ['agent', 'code', 'environment', 'sandbox', 'stateful', 'workspace'],
+    show: (ctx) => ctx.hasStatefulCodeSessions,
+    Component: StatefulWorkspaceDefault,
   },
   // Data controls · Your data
   {

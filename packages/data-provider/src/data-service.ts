@@ -172,6 +172,12 @@ export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
 }
 
+export function updateUserPreferences(
+  preferences: t.TUpdateUserPreferencesRequest,
+): Promise<t.TUpdateUserPreferencesResponse> {
+  return request.patch(endpoints.userPreferences(), preferences);
+}
+
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
 }
