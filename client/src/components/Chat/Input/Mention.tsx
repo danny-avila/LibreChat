@@ -2,7 +2,7 @@ import { memo, useState, useRef, useEffect } from 'react';
 import { AutoSizer, List } from 'react-virtualized';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
-import { Input, Spinner, useCombobox } from '@librechat/client';
+import { Input, Spinner, useCombobox, useRemScale } from '@librechat/client';
 import type { RecoilState } from 'recoil';
 import type { MentionOption, ConvoGenerator } from '~/common';
 import { useGetConversation, useLocalize, TranslationKeys } from '~/hooks';
@@ -11,7 +11,6 @@ import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { removeCharIfLast } from '~/utils';
-import useRemScale from '~/hooks/useRemScale';
 import MentionItem from './MentionItem';
 
 const ROW_HEIGHT = 44;

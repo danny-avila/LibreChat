@@ -1,12 +1,11 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import { throttle } from 'lodash';
-import { Spinner } from '@librechat/client';
+import { Spinner, useRemScale } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
-import useRemScale from '~/hooks/useRemScale';
 import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';

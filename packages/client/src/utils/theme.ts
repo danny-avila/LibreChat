@@ -1,3 +1,5 @@
+import { invalidateRemScale } from './remScale';
+
 export const MIN_UI_SCALE = 0.5;
 export const MAX_UI_SCALE = 1.5;
 export const DEFAULT_UI_SCALE = 1;
@@ -28,6 +30,7 @@ export const clampUiScale = (scale: number): number => {
  */
 export const applyUiScale = (scale: number): void => {
   document.documentElement.style.setProperty('--ui-scale', String(clampUiScale(scale)));
+  invalidateRemScale();
 };
 
 export const applyFontSize = (val: string): void => {

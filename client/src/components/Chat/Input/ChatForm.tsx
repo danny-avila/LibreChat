@@ -1,7 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
-import { TextareaAutosize } from '@librechat/client';
-import useRemScale from '~/hooks/useRemScale';
+import { TextareaAutosize, useRemScale } from '@librechat/client';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
