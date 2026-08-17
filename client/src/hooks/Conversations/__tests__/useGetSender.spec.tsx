@@ -91,4 +91,19 @@ describe('useGetSender', () => {
     };
     expect(getSender(asOption(unknownCustom))).toBe(getResponseSender(asOption(unknownCustom)));
   });
+
+  it('never reveals model or spec labels for agent conversations', () => {
+    const getSender = renderGetSender();
+    expect(
+      getSender(
+        asOption({
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent_abc123',
+          model: 'gpt-5.5',
+          modelLabel: 'GPT-5.5 Pro',
+          spec: 'fast-qwen',
+        }),
+      ),
+    ).toBe('');
+  });
 });
