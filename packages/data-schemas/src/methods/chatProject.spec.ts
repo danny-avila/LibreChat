@@ -1,16 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { IChatProject, IConversation, IMessage, IMongoFile, ISharedLink } from '~/types';
+import type { IChatProject, IConversation } from '~/types';
 import {
   createChatProjectMethods,
-  refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
   type ChatProjectMethods,
 } from './chatProject';
-import { createApplyForcedRetention } from '~/utils/retention';
 import { createModels } from '~/models';
-import type { IChatProject, IConversation } from '~/types';
-import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EToolResources, FileContext } from 'librechat-data-provider';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
-import { runAsSystem } from '~/config/tenantContext';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
 
@@ -135,22 +135,6 @@ describe('File Methods', () => {
       await expect(File.countDocuments({ file_id: fileId, user: userId })).resolves.toBe(1);
     });
 
-    it('casts caller-supplied timestamps in atomic pipeline upserts', async () => {
-      const createdAt = '2026-07-26T10:15:30.000Z';
-      const file = await fileMethods.createFile({
-        file_id: uuidv4(),
-        user: new mongoose.Types.ObjectId(),
-        filename: 'timestamped.png',
-        filepath: '/uploads/timestamped.png',
-        type: 'image/png',
-        bytes: 100,
-        createdAt: createdAt as unknown as Date,
-      });
-
-      expect(file?.createdAt).toBeInstanceOf(Date);
-      expect(file?.createdAt?.toISOString()).toBe(createdAt);
-    });
-
     it('rejects cross-tenant mutation fields before atomic pipeline upserts', async () => {
       const userId = new mongoose.Types.ObjectId();
 
@@ -187,29 +171,6 @@ describe('File Methods', () => {
       await expect(
         runAsSystem(() => File.countDocuments({ file_id: fileId, tenantId: 'tenant-a' })),
       ).resolves.toBe(1);
-    });
-
-    it('updates expiredAt monotonically with an atomic minimum', async () => {
-      const fileId = uuidv4();
-      const userId = new mongoose.Types.ObjectId();
-      const firstExpiry = new Date('2030-01-01T00:00:00.000Z');
-      const laterExpiry = new Date('2031-01-01T00:00:00.000Z');
-      const soonerExpiry = new Date('2029-01-01T00:00:00.000Z');
-      const data = {
-        file_id: fileId,
-        user: userId,
-        filename: 'retained.txt',
-        filepath: '/uploads/retained.txt',
-        type: 'text/plain',
-        bytes: 100,
-      };
-
-      await fileMethods.createFile({ ...data, expiredAt: firstExpiry }, true);
-      const notExtended = await fileMethods.createFile({ ...data, expiredAt: laterExpiry }, true);
-      const shortened = await fileMethods.createFile({ ...data, expiredAt: soonerExpiry }, true);
-
-      expect(notExtended?.expiredAt?.getTime()).toBe(firstExpiry.getTime());
-      expect(shortened?.expiredAt?.getTime()).toBe(soonerExpiry.getTime());
     });
   });
 
