@@ -85,18 +85,36 @@ class FakeRedisClient {
     _script: string,
     _keyCount: number,
     key: string,
-    taskId: string,
-    ownerId: string,
-    _ttlMs: string,
-  ): Promise<number> {
-    if (this.bus.registrationFailures > 0) {
-      this.bus.registrationFailures -= 1;
-      throw new Error('temporary registration failure');
-    }
+    ...args: string[]
+  ): Promise<number | string | string[] | null> {
     const hash = this.bus.hashes.get(key) ?? new Map<string, string>();
-    hash.set(taskId, ownerId);
-    this.bus.hashes.set(key, hash);
-    return 1;
+    if (args.length === 3) {
+      if (this.bus.registrationFailures > 0) {
+        this.bus.registrationFailures -= 1;
+        throw new Error('temporary registration failure');
+      }
+      const [taskId, ownerId, ttlMs] = args;
+      hash.set(taskId, `${Date.now() + Number(ttlMs)}|${ownerId}`);
+      this.bus.hashes.set(key, hash);
+      return 1;
+    }
+    const readOwner = (taskId: string): string | null => {
+      const value = hash.get(taskId);
+      const separator = value?.indexOf('|') ?? -1;
+      const expiresAt = separator < 0 ? Number.NaN : Number(value?.slice(0, separator));
+      if (value == null || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        hash.delete(taskId);
+        return null;
+      }
+      return value.slice(separator + 1);
+    };
+    if (args.length === 1) {
+      return readOwner(args[0]);
+    }
+    return [...hash.keys()].flatMap((taskId) => {
+      const ownerId = readOwner(taskId);
+      return ownerId == null ? [] : [taskId, ownerId];
+    });
   }
 
   async hget(key: string, field: string): Promise<string | null> {
@@ -287,6 +305,86 @@ describe('RedisSubagentTaskControlTransport', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 5));
     }
     await expect(requester.hasTasks('scope-1')).resolves.toBe(true);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('expires a dead owner independently while another owner keeps the scope active', async () => {
+    const bus = new FakeRedisBus();
+    const deadOwner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'dead-owner', registrationHeartbeatMs: 5 },
+    );
+    const liveOwner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'live-owner', registrationHeartbeatMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
+    );
+    const deadTask = snapshot({ taskId: 'dead-task' });
+    const liveTask = snapshot({ taskId: 'live-task' });
+    await deadOwner.bind({
+      claim: () => ({ status: 'running', task: deadTask }),
+      control: () => ({ status: 'not_found' }),
+      list: () => [deadTask],
+    });
+    await liveOwner.bind({
+      claim: () => ({ status: 'running', task: liveTask }),
+      control: () => ({ status: 'not_found' }),
+      list: () => [liveTask],
+    });
+    await requester.bind({
+      claim: () => ({ status: 'not_found' }),
+      control: () => ({ status: 'not_found' }),
+      list: () => [],
+    });
+    await deadOwner.registerTask('scope-1', deadTask.taskId, 20);
+    await liveOwner.registerTask('scope-1', liveTask.taskId, 20);
+    await deadOwner.destroy();
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 35));
+
+    await expect(requester.list('scope-1')).resolves.toEqual([liveTask]);
+    await Promise.all([liveOwner.destroy(), requester.destroy()]);
+  });
+
+  it('does not prune registered tasks omitted from a capped owner response', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const tasks = Array.from({ length: 201 }, (_, index) =>
+      snapshot({ taskId: `task-${index + 1}` }),
+    );
+    const handler = {
+      claim: (_scopeId: string, taskId: string) => ({
+        status: 'running' as const,
+        task: snapshot({ taskId }),
+      }),
+      control: () => ({ status: 'not_found' }) as const,
+      list: () => tasks,
+    };
+    await owner.bind(handler);
+    await requester.bind({ ...handler, list: () => [] });
+    await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
+
+    await expect(requester.list('scope-1')).resolves.toHaveLength(200);
+    await expect(requester.claim('scope-1', 'task-201')).resolves.toMatchObject({
+      status: 'running',
+      task: { taskId: 'task-201' },
+    });
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

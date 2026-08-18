@@ -29,9 +29,39 @@ const MAX_TASK_SNAPSHOTS = 200;
 const MAX_ROUTED_MESSAGE_CHARS = 8 * 1_024 * 1_024;
 
 const REGISTER_TASK_SCRIPT =
-  "redis.call('HSET', KEYS[1], ARGV[1], ARGV[2]); " +
-  "redis.call('PEXPIRE', KEYS[1], ARGV[3]); " +
+  "local now = redis.call('TIME'); " +
+  'local ttl = tonumber(ARGV[3]); ' +
+  'local expiresAt = (tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000) + ttl; ' +
+  "redis.call('HSET', KEYS[1], ARGV[1], tostring(expiresAt) .. '|' .. ARGV[2]); " +
+  "local directoryTtl = redis.call('PTTL', KEYS[1]); " +
+  "if directoryTtl < ttl then redis.call('PEXPIRE', KEYS[1], ttl); end; " +
   'return 1';
+
+const READ_ACTIVE_REGISTRATIONS_SCRIPT =
+  "local now = redis.call('TIME'); " +
+  'local nowMs = (tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000); ' +
+  "local entries = redis.call('HGETALL', KEYS[1]); " +
+  'local active = {}; ' +
+  'for i = 1, #entries, 2 do ' +
+  'local value = entries[i + 1]; ' +
+  "local separator = string.find(value, '|', 1, true); " +
+  'local expiresAt = separator and tonumber(string.sub(value, 1, separator - 1)); ' +
+  'if expiresAt and expiresAt > nowMs then ' +
+  'table.insert(active, entries[i]); ' +
+  'table.insert(active, string.sub(value, separator + 1)); ' +
+  "else redis.call('HDEL', KEYS[1], entries[i]); end; " +
+  'end; ' +
+  'return active';
+
+const READ_TASK_OWNER_SCRIPT =
+  "local value = redis.call('HGET', KEYS[1], ARGV[1]); " +
+  'if not value then return nil; end; ' +
+  "local separator = string.find(value, '|', 1, true); " +
+  'local expiresAt = separator and tonumber(string.sub(value, 1, separator - 1)); ' +
+  "local now = redis.call('TIME'); " +
+  'local nowMs = (tonumber(now[1]) * 1000) + math.floor(tonumber(now[2]) / 1000); ' +
+  "if not expiresAt or expiresAt <= nowMs then redis.call('HDEL', KEYS[1], ARGV[1]); return nil; end; " +
+  'return string.sub(value, separator + 1)';
 
 type RedisClient = Redis | Cluster;
 interface RoutedRequestBase {
@@ -77,6 +107,11 @@ interface PendingRequest {
 interface CachedResponse {
   value: string;
   expiresAt: number;
+}
+
+interface RoutedTaskList {
+  snapshots: SubagentTaskSnapshot[];
+  truncated: boolean;
 }
 
 interface OwnedTaskRegistration {
@@ -296,6 +331,18 @@ function isControlResult(value: unknown): value is SubagentTaskControlResult {
   );
 }
 
+function isRoutedTaskList(value: unknown): value is RoutedTaskList {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Partial<RoutedTaskList>;
+  return (
+    Array.isArray(candidate.snapshots) &&
+    candidate.snapshots.every(isSnapshot) &&
+    typeof candidate.truncated === 'boolean'
+  );
+}
+
 function parseControlCommand(value: unknown): SubagentTaskControlCommand | undefined {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -470,7 +517,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     this.assertScope(scopeId);
     await this.requireReady();
     try {
-      return (await this.publisher.hlen(this.registryKey(scopeId))) > 0;
+      return Object.keys(await this.readActiveRegistrations(scopeId)).length > 0;
     } catch (error) {
       logger.warn('[subagentTaskRouting] Failed to inspect the task owner directory', error);
       throw new SubagentTaskOwnerUnavailableError();
@@ -516,7 +563,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     await this.requireReady();
     let ownersByTask: Record<string, string>;
     try {
-      ownersByTask = await this.publisher.hgetall(this.registryKey(scopeId));
+      ownersByTask = await this.readActiveRegistrations(scopeId);
     } catch (error) {
       logger.warn('[subagentTaskRouting] Failed to read the task owner directory', error);
       throw new SubagentTaskOwnerUnavailableError();
@@ -533,19 +580,21 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     const snapshots: SubagentTaskSnapshot[] = [];
     const staleTaskIds: string[] = [];
     for (const [index, value] of results.entries()) {
-      if (!Array.isArray(value) || !value.every(isSnapshot)) {
+      if (!isRoutedTaskList(value)) {
         throw new SubagentTaskOwnerUnavailableError();
       }
       const ownerId = ownerIds[index];
-      const reportedTaskIds = new Set(value.map((snapshot) => snapshot.taskId));
-      for (const snapshot of value) {
+      const reportedTaskIds = new Set(value.snapshots.map((snapshot) => snapshot.taskId));
+      for (const snapshot of value.snapshots) {
         if (ownersByTask[snapshot.taskId] === ownerId) {
           snapshots.push(snapshot);
         }
       }
-      for (const [taskId, registeredOwnerId] of Object.entries(ownersByTask)) {
-        if (registeredOwnerId === ownerId && !reportedTaskIds.has(taskId)) {
-          staleTaskIds.push(taskId);
+      if (!value.truncated) {
+        for (const [taskId, registeredOwnerId] of Object.entries(ownersByTask)) {
+          if (registeredOwnerId === ownerId && !reportedTaskIds.has(taskId)) {
+            staleTaskIds.push(taskId);
+          }
         }
       }
     }
@@ -627,9 +676,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
     let response: RoutedResponse;
     try {
-      let result: SubagentTaskClaim | SubagentTaskControlResult | SubagentTaskSnapshot[];
+      let result: SubagentTaskClaim | SubagentTaskControlResult | RoutedTaskList;
       if (request.operation === 'list') {
-        result = handler.list(request.scopeId).slice(0, MAX_TASK_SNAPSHOTS).map(boundedSnapshot);
+        const tasks = handler.list(request.scopeId);
+        result = {
+          snapshots: tasks.slice(0, MAX_TASK_SNAPSHOTS).map(boundedSnapshot),
+          truncated: tasks.length > MAX_TASK_SNAPSHOTS,
+        };
       } else if (request.operation === 'claim') {
         result = boundedClaim(handler.claim(request.scopeId, request.taskId));
       } else {
@@ -668,7 +721,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     await this.requireReady();
     let ownerId: string | null;
     try {
-      ownerId = await this.publisher.hget(this.registryKey(scopeId), taskId);
+      ownerId = (await this.publisher.eval(
+        READ_TASK_OWNER_SCRIPT,
+        1,
+        this.registryKey(scopeId),
+        taskId,
+      )) as string | null;
     } catch (error) {
       logger.warn('[subagentTaskRouting] Failed to resolve the task owner', error);
       throw new SubagentTaskOwnerUnavailableError();
@@ -802,6 +860,27 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       this.instanceId,
       registration.ttlMs.toString(),
     );
+  }
+
+  private async readActiveRegistrations(scopeId: string): Promise<Record<string, string>> {
+    const value = (await this.publisher.eval(
+      READ_ACTIVE_REGISTRATIONS_SCRIPT,
+      1,
+      this.registryKey(scopeId),
+    )) as unknown;
+    if (!Array.isArray(value) || value.length % 2 !== 0) {
+      throw new SubagentTaskOwnerUnavailableError();
+    }
+    const registrations: Record<string, string> = {};
+    for (let index = 0; index < value.length; index += 2) {
+      const taskId = value[index];
+      const ownerId = value[index + 1];
+      if (!isBoundedString(taskId, MAX_TASK_ID_CHARS) || !isBoundedString(ownerId, 128)) {
+        throw new SubagentTaskOwnerUnavailableError();
+      }
+      registrations[taskId] = ownerId;
+    }
+    return registrations;
   }
 
   private async removeRegistrations(scopeId: string, taskIds: string[]): Promise<void> {
