@@ -1577,16 +1577,16 @@ describe('SubagentThreadTaskStore', () => {
       .mockResolvedValue({ status: 'cancelled', task: threadSnapshot('task-1') });
     try {
       await store.cancelAndDrainForOwner(userId);
+
+      /** An unconfirmed delivery is retried under the same invocation, and once the
+       * owner answers the drain only waits for the lease instead of re-cancelling. */
+      expect(controlTask).toHaveBeenCalledTimes(2);
+      expect(controlTask.mock.calls[0][3]).toBe(controlTask.mock.calls[1][3]);
+      expect(listLeases).toHaveBeenCalledTimes(4);
     } finally {
       listLeases.mockRestore();
       controlTask.mockRestore();
     }
-
-    /** An unconfirmed delivery is retried under the same invocation, and once the
-     * owner answers the drain only waits for the lease instead of re-cancelling. */
-    expect(controlTask).toHaveBeenCalledTimes(2);
-    expect(controlTask.mock.calls[0][3]).toBe(controlTask.mock.calls[1][3]);
-    expect(listLeases).toHaveBeenCalledTimes(4);
   });
 
   it('fences owner admission around the deletion it drains for', async () => {

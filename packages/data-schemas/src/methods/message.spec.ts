@@ -1553,15 +1553,12 @@ describe('Message Operations', () => {
   });
   describe('claimSubagentTaskResult', () => {
     const terminalResult = async (taskId: string, conversationId: string, status: string) =>
-      saveMessage(
-        { userId: 'user123' },
-        {
-          messageId: `${taskId}:assistant`,
-          conversationId,
-          text: 'child result',
-          subagentTask: { attemptKey: `${taskId}:attempt`, status },
-        } as Partial<IMessage>,
-      );
+      saveMessage({ userId: 'user123' }, {
+        messageId: `${taskId}:assistant`,
+        conversationId,
+        text: 'child result',
+        subagentTask: { attemptKey: `${taskId}:attempt`, status },
+      } as Partial<IMessage>);
 
     it('hands one terminal result to a single polling invocation', async () => {
       const taskId = uuidv4();
@@ -1631,5 +1628,4 @@ describe('Message Operations', () => {
       ).resolves.toEqual({ status: 'not_found' });
     });
   });
-
 });
