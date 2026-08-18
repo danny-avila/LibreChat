@@ -392,11 +392,7 @@ function isCancelResult(value: unknown): value is RoutedCancelResult {
   return Number.isSafeInteger(cancelled) && (cancelled as number) >= 0;
 }
 
-/**
- * Canonical identity of one control's content. Property order cannot vary it, so the
- * transport and the owning task store agree on when two commands are the same.
- */
-export function controlFingerprint(command: SubagentTaskControlCommand): string {
+function controlContent(command: SubagentTaskControlCommand): string {
   if (command.action === 'cancel') {
     return 'cancel';
   }
@@ -404,6 +400,15 @@ export function controlFingerprint(command: SubagentTaskControlCommand): string 
     return `cancel_message\u0000${command.controlId}`;
   }
   return `${command.action}\u0000${command.message}`;
+}
+
+/**
+ * Canonical identity of one control's content. Property order cannot vary it, so the
+ * transport and the owning task store agree on when two commands are the same, and it
+ * is hashed so retaining one costs a fixed few bytes rather than a whole message.
+ */
+export function controlFingerprint(command: SubagentTaskControlCommand): string {
+  return createHash('sha256').update(controlContent(command)).digest('base64url');
 }
 
 /** True once a claim has consumed the task's one-shot terminal result. */

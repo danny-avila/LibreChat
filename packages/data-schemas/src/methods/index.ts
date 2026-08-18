@@ -44,7 +44,12 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  type MessageMethods,
+  type SubagentTaskResultClaim,
+} from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
@@ -368,6 +373,7 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,
   TxMethods,

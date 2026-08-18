@@ -135,9 +135,14 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Date,
       select: false,
     },
-    subagentAdmissionFencedUntil: {
-      type: Date,
+    subagentAdmissionFence: {
+      type: {
+        token: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+      },
+      _id: false,
       select: false,
+      default: undefined,
     },
     personalization: {
       type: {

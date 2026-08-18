@@ -129,8 +129,8 @@ export function createUserMethods(
   ) => Promise<'acquired' | 'in_progress' | 'missing'>;
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
-  fenceSubagentAdmission: (userId: string, fencedUntil: Date) => Promise<void>;
-  releaseSubagentAdmission: (userId: string) => Promise<void>;
+  fenceSubagentAdmission: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
+  releaseSubagentAdmission: (userId: string, token: string) => Promise<void>;
   isSubagentOwnerAdmissible: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   updateUserPlugins: (
@@ -460,25 +460,37 @@ export function createUserMethods(
    * its live children. The fence expires on its own so a process that dies mid-delete
    * cannot lock the account out of running subagents.
    */
-  async function fenceSubagentAdmission(userId: string, fencedUntil: Date): Promise<void> {
+  async function fenceSubagentAdmission(
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ): Promise<void> {
     if (!(fencedUntil instanceof Date) || !Number.isFinite(fencedUntil.getTime())) {
       throw new TypeError('fencedUntil must be a valid Date');
+    }
+    if (token.length === 0 || token.length > 128) {
+      throw new TypeError('A subagent admission fence needs a bounded owner token');
     }
     const User = mongoose.models.User;
     await User.updateOne(
       { _id: userId },
-      { $set: { subagentAdmissionFencedUntil: fencedUntil } },
+      { $set: { subagentAdmissionFence: { token, expiresAt: fencedUntil } } },
       { timestamps: false },
     );
+    await invalidateAuthUserDocCache(userId);
   }
 
-  async function releaseSubagentAdmission(userId: string): Promise<void> {
+  /** Lifts only the fence this deletion took, so an overlapping one keeps its own. */
+  async function releaseSubagentAdmission(userId: string, token: string): Promise<void> {
     const User = mongoose.models.User;
-    await User.updateOne(
-      { _id: userId },
-      { $unset: { subagentAdmissionFencedUntil: 1 } },
+    const result = await User.updateOne(
+      { _id: userId, 'subagentAdmissionFence.token': token },
+      { $unset: { subagentAdmissionFence: 1 } },
       { timestamps: false },
     );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+    }
   }
 
   /** True while this owner may admit a new child: no account deletion, no live fence. */
@@ -489,8 +501,8 @@ export function createUserMethods(
         _id: userId,
         agentTriggerDeletionStartedAt: { $exists: false },
         $or: [
-          { subagentAdmissionFencedUntil: { $exists: false } },
-          { subagentAdmissionFencedUntil: { $lte: new Date() } },
+          { subagentAdmissionFence: { $exists: false } },
+          { 'subagentAdmissionFence.expiresAt': { $lte: new Date() } },
         ],
       })) != null
     );

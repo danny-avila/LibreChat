@@ -260,6 +260,21 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('fences the owner when DELETE / is called without a conversation filter', async () => {
+      deleteConvos.mockResolvedValue({ deletedCount: 3, conversationIds: ['a', 'b', 'c'] });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      /** An empty filter deletes everything, so it takes the same admission fence. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
+      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+    });
+
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
       deleteConvos.mockResolvedValue({
         deletedCount: 2,

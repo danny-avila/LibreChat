@@ -6,6 +6,7 @@ import type {
 import type { Cluster, Redis } from 'ioredis';
 import type { SubagentTaskControlHandler } from './subagentTaskRouting';
 import {
+  controlFingerprint,
   RedisSubagentTaskControlTransport,
   SubagentTaskOwnerUnavailableError,
 } from './subagentTaskRouting';
@@ -894,6 +895,19 @@ describe('RedisSubagentTaskControlTransport', () => {
     expect(claim).toHaveBeenCalledTimes(1);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('keeps a control fingerprint small no matter how large its message is', () => {
+    const large = controlFingerprint({ action: 'queue', message: 'x'.repeat(64 * 1024) });
+    const other = controlFingerprint({ action: 'queue', message: 'y'.repeat(64 * 1024) });
+
+    /** Fingerprints are retained per invocation, so they must not carry the message. */
+    expect(large).toHaveLength(43);
+    expect(other).toHaveLength(43);
+    expect(large).not.toBe(other);
+    expect(controlFingerprint({ action: 'queue', message: 'same' })).toBe(
+      controlFingerprint({ action: 'queue', message: 'same' }),
+    );
   });
 
   it('never answers one invocation id from a different command it already ran', async () => {

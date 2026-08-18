@@ -24,6 +24,7 @@ import type {
   IMessage,
   MessageMethods,
   ConversationMethods,
+  SubagentTaskResultClaim,
 } from '@librechat/data-schemas';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
@@ -126,8 +127,8 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   ownerDrainPollMs?: number;
   taskRoutingTtlMs?: number;
   isOwnerActive?: (userId: string) => Promise<boolean>;
-  fenceOwnerAdmission?: (userId: string, fencedUntil: Date) => Promise<void>;
-  releaseOwnerAdmission?: (userId: string) => Promise<void>;
+  fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
+  releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -316,6 +317,22 @@ function publicFailureDetail(error: unknown): string {
     : 'The child run could not be completed.';
 }
 
+/** Rebuilds the terminal claim a recovered durable result stands for. */
+function recoveredClaim(
+  message: IMessage,
+  claim: Extract<SubagentTaskClaim, { status: 'claimed' }>,
+): SubagentTaskClaim | undefined {
+  const status = message.subagentTask?.status;
+  const content = message.text ?? '';
+  if (status === 'completed') {
+    return { status: 'completed', task: claim.task, result: content };
+  }
+  if (status === 'error' || status === 'cancelled') {
+    return { status, task: claim.task, error: content };
+  }
+  return undefined;
+}
+
 function drainKey(parentConversationId: string, taskId: string): string {
   return `${parentConversationId}\u0000${taskId}`;
 }
@@ -341,8 +358,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly ownerDrainPollMs: number;
   private readonly taskRoutingTtlMs: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
-  private readonly fenceOwnerAdmission?: (userId: string, fencedUntil: Date) => Promise<void>;
-  private readonly releaseOwnerAdmission?: (userId: string) => Promise<void>;
+  private readonly fenceOwnerAdmission?: (
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ) => Promise<void>;
+
+  private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
   private taskControlTransport?: SubagentTaskControlTransport;
 
   constructor(
@@ -587,63 +609,47 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       local.status !== 'not_found'
         ? local
         : ((await this.taskControlTransport?.claim(scopeId, taskId)) ?? local);
-    if (invocationId == null || claim.status === 'not_found') {
+    const threadId = claim.status === 'not_found' ? undefined : claim.task.threadId;
+    if (invocationId == null || claim.status === 'running' || threadId == null || threadId === '') {
       return claim;
     }
-    const threadId = claim.task.threadId;
-    if (threadId == null || threadId === '') {
+    /** The durable record decides who holds this one-shot result. The invocation that
+     * already consumed it re-acquires and is handed it again, a second invocation is
+     * told it was collected instead of being given a duplicate, and a task with no
+     * durable record to arbitrate keeps whatever the owner just answered. */
+    const collected = await this.assignResultClaim(
+      parseScope(scopeId).userId,
+      threadId,
+      claim.task.taskId,
+      invocationId,
+    );
+    if (collected.status === 'claimed') {
+      return { status: 'claimed', task: claim.task };
+    }
+    if (collected.status === 'not_found') {
       return claim;
     }
-    const scope = parseScope(scopeId);
-    if (claim.status === 'claimed') {
-      return (await this.recoverResultClaim(scope, threadId, claim, invocationId)) ?? claim;
-    }
-    if (claim.status !== 'running') {
-      await this.methods
-        .claimSubagentTaskResult({
-          userId: scope.userId,
-          conversationId: threadId,
-          taskId: claim.task.taskId,
-          claimId: invocationId,
-        })
-        .catch((error) => {
-          logger.warn('[subagentThreads] Failed to record a collected child result', error);
-        });
-    }
-    return claim;
+    return claim.status === 'claimed' ? (recoveredClaim(collected.message, claim) ?? claim) : claim;
   }
 
-  /** Returns a terminal result this invocation already consumed but never received. */
-  private async recoverResultClaim(
-    scope: SubagentThreadScope,
+  /** Assigns one durable terminal result to the invocation collecting it. */
+  private async assignResultClaim(
+    userId: string,
     threadId: string,
-    claim: Extract<SubagentTaskClaim, { status: 'claimed' }>,
+    taskId: string,
     invocationId: string,
-  ): Promise<SubagentTaskClaim | undefined> {
-    let recovered: Awaited<ReturnType<MessageMethods['claimSubagentTaskResult']>>;
+  ): Promise<SubagentTaskResultClaim> {
     try {
-      recovered = await this.methods.claimSubagentTaskResult({
-        userId: scope.userId,
+      return await this.methods.claimSubagentTaskResult({
+        userId,
         conversationId: threadId,
-        taskId: claim.task.taskId,
+        taskId,
         claimId: invocationId,
       });
     } catch (error) {
-      logger.warn('[subagentThreads] Failed to recover a collected child result', error);
-      return undefined;
+      logger.warn('[subagentThreads] Failed to record a collected child result', error);
+      return { status: 'not_found' };
     }
-    if (recovered.status !== 'acquired') {
-      return undefined;
-    }
-    const status = recovered.message.subagentTask?.status;
-    const content = recovered.message.text ?? '';
-    if (status === 'completed') {
-      return { status: 'completed', task: claim.task, result: content };
-    }
-    if (status === 'error' || status === 'cancelled') {
-      return { status, task: claim.task, error: content };
-    }
-    return undefined;
   }
 
   /**
@@ -928,12 +934,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     deletion: () => Promise<T>,
   ): Promise<T> {
     const fencedUntil = new Date(Date.now() + this.ownerDrainTimeoutMs + OWNER_FENCE_GRACE_MS);
-    await this.fenceOwnerAdmission?.(userId, fencedUntil);
+    const token = randomUUID();
+    await this.fenceOwnerAdmission?.(userId, token, fencedUntil);
     try {
       await this.cancelAndDrainForOwner(userId, tenantId);
       return await deletion();
     } finally {
-      await this.releaseOwnerAdmission?.(userId).catch((error) => {
+      /** Only this deletion's own fence is lifted: an overlapping deletion that took a
+       * later one keeps admission closed until it finishes. */
+      await this.releaseOwnerAdmission?.(userId, token).catch((error) => {
         logger.warn('[subagentThreads] Failed to release the owner admission fence', error);
       });
     }
@@ -1000,7 +1009,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     });
     try {
       const result = await this.controlTask(scopeId, taskId, { action: 'cancel' }, invocationId);
-      if (result.status !== 'invalid') {
+      /** Only the owner confirming the task is stopped ends the commands for it. A
+       * `not_found` means its registration is missing while its lease is still live —
+       * an unconfirmed delivery, retried once the owner republishes itself. */
+      if (result.status === 'cancelled' || result.status === 'not_running') {
         answered.add(key);
       }
     } catch (error) {

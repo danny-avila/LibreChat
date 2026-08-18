@@ -707,6 +707,53 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('subagent admission fence', () => {
+    test('closes admission until the deletion that took the fence releases it', async () => {
+      const user = await User.create({
+        name: 'Subagent Fence',
+        email: 'subagent-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', fencedUntil);
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      /** An overlapping deletion owns the fence, so the first one cannot lift it. */
+      await methods.fenceSubagentAdmission(userId, 'deletion-b', fencedUntil);
+      await methods.releaseSubagentAdmission(userId, 'deletion-a');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      await methods.releaseSubagentAdmission(userId, 'deletion-b');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('reopens admission once an abandoned fence expires', async () => {
+      const user = await User.create({
+        name: 'Expired Fence',
+        email: 'expired-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Date.now() - 1));
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('refuses an unbounded or invalid fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Number.NaN)),
+      ).rejects.toThrow('fencedUntil must be a valid Date');
+      await expect(
+        methods.fenceSubagentAdmission(userId, '', new Date(Date.now() + 60_000)),
+      ).rejects.toThrow('bounded owner token');
+    });
+  });
+
   describe('countUsers', () => {
     test('should count all users', async () => {
       await User.create([

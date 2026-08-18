@@ -155,6 +155,7 @@ router.delete('/', configMiddleware, async (req, res) => {
         ? req.user.tenantId
         : undefined;
     let cancellationPlan;
+    let dbResponse;
     if (filter.conversationId) {
       /** Resolve the targets while the conversations still exist: the second pass
        * runs after their rows are gone and can only reach registered owners. */
@@ -164,10 +165,14 @@ router.delete('/', configMiddleware, async (req, res) => {
         tenantId,
       );
       await subagentThreadTaskStore.cancelPlan(cancellationPlan);
+      dbResponse = await db.deleteConvos(req.user.id, filter);
     } else {
-      await subagentThreadTaskStore.cancelAndDrainForOwner(req.user.id, tenantId);
+      /** An empty filter deletes every conversation this owner has, so it runs behind
+       * the same admission fence as `DELETE /all` rather than a bare drain. */
+      dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(req.user.id, tenantId, () =>
+        db.deleteConvos(req.user.id, filter),
+      );
     }
-    const dbResponse = await db.deleteConvos(req.user.id, filter);
     const deletedConversationIds =
       dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
     /** Root deletion closes new child admission. Replay the plan to catch a task

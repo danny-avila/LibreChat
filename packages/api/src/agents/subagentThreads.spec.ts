@@ -128,6 +128,19 @@ function taskRequest(
   };
 }
 
+function replayTransport(claim: SubagentTaskClaim): SubagentTaskControlTransport {
+  return {
+    bind: async () => undefined,
+    registerTask: async () => undefined,
+    hasTasks: async () => true,
+    claim: async () => claim,
+    control: async () => undefined,
+    list: async () => [],
+    cancelScope: async () => 0,
+    destroy: async () => undefined,
+  };
+}
+
 function threadSnapshot(taskId: string): SubagentTaskSnapshot {
   return {
     taskId,
@@ -1557,6 +1570,49 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('tells a second invocation a retained result was already collected', async () => {
+    const userId = 'duplicate-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Only one caller may hold this.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+    const threadId = requireThreadId(started);
+
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Only one caller may hold this.',
+    });
+
+    /** An owner replaying a retained response would hand the same terminal result to
+     * another invocation; the durable record decides, so that one is told it was
+     * already collected rather than being given a second copy. */
+    const replayingStore = new SubagentThreadTaskStore(methods);
+    await replayingStore.configureTaskControlTransport(
+      replayTransport({
+        status: 'completed',
+        task: { ...threadSnapshot(taskId), threadId, status: 'completed' },
+        result: 'Only one caller may hold this.',
+      }),
+    );
+    await expect(replayingStore.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject(
+      { status: 'claimed' },
+    );
+
+    /** The invocation that already holds it still recovers its own result. */
+    await expect(replayingStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      { status: 'completed', result: 'Only one caller may hold this.' },
+    );
+
+    await replayingStore.destroyTaskControlTransport();
+  });
+
   it('cancels each drained task once and retries only unconfirmed deliveries', async () => {
     const userId = 'drain-user';
     const parentConversationId = randomUUID();
@@ -1570,19 +1626,22 @@ describe('SubagentThreadTaskStore', () => {
       .mockResolvedValueOnce([lease])
       .mockResolvedValueOnce([lease])
       .mockResolvedValueOnce([lease])
+      .mockResolvedValueOnce([lease])
       .mockResolvedValue([]);
     const controlTask = jest
       .spyOn(store, 'controlTask')
       .mockRejectedValueOnce(new Error('owner unavailable'))
+      .mockResolvedValueOnce({ status: 'not_found' })
       .mockResolvedValue({ status: 'cancelled', task: threadSnapshot('task-1') });
     try {
       await store.cancelAndDrainForOwner(userId);
 
-      /** An unconfirmed delivery is retried under the same invocation, and once the
-       * owner answers the drain only waits for the lease instead of re-cancelling. */
-      expect(controlTask).toHaveBeenCalledTimes(2);
-      expect(controlTask.mock.calls[0][3]).toBe(controlTask.mock.calls[1][3]);
-      expect(listLeases).toHaveBeenCalledTimes(4);
+      /** An unconfirmed delivery is retried under the same invocation — including a
+       * `not_found`, which means the owner's registration is missing while its lease
+       * is live — and once the owner confirms, the drain only waits for the lease. */
+      expect(controlTask).toHaveBeenCalledTimes(3);
+      expect(new Set(controlTask.mock.calls.map((call) => call[3])).size).toBe(1);
+      expect(listLeases).toHaveBeenCalledTimes(5);
     } finally {
       listLeases.mockRestore();
       controlTask.mockRestore();
@@ -1592,12 +1651,16 @@ describe('SubagentThreadTaskStore', () => {
   it('fences owner admission around the deletion it drains for', async () => {
     const userId = 'fenced-user';
     const order: string[] = [];
+    const tokens: string[] = [];
+    const released: string[] = [];
     const store = new SubagentThreadTaskStore(methods, {
       ownerDrainPollMs: 1,
-      fenceOwnerAdmission: async () => {
+      fenceOwnerAdmission: async (_userId: string, token: string) => {
+        tokens.push(token);
         order.push('fence');
       },
-      releaseOwnerAdmission: async () => {
+      releaseOwnerAdmission: async (_userId: string, token: string) => {
+        released.push(token);
         order.push('release');
       },
     });
@@ -1615,6 +1678,10 @@ describe('SubagentThreadTaskStore', () => {
         }),
       ).resolves.toBe('deleted');
       expect(order).toEqual(['fence', 'drain', 'delete', 'release']);
+      /** Only the fence this deletion took is lifted, so an overlapping deletion
+       * keeps admission closed until its own fence is released. */
+      expect(released).toEqual(tokens);
+      expect(tokens[0]).toEqual(expect.any(String));
 
       /** A failed deletion still lifts the fence, so one bad request cannot leave the
        * account unable to run subagents. */
