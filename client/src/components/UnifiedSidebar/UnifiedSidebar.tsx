@@ -57,6 +57,14 @@ function UnifiedSidebar() {
   const isInsightsRoute = location.pathname.startsWith('/insights');
   const panelExpanded = expanded && !isInsightsRoute;
 
+  /** Mirrors the bounds the aside is rendered with, so the resize handle never announces a
+   *  value outside its own range: a width restored from a wider window can exceed the
+   *  current maximum, and while collapsed the range narrows to the collapsed width. */
+  const resizeMax = Math.round(window.innerWidth * 0.4);
+  const resizeNow = panelExpanded
+    ? Math.min(Math.max(sidebarWidth, EXPANDED_MIN), resizeMax)
+    : COLLAPSED_WIDTH;
+
   const handleCollapse = useCallback(
     (afterSlide?: () => void) => {
       setSidebarOpen(false, afterSlide);
@@ -222,6 +230,9 @@ function UnifiedSidebar() {
           <Sidebar
             links={links}
             expanded={panelExpanded}
+            width={resizeNow}
+            minWidth={panelExpanded ? EXPANDED_MIN : COLLAPSED_WIDTH}
+            maxWidth={panelExpanded ? resizeMax : COLLAPSED_WIDTH}
             onCollapse={handleCollapse}
             onExpand={handlePanelExpand}
             onLeaveInsights={handleLeaveInsights}

@@ -19,7 +19,7 @@ interface DropdownProps {
   gutter?: number;
   modal?: boolean;
   portal?: boolean;
-  portalElement?: HTMLElement | null;
+  portalElement?: Ariakit.MenuProps['portalElement'];
   preserveTabOrder?: boolean;
   focusLoop?: boolean;
   menuId: string;
