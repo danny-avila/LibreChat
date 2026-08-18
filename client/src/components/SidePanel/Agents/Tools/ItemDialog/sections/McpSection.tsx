@@ -282,9 +282,10 @@ export default function McpSection({ item }: Props) {
   const programmaticBulkLabel = localize(
     allProgrammatic ? 'com_ui_mcp_unprogrammatic_all' : 'com_ui_mcp_programmatic_all',
   );
-  const programmaticBulkTooltip = programmaticToolsAvailable
-    ? programmaticBulkLabel
-    : localize('com_ui_mcp_programmatic_requires_code');
+  const programmaticBulkTooltip =
+    programmaticToolsAvailable || allProgrammatic
+      ? programmaticBulkLabel
+      : localize('com_ui_mcp_programmatic_requires_code');
   const allBackground = areAllToolsBackground(tools);
   /** Programmatic-only tools can never carry an intent label (the backend's
    *  `canInjectIntentParam` skips non-direct tools), so both the bulk toggle
@@ -464,7 +465,7 @@ export default function McpSection({ item }: Props) {
                   label={programmaticBulkLabel}
                   activeClass="text-violet-600 dark:text-violet-500"
                   tooltip={programmaticBulkTooltip}
-                  disabled={!programmaticToolsAvailable}
+                  disabled={!programmaticToolsAvailable && !allProgrammatic}
                   onToggle={() => toggleProgrammaticAll(tools)}
                 />
               )}

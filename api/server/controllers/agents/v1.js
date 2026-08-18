@@ -272,6 +272,12 @@ const isSubagentsCapabilityEnabled = (req) => {
   return capabilities.includes(AgentCapabilities.subagents);
 };
 
+const isCodeInterpreterCapabilityEnabled = (req) => {
+  const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.includes(AgentCapabilities.execute_code);
+};
+
 /** Reject a newly selected stateful workspace scope that the deployment owner
  * has excluded. Disabled sessions and unrelated edits remain saveable so an
  * allowlist tightening never silently rewrites or strands an existing agent. */
@@ -534,7 +540,10 @@ const createAgentHandler = async (req, res) => {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
-    if (!tools.includes(Tools.execute_code) && agentData.tool_options != null) {
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) || !tools.includes(Tools.execute_code)) &&
+      agentData.tool_options != null
+    ) {
       agentData.tool_options = removeCodeExecutionCaller(agentData.tool_options);
     }
 
@@ -865,7 +874,11 @@ const updateAgentHandler = async (req, res) => {
       if (includesToolsConfiguration || includesToolOptionsConfiguration) {
         const effectiveTools = updateData.tools ?? existingAgent.tools;
         const effectiveToolOptions = updateData.tool_options ?? existingAgent.tool_options;
-        if (!effectiveTools?.includes(Tools.execute_code) && effectiveToolOptions != null) {
+        if (
+          (!isCodeInterpreterCapabilityEnabled(req) ||
+            !effectiveTools?.includes(Tools.execute_code)) &&
+          effectiveToolOptions != null
+        ) {
           updateData.tool_options = removeCodeExecutionCaller(effectiveToolOptions);
         }
       }
@@ -1281,6 +1294,14 @@ const duplicateAgentHandler = async (req, res) => {
         ownerIds: userId,
         logPrefix: '[/Agents/:id/duplicate]',
       });
+    }
+
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) ||
+        !newAgentData.tools?.includes(Tools.execute_code)) &&
+      newAgentData.tool_options != null
+    ) {
+      newAgentData.tool_options = removeCodeExecutionCaller(newAgentData.tool_options);
     }
 
     const newAgent = await db.createAgent(newAgentData);
@@ -1773,6 +1794,15 @@ const revertAgentVersionHandler = async (req, res) => {
       if (filteredTools.length !== updatedAgent.tools.length) {
         revertUpdates.tools = filteredTools;
       }
+    }
+
+    const effectiveRevertTools = revertUpdates.tools ?? updatedAgent.tools;
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) ||
+        !effectiveRevertTools?.includes(Tools.execute_code)) &&
+      updatedAgent.tool_options != null
+    ) {
+      revertUpdates.tool_options = removeCodeExecutionCaller(updatedAgent.tool_options);
     }
 
     if (updatedAgent.tool_resources) {

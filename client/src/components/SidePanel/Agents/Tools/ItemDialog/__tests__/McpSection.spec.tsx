@@ -12,6 +12,7 @@ const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
 const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
+const mockAreAllToolsProgrammatic = jest.fn((): boolean => false);
 const mockCapabilities = {
   codeEnabled: false,
   deferredToolsEnabled: false,
@@ -70,7 +71,7 @@ jest.mock('~/hooks', () => ({
     toggleToolBackground: jest.fn(),
     toggleToolIntent: jest.fn(),
     areAllToolsDeferred: () => false,
-    areAllToolsProgrammatic: () => false,
+    areAllToolsProgrammatic: mockAreAllToolsProgrammatic,
     areAllToolsBackground: () => false,
     areAllToolsIntent: () => false,
     toggleDeferAll: jest.fn(),
@@ -174,6 +175,8 @@ describe('McpSection', () => {
     mockToggleIntentAll.mockClear();
     mockIsToolProgrammaticOnly.mockReset();
     mockIsToolProgrammaticOnly.mockReturnValue(false);
+    mockAreAllToolsProgrammatic.mockReset();
+    mockAreAllToolsProgrammatic.mockReturnValue(false);
     mockGetToolOptions.mockReset();
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
@@ -436,6 +439,17 @@ describe('McpSection', () => {
     expect(screen.getByRole('button', { name: 'com_ui_mcp_programmatic_all' })).not.toHaveAttribute(
       'aria-disabled',
     );
+  });
+
+  test('bulk programmatic toggle can clear a legacy programmatic configuration', () => {
+    mockCapabilities.programmaticToolsEnabled = true;
+    mockAreAllToolsProgrammatic.mockReturnValue(true);
+
+    render(<McpSection item={item} />);
+
+    expect(
+      screen.getByRole('button', { name: 'com_ui_mcp_unprogrammatic_all' }),
+    ).not.toHaveAttribute('aria-disabled');
   });
 
   test('bulk intent skips programmatic-only tools (label can never reach them)', () => {

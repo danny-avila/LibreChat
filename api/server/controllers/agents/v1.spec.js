@@ -182,12 +182,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
   });
 
   describe('createAgentHandler', () => {
-    test('removes programmatic tool options when Code Interpreter is disabled', async () => {
+    test('removes programmatic tool options when Code Interpreter capability is disabled', async () => {
       mockReq.body = {
         name: 'Invalid Programmatic Agent',
         provider: 'openai',
         model: 'gpt-4',
-        tools: ['search_mcp_example'],
+        tools: [Tools.execute_code, 'search_mcp_example'],
         tool_options: {
           search_mcp_example: { allowed_callers: ['code_execution'] },
         },
@@ -841,8 +841,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.name).toBe('Updated Agent');
     });
 
-    test('removes newly added programmatic options when Code Interpreter is disabled', async () => {
-      await Agent.updateOne({ id: existingAgentId }, { tools: ['search_mcp_example'] });
+    test('removes newly added programmatic options when Code Interpreter capability is disabled', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { tools: [Tools.execute_code, 'search_mcp_example'] },
+      );
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
       mockReq.body = {
@@ -1638,6 +1641,56 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
       const agentInDb = await Agent.findOne({ id: agent.id }).lean();
       expect(agentInDb.tool_resources.file_search.file_ids).toEqual([ownedFileId, otherFileId]);
+    });
+
+    test('duplicateAgentHandler removes programmatic options without Code Interpreter', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Legacy Programmatic Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        tools: ['search_mcp_example'],
+        tool_options: {
+          search_mcp_example: { allowed_callers: ['code_execution'] },
+        },
+      });
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      expect(mockRes.json.mock.calls[0][0].agent.tool_options).toEqual({});
+    });
+
+    test('revertAgentVersionHandler removes restored programmatic options without Code Interpreter', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        versions: [
+          {
+            name: 'Legacy Programmatic Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: ['search_mcp_example'],
+            tool_options: {
+              search_mcp_example: { allowed_callers: ['code_execution'] },
+            },
+          },
+        ],
+      });
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      expect(mockRes.json.mock.calls[0][0].tool_options).toEqual({});
     });
   });
 
