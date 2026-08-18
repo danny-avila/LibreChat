@@ -369,6 +369,7 @@ describe('deleteUserController', () => {
     );
     expect(mockDrainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(mockCancelAndDrainSubagentThreads).toHaveBeenCalledWith(userId.toString(), undefined);
+    expect(mockQuiesceUserSchedules).toHaveBeenCalledWith(userId.toString());
     expect(beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
@@ -379,6 +380,9 @@ describe('deleteUserController', () => {
       mockCancelAndDrainSubagentThreads.mock.invocationCallOrder[0],
     );
     expect(mockCancelAndDrainSubagentThreads.mock.invocationCallOrder[0]).toBeLessThan(
+      mockQuiesceUserSchedules.mock.invocationCallOrder[0],
+    );
+    expect(mockQuiesceUserSchedules.mock.invocationCallOrder[0]).toBeLessThan(
       deleteMessages.mock.invocationCallOrder[0],
     );
     expect(deleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
