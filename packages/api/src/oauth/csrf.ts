@@ -47,6 +47,43 @@ export function shouldUseSecureCookie(): boolean {
   return isProduction && !isLocalhost;
 }
 
+export type AuthCookieSameSite = 'strict' | 'lax' | 'none';
+
+/**
+ * Resolves the SameSite attribute for authentication cookies from the
+ * `COOKIE_SAMESITE` environment variable. Accepts `strict`, `lax`, or `none`
+ * (case-insensitive). Anything else (including unset) falls back to `strict`,
+ * which preserves the historical behavior.
+ *
+ * Use `getAuthCookieOptions()` instead of calling this directly when setting
+ * cookies, so the `SameSite=None` requires `Secure` invariant is enforced.
+ */
+export function getAuthCookieSameSite(): AuthCookieSameSite {
+  const raw = (process.env.COOKIE_SAMESITE || '').trim().toLowerCase();
+  if (raw === 'lax' || raw === 'none' || raw === 'strict') {
+    return raw;
+  }
+  return 'strict';
+}
+
+/**
+ * Returns the `{ secure, sameSite }` pair that should be applied to every
+ * authentication cookie set by the API. Centralizing the choice keeps all
+ * cookie-setting sites in sync and enforces the browser rule that
+ * `SameSite=None` cookies must also be `Secure`. When the user opts into
+ * `SameSite=None`, `secure` is forced to `true` regardless of the local
+ * `shouldUseSecureCookie()` heuristic, because non-secure SameSite=None
+ * cookies are silently dropped by modern browsers.
+ */
+export function getAuthCookieOptions(): {
+  secure: boolean;
+  sameSite: AuthCookieSameSite;
+} {
+  const sameSite = getAuthCookieSameSite();
+  const secure = sameSite === 'none' ? true : shouldUseSecureCookie();
+  return { secure, sameSite };
+}
+
 /** Generates an HMAC-based token for OAuth CSRF protection */
 export function generateOAuthCsrfToken(flowId: string, secret?: string): string {
   const key = secret || process.env.JWT_SECRET;
