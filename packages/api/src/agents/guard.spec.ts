@@ -40,6 +40,7 @@ function makeStore(): SubagentThreadTaskStore {
     deleteConvos: unused as AllMethods['deleteConvos'],
     deleteMessages: unused as AllMethods['deleteMessages'],
     getConvo: unused as AllMethods['getConvo'],
+    getFiles: unused as AllMethods['getFiles'],
     getMessages: unused as AllMethods['getMessages'],
     saveConvo: unused as AllMethods['saveConvo'],
     saveMessage: unused as AllMethods['saveMessage'],

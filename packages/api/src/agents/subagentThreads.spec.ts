@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { EModelEndpoint, FileSources } from 'librechat-data-provider';
 import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import { createMethods, createModels, logger, tenantStorage } from '@librechat/data-schemas';
 import type {
@@ -112,6 +112,7 @@ beforeEach(async () => {
   await Promise.all([
     (mongoose.models.Message as mongoose.Model<IMessage>).deleteMany({}),
     (mongoose.models.Conversation as mongoose.Model<IConversation>).deleteMany({}),
+    mongoose.models.File.deleteMany({}),
   ]);
 });
 
@@ -197,6 +198,51 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(store.isThreadActive(config.scopeId, threadId)).toBe(false);
     expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+  });
+
+  it('does not overwrite a child title changed while detached execution is running', async () => {
+    const userId = 'user-title-race';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let release = (_value: { content: string; messages: BaseMessage[] }): void => undefined;
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const result = new Promise<{ content: string; messages: BaseMessage[] }>((resolve) => {
+      release = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => {
+          markEntered();
+          return result;
+        },
+      }),
+    );
+    if (!started.accepted) return;
+    await entered;
+
+    await methods.saveConvo(
+      { userId },
+      { conversationId: requireThreadId(started), title: 'Renamed while running' },
+      { noUpsert: true },
+    );
+    release({
+      content: 'Renamed child completed.',
+      messages: [
+        new HumanMessage('Investigate the issue.'),
+        new AIMessage('Renamed child completed.'),
+      ],
+    });
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(await methods.getConvo(userId, requireThreadId(started))).toMatchObject({
+      title: 'Renamed while running',
       subagentThread: { userRunnable: true },
     });
   });
@@ -294,13 +340,7 @@ describe('SubagentThreadTaskStore', () => {
     const flakyMethods = {
       ...methods,
       saveConvo: jest.fn(async (...args: Parameters<AllMethods['saveConvo']>) => {
-        const lineage = args[1].subagentThread;
-        if (
-          lineage != null &&
-          typeof lineage === 'object' &&
-          'userRunnable' in lineage &&
-          lineage.userRunnable === true
-        ) {
+        if (args[1]['subagentThread.userRunnable'] === true) {
           runnableRefreshes += 1;
           if (runnableRefreshes === 2) {
             throw new Error('sidebar refresh failed');
@@ -660,7 +700,7 @@ describe('SubagentThreadTaskStore', () => {
   });
 
   it('folds ordinary child-chat turns into the next parent-driven continuation', async () => {
-    const userId = 'user-manual';
+    const userId = new mongoose.Types.ObjectId().toString();
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const store = new SubagentThreadTaskStore(methods);
@@ -672,6 +712,26 @@ describe('SubagentThreadTaskStore', () => {
     const manualUserId = randomUUID();
     const manualAssistantId = randomUUID();
     const manualAttachmentId = randomUUID();
+    await methods.createFile({
+      file_id: 'manual-file',
+      user: new mongoose.Types.ObjectId(userId),
+      filename: 'brief.txt',
+      filepath: '/uploads/brief.txt',
+      type: 'text/plain',
+      bytes: 32,
+      source: FileSources.text,
+      text: 'The launch code is ORBIT-7.',
+    });
+    await methods.createFile({
+      file_id: 'foreign-file',
+      user: new mongoose.Types.ObjectId(),
+      filename: 'foreign.txt',
+      filepath: '/uploads/foreign.txt',
+      type: 'text/plain',
+      bytes: 40,
+      source: FileSources.text,
+      text: 'This cross-owner secret must not be restored.',
+    });
     await methods.saveMessage(
       { userId },
       {
@@ -709,8 +769,11 @@ describe('SubagentThreadTaskStore', () => {
         parentMessageId: manualAssistantId,
         sender: 'User',
         text: '',
-        files: [{ file_id: 'manual-file', filename: 'brief.pdf' }],
-        attachments: [{ conversationId: first.task.threadId, filename: 'brief.pdf' }],
+        files: [
+          { file_id: 'manual-file', filename: 'brief.txt' },
+          { file_id: 'foreign-file', filename: 'foreign.txt' },
+        ],
+        attachments: [{ conversationId: first.task.threadId, filename: 'brief.txt' }],
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: true,
       },
@@ -750,7 +813,10 @@ describe('SubagentThreadTaskStore', () => {
       { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
     ]);
     expect(restored[3].content).toBe('The child answered the human.');
-    expect(restored[4].content).toBe(ATTACHMENT_ONLY_TEXT);
+    expect(restored[4].content).toContain('Attached document(s):');
+    expect(restored[4].content).toContain('The launch code is ORBIT-7.');
+    expect(restored[4].content).not.toContain('cross-owner secret');
+    expect(restored[4].content).not.toBe(ATTACHMENT_ONLY_TEXT);
 
     const afterFirstContinuation = await methods.getMessages(
       { user: userId, conversationId: first.task.threadId },
@@ -784,10 +850,87 @@ describe('SubagentThreadTaskStore', () => {
     expect(restoredAgain[2].content).toEqual(restored[2].content);
     expect(restoredAgain.map((message) => message.content).slice(3)).toEqual([
       'The child answered the human.',
-      ATTACHMENT_ONLY_TEXT,
+      restored[4].content,
       'Return to the parent task.',
       'Returned.',
     ]);
+  });
+
+  it('restores persisted Gemini thought signatures from ordinary child turns', async () => {
+    const userId = 'user-thought-signatures';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const first = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, first);
+    if (!first.accepted) return;
+
+    const manualUserId = randomUUID();
+    await methods.saveMessage(
+      { userId },
+      {
+        messageId: manualUserId,
+        conversationId: first.task.threadId,
+        parentMessageId: `${first.task.taskId}:assistant`,
+        sender: 'User',
+        text: 'Run the signed tool step.',
+        endpoint: EModelEndpoint.agents,
+        isCreatedByUser: true,
+      },
+    );
+    await methods.saveMessage(
+      { userId },
+      {
+        messageId: randomUUID(),
+        conversationId: first.task.threadId,
+        parentMessageId: manualUserId,
+        sender: 'researcher-agent',
+        text: '',
+        content: [
+          { type: 'text', text: '', tool_call_ids: ['signed-call'] },
+          {
+            type: 'tool_call',
+            tool_call: {
+              id: 'signed-call',
+              name: 'lookup',
+              args: '{}',
+              output: 'signed result',
+            },
+          },
+        ],
+        metadata: { thoughtSignatures: { 'signed-call': 'gemini-signature' } },
+        endpoint: EModelEndpoint.agents,
+        isCreatedByUser: false,
+      },
+    );
+
+    let restored: BaseMessage[] = [];
+    const continued = store.start(
+      taskRequest(config.scopeId, {
+        threadId: first.task.threadId,
+        input: 'Continue after the signed step.',
+        run: async (_runtime, initialMessages = []) => {
+          restored = initialMessages;
+          return {
+            content: 'Continued.',
+            messages: [
+              ...initialMessages,
+              new HumanMessage('Continue after the signed step.'),
+              new AIMessage('Continued.'),
+            ],
+          };
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, continued);
+
+    const signedMessage = restored.find(
+      (message) =>
+        message instanceof AIMessage &&
+        message.tool_calls?.some((call) => call.id === 'signed-call'),
+    );
+    expect(signedMessage?.additional_kwargs.signatures).toEqual(['gemini-signature']);
   });
 
   it('persists a compacted canonical replacement without replaying superseded history', async () => {
@@ -1129,13 +1272,7 @@ describe('SubagentThreadTaskStore', () => {
     const retryingMethods = {
       ...methods,
       saveConvo: jest.fn(async (...args: Parameters<AllMethods['saveConvo']>) => {
-        const lineage = args[1].subagentThread;
-        if (
-          lineage != null &&
-          typeof lineage === 'object' &&
-          'userRunnable' in lineage &&
-          lineage.userRunnable === true
-        ) {
+        if (args[1]['subagentThread.userRunnable'] === true) {
           runnableAttempts += 1;
           if (runnableAttempts === 1) {
             throw new Error('transient writability update failure');

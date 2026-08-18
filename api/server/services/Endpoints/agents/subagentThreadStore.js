@@ -7,6 +7,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore({
   deleteConvos: db.deleteConvos,
   deleteMessages: db.deleteMessages,
   getConvo: db.getConvo,
+  getFiles: db.getFiles,
   getMessages: db.getMessages,
   saveConvo: db.saveConvo,
   saveMessage: db.saveMessage,

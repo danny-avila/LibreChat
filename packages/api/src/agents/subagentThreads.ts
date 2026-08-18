@@ -33,23 +33,30 @@ import type {
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { TMessage } from 'librechat-data-provider';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import { ATTACHMENT_ONLY_TEXT, extractFileContext } from '~/files/context';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { formatQuotesAsMarkdown, mergeQuotedText } from '~/utils';
-import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
+import { countTokens } from '~/utils/tokenizer';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
 const DEFAULT_MAX_THREAD_DEPTH = 1;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
-  'messageId parentMessageId text content files attachments quotes isCreatedByUser error createdAt +subagentTranscript';
+  'messageId parentMessageId text content files attachments quotes metadata isCreatedByUser error createdAt +subagentTranscript';
 
 class SubagentThreadPublicError extends Error {}
 class SubagentThreadDeletedError extends SubagentThreadPublicError {}
 
 type SubagentThreadMethods = Pick<
   AllMethods,
-  'deleteConvos' | 'deleteMessages' | 'getConvo' | 'getMessages' | 'saveConvo' | 'saveMessage'
+  | 'deleteConvos'
+  | 'deleteMessages'
+  | 'getConvo'
+  | 'getFiles'
+  | 'getMessages'
+  | 'saveConvo'
+  | 'saveMessage'
 >;
 
 interface SubagentThreadScope {
@@ -81,6 +88,7 @@ type ThreadMessage = Pick<
   | 'isCreatedByUser'
   | 'error'
   | 'createdAt'
+  | 'metadata'
   | 'subagentTranscript'
 > & {
   content?: TMessage['content'];
@@ -231,12 +239,34 @@ function prependVisibleQuotes(
   );
 }
 
-function restoreVisibleMessage(message: ThreadMessage): BaseMessage[] {
+function prependVisibleFileContext(
+  content: string | MessageContentComplex[],
+  fileContext: string | undefined,
+): string | MessageContentComplex[] {
+  if (fileContext == null || fileContext === '') {
+    return content;
+  }
+  if (typeof content === 'string') {
+    return content === '' ? fileContext : `${fileContext}\n${content}`;
+  }
+  const textIndex = content.findIndex(isVisibleTextPart);
+  if (textIndex < 0) {
+    return [{ type: ContentTypes.TEXT, text: fileContext }, ...content];
+  }
+  return content.map((part, index) =>
+    index === textIndex && isVisibleTextPart(part)
+      ? { ...part, text: `${fileContext}\n${part.text}` }
+      : part,
+  );
+}
+
+function restoreVisibleMessage(message: ThreadMessage, fileContext?: string): BaseMessage[] {
   const role = message.isCreatedByUser ? 'user' : 'assistant';
   let content: string | MessageContentComplex[] =
     message.content != null && message.content.length > 0
       ? normalizeVisibleContent(message.content)
       : (message.text ?? '');
+  content = prependVisibleFileContext(content, fileContext);
   content = prependVisibleQuotes(content, message.quotes);
   if (
     role === 'user' &&
@@ -258,7 +288,30 @@ function restoreVisibleMessage(message: ThreadMessage): BaseMessage[] {
           }),
         ];
   }
-  const restored = formatAgentMessages([{ role, content }]).messages;
+  const restored = formatAgentMessages([{ role, content, metadata: message.metadata }]).messages;
+  const thoughtSignatures = message.metadata?.thoughtSignatures;
+  if (
+    thoughtSignatures != null &&
+    typeof thoughtSignatures === 'object' &&
+    !Array.isArray(thoughtSignatures)
+  ) {
+    const signaturesByCallId = thoughtSignatures as Record<string, unknown>;
+    for (const restoredMessage of restored) {
+      if (!(restoredMessage instanceof AIMessage) || !restoredMessage.tool_calls?.length) {
+        continue;
+      }
+      const signatures = restoredMessage.tool_calls.map((toolCall) => {
+        const signature = signaturesByCallId[toolCall.id ?? ''];
+        return typeof signature === 'string' ? signature : '';
+      });
+      if (signatures.some((signature) => signature !== '')) {
+        restoredMessage.additional_kwargs = {
+          ...restoredMessage.additional_kwargs,
+          signatures,
+        };
+      }
+    }
+  }
   if (message.error === true) {
     for (const restoredMessage of restored) {
       if (restoredMessage instanceof AIMessage) {
@@ -272,7 +325,10 @@ function restoreVisibleMessage(message: ThreadMessage): BaseMessage[] {
   return restored;
 }
 
-function restoreThreadMessages(branch: ThreadMessage[]): RestoredThreadMessages {
+function restoreThreadMessages(
+  branch: ThreadMessage[],
+  fileContexts: Map<string, string>,
+): RestoredThreadMessages {
   let storedMessages: StoredMessage[] = [];
   let lastTranscriptIndex = -1;
   for (let index = 0; index < branch.length; index += 1) {
@@ -292,7 +348,8 @@ function restoreThreadMessages(branch: ThreadMessage[]): RestoredThreadMessages 
   const restored = mapStoredMessagesToChatMessages(storedMessages);
   let hasVisibleTail = false;
   for (let index = lastTranscriptIndex + 1; index < branch.length; index += 1) {
-    const restoredMessages = restoreVisibleMessage(branch[index]);
+    const message = branch[index];
+    const restoredMessages = restoreVisibleMessage(message, fileContexts.get(message.messageId));
     if (restoredMessages.length === 0) {
       continue;
     }
@@ -687,7 +744,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         { sort: { createdAt: 1, _id: 1 } },
       )) as ThreadMessage[];
       const branch = selectLatestBranch(allMessages);
-      const restored = restoreThreadMessages(branch);
+      const fileContexts = await this.resolveVisibleFileContexts(scope, branch);
+      const restored = restoreThreadMessages(branch, fileContexts);
       const initialMessages = restored.messages;
       const userMessageId = `${taskId}:user`;
       const parentMessageId = branch[branch.length - 1]?.messageId ?? Constants.NO_PARENT;
@@ -726,6 +784,80 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       await this.rollbackPreparation(scope, threadId, taskId, request, createdThread);
       throw error;
     }
+  }
+
+  /** Rebuilds the text-document context that the normal Agents history path
+   * prepends to visible user turns. Resolve every referenced file in one
+   * owner-scoped query, preserve message/ref order, and include each file only
+   * once across the tail just like BaseClient.addPreviousAttachments. */
+  private async resolveVisibleFileContexts(
+    scope: SubagentThreadScope,
+    branch: ThreadMessage[],
+  ): Promise<Map<string, string>> {
+    let lastTranscriptIndex = -1;
+    for (let index = 0; index < branch.length; index += 1) {
+      if (branch[index].subagentTranscript != null) {
+        lastTranscriptIndex = index;
+      }
+    }
+    const visibleTail = branch.slice(lastTranscriptIndex + 1);
+    const fileIds = new Set<string>();
+    for (const message of visibleTail) {
+      if (!message.isCreatedByUser) {
+        continue;
+      }
+      for (const file of message.files ?? []) {
+        if (isNonEmptyString(file?.file_id)) {
+          fileIds.add(file.file_id);
+        }
+      }
+    }
+    if (fileIds.size === 0) {
+      return new Map();
+    }
+
+    const files =
+      (await this.methods.getFiles(
+        {
+          file_id: { $in: [...fileIds] },
+          user: scope.userId,
+          ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+        },
+        {},
+        {},
+      )) ?? [];
+    const filesById = new Map(files.map((file) => [file.file_id, file]));
+    const contextSeen = new Set<string>();
+    const contexts = new Map<string, string>();
+    for (const message of visibleTail) {
+      if (!message.isCreatedByUser) {
+        continue;
+      }
+      const messageFiles = (message.files ?? [])
+        .map((file) => {
+          const fileId = file?.file_id;
+          if (!isNonEmptyString(fileId) || contextSeen.has(fileId)) {
+            return undefined;
+          }
+          const resolved = filesById.get(fileId);
+          if (resolved != null) {
+            contextSeen.add(fileId);
+          }
+          return resolved;
+        })
+        .filter((file): file is NonNullable<typeof file> => file != null);
+      if (messageFiles.length === 0) {
+        continue;
+      }
+      const context = await extractFileContext({
+        attachments: messageFiles,
+        tokenCountFn: countTokens,
+      });
+      if (context != null && context !== '') {
+        contexts.set(message.messageId, context);
+      }
+    }
+    return contexts;
   }
 
   private assertContinuation(
@@ -1011,19 +1143,16 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     conversation: IConversation,
     userRunnable = conversation.subagentThread?.userRunnable,
   ): Promise<IConversation> {
-    const subagentThread =
-      conversation.subagentThread == null
-        ? undefined
-        : { ...conversation.subagentThread, userRunnable: userRunnable === true };
+    /** Settlement owns only the child-lineage writability bit. Omitting title,
+     * agent identity, and retention fields prevents a long-running task's stale
+     * conversation snapshot from overwriting concurrent user/admin edits. */
     const saved = await this.methods.saveConvo(
       { userId },
       {
         conversationId: conversation.conversationId,
-        endpoint: conversation.endpoint,
-        title: conversation.title,
-        ...(conversation.agent_id == null ? {} : { agent_id: conversation.agent_id }),
-        ...(subagentThread == null ? {} : { subagentThread }),
-        ...retentionFields(conversation),
+        ...(conversation.subagentThread == null
+          ? {}
+          : { 'subagentThread.userRunnable': userRunnable === true }),
       },
       { context: 'SubagentThreadTaskStore.refreshConversation', noUpsert: true },
     );
@@ -1045,7 +1174,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
 export function createSubagentThreadTaskStore(
   methods: Pick<ConversationMethods, 'deleteConvos' | 'getConvo' | 'saveConvo'> &
-    Pick<MessageMethods, 'deleteMessages' | 'getMessages' | 'saveMessage'>,
+    Pick<MessageMethods, 'deleteMessages' | 'getMessages' | 'saveMessage'> &
+    Pick<AllMethods, 'getFiles'>,
   options?: SubagentThreadTaskStoreOptions,
 ): SubagentThreadTaskStore {
   return new SubagentThreadTaskStore(methods, options);
