@@ -900,10 +900,16 @@ describe('Agent Abort Endpoint', () => {
         expect(mockBeginScheduledStop.mock.invocationCallOrder[0]).toBeLessThan(
           mockGenerationJobManager.abortJob.mock.invocationCallOrder[0],
         );
-        expect(mockAcknowledgeScheduledStopPersistence).toHaveBeenCalledWith({
-          scheduleId: 's1',
-          scheduledFor: '2026-01-01T00:00:00.000Z',
-        });
+        // The ack also carries a terminal outcome to re-drive: the owner calls
+        // recordScheduleOutcome once, and if that call's Stop barrier deferred (slow
+        // beforePublish), nothing would settle the run where no reconciler is armed.
+        expect(mockAcknowledgeScheduledStopPersistence).toHaveBeenCalledWith(
+          expect.objectContaining({
+            scheduleId: 's1',
+            scheduledFor: '2026-01-01T00:00:00.000Z',
+            settle: expect.objectContaining({ status: 'interrupted' }),
+          }),
+        );
         expect(mockGenerationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
           mockAcknowledgeScheduledStopPersistence.mock.invocationCallOrder[0],
         );
@@ -943,6 +949,30 @@ describe('Agent Abort Endpoint', () => {
         expect(response.body.persistenceFailed).toBe(true);
         expect(mockBeginScheduledStop).toHaveBeenCalled();
         expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
+      });
+
+      it('does not re-drive settlement for a PAUSED job, which settles explicitly', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          ...scheduledJob,
+          status: 'requires_action',
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        const ack = mockAcknowledgeScheduledStopPersistence.mock.calls[0][0];
+        expect(ack.settle).toBeUndefined();
+        // The paused path records its own outcome explicitly.
+        expect(mockRecordScheduleOutcome).toHaveBeenCalled();
       });
 
       it('leaves non-scheduled aborts untouched by the Stop protocol', async () => {

@@ -170,12 +170,25 @@ async function settleDeadDeliveries(deps: ScheduleErasureDeps): Promise<void> {
       if (delivery?.status !== 'dead') {
         continue;
       }
+      // `dead` alone is NOT proof the request was rejected. The trigger host marks
+      // response timeouts and invalid success responses `ambiguous`, and the engine
+      // dead-letters those once retries are exhausted — so an ambiguous dead letter can
+      // sit over a generation a peer accepted and is still running. Settle only on a
+      // DEFINITE rejection, unless this process can observe generation absence
+      // deployment-wide (safe topology), where the confirmed-absent job above is itself
+      // authoritative evidence.
+      if (delivery.lastError?.certainty !== 'definite' && !deps.canInferOwnerDeathFromMissingJob) {
+        continue;
+      }
       await deps.methods.recordRunOutcome({
         scheduleId: run.scheduleId,
         scheduledFor: run.scheduledFor,
         status: 'error',
         conversationId: run.conversationId,
-        error: delivery.lastError ?? 'Scheduled delivery failed before running',
+        // `lastError` is an AgentTriggerDeliveryFailure, not a string: passing the object
+        // into the String-typed run/schedule error fields fails the Mongoose cast, and the
+        // per-row catch would swallow it while the run kept its capacity slot.
+        error: delivery.lastError?.message ?? 'Scheduled delivery failed before running',
         autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
       });
     } catch (err) {

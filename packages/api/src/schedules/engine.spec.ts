@@ -254,7 +254,16 @@ describe('reconciliation consults the durable trigger delivery', () => {
   it('settles a DEAD delivery as error promptly, before the 30-minute orphan age', async () => {
     const methods = await runReconcile(joblessRun(YOUNG()), async () => ({
       status: 'dead',
-      lastError: 'rate limited',
+      // The durable record's lastError is an AgentTriggerDeliveryFailure OBJECT, not a
+      // string — the recorded outcome must carry its `message`, or the String-typed
+      // Mongoose field rejects the cast and the run keeps its capacity slot.
+      lastError: {
+        code: 'rate_limited',
+        message: 'rate limited',
+        certainty: 'definite' as const,
+        retryable: false,
+        attemptedAt: new Date(),
+      },
     }));
     expect(methods.recordRunOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ scheduleId: 's1', status: 'error', error: 'rate limited' }),

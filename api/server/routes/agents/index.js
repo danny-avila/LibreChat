@@ -908,6 +908,19 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         await acknowledgeScheduledStopPersistence({
           scheduleId: stopScheduleId,
           scheduledFor: stopScheduledFor,
+          // Re-drive the terminal outcome from here for a RUNNING generation: its owner
+          // calls recordScheduleOutcome once, and if that call's Stop barrier deferred
+          // (slow beforePublish), nothing would settle the run where no schedule
+          // reconciler is armed. recordRunOutcome is match-guarded and idempotent, so an
+          // owner that already settled makes this a no-op. A paused job is settled
+          // explicitly below and needs no re-drive here.
+          ...(job.status !== 'requires_action' && {
+            settle: {
+              status: 'interrupted',
+              conversationId: job.metadata?.conversationId ?? jobStreamId,
+              error: 'Scheduled run was stopped',
+            },
+          }),
         });
       }
 

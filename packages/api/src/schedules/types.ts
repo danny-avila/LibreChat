@@ -2,6 +2,7 @@ import type {
   ScheduleMethods,
   ISchedule,
   AgentTriggerDeliveryStatus,
+  AgentTriggerDeliveryFailure,
 } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { AgentTriggerEnqueueOptions, AgentTriggerEnvelope } from '../agents/triggers';
@@ -147,9 +148,10 @@ export interface ScheduleEngineDeps {
    * `Retry-After` can defer up to 24h) or a dead-letter (`dead`, with its `lastError`)
    * apart from a genuinely orphaned jobless run. Null when no delivery record exists.
    */
-  getTriggerDelivery: (
-    deliveryKey: string,
-  ) => Promise<{ status: AgentTriggerDeliveryStatus; lastError?: string } | null>;
+  getTriggerDelivery: (deliveryKey: string) => Promise<{
+    status: AgentTriggerDeliveryStatus;
+    lastError?: AgentTriggerDeliveryFailure;
+  } | null>;
   /** Runs fn inside the owner's tenant ALS context. */
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
   /**

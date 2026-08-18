@@ -196,6 +196,9 @@ export interface SchedulesService {
   acknowledgeScheduledStopPersistence: (input: {
     scheduleId: string;
     scheduledFor: string | Date;
+    /** Optional terminal outcome to re-drive once the barrier clears, so a settlement the
+     *  owner deferred past its poll budget still converges where no reconciler is armed. */
+    settle?: { status: ScheduleRunOutcomeStatus; conversationId?: string; error?: string };
   }) => Promise<void>;
   /** Re-enters a paused occurrence into the DB-enforced global/same-schedule
    * capacity set before its approval job is allowed to resume. */
@@ -312,9 +315,15 @@ export function createSchedulesService(
     // principal override. Without this a tenant/role/user override resolving to
     // enabled would let the sidebar and CRUD handlers admit schedules that
     // isGloballyDisabled() correctly refuses to ever fire.
+    // isRuntimeDisabled, NOT `=== false`: the base stop has TWO shapes (`false` and
+    // `{ use: false }`), and deepMerge turns a base `{ use: false, ... }` plus a principal
+    // override of `true` into `{ use: true, ... }`. A literal-false check missed that, so
+    // getLimits reported the feature enabled and Run Now dispatched straight through
+    // fireSchedule — bypassing the operator's object-form emergency stop. Same predicate
+    // the engine gate (isGloballyDisabled) already uses.
     if (
       user != null &&
-      (await deps.getAppConfig({ baseOnly: true }))?.interfaceConfig?.schedules === false
+      isRuntimeDisabled((await deps.getAppConfig({ baseOnly: true }))?.interfaceConfig?.schedules)
     ) {
       return { ...DEFAULT_SCHEDULE_LIMITS, enabled: false };
     }
@@ -929,14 +938,33 @@ export function createSchedulesService(
   async function acknowledgeScheduledStopPersistence({
     scheduleId,
     scheduledFor,
+    settle,
   }: {
     scheduleId: string;
     scheduledFor: string | Date;
+    /** Terminal outcome to (re-)drive once the barrier clears. Supplied by the Stop route
+     *  so a settlement its owner already DEFERRED past the poll budget still converges. */
+    settle?: { status: ScheduleRunOutcomeStatus; conversationId?: string; error?: string };
   }): Promise<void> {
     if (!scheduleId || !scheduledFor) {
       return;
     }
     await methods.markRunAbortPersisted(scheduleId, new Date(scheduledFor));
+    if (settle == null) {
+      return;
+    }
+    // The owner calls recordScheduleOutcome ONCE. If its Stop barrier deferred (slow
+    // beforePublish), nothing would re-drive it where no schedule reconciler is armed —
+    // the run would stay `started`, its job preserved, and its global capacity slot held.
+    // Now that the barrier is acknowledged, settle from here; recordRunOutcome is
+    // match-guarded and idempotent, so a run the owner already settled is a no-op.
+    await recordScheduleOutcome({
+      scheduleId,
+      scheduledFor,
+      status: settle.status,
+      conversationId: settle.conversationId,
+      error: settle.error,
+    }).catch((err) => logger.warn('[schedules] post-acknowledgement settlement failed:', err));
   }
 
   async function isScheduleLive(

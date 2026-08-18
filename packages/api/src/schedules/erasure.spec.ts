@@ -82,6 +82,12 @@ describe('schedule erasure fallback owner-death evidence', () => {
   });
 });
 
+const DEFINITE = {
+  code: 'rejected',
+  message: 'rejected before running',
+  certainty: 'definite' as const,
+};
+
 describe('topology-safe dead-delivery convergence', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -95,7 +101,10 @@ describe('topology-safe dead-delivery convergence', () => {
 
   async function convergeOnce(options: {
     run?: Partial<IScheduleRun>;
-    delivery?: { status: string; lastError?: string } | null;
+    delivery?: {
+      status: string;
+      lastError?: { code: string; message: string; certainty: 'definite' | 'ambiguous' };
+    } | null;
     job?: JobState | null;
     canInferOwnerDeathFromMissingJob?: boolean;
   }) {
@@ -124,7 +133,10 @@ describe('topology-safe dead-delivery convergence', () => {
 
   it('settles a dead delivery as error even in an unsafe topology (positive evidence)', async () => {
     const { methods } = await convergeOnce({
-      delivery: { status: 'dead', lastError: 'blocked by moderation' },
+      delivery: {
+        status: 'dead',
+        lastError: { code: 'blocked', message: 'blocked by moderation', certainty: 'definite' },
+      },
     });
     expect(methods.recordRunOutcome).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -142,7 +154,7 @@ describe('topology-safe dead-delivery convergence', () => {
 
   it('never settles while an identity-matched generation still owns the reservation', async () => {
     const { methods, getTriggerDelivery } = await convergeOnce({
-      delivery: { status: 'dead' },
+      delivery: { status: 'dead', lastError: DEFINITE },
       job: {
         status: 'running',
         scheduleId: 'schedule-1',
@@ -156,7 +168,7 @@ describe('topology-safe dead-delivery convergence', () => {
   it('defers a run whose abort is still in flight', async () => {
     const { methods } = await convergeOnce({
       run: { abortRequestedAt: new Date() } as Partial<IScheduleRun>,
-      delivery: { status: 'dead' },
+      delivery: { status: 'dead', lastError: DEFINITE },
     });
     expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   });
@@ -164,9 +176,81 @@ describe('topology-safe dead-delivery convergence', () => {
   it('ignores a legacy reservation carrying no deliveryKey', async () => {
     const { methods, getTriggerDelivery } = await convergeOnce({
       run: { deliveryKey: undefined } as Partial<IScheduleRun>,
-      delivery: { status: 'dead' },
+      delivery: { status: 'dead', lastError: DEFINITE },
     });
     expect(getTriggerDelivery).not.toHaveBeenCalled();
     expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+});
+
+describe('dead-delivery certainty fence', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  async function sweepWithDelivery(options: {
+    certainty: 'definite' | 'ambiguous';
+    canInferOwnerDeathFromMissingJob: boolean;
+  }) {
+    const methods = {
+      getDeletingSchedules: jest.fn(async () => []),
+      getActiveRunsForSchedule: jest.fn(async () => []),
+      recordRunOutcome: jest.fn(async () => undefined),
+      eraseScheduleIfDrained: jest.fn(async () => false),
+      markEraseAttempted: jest.fn(async () => undefined),
+      getRunsForReconciliation: jest.fn(async () => [oldRun({ deliveryKey: 'dk-1' } as never)]),
+    };
+    const sweep = startScheduleErasureSweep({
+      methods: methods as unknown as ScheduleMethods,
+      getJobStatus: jest.fn(async () => null),
+      getTriggerDelivery: (async () => ({
+        status: 'dead',
+        lastError: { code: 'x', message: 'timed out', certainty: options.certainty },
+      })) as never,
+      canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob,
+    });
+    await jest.advanceTimersByTimeAsync(5 * 60_000);
+    sweep.stop();
+    return methods;
+  }
+
+  /**
+   * `dead` is not proof of rejection: the trigger host marks response timeouts and invalid
+   * success responses `ambiguous`, and the engine dead-letters those after exhausting
+   * retries — so an ambiguous dead letter can sit over a generation a peer accepted and is
+   * still running. Settling it here would release capacity mid-run.
+   */
+  it('refuses an AMBIGUOUS dead letter when absence is not deployment-authoritative', async () => {
+    const methods = await sweepWithDelivery({
+      certainty: 'ambiguous',
+      canInferOwnerDeathFromMissingJob: false,
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('settles an ambiguous dead letter once job absence IS deployment-authoritative', async () => {
+    const methods = await sweepWithDelivery({
+      certainty: 'ambiguous',
+      canInferOwnerDeathFromMissingJob: true,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', error: 'timed out' }),
+    );
+  });
+
+  it('settles a DEFINITE rejection even in an unsafe topology', async () => {
+    const methods = await sweepWithDelivery({
+      certainty: 'definite',
+      canInferOwnerDeathFromMissingJob: false,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', error: 'timed out' }),
+    );
   });
 });

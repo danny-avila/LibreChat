@@ -262,7 +262,7 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
                 // ordinary outcome path — no need to wait the 30-minute orphan age.
                 await finalize(
                   'error',
-                  delivery?.lastError ?? 'Scheduled delivery failed before running',
+                  delivery?.lastError?.message ?? 'Scheduled delivery failed before running',
                 );
                 continue;
               }
