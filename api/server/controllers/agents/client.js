@@ -21,6 +21,7 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  createDetachedSubagentUsageRecorder,
   sendEvent,
   computeUsageCostUSD,
   aggregateEmittedUsage,
@@ -225,6 +226,11 @@ class AgentClient extends BaseClient {
      *  these before returning — otherwise job cleanup can race the persist.
      *  @type {Promise<void>[]} */
     this.pendingSubagentEmits = [];
+    /** Stable per-generation sequence for subagent usage events. Detached
+     * usage is billed outside `collectedUsage`, so array length is no longer
+     * a valid sequence source. @type {number} */
+    this.subagentUsageSeq =
+      usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -395,6 +401,30 @@ class AgentClient extends BaseClient {
         preemption: createSteerPreemptPoll(streamId),
       }),
     };
+  }
+
+  /**
+   * Registers the parent conversation write as a child-dispatch prerequisite.
+   * The store retains only the persistence promise, never this request-scoped client.
+   * @param {string} message
+   * @param {Record<string, unknown>} [opts]
+   */
+  async sendMessage(message, opts = {}) {
+    const subagentTasks = this.options?.subagentTasks;
+    const store = subagentTasks?.store;
+    if (typeof store?.registerParentPersistence !== 'function') {
+      return super.sendMessage(message, opts);
+    }
+    const getReqData = opts.getReqData;
+    return super.sendMessage(message, {
+      ...opts,
+      getReqData: (data = {}) => {
+        getReqData?.(data);
+        if (data.userMessagePromise instanceof Promise) {
+          store.registerParentPersistence(subagentTasks.scopeId, data.userMessagePromise);
+        }
+      },
+    });
   }
 
   setOptions(_options) {}
@@ -2431,39 +2461,67 @@ class AgentClient extends BaseClient {
    * @returns {((usage: UsageMetadata) => void) | undefined}
    */
   buildSubagentUsageEmitter(appConfig) {
-    const res = this.options.res;
-    const streamId = this.options.req?._resumableStreamId || null;
+    /** Detached children can report usage after `disposeClient` has cleared the
+     * parent client. Snapshot every value the emitter needs now; the returned
+     * callback must not dereference mutable client state. */
+    const options = this.options;
+    const res = options.res;
+    const streamId = options.req?._resumableStreamId || null;
     if (!res && !streamId) {
       return undefined;
     }
     const includeCost = appConfig?.interfaceConfig?.contextCost === true;
+    const responseMessageId = this.responseMessageId;
+    const jobCreatedAt = this.jobCreatedAt;
+    const usageEmitSink = this.usageEmitSink;
+    const pendingSubagentEmits = this.pendingSubagentEmits;
+    const endpointTokenConfig = options.endpointTokenConfig;
+    const endpointTokenConfigByAgentId =
+      options.endpointTokenConfigByAgentId instanceof Map
+        ? new Map(options.endpointTokenConfigByAgentId)
+        : options.endpointTokenConfigByAgentId;
+    let subagentUsageSeq = this.subagentUsageSeq;
     return (usage) => {
+      subagentUsageSeq += 1;
+      const cache_creation =
+        usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
+      const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
       const data = {
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
         total_tokens: usage.total_tokens,
-        input_token_details: this.subagentCacheDetails(usage),
+        input_token_details:
+          cache_creation == null && cache_read == null ? undefined : { cache_creation, cache_read },
         model: usage.model,
         provider: usage.provider,
         usage_type: 'subagent',
-        runId: this.responseMessageId,
-        /** Unique per collected entry (post-push length) for resume dedupe */
-        seq: this.collectedUsage.length,
+        runId: jobCreatedAt != null ? `${responseMessageId}:${jobCreatedAt}` : responseMessageId,
+        /** Unique per child call for reconnect/resume dedupe. */
+        seq: subagentUsageSeq,
         /** Price with the SUBAGENT's own endpoint token config (its endpoint may
          *  differ from the parent's); `usage.agentId` is tagged by the sink. */
         cost: includeCost
           ? computeUsageCostUSD(
               usage,
               { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-              this.resolveAgentEndpointTokenConfig(usage),
+              resolveAgentTokenConfig({
+                agentId: usage?.agentId,
+                byAgentId: endpointTokenConfigByAgentId,
+                fallback: endpointTokenConfig,
+              }),
             )
           : undefined,
       };
+      if (data.cost != null) {
+        /** The detached task collector persists this same usage object on the
+         * child message after the emitter has attached authoritative cost. */
+        usage.cost = data.cost;
+      }
       /** Fold into the response's usage rollup (synchronously, regardless of
        *  emit success) so the persisted total matches the live session, which
        *  also folds subagent usage into its cost/totals. */
-      if (this.usageEmitSink) {
-        this.usageEmitSink.push(data);
+      if (usageEmitSink) {
+        usageEmitSink.push(data);
       }
       /** The sink fires this without awaiting, so retain the promise and flush
        *  it in chatCompletion's finally — emitChunk persists (HSET) before
@@ -2478,7 +2536,7 @@ class AgentClient extends BaseClient {
                 event: UsageEvents.ON_TOKEN_USAGE,
                 data,
               },
-              { expectedCreatedAt: this.jobCreatedAt },
+              { expectedCreatedAt: jobCreatedAt },
             );
           } else {
             sendEvent(res, { event: UsageEvents.ON_TOKEN_USAGE, data });
@@ -2487,20 +2545,45 @@ class AgentClient extends BaseClient {
           logger.warn('[AgentClient] Failed to emit subagent usage', err);
         }
       })();
-      this.pendingSubagentEmits.push(emit);
+      pendingSubagentEmits.push(emit);
       return emit;
     };
   }
 
-  /** Normalizes a subagent usage event's cache token details for emission. */
-  subagentCacheDetails(usage) {
-    const cache_creation =
-      usage.input_token_details?.cache_creation ?? usage.cache_creation_input_tokens;
-    const cache_read = usage.input_token_details?.cache_read ?? usage.cache_read_input_tokens;
-    if (cache_creation == null && cache_read == null) {
-      return undefined;
-    }
-    return { cache_creation, cache_read };
+  /**
+   * Detached children may outlive the parent turn's one-time billing flush.
+   * Bill each detached model call on the SDK's awaited usage path; foreground
+   * children continue to batch with the parent turn.
+   * @param {AppConfig['balance']} balance
+   * @param {AppConfig['transactions']} transactions
+   * @returns {(usage: UsageMetadata) => Promise<void>}
+   */
+  buildDetachedSubagentUsageRecorder(balance, transactions) {
+    const options = this.options;
+    const billing = {
+      user: this.user ?? options?.req?.user?.id,
+      conversationId: this.conversationId,
+      messageId: this.responseMessageId,
+      model: this.model ?? options?.agent?.model_parameters?.model,
+      endpointTokenConfig: options?.endpointTokenConfig,
+      endpointTokenConfigByAgentId: options?.endpointTokenConfigByAgentId,
+    };
+    return createDetachedSubagentUsageRecorder(
+      {
+        spendTokens: db.spendTokens,
+        spendStructuredTokens: db.spendStructuredTokens,
+        pricing: {
+          getMultiplier: db.getMultiplier,
+          getCacheMultiplier: db.getCacheMultiplier,
+        },
+        bulkWriteOps: {
+          insertMany: db.bulkInsertTransactions,
+          updateBalance: db.updateBalance,
+        },
+        isPrincipalActive: db.isAgentTriggerPrincipalActive,
+      },
+      { ...billing, balance, transactions },
+    );
   }
 
   /**
@@ -3170,17 +3253,18 @@ class AgentClient extends BaseClient {
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
-          /** Bills subagent child-run model calls — child graphs execute
-           *  outside the streamEvents loop, so ModelEndHandler never sees
-           *  them. Entries land in collectedUsage tagged
-           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage.
+          /** Bills subagent child-run model calls — foreground usage joins
+           *  the parent batch, while detached usage is recorded per call and
+           *  persisted with its child result because it may outlive this turn.
            *  The sink also streams each as an `on_token_usage` event so the
            *  gauge's session cost/totals include billed subagent usage (the
            *  `subagent` tag keeps it out of the live context meter). */
           subagentUsageSink: createSubagentUsageSink(
             this.collectedUsage,
             this.buildSubagentUsageEmitter(appConfig),
+            this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
           ),
+          subagentTasks: this.options.subagentTasks,
         }).then((createdRun) => {
           if (!createdRun) {
             throw new Error('Failed to create run');
@@ -3568,7 +3652,9 @@ class AgentClient extends BaseClient {
         subagentUsageSink: createSubagentUsageSink(
           this.collectedUsage,
           this.buildSubagentUsageEmitter(appConfig),
+          this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
         ),
+        subagentTasks: this.options.subagentTasks,
       });
 
       if (!run) {

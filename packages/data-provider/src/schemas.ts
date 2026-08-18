@@ -951,6 +951,19 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
   ]),
 );
 
+export const subagentThreadLineageSchema = z.object({
+  rootConversationId: z.string().min(1),
+  parentConversationId: z.string().min(1),
+  parentMessageId: z.string().min(1),
+  parentToolCallId: z.string().min(1),
+  parentAgentId: z.string().min(1).optional(),
+  subagentType: z.string().min(1),
+  subagentKind: z.enum(['agent', 'graph']),
+  depth: z.number().int().positive(),
+});
+
+export type TSubagentThreadLineage = z.infer<typeof subagentThreadLineageSchema>;
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
@@ -1026,6 +1039,8 @@ export const tConversationSchema = z.object({
   assistant_id: z.string().optional(),
   /* agents */
   agent_id: z.string().optional(),
+  /** Durable parent/child navigation for a subagent thread. */
+  subagentThread: subagentThreadLineageSchema.optional(),
   /* AWS Bedrock */
   region: z.string().optional(),
   maxTokens: coerceNumber.optional(),

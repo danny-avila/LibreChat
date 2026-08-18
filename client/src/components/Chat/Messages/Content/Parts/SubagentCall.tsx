@@ -21,11 +21,13 @@ import type { SubagentTickerLine } from '~/utils/subagentContent';
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
+import SubagentThreadLink from '~/components/Chat/SubagentThreadLink';
 import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
 import Container from '~/components/Chat/Messages/Content/Container';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
 import { MessageContext } from '~/Providers/MessageContext';
 import MessageIcon from '~/components/Share/MessageIcon';
+import { parseSubagentBackgroundHandle } from './handle';
 import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
 import { useMCPServerNames } from '~/hooks/MCP';
@@ -186,6 +188,10 @@ export default function SubagentCall({
   const agentsMap = useAgentsMapContext();
   const [open, setOpen] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const backgroundHandle = useMemo(
+    () => parseSubagentBackgroundHandle(output, args),
+    [output, args],
+  );
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
@@ -457,7 +463,7 @@ export default function SubagentCall({
         </MessageContext.Provider>
       );
     }
-    if (output) {
+    if (output && backgroundHandle == null) {
       /** Fallback: no aggregated content parts but the backend
        *  wrote a final tool_call output. Happens for older
        *  subagent runs recorded before the event forwarder
@@ -567,11 +573,19 @@ export default function SubagentCall({
           )}
         >
           <div className="shrink-0 px-6 pb-3 pr-14 pt-6">
-            <OGDialogTitle>
-              {isSelfSpawn
-                ? localize('com_ui_subagent_dialog_title_self')
-                : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
-            </OGDialogTitle>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <OGDialogTitle>
+                {isSelfSpawn
+                  ? localize('com_ui_subagent_dialog_title_self')
+                  : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
+              </OGDialogTitle>
+              {backgroundHandle != null && (
+                <SubagentThreadLink
+                  threadId={backgroundHandle.subagent_thread_id}
+                  relation="child"
+                />
+              )}
+            </div>
             <OGDialogDescription className="sr-only">
               {localize('com_ui_subagent_dialog_description')}
             </OGDialogDescription>
