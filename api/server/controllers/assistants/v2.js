@@ -32,8 +32,16 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = await getAssistantToolDefinitions({ req, tools });
-    const healedTools = await healMcpToolNames({ req, tools, toolDefinitions });
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
     assistantData.tools = healedTools
       .map((tool) => {
@@ -139,8 +147,16 @@ const updateAssistant = async ({ req, openai, assistant_id, updateData }) => {
   }
 
   let hasFileSearch = false;
-  const toolDefinitions = await getAssistantToolDefinitions({ req, tools: updateData.tools });
-  const healedTools = await healMcpToolNames({ req, tools: updateData.tools, toolDefinitions });
+  const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+    req,
+    tools: updateData.tools,
+  });
+  const healedTools = await healMcpToolNames({
+    req,
+    tools: updateData.tools,
+    toolDefinitions,
+    accessibleServerNames,
+  });
   for (const tool of healedTools) {
     /** Agents-runtime-only tools (e.g. ask_user_question) cannot execute on
      *  the assistants runtime — drop them even when posted directly, since

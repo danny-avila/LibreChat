@@ -48,8 +48,8 @@ describe('getAssistantToolDefinitions', () => {
     const deps = createDeps();
 
     await expect(getAssistantToolDefinitions(params, deps)).resolves.toEqual({
-      ...params.staticTools,
-      ...catalog,
+      toolDefinitions: { ...params.staticTools, ...catalog },
+      accessibleServerNames: ['app-server'],
     });
     expect(deps.getMCPServerTools).toHaveBeenCalledWith('user-1', 'app-server', serverConfig);
   });
@@ -73,11 +73,11 @@ describe('getAssistantToolDefinitions', () => {
     };
     const deps = createDeps({ getMCPServerTools: jest.fn().mockResolvedValue(strippedCatalog) });
 
-    const result = await getAssistantToolDefinitions(params, deps);
+    const { toolDefinitions } = await getAssistantToolDefinitions(params, deps);
 
-    expect(result[strippedKey]?.serverToolName).toBe('app-server_search');
+    expect(toolDefinitions[strippedKey]?.serverToolName).toBe('app-server_search');
 
-    const sanitized = toProviderToolDefinition(result[strippedKey]);
+    const sanitized = toProviderToolDefinition(toolDefinitions[strippedKey]);
     expect(sanitized).toEqual({
       type: 'function',
       ['function']: strippedCatalog[strippedKey]['function'],
@@ -99,8 +99,8 @@ describe('getAssistantToolDefinitions', () => {
     });
 
     await expect(getAssistantToolDefinitions(params, deps)).resolves.toEqual({
-      ...params.staticTools,
-      ...recoveredCatalog,
+      toolDefinitions: { ...params.staticTools, ...recoveredCatalog },
+      accessibleServerNames: ['app-server'],
     });
     expect(recoverServerTools).toHaveBeenCalledWith('app-server', serverConfig);
   });
@@ -153,7 +153,10 @@ describe('getAssistantToolDefinitions', () => {
       cacheMCPServerTools,
     });
 
-    await expect(getAssistantToolDefinitions(params, deps)).resolves.toEqual(params.staticTools);
+    await expect(getAssistantToolDefinitions(params, deps)).resolves.toEqual({
+      toolDefinitions: params.staticTools,
+      accessibleServerNames: ['app-server'],
+    });
     expect(cacheMCPServerTools).toHaveBeenCalledWith({
       userId: 'user-1',
       serverName: 'app-server',
@@ -227,7 +230,7 @@ describe('getAssistantToolDefinitions', () => {
         },
         deps,
       ),
-    ).resolves.toBe(staticTools);
+    ).resolves.toEqual({ toolDefinitions: staticTools });
     expect(deps.ensureConfigServers).not.toHaveBeenCalled();
     expect(deps.getMCPServerTools).not.toHaveBeenCalled();
   });

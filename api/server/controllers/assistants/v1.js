@@ -34,8 +34,16 @@ const createAssistant = async (req, res) => {
     delete assistantData.conversation_starters;
     delete assistantData.append_current_datetime;
 
-    const toolDefinitions = await getAssistantToolDefinitions({ req, tools });
-    const healedTools = await healMcpToolNames({ req, tools, toolDefinitions });
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
     assistantData.tools = healedTools
       .map((tool) => {
@@ -150,8 +158,16 @@ const patchAssistant = async (req, res) => {
       ...updateData
     } = req.body;
 
-    const toolDefinitions = await getAssistantToolDefinitions({ req, tools: updateData.tools });
-    const healedTools = await healMcpToolNames({ req, tools: updateData.tools, toolDefinitions });
+    const { toolDefinitions, accessibleServerNames } = await getAssistantToolDefinitions({
+      req,
+      tools: updateData.tools,
+    });
+    const healedTools = await healMcpToolNames({
+      req,
+      tools: updateData.tools,
+      toolDefinitions,
+      accessibleServerNames,
+    });
 
     updateData.tools = healedTools
       .map((tool) => {

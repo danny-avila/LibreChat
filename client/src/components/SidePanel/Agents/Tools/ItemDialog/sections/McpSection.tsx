@@ -176,13 +176,13 @@ export default function McpSection({ item }: Props) {
    * this exact raw name as its upstream tool — so a stale id for a removed
    * tool can never migrate onto a different sibling.
    */
+  /** Constant-time lookups for the migration below — the form heal calls it
+   *  per persisted key, so linear catalog scans go O(options × tools). */
+  const toolsById = useMemo(() => new Map(tools.map((tool) => [tool.tool_id, tool])), [tools]);
+
   const toStrippedToolId = useCallback(
     (entry: string): string => {
-      if (
-        entry === serverToken ||
-        entry === serverAllToken ||
-        tools.some((tool) => tool.tool_id === entry)
-      ) {
+      if (entry === serverToken || entry === serverAllToken || toolsById.has(entry)) {
         return entry;
       }
       const normalizedName = normalizeServerName(serverName);
@@ -195,10 +195,10 @@ export default function McpSection({ item }: Props) {
         return entry;
       }
       const strippedId = `${strippedPart}${Constants.mcp_delimiter}${normalizedName}`;
-      const target = tools.find((tool) => tool.tool_id === strippedId);
+      const target = toolsById.get(strippedId);
       return target?.metadata.serverToolName === toolPart ? strippedId : entry;
     },
-    [serverName, serverToken, serverAllToken, tools],
+    [serverName, serverToken, serverAllToken, toolsById],
   );
 
   const toCurrentToolId = useCallback(

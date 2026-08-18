@@ -255,7 +255,7 @@ async function getAccessibleMcpServerNames(userId, role) {
  * @param {Record<string, unknown>} params.toolDefinitions
  * @returns {Promise<Array<string | object>>}
  */
-async function healMcpToolNames({ req, tools, toolDefinitions }) {
+async function healMcpToolNames({ req, tools, toolDefinitions, accessibleServerNames }) {
   const list = tools ?? [];
   const needsHeal = list.some(
     (tool) =>
@@ -266,25 +266,29 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
   if (!needsHeal) {
     return list;
   }
-  const rawServerNames = await resolveMcpConfigNames(req);
   /** Cross-tier shadowing (DB `foo` vs operator `foo!`) is invisible to
    *  operator names alone — the shadow set must come from the FULL
-   *  accessible audit. The audit is ALWAYS the full accessible set here:
-   *  assistants reference user-owned servers too (the definitions loader
-   *  resolves them), so their pre-strip keys must heal against the same
-   *  catalog. When the audit cannot complete, healing is skipped entirely
-   *  (the raw key stays raw and fails closed). */
-  let accessibleServerNames;
-  try {
-    accessibleServerNames = await getAccessibleMcpServerNames(req.user?.id, req.user?.role);
-  } catch (error) {
-    logger.warn(
-      '[healMcpToolNames] Accessible-server audit unavailable; skipping legacy-key healing:',
-      error,
-    );
-    return list;
+   *  accessible audit: assistants reference user-owned servers too (the
+   *  definitions loader resolves them), so their pre-strip keys must heal
+   *  against the same catalog. Callers holding the loader's snapshot pass
+   *  it to avoid repeating the app-config and registry reads on the write
+   *  path; without one, the audit is fetched here, and when it cannot
+   *  complete healing is skipped entirely (the raw key stays raw and fails
+   *  closed). */
+  let auditNames = accessibleServerNames;
+  if (auditNames == null) {
+    const rawServerNames = await resolveMcpConfigNames(req);
+    try {
+      const accessible = await getAccessibleMcpServerNames(req.user?.id, req.user?.role);
+      auditNames = [...new Set([...accessible, ...rawServerNames])];
+    } catch (error) {
+      logger.warn(
+        '[healMcpToolNames] Accessible-server audit unavailable; skipping legacy-key healing:',
+        error,
+      );
+      return list;
+    }
   }
-  const auditNames = [...new Set([...accessibleServerNames, ...rawServerNames])];
   const shadowed = findShadowedServerNames(auditNames);
   /** A pre-strip key persisted AFTER server-name normalization carries the
    *  NORMALIZED suffix, which the raw config names cannot match — the

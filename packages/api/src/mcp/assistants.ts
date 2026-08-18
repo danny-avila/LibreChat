@@ -154,11 +154,22 @@ async function loadServerCatalog(
   throw new Error(`MCP tool definitions unavailable for assistant server "${serverName}"`);
 }
 
+export interface AssistantToolDefinitionsResult {
+  toolDefinitions: LCAvailableTools;
+  /**
+   * Every server name the principal can reach, from the same merged registry
+   * read that resolved the catalogs — the legacy-key heal reuses it instead
+   * of repeating the app-config and registry round trips on the write path.
+   * `undefined` when the payload references no MCP tools (nothing to heal).
+   */
+  accessibleServerNames?: string[];
+}
+
 /** Loads the static catalog with the configuration-addressed MCP slices referenced by an assistant. */
 export async function getAssistantToolDefinitions(
   params: AssistantToolDefinitionsParams,
   deps: AssistantToolDefinitionsDeps,
-): Promise<LCAvailableTools> {
+): Promise<AssistantToolDefinitionsResult> {
   const mcpToolNames =
     params.tools?.filter(
       (tool): tool is string =>
@@ -166,7 +177,7 @@ export async function getAssistantToolDefinitions(
     ) ?? [];
   const userId = params.user?.id;
   if (mcpToolNames.length === 0 || !userId) {
-    return params.staticTools;
+    return { toolDefinitions: params.staticTools };
   }
 
   const configs = await resolveAssistantMcpConfigs(
@@ -185,7 +196,12 @@ export async function getAssistantToolDefinitions(
   /** Entries keep `serverToolName` here: the assistants heal verifies legacy
    *  key rewrites against that upstream identity. The controllers sanitize
    *  through {@link toProviderToolDefinition} at the submission boundary. */
-  return Object.assign({}, params.staticTools, ...serverCatalogs);
+  return {
+    toolDefinitions: Object.assign({}, params.staticTools, ...serverCatalogs),
+    accessibleServerNames: [
+      ...new Set([...Object.keys(configs), ...Object.keys(params.mcpConfig)]),
+    ],
+  };
 }
 
 /**

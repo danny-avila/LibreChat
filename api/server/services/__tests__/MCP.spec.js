@@ -115,8 +115,11 @@ describe('getAssistantToolDefinitions', () => {
     });
 
     expect(definitions).toEqual({
-      code_interpreter: { type: 'code_interpreter' },
-      [toolKey]: mcpDefinition,
+      toolDefinitions: {
+        code_interpreter: { type: 'code_interpreter' },
+        [toolKey]: mcpDefinition,
+      },
+      accessibleServerNames: ['app-server'],
     });
     expect(getMCPServerTools).toHaveBeenCalledWith('u1', 'app-server', serverConfig);
   });
@@ -135,7 +138,8 @@ describe('getAssistantToolDefinitions', () => {
     require('~/config').getMCPManager.mockReturnValue({ getServerToolFunctionsSnapshot });
 
     await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
-      [toolKey]: mcpDefinition,
+      toolDefinitions: { [toolKey]: mcpDefinition },
+      accessibleServerNames: ['app-server'],
     });
     expect(cacheMCPServerTools).toHaveBeenCalledWith({
       userId: 'u1',
@@ -159,7 +163,8 @@ describe('getAssistantToolDefinitions', () => {
     reinitMCPServer.mockResolvedValue({ availableTools: { [toolKey]: mcpDefinition } });
 
     await expect(getAssistantToolDefinitions({ req, tools: [toolKey] })).resolves.toEqual({
-      [toolKey]: mcpDefinition,
+      toolDefinitions: { [toolKey]: mcpDefinition },
+      accessibleServerNames: ['app-server'],
     });
     expect(reinitMCPServer).toHaveBeenCalledWith({
       user: req.user,
@@ -438,6 +443,26 @@ describe('healMcpToolNames', () => {
     });
 
     expect(healed).toEqual([strippedKey]);
+  });
+
+  it('reuses a provided accessible-server snapshot without re-reading config', async () => {
+    /** The controllers pass the definitions loader's snapshot so the write
+     *  path does not repeat the app-config and registry round trips. */
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [strippedKey]: { type: 'function', serverToolName: 'acme_search' },
+    };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+      accessibleServerNames: ['acme'],
+    });
+
+    expect(healed).toEqual([strippedKey]);
+    expect(getAppConfig).not.toHaveBeenCalled();
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
   });
 
   it('heals a pre-strip key for a USER-OWNED server absent from the operator config', async () => {
