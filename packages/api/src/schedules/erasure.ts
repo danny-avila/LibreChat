@@ -1,6 +1,6 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { ScheduleMethods, IScheduleRun } from '@librechat/data-schemas';
-import type { JobState } from './types';
+import type { JobState, ScheduleEngineDeps } from './types';
 import { hasResumeHandoffInFlight, hasAbortInFlight } from './types';
 import { registerShutdownTask } from '~/app/shutdown';
 
@@ -10,6 +10,9 @@ const SWEEP_BATCH = 100;
 /** Runs with no readable job older than this are presumed owner-dead (matches the
  *  engine reconciler's orphan cutoff). */
 const ABANDONED_RUN_AGE_MS = 30 * 60_000;
+/** Grace before a jobless reservation's delivery is consulted, so an accepted delivery
+ *  still creating its generation is never settled mid-handoff. */
+const DEAD_DELIVERY_MIN_AGE_MS = 2 * 60_000;
 
 /** Terminal job status → the run outcome it proves (mirror of the quiesce map). */
 const TERMINAL_JOB_OUTCOMES: Record<string, 'success' | 'error' | 'interrupted' | undefined> = {
@@ -29,10 +32,15 @@ export interface ScheduleErasureDeps {
     | 'eraseScheduleIfDrained'
     | 'markEraseAttempted'
     | 'getActiveRunsForSchedule'
+    | 'getRunsForReconciliation'
     | 'recordRunOutcome'
   >;
   /** Job state at a run's conversationId; null = confirmed absent, throw = unknown. */
   getJobStatus: (conversationId: string) => Promise<JobState | null>;
+  /** Durable trigger delivery for a reservation's `deliveryKey`. A `dead` delivery is
+   *  POSITIVE shared evidence that no generation owns the reservation, so settling on it
+   *  is topology-safe (unlike absence). */
+  getTriggerDelivery: ScheduleEngineDeps['getTriggerDelivery'];
   /** Whether absence in this process's job store proves absence deployment-wide.
    * False for the process-local fallback whose scheduler refused unsafe topology. */
   canInferOwnerDeathFromMissingJob: boolean;
@@ -118,6 +126,65 @@ async function settleAbandonedRuns(deps: ScheduleErasureDeps, scheduleId: string
 }
 
 /**
+ * Settles reservations whose durable trigger delivery is DEAD, for live (non-deleting)
+ * schedules too.
+ *
+ * `fireSchedule` reserves the run and its global capacity slot before the delivery reaches
+ * the chat route, so a pre-generation rejection (interactive limiter, PII, moderation) dead-
+ * letters the delivery while the run stays `started`. The engine's reconciler maps that to an
+ * `error`, but the clustered entrypoint arms no engine — a delivery that was queued before a
+ * restart into clustered mode would otherwise hold its capacity slot indefinitely.
+ *
+ * This is POSITIVE-EVIDENCE-ONLY and therefore safe in every topology: a `dead` delivery is
+ * durable shared state proving no generation owns the reservation. It never infers owner
+ * death from a missing job, never claims, fires, or advances, and defers anything fenced by
+ * an in-flight abort or resume hand-off. Auto-disable policy is deliberately NOT applied here
+ * (the armed engine owns that); the failure is recorded and the slot released.
+ */
+async function settleDeadDeliveries(deps: ScheduleErasureDeps): Promise<void> {
+  const runs = await deps.methods.getRunsForReconciliation(
+    new Date(Date.now() - DEAD_DELIVERY_MIN_AGE_MS),
+    SWEEP_BATCH,
+  );
+  const now = Date.now();
+  for (const run of runs) {
+    try {
+      if (run.status !== 'started' || !run.deliveryKey) {
+        continue;
+      }
+      if (hasAbortInFlight(run, now) || hasResumeHandoffInFlight(run, now)) {
+        continue;
+      }
+      // A live generation owns the reservation regardless of delivery state; only an
+      // absent/unknown job leaves the delivery as the authority. Unknown defers.
+      const job = run.conversationId
+        ? await deps.getJobStatus(run.conversationId).then(
+            (state) => ({ known: true, state }),
+            () => ({ known: false, state: null }),
+          )
+        : { known: true, state: null };
+      if (!job.known || jobMatchesRun(job.state, run)) {
+        continue;
+      }
+      const delivery = await deps.getTriggerDelivery(run.deliveryKey);
+      if (delivery?.status !== 'dead') {
+        continue;
+      }
+      await deps.methods.recordRunOutcome({
+        scheduleId: run.scheduleId,
+        scheduledFor: run.scheduledFor,
+        status: 'error',
+        conversationId: run.conversationId,
+        error: delivery.lastError ?? 'Scheduled delivery failed before running',
+        autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      });
+    } catch (err) {
+      logger.warn(`[schedules] dead-delivery settle failed for ${run.scheduleId}:`, err);
+    }
+  }
+}
+
+/**
  * Erases soft-deleted schedules once they drain — and NOTHING else.
  *
  * A `deleting` row is normally erased by whichever actor first observes it drained: the
@@ -154,6 +221,11 @@ export function startScheduleErasureSweep(deps: ScheduleErasureDeps): ScheduleEr
         await deps.methods
           .markEraseAttempted(deleting.map((schedule) => schedule.id))
           .catch((err) => logger.warn('[schedules] failed to stamp erase attempts:', err));
+        // Live schedules too: converge reservations whose durable delivery is dead, so a
+        // pre-generation rejection cannot hold a global capacity slot where no engine is armed.
+        await settleDeadDeliveries(deps).catch((err) =>
+          logger.warn('[schedules] dead-delivery convergence pass failed:', err),
+        );
       });
     } catch (err) {
       logger.error('[schedules] erasure sweep failed:', err);

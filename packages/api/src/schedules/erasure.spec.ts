@@ -23,10 +23,12 @@ async function sweepOnce(options: {
     recordRunOutcome: jest.fn(async () => undefined),
     eraseScheduleIfDrained: jest.fn(async () => false),
     markEraseAttempted: jest.fn(async () => undefined),
+    getRunsForReconciliation: jest.fn(async () => []),
   };
   const sweep = startScheduleErasureSweep({
     methods: methods as unknown as ScheduleMethods,
     getJobStatus: jest.fn(async () => options.job ?? null),
+    getTriggerDelivery: jest.fn(async () => null),
     canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob,
   });
   await jest.advanceTimersByTimeAsync(5 * 60_000);
@@ -77,5 +79,94 @@ describe('schedule erasure fallback owner-death evidence', () => {
     expect(methods.recordRunOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ scheduleId: 'schedule-1', status: 'success' }),
     );
+  });
+});
+
+describe('topology-safe dead-delivery convergence', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  async function convergeOnce(options: {
+    run?: Partial<IScheduleRun>;
+    delivery?: { status: string; lastError?: string } | null;
+    job?: JobState | null;
+    canInferOwnerDeathFromMissingJob?: boolean;
+  }) {
+    const methods = {
+      getDeletingSchedules: jest.fn(async () => []),
+      getActiveRunsForSchedule: jest.fn(async () => []),
+      recordRunOutcome: jest.fn(async () => undefined),
+      eraseScheduleIfDrained: jest.fn(async () => false),
+      markEraseAttempted: jest.fn(async () => undefined),
+      getRunsForReconciliation: jest.fn(async () => [
+        oldRun({ deliveryKey: 'dk-1', ...options.run } as Partial<IScheduleRun>),
+      ]),
+    };
+    const getTriggerDelivery = jest.fn(async () => options.delivery ?? null);
+    const sweep = startScheduleErasureSweep({
+      methods: methods as unknown as ScheduleMethods,
+      getJobStatus: jest.fn(async () => options.job ?? null),
+      getTriggerDelivery: getTriggerDelivery as never,
+      // Defaults to the UNSAFE topology to prove this path never depends on it.
+      canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob ?? false,
+    });
+    await jest.advanceTimersByTimeAsync(5 * 60_000);
+    sweep.stop();
+    return { methods, getTriggerDelivery };
+  }
+
+  it('settles a dead delivery as error even in an unsafe topology (positive evidence)', async () => {
+    const { methods } = await convergeOnce({
+      delivery: { status: 'dead', lastError: 'blocked by moderation' },
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduleId: 'schedule-1',
+        status: 'error',
+        error: 'blocked by moderation',
+      }),
+    );
+  });
+
+  it('leaves a live delivery alone', async () => {
+    const { methods } = await convergeOnce({ delivery: { status: 'pending' } });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('never settles while an identity-matched generation still owns the reservation', async () => {
+    const { methods, getTriggerDelivery } = await convergeOnce({
+      delivery: { status: 'dead' },
+      job: {
+        status: 'running',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      } as unknown as JobState,
+    });
+    expect(getTriggerDelivery).not.toHaveBeenCalled();
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('defers a run whose abort is still in flight', async () => {
+    const { methods } = await convergeOnce({
+      run: { abortRequestedAt: new Date() } as Partial<IScheduleRun>,
+      delivery: { status: 'dead' },
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('ignores a legacy reservation carrying no deliveryKey', async () => {
+    const { methods, getTriggerDelivery } = await convergeOnce({
+      run: { deliveryKey: undefined } as Partial<IScheduleRun>,
+      delivery: { status: 'dead' },
+    });
+    expect(getTriggerDelivery).not.toHaveBeenCalled();
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   });
 });

@@ -634,6 +634,9 @@ export function createSchedulesService(
     erasureSweep = startScheduleErasureSweep({
       methods,
       getJobStatus: engineDeps.getJobStatus,
+      // Positive-evidence delivery convergence: a dead delivery settles its reservation
+      // and frees the global capacity slot even where no engine is armed.
+      getTriggerDelivery: engineDeps.getTriggerDelivery,
       // If topology itself prevented arming, this process's missing job says
       // nothing about peer liveness. If only index creation failed, the topology
       // proof still holds and the existing owner-death backstop remains valid.
