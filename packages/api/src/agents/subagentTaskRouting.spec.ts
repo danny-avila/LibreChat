@@ -313,7 +313,7 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('refuses a claim it cannot retain instead of consuming the result', async () => {
+  it('keeps consuming claims when earlier results were never acknowledged', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
@@ -344,33 +344,19 @@ describe('RedisSubagentTaskControlTransport', () => {
       );
     }
 
+    /** Retention is a fast path over a durable result, so abandoned copies bound
+     * themselves instead of refusing later callers until the process restarts. */
     const { claimReplays } = owner as unknown as {
       claimReplays: { entries: Map<string, unknown>; bytes: number };
     };
-    const consumed = claim.mock.calls.map(([, taskId]) => taskId);
-    /** Retention filled, so later claims were refused rather than consumed. */
-    expect(consumed.length).toBeLessThan(taskIds.length);
-    /** Every result the owner did consume is still replayable — none was displaced. */
-    expect(claimReplays.entries.size).toBe(consumed.length);
+    expect(claim).toHaveBeenCalledTimes(taskIds.length);
+    expect(claimReplays.entries.size).toBeLessThanOrEqual(2_000);
     expect(claimReplays.bytes).toBeLessThanOrEqual(16 * 1024 * 1024);
 
-    /** A refused task keeps its result, and becomes claimable once space frees. */
-    const refusedTaskId = taskIds[taskIds.length - 1];
-    expect(consumed).not.toContain(refusedTaskId);
     bus.dropResponses = 0;
-    await expect(requester.claim('scope-1', consumed[0])).resolves.toMatchObject({
+    await owner.registerTask('scope-1', 'task-late', 60_000);
+    await expect(requester.claim('scope-1', 'task-late')).resolves.toMatchObject({
       status: 'completed',
-    });
-    for (
-      let attempt = 0;
-      attempt < 50 && claimReplays.entries.size >= consumed.length;
-      attempt += 1
-    ) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 5));
-    }
-    await expect(requester.claim('scope-1', refusedTaskId)).resolves.toMatchObject({
-      status: 'completed',
-      result,
     });
 
     await Promise.all([owner.destroy(), requester.destroy()]);
@@ -720,7 +706,7 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('recovers a consumed result claimed again long after the replay window', async () => {
+  it('lets an abandoned result expire out of retention', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
@@ -732,44 +718,48 @@ describe('RedisSubagentTaskControlTransport', () => {
       asRedis(bus.createClient()),
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
     );
-    const claim = jest.fn((_scopeId: string, taskId: string) => ({
-      status: 'completed' as const,
-      task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
-      result: 'child result',
-    }));
+    let consumed = false;
+    const claim = jest.fn((_scopeId: string, taskId: string) => {
+      if (consumed) {
+        return { status: 'claimed' as const, task: snapshot({ taskId, status: 'completed' }) };
+      }
+      consumed = true;
+      return {
+        status: 'completed' as const,
+        task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+        result: 'child result',
+      };
+    });
     await owner.bind(taskHandler({ claim }));
     await requester.bind(taskHandler());
-    /** The owner stays addressable across the jump, so only replay retention is under test. */
     await owner.registerTask('scope-1', 'task-1', 4 * 60 * 60_000);
 
     bus.dropResponses = 2;
     await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
       SubagentTaskOwnerUnavailableError,
     );
-    expect(claim).toHaveBeenCalledTimes(1);
 
-    /** An unacknowledged result is task-owned state, not a timed cache entry. */
+    /** A requester that never comes back cannot hold owner memory forever: the copy
+     * carries an expiry, and the result stays recoverable from its durable thread. */
     const { claimReplays } = owner as unknown as {
-      claimReplays: { entries: Map<string, { expiresAt?: number }> };
+      claimReplays: { entries: Map<string, { expiresAt: number }> };
     };
-    expect([...claimReplays.entries.values()][0]?.expiresAt).toBeUndefined();
+    expect([...claimReplays.entries.values()][0]?.expiresAt).toBeGreaterThan(Date.now());
 
     const realNow = Date.now();
-    const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow + 60 * 60_000);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow + 6 * 60_000);
     try {
       await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
-        status: 'completed',
-        result: 'child result',
+        status: 'claimed',
       });
     } finally {
       clock.mockRestore();
     }
-    expect(claim).toHaveBeenCalledTimes(1);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('holds a result the owner could not be told was delivered, until a later poll', async () => {
+  it('delivers a result whose acknowledgement could not be confirmed', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
@@ -793,14 +783,16 @@ describe('RedisSubagentTaskControlTransport', () => {
       claimReplays: { entries: Map<string, unknown> };
     };
 
-    /** Every acknowledgement reaches nobody, so delivery is never confirmed. */
+    /** Every acknowledgement reaches nobody, so the owner is never told it landed. */
     bus.ackFailures = 1_000;
-    await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
-      SubagentTaskOwnerUnavailableError,
-    );
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'child result',
+    });
+    /** The caller keeps the result it is holding; only the owner's copy lingers. */
     expect(claimReplays.entries.size).toBe(1);
+    expect(claim).toHaveBeenCalledTimes(1);
 
-    /** A later poll recovers the same result and acknowledges it. */
     bus.ackFailures = 0;
     await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
       status: 'completed',
@@ -810,7 +802,6 @@ describe('RedisSubagentTaskControlTransport', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 5));
     }
     expect(claimReplays.entries.size).toBe(0);
-    /** The one-shot handler ran exactly once across both polls. */
     expect(claim).toHaveBeenCalledTimes(1);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
@@ -854,7 +845,7 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('keeps an unacknowledged result addressable after its task leaves the store', async () => {
+  it('keeps a retained result addressable after its task leaves the store', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
@@ -873,21 +864,22 @@ describe('RedisSubagentTaskControlTransport', () => {
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
     );
     let retained = true;
+    const claim = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'completed' as const,
+      task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+      result: 'child result',
+    }));
     await owner.bind(
       taskHandler({
-        claim: (_scopeId: string, taskId: string) => ({
-          status: 'completed' as const,
-          task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
-          result: 'child result',
-        }),
-        /** The task ages out of the store while its result is still unacknowledged. */
+        claim,
+        /** The task ages out of the store while its result is still retained. */
         list: () => (retained ? [snapshot({ taskId: 'task-1' })] : []),
       }),
     );
     await requester.bind(taskHandler());
     await owner.registerTask('scope-1', 'task-1', 60_000);
 
-    bus.ackFailures = 1_000;
+    bus.dropResponses = 2;
     await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
       SubagentTaskOwnerUnavailableError,
     );
@@ -895,11 +887,59 @@ describe('RedisSubagentTaskControlTransport', () => {
     retained = false;
     await new Promise<void>((resolve) => setTimeout(resolve, 30));
 
-    bus.ackFailures = 0;
     await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
       status: 'completed',
       result: 'child result',
     });
+    expect(claim).toHaveBeenCalledTimes(1);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('never answers one invocation id from a different command it already ran', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const control = jest.fn(
+      (_scopeId: string, taskId: string, command: SubagentTaskControlCommand) => ({
+        status: 'accepted' as const,
+        task: snapshot({ taskId }),
+        controlId: `control-${'message' in command ? command.message : command.action}`,
+      }),
+    );
+    await owner.bind(taskHandler({ control }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    await expect(
+      requester.control('scope-1', 'task-1', { action: 'queue', message: 'first' }, 'invocation-1'),
+    ).resolves.toMatchObject({ controlId: 'control-first' });
+
+    /** A retransmission of that invocation replays without applying again. */
+    await expect(
+      requester.control('scope-1', 'task-1', { action: 'queue', message: 'first' }, 'invocation-1'),
+    ).resolves.toMatchObject({ controlId: 'control-first' });
+    expect(control).toHaveBeenCalledTimes(1);
+
+    /** Reusing the id for different content is a caller error, so it reaches the
+     * owner to be refused rather than collecting the earlier command's success. */
+    await expect(
+      requester.control(
+        'scope-1',
+        'task-1',
+        { action: 'queue', message: 'second' },
+        'invocation-1',
+      ),
+    ).resolves.toMatchObject({ controlId: 'control-second' });
+    expect(control).toHaveBeenCalledTimes(2);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

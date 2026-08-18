@@ -65,11 +65,13 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
-      expect(subagentThreadStore.cancelAndDrainForOwner).toHaveBeenCalledWith(
-        'test-user-123',
-        undefined,
-      );
-      expect(subagentThreadStore.cancelAndDrainForOwner).toHaveBeenCalledTimes(2);
+      /** The deletion runs inside the owner admission fence, not around it. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      const [fencedUserId, fencedTenantId] =
+        subagentThreadStore.withOwnerDeletionFence.mock.calls[0];
+      expect(fencedUserId).toBe('test-user-123');
+      expect(fencedTenantId).toBeUndefined();
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -137,7 +139,8 @@ describe('Convos Routes', () => {
     });
 
     it('does not delete conversations when cross-replica task draining fails', async () => {
-      subagentThreadStore.cancelAndDrainForOwner.mockRejectedValueOnce(
+      /** Draining happens inside the admission fence, so its failure fails the fence. */
+      subagentThreadStore.withOwnerDeletionFence.mockRejectedValueOnce(
         new Error('task owner unavailable'),
       );
 

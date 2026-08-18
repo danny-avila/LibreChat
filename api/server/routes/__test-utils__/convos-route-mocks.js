@@ -124,6 +124,9 @@ module.exports = {
 
   subagentThreadStore: () => ({
     cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
+    withOwnerDeletionFence: jest.fn().mockImplementation(async (_userId, _tenantId, deletion) => {
+      return deletion();
+    }),
     planCancellationForConversations: jest
       .fn()
       .mockImplementation(async (userId, conversationIds, tenantId) => ({

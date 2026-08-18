@@ -55,6 +55,8 @@ export interface IUser extends Document {
   termsAcceptedAt?: Date | null;
   /** Internal fence that prevents agent-trigger admission during account deletion. */
   agentTriggerDeletionStartedAt?: Date;
+  /** Expiring fence that closes subagent admission while a bulk deletion drains. */
+  subagentAdmissionFencedUntil?: Date;
   personalization?: {
     memories?: boolean;
     statefulCodeEnvironment?: StatefulCodeEnvironment;

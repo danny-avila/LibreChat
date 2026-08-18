@@ -15,15 +15,13 @@ const DEFAULT_RETRY_DELAY_MS = 500;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const DEFAULT_REGISTRATION_HEARTBEAT_MS = 10_000;
 const MAX_PENDING_REQUESTS = 1_000;
-/** A consumed claim is the only response whose loss destroys data, so it is retained
- * apart from control replays and can never be evicted by unrelated command traffic. */
+/** A consumed claim is retained apart from control replays so unrelated command
+ * traffic cannot displace it while its caller retries. Retention is a fast path, not
+ * the guarantee: the terminal result is recoverable from its durable child message. */
 const MAX_CLAIM_REPLAY_ENTRIES = 2_000;
 const MAX_CLAIM_REPLAY_BYTES = 16 * 1024 * 1024;
 const MAX_CONTROL_REPLAY_ENTRIES = 2_000;
 const MAX_CONTROL_REPLAY_BYTES = 4 * 1024 * 1024;
-/** Headroom for the largest retainable claim: every bounded character of a result
- * can expand to a six-byte JSON escape, plus its bounded snapshot fields. */
-const MAX_CLAIM_REPLAY_ENTRY_BYTES = 700 * 1024;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
@@ -135,8 +133,9 @@ interface PendingRequest {
 interface CachedResponse {
   value: string;
   bytes: number;
-  /** Absent while the owner still holds a consumed result nobody has acknowledged. */
-  expiresAt?: number;
+  expiresAt: number;
+  /** Content this response answered, so one id cannot replay a different command. */
+  fingerprint?: string;
 }
 
 interface ReplayCache {
@@ -144,10 +143,6 @@ interface ReplayCache {
   bytes: number;
   maxEntries: number;
   maxBytes: number;
-  /** Consumed results are admitted only when they fit, so none is ever displaced. */
-  evictable: boolean;
-  /** Consumed results are released by acknowledgement rather than by elapsed time. */
-  expires: boolean;
 }
 
 interface RoutedTaskList {
@@ -397,6 +392,20 @@ function isCancelResult(value: unknown): value is RoutedCancelResult {
   return Number.isSafeInteger(cancelled) && (cancelled as number) >= 0;
 }
 
+/**
+ * Canonical identity of one control's content. Property order cannot vary it, so the
+ * transport and the owning task store agree on when two commands are the same.
+ */
+export function controlFingerprint(command: SubagentTaskControlCommand): string {
+  if (command.action === 'cancel') {
+    return 'cancel';
+  }
+  if (command.action === 'cancel_message') {
+    return `cancel_message\u0000${command.controlId}`;
+  }
+  return `${command.action}\u0000${command.message}`;
+}
+
 /** True once a claim has consumed the task's one-shot terminal result. */
 function consumesResult(result: SubagentTaskClaim): boolean {
   return (
@@ -539,13 +548,8 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
   };
 }
 
-function createReplayCache(
-  maxEntries: number,
-  maxBytes: number,
-  evictable: boolean,
-  expires: boolean,
-): ReplayCache {
-  return { entries: new Map(), bytes: 0, maxEntries, maxBytes, evictable, expires };
+function createReplayCache(maxEntries: number, maxBytes: number): ReplayCache {
+  return { entries: new Map(), bytes: 0, maxEntries, maxBytes };
 }
 
 function parseAck(value: unknown): RoutedAck | undefined {
@@ -600,15 +604,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private readonly claimReplays = createReplayCache(
     MAX_CLAIM_REPLAY_ENTRIES,
     MAX_CLAIM_REPLAY_BYTES,
-    false,
-    false,
   );
 
   private readonly controlReplays = createReplayCache(
     MAX_CONTROL_REPLAY_ENTRIES,
     MAX_CONTROL_REPLAY_BYTES,
-    true,
-    true,
   );
 
   private readonly ownedTasks = new Map<string, OwnedTaskRegistration>();
@@ -686,10 +686,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       await this.removeRegistrations(scopeId, [taskId]);
       return undefined;
     }
-    if (consumesResult(result) && !(await this.acknowledgeClaim(ownerId, scopeId, taskId))) {
-      /** Delivery is not complete until the owner can release the result. It still
-       * holds it, so report the retryable path and let a later poll collect it. */
-      throw new SubagentTaskOwnerUnavailableError();
+    if (consumesResult(result)) {
+      /** Frees the owner's retained copy immediately. An acknowledgement that cannot
+       * be confirmed only leaves that copy to expire, so the caller still keeps the
+       * result it is holding rather than trading it for a retry. */
+      await this.acknowledgeClaim(ownerId, scopeId, taskId);
     }
     return result;
   }
@@ -884,7 +885,14 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private async handleRequest(request: RoutedRequest): Promise<void> {
     const replay = this.replayFor(request);
     const cached = replay?.cache.entries.get(replay.key);
-    if (cached != null && (cached.expiresAt == null || cached.expiresAt > Date.now())) {
+    /** A retransmission replays; the same id carrying different content is a caller
+     * error, so it reaches the owner, which refuses it, rather than being answered
+     * from the earlier command's response. */
+    if (
+      cached != null &&
+      cached.expiresAt > Date.now() &&
+      cached.fingerprint === replay?.fingerprint
+    ) {
       await this.publish(
         this.channel(request.requesterId),
         successResponse(request.requestId, cached.value),
@@ -893,13 +901,6 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
     const handler = this.handler;
     if (handler == null) {
-      return;
-    }
-    /** Consuming a one-shot result this owner cannot retain would lose it if the
-     * response is dropped, so refuse instead and leave it on the task. */
-    if (request.operation === 'claim' && !this.canRetainClaim()) {
-      logger.warn('[subagentTaskRouting] Refused a routed claim; replay retention is full');
-      await this.publish(this.channel(request.requesterId), failureResponse(request.requestId));
       return;
     }
     let serialized: string;
@@ -933,7 +934,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       /** Retaining the result rather than the envelope lets a later caller retry,
        * which carries its own correlation id, recover a response it never received. */
       if (replay != null && replayable) {
-        this.retainReplay(replay.cache, replay.key, serializedResult);
+        this.retainReplay(replay.cache, replay.key, serializedResult, replay.fingerprint);
       }
       serialized = successResponse(request.requestId, serializedResult);
     } catch (error) {
@@ -946,11 +947,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   /**
    * Locates a destructive operation's replay slot. A claim consumes the one-shot
    * result, so it is keyed by operation—stable across callers and replicas, so a
-   * later poll still resolves to the response the owner produced—and retained apart
-   * from control replays, which cannot then evict it. Lists are idempotent and
-   * recomputable, so their large bodies are never retained.
+   * later poll still resolves to the response the owner produced. Lists are
+   * idempotent and recomputable, so their large bodies are never retained.
    */
-  private replayFor(request: RoutedRequest): { cache: ReplayCache; key: string } | undefined {
+  private replayFor(
+    request: RoutedRequest,
+  ): { cache: ReplayCache; key: string; fingerprint?: string } | undefined {
     if (request.operation === 'list') {
       return undefined;
     }
@@ -968,6 +970,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     return {
       cache: this.controlReplays,
       key: `control\u0000${shortHash(request.scopeId)}\u0000${request.taskId}\u0000${request.invocationId}`,
+      fingerprint: controlFingerprint(request.command),
     };
   }
 
@@ -976,9 +979,8 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   /**
-   * Releases a consumed result once a caller confirms holding it. Until that
-   * acknowledgement the owner keeps it as task-owned state, so a lost response never
-   * destroys the only copy; ordinary cleanup applies only after it is handed over.
+   * Releases a retained result once a caller confirms holding it, so a delivered
+   * result frees its slot immediately instead of waiting out the replay window.
    */
   private releaseClaimReplay(scopeId: string, taskId: string): void {
     const key = this.claimReplayKey(scopeId, taskId);
@@ -991,15 +993,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   /**
-   * Confirms the owner may release a consumed result. Delivery to zero subscribers is
-   * not an acknowledgement, so this retries inside the ordinary request window and
-   * reports whether the owner actually received it.
+   * Tells the owner it may release a delivered result. Delivery to zero subscribers is
+   * not an acknowledgement, so this retries inside the ordinary request window.
    */
-  private async acknowledgeClaim(
-    ownerId: string,
-    scopeId: string,
-    taskId: string,
-  ): Promise<boolean> {
+  private async acknowledgeClaim(ownerId: string, scopeId: string, taskId: string): Promise<void> {
     const ack: RoutedAck = { version: PROTOCOL_VERSION, kind: 'ack', scopeId, taskId };
     const serialized = JSON.stringify(ack);
     const destination = this.channel(ownerId);
@@ -1007,13 +1004,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     for (;;) {
       try {
         if ((await this.publish(destination, serialized)) > 0) {
-          return true;
+          return;
         }
       } catch (error) {
         logger.warn('[subagentTaskRouting] Failed to acknowledge a claimed result', error);
       }
       if (Date.now() + this.retryDelayMs >= deadline) {
-        return false;
+        return;
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, this.retryDelayMs);
@@ -1099,19 +1096,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     });
   }
 
-  /** True while a worst-case consumed result can be retained without displacing one. */
-  private canRetainClaim(): boolean {
-    this.pruneExpiredReplays(this.claimReplays);
-    return (
-      this.claimReplays.entries.size < this.claimReplays.maxEntries &&
-      this.claimReplays.bytes + MAX_CLAIM_REPLAY_ENTRY_BYTES <= this.claimReplays.maxBytes
-    );
-  }
-
   private pruneExpiredReplays(cache: ReplayCache): void {
-    if (!cache.expires) {
-      return;
-    }
     const now = Date.now();
     for (const [id, cached] of cache.entries) {
       if (cached.expiresAt != null && cached.expiresAt <= now) {
@@ -1121,33 +1106,26 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
   }
 
-  private retainReplay(cache: ReplayCache, key: string, value: string): void {
+  private retainReplay(cache: ReplayCache, key: string, value: string, fingerprint?: string): void {
     const bytes = Buffer.byteLength(value, 'utf8');
     if (bytes > cache.maxBytes) {
       return;
     }
     this.pruneExpiredReplays(cache);
-    const overflows = (): boolean =>
-      cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes;
-    if (!cache.evictable) {
-      if (overflows()) {
-        return;
+    while (cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes) {
+      const oldest = cache.entries.keys().next().value as string | undefined;
+      if (oldest == null) {
+        break;
       }
-    } else {
-      while (overflows()) {
-        const oldest = cache.entries.keys().next().value as string | undefined;
-        if (oldest == null) {
-          break;
-        }
-        const evicted = cache.entries.get(oldest);
-        cache.entries.delete(oldest);
-        cache.bytes -= evicted?.bytes ?? 0;
-      }
+      const evicted = cache.entries.get(oldest);
+      cache.entries.delete(oldest);
+      cache.bytes -= evicted?.bytes ?? 0;
     }
     cache.entries.set(key, {
       value,
       bytes,
-      ...(cache.expires ? { expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS } : {}),
+      expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS,
+      ...(fingerprint == null ? {} : { fingerprint }),
     });
     cache.bytes += bytes;
   }

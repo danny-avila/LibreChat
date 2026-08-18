@@ -31,6 +31,7 @@ import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { createConcurrencyLimiter } from '~/utils/promise';
+import { controlFingerprint } from './subagentTaskRouting';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
@@ -38,6 +39,8 @@ const DEFAULT_MAX_THREAD_DEPTH = 1;
 const DEFAULT_LEASE_TTL_MS = 30_000;
 const DEFAULT_LEASE_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_DRAIN_TIMEOUT_MS = 45_000;
+/** Keeps the admission fence alive across the deletion that follows the drain. */
+const OWNER_FENCE_GRACE_MS = 5 * 60_000;
 const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 /** Matches the deletion drain batch so cancellation cannot burst Redis. */
 const DELETION_CANCEL_CONCURRENCY = 32;
@@ -64,6 +67,7 @@ class SubagentThreadDeletedError extends SubagentThreadPublicError {}
 type SubagentThreadMethods = Pick<
   AllMethods,
   | 'acquireSubagentThreadLease'
+  | 'claimSubagentTaskResult'
   | 'countActiveSubagentThreadLeases'
   | 'deleteConvos'
   | 'deleteMessages'
@@ -122,6 +126,8 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   ownerDrainPollMs?: number;
   taskRoutingTtlMs?: number;
   isOwnerActive?: (userId: string) => Promise<boolean>;
+  fenceOwnerAdmission?: (userId: string, fencedUntil: Date) => Promise<void>;
+  releaseOwnerAdmission?: (userId: string) => Promise<void>;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -310,6 +316,10 @@ function publicFailureDetail(error: unknown): string {
     : 'The child run could not be completed.';
 }
 
+function drainKey(parentConversationId: string, taskId: string): string {
+  return `${parentConversationId}\u0000${taskId}`;
+}
+
 function safeErrorMessage(error: unknown): string {
   return `Subagent task failed: ${publicFailureDetail(error).slice(0, 2_000)}`;
 }
@@ -331,6 +341,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly ownerDrainPollMs: number;
   private readonly taskRoutingTtlMs: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
+  private readonly fenceOwnerAdmission?: (userId: string, fencedUntil: Date) => Promise<void>;
+  private readonly releaseOwnerAdmission?: (userId: string) => Promise<void>;
   private taskControlTransport?: SubagentTaskControlTransport;
 
   constructor(
@@ -354,6 +366,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.ownerDrainPollMs = positiveInteger(options.ownerDrainPollMs, DEFAULT_OWNER_DRAIN_POLL_MS);
     this.taskRoutingTtlMs = positiveInteger(options.taskRoutingTtlMs, DEFAULT_TASK_ROUTING_TTL_MS);
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
+    this.fenceOwnerAdmission = options.fenceOwnerAdmission;
+    this.releaseOwnerAdmission = options.releaseOwnerAdmission;
   }
 
   /** Enables optional cross-replica lookup after the host's Redis service is ready. */
@@ -554,13 +568,82 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return started;
   }
 
-  /** Claims locally when possible, otherwise asks the registered owning replica. */
-  async claimTask(scopeId: string, taskId: string): Promise<SubagentTaskClaim> {
+  /**
+   * Claims locally when possible, otherwise asks the registered owning replica.
+   *
+   * A child's terminal result is durable in its own thread, so collection is recorded
+   * there against the polling invocation rather than kept alive in the owner's memory.
+   * The invocation that lost a response re-acquires its own result on the next poll;
+   * a different invocation is told the result was already collected. Owner-side
+   * retention stays a fast path, free to expire, instead of the only copy.
+   */
+  async claimTask(
+    scopeId: string,
+    taskId: string,
+    invocationId?: string,
+  ): Promise<SubagentTaskClaim> {
     const local = super.claim(scopeId, taskId);
-    if (local.status !== 'not_found') {
-      return local;
+    const claim =
+      local.status !== 'not_found'
+        ? local
+        : ((await this.taskControlTransport?.claim(scopeId, taskId)) ?? local);
+    if (invocationId == null || claim.status === 'not_found') {
+      return claim;
     }
-    return (await this.taskControlTransport?.claim(scopeId, taskId)) ?? local;
+    const threadId = claim.task.threadId;
+    if (threadId == null || threadId === '') {
+      return claim;
+    }
+    const scope = parseScope(scopeId);
+    if (claim.status === 'claimed') {
+      return (await this.recoverResultClaim(scope, threadId, claim, invocationId)) ?? claim;
+    }
+    if (claim.status !== 'running') {
+      await this.methods
+        .claimSubagentTaskResult({
+          userId: scope.userId,
+          conversationId: threadId,
+          taskId: claim.task.taskId,
+          claimId: invocationId,
+        })
+        .catch((error) => {
+          logger.warn('[subagentThreads] Failed to record a collected child result', error);
+        });
+    }
+    return claim;
+  }
+
+  /** Returns a terminal result this invocation already consumed but never received. */
+  private async recoverResultClaim(
+    scope: SubagentThreadScope,
+    threadId: string,
+    claim: Extract<SubagentTaskClaim, { status: 'claimed' }>,
+    invocationId: string,
+  ): Promise<SubagentTaskClaim | undefined> {
+    let recovered: Awaited<ReturnType<MessageMethods['claimSubagentTaskResult']>>;
+    try {
+      recovered = await this.methods.claimSubagentTaskResult({
+        userId: scope.userId,
+        conversationId: threadId,
+        taskId: claim.task.taskId,
+        claimId: invocationId,
+      });
+    } catch (error) {
+      logger.warn('[subagentThreads] Failed to recover a collected child result', error);
+      return undefined;
+    }
+    if (recovered.status !== 'acquired') {
+      return undefined;
+    }
+    const status = recovered.message.subagentTask?.status;
+    const content = recovered.message.text ?? '';
+    if (status === 'completed') {
+      return { status: 'completed', task: claim.task, result: content };
+    }
+    if (status === 'error' || status === 'cancelled') {
+      return { status, task: claim.task, error: content };
+    }
+    return undefined;
   }
 
   /**
@@ -597,7 +680,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     invocationId: string,
   ): SubagentTaskControlResult {
     const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
-    const fingerprint = JSON.stringify(command);
+    const fingerprint = controlFingerprint(command);
     const applied = this.controlInvocations.get(key);
     if (applied != null) {
       /** One invocation is one command; reusing its id for different content is a
@@ -830,10 +913,44 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
   }
 
-  /** Cancels local work and waits for every replica's durable lease to drain. */
+  /**
+   * Deletes an owner's conversations behind a durable admission fence. Draining alone
+   * cannot close the race: a child admitted on another replica after the drain read
+   * its leases would begin provider work against a parent that is about to disappear.
+   * Fencing first inverts that — the fence is written before any lease is read, and a
+   * child validates the fence after its own lease is written, so one of the two always
+   * observes the other. The fence expires by itself, so a process lost mid-deletion
+   * cannot leave the account unable to run subagents.
+   */
+  async withOwnerDeletionFence<T>(
+    userId: string,
+    tenantId: string | undefined,
+    deletion: () => Promise<T>,
+  ): Promise<T> {
+    const fencedUntil = new Date(Date.now() + this.ownerDrainTimeoutMs + OWNER_FENCE_GRACE_MS);
+    await this.fenceOwnerAdmission?.(userId, fencedUntil);
+    try {
+      await this.cancelAndDrainForOwner(userId, tenantId);
+      return await deletion();
+    } finally {
+      await this.releaseOwnerAdmission?.(userId).catch((error) => {
+        logger.warn('[subagentThreads] Failed to release the owner admission fence', error);
+      });
+    }
+  }
+
+  /**
+   * Cancels local work and waits for every replica's durable lease to drain. Each task
+   * is cancelled under one invocation held for the whole drain and only while its
+   * owner has not answered: a fresh invocation per poll would retain a replay entry on
+   * the owner for every pass, and a task already reported cancelled needs no second
+   * command, only its lease to disappear.
+   */
   async cancelAndDrainForOwner(userId: string, tenantId?: string): Promise<void> {
     this.cancelForOwner(userId, tenantId);
     const deadline = Date.now() + this.ownerDrainTimeoutMs;
+    const invocations = new Map<string, string>();
+    const answered = new Set<string>();
     while (true) {
       const activeLeases = await this.methods.listActiveSubagentThreadLeases({
         user: userId,
@@ -846,19 +963,48 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       if (Date.now() >= deadline) {
         throw new Error('Timed out draining detached subagent tasks for account deletion.');
       }
-      for (let index = 0; index < activeLeases.length; index += 32) {
+      const unanswered = activeLeases.filter(
+        ({ parentConversationId, taskId }) => !answered.has(drainKey(parentConversationId, taskId)),
+      );
+      for (let index = 0; index < unanswered.length; index += DELETION_CANCEL_CONCURRENCY) {
         await Promise.all(
-          activeLeases.slice(index, index + 32).map(({ parentConversationId, taskId }) => {
-            const scopeId = serializeScope({
-              userId,
-              parentConversationId,
-              ...(tenantId == null ? {} : { tenantId }),
-            });
-            return this.controlTask(scopeId, taskId, { action: 'cancel' });
-          }),
+          unanswered
+            .slice(index, index + DELETION_CANCEL_CONCURRENCY)
+            .map(({ parentConversationId, taskId }) =>
+              this.cancelDrainedTask(
+                { userId, parentConversationId, taskId, tenantId },
+                invocations,
+                answered,
+              ),
+            ),
         );
       }
       await new Promise<void>((resolve) => setTimeout(resolve, this.ownerDrainPollMs));
+    }
+  }
+
+  /** Sends one drained task's cancellation, retrying only unconfirmed deliveries. */
+  private async cancelDrainedTask(
+    target: { userId: string; parentConversationId: string; taskId: string; tenantId?: string },
+    invocations: Map<string, string>,
+    answered: Set<string>,
+  ): Promise<void> {
+    const { userId, parentConversationId, taskId, tenantId } = target;
+    const key = drainKey(parentConversationId, taskId);
+    const invocationId = invocations.get(key) ?? randomUUID();
+    invocations.set(key, invocationId);
+    const scopeId = serializeScope({
+      userId,
+      parentConversationId,
+      ...(tenantId == null ? {} : { tenantId }),
+    });
+    try {
+      const result = await this.controlTask(scopeId, taskId, { action: 'cancel' }, invocationId);
+      if (result.status !== 'invalid') {
+        answered.add(key);
+      }
+    } catch (error) {
+      logger.warn('[subagentThreads] Retrying an unconfirmed child cancellation', error);
     }
   }
 
@@ -1530,7 +1676,10 @@ export function createSubagentThreadTaskStore(
     | 'renewSubagentThreadLease'
     | 'saveConvo'
   > &
-    Pick<MessageMethods, 'deleteMessages' | 'getMessages' | 'saveMessage'>,
+    Pick<
+      MessageMethods,
+      'claimSubagentTaskResult' | 'deleteMessages' | 'getMessages' | 'saveMessage'
+    >,
   options?: SubagentThreadTaskStoreOptions,
 ): SubagentThreadTaskStore {
   return new SubagentThreadTaskStore(methods, options);

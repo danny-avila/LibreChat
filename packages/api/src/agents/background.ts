@@ -1128,10 +1128,11 @@ function buildSubagentControlCommand(
 }
 
 /**
- * One tool call is one control invocation. A provider tool-call id such as `call_0`
- * repeats across runs and agents, so the identity also carries the run and executing
- * agent; replaying that same call stays idempotent while a later run's identical id is
- * a new command. Hashing keeps every derived identity inside the routed bound.
+ * One tool call is one invocation, of a control or of the poll that collects a result.
+ * A provider tool-call id such as `call_0` repeats across runs and agents, so the
+ * identity also carries the run and executing agent; replaying that same call stays
+ * idempotent while a later run's identical id is a new invocation. Hashing keeps every
+ * derived identity inside the routed bound.
  */
 function controlInvocationId(params: {
   toolCallId?: string;
@@ -1150,7 +1151,7 @@ function controlInvocationId(params: {
 
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
 interface RoutedSubagentTaskStore {
-  claimTask(scopeId: string, taskId: string): Promise<SubagentTaskClaim>;
+  claimTask(scopeId: string, taskId: string, invocationId: string): Promise<SubagentTaskClaim>;
   controlTask(
     scopeId: string,
     taskId: string,
@@ -1214,7 +1215,7 @@ export async function runCheckBackgroundTask(params: {
           const claim =
             routedStore == null
               ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
-              : await routedStore.claimTask(subagentTasks.scopeId, taskId);
+              : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
           const claimed = serializeSubagentClaim(claim);
           if (claimed != null) {
             return JSON.stringify(claimed);

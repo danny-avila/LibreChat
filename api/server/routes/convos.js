@@ -201,25 +201,18 @@ router.delete('/', configMiddleware, async (req, res) => {
 
 router.delete('/all', configMiddleware, async (req, res) => {
   try {
-    await subagentThreadTaskStore.cancelAndDrainForOwner(
-      req.user.id,
+    const tenantId =
       typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
         ? req.user.tenantId
-        : undefined,
+        : undefined;
+    /** Fences new child admission for this owner, drains the live ones, and deletes
+     * inside that fence: a child admitted on another replica mid-deletion would
+     * otherwise keep running against conversations that no longer exist. */
+    const dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(
+      req.user.id,
+      tenantId,
+      () => db.deleteConvos(req.user.id, {}),
     );
-    const dbResponse = await db.deleteConvos(req.user.id, {});
-    /** No new child can acquire a deleted parent; drain again to catch work
-     * admitted in the narrow gap after the pre-delete drain completed. */
-    await subagentThreadTaskStore
-      .cancelAndDrainForOwner(
-        req.user.id,
-        typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
-          ? req.user.tenantId
-          : undefined,
-      )
-      .catch((error) => {
-        logger.warn('Post-delete subagent drain failed', error);
-      });
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

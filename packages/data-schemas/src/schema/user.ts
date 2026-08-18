@@ -135,6 +135,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Date,
       select: false,
     },
+    subagentAdmissionFencedUntil: {
+      type: Date,
+      select: false,
+    },
     personalization: {
       type: {
         memories: {

@@ -129,6 +129,9 @@ export function createUserMethods(
   ) => Promise<'acquired' | 'in_progress' | 'missing'>;
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
+  fenceSubagentAdmission: (userId: string, fencedUntil: Date) => Promise<void>;
+  releaseSubagentAdmission: (userId: string) => Promise<void>;
+  isSubagentOwnerAdmissible: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   updateUserPlugins: (
     userId: string,
@@ -453,6 +456,47 @@ export function createUserMethods(
   }
 
   /**
+   * Closes subagent admission for one owner while a bulk conversation deletion drains
+   * its live children. The fence expires on its own so a process that dies mid-delete
+   * cannot lock the account out of running subagents.
+   */
+  async function fenceSubagentAdmission(userId: string, fencedUntil: Date): Promise<void> {
+    if (!(fencedUntil instanceof Date) || !Number.isFinite(fencedUntil.getTime())) {
+      throw new TypeError('fencedUntil must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId },
+      { $set: { subagentAdmissionFencedUntil: fencedUntil } },
+      { timestamps: false },
+    );
+  }
+
+  async function releaseSubagentAdmission(userId: string): Promise<void> {
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId },
+      { $unset: { subagentAdmissionFencedUntil: 1 } },
+      { timestamps: false },
+    );
+  }
+
+  /** True while this owner may admit a new child: no account deletion, no live fence. */
+  async function isSubagentOwnerAdmissible(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    return (
+      (await User.exists({
+        _id: userId,
+        agentTriggerDeletionStartedAt: { $exists: false },
+        $or: [
+          { subagentAdmissionFencedUntil: { $exists: false } },
+          { subagentAdmissionFencedUntil: { $lte: new Date() } },
+        ],
+      })) != null
+    );
+  }
+
+  /**
    * Generates a JWT token for a given user.
    * @param user - The user object
    * @param expiresIn - Optional expiry time in milliseconds. Default: 15 minutes
@@ -707,6 +751,9 @@ export function createUserMethods(
     recoverStaleAgentTriggerUserDeletion,
     cancelAgentTriggerUserDeletion,
     isAgentTriggerPrincipalActive,
+    fenceSubagentAdmission,
+    releaseSubagentAdmission,
+    isSubagentOwnerAdmissible,
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,

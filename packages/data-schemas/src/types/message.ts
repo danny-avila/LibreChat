@@ -53,6 +53,11 @@ export interface IMessage extends Document {
     attemptKey: string;
     requestFingerprint?: string;
     status: 'running' | 'completed' | 'error' | 'cancelled';
+    /** Records which polling invocation collected this terminal result. */
+    resultClaim?: {
+      claimId: string;
+      claimedAt: Date;
+    };
   };
   contextMeta?: {
     calibrationRatio?: number;

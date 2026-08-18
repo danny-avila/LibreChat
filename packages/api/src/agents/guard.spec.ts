@@ -31,6 +31,7 @@ function makeStore(): SubagentThreadTaskStore {
   const unused = jest.fn();
   return new SubagentThreadTaskStore({
     acquireSubagentThreadLease: unused as AllMethods['acquireSubagentThreadLease'],
+    claimSubagentTaskResult: unused as AllMethods['claimSubagentTaskResult'],
     countActiveSubagentThreadLeases: unused as AllMethods['countActiveSubagentThreadLeases'],
     deleteConvos: unused as AllMethods['deleteConvos'],
     deleteMessages: unused as AllMethods['deleteMessages'],

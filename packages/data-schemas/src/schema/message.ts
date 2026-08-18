@@ -144,6 +144,14 @@ const messageSchema: Schema<IMessage> = new Schema(
           enum: ['running', 'completed', 'error', 'cancelled'],
           required: true,
         },
+        resultClaim: {
+          type: {
+            claimId: { type: String, required: true },
+            claimedAt: { type: Date, required: true },
+          },
+          _id: false,
+          default: undefined,
+        },
       },
       _id: false,
       select: false,
