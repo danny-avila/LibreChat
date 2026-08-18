@@ -91,32 +91,26 @@ export function getServerNameFromTool(toolName: string): string | undefined {
 }
 
 /**
- * Aliases persisted pre-strip `tool_options` keys onto the current instance
- * names IN PLACE, so every downstream reader of `agent.tool_options` (the
- * registry build for defer/programmatic, the background and intent passes)
- * sees the healed keys in BOTH loading modes — wildcard-expanded catalogs
- * rename tools without any `agent.tools` entry to preserve the spelling.
- * Identity-gated: the alias only lands when the definition records the
- * legacy raw name as its own upstream tool, and an explicit entry under the
- * current name always wins.
+ * Aliases persisted `tool_options` keys onto the instance names IN PLACE, so
+ * every downstream reader of `agent.tool_options` (the registry build for
+ * defer/programmatic, the background and intent passes) sees the healed keys
+ * in BOTH loading modes and BOTH spelling directions: options keyed by a
+ * pre-strip spelling follow a renamed (wildcard-expanded) instance, and
+ * options the editor migrated to the CURRENT catalog spelling still reach a
+ * legacy-named instance an unedited `agent.tools` entry retained.
+ * Identity-gated through {@link collectMCPToolAliases}, and an explicit
+ * entry under the instance's own name always wins.
  */
-export function aliasLegacyMCPToolOptions(
-  mcpToolDefs: ToolDefinition[],
+export function aliasMCPToolOptions(
+  aliases: readonly MCPToolAlias[],
   agentToolOptions?: AgentToolOptions,
 ): void {
   if (!agentToolOptions || Object.keys(agentToolOptions).length === 0) {
     return;
   }
-  for (const def of mcpToolDefs) {
-    if (!def.serverToolName || !def.serverName) {
-      continue;
-    }
-    const legacyKey = `${def.serverToolName}${Constants.mcp_delimiter}${normalizeServerName(def.serverName)}`;
-    if (legacyKey === def.name) {
-      continue;
-    }
-    if (agentToolOptions[def.name] == null && agentToolOptions[legacyKey] != null) {
-      agentToolOptions[def.name] = agentToolOptions[legacyKey];
+  for (const { name, aliasName } of aliases) {
+    if (agentToolOptions[name] == null && agentToolOptions[aliasName] != null) {
+      agentToolOptions[name] = agentToolOptions[aliasName];
     }
   }
 }
@@ -374,7 +368,7 @@ export async function buildToolClassification(
 
   const mcpToolDefs = mcpTools.map(extractMCPToolDefinition);
   const mcpToolAliases = collectMCPToolAliases(mcpToolDefs);
-  aliasLegacyMCPToolOptions(mcpToolDefs, agentToolOptions);
+  aliasMCPToolOptions(mcpToolAliases, agentToolOptions);
   const toolRegistry: LCToolRegistry = buildToolRegistry(mcpToolDefs, agentToolOptions);
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */

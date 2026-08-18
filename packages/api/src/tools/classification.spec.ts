@@ -4,7 +4,7 @@ import type { GenericTool } from '@librechat/agents';
 import type { LCToolRegistry } from './classification';
 import {
   buildToolRegistryFromAgentOptions,
-  aliasLegacyMCPToolOptions,
+  aliasMCPToolOptions,
   agentHasProgrammaticTools,
   buildToolClassification,
   collectMCPToolAliases,
@@ -64,7 +64,7 @@ describe('classification.ts', () => {
     });
   });
 
-  describe('aliasLegacyMCPToolOptions', () => {
+  describe('aliasMCPToolOptions', () => {
     it('aliases pre-strip option keys onto the current instance name, identity-gated', () => {
       /** Wildcard-expanded catalogs rename stripped tools without any
        *  `agent.tools` entry to preserve the spelling — persisted defer,
@@ -81,21 +81,44 @@ describe('classification.ts', () => {
         acme_search_mcp_acme: { defer_loading: true },
       };
 
-      aliasLegacyMCPToolOptions(defs, agentToolOptions);
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
 
       expect(agentToolOptions['search_mcp_acme']).toEqual({ defer_loading: true });
       const registry = buildToolRegistryFromAgentOptions(defs, agentToolOptions);
       expect(registry.get('search_mcp_acme')?.defer_loading).toBe(true);
     });
 
-    it('never overrides an explicit entry under the current name', () => {
+    it('aliases current-keyed options back onto a legacy-named instance', () => {
+      /** The editor migrates `tool_options` keys to the current catalog
+       *  spelling, while an unedited `agent.tools` entry keeps the legacy
+       *  instance name — options must follow the reverse direction too. */
+      const defs = [
+        {
+          name: 'acme_search_mcp_acme',
+          serverName: 'acme',
+          serverToolName: 'acme_search',
+          currentToolName: 'search',
+        },
+      ];
+      const agentToolOptions: AgentToolOptions = {
+        search_mcp_acme: { defer_loading: true },
+      };
+
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
+
+      expect(agentToolOptions['acme_search_mcp_acme']).toEqual({ defer_loading: true });
+      const registry = buildToolRegistryFromAgentOptions(defs, agentToolOptions);
+      expect(registry.get('acme_search_mcp_acme')?.defer_loading).toBe(true);
+    });
+
+    it('never overrides an explicit entry under the instance name', () => {
       const defs = [{ name: 'search_mcp_acme', serverName: 'acme', serverToolName: 'acme_search' }];
       const agentToolOptions: AgentToolOptions = {
         search_mcp_acme: { defer_loading: false },
         acme_search_mcp_acme: { defer_loading: true },
       };
 
-      aliasLegacyMCPToolOptions(defs, agentToolOptions);
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
 
       expect(agentToolOptions['search_mcp_acme']).toEqual({ defer_loading: false });
     });
@@ -106,7 +129,7 @@ describe('classification.ts', () => {
         acme_search_mcp_acme: { defer_loading: true },
       };
 
-      aliasLegacyMCPToolOptions(defs, agentToolOptions);
+      aliasMCPToolOptions(collectMCPToolAliases(defs), agentToolOptions);
 
       expect(agentToolOptions['search_mcp_acme']).toBeUndefined();
     });
