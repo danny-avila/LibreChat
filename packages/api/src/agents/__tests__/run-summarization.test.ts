@@ -6,6 +6,7 @@ import {
   MAX_SUBAGENT_RUN_CONFIGS,
 } from 'librechat-data-provider';
 import type { SummarizationConfig, TEndpoint } from 'librechat-data-provider';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { AppConfig } from '@librechat/data-schemas';
 import { createRun } from '~/agents/run';
 
@@ -159,6 +160,8 @@ async function callAndCapture(
     summarizationConfig?: SummarizationConfig;
     initialSummary?: { text: string; tokenCount: number };
     appConfig?: AppConfig;
+    messages?: BaseMessage[];
+    discoveredToolNames?: string[];
   } = {},
 ) {
   const agents = opts.agents ?? [makeAgent()];
@@ -170,6 +173,8 @@ async function callAndCapture(
     summarizationConfig: opts.summarizationConfig,
     initialSummary: opts.initialSummary,
     appConfig: opts.appConfig,
+    messages: opts.messages,
+    discoveredToolNames: opts.discoveredToolNames,
     streaming: true,
     streamUsage: true,
   });
@@ -1129,6 +1134,356 @@ describe('subagentConfigs', () => {
     expect(resolve).toHaveBeenCalledTimes(2);
   });
 
+  it('uses pristine top-level inputs for a graph resolved by a lazy child', async () => {
+    const topLevelMember = makeAgent({
+      id: 'agent_top_level_member',
+      hasDeferredTools: true,
+      toolDefinitions: [{ name: 'tool_search' }],
+      toolRegistry: new Map([['deep_tool', { name: 'deep_tool', defer_loading: true }]]),
+    });
+    const definition = {
+      type: 'late_team',
+      name: 'Late team',
+      description: 'Resolves after the parent input is built',
+      agent_ids: [topLevelMember.id],
+      edges: [],
+      entry_agent_id: topLevelMember.id,
+      result_agent_id: topLevelMember.id,
+    };
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_lazy_parent',
+        subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+        subagentGraphConfigs: [{ definition, memberConfigs: [topLevelMember] }],
+      }),
+    );
+    const parent = makeAgent({
+      id: 'agent_parent',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_lazy_parent'] },
+      lazySubagentConfigs: [
+        {
+          id: 'agent_lazy_parent',
+          name: 'Lazy parent',
+          description: 'Lazy graph owner',
+          configId: 'agent_lazy_parent:1:fingerprint',
+          resolve,
+        },
+      ],
+    });
+
+    const agents = await callAndCapture({
+      agents: [topLevelMember, parent],
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+    const lazyConfig = (agents[1].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const resolvedInputs = await (
+      lazyConfig.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+    const graphConfig = (resolvedInputs.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInput = (graphConfig.agents as Array<Record<string, unknown>>)[0];
+    const memberRegistry = memberInput.toolRegistry as Map<string, { defer_loading?: boolean }>;
+
+    expect(
+      (agents[0].toolRegistry as Map<string, { defer_loading?: boolean }>).get('deep_tool'),
+    ).toMatchObject({ defer_loading: false });
+    expect(memberRegistry.get('deep_tool')).toMatchObject({ defer_loading: true });
+    expect(memberInput.toolDefinitions).toEqual([{ name: 'tool_search' }]);
+  });
+
+  it('builds lazy graph inputs from initialized members instead of capability metadata', async () => {
+    const childId = 'agent_lazy_capability_parent';
+    const memberId = 'agent_lazy_capability_member';
+    const metadata = makeAgent({ id: memberId, codeEnvAvailable: true });
+    const initializedMember = makeAgent({
+      id: memberId,
+      codeEnvAvailable: true,
+      toolDefinitions: [{ name: 'initialized_tool' }],
+      toolRegistry: new Map([['initialized_tool', { name: 'initialized_tool' }]]),
+    });
+    const definition = {
+      type: 'capability_team',
+      name: 'Capability team',
+      description: 'Uses the initialized member runtime',
+      agent_ids: [childId, memberId],
+      edges: [{ from: childId, to: memberId, edgeType: 'direct' as const }],
+      entry_agent_id: childId,
+      result_agent_id: memberId,
+    };
+    const resolve = jest.fn().mockImplementation(async () => {
+      const initializedChild = makeAgent({
+        id: childId,
+        toolDefinitions: [{ name: 'child_tool' }],
+        toolRegistry: new Map([['child_tool', { name: 'child_tool' }]]),
+        subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+      });
+      initializedChild.subagentGraphConfigs = [
+        { definition, memberConfigs: [initializedChild, initializedMember] },
+      ];
+      return initializedChild;
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          subagents: {
+            enabled: true,
+            allowSelf: false,
+            agent_ids: [childId],
+          },
+          lazySubagentConfigs: [
+            {
+              id: childId,
+              name: 'Lazy capability parent',
+              description: 'Resolves its team on selection',
+              configId: `${childId}:1:fingerprint`,
+              subagentGraphMemberMetadata: [metadata],
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const lazyConfig = (agents[0].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const resolvedInputs = await (
+      lazyConfig.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+    const graphConfig = (resolvedInputs.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInputs = graphConfig.agents as Array<Record<string, unknown>>;
+
+    expect(memberInputs[0].toolDefinitions).toEqual([{ name: 'child_tool' }]);
+    expect(memberInputs[0].toolRegistry).toEqual(new Map([['child_tool', { name: 'child_tool' }]]));
+    expect(memberInputs[1].toolDefinitions).toEqual([{ name: 'initialized_tool' }]);
+    expect(memberInputs[1].toolRegistry).toEqual(
+      new Map([['initialized_tool', { name: 'initialized_tool' }]]),
+    );
+  });
+
+  it('builds an explicit saved-agent team as one graph subagent config', async () => {
+    const researcher = makeAgent({
+      id: 'agent_researcher',
+      name: 'Researcher',
+      recursion_limit: 30,
+    });
+    const writer = makeAgent({
+      id: 'agent_writer',
+      name: 'Writer',
+      recursion_limit: 24,
+      subagents: { enabled: true, agent_ids: ['agent_nested'] },
+      subagentAgentConfigs: [makeAgent({ id: 'agent_nested' })],
+    });
+    const definition = {
+      type: 'research_team',
+      name: 'Research team',
+      description: 'Researches and writes a final answer',
+      agent_ids: ['agent_researcher', 'agent_writer'],
+      edges: [{ from: 'agent_researcher', to: 'agent_writer', edgeType: 'direct' as const }],
+      entry_agent_id: 'agent_researcher',
+      result_agent_id: 'agent_writer',
+    };
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+          subagentGraphConfigs: [{ definition, memberConfigs: [researcher, writer] }],
+        }),
+      ],
+    });
+
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      kind: 'graph',
+      type: 'research_team',
+      name: 'Research team',
+      description: 'Researches and writes a final answer',
+      edges: definition.edges,
+      entryAgentId: 'agent_researcher',
+      resultAgentId: 'agent_writer',
+      maxTurns: 8,
+    });
+    const memberInputs = configs[0].agents as Array<Record<string, unknown>>;
+    expect(memberInputs.map((member) => member.agentId)).toEqual([
+      'agent_researcher',
+      'agent_writer',
+    ]);
+    expect(memberInputs.every((member) => member.subagentConfigs == null)).toBe(true);
+  });
+
+  it('builds a one-member graph subagent without edges', async () => {
+    const member = makeAgent({ id: 'agent_solo', name: 'Solo' });
+    const definition = {
+      type: 'solo_team',
+      name: 'Solo team',
+      description: 'Runs one isolated graph member',
+      agent_ids: ['agent_solo'],
+      edges: [],
+      entry_agent_id: 'agent_solo',
+      result_agent_id: 'agent_solo',
+    };
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+          subagentGraphConfigs: [{ definition, memberConfigs: [member] }],
+        }),
+      ],
+    });
+
+    expect(agents[0].subagentConfigs).toEqual([
+      expect.objectContaining({
+        kind: 'graph',
+        type: 'solo_team',
+        agents: [expect.objectContaining({ agentId: 'agent_solo' })],
+        edges: [],
+        entryAgentId: 'agent_solo',
+        resultAgentId: 'agent_solo',
+      }),
+    ]);
+  });
+
+  it('normalizes an explicit false excludeResults value before SDK validation', async () => {
+    const researcher = makeAgent({ id: 'agent_researcher' });
+    const writer = makeAgent({ id: 'agent_writer' });
+    const definition = {
+      type: 'default_results_team',
+      name: 'Default results team',
+      description: 'Uses the default edge result behavior',
+      agent_ids: ['agent_researcher', 'agent_writer'],
+      edges: [
+        {
+          from: 'agent_researcher',
+          to: 'agent_writer',
+          edgeType: 'direct' as const,
+          excludeResults: false,
+        },
+      ],
+      entry_agent_id: 'agent_researcher',
+      result_agent_id: 'agent_writer',
+    };
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+          subagentGraphConfigs: [{ definition, memberConfigs: [researcher, writer] }],
+        }),
+      ],
+    });
+
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(config.edges).toEqual([
+      { from: 'agent_researcher', to: 'agent_writer', edgeType: 'direct' },
+    ]);
+  });
+
+  it("adds each graph member's always-apply skills to its isolated context", async () => {
+    const member = makeAgent({
+      id: 'agent_skilled_member',
+      additional_instructions: 'Keep the response concise.',
+      alwaysApplySkillPrimes: [
+        { name: 'member-workflow', body: 'Follow the member-specific workflow.' },
+      ],
+    });
+    const definition = {
+      type: 'skilled_team',
+      name: 'Skilled team',
+      description: 'Runs a member with its own always-apply skill',
+      agent_ids: ['agent_skilled_member'],
+      edges: [],
+      entry_agent_id: 'agent_skilled_member',
+      result_agent_id: 'agent_skilled_member',
+    };
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+          subagentGraphConfigs: [{ definition, memberConfigs: [member] }],
+        }),
+      ],
+    });
+
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    const [memberInput] = config.agents as Array<Record<string, unknown>>;
+    expect(memberInput.additional_instructions).toBe(
+      'Keep the response concise.\n\n' +
+        '# Always-apply skill: member-workflow\nFollow the member-specific workflow.',
+    );
+  });
+
+  it('isolates a parent graph member before discovered tools mutate the parent registry', async () => {
+    const agent = makeAgent({
+      id: 'agent_parent',
+      name: 'Parent',
+      hasDeferredTools: true,
+      toolDefinitions: [{ name: 'tool_search' }],
+      toolRegistry: new Map([['deep_tool', { name: 'deep_tool', defer_loading: true }]]),
+    });
+    const definition = {
+      type: 'self_team',
+      name: 'Self team',
+      description: 'Runs the parent as an isolated graph member',
+      agent_ids: ['agent_parent'],
+      edges: [],
+      entry_agent_id: 'agent_parent',
+      result_agent_id: 'agent_parent',
+    };
+    agent.subagents = { enabled: true, allowSelf: false, graphs: [definition] };
+    agent.subagentGraphConfigs = [{ definition, memberConfigs: [agent] }];
+
+    const agents = await callAndCapture({
+      agents: [agent],
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+
+    const parentRegistry = agents[0].toolRegistry as Map<string, { defer_loading?: boolean }>;
+    const graphConfig = (agents[0].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInputs = graphConfig.agents as Array<Record<string, unknown>>;
+    const memberRegistry = memberInputs[0].toolRegistry as Map<string, { defer_loading?: boolean }>;
+    expect(parentRegistry.get('deep_tool')?.defer_loading).toBe(false);
+    expect(memberRegistry.get('deep_tool')?.defer_loading).toBe(true);
+    expect(memberInputs[0].toolDefinitions).toEqual([{ name: 'tool_search' }]);
+  });
+
+  it('snapshots graph members before an earlier top-level input mutates them', async () => {
+    const earlierAgent = makeAgent({
+      id: 'agent_earlier',
+      name: 'Earlier',
+      hasDeferredTools: true,
+      toolDefinitions: [{ name: 'tool_search' }],
+      toolRegistry: new Map([['deep_tool', { name: 'deep_tool', defer_loading: true }]]),
+    });
+    const definition = {
+      type: 'cross_root_team',
+      name: 'Cross-root team',
+      description: 'Uses an earlier top-level agent as an isolated member',
+      agent_ids: ['agent_earlier'],
+      edges: [],
+      entry_agent_id: 'agent_earlier',
+      result_agent_id: 'agent_earlier',
+    };
+    const laterAgent = makeAgent({
+      id: 'agent_later',
+      name: 'Later',
+      subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+      subagentGraphConfigs: [{ definition, memberConfigs: [earlierAgent] }],
+    });
+
+    const agents = await callAndCapture({
+      agents: [earlierAgent, laterAgent],
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+
+    const earlierRegistry = agents[0].toolRegistry as Map<string, { defer_loading?: boolean }>;
+    const laterGraph = (agents[1].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInputs = laterGraph.agents as Array<Record<string, unknown>>;
+    const memberRegistry = memberInputs[0].toolRegistry as Map<string, { defer_loading?: boolean }>;
+    expect(earlierRegistry.get('deep_tool')?.defer_loading).toBe(false);
+    expect(memberRegistry.get('deep_tool')?.defer_loading).toBe(true);
+    expect(memberInputs[0].toolDefinitions).toEqual([{ name: 'tool_search' }]);
+  });
+
   it('preserves explicit nested subagents across the SDK child graph boundary', async () => {
     const grandchild = makeAgent({ id: 'agent_grandchild', name: 'Grandchild' });
     const child = makeAgent({
@@ -1930,6 +2285,44 @@ describe('toolOutputReferences gating', () => {
     const createMock = Run.create as jest.Mock;
     const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+  });
+
+  it('enables tool output references from a lazy graph member metadata descriptor', async () => {
+    const signal = new AbortController().signal;
+    const graphMember = makeAgent({
+      id: 'agent_lazy_graph_member',
+      codeEnvAvailable: true,
+      statefulCodeSessions: true,
+    });
+    const lazyChild = {
+      ...makeAgent({ id: 'agent_lazy_child', codeEnvAvailable: false }),
+      configId: 'agent_lazy_child:v1',
+      subagentGraphMemberMetadata: [graphMember],
+      resolve: jest.fn(),
+    };
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_lazy_child'] },
+          lazySubagentConfigs: [lazyChild],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+    /**
+     * Stateful routing is intentionally agent-scoped. A lazy graph member must
+     * not promote its execution profile into run-global SDK configuration.
+     */
+    expect(callArgs.toolExecution).toBeUndefined();
+    expect(lazyChild.resolve).not.toHaveBeenCalled();
   });
 
   it('terminates and omits toolOutputReferences for a cyclic agent tree with no codeenv', async () => {

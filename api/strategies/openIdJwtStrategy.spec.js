@@ -10,6 +10,7 @@ const mockAuthUserDocCacheStore = {
 };
 const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
 const mockGetTenantId = jest.fn();
+const mockRunAsSystem = jest.fn((callback) => callback());
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -29,6 +30,7 @@ jest.mock('https-proxy-agent', () => ({
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
   getTenantId: mockGetTenantId,
+  runAsSystem: mockRunAsSystem,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
@@ -48,6 +50,7 @@ jest.mock('@librechat/api', () => ({
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   updateUser: jest.fn(),
+  isAgentTriggerPrincipalActive: jest.fn(() => true),
 }));
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({
@@ -69,7 +72,7 @@ const {
   setCachedAuthUserDoc,
 } = require('@librechat/api');
 const openIdJwtLogin = require('./openIdJwtStrategy');
-const { findUser, updateUser } = require('~/models');
+const { findUser, updateUser, isAgentTriggerPrincipalActive } = require('~/models');
 
 function resetAuthUserDocCacheMocks() {
   mockGetTenantId.mockReturnValue(undefined);
@@ -87,6 +90,8 @@ function resetAuthUserDocCacheMocks() {
 
 beforeEach(() => {
   resetAuthUserDocCacheMocks();
+  mockRunAsSystem.mockClear();
+  isAgentTriggerPrincipalActive.mockResolvedValue(true);
 });
 
 function withEnv(env, callback) {
@@ -449,6 +454,32 @@ describe('openIdJwtStrategy – auth user document cache', () => {
     });
     expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached OpenID user while account deletion is fenced', async () => {
+    mockGetTenantId.mockReturnValue('tenant-a');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'cached-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      tenantId: 'tenant-a',
+    });
+    isAgentTriggerPrincipalActive.mockResolvedValue(false);
+
+    const result = await invokeVerify(req, payload);
+
+    expect(result).toEqual({
+      user: false,
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));
+    expect(isAgentTriggerPrincipalActive).toHaveBeenCalledWith('cached-user');
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
   it('populates the cache after a miss with the fresh user document', async () => {

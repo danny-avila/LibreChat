@@ -26,14 +26,16 @@ jest.mock('~/utils', () => ({
 jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
   __esModule: true,
   default: ({
-    progress,
+    phase,
     inProgressText,
     finishedText,
   }: {
-    progress: number;
+    phase: 'running' | 'completed' | 'cancelled' | 'failed';
     inProgressText: string;
     finishedText: string;
-  }) => <div data-testid="progress-text">{progress < 1 ? inProgressText : finishedText}</div>,
+  }) => (
+    <div data-testid="progress-text">{phase === 'running' ? inProgressText : finishedText}</div>
+  ),
 }));
 
 jest.mock('../CodeWindowHeader', () => ({
@@ -64,14 +66,14 @@ jest.mock('../useLazyHighlight', () => {
 
 jest.mock('../useToolCallState', () => ({
   __esModule: true,
-  default: (initialProgress: number) => ({
+  /** Mirrors the real hook: options object in, a single `phase` out. */
+  default: ({ initialProgress }: { initialProgress: number }) => ({
     showCode: true,
     toggleCode: jest.fn(),
     expandStyle: {},
     expandRef: { current: null },
     progress: initialProgress,
-    cancelled: false,
-    hasError: false,
+    phase: initialProgress < 1 ? 'running' : 'completed',
   }),
 }));
 

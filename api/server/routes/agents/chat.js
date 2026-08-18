@@ -5,6 +5,7 @@ const {
   generateCheckAccess,
   skipAgentCheck,
   applyResumeContext,
+  applyResumeModelParameters,
   GenerationJobManager,
 } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
@@ -56,14 +57,9 @@ const restoreResumeContext = async (req, res, next) => {
       // resume payload omits — without this the continuation runs with defaults. They're
       // scattered top-level fields (folded into model_parameters by buildOptions' rest
       // spread), not part of the RESUME_CONTEXT_KEYS allowlist, so merge them back here.
-      // Authoritative: overwrites any client-supplied values with the captured set.
-      // `model` is excluded — it's replayed via RESUME_CONTEXT_KEYS to the exact value the
-      // resume fingerprint was pinned on, so overwriting it here could trip that check.
-      const resumedModelParameters = resumeContext?.model_parameters;
-      if (resumedModelParameters && typeof resumedModelParameters === 'object') {
-        const { model: _replayedModel, ...replayParams } = resumedModelParameters;
-        Object.assign(req.body, replayParams);
-      }
+      // Generation params are authoritative, but routing, graph identity, and resume-action
+      // fields remain owned by the restored context/request envelope.
+      applyResumeModelParameters(req.body, resumeContext?.model_parameters);
     }
   } catch (err) {
     logger.warn('[agents/chat] Failed to restore resume context', err?.message ?? err);

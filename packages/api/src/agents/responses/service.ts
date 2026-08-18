@@ -34,9 +34,35 @@ import {
   emitReasoningDone,
   emitReasoningContentPartDone,
   emitReasoningItemDone,
-  updateTrackerUsage,
   type StreamHandlerConfig,
 } from './handlers';
+
+interface ResponseUsageAccumulator {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+}
+
+interface ModelUsageMetadata {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_token_details?: {
+    cache_creation?: number;
+    cache_read?: number;
+  };
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+function accumulateResponseUsage(
+  target: ResponseUsageAccumulator,
+  usage: ModelUsageMetadata,
+): void {
+  target.inputTokens += usage.input_tokens ?? 0;
+  target.outputTokens += usage.output_tokens ?? 0;
+  target.cachedTokens +=
+    (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
+}
 
 /* =============================================================================
  * REQUEST VALIDATION
@@ -546,32 +572,13 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
       handle: (_event: string, data: unknown): void => {
         const endData = data as {
           output?: {
-            usage_metadata?: {
-              input_tokens?: number;
-              output_tokens?: number;
-              // OpenAI format
-              input_token_details?: {
-                cache_creation?: number;
-                cache_read?: number;
-              };
-              // Anthropic format
-              cache_creation_input_tokens?: number;
-              cache_read_input_tokens?: number;
-            };
+            usage_metadata?: ModelUsageMetadata;
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
-          // Extract cached tokens from either OpenAI or Anthropic format
-          const cachedTokens =
-            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
-
-          updateTrackerUsage(config.tracker, {
-            promptTokens: usage.input_tokens,
-            completionTokens: usage.output_tokens,
-            cachedTokens,
-          });
+          accumulateResponseUsage(config.tracker.usage, usage);
         }
       },
     },
@@ -857,29 +864,13 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
       handle: (_event: string, data: unknown): void => {
         const endData = data as {
           output?: {
-            usage_metadata?: {
-              input_tokens?: number;
-              output_tokens?: number;
-              // OpenAI format
-              input_token_details?: {
-                cache_creation?: number;
-                cache_read?: number;
-              };
-              // Anthropic format
-              cache_creation_input_tokens?: number;
-              cache_read_input_tokens?: number;
-            };
+            usage_metadata?: ModelUsageMetadata;
           };
         };
 
         const usage = endData?.output?.usage_metadata;
         if (usage) {
-          aggregator.usage.inputTokens = usage.input_tokens ?? 0;
-          aggregator.usage.outputTokens = usage.output_tokens ?? 0;
-
-          // Extract cached tokens from either OpenAI or Anthropic format
-          aggregator.usage.cachedTokens =
-            (usage.input_token_details?.cache_read ?? 0) + (usage.cache_read_input_tokens ?? 0);
+          accumulateResponseUsage(aggregator.usage, usage);
         }
       },
     },

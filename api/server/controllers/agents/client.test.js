@@ -3179,6 +3179,102 @@ describe('AgentClient - titleConvo', () => {
       expect(parallelAgent2.additional_instructions ?? '').not.toContain(memoryContent);
     });
 
+    it('applies scoped context to graph-only members without promoting them', async () => {
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+      const graphMember = {
+        id: 'graph-member',
+        name: 'Graph Member',
+        instructions: 'Graph member instructions',
+        provider: EModelEndpoint.openAI,
+      };
+      mockAgent.subagentGraphConfigs = [
+        {
+          definition: { type: 'review_team' },
+          memberConfigs: [mockAgent, graphMember],
+        },
+      ];
+      client.agentConfigs = new Map();
+      mockBuildAgentScopedContext.mockResolvedValueOnce(
+        new Map([['graph-member', 'Graph member context']]),
+      );
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Hello',
+            isCreatedByUser: true,
+          },
+        ],
+        null,
+        { instructions: 'Base instructions', additional_instructions: null },
+      );
+
+      expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+        expect.objectContaining({ agentIds: ['primary-agent', 'graph-member'] }),
+      );
+      expect(graphMember.additional_instructions).toContain('Graph member context');
+      expect(client.agentConfigs).toEqual(new Map());
+    });
+
+    it('applies scoped context to graph members resolved by a lazy child', async () => {
+      client.useMemory = jest.fn().mockResolvedValue(undefined);
+      const graphMember = {
+        id: 'lazy-graph-member',
+        name: 'Lazy Graph Member',
+        instructions: 'Lazy graph member instructions',
+        provider: EModelEndpoint.openAI,
+      };
+      const resolvedChild = {
+        id: 'lazy-child',
+        name: 'Lazy Child',
+        instructions: 'Lazy child instructions',
+        provider: EModelEndpoint.openAI,
+        subagentGraphConfigs: [
+          {
+            definition: { type: 'lazy_team' },
+            memberConfigs: [graphMember],
+          },
+        ],
+      };
+      const descriptor = {
+        id: 'lazy-child',
+        resolve: jest.fn().mockResolvedValue(resolvedChild),
+      };
+      mockAgent.lazySubagentConfigs = [descriptor];
+      client.agentConfigs = new Map();
+      mockBuildAgentScopedContext.mockResolvedValueOnce(new Map()).mockResolvedValueOnce(
+        new Map([
+          ['lazy-child', 'Lazy child context'],
+          ['lazy-graph-member', 'Lazy graph member context'],
+        ]),
+      );
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Hello',
+            isCreatedByUser: true,
+          },
+        ],
+        null,
+        { instructions: 'Base instructions', additional_instructions: null },
+      );
+      const resolved = await descriptor.resolve({ signal: new AbortController().signal });
+
+      expect(resolved).toBe(resolvedChild);
+      expect(resolvedChild.additional_instructions).toContain('Lazy child context');
+      expect(graphMember.additional_instructions).toContain('Lazy graph member context');
+      expect(mockBuildAgentScopedContext).toHaveBeenLastCalledWith(
+        expect.objectContaining({ agentIds: ['lazy-child', 'lazy-graph-member'] }),
+      );
+    });
+
     it('should pass memory context to parallel agents when automatic memory updates are enabled', async () => {
       const memoryContent = 'User prefers dark mode. User is a software developer.';
       client.useMemory = jest

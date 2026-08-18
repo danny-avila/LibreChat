@@ -12,6 +12,7 @@ import {
   sanitizeResumeModelParameters,
   pickResumeContext,
   applyResumeContext,
+  applyResumeModelParameters,
   exemptAskUserQuestionFromApproval,
 } from './policy';
 
@@ -319,6 +320,7 @@ describe('sanitizeResumeModelParameters', () => {
       authOptions: { credentials: { private_key: 'google-secret' } },
       credentials: { accessKeyId: 'aws-id', secretAccessKey: 'aws-secret' },
       client: { config: { token: { token: 'bedrock-bearer' } } },
+      endpoint: 'aiplatform.eu.rep.googleapis.com',
       endpointHost: 'vpce.internal.example',
       baseURL: 'https://internal-gateway.example',
     });
@@ -472,6 +474,19 @@ describe('captureResumeModelParameters', () => {
     expect(captureResumeModelParameters({ temperature: 0.5 }, undefined)).toEqual({
       temperature: 0.5,
     });
+  });
+
+  test('does not capture a provider transport endpoint for request replay (#14946)', () => {
+    expect(
+      captureResumeModelParameters(
+        { temperature: 0.2 },
+        {
+          model: 'gemini-3.7-flash',
+          temperature: 0.2,
+          endpoint: 'aiplatform.eu.rep.googleapis.com',
+        },
+      ),
+    ).toEqual({ model: 'gemini-3.7-flash', temperature: 0.2 });
   });
 
   test('only replays schema-known generation params; identity fields stay owned elsewhere', () => {
@@ -691,6 +706,52 @@ describe('pickResumeContext / applyResumeContext', () => {
     applyResumeContext(reloadedBody, action.resumeContext);
     expect(reloadedBody.ephemeralAgent).toEqual({ execute_code: true });
     expect(reloadedBody.promptPrefix).toBe('p');
+  });
+});
+
+describe('applyResumeModelParameters', () => {
+  it('replays generation params without replacing routing or resume identity fields (#14946)', () => {
+    const body: Record<string, unknown> = {
+      conversationId: 'conversation-1',
+      generationCreatedAt: 123,
+      actionId: 'action-1',
+      endpoint: 'agents',
+      endpointType: 'google',
+      agent_id: 'agent-1',
+      model: 'gemini-3.7-flash',
+      temperature: 1,
+    };
+
+    applyResumeModelParameters(body, {
+      conversationId: 'provider-conversation',
+      generationCreatedAt: 999,
+      actionId: 'provider-action',
+      endpoint: 'aiplatform.eu.rep.googleapis.com',
+      endpointType: 'custom',
+      agent_id: 'provider-agent',
+      model: 'provider-model',
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+    });
+
+    expect(body).toEqual({
+      conversationId: 'conversation-1',
+      generationCreatedAt: 123,
+      actionId: 'action-1',
+      endpoint: 'agents',
+      endpointType: 'google',
+      agent_id: 'agent-1',
+      model: 'gemini-3.7-flash',
+      temperature: 0.2,
+      maxOutputTokens: 2048,
+    });
+  });
+
+  it('is a no-op for invalid captured parameters', () => {
+    const body: Record<string, unknown> = { endpoint: 'agents' };
+    applyResumeModelParameters(body, undefined);
+    applyResumeModelParameters(body, ['aiplatform.eu.rep.googleapis.com']);
+    expect(body).toEqual({ endpoint: 'agents' });
   });
 });
 

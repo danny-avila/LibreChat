@@ -42,6 +42,11 @@ export function registerShutdownTask(
   tasks.push({ name, fn, phase, priority, registrationOrder: nextRegistrationOrder++ });
 }
 
+/** Whether graceful shutdown has started, for admission paths that must fail closed. */
+export function isShutdownInProgress(): boolean {
+  return isShuttingDown;
+}
+
 /**
  * Wires SIGTERM, SIGINT, SIGQUIT, and SIGHUP to a graceful shutdown
  * sequence: initiate HTTP server close to stop accepting new connections,

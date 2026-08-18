@@ -1284,4 +1284,155 @@ describe('Langfuse feedback scores', () => {
       }),
     );
   });
+
+  it('sends configured headers with score creation', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://langfuse.internal/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+  });
+
+  it('refuses redirects on requests carrying custom headers', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'X-Proxy-Token': 'proxy-token' },
+      }),
+    });
+
+    /** Node drops `Authorization` across a cross-origin redirect but keeps
+     *  arbitrary headers, so following one would hand the gateway credential
+     *  to a host that passed no origin check. */
+    const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(init.redirect).toBe('error');
+  });
+
+  it('keeps default redirect handling when no custom headers are configured', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({}),
+    });
+
+    const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(init.redirect).toBeUndefined();
+  });
+
+  it('withholds configured headers from an unconfigured origin', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'internal-gateway-token' },
+      }),
+    });
+
+    /** Default central export is Langfuse Cloud, which the operator never
+     *  pointed at — a gateway credential must not be disclosed to it. */
+    const [url, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://cloud.langfuse.com/api/public/scores');
+    expect(JSON.stringify(init.headers)).not.toContain('internal-gateway-token');
+  });
+
+  it('sends configured headers with score deletion', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: null,
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      expect.stringContaining('/api/public/scores/'),
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+        }),
+      }),
+    );
+  });
+
+  it.each(['Authorization', 'authorization', 'AUTHORIZATION'])(
+    'never lets a configured %s header displace the Langfuse authorization',
+    async (headerName) => {
+      const { sendFeedbackScore } = await loadFeedback();
+
+      await sendFeedbackScore({
+        traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          headers: { [headerName]: 'Bearer proxy-token' },
+        }),
+      });
+
+      const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      /** A surviving case variant would be *appended* by fetch, sending a
+       *  combined "Bearer proxy-token, Basic ..." value rather than ours. */
+      expect(
+        Object.keys(headers).filter((key) => key.toLowerCase() === 'authorization'),
+      ).toHaveLength(1);
+      expect(Object.values(headers)).toContain(getCentralAuthorization());
+      expect(Object.values(headers)).not.toContain('Bearer proxy-token');
+    },
+  );
+
+  it('sends configured headers with the central project identity lookup', async () => {
+    delete process.env.LANGFUSE_PROJECT_ID;
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ data: [{ id: 'discovered-project' }] }), { status: 200 }),
+    );
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'proxy-client' },
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'https://langfuse.internal/api/public/projects',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'CF-Access-Client-Id': 'proxy-client',
+          Authorization: getCentralAuthorization(),
+        }),
+      }),
+    );
+  });
 });

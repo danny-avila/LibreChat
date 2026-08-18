@@ -475,4 +475,442 @@ describe('buildLangfuseConfig', () => {
       });
     },
   );
+
+  it('sends configured headers with env-credential central export', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: { headers: { 'CF-Access-Client-Id': 'proxy-client' } },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-env',
+      secretKey: 'sk-env',
+      baseUrl: 'https://langfuse.internal',
+      additionalHeaders: { 'CF-Access-Client-Id': 'proxy-client' },
+    });
+  });
+
+  it('sends configured headers with a stored tenant connection', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_FANOUT_TENANT_US_BASE_URL = 'https://us.langfuse.internal';
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: {
+          langfuse: {
+            enabled: true,
+            publicKey: 'pk-stored',
+            secretKey: encryptV3('sk-stored'),
+            destination: 'us',
+            headers: { 'X-Proxy-Token': 'tenant-token' },
+          },
+        } as unknown as AppConfig,
+      }),
+    ).toEqual({
+      deterministicTraceId: true,
+      publicKey: 'pk-stored',
+      secretKey: 'sk-stored',
+      baseUrl: 'https://us.langfuse.internal',
+      additionalHeaders: { 'X-Proxy-Token': 'tenant-token' },
+    });
+    delete process.env.LANGFUSE_FANOUT_TENANT_US_BASE_URL;
+  });
+
+  it('withholds headers from an origin the deployment never configured', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    /** The destination here is the built-in Langfuse Cloud default. A proxy
+     *  credential meant for an internal gateway must not be disclosed to a
+     *  third-party origin the operator never pointed at. */
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          enabled: true,
+          publicKey: 'pk-stored',
+          secretKey: encryptV3('sk-stored'),
+          destination: 'us',
+          headers: { 'X-Proxy-Token': 'internal-gateway-token' },
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(built).not.toHaveProperty('additionalHeaders');
+    expect(JSON.stringify(built)).not.toContain('internal-gateway-token');
+  });
+
+  it('withholds headers from central cloud export while the collector still receives them', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const appConfig = {
+      langfuse: { headers: { 'X-Gateway-Key': 'gateway' } },
+    } as unknown as AppConfig;
+
+    expect(buildLangfuseConfig({ tenantId: 'tenant-1', appConfig })).toMatchObject({
+      baseUrl: 'http://collector:4318',
+      additionalHeaders: { 'X-Gateway-Key': 'gateway' },
+    });
+
+    /** Without fanout the same config exports straight to Langfuse Cloud, which
+     *  must not receive the collector's credential. */
+    delete process.env.LANGFUSE_FANOUT_ENABLED;
+    delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const direct = buildLangfuseConfig({ runId: 'run-1', appConfig });
+    expect(direct).toMatchObject({ baseUrl: 'https://cloud.langfuse.com' });
+    expect(direct).not.toHaveProperty('additionalHeaders');
+  });
+
+  it('sends configured headers to the fanout collector', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        tenantId: 'tenant-1',
+        appConfig: {
+          langfuse: { headers: { 'X-Gateway-Key': 'gateway' } },
+        } as unknown as AppConfig,
+      }),
+    ).toMatchObject({
+      baseUrl: 'http://collector:4318',
+      additionalHeaders: { 'X-Gateway-Key': 'gateway' },
+    });
+  });
+
+  it('interpolates env vars in headers and drops the unresolved', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_PROXY_TOKEN = 'resolved-token';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Missing': '${LANGFUSE_HEADER_NOT_SET}',
+            'X-Blank': '   ',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    expect(built.additionalHeaders).toEqual({ 'X-Proxy-Token': 'resolved-token' });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('collapses case-variant header names to a single spelling', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            authorization: 'Bearer first',
+            AUTHORIZATION: 'Bearer second',
+            'X-Other': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Two spellings surviving would let one slip past the single-key
+     *  displacement in `mergeHeaders` and be appended by fetch. */
+    expect(
+      Object.keys(built.additionalHeaders ?? {}).filter(
+        (key) => key.toLowerCase() === 'authorization',
+      ),
+    ).toHaveLength(1);
+    expect(built.additionalHeaders?.['X-Other']).toBe('kept');
+  });
+
+  it('encodes header values that fetch cannot transmit verbatim', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_TEAM_HEADER = 'Marić';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Latin1': 'José',
+            'X-Extended': 'Marić',
+            'X-FromEnv': '${LANGFUSE_TEAM_HEADER}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Characters above U+00FF throw in the `Headers` constructor, so they must
+     *  be encoded before they reach any request. Latin-1 passes through. */
+    expect(built.additionalHeaders?.['X-Latin1']).toBe('José');
+    expect(built.additionalHeaders?.['X-Extended']).toBe('b64:TWFyacSH');
+    expect(built.additionalHeaders?.['X-FromEnv']).toBe('b64:TWFyacSH');
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
+    delete process.env.LANGFUSE_TEAM_HEADER;
+  });
+
+  it('drops header names that are not valid HTTP tokens', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X Proxy Token': 'spaces',
+            'X-Proxy-Token:': 'colon',
+            '  X-Padded  ': 'trimmed-to-valid',
+            'X-Valid': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** An invalid name throws in the `Headers` constructor, which would take
+     *  down every request rather than just this header. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Padded': 'trimmed-to-valid',
+      'X-Valid': 'kept',
+    });
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
+  });
+
+  it('keeps a resolved credential that itself contains ${...}', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc${def}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Missing': '${LANGFUSE_HEADER_NOT_SET}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** Gateway tokens are arbitrary strings; testing the *resolved* text for
+     *  `${...}` cannot distinguish a failed substitution from a credential
+     *  that merely contains those characters. */
+    expect(built.additionalHeaders).toEqual({ 'X-Proxy-Token': 'abc${def}ghi' });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('does not strip a user placeholder that a resolved credential contains', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc{{LIBRECHAT_USER_ID}}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+            'X-Templated': 'keep{{LIBRECHAT_USER_ID}}me',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** The placeholder in the *configured* value is stripped; an identical span
+     *  that arrives inside the resolved credential is data, not syntax. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Proxy-Token': 'abc{{LIBRECHAT_USER_ID}}ghi',
+      'X-Templated': 'keepme',
+    });
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('does not re-expand a placeholder that a resolved credential contains', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_EMBEDDED_NAME = 'SHOULD-NOT-APPEAR';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc${LANGFUSE_EMBEDDED_NAME}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: { headers: { 'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}' } },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** The embedded name is *set* here, so a second expansion pass would
+     *  rewrite the credential rather than leave it — the earlier test only
+     *  covered an unset name and could not catch that. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Proxy-Token': 'abc${LANGFUSE_EMBEDDED_NAME}ghi',
+    });
+    delete process.env.LANGFUSE_EMBEDDED_NAME;
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
+  it('drops headers referencing infrastructure secrets', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.JWT_SECRET = 'super-secret-jwt';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: { headers: { 'X-Leak': '${JWT_SECRET}' } },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    expect(built).not.toHaveProperty('additionalHeaders');
+    expect(JSON.stringify(built)).not.toContain('super-secret-jwt');
+  });
+
+  it('drops header values carrying bytes illegal in an HTTP header', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Injected': 'token\r\nX-Evil: injected',
+            'X-Nul': 'tok en',
+            'X-Trailing-Newline': 'token\n',
+            'X-Clean': 'token',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** A trailing newline is the common `$(cat secret)` case and is trimmed;
+     *  an embedded CRLF is a request-splitting attempt and is dropped. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Trailing-Newline': 'token',
+      'X-Clean': 'token',
+    });
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
+  });
+
+  it('expands a value built from several env references', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_CLIENT_ID = 'client-id';
+    process.env.LANGFUSE_CLIENT_SECRET = 'client-secret';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Pair': '${LANGFUSE_CLIENT_ID}:${LANGFUSE_CLIENT_SECRET}',
+            'X-Suffixed': 'Bearer ${LANGFUSE_CLIENT_SECRET}',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** `extractEnvVariable`'s anchored branch is greedy, so a value that both
+     *  starts and ends with a reference parses as one variable named
+     *  `LANGFUSE_CLIENT_ID}:${LANGFUSE_CLIENT_SECRET` and is sent raw. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Pair': 'client-id:client-secret',
+      'X-Suffixed': 'Bearer client-secret',
+    });
+    delete process.env.LANGFUSE_CLIENT_ID;
+    delete process.env.LANGFUSE_CLIENT_SECRET;
+  });
+
+  it('drops headers that control request framing', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'Transfer-Encoding': 'chunked',
+            'content-length': '42',
+            Host: 'elsewhere.example',
+            'X-Valid': 'kept',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** One of these on the shared map breaks every request the map is attached
+     *  to, rather than being ignored for that header. */
+    expect(built.additionalHeaders).toEqual({ 'X-Valid': 'kept' });
+  });
+
+  it('omits headers entirely when none are configured', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: { langfuse: { headers: {} } } as unknown as AppConfig,
+      }),
+    ).not.toHaveProperty('additionalHeaders');
+  });
 });

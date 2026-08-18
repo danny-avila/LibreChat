@@ -47,6 +47,54 @@ function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
 }
 
 describe('RedisJobStore', () => {
+  test('marks only the exact provider segment drained', async () => {
+    const evalDrain = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalDrain,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.markProviderExecutionDrained('stream-provider-drain', 123456, 'segment-a'),
+    ).resolves.toBe(true);
+
+    const [script, keyCount, jobKey, createdAt, providerExecutionId] = evalDrain.mock.calls[0];
+    expect(script).toContain('HGET", KEYS[1], "createdAt"');
+    expect(script).toContain('HGET", KEYS[1], "providerExecutionId"');
+    expect(script).toContain('HSET", KEYS[1], "providerDrained", "1"');
+    expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
+      1,
+      'stream:{stream-provider-drain}:job',
+      '123456',
+      'segment-a',
+    ]);
+  });
+
+  test('starts only the exact still-running initial provider segment', async () => {
+    const evalBegin = jest.fn().mockResolvedValue(1);
+    const redis = {
+      isCluster: true,
+      eval: evalBegin,
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(
+      store.beginProviderExecution('stream-provider-begin', 123456, 'segment-a'),
+    ).resolves.toBe(true);
+
+    const [script, keyCount, jobKey, createdAt, providerExecutionId] = evalBegin.mock.calls[0];
+    expect(script).toContain('HGET", KEYS[1], "status") ~= "running"');
+    expect(script).toContain('HGET", KEYS[1], "providerDrained") ~= "1"');
+    expect(script).toContain('HSET", KEYS[1], "providerDrained", "0"');
+    expect([keyCount, jobKey, createdAt, providerExecutionId]).toEqual([
+      1,
+      'stream:{stream-provider-begin}:job',
+      '123456',
+      'segment-a',
+    ]);
+  });
+
   test('guards the atomic status transition with the expected creation epoch', async () => {
     const evalTransition = jest.fn().mockResolvedValue(0);
     const redis = {
@@ -411,7 +459,18 @@ describe('RedisJobStore', () => {
   test('atomically resets predecessor state when creating a replacement', async () => {
     const evalJobCreation = jest
       .fn()
-      .mockImplementation((...args: unknown[]) => ['user-1', '', args[Number(args[1]) + 3]]);
+      .mockImplementation((...args: unknown[]) => [
+        'user-1',
+        '',
+        args[Number(args[1]) + 3],
+        '',
+        '1',
+        'running',
+        'conversation-before-replacement',
+        '1',
+        'provider-before-replacement',
+        '0',
+      ]);
     const redis = {
       isCluster: true,
       eval: evalJobCreation,
@@ -423,7 +482,16 @@ describe('RedisJobStore', () => {
     const store = new RedisJobStore(redis);
     store.setCollectedUsage('stream-replacement', [{ input_tokens: 10 }]);
 
-    await store.createJob('stream-replacement', 'user-1');
+    const replacement = await store.createJob('stream-replacement', 'user-1');
+
+    expect(replacement.replacedJob).toMatchObject({
+      createdAt: 1,
+      status: 'running',
+      conversationId: 'conversation-before-replacement',
+      providerAbortReady: true,
+      providerExecutionId: 'provider-before-replacement',
+      providerDrained: false,
+    });
 
     const [script, keyCount, ...args] = evalJobCreation.mock.calls[0];
     expect(script).toContain(

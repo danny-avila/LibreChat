@@ -91,6 +91,8 @@ const REAPED_JOB_ERROR = 'Generation timed out';
  * digits; this trips only when Redis stalls, bounding buffered batches and
  * queued commands by pacing the producer instead of growing without limit. */
 const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
+const PROVIDER_DRAIN_TIMEOUT_MS = 30_000;
+const PROVIDER_DRAIN_POLL_MS = 50;
 
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
@@ -1563,16 +1565,37 @@ class GenerationJobManagerClass {
       // resumed owner must acknowledge like any other live provider.
       const hadRunningProvider =
         receipt.status === 'running' && receipt.providerAbortReady !== false;
-      if (
-        await this.notifyReplacedGeneration(
-          streamId,
-          receipt.createdAt,
-          receipt.conversationId,
-          fallbackConversationId,
-          job.creationAttemptId,
-          hadRunningProvider,
-        )
-      ) {
+      let delivered = await this.notifyReplacedGeneration(
+        streamId,
+        receipt.createdAt,
+        receipt.conversationId,
+        fallbackConversationId,
+        job.creationAttemptId,
+        hadRunningProvider,
+      );
+      if (delivered && receipt.providerDrained === false) {
+        if (!receipt.providerExecutionId) {
+          logger.error(
+            `[GenerationJobManager] Replacement receipt lacks provider identity: ${streamId}/${receipt.createdAt}`,
+          );
+          delivered = false;
+        } else {
+          try {
+            await this.waitForProviderExecutionDrain(
+              streamId,
+              receipt.createdAt,
+              receipt.providerExecutionId,
+            );
+          } catch (error) {
+            logger.error(
+              `[GenerationJobManager] Replaced provider did not drain: ${streamId}/${receipt.createdAt}`,
+              error,
+            );
+            delivered = false;
+          }
+        }
+      }
+      if (delivered) {
         acknowledged.push(receipt.createdAt);
       } else {
         allReceiptsDelivered = false;
@@ -1844,61 +1867,76 @@ class GenerationJobManagerClass {
    * terminal hash that makes every duplicate retry wait until Redis TTL expiry. */
   private async terminalizeUnexposedGeneration(
     streamId: string,
-    job: Pick<SerializableJobData, 'createdAt' | 'conversationId'>,
+    job: Pick<SerializableJobData, 'createdAt' | 'conversationId' | 'providerExecutionId'>,
     message: string,
   ): Promise<boolean> {
-    const finalEvent: t.FinalEvent = {
-      final: true,
-      reconcile: true,
-      reconcileReason: 'terminal_payload_missing',
-      terminalStatus: 'error',
-      generationCreatedAt: job.createdAt,
-      conversation: { conversationId: job.conversationId ?? streamId },
-    };
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        if (
-          await this.jobStore.transitionStatus(streamId, {
-            from: 'running',
-            to: 'error',
-            patch: {
-              completedAt: Date.now(),
-              error: message,
-              finalEvent: JSON.stringify(finalEvent),
-            },
-            expectCreatedAt: job.createdAt,
-          })
-        ) {
-          return true;
+    try {
+      const finalEvent: t.FinalEvent = {
+        final: true,
+        reconcile: true,
+        reconcileReason: 'terminal_payload_missing',
+        terminalStatus: 'error',
+        generationCreatedAt: job.createdAt,
+        conversation: { conversationId: job.conversationId ?? streamId },
+      };
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          if (
+            await this.jobStore.transitionStatus(streamId, {
+              from: 'running',
+              to: 'error',
+              patch: {
+                completedAt: Date.now(),
+                error: message,
+                finalEvent: JSON.stringify(finalEvent),
+              },
+              expectCreatedAt: job.createdAt,
+            })
+          ) {
+            return true;
+          }
+        } catch (error) {
+          // As with create, the terminal CAS may have committed before the reply
+          // was lost. Probe its exact epoch before retrying.
+          lastError = error;
         }
-      } catch (error) {
-        // As with create, the terminal CAS may have committed before the reply
-        // was lost. Probe its exact epoch before retrying.
-        lastError = error;
+
+        try {
+          const current = await this.jobStore.getJob(streamId);
+          if (
+            current == null ||
+            current.createdAt !== job.createdAt ||
+            (current.status !== 'running' && current.status !== 'requires_action')
+          ) {
+            return true;
+          }
+        } catch (error) {
+          lastError = error;
+        }
       }
 
-      try {
-        const current = await this.jobStore.getJob(streamId);
-        if (
-          current == null ||
-          current.createdAt !== job.createdAt ||
-          (current.status !== 'running' && current.status !== 'requires_action')
-        ) {
-          return true;
-        }
-      } catch (error) {
-        lastError = error;
+      if (lastError != null) {
+        logger.error(
+          `[GenerationJobManager] Failed to terminalize unexposed generation ${streamId}:`,
+          lastError,
+        );
+      }
+      return false;
+    } finally {
+      if (job.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          job.createdAt,
+          job.providerExecutionId,
+        ).catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to mark unexposed provider drained ${streamId}:`,
+            error,
+          );
+        });
       }
     }
-
-    if (lastError != null) {
-      logger.error(
-        `[GenerationJobManager] Failed to terminalize unexposed generation ${streamId}:`,
-        lastError,
-      );
-    }
-    return false;
   }
 
   async createJob(
@@ -1938,7 +1976,12 @@ class GenerationJobManagerClass {
 
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
-    const initialMetadata = sanitizeJobMetadata(options.initialMetadata ?? {});
+    const creationAttemptId = randomUUID();
+    const initialMetadata = {
+      ...sanitizeJobMetadata(options.initialMetadata ?? {}),
+      providerExecutionId: creationAttemptId,
+      providerDrained: true,
+    };
     if (
       (options.recoveredSteerId != null) !== (options.recoveredSteerPayload != null) ||
       (options.recoveredSteerPayload != null &&
@@ -1946,7 +1989,6 @@ class GenerationJobManagerClass {
     ) {
       throw new RecoveredSteerPayloadMismatchError();
     }
-    const creationAttemptId = randomUUID();
     // Capture the active epoch before the store atomically replaces it. A
     // subscriber attached to that predecessor filters events by generation,
     // so replacement must explicitly close/handoff that old attachment.
@@ -1974,6 +2016,18 @@ class GenerationJobManagerClass {
         throw error;
       }
       if (error instanceof JobCreationSupersededError) {
+        if (error.createdJob.providerExecutionId) {
+          await this.markProviderExecutionDrained(
+            streamId,
+            error.createdJob.createdAt,
+            error.createdJob.providerExecutionId,
+          ).catch((drainError) => {
+            logger.error(
+              `[GenerationJobManager] Failed to mark superseded unexposed provider drained ${streamId}:`,
+              drainError,
+            );
+          });
+        }
         try {
           const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
           if (
@@ -2092,6 +2146,13 @@ class GenerationJobManagerClass {
         currentRuntimeBeforeInstall.createdAt > jobData.createdAt) ||
       (ownedCreatedAtBeforeInstall != null && ownedCreatedAtBeforeInstall > jobData.createdAt)
     ) {
+      if (jobData.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          jobData.createdAt,
+          jobData.providerExecutionId,
+        );
+      }
       throw new Error('Generation job was replaced during initialization');
     }
     if (this.shuttingDown) {
@@ -2110,6 +2171,13 @@ class GenerationJobManagerClass {
         patch: { completedAt: Date.now(), error: SHUTDOWN_JOB_ERROR },
         expectCreatedAt: jobData.createdAt,
       });
+      if (jobData.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          jobData.createdAt,
+          jobData.providerExecutionId,
+        );
+      }
       const replacedLocal = this.runtimeState.get(streamId);
       if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
         replacedLocal.abortController.abort();
@@ -2186,6 +2254,13 @@ class GenerationJobManagerClass {
         runtimeImmediatelyBeforeInstall.createdAt > jobData.createdAt) ||
       (ownedImmediatelyBeforeInstall != null && ownedImmediatelyBeforeInstall > jobData.createdAt)
     ) {
+      if (jobData.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          jobData.createdAt,
+          jobData.providerExecutionId,
+        );
+      }
       throw new Error('Generation job was replaced during initialization');
     }
 
@@ -2301,6 +2376,18 @@ class GenerationJobManagerClass {
           finalizeError,
         );
       });
+      if (jobData.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          jobData.createdAt,
+          jobData.providerExecutionId,
+        ).catch((drainError) => {
+          logger.error(
+            `[GenerationJobManager] Failed to mark partially initialized provider drained ${streamId}:`,
+            drainError,
+          );
+        });
+      }
       if (
         this.runtimeState.get(streamId) === runtime &&
         runtime.replacementTransportHold !== true
@@ -2409,6 +2496,8 @@ class GenerationJobManagerClass {
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
+        providerExecutionId: jobData.providerExecutionId,
+        providerDrained: jobData.providerDrained,
         steersClosed: jobData.steersClosed,
         idempotencyClientRequestId: jobData.idempotencyClientRequestId,
         terminalPersistencePending: jobData.terminalPersistencePending,
@@ -3403,6 +3492,7 @@ class GenerationJobManagerClass {
         const terminalJob = await this.jobStore.getJob(streamId);
         if (
           !retainForTerminalReplay &&
+          terminalJob?.providerDrained !== false &&
           (terminalJob?.createdAt !== createdAt || terminalJob.terminalPersistencePending !== true)
         ) {
           // A same-stream replacement created after the claim makes this a safe
@@ -3538,6 +3628,9 @@ class GenerationJobManagerClass {
        * same-stream replacement between authorization and the manager read
        * could be stopped by a stale request intended for its predecessor. */
       expectedCreatedAt?: number;
+      /** Destructive user cleanup must wait until the provider owner has
+       * completed every trailing persistence task, not merely received Stop. */
+      awaitProviderDrain?: boolean;
     },
   ): Promise<AbortResult> {
     const observedRuntime = this.runtimeState.get(streamId);
@@ -3607,6 +3700,9 @@ class GenerationJobManagerClass {
 
     const abortableStatus = jobData.status;
     if (abortableStatus !== 'running' && abortableStatus !== 'requires_action') {
+      if (options?.awaitProviderDrain) {
+        await this.waitForProviderDrainIfRequired(streamId, jobData);
+      }
       this.reconcileInactiveGeneration(streamId, jobData.createdAt, jobData, observedRuntime);
       logger.debug(
         `[GenerationJobManager] Cannot abort terminal job ${streamId}: ${jobData.status}`,
@@ -3706,6 +3802,12 @@ class GenerationJobManagerClass {
       const jobStillActive =
         currentJob?.createdAt === jobData.createdAt &&
         (currentJob.status === 'running' || currentJob.status === 'requires_action');
+      if (options?.awaitProviderDrain) {
+        if (jobStillActive || currentJob?.createdAt !== jobData.createdAt) {
+          throw new Error(`Failed to stop provider execution before user cleanup: ${streamId}`);
+        }
+        await this.waitForProviderDrainIfRequired(streamId, currentJob ?? jobData);
+      }
       return {
         success: false,
         ...(jobStillActive
@@ -3864,7 +3966,13 @@ class GenerationJobManagerClass {
         ...(publication.persistenceFailed && { persistenceFailed: true }),
       };
     } finally {
-      await this.finishTerminalJob(terminalClaim);
+      try {
+        if (options?.awaitProviderDrain) {
+          await this.waitForProviderDrainIfRequired(streamId, jobData);
+        }
+      } finally {
+        await this.finishTerminalJob(terminalClaim);
+      }
     }
   }
 
@@ -6212,6 +6320,107 @@ class GenerationJobManagerClass {
     await this.jobStore.updateJob(streamId, sanitizeJobMetadata(metadata), generationId);
   }
 
+  /** Records that one exact provider segment has completed every trailing write.
+   * The opaque segment id prevents a paused controller from acknowledging a
+   * later HITL resume that reuses the same generation epoch. */
+  async markProviderExecutionDrained(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
+      return false;
+    }
+
+    const [marked, recorded] = await Promise.all([
+      this.jobStore.markProviderExecutionDrained?.(
+        streamId,
+        expectedCreatedAt,
+        providerExecutionId,
+      ) ?? Promise.resolve(false),
+      this.eventTransport.recordProviderDrain?.(streamId, expectedCreatedAt, providerExecutionId) ??
+        Promise.resolve(false),
+    ]);
+    const job = await this.jobStore.getJob(streamId);
+    if (
+      marked &&
+      recorded &&
+      this._cleanupOnComplete &&
+      job?.createdAt === expectedCreatedAt &&
+      job.providerExecutionId === providerExecutionId &&
+      job.providerDrained === true &&
+      job.terminalPersistencePending !== true &&
+      (job.status === 'complete' || job.status === 'aborted')
+    ) {
+      await this.jobStore.deleteJob(streamId, expectedCreatedAt);
+    }
+    return marked;
+  }
+
+  /** Starts the initial provider owner only if account deletion, abort, or a
+   * replacement has not already changed the exact running generation. */
+  async beginProviderExecution(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    if (providerExecutionId.length === 0 || providerExecutionId.length > 128) {
+      return false;
+    }
+    return (
+      this.jobStore.beginProviderExecution?.(streamId, expectedCreatedAt, providerExecutionId) ??
+      Promise.resolve(false)
+    );
+  }
+
+  private async waitForProviderExecutionDrain(
+    streamId: string,
+    expectedCreatedAt: number,
+    providerExecutionId: string,
+  ): Promise<void> {
+    const deadline = Date.now() + PROVIDER_DRAIN_TIMEOUT_MS;
+    for (;;) {
+      if (
+        (await this.eventTransport
+          .hasProviderDrain?.(streamId, expectedCreatedAt, providerExecutionId)
+          .catch(() => false)) === true
+      ) {
+        return;
+      }
+      const job = await this.jobStore.getJob(streamId);
+      if (
+        job?.createdAt === expectedCreatedAt &&
+        job.providerExecutionId === providerExecutionId &&
+        job.providerDrained === true
+      ) {
+        return;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for provider execution to drain: ${streamId}`);
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, PROVIDER_DRAIN_POLL_MS);
+      });
+    }
+  }
+
+  private async waitForProviderDrainIfRequired(
+    streamId: string,
+    job: SerializableJobData,
+  ): Promise<void> {
+    if (!job.providerExecutionId) {
+      if (job.providerDrained !== false) {
+        return;
+      }
+      throw new Error(`Cannot confirm provider execution drain for legacy job: ${streamId}`);
+    }
+    // Never trust the caller's pre-abort `providerDrained` snapshot here. The
+    // provider can win its exact begin CAS after that read but before the
+    // terminal CAS. Re-read the exact segment only after terminal ownership is
+    // committed, when no not-yet-started provider can begin anymore.
+    await this.waitForProviderExecutionDrain(streamId, job.createdAt, job.providerExecutionId);
+  }
+
   /**
    * Set reference to the graph's contentParts array.
    */
@@ -7120,6 +7329,12 @@ class GenerationJobManagerClass {
    */
   async getActiveJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
     return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
+  }
+
+  /** Returns every generation whose provider can still mutate user-owned data,
+   * including a terminal generation whose controller is finishing trailing writes. */
+  async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
+    return this.jobStore.getCleanupBlockingJobIdsByUser(userId, tenantId);
   }
 
   private async finalizeOwnedJobsForShutdown(): Promise<void> {
