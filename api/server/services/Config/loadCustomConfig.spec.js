@@ -234,6 +234,33 @@ describe('loadCustomConfig', () => {
     expect(logger.debug).toHaveBeenCalledWith('Custom config:', mockConfig);
   });
 
+  it('masks literal Langfuse header credentials in the startup log', async () => {
+    const mockConfig = {
+      version: '1.0',
+      cache: true,
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-lf-1',
+        headers: {
+          'CF-Access-Client-Id': 'client-id',
+          'CF-Access-Client-Secret': 'gateway-credential',
+        },
+      },
+    };
+    process.env.CONFIG_PATH = 'validConfig.yaml';
+    loadYaml.mockReturnValueOnce(mockConfig);
+
+    const result = await loadCustomConfig();
+
+    const logged = logger.info.mock.calls.map(([value]) => value).join('\n');
+    const debugged = JSON.stringify(logger.debug.mock.calls);
+    expect(logged).not.toContain('gateway-credential');
+    expect(debugged).not.toContain('gateway-credential');
+    expect(logged).toContain('***');
+    // The masking is for logging only — the live config keeps real values.
+    expect(result.langfuse.headers['CF-Access-Client-Secret']).toBe('gateway-credential');
+  });
+
   describe('parseCustomParams', () => {
     const mockConfig = {
       version: '1.0',

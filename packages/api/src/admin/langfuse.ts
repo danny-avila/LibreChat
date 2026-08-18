@@ -2,7 +2,6 @@ import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import type {
   TCustomConfig,
-  LangfuseConfig,
   TLangfuseConnectionStatus,
   TUpdateLangfuseConnectionRequest,
   TLangfuseConnectionTestErrorCode,
@@ -19,9 +18,11 @@ import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
+import { getLangfuseDestinationId, scopeHeadersToDestination } from '~/langfuse/destinations';
+import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
-import { getLangfuseDestinationId } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
+import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
@@ -56,7 +57,10 @@ function getTenantId(req: ServerRequest): string | undefined {
   return (req.user as { tenantId?: string } | undefined)?.tenantId;
 }
 
-function readStoredLangfuse(config: IConfig | null): LangfuseConfig | undefined {
+/** Reads from the stored override tree, so this is `TCustomConfig`'s
+ *  `DeepPartial` view of the section rather than the standalone
+ *  `LangfuseConfig` — record-valued fields carry optional values here. */
+function readStoredLangfuse(config: IConfig | null): TCustomConfig['langfuse'] {
   const overrides = config?.overrides as Partial<TCustomConfig> | undefined;
   return overrides?.langfuse;
 }
@@ -136,13 +140,15 @@ async function verifyLangfuseCredentials(
   destination: LangfuseTenantDestination,
   publicKey: string,
   secretKey: string,
+  headers?: Record<string, string>,
 ): Promise<LangfuseVerificationResult> {
   try {
     const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
     const signal = AbortSignal.timeout(LANGFUSE_VERIFICATION_TIMEOUT_MS);
     const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
-      headers: { Authorization: `Basic ${auth}` },
+      headers: mergeHeaders(headers, { Authorization: `Basic ${auth}` }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!secretResponse.ok) {
       return {
@@ -181,13 +187,14 @@ async function verifyLangfuseCredentials(
 
     const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
       method: 'POST',
-      headers: {
+      headers: mergeHeaders(headers, {
         Authorization: `Bearer ${publicKey}`,
         'X-Langfuse-Public-Key': publicKey,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ batch: [] }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!publicResponse.ok) {
       return {
@@ -372,6 +379,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
           tenantDestination,
           publicKey,
           secretKey,
+          scopeHeadersToDestination(
+            resolveLangfuseHeaders(req.config?.langfuse?.headers),
+            tenantDestination.baseUrl,
+          ),
         );
         if (!verification.success) {
           return res
@@ -463,7 +474,15 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         return res.status(200).json(failed);
       }
 
-      const result = await verifyLangfuseCredentials(tenantDestination, publicKey, secretKey);
+      const result = await verifyLangfuseCredentials(
+        tenantDestination,
+        publicKey,
+        secretKey,
+        scopeHeadersToDestination(
+          resolveLangfuseHeaders(req.config?.langfuse?.headers),
+          tenantDestination.baseUrl,
+        ),
+      );
       const response: TLangfuseConnectionTestResponse = result.success
         ? { success: true }
         : { success: false, errorCode: result.errorCode };

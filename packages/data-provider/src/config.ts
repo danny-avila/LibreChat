@@ -2040,6 +2040,27 @@ export const langfuseConfigSchema = z.object({
   secretKeyPreview: z.string().optional(),
   /** Routing key for one of the deployment-configured tenant Langfuse destinations. */
   destination: z.string().optional(),
+  /**
+   * Custom request headers sent on every outbound Langfuse request — trace and
+   * media export, feedback scores, and credential verification — for
+   * self-hosted instances behind an authenticating proxy or gateway. Values
+   * support `${ENV_VAR}` interpolation.
+   *
+   * Deployment-level only. Trace export batches spans from every user through
+   * one exporter, so unlike endpoint headers these cannot carry per-user
+   * placeholders. Headers referencing an unset variable, naming an
+   * infrastructure secret, or carrying an invalid HTTP field name are dropped
+   * with a warning rather than sent.
+   *
+   * Sent only when the deployment configures exactly one Langfuse origin, and
+   * only to that origin. The map cannot say which endpoint it authenticates
+   * to, so with several configured origins any choice of recipient would risk
+   * disclosing a gateway credential to the others; a warning is logged instead.
+   * Multi-destination deployments need per-destination headers, which this
+   * schema does not yet express — and note the fanout collector forwards only
+   * `Authorization` upstream regardless.
+   */
+  headers: z.record(z.string()).optional(),
 });
 
 export type LangfuseConfig = z.infer<typeof langfuseConfigSchema>;
