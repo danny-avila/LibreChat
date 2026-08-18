@@ -21,6 +21,9 @@ const MAX_CLAIM_REPLAY_ENTRIES = 2_000;
 const MAX_CLAIM_REPLAY_BYTES = 16 * 1024 * 1024;
 const MAX_CONTROL_REPLAY_ENTRIES = 2_000;
 const MAX_CONTROL_REPLAY_BYTES = 4 * 1024 * 1024;
+/** Headroom for the largest retainable claim: every bounded character of a result
+ * can expand to a six-byte JSON escape, plus its bounded snapshot fields. */
+const MAX_CLAIM_REPLAY_ENTRY_BYTES = 700 * 1024;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
@@ -134,6 +137,8 @@ interface ReplayCache {
   bytes: number;
   maxEntries: number;
   maxBytes: number;
+  /** Consumed results are admitted only when they fit, so none is ever displaced. */
+  evictable: boolean;
 }
 
 interface RoutedTaskList {
@@ -424,6 +429,16 @@ function parseControlCommand(value: unknown): SubagentTaskControlCommand | undef
   return undefined;
 }
 
+function failureResponse(requestId: string): string {
+  const response: RoutedResponse = {
+    version: PROTOCOL_VERSION,
+    kind: 'response',
+    requestId,
+    ok: false,
+  };
+  return JSON.stringify(response);
+}
+
 function successResponse(requestId: string, result: string): string {
   return `{"version":${PROTOCOL_VERSION},"kind":"response","requestId":${JSON.stringify(
     requestId,
@@ -511,8 +526,24 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
   };
 }
 
-function createReplayCache(maxEntries: number, maxBytes: number): ReplayCache {
-  return { entries: new Map(), bytes: 0, maxEntries, maxBytes };
+function createReplayCache(maxEntries: number, maxBytes: number, evictable: boolean): ReplayCache {
+  return { entries: new Map(), bytes: 0, maxEntries, maxBytes, evictable };
+}
+
+/**
+ * Identifies the logical control a caller issued. The transport's own retry reuses
+ * one envelope, but a caller that saw `unavailable` reissues the command under a new
+ * correlation id; keying by the command itself keeps that retry from steering,
+ * queueing, or interrupting the child a second time.
+ */
+function controlIdentity(command: SubagentTaskControlCommand): string {
+  if (command.action === 'cancel') {
+    return 'cancel';
+  }
+  if (command.action === 'cancel_message') {
+    return `cancel_message\u0000${command.controlId}`;
+  }
+  return `${command.action}\u0000${shortHash(command.message)}`;
 }
 
 function parseAck(value: unknown): RoutedAck | undefined {
@@ -567,11 +598,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private readonly claimReplays = createReplayCache(
     MAX_CLAIM_REPLAY_ENTRIES,
     MAX_CLAIM_REPLAY_BYTES,
+    false,
   );
 
   private readonly controlReplays = createReplayCache(
     MAX_CONTROL_REPLAY_ENTRIES,
     MAX_CONTROL_REPLAY_BYTES,
+    true,
   );
 
   private readonly ownedTasks = new Map<string, OwnedTaskRegistration>();
@@ -855,6 +888,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (handler == null) {
       return;
     }
+    /** Consuming a one-shot result this owner cannot retain would lose it if the
+     * response is dropped, so refuse instead and leave it on the task. */
+    if (request.operation === 'claim' && !this.canRetainClaim()) {
+      logger.warn('[subagentTaskRouting] Refused a routed claim; replay retention is full');
+      await this.publish(this.channel(request.requesterId), failureResponse(request.requestId));
+      return;
+    }
     let serialized: string;
     try {
       let result:
@@ -891,13 +931,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       serialized = successResponse(request.requestId, serializedResult);
     } catch (error) {
       logger.error('[subagentTaskRouting] Owner failed to process a routed command', error);
-      const response: RoutedResponse = {
-        version: PROTOCOL_VERSION,
-        kind: 'response',
-        requestId: request.requestId,
-        ok: false,
-      };
-      serialized = JSON.stringify(response);
+      serialized = failureResponse(request.requestId);
     }
     await this.publish(this.channel(request.requesterId), serialized);
   }
@@ -919,7 +953,15 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         key: this.claimReplayKey(request.scopeId, request.taskId),
       };
     }
-    return { cache: this.controlReplays, key: `control\u0000${request.requestId}` };
+    if (request.operation === 'cancel') {
+      return { cache: this.controlReplays, key: `cancel\u0000${request.requestId}` };
+    }
+    return {
+      cache: this.controlReplays,
+      key: `control\u0000${shortHash(request.scopeId)}\u0000${request.taskId}\u0000${controlIdentity(
+        request.command,
+      )}`,
+    };
   }
 
   private claimReplayKey(scopeId: string, taskId: string): string {
@@ -1014,28 +1056,49 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     });
   }
 
-  private retainReplay(cache: ReplayCache, key: string, value: string): void {
+  /** True while a worst-case consumed result can be retained without displacing one. */
+  private canRetainClaim(): boolean {
+    this.pruneExpiredReplays(this.claimReplays);
+    return (
+      this.claimReplays.entries.size < this.claimReplays.maxEntries &&
+      this.claimReplays.bytes + MAX_CLAIM_REPLAY_ENTRY_BYTES <= this.claimReplays.maxBytes
+    );
+  }
+
+  private pruneExpiredReplays(cache: ReplayCache): void {
     const now = Date.now();
-    const bytes = Buffer.byteLength(value, 'utf8');
-    if (bytes > cache.maxBytes) {
-      return;
-    }
     for (const [id, cached] of cache.entries) {
       if (cached.expiresAt <= now) {
         cache.entries.delete(id);
         cache.bytes -= cached.bytes;
       }
     }
-    while (cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes) {
-      const oldest = cache.entries.keys().next().value as string | undefined;
-      if (oldest == null) {
-        break;
-      }
-      const evicted = cache.entries.get(oldest);
-      cache.entries.delete(oldest);
-      cache.bytes -= evicted?.bytes ?? 0;
+  }
+
+  private retainReplay(cache: ReplayCache, key: string, value: string): void {
+    const bytes = Buffer.byteLength(value, 'utf8');
+    if (bytes > cache.maxBytes) {
+      return;
     }
-    cache.entries.set(key, { value, bytes, expiresAt: now + RESPONSE_CACHE_TTL_MS });
+    this.pruneExpiredReplays(cache);
+    const overflows = (): boolean =>
+      cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes;
+    if (!cache.evictable) {
+      if (overflows()) {
+        return;
+      }
+    } else {
+      while (overflows()) {
+        const oldest = cache.entries.keys().next().value as string | undefined;
+        if (oldest == null) {
+          break;
+        }
+        const evicted = cache.entries.get(oldest);
+        cache.entries.delete(oldest);
+        cache.bytes -= evicted?.bytes ?? 0;
+      }
+    }
+    cache.entries.set(key, { value, bytes, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
     cache.bytes += bytes;
   }
 

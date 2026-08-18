@@ -305,7 +305,7 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('bounds unacknowledged claim replays by serialized bytes', async () => {
+  it('refuses a claim it cannot retain instead of consuming the result', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
@@ -318,19 +318,17 @@ describe('RedisSubagentTaskControlTransport', () => {
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
     );
     const result = '\u0000'.repeat(100_000);
-    const handler = taskHandler({
-      claim: (_scopeId: string, taskId: string) => ({
-        status: 'completed' as const,
-        task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
-        result,
-      }),
-    });
-    await owner.bind(handler);
-    await requester.bind(handler);
-    const taskIds = Array.from({ length: 30 }, (_, index) => `task-${index + 1}`);
+    const claim = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'completed' as const,
+      task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+      result,
+    }));
+    await owner.bind(taskHandler({ claim }));
+    await requester.bind(taskHandler());
+    const taskIds = Array.from({ length: 40 }, (_, index) => `task-${index + 1}`);
     await Promise.all(taskIds.map((taskId) => owner.registerTask('scope-1', taskId, 60_000)));
 
-    /** Every response is lost, so no claim is ever acknowledged or released. */
+    /** Every response is lost, so nothing is ever acknowledged or released. */
     bus.dropResponses = taskIds.length * 2;
     for (const taskId of taskIds) {
       await expect(requester.claim('scope-1', taskId)).rejects.toBeInstanceOf(
@@ -341,8 +339,76 @@ describe('RedisSubagentTaskControlTransport', () => {
     const { claimReplays } = owner as unknown as {
       claimReplays: { entries: Map<string, unknown>; bytes: number };
     };
+    const consumed = claim.mock.calls.map(([, taskId]) => taskId);
+    /** Retention filled, so later claims were refused rather than consumed. */
+    expect(consumed.length).toBeLessThan(taskIds.length);
+    /** Every result the owner did consume is still replayable — none was displaced. */
+    expect(claimReplays.entries.size).toBe(consumed.length);
     expect(claimReplays.bytes).toBeLessThanOrEqual(16 * 1024 * 1024);
-    expect(claimReplays.entries.size).toBeLessThan(taskIds.length);
+
+    /** A refused task keeps its result, and becomes claimable once space frees. */
+    const refusedTaskId = taskIds[taskIds.length - 1];
+    expect(consumed).not.toContain(refusedTaskId);
+    bus.dropResponses = 0;
+    await expect(requester.claim('scope-1', consumed[0])).resolves.toMatchObject({
+      status: 'completed',
+    });
+    for (
+      let attempt = 0;
+      attempt < 50 && claimReplays.entries.size >= consumed.length;
+      attempt += 1
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    await expect(requester.claim('scope-1', refusedTaskId)).resolves.toMatchObject({
+      status: 'completed',
+      result,
+    });
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('applies one logical control once across caller retries', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 30, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
+    );
+    const control = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'accepted' as const,
+      task: snapshot({ taskId }),
+      controlId: 'control-1',
+    }));
+    await owner.bind(taskHandler({ control }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    const steer = { action: 'queue' as const, message: 'Check one more source.' };
+
+    /** The command is applied, but both responses are lost. */
+    bus.dropResponses = 2;
+    await expect(requester.control('scope-1', 'task-1', steer)).rejects.toBeInstanceOf(
+      SubagentTaskOwnerUnavailableError,
+    );
+    expect(control).toHaveBeenCalledTimes(1);
+
+    /** The caller reissues the same command under a new correlation id. */
+    await expect(requester.control('scope-1', 'task-1', steer)).resolves.toMatchObject({
+      status: 'accepted',
+      controlId: 'control-1',
+    });
+    expect(control).toHaveBeenCalledTimes(1);
+
+    /** A different message is a different command and still applies. */
+    await expect(
+      requester.control('scope-1', 'task-1', { action: 'queue', message: 'And a second source.' }),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    expect(control).toHaveBeenCalledTimes(2);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
