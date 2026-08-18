@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
+import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
 import balanceSchema from '~/schema/balance';
-import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
 
 /** Mocking crypto for generateToken */
@@ -625,6 +625,85 @@ describe('User Methods - Database Tests', () => {
 
       expect(result.deletedCount).toBe(0);
       expect(result.message).toBe('No user found with that ID.');
+    });
+  });
+
+  describe('agent trigger account-deletion fence', () => {
+    test('blocks trigger admission until the owning deletion attempt releases it', async () => {
+      const user = await User.create({
+        name: 'Trigger Fence',
+        email: 'trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const startedAt = new Date('2026-08-17T12:00:00.000Z');
+
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+      await expect(methods.beginAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe('in_progress');
+      await expect(
+        methods.cancelAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('reports a missing principal without creating a deletion fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, new Date())).resolves.toBe(
+        'missing',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+    });
+
+    test('requires explicit stale-fence recovery and preserves successor ownership', async () => {
+      const user = await User.create({
+        name: 'Stale Trigger Fence',
+        email: 'stale-trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const abandonedAt = new Date('2026-08-17T12:00:00.000Z');
+      const takeoverAt = new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS + 1);
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.beginAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'in_progress',
+      );
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(
+          userId,
+          new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS - 1),
+        ),
+      ).resolves.toBe('in_progress');
+      await expect(methods.recoverStaleAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        false,
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('rejects invalid deletion-fence timestamps', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('startedAt must be a valid Date');
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('recoveredAt must be a valid Date');
     });
   });
 

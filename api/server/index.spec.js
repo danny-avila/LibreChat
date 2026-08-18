@@ -35,6 +35,10 @@ jest.mock('~/config', () => ({
   }),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock(
   '@librechat/api/telemetry',
   () => ({
@@ -163,6 +167,14 @@ describe('Startup readiness wiring', () => {
     expect(readinessGateIndex).toBeGreaterThan(-1);
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
+  });
+
+  it('awaits durable trigger delivery before reporting readiness', () => {
+    const triggerDeliveryIndex = source.indexOf('await initializeAgentTriggerService(');
+    const readyIndex = source.indexOf('serverReady = true;');
+
+    expect(triggerDeliveryIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
 });
 

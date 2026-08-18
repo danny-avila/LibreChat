@@ -3,6 +3,7 @@
 // @ts-nocheck
 const path = require('path');
 const mongoose = require('mongoose');
+const { createModels, createMethods, runAsSystem } = require('@librechat/data-schemas');
 const {
   Key,
   User,
@@ -27,10 +28,22 @@ const {
   Transaction,
   Conversation,
   ConversationTag,
-} = require('@librechat/data-schemas').createModels(mongoose);
+} = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const {
+  GenerationJobManager,
+  createStreamServices,
+  waitForKeyvRedisClient,
+} = require('@librechat/api');
+const getLogStores = require('~/cache/getLogStores');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+
+const TRIGGER_DRAIN_TIMEOUT_MS = 35_000;
+const TRIGGER_DRAIN_POLL_MS = 100;
+const methods = createMethods(mongoose, { getCache: getLogStores });
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function gracefulExit(code = 0) {
   try {
@@ -76,41 +89,157 @@ async function gracefulExit(code = 0) {
 
   const uid = user._id.toString();
 
-  // 5) Build and run deletion tasks
-  const tasks = [
-    Action.deleteMany({ user: uid }),
-    Agent.deleteMany({ author: uid }),
-    AgentApiKey.deleteMany({ user: uid }),
-    Assistant.deleteMany({ user: uid }),
-    Balance.deleteMany({ user: uid }),
-    ConversationTag.deleteMany({ user: uid }),
-    Conversation.deleteMany({ user: uid }),
-    Message.deleteMany({ user: uid }),
-    File.deleteMany({ user: uid }),
-    Key.deleteMany({ userId: uid }),
-    MemoryEntry.deleteMany({ userId: uid }),
-    PluginAuth.deleteMany({ userId: uid }),
-    Prompt.deleteMany({ author: uid }),
-    PromptGroup.deleteMany({ author: uid }),
-    Preset.deleteMany({ user: uid }),
-    Session.deleteMany({ user: uid }),
-    SharedLink.deleteMany({ user: uid }),
-    ToolCall.deleteMany({ user: uid }),
-    Token.deleteMany({ userId: uid }),
-    AclEntry.deleteMany({ principalId: user._id }),
-  ];
-
-  if (deleteTx) {
-    tasks.push(Transaction.deleteMany({ user: uid }));
+  // The CLI can coordinate live generation aborts only through the shared
+  // Redis stream store. Without it, require an explicit offline assertion.
+  let streamServices;
+  try {
+    await waitForKeyvRedisClient();
+    streamServices = createStreamServices();
+  } catch (error) {
+    console.yellow(
+      `Shared Redis generation coordination is unreachable: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    streamServices = createStreamServices({ useRedis: false });
+  }
+  const hasSharedGenerationStore = streamServices.isRedis;
+  let allProcessesStopped = false;
+  if (!hasSharedGenerationStore) {
+    const confirmOffline = await askQuestion(
+      'Shared Redis generation coordination is unavailable. Confirm ALL LibreChat app, worker, and other deletion CLI processes are stopped before continuing. (y/N)',
+    );
+    if (confirmOffline.toLowerCase() !== 'y') {
+      console.yellow('Aborted. Stop every LibreChat process or enable Redis stream coordination.');
+      return gracefulExit(1);
+    }
+    allProcessesStopped = true;
+  } else {
+    GenerationJobManager.configure({ ...streamServices, cleanupOnComplete: false });
+    GenerationJobManager.initialize();
   }
 
-  await Promise.all(tasks);
+  let deletionFence;
+  let userDeleted = false;
 
-  // 6) Remove user from all groups
-  await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
+  try {
+    deletionFence = new Date();
+    let fenceState = await runAsSystem(() =>
+      methods.beginAgentTriggerUserDeletion(uid, deletionFence),
+    );
+    if (fenceState === 'in_progress') {
+      deletionFence = undefined;
+      if (!allProcessesStopped) {
+        const confirmRecovery = await askQuestion(
+          'An account-deletion fence already exists. Confirm ALL LibreChat app, worker, and other deletion CLI processes are stopped to recover it only if stale. (y/N)',
+        );
+        if (confirmRecovery.toLowerCase() !== 'y') {
+          throw new Error('Account deletion is already in progress');
+        }
+        allProcessesStopped = true;
+      }
 
-  // 7) Finally delete the user document itself
-  await User.deleteOne({ _id: uid });
+      const recoveredAt = new Date();
+      fenceState = await runAsSystem(() =>
+        methods.recoverStaleAgentTriggerUserDeletion(uid, recoveredAt),
+      );
+      if (fenceState !== 'acquired') {
+        throw new Error(
+          fenceState === 'missing'
+            ? 'User disappeared before stale-fence recovery'
+            : 'Account deletion is active or its fence is not stale enough to recover',
+        );
+      }
+      deletionFence = recoveredAt;
+    }
+    if (fenceState === 'missing') {
+      deletionFence = undefined;
+    }
+
+    if (deletionFence != null) {
+      await runAsSystem(() =>
+        methods.prepareAgentTriggerUserPurge(uid, deletionFence, user.tenantId),
+      );
+      if (hasSharedGenerationStore) {
+        const deadline = Date.now() + TRIGGER_DRAIN_TIMEOUT_MS;
+        while (
+          (await runAsSystem(() =>
+            methods.countActiveAgentTriggerDeliveriesByUser(uid, new Date()),
+          )) > 0
+        ) {
+          if (Date.now() >= deadline) {
+            throw new Error('Timed out draining active agent trigger deliveries');
+          }
+          await delay(TRIGGER_DRAIN_POLL_MS);
+        }
+      }
+    }
+
+    if (hasSharedGenerationStore) {
+      const cleanupBlockingAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
+        uid,
+        user.tenantId,
+      );
+      await Promise.all(
+        cleanupBlockingAgentRuns.map((streamId) =>
+          GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+        ),
+      );
+    }
+
+    // 5) Build and run deletion tasks
+    const tasks = [
+      Action.deleteMany({ user: uid }),
+      Agent.deleteMany({ author: uid }),
+      AgentApiKey.deleteMany({ user: uid }),
+      Assistant.deleteMany({ user: uid }),
+      Balance.deleteMany({ user: uid }),
+      ConversationTag.deleteMany({ user: uid }),
+      Conversation.deleteMany({ user: uid }),
+      Message.deleteMany({ user: uid }),
+      File.deleteMany({ user: uid }),
+      Key.deleteMany({ userId: uid }),
+      MemoryEntry.deleteMany({ userId: uid }),
+      PluginAuth.deleteMany({ userId: uid }),
+      Prompt.deleteMany({ author: uid }),
+      PromptGroup.deleteMany({ author: uid }),
+      Preset.deleteMany({ user: uid }),
+      Session.deleteMany({ user: uid }),
+      SharedLink.deleteMany({ user: uid }),
+      ToolCall.deleteMany({ user: uid }),
+      Token.deleteMany({ userId: uid }),
+      AclEntry.deleteMany({ principalId: user._id }),
+    ];
+
+    if (deleteTx) {
+      tasks.push(Transaction.deleteMany({ user: uid }));
+    }
+
+    await Promise.all(tasks);
+
+    // 6) Remove user from all groups
+    await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
+
+    // 7) Finally delete the user document itself
+    const deletedUser = await runAsSystem(() => methods.deleteUserById(uid));
+    if (deletedUser.deletedCount !== 1) {
+      throw new Error('User disappeared before account deletion could commit');
+    }
+    userDeleted = true;
+    await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
+  } finally {
+    if (deletionFence != null && !userDeleted) {
+      await runAsSystem(() => methods.cancelAgentTriggerUserPurge(uid, deletionFence)).catch(
+        (error) => console.error('Failed to disarm trigger purge recovery:', error),
+      );
+      await runAsSystem(() => methods.cancelAgentTriggerUserDeletion(uid, deletionFence)).catch(
+        (error) => console.error('Failed to release account-deletion fence:', error),
+      );
+    }
+    if (hasSharedGenerationStore) {
+      await GenerationJobManager.destroy().catch((error) =>
+        console.error('Failed to close generation coordination:', error),
+      );
+    }
+  }
 
   console.green(`✔ Successfully deleted user ${email} and all associated data.`);
   if (!deleteTx) {

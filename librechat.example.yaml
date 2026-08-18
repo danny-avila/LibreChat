@@ -11,6 +11,35 @@ cache: true
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central
 # credentials and optional fanout routing are documented in .env.example.
+#
+# Self-hosted Langfuse behind an authenticating proxy or gateway can be given
+# custom request headers. They are sent on every outbound Langfuse request —
+# trace and media export, feedback scores, and credential verification.
+# Values support ${ENV_VAR} interpolation; a header whose variable is unset is
+# dropped with a warning rather than sent as a literal placeholder.
+#
+# These are deployment-level: trace export batches spans from every user through
+# a single exporter, so unlike endpoints.custom headers they cannot carry
+# per-user placeholders such as {{LIBRECHAT_USER_ID}}.
+#
+# Values are masked in admin config reads and in the startup config log, but
+# prefer ${ENV_VAR} references over literal credentials here regardless.
+#
+# Scope: these are sent only when the deployment configures exactly ONE Langfuse
+# origin (a self-hosted base URL, or a single tenant destination URL), and only
+# to that origin. The map has no way to say which endpoint it authenticates to,
+# so a deployment configuring several origins — e.g. a fanout collector plus a
+# separate central host — gets a warning and no headers, rather than having a
+# gateway credential sent somewhere it was not meant for.
+#
+# Fanout deployments additionally need collector support: the gateway forwards
+# only Authorization upstream, so a tenant Langfuse behind its own proxy is not
+# covered even when the collector receives these.
+#
+# langfuse:
+#   headers:
+#     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
+#     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)

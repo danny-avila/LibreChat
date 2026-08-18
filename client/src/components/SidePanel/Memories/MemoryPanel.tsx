@@ -193,6 +193,7 @@ export default function MemoryPanel() {
             onChange={setPartitionFilter}
             options={partitionOptions}
             className="w-full"
+            triggerClassName="w-full"
             ariaLabel={localize('com_ui_memories_partition_filter')}
             testId="memory-partition-filter"
           />
