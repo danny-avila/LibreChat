@@ -1,5 +1,7 @@
-import type { EnqueueAgentTrigger } from './subagentCompletionWakeup';
+import type { IMessage } from '@librechat/data-schemas';
+import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import type { EnqueueAgentTrigger } from './subagentCompletionWakeup';
 import {
   createAgentTriggerEnvelope,
   getAgentTriggerIdempotencyKey,
@@ -115,8 +117,8 @@ describe('createSubagentCompletionWakeupHandler', () => {
   });
 });
 
-function wakeupEnvelope() {
-  return createAgentTriggerEnvelope({
+function wakeupEnvelope(): AgentContinueTriggerEnvelope {
+  const envelope = createAgentTriggerEnvelope({
     mode: 'continue',
     requestId: 'request-1',
     deliveryId: 'task-1',
@@ -136,9 +138,17 @@ function wakeupEnvelope() {
     },
     input: 'pending',
   });
+  if (envelope.mode !== 'continue') {
+    throw new Error('Expected a continue envelope.');
+  }
+  return envelope;
 }
 
 function resolverMethods() {
+  const subagentTask: IMessage['subagentTask'] = {
+    attemptKey: 'attempt-1',
+    status: 'completed',
+  };
   const terminal = {
     messageId: 'task-1:assistant',
     conversationId: 'thread-1',
@@ -148,7 +158,7 @@ function resolverMethods() {
     isCreatedByUser: false,
     createdAt: new Date(NOW),
     updatedAt: new Date(NOW),
-    subagentTask: { attemptKey: 'attempt-1', status: 'completed' },
+    subagentTask,
   };
   const methods = {
     getConvo: jest.fn(async (_userId: string, conversationId: string) =>

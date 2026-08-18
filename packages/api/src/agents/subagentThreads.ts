@@ -555,8 +555,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 'This child thread is already being continued by another run.',
               );
             }
+            const preparedThread = prepared;
             const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
-              request.run(runtime, prepared.initialMessages),
+              request.run(runtime, preparedThread.initialMessages),
             );
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');

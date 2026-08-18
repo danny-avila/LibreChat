@@ -19,8 +19,8 @@ import type {
   SubagentTaskControlHandler,
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
-import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
   createSubagentThreadTaskStore,

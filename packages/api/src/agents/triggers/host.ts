@@ -459,6 +459,19 @@ function parseStartResult(
   };
 }
 
+function resolveParentMessageId(
+  preparation: AgentTriggerContinuePreparation | undefined,
+  envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
+): string {
+  if (preparation?.status === 'ready') {
+    return preparation.parentMessageId;
+  }
+  if (envelope.mode === 'continue') {
+    return envelope.target.parentMessageId;
+  }
+  return Constants.NO_PARENT;
+}
+
 function startRun(
   envelope: AgentFireTriggerEnvelope,
   context: AgentTriggerDispatchContext,
@@ -489,20 +502,15 @@ async function startRun(
             context.signal,
           )
         : undefined;
-    if (preparation?.status === 'settled') {
+    if (preparation?.status === 'settled' && envelope.mode === 'continue') {
       return {
-        mode,
+        mode: 'continue',
         status: 'settled',
         conversationId: envelope.target.conversationId,
       };
     }
     const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
-    const parentMessageId =
-      preparation?.status === 'ready'
-        ? preparation.parentMessageId
-        : mode === 'continue'
-          ? envelope.target.parentMessageId
-          : Constants.NO_PARENT;
+    const parentMessageId = resolveParentMessageId(preparation, envelope);
     const [token, timezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),

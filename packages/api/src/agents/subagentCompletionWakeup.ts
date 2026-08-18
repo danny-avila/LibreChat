@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { isEphemeralAgentId } from 'librechat-data-provider';
 import type { ConversationMethods, IMessage, MessageMethods } from '@librechat/data-schemas';
-import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
-import type { SubagentTaskWakeupRegistration } from './subagentThreads';
-import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type {
   AgentTriggerContinuePreparation,
   AgentTriggerExecutionHostDeps,
 } from './triggers/host';
+import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
-import { AgentTriggerExecutionError } from './triggers/host';
+import type { AgentTriggerDispatchContext } from './triggers/dispatch';
+import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
+import { AgentTriggerExecutionError } from './triggers/host';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 const SOURCE_ID = 'subagent-completion';
@@ -126,13 +126,13 @@ function latestAssistantDescendant(messages: IMessage[], anchorId: string): stri
     memo.set(message.messageId, reachable);
     return reachable;
   };
-  return messages
+  const descendants = messages
     .filter((message) => message.isCreatedByUser === false && reachesAnchor(message))
     .sort((left, right) => {
       const time = timestamp(left) - timestamp(right);
       return time === 0 ? left.messageId.localeCompare(right.messageId) : time;
-    })
-    .at(-1)?.messageId;
+    });
+  return descendants[descendants.length - 1]?.messageId;
 }
 
 function renderWakeupInput(
