@@ -477,29 +477,27 @@ export function createUserMethods(
       throw new TypeError('A subagent admission fence needs a bounded owner token');
     }
     const User = mongoose.models.User;
-    await User.updateOne({ _id: userId }, [
+    /** Plain update operators only: DocumentDB rejects pipeline-form updates, and
+     * this runs before any deletion, so using one would fail the whole endpoint. */
+    await User.updateOne(
+      { _id: userId },
+      { $pull: { subagentAdmissionFences: { expiresAt: { $lte: new Date() } } } },
+      { timestamps: false },
+    );
+    /** Admitted only while the owner is under the concurrent-deletion cap. Dropping
+     * an active fence to make room would reopen admission for a deletion that is
+     * still running, so an excess deletion is refused instead. */
+    const fenced = await User.updateOne(
       {
-        $set: {
-          subagentAdmissionFences: {
-            $slice: [
-              {
-                $concatArrays: [
-                  {
-                    $filter: {
-                      input: { $ifNull: ['$subagentAdmissionFences', []] },
-                      as: 'fence',
-                      cond: { $gt: ['$$fence.expiresAt', new Date()] },
-                    },
-                  },
-                  [{ token, expiresAt: fencedUntil }],
-                ],
-              },
-              -MAX_SUBAGENT_ADMISSION_FENCES,
-            ],
-          },
-        },
+        _id: userId,
+        [`subagentAdmissionFences.${MAX_SUBAGENT_ADMISSION_FENCES - 1}`]: { $exists: false },
       },
-    ]);
+      { $push: { subagentAdmissionFences: { token, expiresAt: fencedUntil } } },
+      { timestamps: false },
+    );
+    if (fenced.matchedCount !== 1) {
+      throw new Error('Too many concurrent bulk deletions are already fencing this owner.');
+    }
     await invalidateAuthUserDocCache(userId);
   }
 

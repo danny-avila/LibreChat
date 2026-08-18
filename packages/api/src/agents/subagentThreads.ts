@@ -47,8 +47,6 @@ const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 const DELETION_CANCEL_CONCURRENCY = 32;
 /** Bounds retained control invocations; one entry per applied command. */
 const MAX_CONTROL_INVOCATIONS = 4_096;
-/** Bounds the search for a settled task's record before falling back to the oldest. */
-const INVOCATION_EVICTION_SCAN = 64;
 
 /** A cancellation target set resolved before the conversations are removed. */
 export interface SubagentCancellationPlan {
@@ -712,41 +710,41 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             message: 'This control invocation id was already used for a different command.',
           };
     }
+    if (!this.makeRoomForInvocation()) {
+      /** Every tracked invocation belongs to a task this store still holds. Applying
+       * this command without room to record it would let a caller retry apply it a
+       * second time, so it is refused before the child is touched at all. */
+      logger.warn('[subagentThreads] Refused a control; live invocation records are full');
+      return {
+        status: 'invalid',
+        message: 'Too many control invocations are in flight for this process; retry shortly.',
+      };
+    }
     const result = this.control(scopeId, taskId, command);
     if (result.status === 'not_found') {
       return result;
     }
-    this.makeRoomForInvocation();
     this.controlInvocations.set(key, { scopeId, taskId, fingerprint, result });
     return result;
   }
 
   /**
-   * Frees one invocation slot, preferring records whose task the store no longer
-   * holds: evicting a live task's record would let a caller retry apply its command a
-   * second time. Only a full window of live records falls back to the oldest, which
-   * keeps the scan bounded rather than walking the whole map on every control.
+   * Frees invocation slots by dropping records whose task the store no longer holds:
+   * a settled task cannot be controlled again, so its record is worthless, while a
+   * live one is exactly what a caller retry needs to replay instead of applying its
+   * command twice. The sweep runs only when the window is full and clears every dead
+   * record at once, so it is amortized rather than repeated per control.
    */
-  private makeRoomForInvocation(): void {
+  private makeRoomForInvocation(): boolean {
     if (this.controlInvocations.size < this.maxControlInvocations) {
-      return;
+      return true;
     }
-    let oldest: string | undefined;
-    let scanned = 0;
     for (const [key, invocation] of this.controlInvocations) {
-      oldest ??= key;
       if (this.get(invocation.scopeId, invocation.taskId) == null) {
         this.controlInvocations.delete(key);
-        return;
-      }
-      scanned += 1;
-      if (scanned >= INVOCATION_EVICTION_SCAN) {
-        break;
       }
     }
-    if (oldest != null) {
-      this.controlInvocations.delete(oldest);
-    }
+    return this.controlInvocations.size < this.maxControlInvocations;
   }
 
   /** Returns this process's tasks plus tasks reported by registered remote owners. */

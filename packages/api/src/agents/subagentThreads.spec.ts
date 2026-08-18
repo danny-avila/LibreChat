@@ -1685,13 +1685,21 @@ describe('SubagentThreadTaskStore', () => {
     }
     expect(store.get(config.scopeId, settledTaskId)).toBeUndefined();
 
-    /** The window is full, so admitting another invocation evicts one. The record of a
-     * task this store no longer holds goes first: dropping the live task's record
-     * would let a caller retry steer that child a second time. */
+    /** The window is full, so admitting another invocation sweeps the records of tasks
+     * this store no longer holds. The live task's record survives, so a caller
+     * retrying it replays instead of steering that child a second time. */
     store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-later');
     expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live')).toEqual(
       applied,
     );
+    expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
+
+    /** With every remaining record belonging to a live task, a further invocation is
+     * refused rather than displacing one: applying it unrecorded would let its own
+     * retry apply the command twice. */
+    expect(
+      store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-third'),
+    ).toMatchObject({ status: 'invalid' });
     expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
 
     finish({ content: 'done' });

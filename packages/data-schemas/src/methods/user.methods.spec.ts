@@ -779,6 +779,29 @@ describe('User Methods - Database Tests', () => {
       await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
     });
 
+    test('refuses an excess deletion instead of discarding an active fence', async () => {
+      const user = await User.create({
+        name: 'Saturated Fence',
+        email: 'saturated-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      for (let index = 0; index < 32; index += 1) {
+        await methods.fenceSubagentAdmission(userId, `deletion-${index}`, fencedUntil);
+      }
+      await expect(
+        methods.fenceSubagentAdmission(userId, 'deletion-overflow', fencedUntil),
+      ).rejects.toThrow('Too many concurrent bulk deletions');
+
+      /** The first deletion still owns its fence, so admission stays closed for it. */
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(32);
+      expect(stored?.subagentAdmissionFences?.[0]?.token).toBe('deletion-0');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+    });
+
     test('refuses an unbounded or invalid fence', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 
