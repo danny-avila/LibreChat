@@ -30,12 +30,14 @@ const userMessage = {
 function renderHoverButtons({
   isSubmitting,
   message = userMessage,
+  conversation: targetConversation = conversation,
   isLast = false,
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
 }: {
   isSubmitting: boolean;
   message?: TMessage;
+  conversation?: TConversation;
   isLast?: boolean;
   latestMessageId?: string;
   getCanCopy?: () => boolean;
@@ -55,7 +57,7 @@ function renderHoverButtons({
             isLast={isLast}
             isEditing={false}
             message={message}
-            conversation={conversation}
+            conversation={targetConversation}
             isSubmitting={isSubmitting}
             enterEdit={jest.fn()}
             regenerate={jest.fn()}
@@ -172,5 +174,41 @@ describe('HoverButtons edit affordance', () => {
 
     expect(screen.queryByTestId('copy-response-button')).toBeNull();
     expect(getCanCopy).not.toHaveBeenCalled();
+  });
+
+  it('keeps child-thread history readable without model-turn controls', () => {
+    const assistantMessage = {
+      ...userMessage,
+      messageId: 'assistant-child',
+      isCreatedByUser: false,
+      text: 'Completed child result',
+    } as TMessage;
+    const childConversation = {
+      ...conversation,
+      conversationId: 'child-thread',
+      subagentThread: {
+        rootConversationId: 'parent-thread',
+        parentConversationId: 'parent-thread',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        parentAgentId: 'parent-agent',
+        subagentType: 'researcher',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    } as TConversation;
+
+    const container = renderHoverButtons({
+      isSubmitting: false,
+      message: assistantMessage,
+      conversation: childConversation,
+      isLast: true,
+      latestMessageId: assistantMessage.messageId,
+    });
+
+    expect(screen.getByTestId('copy-response-button')).toBeEnabled();
+    expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).toBeNull();
+    expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
+    expect(screen.queryByTestId('continue-generation-button')).toBeNull();
   });
 });

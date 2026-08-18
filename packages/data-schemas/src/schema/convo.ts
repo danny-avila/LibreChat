@@ -29,6 +29,31 @@ const convoSchema: Schema<IConversation> = new Schema(
     agent_id: {
       type: String,
     },
+    subagentThread: {
+      type: {
+        rootConversationId: { type: String, required: true },
+        parentConversationId: { type: String, required: true },
+        parentMessageId: { type: String, required: true },
+        parentToolCallId: { type: String, required: true },
+        parentAgentId: { type: String },
+        subagentType: { type: String, required: true },
+        subagentKind: { type: String, enum: ['agent', 'graph'], required: true },
+        depth: { type: Number, min: 1, required: true },
+      },
+      _id: false,
+      default: undefined,
+    },
+    /** Mongo-backed continuation lease shared by every API replica. */
+    subagentThreadLease: {
+      type: {
+        token: { type: String, required: true },
+        taskId: { type: String, required: true },
+        expiresAt: { type: Date, required: true },
+      },
+      _id: false,
+      default: undefined,
+      select: false,
+    },
     tags: {
       type: [String],
       default: [],
@@ -66,6 +91,7 @@ const convoSchema: Schema<IConversation> = new Schema(
 convoSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true });
+convoSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ user: 1, _id: 1 });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
@@ -77,6 +103,9 @@ convoSchema.index({ user: 1, isArchived: 1, archivedAt: -1, createdAt: -1, _id: 
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });
 
 convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
+/** Owner-scoped child-thread cascade lookup used when a parent is deleted. */
+convoSchema.index({ user: 1, 'subagentThread.parentConversationId': 1 });
+convoSchema.index({ user: 1, 'subagentThreadLease.expiresAt': 1 });
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 

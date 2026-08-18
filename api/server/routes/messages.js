@@ -13,7 +13,10 @@ const {
   sendFeedbackScore,
   traceIdForMessage,
   mergeQuotedTextForCount,
+  CHILD_THREAD_READ_ONLY_ERROR,
+  isSubagentThreadWriteBlocked,
 } = require('@librechat/api');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
 const {
   requireJwtAuth,
@@ -26,6 +29,24 @@ const db = require('~/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+async function rejectSubagentThreadWrite(req, res, conversationId) {
+  const blocked = await isSubagentThreadWriteBlocked(
+    { getConvo: db.getConvo, store: subagentThreadTaskStore },
+    {
+      userId: req.user.id,
+      conversationId,
+      ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? { tenantId: req.user.tenantId }
+        : {}),
+    },
+  );
+  if (!blocked) {
+    return false;
+  }
+  res.status(409).json({ error: CHILD_THREAD_READ_ONLY_ERROR });
+  return true;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -134,6 +155,10 @@ router.post('/branch', async (req, res) => {
       return res.status(404).json({ error: 'Source message not found' });
     }
 
+    if (await rejectSubagentThreadWrite(req, res, sourceMessage.conversationId)) {
+      return;
+    }
+
     if (sourceMessage.isCreatedByUser) {
       return res.status(400).json({ error: 'Cannot branch from user messages' });
     }
@@ -213,6 +238,10 @@ router.post('/artifact/:messageId', async (req, res) => {
     const message = await db.getMessage({ user: req.user.id, messageId });
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
+      return;
     }
 
     const artifacts = findAllArtifacts(message);
@@ -315,6 +344,9 @@ router.get('/:conversationId', prepareMessageRequestValidation, async (req, res)
 
 router.post('/:conversationId', validateMessageReq, async (req, res) => {
   try {
+    if (await rejectSubagentThreadWrite(req, res, req.params.conversationId)) {
+      return;
+    }
     const message = { ...req.body, conversationId: req.params.conversationId };
     const reqCtx = {
       userId: req?.user?.id,
@@ -365,6 +397,18 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
+    const message = (
+      await db.getMessages(
+        { messageId, user: req.user.id },
+        'conversationId content tokenCount quotes isCreatedByUser',
+      )
+    )?.[0];
+    if (!message || message.conversationId !== conversationId) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
+      return;
+    }
     const { text, index, model } = req.body;
 
     if (index === undefined) {
@@ -372,16 +416,10 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
        *  every send, but this edit only changes `text`. Count the merged
        *  text+quotes so the stored `tokenCount` stays authoritative (matching the
        *  send path); a plain text-only count under-reports by the quote block. */
-      const existing = (
-        await db.getMessages(
-          { conversationId, messageId, user: req.user.id },
-          'quotes isCreatedByUser',
-        )
-      )?.[0];
       const textToCount = mergeQuotedTextForCount(
         text,
-        existing?.quotes,
-        existing?.isCreatedByUser === true,
+        message.quotes,
+        message.isCreatedByUser === true,
       );
       const tokenCount = await countTokens(textToCount, model);
       const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
@@ -390,13 +428,6 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 
     if (typeof index !== 'number' || index < 0) {
       return res.status(400).json({ error: 'Invalid index' });
-    }
-
-    const message = (
-      await db.getMessages({ conversationId, messageId, user: req.user.id }, 'content tokenCount')
-    )?.[0];
-    if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
     }
 
     const existingContent = message.content;
@@ -510,6 +541,9 @@ router.put(
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
+    if (await rejectSubagentThreadWrite(req, res, conversationId)) {
+      return;
+    }
     await db.deleteMessages({ messageId, conversationId, user: req.user.id });
     res.status(204).send();
   } catch (error) {

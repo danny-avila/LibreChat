@@ -18,6 +18,9 @@ jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());
 jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
 jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
+  require(MOCKS).subagentThreadStore(),
+);
 
 describe('Convos Routes', () => {
   let app;
@@ -28,6 +31,7 @@ describe('Convos Routes', () => {
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
+  const subagentThreadStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -61,6 +65,7 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+      expect(subagentThreadStore.cancelForOwner).toHaveBeenCalledWith('test-user-123', undefined);
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -234,6 +239,43 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 1 });
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 1 });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({
+          arg: { conversationId: 'parent-conversation' },
+        });
+
+      expect(response.status).toBe(201);
+      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
+        1,
+        'test-user-123',
+        ['parent-conversation'],
+        undefined,
+      );
+      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
+        2,
+        'test-user-123',
+        ['parent-conversation', 'child-conversation'],
+        undefined,
+      );
+      expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
+      expect(deleteConvoSharedLinksWithCleanup.mock.calls.map((call) => call[1])).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
+    });
+
     it('should delete a single conversation, tool calls, and associated shared links', async () => {
       const mockConversationId = 'conv-123';
       const mockDbResponse = {

@@ -16,9 +16,17 @@ import { useActivePanel, resolveActivePanel } from '~/Providers';
  * Only available links render, so a shortcut for a panel this endpoint does not
  * offer still correctly does nothing.
  */
-function ShortcutTargets({ links }: { links: NavLink[] }) {
+function ShortcutTargets({
+  links,
+  onLeaveInsights,
+  routeActiveId,
+}: {
+  links: NavLink[];
+  onLeaveInsights?: () => void;
+  routeActiveId?: string;
+}) {
   const { active, setActive } = useActivePanel();
-  const activeId = resolveActivePanel(active, links);
+  const activeId = routeActiveId ?? resolveActivePanel(active, links);
 
   return (
     <>
@@ -30,7 +38,16 @@ function ShortcutTargets({ links }: { links: NavLink[] }) {
           tabIndex={-1}
           data-testid={`nav-panel-${link.id}`}
           aria-pressed={link.id === activeId}
-          onClick={() => setActive(link.id)}
+          onClick={() => {
+            if (link.onClick) {
+              link.onClick();
+              return;
+            }
+            setActive(link.id);
+            if (routeActiveId) {
+              onLeaveInsights?.();
+            }
+          }}
         />
       ))}
     </>

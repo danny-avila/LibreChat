@@ -20,6 +20,7 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   createStatefulCodeEnvironmentPolicyError,
+  buildSubagentThreadTaskConfig,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -60,6 +61,7 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
+const subagentThreadTaskStore = require('./subagentThreadStore');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -148,6 +150,16 @@ const initializeClient = async ({
     throw new Error('Endpoint option not provided');
   }
   const appConfig = req.config;
+  /** The normal controller resolves this once for timestamp anchoring. Reuse
+   * that trusted document for child-thread execution policy; resume and direct
+   * callers fall back to the same owner-scoped lookup. */
+  const conversationId = req.body?.conversationId;
+  let requestConversationPromise = Promise.resolve(null);
+  if (Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+    requestConversationPromise = Promise.resolve(req.resolvedConversation);
+  } else if (typeof conversationId === 'string' && conversationId !== '') {
+    requestConversationPromise = db.getConvo(req.user.id, conversationId);
+  }
   const startupTelemetry = getAgentStartupTelemetry(req);
 
   /** @type {string | null} */
@@ -390,25 +402,6 @@ const initializeClient = async ({
   /** @type {Array<import('librechat-data-provider').TTokenUsageEvent>} */
   const usageEmitSink = [];
 
-  const eventHandlers = getDefaultHandlers({
-    res,
-    contentParts,
-    stepMap,
-    toolInputValidationErrors,
-    toolExecuteOptions,
-    summarizationOptions,
-    aggregateContent,
-    toolEndCallback,
-    collectedUsage,
-    collectedThoughtSignatures,
-    streamId,
-    jobCreatedAt,
-    subagentAggregatorsByToolCallId,
-    usageCost,
-    contextUsageSink,
-    usageEmitSink,
-  });
-
   const [
     memoryAvailable,
     accessibleSkillIds,
@@ -416,6 +409,7 @@ const initializeClient = async ({
     skillCreateAllowed,
     { skillStates, defaultActiveOnShare },
     { primaryAgent, modelsConfig },
+    requestConversation,
   ] = await Promise.all([
     memoryAvailablePromise,
     accessibleSkillIdsPromise,
@@ -423,6 +417,7 @@ const initializeClient = async ({
     skillCreateAllowedPromise,
     skillStatesPromise,
     validatedPrimaryAgentPromise,
+    requestConversationPromise,
   ]);
   delete endpointOption.agent;
 
@@ -433,8 +428,6 @@ const initializeClient = async ({
   const loadTools = createToolLoader(signal, streamId, true, jobCreatedAt);
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
-  /** @type {string} */
-  const conversationId = req.body.conversationId;
   /** @type {string | undefined} */
   const parentMessageId = req.body.parentMessageId;
   /**
@@ -693,7 +686,11 @@ const initializeClient = async ({
   // spawn tool, not handoff edges. Explicit children are advertised as inert,
   // VIEW-checked descriptors; model, tool, MCP, file, and skill initialization
   // happens only when the SDK selects one.
+  const atSubagentThreadDepthLimit = !subagentThreadTaskStore.canCreateChildThread(
+    requestConversation?.subagentThread?.depth ?? 0,
+  );
   const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+  const subagentsAvailableForRun = subagentsCapabilityEnabled && !atSubagentThreadDepthLimit;
   /** Track skipped ids locally so repeated failures short-circuit within
    *  the subagent loading loop. Seeded from the discovery helper's skip
    *  list so agents that already failed handoff loading don't get retried. */
@@ -997,7 +994,7 @@ const initializeClient = async ({
   };
 
   const buildLazySubagentDescriptors = async (agent, depth = 0, ancestors = new Set()) => {
-    if (!subagentsCapabilityEnabled || !agent.subagents?.enabled) {
+    if (!subagentsAvailableForRun || !agent.subagents?.enabled) {
       return [];
     }
     if (agent.subagents.allowSelf !== false) {
@@ -1165,7 +1162,7 @@ const initializeClient = async ({
   async function resolveGraphSubagentsFor(config, graphSignal = signal) {
     throwIfAborted(graphSignal);
     const definitions =
-      subagentsCapabilityEnabled && config.subagents?.enabled === true
+      subagentsAvailableForRun && config.subagents?.enabled === true
         ? (config.subagents.graphs ?? [])
         : [];
     const resolvedGraphs = [];
@@ -1212,15 +1209,53 @@ const initializeClient = async ({
     await resolveGraphSubagentsFor(config);
   }
 
-  primaryConfig.subagents = subagentsCapabilityEnabled ? primaryConfig.subagents : undefined;
+  /** Build detached execution only for an attributable owner/thread. New
+   * tasks still require a spawnable child, while an existing process-local
+   * task keeps its poll/control seam after agent configuration changes. The
+   * SDK receives only this trusted host scope; models can select a child
+   * `threadId`, never the owner or parent-thread namespace. */
+  const hasSpawnableSubagent = rootSubagentConfigs.some(
+    (config) =>
+      config.subagents?.enabled === true &&
+      (config.subagents.allowSelf !== false ||
+        (config.subagentAgentConfigs?.length ?? 0) > 0 ||
+        (config.lazySubagentConfigs?.length ?? 0) > 0 ||
+        (config.subagentGraphConfigs?.length ?? 0) > 0),
+  );
+  const trustedSubagentTasks =
+    backgroundToolsAvailable &&
+    typeof req.user?.id === 'string' &&
+    req.user.id !== '' &&
+    typeof conversationId === 'string' &&
+    conversationId !== ''
+      ? buildSubagentThreadTaskConfig(subagentThreadTaskStore, {
+          userId: req.user.id,
+          parentConversationId: conversationId,
+          ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+            ? { tenantId: req.user.tenantId }
+            : {}),
+        })
+      : undefined;
+  const hasExistingSubagentTask =
+    trustedSubagentTasks != null &&
+    trustedSubagentTasks.store.list(trustedSubagentTasks.scopeId).length > 0;
+  const subagentTasks =
+    trustedSubagentTasks != null &&
+    ((subagentsAvailableForRun && hasSpawnableSubagent) || hasExistingSubagentTask)
+      ? trustedSubagentTasks
+      : undefined;
+  if (subagentTasks != null) {
+    toolExecuteOptions.subagentTasks = subagentTasks;
+  }
 
-  /** If the capability is off at the endpoint level, strip `subagents` on
-   *  every loaded config — not just the primary. `run.ts` calls
+  primaryConfig.subagents = subagentsAvailableForRun ? primaryConfig.subagents : undefined;
+
+  /** If the capability is off or this durable child is at the depth limit,
+   *  strip `subagents` on every loaded config — not just the primary. `run.ts` calls
    *  `buildSubagentConfigs` for every agent in the array, so a handoff
    *  agent with `subagents.enabled: true` persisted on its document would
-   *  otherwise still expose self-spawn at runtime even though the admin
-   *  has disabled the capability globally. */
-  if (!subagentsCapabilityEnabled) {
+   *  otherwise still expose self-spawn at runtime. */
+  if (!subagentsAvailableForRun) {
     primaryConfig.lazySubagentConfigs = undefined;
     primaryConfig.subagentGraphConfigs = undefined;
     for (const config of agentConfigs.values()) {
@@ -1306,6 +1341,25 @@ const initializeClient = async ({
       fallback: usageCost.endpointTokenConfig,
     });
 
+  const eventHandlers = getDefaultHandlers({
+    res,
+    contentParts,
+    stepMap,
+    toolInputValidationErrors,
+    toolExecuteOptions,
+    summarizationOptions,
+    aggregateContent,
+    toolEndCallback,
+    collectedUsage,
+    collectedThoughtSignatures,
+    streamId,
+    jobCreatedAt,
+    subagentAggregatorsByToolCallId,
+    usageCost,
+    contextUsageSink,
+    usageEmitSink,
+  });
+
   const client = new AgentClient({
     req,
     res,
@@ -1330,6 +1384,7 @@ const initializeClient = async ({
     maxContextTokens: primaryConfig.maxContextTokens,
     endpoint: isEphemeralAgentId(primaryConfig.id) ? primaryConfig.endpoint : EModelEndpoint.agents,
     subagentAggregatorsByToolCallId,
+    subagentTasks,
     /** Resolved endpoint token/pricing config so spending and cost reflect
      *  configured rates for custom-endpoint agents instead of defaults. */
     endpointTokenConfig: primaryConfig.endpointTokenConfig,

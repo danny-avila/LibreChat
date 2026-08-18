@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import { InMemorySubagentTaskStore } from '@librechat/agents';
+import type { LCTool, LCToolRegistry, SubagentTaskConfig } from '@librechat/agents';
 import {
   isBackgroundEligibleToolName,
   isBackgroundRequested,
@@ -27,6 +28,20 @@ const mcpDef = (name: string): LCTool =>
     description: `${name} description`,
     parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
   }) as unknown as LCTool;
+
+async function waitForSubagentTaskToSettle(
+  store: InMemorySubagentTaskStore,
+  scopeId: string,
+  taskId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (store.get(scopeId, taskId)?.status !== 'running') {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error('Timed out waiting for the detached subagent task.');
+}
 
 describe('isBackgroundEligibleToolName', () => {
   it('excludes direct-path, host-special, and machinery tools', () => {
@@ -1137,6 +1152,120 @@ describe('runCheckBackgroundTask (singleton)', () => {
         background_task_id: dispatched.task.id,
       }),
     );
+  });
+
+  it('polls and one-shot claims a detached subagent result', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-1',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-1',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => ({ content: 'finished research' }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await waitForSubagentTaskToSettle(store, subagentTasks.scopeId, started.task.taskId);
+
+    const first = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(first).toEqual(
+      expect.objectContaining({
+        background_task_id: started.task.taskId,
+        subagent_thread_id: started.task.threadId,
+        tool: 'subagent',
+        status: 'completed',
+        result: 'finished research',
+      }),
+    );
+
+    const second = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
+    expect(second.result).toBeUndefined();
+  });
+
+  it('routes parent control actions only to detached subagent tasks', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-2',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-2',
+      input: 'Keep working.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => result,
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await Promise.resolve();
+
+    const queued = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: started.task.taskId,
+          action: 'queue',
+          message: 'Also verify the source.',
+        },
+        subagentTasks,
+      }),
+    );
+    expect(queued).toEqual(
+      expect.objectContaining({ status: 'accepted', control_id: expect.any(String) }),
+    );
+
+    const cancelledMessage = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: started.task.taskId,
+          action: 'cancel_message',
+          control_id: queued.control_id,
+        },
+        subagentTasks,
+      }),
+    );
+    expect(cancelledMessage.status).toBe('accepted');
+
+    const cancelledTask = JSON.parse(
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId, action: 'cancel' },
+        subagentTasks,
+      }),
+    );
+    expect(cancelledTask.status).toBe('cancelled');
+    finish({ content: 'late result' });
   });
 });
 

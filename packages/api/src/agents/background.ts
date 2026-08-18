@@ -34,7 +34,16 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
-import type { LCTool, LCToolRegistry, JsonSchemaType } from '@librechat/agents';
+import type {
+  LCTool,
+  LCToolRegistry,
+  JsonSchemaType,
+  SubagentTaskClaim,
+  SubagentTaskConfig,
+  SubagentTaskSnapshot,
+  SubagentTaskControlCommand,
+  SubagentTaskControlResult,
+} from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
 import {
@@ -286,9 +295,9 @@ export function stripBackgroundFromToolRegistry(
   return next;
 }
 
-const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check the status and retrieve the result of tool calls previously dispatched in the background (with run_in_background: true).
+const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this conversation. A task is only finished when its status is "completed" or "error" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Background tasks persist on this server across turns, so you can collect a result in a later turn; they do not survive a server restart.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Execution leases remain available only while requests reach the owning server process; they do not survive a restart or cross-worker routing. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'object',
@@ -296,7 +305,20 @@ const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchem
     background_task_id: {
       type: 'string',
       description:
-        'The id returned when the tool call was dispatched. Omit to list the status of all background tasks in this conversation.',
+        'The id returned when the tool or subagent was dispatched. Omit to list all background tasks in this thread.',
+    },
+    action: {
+      type: 'string',
+      enum: ['poll', 'steer', 'queue', 'interrupt', 'cancel', 'cancel_message'],
+      description: 'Defaults to poll. Control actions apply only to a running subagent task.',
+    },
+    message: {
+      type: 'string',
+      description: 'Required for steer, queue, or interrupt.',
+    },
+    control_id: {
+      type: 'string',
+      description: 'Required for cancel_message; use the id returned by a prior control action.',
     },
   },
   required: [],
@@ -979,32 +1001,175 @@ function serializeTask(
   };
 }
 
+interface SerializedSubagentTask {
+  background_task_id: string;
+  subagent_thread_id?: string;
+  tool: string;
+  subagent_type: string;
+  status: string;
+  progress: number;
+  progress_detail?: SubagentTaskSnapshot['progress'];
+  result?: string;
+  result_available?: boolean;
+  result_claimed?: boolean;
+  pending_controls?: number;
+  error?: string;
+  control_id?: string;
+  message?: string;
+}
+
+function serializeSubagentSnapshot(
+  task: SubagentTaskSnapshot,
+  options: { includeResult?: string; status?: string; controlId?: string } = {},
+): SerializedSubagentTask {
+  return {
+    background_task_id: task.taskId,
+    ...(task.threadId == null ? {} : { subagent_thread_id: task.threadId }),
+    tool: String(AgentConstants.SUBAGENT),
+    subagent_type: task.subagentType,
+    status: options.status ?? task.status,
+    progress: task.status === 'running' ? 0 : 1,
+    ...(task.progress == null ? {} : { progress_detail: task.progress }),
+    ...(options.includeResult == null ? {} : { result: options.includeResult }),
+    ...(task.resultAvailable ? { result_available: true } : {}),
+    ...(task.resultClaimed ? { result_claimed: true } : {}),
+    ...(task.pendingControls > 0 ? { pending_controls: task.pendingControls } : {}),
+    ...(task.error == null ? {} : { error: task.error }),
+    ...(options.controlId == null ? {} : { control_id: options.controlId }),
+  };
+}
+
+function serializeSubagentClaim(claim: SubagentTaskClaim): SerializedSubagentTask | undefined {
+  if (claim.status === 'not_found') {
+    return undefined;
+  }
+  if (claim.status === 'completed') {
+    return serializeSubagentSnapshot(claim.task, { includeResult: claim.result });
+  }
+  if (claim.status === 'error' || claim.status === 'cancelled') {
+    return {
+      ...serializeSubagentSnapshot(claim.task, { status: claim.status }),
+      error: claim.error,
+    };
+  }
+  return serializeSubagentSnapshot(claim.task, { status: claim.status });
+}
+
+function serializeSubagentControl(
+  result: SubagentTaskControlResult,
+): SerializedSubagentTask | { status: string; message?: string } | undefined {
+  if (result.status === 'not_found') {
+    return undefined;
+  }
+  if (result.status === 'invalid') {
+    return { status: result.status, message: result.message };
+  }
+  return serializeSubagentSnapshot(result.task, {
+    status: result.status,
+    ...(result.status === 'accepted' && result.controlId != null
+      ? { controlId: result.controlId }
+      : {}),
+  });
+}
+
+function buildSubagentControlCommand(
+  args: Record<string, unknown>,
+  action: string,
+): SubagentTaskControlCommand | undefined {
+  if (action === 'cancel') {
+    return { action: 'cancel' };
+  }
+  if (action === 'cancel_message') {
+    return typeof args.control_id === 'string'
+      ? { action: 'cancel_message', controlId: args.control_id }
+      : undefined;
+  }
+  if (action === 'steer' || action === 'queue' || action === 'interrupt') {
+    return typeof args.message === 'string' ? { action, message: args.message } : undefined;
+  }
+  return undefined;
+}
+
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
 export function runCheckBackgroundTask(params: {
   userId: string;
   conversationId: string;
   args: unknown;
+  subagentTasks?: SubagentTaskConfig;
 }): string {
   const { userId, conversationId } = params;
-  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const args = coerceArgsObject(params.args) ?? {};
+  const rawId = args.background_task_id;
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);
-    if (!task) {
-      return JSON.stringify({
-        status: 'not_found',
-        background_task_id: taskId,
-        message: 'No background task with that id exists in this conversation.',
-      });
+    if (task != null) {
+      if (action !== 'poll') {
+        return JSON.stringify({
+          status: 'invalid',
+          background_task_id: taskId,
+          message: 'Control actions are supported only for subagent tasks.',
+        });
+      }
+      return JSON.stringify(serializeTask(task, { includeResult: true }));
     }
-    return JSON.stringify(serializeTask(task, { includeResult: true }));
+
+    const subagentTasks = params.subagentTasks;
+    if (subagentTasks != null) {
+      if (action === 'poll') {
+        const claimed = serializeSubagentClaim(
+          subagentTasks.store.claim(subagentTasks.scopeId, taskId),
+        );
+        if (claimed != null) {
+          return JSON.stringify(claimed);
+        }
+      } else {
+        const command = buildSubagentControlCommand(args, action);
+        if (command == null) {
+          return JSON.stringify({
+            status: 'invalid',
+            background_task_id: taskId,
+            message: 'This subagent control action is unknown or missing its required argument.',
+          });
+        }
+        const controlled = serializeSubagentControl(
+          subagentTasks.store.control(subagentTasks.scopeId, taskId, command),
+        );
+        if (controlled != null) {
+          return JSON.stringify(controlled);
+        }
+      }
+    }
+
+    return JSON.stringify({
+      status: 'not_found',
+      background_task_id: taskId,
+      message: 'No background task with that id exists in this thread.',
+    });
+  }
+
+  if (action !== 'poll') {
+    return JSON.stringify({
+      status: 'invalid',
+      message: 'A background_task_id is required for control actions.',
+    });
   }
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
-  logger.debug(`[background] check_background_task listed ${tasks.length} task(s)`);
+  const subagentTasks =
+    params.subagentTasks?.store
+      .list(params.subagentTasks.scopeId)
+      .map((task) => serializeSubagentSnapshot(task)) ?? [];
+  logger.debug(
+    `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
+  );
   return JSON.stringify({
-    tasks: tasks.map((task) => serializeTask(task, { includeResult: false })),
+    tasks: [
+      ...tasks.map((task) => serializeTask(task, { includeResult: false })),
+      ...subagentTasks,
+    ],
   });
 }
 

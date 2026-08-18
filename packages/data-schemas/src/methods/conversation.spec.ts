@@ -1583,6 +1583,86 @@ describe('Conversation Operations', () => {
       expect(deletedConvo).toBeNull();
     });
 
+    it('cascades parent deletion through owner-scoped child-thread lineage', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const grandchildId = uuidv4();
+      const otherUsersChildId = uuidv4();
+      const lineage = (
+        parentConversationId: string,
+        rootConversationId: string,
+        depth: number,
+      ) => ({
+        rootConversationId,
+        parentConversationId,
+        parentMessageId: `message-${depth}`,
+        parentToolCallId: `tool-${depth}`,
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth,
+      });
+      await Conversation.create([
+        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(parentId, parentId, 1),
+        },
+        {
+          conversationId: grandchildId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(childId, parentId, 2),
+        },
+        {
+          conversationId: otherUsersChildId,
+          user: 'other-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage(parentId, parentId, 1),
+        },
+      ]);
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 3 });
+
+      const result = await deleteConvos('user123', { conversationId: parentId });
+
+      expect(result.deletedCount).toBe(3);
+      expect(result.conversationIds).toEqual([parentId, childId, grandchildId]);
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId, grandchildId] },
+        user: 'user123',
+      });
+      expect(await Conversation.find({ user: 'user123' })).toHaveLength(0);
+      expect(await Conversation.findOne({ conversationId: otherUsersChildId })).not.toBeNull();
+    });
+
+    it('does not delete a parent when deleting one child thread', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      await Conversation.create([
+        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+
+      const result = await deleteConvos('user123', { conversationId: childId });
+
+      expect(result.conversationIds).toEqual([childId]);
+      expect(await Conversation.findOne({ conversationId: parentId })).not.toBeNull();
+    });
+
     it('should throw error if no conversations found', async () => {
       await expect(deleteConvos('user123', { conversationId: 'non-existent' })).rejects.toThrow(
         'Conversation not found or already deleted.',
@@ -3187,6 +3267,153 @@ describe('Conversation Operations', () => {
       const result = await getConvosByCursor('user123', {});
 
       expect(result.conversations).toHaveLength(2);
+    });
+  });
+
+  describe('subagent thread leases', () => {
+    it('reserves child lineage once without overwriting a concurrent winner', async () => {
+      await Conversation.init();
+      const conversationId = uuidv4();
+      const lineage = {
+        rootConversationId: 'root',
+        parentConversationId: 'parent',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool',
+        parentAgentId: 'parent-agent',
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      };
+      const reservations = await Promise.all(
+        ['First title', 'Second title'].map((title) =>
+          methods.reserveSubagentThread({
+            user: 'reservation-user',
+            conversationId,
+            conversation: { endpoint: EModelEndpoint.agents, title, subagentThread: lineage },
+          }),
+        ),
+      );
+
+      expect(reservations.filter((reservation) => reservation.created)).toHaveLength(1);
+      const saved = await methods.getConvo('reservation-user', conversationId);
+      expect(saved?.title).toBe(
+        reservations.find((reservation) => reservation.created)?.conversation.title,
+      );
+      expect(saved?.subagentThread).toEqual(lineage);
+    });
+
+    it('admits one cross-replica owner and fences renewal and release by token', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'lease-user',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          parentAgentId: 'parent-agent',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-18T00:00:00.000Z');
+      const expiresAt = new Date(now.getTime() + 30_000);
+
+      const claims = await Promise.all(
+        ['token-a', 'token-b'].map((token) =>
+          methods.acquireSubagentThreadLease({
+            user: 'lease-user',
+            conversationId,
+            token,
+            taskId: `task-${token}`,
+            now,
+            expiresAt,
+          }),
+        ),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      const winner = claims[0] ? 'token-a' : 'token-b';
+      const loser = winner === 'token-a' ? 'token-b' : 'token-a';
+      expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(1);
+      expect(await methods.getConvo('lease-user', conversationId)).not.toHaveProperty(
+        'subagentThreadLease',
+      );
+      await expect(
+        methods.renewSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: loser,
+          now,
+          expiresAt: new Date(expiresAt.getTime() + 30_000),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.releaseSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: loser,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.releaseSubagentThreadLease({
+          user: 'lease-user',
+          conversationId,
+          token: winner,
+        }),
+      ).resolves.toBe(true);
+      expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(0);
+    });
+
+    it('allows takeover only after the prior lease expires', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'takeover-user',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'graph',
+          subagentKind: 'graph',
+          depth: 1,
+        },
+      });
+      const startedAt = new Date('2026-08-18T00:00:00.000Z');
+      const firstExpiry = new Date(startedAt.getTime() + 1_000);
+      await methods.acquireSubagentThreadLease({
+        user: 'takeover-user',
+        conversationId,
+        token: 'first',
+        taskId: 'task-first',
+        now: startedAt,
+        expiresAt: firstExpiry,
+      });
+
+      await expect(
+        methods.acquireSubagentThreadLease({
+          user: 'takeover-user',
+          conversationId,
+          token: 'second',
+          taskId: 'task-second',
+          now: new Date(firstExpiry.getTime() - 1),
+          expiresAt: new Date(firstExpiry.getTime() + 1_000),
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        methods.acquireSubagentThreadLease({
+          user: 'takeover-user',
+          conversationId,
+          token: 'second',
+          taskId: 'task-second',
+          now: firstExpiry,
+          expiresAt: new Date(firstExpiry.getTime() + 1_000),
+        }),
+      ).resolves.toBe(true);
     });
   });
 

@@ -47,7 +47,7 @@
     "@google/genai": "^2.8.0",
     "@keyv/redis": "5.1.6",
     "@redis/client": "5.10.0",
-    "@librechat/agents": "^3.6.3",
+    "@librechat/agents": "^3.6.6",
     "@librechat/api": "*",
     "@librechat/data-schemas": "*",
     "@microsoft/microsoft-graph-client": "^3.0.7",

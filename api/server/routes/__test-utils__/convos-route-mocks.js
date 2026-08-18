@@ -121,4 +121,9 @@ module.exports = {
     })),
 
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
+
+  subagentThreadStore: () => ({
+    cancelForConversations: jest.fn(),
+    cancelForOwner: jest.fn(),
+  }),
 };
