@@ -18,13 +18,26 @@ set -uo pipefail
 readonly ATTEMPT_TIMEOUT_SECONDS=70
 readonly MAX_ATTEMPTS=3
 
+cleanup_apt() {
+  # Terminate any dangling apt or dpkg processes if a previous timeout orphaned them
+  sudo pkill -9 -f 'apt-get|dpkg' 2>/dev/null || true
+  for _ in $(seq 1 30); do
+    if ! sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+}
+
 for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
-  if timeout "${ATTEMPT_TIMEOUT_SECONDS}" npx playwright install-deps chrome; then
+  cleanup_apt
+  if timeout --kill-after=5s "${ATTEMPT_TIMEOUT_SECONDS}" npx playwright install-deps chrome; then
     exit 0
   fi
   echo "::warning::playwright install-deps attempt ${attempt}/${MAX_ATTEMPTS} failed or timed out"
   sleep 5
 done
 
+cleanup_apt
 echo "::warning::Optional Playwright font packages were not installed; continuing without them."
 exit 0

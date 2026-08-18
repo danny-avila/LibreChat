@@ -261,6 +261,10 @@ jobs:
       - name: Install Redis runtime dependencies
         timeout-minutes: 5
         run: |
+          for _ in $(seq 1 60); do
+            sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break
+            sleep 2
+          done
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools
 
