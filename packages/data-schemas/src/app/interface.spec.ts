@@ -168,6 +168,30 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig).not.toHaveProperty('temporaryChatRetention');
   });
 
+  it('preserves the configured file retention period', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        fileRetention: 72,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.fileRetention).toBe(72);
+  });
+
+  it('omits file retention when it is not explicitly configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('fileRetention');
+  });
+
   it('preserves the configured agent file retention exemption', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

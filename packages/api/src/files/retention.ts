@@ -4,13 +4,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 
 type InterfaceConfig = AppConfig['interfaceConfig'];
 
-const retentionExpiryCache = new WeakMap<
-  RetentionRequest,
-  {
-    key: string;
-    promise: Promise<RetentionExpiry>;
-  }
->();
+const retentionExpiryCache = new WeakMap<RetentionRequest, Map<string, Promise<RetentionExpiry>>>();
 
 export type RetentionConversation = {
   expiredAt?: Date | string | number | null;
@@ -32,6 +26,10 @@ export type RetentionRequest = {
 
 export type RetentionExpiry = {
   expiredAt?: Date | null;
+};
+
+export type RetentionOptions = {
+  applyFileRetention?: boolean;
 };
 
 export type AgentFileRetentionRequest = {
@@ -91,8 +89,13 @@ const createRetentionExpiry = (
   }
 };
 
-const getRetentionCacheKey = (req: RetentionRequest): string =>
+const hasFileRetentionConfigured = (req: RetentionRequest | null | undefined): boolean =>
+  req?.config?.interfaceConfig?.fileRetention != null;
+
+const getRetentionCacheKey = (req: RetentionRequest, options: RetentionOptions = {}): string =>
   [
+    String(options.applyFileRetention ?? false),
+    req.config?.interfaceConfig?.fileRetention ?? '',
     req.config?.interfaceConfig?.retentionMode ?? '',
     req.user?.id ?? '',
     req.body?.conversationId ?? '',
@@ -102,7 +105,12 @@ const getRetentionCacheKey = (req: RetentionRequest): string =>
 async function computeRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
+  options: RetentionOptions,
 ): Promise<RetentionExpiry> {
+  if (options.applyFileRetention && hasFileRetentionConfigured(req)) {
+    return createRetentionExpiry(req, dependencies);
+  }
+
   if (req?.config?.interfaceConfig?.retentionMode === RetentionMode.ALL) {
     return createRetentionExpiry(req, dependencies);
   }
@@ -150,19 +158,27 @@ async function computeRetentionExpiry(
 export async function getRetentionExpiry(
   req: RetentionRequest | null | undefined,
   dependencies: RetentionDependencies,
+  options: RetentionOptions = {},
 ): Promise<RetentionExpiry> {
   if (!req) {
     return {};
   }
 
-  const key = getRetentionCacheKey(req);
-  const cached = retentionExpiryCache.get(req);
-  if (cached?.key === key) {
-    return cached.promise;
+  const key = getRetentionCacheKey(req, options);
+  const reqCache = retentionExpiryCache.get(req);
+  const cachedPromise = reqCache?.get(key);
+  if (cachedPromise) {
+    return cachedPromise;
   }
 
-  const promise = computeRetentionExpiry(req, dependencies);
-  retentionExpiryCache.set(req, { key, promise });
+  const promise = computeRetentionExpiry(req, dependencies, options);
+
+  if (reqCache) {
+    reqCache.set(key, promise);
+  } else {
+    retentionExpiryCache.set(req, new Map([[key, promise]]));
+  }
+
   return promise;
 }
 
@@ -188,6 +204,10 @@ export async function getAgentFileRetentionExpiry(
   params: AgentFileRetentionRequest,
   dependencies: RetentionDependencies,
 ): Promise<RetentionExpiry> {
+  if (hasFileRetentionConfigured(params.req)) {
+    return await getRetentionExpiry(params.req, dependencies, { applyFileRetention: true });
+  }
+
   if (shouldRetainPersistentAgentFile(params)) {
     return {};
   }
