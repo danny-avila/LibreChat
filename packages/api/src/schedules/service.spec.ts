@@ -718,6 +718,31 @@ describe('interactive Stop persistence barrier', () => {
     expect(methods.recordRunOutcome).toHaveBeenCalled();
   });
 
+  /**
+   * The poll budget expiring proves nothing about the Stop route's writes (slow checkpoint
+   * cleanup looks identical), so the barrier must DEFER rather than terminalize the run and
+   * release its capacity mid-persistence.
+   */
+  it('defers settlement when a fresh Stop never acknowledges within the poll budget', async () => {
+    const { service, methods } = outcomeService();
+    methods.getScheduleRunAbortState = jest.fn(async () => ({
+      status: 'started',
+      abortSource: 'stop',
+      abortRequestedAt: new Date(),
+    }));
+
+    const settled = await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'interrupted',
+    });
+
+    // Reported NOT settled so a durable-retry caller re-drives it, and the run is left
+    // active rather than terminalized while persistence may still be in flight.
+    expect(settled).toBe(false);
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('does not gate a pause (requires_action) on the Stop barrier', async () => {
     const { service, methods } = outcomeService();
     methods.getScheduleRunAbortState = jest.fn(async () => null);

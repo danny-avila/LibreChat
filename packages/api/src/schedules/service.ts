@@ -772,7 +772,7 @@ export function createSchedulesService(
    * marker, a non-stop source, or a stamp gone stale (its route presumed dead) proceeds
    * immediately, so the stale-owner timeout remains the bounded recovery path.
    */
-  async function waitForStopPersistence(scheduleId: string, scheduledFor: Date): Promise<void> {
+  async function waitForStopPersistence(scheduleId: string, scheduledFor: Date): Promise<boolean> {
     const deadline = Date.now() + STOP_BARRIER_TIMEOUT_MS;
     for (;;) {
       const state = await methods.getScheduleRunAbortState(scheduleId, scheduledFor);
@@ -782,10 +782,18 @@ export function createSchedulesService(
         state.abortPersistedAt != null ||
         !hasAbortInFlight(state, Date.now())
       ) {
-        return;
+        // Cleared to settle: no Stop owns the run, it acknowledged, or its owner is past
+        // the stale cutoff and is presumed dead (the bounded recovery path).
+        return true;
       }
       if (Date.now() >= deadline) {
-        return;
+        // Still an UNACKNOWLEDGED, FRESH Stop. The poll budget expiring proves nothing about
+        // the route's writes — slow checkpoint cleanup looks exactly like this — so treating
+        // the barrier as satisfied would terminalize the run and release its capacity (and
+        // its deletion/erasure barriers) while beforePublish may still be writing. DEFER
+        // instead: the acknowledgement settles it, or the stale-owner cutoff authorizes a
+        // later attempt.
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, STOP_BARRIER_POLL_MS));
     }
@@ -806,8 +814,16 @@ export function createSchedulesService(
     }
     const terminal = status !== 'requires_action';
     if (terminal) {
-      // Honor an in-flight interactive Stop's persistence before terminalizing.
-      await waitForStopPersistence(scheduleId, new Date(scheduledFor));
+      // Honor an in-flight interactive Stop's persistence before terminalizing. A deferral
+      // is NOT a failure to record — the run is deliberately left active/preserved — but it
+      // must report "not settled" so callers with durable retry (the approval-expiry host
+      // action, reconciliation) re-drive it rather than assuming the outcome landed.
+      if (!(await waitForStopPersistence(scheduleId, new Date(scheduledFor)))) {
+        logger.info(
+          `[schedules] deferring terminal settlement for ${scheduleId}: interactive Stop persistence is still unacknowledged`,
+        );
+        return false;
+      }
     }
     if (terminal && streamId && jobCreatedAt != null) {
       try {
