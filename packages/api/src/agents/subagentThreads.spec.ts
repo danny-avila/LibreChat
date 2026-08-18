@@ -68,7 +68,7 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
   ): Promise<SubagentTaskControlResult | undefined> {
     return this.hub.owners
       .get(this.hub.key(scopeId, taskId))
-      ?.handler?.control(scopeId, taskId, command);
+      ?.handler?.control(scopeId, taskId, command, _invocationId);
   }
 
   async list(scopeId: string): Promise<SubagentTaskSnapshot[]> {
@@ -1428,6 +1428,83 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('applies one control invocation once whether it arrives locally or through routing', async () => {
+    const userId = 'invocation-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => result,
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
+    const routed = await requesterStore.controlTask(config.scopeId, taskId, steer, 'invocation-1');
+    expect(routed).toMatchObject({ status: 'accepted' });
+
+    /** The same invocation reaching the owner directly replays that result rather than
+     * queueing a second steer, so local and routed callers agree. */
+    await expect(
+      ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
+    ).resolves.toEqual(routed);
+    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    /** Reusing one invocation id for different content is a caller error, not a retry. */
+    await expect(
+      requesterStore.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Something else entirely.' },
+        'invocation-1',
+      ),
+    ).resolves.toMatchObject({ status: 'invalid' });
+    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    finish({ content: 'Cross-replica result.' });
+    await waitForSettled(ownerStore, config.scopeId, started);
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      requesterStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('fails a child closed when its owner address cannot be published', async () => {
+    const userId = 'unregistered-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const transport = new TestTaskControlTransport(hub);
+    transport.registerTask = async () => {
+      throw new Error('registration failed');
+    };
+    const store = new SubagentThreadTaskStore(methods);
+    await store.configureTaskControlTransport(transport);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const run = jest.fn(async () => ({ content: 'never reached' }));
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    /** An unaddressable child cannot be polled, controlled, or cancelled, so no
+     * provider work may start behind a failed registration. */
+    expect(run).not.toHaveBeenCalled();
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'error',
+    });
+    await store.destroyTaskControlTransport();
+  });
+
   it('routes conversation-deletion cancellation to a remote task owner', async () => {
     const userId = 'routed-delete-user';
     const parentConversationId = randomUUID();
@@ -1451,9 +1528,10 @@ describe('SubagentThreadTaskStore', () => {
     const taskId = requireAccepted(started).task.taskId;
     await Promise.resolve();
 
-    await expect(
-      deletingStore.cancelForConversationsAcrossReplicas(userId, [parentConversationId]),
-    ).resolves.toBe(1);
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await expect(deletingStore.cancelPlan(plan)).resolves.toBe(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
 
@@ -1494,9 +1572,8 @@ describe('SubagentThreadTaskStore', () => {
     expect(await methods.getConvo(userId, threadId)).not.toBeNull();
 
     /** The parent survives this deletion, so the child's own thread is the only target. */
-    await expect(
-      deletingStore.cancelForConversationsAcrossReplicas(userId, [threadId]),
-    ).resolves.toBe(1);
+    const plan = await deletingStore.planCancellationForConversations(userId, [threadId]);
+    await expect(deletingStore.cancelPlan(plan)).resolves.toBe(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
 
@@ -1538,11 +1615,15 @@ describe('SubagentThreadTaskStore', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
 
-    /** The post-delete pass cannot read the removed conversations back, so it resolves
-     * this child from its durable lease instead. */
+    /** Production ordering: the plan is resolved first, the cascade is deleted, and
+     * only then is the plan replayed against the owner directory. */
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await methods.deleteConvos(userId, { conversationId: parentConversationId });
     await expect(
-      deletingStore.cancelActiveLeasesForConversations(userId, [parentConversationId]),
-    ).resolves.toBe(1);
+      deletingStore.cancelPlan(plan, [parentConversationId, requireThreadId(started)]),
+    ).resolves.toBeGreaterThanOrEqual(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
 

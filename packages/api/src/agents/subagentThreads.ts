@@ -19,6 +19,7 @@ import type {
 } from '@librechat/agents';
 import type {
   AllMethods,
+  IActiveSubagentThreadLease,
   IConversation,
   IMessage,
   MessageMethods,
@@ -40,6 +41,17 @@ const DEFAULT_OWNER_DRAIN_TIMEOUT_MS = 45_000;
 const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 /** Matches the deletion drain batch so cancellation cannot burst Redis. */
 const DELETION_CANCEL_CONCURRENCY = 32;
+/** Bounds retained control invocations; one entry per applied command. */
+const MAX_CONTROL_INVOCATIONS = 4_096;
+
+/** A cancellation target set resolved before the conversations are removed. */
+export interface SubagentCancellationPlan {
+  userId: string;
+  tenantId?: string;
+  conversationIds: string[];
+  scopes: Array<{ scopeId: string; threadIds: string[] | null }>;
+  leases: IActiveSubagentThreadLease[];
+}
 /** Three missed 10-second transport heartbeats retire a crashed owner. */
 const DEFAULT_TASK_ROUTING_TTL_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
@@ -306,6 +318,10 @@ function safeErrorMessage(error: unknown): string {
 export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   readonly supportsThreadContinuation = true;
   private readonly activeThreads = new Map<string, TaskThreadLease>();
+  private readonly controlInvocations = new Map<
+    string,
+    { fingerprint: string; result: SubagentTaskControlResult }
+  >();
   private readonly parentPersistence = new Map<string, Promise<unknown>>();
   private readonly maxThreadDepth: number;
   private readonly leaseTtlMs: number;
@@ -346,7 +362,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     await transport.bind({
       claim: (scopeId, taskId) => super.claim(scopeId, taskId),
-      control: (scopeId, taskId, command) => this.control(scopeId, taskId, command),
+      control: (scopeId, taskId, command, invocationId) =>
+        this.controlInvocation(scopeId, taskId, command, invocationId),
       list: (scopeId) => super.list(scopeId),
       cancelScope: (scopeId, threadIds) => this.cancelForScope(scopeId, threadIds),
     });
@@ -418,6 +435,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
+            /** Publish the owner address before any provider work: a child running
+             * while unaddressable cannot be polled, controlled, or cancelled, and its
+             * side effects would already have happened by the time a heartbeat
+             * republished it. A failed registration fails the task closed instead. */
+            await this.taskControlTransport?.registerTask(
+              request.scopeId,
+              runtime.taskId,
+              this.taskRoutingTtlMs,
+            );
             await parentReady;
             const prepared = await this.prepareThread(
               request.scopeId,
@@ -524,13 +550,6 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     } else if (ownsLease && this.activeThreads.get(lockKey) === lease) {
       this.activeThreads.delete(lockKey);
     }
-    if (started.accepted && this.taskControlTransport != null) {
-      void this.taskControlTransport
-        .registerTask(request.scopeId, started.task.taskId, this.taskRoutingTtlMs)
-        .catch((error) => {
-          logger.warn('[subagentThreads] Failed to publish the child-task owner', error);
-        });
-    }
     return started;
   }
 
@@ -555,13 +574,52 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string = randomUUID(),
   ): Promise<SubagentTaskControlResult> {
-    const local = this.control(scopeId, taskId, command);
+    const local = this.controlInvocation(scopeId, taskId, command, invocationId);
     if (local.status !== 'not_found') {
       return local;
     }
     return (
       (await this.taskControlTransport?.control(scopeId, taskId, command, invocationId)) ?? local
     );
+  }
+
+  /**
+   * Applies one logical control exactly once for its owning task. Idempotency lives
+   * here rather than in the transport so a local and a routed caller of the same
+   * invocation agree, and it is keyed by task as well as invocation because provider
+   * tool-call ids repeat across runs and agents.
+   */
+  controlInvocation(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): SubagentTaskControlResult {
+    const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
+    const fingerprint = JSON.stringify(command);
+    const applied = this.controlInvocations.get(key);
+    if (applied != null) {
+      /** One invocation is one command; reusing its id for different content is a
+       * caller error rather than a retry, so it is refused instead of applied. */
+      return applied.fingerprint === fingerprint
+        ? applied.result
+        : {
+            status: 'invalid',
+            message: 'This control invocation id was already used for a different command.',
+          };
+    }
+    const result = this.control(scopeId, taskId, command);
+    if (result.status === 'not_found') {
+      return result;
+    }
+    if (this.controlInvocations.size >= MAX_CONTROL_INVOCATIONS) {
+      const oldest = this.controlInvocations.keys().next().value as string | undefined;
+      if (oldest != null) {
+        this.controlInvocations.delete(oldest);
+      }
+    }
+    this.controlInvocations.set(key, { fingerprint, result });
+    return result;
   }
 
   /** Returns this process's tasks plus tasks reported by registered remote owners. */
@@ -637,25 +695,39 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
   }
 
-  /** Cancels matching local and remote tasks before conversation data is removed. */
-  async cancelForConversationsAcrossReplicas(
+  /**
+   * Resolves every cancellation target while the conversations still exist. The plan is
+   * replayed after deletion, when those rows can no longer be read back, so the second
+   * pass only has to reach registered owners through Redis.
+   */
+  async planCancellationForConversations(
     userId: string,
     conversationIds: Iterable<string>,
     tenantId?: string,
-  ): Promise<number> {
-    const targets = new Set(conversationIds);
-    let cancelled = this.cancelForConversations(userId, targets, tenantId);
-    const transport = this.taskControlTransport;
-    if (targets.size === 0 || transport == null) {
-      return cancelled;
+  ): Promise<SubagentCancellationPlan> {
+    const targetIds = [...new Set(conversationIds)];
+    const plan: SubagentCancellationPlan = {
+      userId,
+      ...(tenantId == null ? {} : { tenantId }),
+      conversationIds: targetIds,
+      scopes: [],
+      leases: [],
+    };
+    if (targetIds.length === 0 || this.taskControlTransport == null) {
+      return plan;
     }
-
-    const targetIds = [...targets];
+    const targets = new Set(targetIds);
+    const scopeIdFor = (parentConversationId: string): string =>
+      serializeScope({
+        userId,
+        parentConversationId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+    /** Deleting a conversation takes its whole scope; a deleted child only cancels its
+     * own thread inside a parent scope that survives. */
     const conversations = await Promise.all(
       targetIds.map((conversationId) => this.methods.getConvo(userId, conversationId)),
     );
-    /** Deleting a parent takes its whole scope; a deleted child only cancels its own
-     * thread inside a parent scope that survives. */
     const threadTargetsByParent = new Map<string, Set<string>>();
     for (const [index, conversation] of conversations.entries()) {
       const parentConversationId = conversation?.subagentThread?.parentConversationId;
@@ -670,26 +742,69 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       threadIds.add(targetIds[index]);
       threadTargetsByParent.set(parentConversationId, threadIds);
     }
-
-    /** Owners apply the predicate to their complete task set, so a scope holding more
-     * children than the model-facing list cap still cancels every one of them. */
-    const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
-    const scopeIdFor = (parentConversationId: string): string =>
-      serializeScope({
-        userId,
-        parentConversationId,
-        ...(tenantId ? { tenantId } : {}),
-      });
-    const cancellations = [
-      ...targetIds.map((parentConversationId) =>
-        cancelSlot(() => transport.cancelScope(scopeIdFor(parentConversationId), null)),
-      ),
-      ...[...threadTargetsByParent].map(([parentConversationId, threadIds]) =>
-        cancelSlot(() => transport.cancelScope(scopeIdFor(parentConversationId), [...threadIds])),
-      ),
+    plan.scopes = [
+      ...targetIds.map((parentConversationId) => ({
+        scopeId: scopeIdFor(parentConversationId),
+        threadIds: null,
+      })),
+      ...[...threadTargetsByParent].map(([parentConversationId, threadIds]) => ({
+        scopeId: scopeIdFor(parentConversationId),
+        threadIds: [...threadIds],
+      })),
     ];
-    for (const count of await Promise.all(cancellations)) {
+    /** Captured now so descendants removed by the cascade stay reachable afterwards. */
+    plan.leases = await this.methods.listActiveSubagentThreadLeases({
+      user: userId,
+      now: new Date(),
+      ...(tenantId == null ? {} : { tenantId }),
+    });
+    return plan;
+  }
+
+  /**
+   * Cancels local children and replays a plan against registered remote owners.
+   * `removedConversationIds` extends it with the cascade a deletion reported, matched
+   * against leases captured before those rows were removed.
+   */
+  async cancelPlan(
+    plan: SubagentCancellationPlan,
+    removedConversationIds: Iterable<string> = [],
+  ): Promise<number> {
+    const { userId, tenantId } = plan;
+    let cancelled = this.cancelForConversations(userId, plan.conversationIds, tenantId);
+    const transport = this.taskControlTransport;
+    if (transport == null) {
+      return cancelled;
+    }
+    const removed = new Set(removedConversationIds);
+    const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
+    const scopeCancellations = plan.scopes.map((scope) =>
+      cancelSlot(() => transport.cancelScope(scope.scopeId, scope.threadIds)),
+    );
+    const leaseCancellations = plan.leases
+      .filter(
+        (lease) => removed.has(lease.parentConversationId) || removed.has(lease.conversationId),
+      )
+      .map((lease) =>
+        cancelSlot(() =>
+          this.controlTask(
+            serializeScope({
+              userId,
+              parentConversationId: lease.parentConversationId,
+              ...(tenantId ? { tenantId } : {}),
+            }),
+            lease.taskId,
+            { action: 'cancel' },
+          ),
+        ),
+      );
+    for (const count of await Promise.all(scopeCancellations)) {
       cancelled += count;
+    }
+    for (const result of await Promise.all(leaseCancellations)) {
+      if (result.status === 'cancelled') {
+        cancelled += 1;
+      }
     }
     return cancelled;
   }
@@ -705,50 +820,6 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         matchesTenant(candidate.tenantId, scope.tenantId) &&
         (targets == null || targets.has(threadId)),
     );
-  }
-
-  /**
-   * Second cancellation pass after a conversation cascade is deleted. One durable-lease
-   * read resolves every live child address, so catching a child admitted after the
-   * pre-delete snapshot never re-reads the deleted conversations or probes the owner
-   * directory once per removed id.
-   */
-  async cancelActiveLeasesForConversations(
-    userId: string,
-    conversationIds: Iterable<string>,
-    tenantId?: string,
-  ): Promise<number> {
-    const targets = new Set(conversationIds);
-    if (targets.size === 0) {
-      return 0;
-    }
-    const activeLeases = await this.methods.listActiveSubagentThreadLeases({
-      user: userId,
-      now: new Date(),
-      ...(tenantId == null ? {} : { tenantId }),
-    });
-    const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
-    const cancellations: Array<Promise<SubagentTaskControlResult>> = [];
-    for (const lease of activeLeases) {
-      if (!targets.has(lease.parentConversationId) && !targets.has(lease.conversationId)) {
-        continue;
-      }
-      const scopeId = serializeScope({
-        userId,
-        parentConversationId: lease.parentConversationId,
-        ...(tenantId ? { tenantId } : {}),
-      });
-      cancellations.push(
-        cancelSlot(() => this.controlTask(scopeId, lease.taskId, { action: 'cancel' })),
-      );
-    }
-    let cancelled = 0;
-    for (const result of await Promise.all(cancellations)) {
-      if (result.status === 'cancelled') {
-        cancelled += 1;
-      }
-    }
-    return cancelled;
   }
 
   /** Cancels every active child owned by a user before a delete-all operation. */

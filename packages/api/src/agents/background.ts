@@ -1128,18 +1128,24 @@ function buildSubagentControlCommand(
 }
 
 /**
- * One tool call is one control invocation. Reusing the provider's tool-call id keeps a
- * replay of that same call idempotent, where a fresh id would apply the command twice;
- * two distinct calls stay distinct even when their action and message are identical.
+ * One tool call is one control invocation. A provider tool-call id such as `call_0`
+ * repeats across runs and agents, so the identity also carries the run and executing
+ * agent; replaying that same call stays idempotent while a later run's identical id is
+ * a new command. Hashing keeps every derived identity inside the routed bound.
  */
-function controlInvocationId(toolCallId: string | undefined): string {
-  const trimmed = toolCallId?.trim();
-  if (trimmed == null || trimmed === '') {
+function controlInvocationId(params: {
+  toolCallId?: string;
+  agentId?: string;
+  runId?: string;
+}): string {
+  const toolCallId = params.toolCallId?.trim();
+  if (toolCallId == null || toolCallId === '') {
     return randomUUID();
   }
-  return trimmed.length <= MAX_BACKGROUND_TASK_ID_CHARS
-    ? trimmed
-    : createHash('sha256').update(trimmed).digest('base64url').slice(0, 32);
+  return createHash('sha256')
+    .update(`${params.runId ?? ''}\u0000${params.agentId ?? ''}\u0000${toolCallId}`)
+    .digest('base64url')
+    .slice(0, 32);
 }
 
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
@@ -1169,6 +1175,9 @@ export async function runCheckBackgroundTask(params: {
   args: unknown;
   /** The provider's tool-call id: one control invocation, stable across replays. */
   toolCallId?: string;
+  /** Scopes that tool-call id, whose provider ids repeat across runs and agents. */
+  agentId?: string;
+  runId?: string;
   subagentTasks?: SubagentTaskConfig;
 }): Promise<string> {
   const { userId, conversationId } = params;
@@ -1182,7 +1191,7 @@ export async function runCheckBackgroundTask(params: {
   }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
-  const invocationId = controlInvocationId(params.toolCallId);
+  const invocationId = controlInvocationId(params);
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);

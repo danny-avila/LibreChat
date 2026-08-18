@@ -904,6 +904,42 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
+  it('keeps one repeated provider invocation id from bleeding across tasks', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const control = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'accepted' as const,
+      task: snapshot({ taskId }),
+      controlId: `control-${taskId}`,
+    }));
+    await owner.bind(taskHandler({ control }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    await owner.registerTask('scope-2', 'task-2', 60_000);
+    const steer = { action: 'queue' as const, message: 'Check one more source.' };
+
+    /** `call_0` repeats across runs and agents, so it must not answer one task from
+     * another task's retained response. */
+    await expect(requester.control('scope-1', 'task-1', steer, 'call_0')).resolves.toMatchObject({
+      controlId: 'control-task-1',
+    });
+    await expect(requester.control('scope-2', 'task-2', steer, 'call_0')).resolves.toMatchObject({
+      controlId: 'control-task-2',
+    });
+    expect(control).toHaveBeenCalledTimes(2);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
   it('never retains a live claim status behind a later poll', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(

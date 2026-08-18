@@ -4094,6 +4094,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     conversationId: backgroundConversationId,
                     args: tc.args,
                     toolCallId: tc.id,
+                    agentId,
+                    runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
                     subagentTasks,
                   });
                   /** Deliver a completed task's artifact through THIS live poll

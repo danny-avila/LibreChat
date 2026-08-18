@@ -154,25 +154,28 @@ router.delete('/', configMiddleware, async (req, res) => {
       typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
         ? req.user.tenantId
         : undefined;
+    let cancellationPlan;
     if (filter.conversationId) {
-      await subagentThreadTaskStore.cancelForConversationsAcrossReplicas(
+      /** Resolve the targets while the conversations still exist: the second pass
+       * runs after their rows are gone and can only reach registered owners. */
+      cancellationPlan = await subagentThreadTaskStore.planCancellationForConversations(
         req.user.id,
         [filter.conversationId],
         tenantId,
       );
+      await subagentThreadTaskStore.cancelPlan(cancellationPlan);
     } else {
       await subagentThreadTaskStore.cancelAndDrainForOwner(req.user.id, tenantId);
     }
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     const deletedConversationIds =
       dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
-    /** Root deletion closes new child admission. Cancel once more to catch a
-     * task admitted after the pre-delete snapshot but before that fence. The removed
-     * conversations cannot be read back, so this pass resolves live children from
-     * their durable leases rather than from the deleted cascade. */
-    if (deletedConversationIds.length > 0) {
+    /** Root deletion closes new child admission. Replay the plan to catch a task
+     * admitted after the first pass but before that fence, extended with the cascade
+     * this deletion reported. */
+    if (cancellationPlan != null && deletedConversationIds.length > 0) {
       await subagentThreadTaskStore
-        .cancelActiveLeasesForConversations(req.user.id, deletedConversationIds, tenantId)
+        .cancelPlan(cancellationPlan, deletedConversationIds)
         .catch((error) => {
           logger.warn('Post-delete subagent cancellation failed', error);
         });

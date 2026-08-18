@@ -272,21 +272,22 @@ describe('Convos Routes', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenNthCalledWith(
-        1,
+      /** The plan is resolved before deletion, while those rows can still be read. */
+      expect(subagentThreadStore.planCancellationForConversations).toHaveBeenCalledWith(
         'test-user-123',
         ['parent-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledTimes(1);
-      /** The removed conversations cannot be read back, so the second pass resolves
-       * live children from their durable leases instead of the deleted cascade. */
-      expect(subagentThreadStore.cancelActiveLeasesForConversations).toHaveBeenCalledWith(
-        'test-user-123',
-        ['parent-conversation', 'child-conversation'],
-        undefined,
-      );
-      expect(subagentThreadStore.cancelActiveLeasesForConversations).toHaveBeenCalledTimes(1);
+      expect(
+        subagentThreadStore.planCancellationForConversations.mock.invocationCallOrder[0],
+      ).toBeLessThan(deleteConvos.mock.invocationCallOrder[0]);
+      /** It is applied once before deletion and replayed after with the cascade. */
+      expect(subagentThreadStore.cancelPlan).toHaveBeenCalledTimes(2);
+      expect(subagentThreadStore.cancelPlan.mock.calls[0][1]).toBeUndefined();
+      expect(subagentThreadStore.cancelPlan.mock.calls[1][1]).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
       expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
         'parent-conversation',
         'child-conversation',

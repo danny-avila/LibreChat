@@ -171,6 +171,7 @@ export interface SubagentTaskControlHandler {
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    invocationId: string,
   ): SubagentTaskControlResult;
   list(scopeId: string): SubagentTaskSnapshot[];
   cancelScope(scopeId: string, threadIds: string[] | null): number;
@@ -925,7 +926,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         result = claim;
       } else {
         result = boundedControlResult(
-          handler.control(request.scopeId, request.taskId, request.command),
+          handler.control(request.scopeId, request.taskId, request.command, request.invocationId),
         );
       }
       const serializedResult = JSON.stringify(result);
@@ -962,10 +963,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (request.operation === 'cancel') {
       return { cache: this.controlReplays, key: `cancel\u0000${request.requestId}` };
     }
-    /** One tool invocation is one command. The transport's retry republishes the same
-     * envelope, so it replays; two intentional identical controls arrive under distinct
-     * invocation ids and both apply. */
-    return { cache: this.controlReplays, key: `control\u0000${request.invocationId}` };
+    /** Task-scoped: a provider tool-call id such as `call_0` repeats across runs and
+     * agents, so keying on it alone would answer one task from another's snapshot. */
+    return {
+      cache: this.controlReplays,
+      key: `control\u0000${shortHash(request.scopeId)}\u0000${request.taskId}\u0000${request.invocationId}`,
+    };
   }
 
   private claimReplayKey(scopeId: string, taskId: string): string {

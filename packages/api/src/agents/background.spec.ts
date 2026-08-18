@@ -1295,7 +1295,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     finish({ content: 'late result' });
   });
 
-  it('carries the tool-call id as the control invocation identity', async () => {
+  it('derives a bounded control invocation identity from the tool call', async () => {
     const controlTask = jest.fn().mockResolvedValue({
       status: 'not_running',
       task: {
@@ -1331,18 +1331,44 @@ describe('runCheckBackgroundTask (singleton)', () => {
     await control('call_abc');
     await control('call_abc');
     const [firstInvocation, replayedInvocation] = controlTask.mock.calls.map((call) => call[3]);
-    expect(firstInvocation).toBe('call_abc');
-    expect(replayedInvocation).toBe('call_abc');
+    expect(firstInvocation).toBe(replayedInvocation);
+    expect(firstInvocation).toHaveLength(32);
 
     /** A separate tool call is a separate command even with an identical payload. */
     await control('call_def');
-    expect(controlTask.mock.calls[2][3]).toBe('call_def');
+    expect(controlTask.mock.calls[2][3]).not.toBe(firstInvocation);
+
+    /** The same provider id in another run or agent is a different command. */
+    await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: {
+        background_task_id: 'remote-task',
+        action: 'queue',
+        message: 'Check one more source.',
+      },
+      toolCallId: 'call_abc',
+      runId: 'run-2:0',
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+    expect(controlTask.mock.calls[3][3]).not.toBe(firstInvocation);
+
+    /** A provider id far past the protocol bound still routes as a bounded identity. */
+    const longToolCallId = `call_${'x'.repeat(200)}`;
+    await control(longToolCallId);
+    await control(longToolCallId);
+    const [longInvocation, replayedLongInvocation] = controlTask.mock.calls
+      .slice(4)
+      .map((call) => call[3]);
+    expect(longInvocation).toHaveLength(32);
+    expect(replayedLongInvocation).toBe(longInvocation);
 
     /** Without a tool-call id each invocation stays distinct rather than colliding. */
     await control(undefined);
     await control(undefined);
-    const [fallback, otherFallback] = controlTask.mock.calls.slice(3).map((call) => call[3]);
+    const [fallback, otherFallback] = controlTask.mock.calls.slice(6).map((call) => call[3]);
     expect(fallback).not.toBe(otherFallback);
+    expect(fallback.length).toBeLessThanOrEqual(128);
   });
 
   it('reports an unreachable remote subagent owner without pretending the task is missing', async () => {
