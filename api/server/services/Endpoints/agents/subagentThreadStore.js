@@ -33,7 +33,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     fenceOwnerAdmission: db.fenceSubagentAdmission,
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
-    onTaskSettled: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
+    onTaskPrepared: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
   },
 );
 

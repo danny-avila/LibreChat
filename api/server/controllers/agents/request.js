@@ -309,6 +309,18 @@ function rejectPreliminaryParentMessageId(res, generationProtocolVersion) {
   );
 }
 
+function rejectMissingTriggerParentMessageId(res, generationProtocolVersion) {
+  return sendGenerationJson(
+    res,
+    404,
+    {
+      code: 'PARENT_NOT_FOUND',
+      error: 'The selected parent response is no longer available.',
+    },
+    generationProtocolVersion,
+  );
+}
+
 /**
  * Resumable Agent Controller - Generation runs independently of HTTP connection.
  * Returns streamId immediately, client subscribes separately via SSE.
@@ -450,6 +462,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       : undefined,
   });
 
+  const isTriggerContinuation =
+    req._isAgentTrigger === true && !isNewConvo && parentMessageId !== Constants.NO_PARENT;
+
   if (
     await isUnpersistedPreliminaryParent({
       userId,
@@ -458,6 +473,34 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       getMessages,
     })
   ) {
+    if (isTriggerContinuation) {
+      let parentJob;
+      try {
+        parentJob = await GenerationJobManager.getJob(conversationId);
+      } catch (error) {
+        logger.warn('[ResumableAgentController] Trigger parent lookup failed', error);
+        res.set('Retry-After', '1');
+        startupTelemetry?.end('rejected');
+        return sendGenerationJson(
+          res,
+          503,
+          { code: 'SERVER_NOT_READY', error: 'Parent generation state is unavailable.' },
+          generationProtocolVersion,
+        );
+      }
+      if (
+        parentJob != null &&
+        liveJobBelongsToRequester(parentJob, req.user) &&
+        (parentJob.status === 'running' ||
+          parentJob.status === 'requires_action' ||
+          parentJob.metadata?.terminalPersistencePending === true)
+      ) {
+        startupTelemetry?.end('rejected');
+        return rejectPreliminaryParentMessageId(res, generationProtocolVersion);
+      }
+      startupTelemetry?.end('rejected');
+      return rejectMissingTriggerParentMessageId(res, generationProtocolVersion);
+    }
     startupTelemetry?.end('rejected');
     return rejectPreliminaryParentMessageId(res, generationProtocolVersion);
   }
@@ -478,8 +521,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    * another generation on the same conversation stream would replace it.
    * Defer without claiming the continuation idempotency key so the delivery engine
    * can retry after the parent reaches a terminal state. */
-  const isTriggerContinuation =
-    req._isAgentTrigger === true && !isNewConvo && parentMessageId !== Constants.NO_PARENT;
   if (isTriggerContinuation) {
     let parentJob;
     try {
@@ -922,6 +963,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       ...(recoveredSteerId && { recoveredSteerId }),
       ...(recoveredSteerPayload && { recoveredSteerPayload }),
       ...(expectedPredecessorCreatedAt != null && { expectedPredecessorCreatedAt }),
+      ...(isTriggerContinuation && { rejectActivePredecessor: true }),
       ...(ownedIdempotencyClaim?.claimToken && {
         idempotencyClientRequestId: clientRequestId,
         idempotencyClaimToken: ownedIdempotencyClaim.claimToken,
@@ -1949,31 +1991,44 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
           const currentJob = error.currentJob;
           const currentStatus = currentJob?.status;
-          const predecessorVerified =
-            currentJob != null &&
-            Number.isSafeInteger(currentJob.createdAt) &&
-            currentJob.createdAt >= 0 &&
-            currentJob.verified !== false;
-          sendGenerationJson(
-            res,
-            409,
-            {
-              status: 'predecessor_mismatch',
-              code: 'GENERATION_PREDECESSOR_MISMATCH',
-              error: predecessorVerified
-                ? 'A newer generation became current before this request could start.'
-                : 'The prior generation could not be verified. Please retry.',
-              streamId,
-              conversationId: currentJob?.conversationId ?? conversationId,
-              generationCreatedAt: currentJob?.createdAt,
-              predecessorVerified,
-              active:
-                typeof currentJob?.active === 'boolean'
-                  ? currentJob.active
-                  : currentStatus === 'running' || currentStatus === 'requires_action',
-            },
-            generationProtocolVersion,
-          );
+          if (isTriggerContinuation && currentJob?.active === true) {
+            res.set('Retry-After', '1');
+            sendGenerationJson(
+              res,
+              409,
+              {
+                code: 'PARENT_NOT_READY',
+                error: 'Another generation became active before the continuation could start.',
+              },
+              generationProtocolVersion,
+            );
+          } else {
+            const predecessorVerified =
+              currentJob != null &&
+              Number.isSafeInteger(currentJob.createdAt) &&
+              currentJob.createdAt >= 0 &&
+              currentJob.verified !== false;
+            sendGenerationJson(
+              res,
+              409,
+              {
+                status: 'predecessor_mismatch',
+                code: 'GENERATION_PREDECESSOR_MISMATCH',
+                error: predecessorVerified
+                  ? 'A newer generation became current before this request could start.'
+                  : 'The prior generation could not be verified. Please retry.',
+                streamId,
+                conversationId: currentJob?.conversationId ?? conversationId,
+                generationCreatedAt: currentJob?.createdAt,
+                predecessorVerified,
+                active:
+                  typeof currentJob?.active === 'boolean'
+                    ? currentJob.active
+                    : currentStatus === 'running' || currentStatus === 'requires_action',
+              },
+              generationProtocolVersion,
+            );
+          }
         } else if (error?.code === 'RECOVERY_PAYLOAD_MISMATCH') {
           sendGenerationJson(
             res,

@@ -1,75 +1,344 @@
 import { randomUUID } from 'node:crypto';
+import { isEphemeralAgentId } from 'librechat-data-provider';
+import type { ConversationMethods, IMessage, MessageMethods } from '@librechat/data-schemas';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
-import type { SubagentTaskSettlement } from './subagentThreads';
+import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import type { AgentTriggerDispatchContext } from './triggers/dispatch';
+import type {
+  AgentTriggerContinuePreparation,
+  AgentTriggerExecutionHostDeps,
+} from './triggers/host';
+import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
+import { AgentTriggerExecutionError } from './triggers/host';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 const SOURCE_ID = 'subagent-completion';
+const EVENT_TYPE = 'subagent.completion';
+const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
+const TASK_SELECT =
+  'messageId conversationId parentMessageId sender text error createdAt updatedAt +subagentTask';
 
 export type EnqueueAgentTrigger = (
   envelope: unknown,
   options?: AgentTriggerEnqueueOptions,
 ) => Promise<unknown>;
 
-function renderWakeupInput(settlement: SubagentTaskSettlement): string {
+type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
+  Pick<MessageMethods, 'claimSubagentTaskResult' | 'getMessages'>;
+
+interface GenerationState {
+  status?: unknown;
+  metadata?: { terminalPersistencePending?: unknown };
+}
+
+export interface SubagentCompletionWakeupResolverDeps {
+  methods: WakeupMethods;
+  getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
+}
+
+function payloadRegistration(
+  envelope: AgentContinueTriggerEnvelope,
+): Pick<SubagentTaskWakeupRegistration, 'taskId' | 'threadId' | 'subagentType'> | null | undefined {
+  if (
+    envelope.event.source.type !== 'internal' ||
+    envelope.event.source.id !== SOURCE_ID ||
+    envelope.event.type !== EVENT_TYPE
+  ) {
+    return;
+  }
+  const payload = envelope.event.payload;
+  if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+  const { taskId, threadId, subagentType } = payload;
+  if (
+    typeof taskId !== 'string' ||
+    taskId.length === 0 ||
+    taskId.length > 256 ||
+    typeof threadId !== 'string' ||
+    threadId.length === 0 ||
+    threadId.length > 256 ||
+    typeof subagentType !== 'string' ||
+    subagentType.length === 0 ||
+    subagentType.length > 256
+  ) {
+    return null;
+  }
+  return { taskId, threadId, subagentType };
+}
+
+function executionError(
+  message: string,
+  options: { code: string; retryable: boolean; status?: number; retryAfter?: string },
+): AgentTriggerExecutionError {
+  return new AgentTriggerExecutionError(message, {
+    mode: 'continue',
+    certainty: 'definite',
+    ...options,
+  });
+}
+
+function isParentActive(job: GenerationState | null): boolean {
+  return (
+    job?.status === 'running' ||
+    job?.status === 'requires_action' ||
+    job?.metadata?.terminalPersistencePending === true
+  );
+}
+
+function sameTenant(actual: string | undefined, expected: string | undefined): boolean {
+  return actual === expected;
+}
+
+function timestamp(message: Pick<IMessage, 'createdAt'>): number {
+  const value = message.createdAt;
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const parsed = value == null ? Number.NaN : new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** Selects the newest persisted assistant on the branch below the original
+ * parent. Re-resolving for every ordered delivery serializes sibling child
+ * completions onto the branch produced by the preceding wakeup. */
+function latestAssistantDescendant(messages: IMessage[], anchorId: string): string | undefined {
+  const byId = new Map(messages.map((message) => [message.messageId, message]));
+  if (!byId.has(anchorId)) {
+    return;
+  }
+  const memo = new Map<string, boolean>([[anchorId, true]]);
+  const reachesAnchor = (message: IMessage, visiting = new Set<string>()): boolean => {
+    const known = memo.get(message.messageId);
+    if (known != null) {
+      return known;
+    }
+    if (visiting.has(message.messageId)) {
+      memo.set(message.messageId, false);
+      return false;
+    }
+    visiting.add(message.messageId);
+    const parent =
+      typeof message.parentMessageId === 'string' ? byId.get(message.parentMessageId) : undefined;
+    const reachable = parent != null && reachesAnchor(parent, visiting);
+    visiting.delete(message.messageId);
+    memo.set(message.messageId, reachable);
+    return reachable;
+  };
+  return messages
+    .filter((message) => message.isCreatedByUser === false && reachesAnchor(message))
+    .sort((left, right) => {
+      const time = timestamp(left) - timestamp(right);
+      return time === 0 ? left.messageId.localeCompare(right.messageId) : time;
+    })
+    .at(-1)?.messageId;
+}
+
+function renderWakeupInput(
+  registration: Pick<SubagentTaskWakeupRegistration, 'taskId' | 'threadId' | 'subagentType'>,
+  terminal: IMessage,
+): string {
+  const status = terminal.subagentTask?.status ?? 'error';
   return [
-    `A detached subagent task has ${settlement.status}.`,
-    'Collect it now with check_background_task, then continue the parent task from its result.',
+    `A detached subagent task has ${status}. Continue the parent task using its durable result below.`,
     JSON.stringify({
-      background_task_id: settlement.taskId,
-      subagent_thread_id: settlement.threadId,
-      subagent_type: settlement.subagentType,
-      status: settlement.status,
+      background_task_id: registration.taskId,
+      subagent_thread_id: registration.threadId,
+      subagent_type: registration.subagentType,
+      status,
+      result: terminal.text ?? '',
     }),
   ].join('\n');
 }
 
-/**
- * Adapts a persisted child settlement into the source-neutral durable trigger
- * queue. The stable delivery identity makes duplicate settlement callbacks
- * harmless, while the exact parent response id preserves the originating
- * conversation branch.
- */
-export function createSubagentCompletionWakeupHandler(
-  enqueue: EnqueueAgentTrigger,
-): (settlement: SubagentTaskSettlement) => Promise<void> {
-  return async (settlement) => {
-    const parentAgentId = settlement.parentAgentId?.trim();
-    if (parentAgentId == null || parentAgentId === '') {
+/** Resolves a pre-registered completion delivery immediately before dispatch.
+ * The durable result claim elects exactly one consumer (manual poll or this
+ * delivery), while the branch lookup chains ordered sibling completions. */
+export function createSubagentCompletionWakeupResolver({
+  methods,
+  getGenerationJob,
+}: SubagentCompletionWakeupResolverDeps): NonNullable<
+  AgentTriggerExecutionHostDeps['prepareContinue']
+> {
+  return async (
+    envelope: AgentContinueTriggerEnvelope,
+    context: AgentTriggerDispatchContext,
+  ): Promise<AgentTriggerContinuePreparation | undefined> => {
+    const registration = payloadRegistration(envelope);
+    if (registration === undefined) {
       return;
     }
-    const eventId = `${settlement.taskId}:${settlement.status}`;
+    if (registration === null) {
+      throw executionError('The subagent completion wakeup payload is invalid.', {
+        code: 'INVALID_SUBAGENT_WAKEUP',
+        retryable: false,
+      });
+    }
+
+    let parentJob: GenerationState | null;
+    try {
+      parentJob = await getGenerationJob(envelope.target.conversationId);
+    } catch (error) {
+      throw executionError(
+        `Parent generation state is temporarily unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { code: 'PARENT_STATE_UNAVAILABLE', retryable: true },
+      );
+    }
+    if (isParentActive(parentJob)) {
+      throw executionError('The parent generation has not settled yet.', {
+        code: 'PARENT_NOT_READY',
+        retryable: true,
+        status: 409,
+        retryAfter: '1',
+      });
+    }
+
+    const userId = envelope.principal.userId;
+    const tenantId = envelope.principal.tenantId;
+    const [parent, child, parentMessages, taskMessages] = await Promise.all([
+      methods.getConvo(userId, envelope.target.conversationId),
+      methods.getConvo(userId, registration.threadId),
+      methods.getMessages(
+        { user: userId, conversationId: envelope.target.conversationId },
+        MESSAGE_SELECT,
+        { sort: { createdAt: 1, _id: 1 } },
+      ),
+      methods.getMessages(
+        {
+          user: userId,
+          conversationId: registration.threadId,
+          messageId: { $in: [`${registration.taskId}:user`, `${registration.taskId}:assistant`] },
+        },
+        TASK_SELECT,
+        { sort: { createdAt: 1, _id: 1 } },
+      ),
+    ]);
+    if (parent == null || !sameTenant(parent.tenantId, tenantId)) {
+      throw executionError('The parent conversation is no longer available.', {
+        code: 'PARENT_NOT_FOUND',
+        retryable: false,
+        status: 404,
+      });
+    }
+    const lineage = child?.subagentThread;
+    if (
+      child == null ||
+      !sameTenant(child.tenantId, tenantId) ||
+      lineage?.parentConversationId !== envelope.target.conversationId ||
+      lineage.parentMessageId !== envelope.target.parentMessageId ||
+      lineage.parentAgentId !== envelope.target.agentId ||
+      lineage.subagentType !== registration.subagentType
+    ) {
+      throw executionError('The child task lineage is no longer available.', {
+        code: 'CHILD_TASK_MISSING',
+        retryable: false,
+        status: 404,
+      });
+    }
+    const terminal = taskMessages.find(
+      (message) =>
+        message.messageId === `${registration.taskId}:assistant` &&
+        message.subagentTask?.status !== 'running',
+    );
+    if (terminal == null) {
+      const started = taskMessages.some(
+        (message) => message.messageId === `${registration.taskId}:user`,
+      );
+      if (started) {
+        throw executionError('The child task has not settled yet.', {
+          code: 'CHILD_NOT_READY',
+          retryable: true,
+          status: 409,
+          retryAfter: '1',
+        });
+      }
+      throw executionError('The child task no longer exists.', {
+        code: 'CHILD_TASK_MISSING',
+        retryable: false,
+        status: 404,
+      });
+    }
+
+    const parentMessageId = latestAssistantDescendant(
+      parentMessages,
+      envelope.target.parentMessageId,
+    );
+    if (parentMessageId == null) {
+      throw executionError('The parent conversation branch is no longer available.', {
+        code: 'PARENT_NOT_FOUND',
+        retryable: false,
+        status: 404,
+      });
+    }
+
+    const claim = await methods.claimSubagentTaskResult({
+      userId,
+      conversationId: registration.threadId,
+      taskId: registration.taskId,
+      kind: 'wakeup',
+      claimId: context.idempotencyKey,
+    });
+    if (claim.status !== 'acquired') {
+      return { status: 'settled' };
+    }
+    if (claim.message.subagentTask?.status === 'cancelled') {
+      return { status: 'settled' };
+    }
+    return {
+      status: 'ready',
+      parentMessageId,
+      input: renderWakeupInput(registration, claim.message),
+    };
+  };
+}
+
+/** Pre-registers the idempotent delivery before child provider work starts.
+ * A process crash can therefore delay a wakeup but cannot lose it; dispatch
+ * simply defers until the terminal child message exists. */
+export function createSubagentCompletionWakeupHandler(
+  enqueue: EnqueueAgentTrigger,
+): (registration: SubagentTaskWakeupRegistration) => Promise<void> {
+  return async (registration) => {
+    const parentAgentId = registration.parentAgentId?.trim();
+    if (parentAgentId == null || parentAgentId === '' || isEphemeralAgentId(parentAgentId)) {
+      return;
+    }
+    const eventId = registration.taskId;
     const envelope = createAgentTriggerEnvelope({
       mode: 'continue',
       requestId: randomUUID(),
       deliveryId: eventId,
       receivedAt: Date.now(),
       principal: {
-        id: settlement.userId,
-        ...(settlement.tenantId == null ? {} : { tenantId: settlement.tenantId }),
+        id: registration.userId,
+        ...(registration.tenantId == null ? {} : { tenantId: registration.tenantId }),
       },
       event: {
         id: eventId,
-        type: `subagent.${settlement.status}`,
-        occurredAt: settlement.settledAt,
+        type: EVENT_TYPE,
+        occurredAt: registration.createdAt,
         source: { id: SOURCE_ID, type: 'internal' },
         payload: {
-          taskId: settlement.taskId,
-          threadId: settlement.threadId,
-          subagentType: settlement.subagentType,
-          status: settlement.status,
+          taskId: registration.taskId,
+          threadId: registration.threadId,
+          subagentType: registration.subagentType,
         },
       },
       target: {
         agentId: parentAgentId,
-        conversationId: settlement.parentConversationId,
-        parentMessageId: settlement.parentMessageId,
+        conversationId: registration.parentConversationId,
+        parentMessageId: registration.parentMessageId,
       },
-      input: renderWakeupInput(settlement),
+      input: 'A detached subagent task is waiting to complete.',
     });
     await enqueue(envelope, {
-      orderingKey: `subagent-completion:${settlement.parentConversationId}`,
-      availableAt: new Date(Math.max(Date.now(), settlement.settledAt) + WAKEUP_ADMISSION_DELAY_MS),
+      orderingKey: `subagent-completion:${registration.parentConversationId}`,
+      availableAt: new Date(
+        Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
+      ),
     });
   };
 }

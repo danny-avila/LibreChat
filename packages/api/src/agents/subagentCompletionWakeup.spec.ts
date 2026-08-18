@@ -1,7 +1,14 @@
 import type { EnqueueAgentTrigger } from './subagentCompletionWakeup';
-import type { SubagentTaskSettlement } from './subagentThreads';
-import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './triggers/envelope';
-import { createSubagentCompletionWakeupHandler } from './subagentCompletionWakeup';
+import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import {
+  createAgentTriggerEnvelope,
+  getAgentTriggerIdempotencyKey,
+  parseAgentTriggerEnvelope,
+} from './triggers/envelope';
+import {
+  createSubagentCompletionWakeupHandler,
+  createSubagentCompletionWakeupResolver,
+} from './subagentCompletionWakeup';
 
 const NOW = 1_775_000_000_000;
 
@@ -11,20 +18,21 @@ function enqueueMock(): jest.MockedFunction<EnqueueAgentTrigger> {
   }));
 }
 
-function settlement(overrides: Partial<SubagentTaskSettlement> = {}): SubagentTaskSettlement {
+function registration(
+  overrides: Partial<SubagentTaskWakeupRegistration> = {},
+): SubagentTaskWakeupRegistration {
   return {
     userId: 'user-1',
     tenantId: 'tenant-1',
     parentConversationId: 'conversation-1',
     parentMessageId: 'response-1',
-    parentAgentId: 'agent-1',
+    parentAgentId: 'agent_parent_1',
     taskId: 'task-1',
     threadId: 'thread-1',
     subagentType: 'researcher',
-    settledAt: NOW - 10,
-    status: 'completed',
+    createdAt: NOW - 10,
     ...overrides,
-  } as SubagentTaskSettlement;
+  };
 }
 
 describe('createSubagentCompletionWakeupHandler', () => {
@@ -36,11 +44,11 @@ describe('createSubagentCompletionWakeupHandler', () => {
     jest.useRealTimers();
   });
 
-  it('enqueues a bounded continuation on the exact parent branch without copying child output', async () => {
+  it('pre-registers a bounded continuation on the exact parent branch', async () => {
     const enqueue = enqueueMock();
     const notify = createSubagentCompletionWakeupHandler(enqueue);
 
-    await notify(settlement());
+    await notify(registration());
 
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [envelopeValue, options] = enqueue.mock.calls[0]!;
@@ -50,34 +58,32 @@ describe('createSubagentCompletionWakeupHandler', () => {
       mode: 'continue',
       principal: { userId: 'user-1', tenantId: 'tenant-1' },
       target: {
-        agentId: 'agent-1',
+        agentId: 'agent_parent_1',
         conversationId: 'conversation-1',
         parentMessageId: 'response-1',
       },
       event: {
-        id: 'task-1:completed',
-        type: 'subagent.completed',
+        id: 'task-1',
+        type: 'subagent.completion',
         source: { id: 'subagent-completion', type: 'internal' },
         payload: {
           taskId: 'task-1',
           threadId: 'thread-1',
           subagentType: 'researcher',
-          status: 'completed',
         },
       },
     });
-    expect(envelope.input).toContain('check_background_task');
-    expect(envelope.input).not.toContain('"result":');
+    expect(envelope.input).toContain('waiting to complete');
     expect(options).toEqual({
       orderingKey: 'subagent-completion:conversation-1',
       availableAt: new Date(NOW + 250),
     });
   });
 
-  it('keeps one idempotency identity across duplicate settlement callbacks', async () => {
+  it('keeps one idempotency identity across duplicate registration callbacks', async () => {
     const enqueue = enqueueMock();
     const notify = createSubagentCompletionWakeupHandler(enqueue);
-    const event = settlement({ status: 'error' });
+    const event = registration();
 
     await notify(event);
     await notify(event);
@@ -85,17 +91,172 @@ describe('createSubagentCompletionWakeupHandler', () => {
     const first = parseAgentTriggerEnvelope(enqueue.mock.calls[0]![0]);
     const retry = parseAgentTriggerEnvelope(enqueue.mock.calls[1]![0]);
     expect(first.requestId).not.toBe(retry.requestId);
-    expect(first.deliveryId).toBe('task-1:error');
+    expect(first.deliveryId).toBe('task-1');
     expect(getAgentTriggerIdempotencyKey(first)).toBe(getAgentTriggerIdempotencyKey(retry));
-    expect(first.input).toContain('has error');
+    expect(first.input).toContain('waiting to complete');
   });
 
   it('does not enqueue without a stable initiating agent', async () => {
     const enqueue = enqueueMock();
     const notify = createSubagentCompletionWakeupHandler(enqueue);
 
-    await notify(settlement({ parentAgentId: undefined }));
+    await notify(registration({ parentAgentId: undefined }));
 
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue for an ephemeral initiating agent', async () => {
+    const enqueue = enqueueMock();
+    const notify = createSubagentCompletionWakeupHandler(enqueue);
+
+    await notify(registration({ parentAgentId: 'openAI__gpt-4o___GPT-4o____1' }));
+
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+function wakeupEnvelope() {
+  return createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: 'request-1',
+    deliveryId: 'task-1',
+    receivedAt: NOW,
+    principal: { id: 'user-1', tenantId: 'tenant-1' },
+    event: {
+      id: 'task-1',
+      type: 'subagent.completion',
+      occurredAt: NOW,
+      source: { id: 'subagent-completion', type: 'internal' },
+      payload: { taskId: 'task-1', threadId: 'thread-1', subagentType: 'researcher' },
+    },
+    target: {
+      agentId: 'agent_parent_1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+    },
+    input: 'pending',
+  });
+}
+
+function resolverMethods() {
+  const terminal = {
+    messageId: 'task-1:assistant',
+    conversationId: 'thread-1',
+    parentMessageId: 'task-1:user',
+    sender: 'researcher',
+    text: 'Child result',
+    isCreatedByUser: false,
+    createdAt: new Date(NOW),
+    updatedAt: new Date(NOW),
+    subagentTask: { attemptKey: 'attempt-1', status: 'completed' },
+  };
+  const methods = {
+    getConvo: jest.fn(async (_userId: string, conversationId: string) =>
+      conversationId === 'conversation-1'
+        ? { conversationId, tenantId: 'tenant-1' }
+        : {
+            conversationId,
+            tenantId: 'tenant-1',
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'response-1',
+              parentAgentId: 'agent_parent_1',
+              subagentType: 'researcher',
+            },
+          },
+    ),
+    getMessages: jest.fn(async (filter: { conversationId: string }) =>
+      filter.conversationId === 'conversation-1'
+        ? [
+            {
+              messageId: 'response-1',
+              parentMessageId: 'user-1',
+              isCreatedByUser: false,
+              createdAt: new Date(NOW - 30),
+            },
+            {
+              messageId: 'wakeup-user',
+              parentMessageId: 'response-1',
+              isCreatedByUser: true,
+              createdAt: new Date(NOW - 20),
+            },
+            {
+              messageId: 'wakeup-response',
+              parentMessageId: 'wakeup-user',
+              isCreatedByUser: false,
+              createdAt: new Date(NOW - 10),
+            },
+          ]
+        : [
+            {
+              messageId: 'task-1:user',
+              conversationId: 'thread-1',
+              isCreatedByUser: true,
+            },
+            terminal,
+          ],
+    ),
+    claimSubagentTaskResult: jest.fn(async () => ({ status: 'acquired', message: terminal })),
+  };
+  return { methods, terminal };
+}
+
+describe('createSubagentCompletionWakeupResolver', () => {
+  it('defers without claiming while the parent generation is active', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'running' }),
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'PARENT_NOT_READY', retryable: true });
+    expect(methods.claimSubagentTaskResult).not.toHaveBeenCalled();
+  });
+
+  it('claims the durable result and chains onto the latest assistant descendant', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).resolves.toMatchObject({
+      status: 'ready',
+      parentMessageId: 'wakeup-response',
+      input: expect.stringContaining('Child result'),
+    });
+    expect(methods.claimSubagentTaskResult).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'thread-1',
+      taskId: 'task-1',
+      kind: 'wakeup',
+      claimId: 'trigger_claim_1',
+    });
+  });
+
+  it('settles without starting a turn when a manual poll already claimed the result', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'claimed',
+      message: {
+        ...terminal,
+        subagentTask: {
+          ...terminal.subagentTask,
+          resultClaim: { kind: 'manual', claimedAt: new Date(NOW) },
+        },
+      },
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).resolves.toEqual({ status: 'settled' });
   });
 });

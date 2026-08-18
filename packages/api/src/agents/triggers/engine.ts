@@ -211,10 +211,10 @@ function isAccountDeletionDeferral(error: unknown): boolean {
   );
 }
 
-function isParentGenerationDeferral(error: unknown): boolean {
+function isRuntimeReadinessDeferral(error: unknown): boolean {
   return (
     error instanceof AgentTriggerExecutionError &&
-    error.code === 'PARENT_NOT_READY' &&
+    (error.code === 'PARENT_NOT_READY' || error.code === 'CHILD_NOT_READY') &&
     error.status === 409
   );
 }
@@ -334,12 +334,12 @@ export function createAgentTriggerDeliveryEngine(
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
         const deletionRejected = isAccountDeletionDeferral(error);
-        const parentNotReady = isParentGenerationDeferral(error);
+        const runtimeNotReady = isRuntimeReadinessDeferral(error);
         if (
           error instanceof AgentTriggerDeliveryDeferredError ||
           deletionCancelled ||
           deletionRejected ||
-          parentNotReady
+          runtimeNotReady
         ) {
           const delayMs =
             error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
@@ -355,8 +355,11 @@ export function createAgentTriggerDeliveryEngine(
             let reason = 'pre_dispatch';
             if (deletionCancelled || deletionRejected) {
               reason = 'account_deletion';
-            } else if (parentNotReady) {
-              reason = 'parent_generation';
+            } else if (runtimeNotReady) {
+              reason =
+                error instanceof AgentTriggerExecutionError && error.code === 'CHILD_NOT_READY'
+                  ? 'child_task'
+                  : 'parent_generation';
             }
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,

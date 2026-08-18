@@ -146,6 +146,7 @@ const messageSchema: Schema<IMessage> = new Schema(
         },
         resultClaim: {
           type: {
+            kind: { type: String, enum: ['manual', 'wakeup'], required: true },
             claimId: { type: String, required: true },
             claimedAt: { type: Date, required: true },
           },

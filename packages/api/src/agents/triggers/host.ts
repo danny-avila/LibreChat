@@ -32,6 +32,10 @@ type FireStatus = 'started' | 'resumed' | 'replaced' | 'settled';
 
 export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export type AgentTriggerContinuePreparation =
+  | { status: 'ready'; input: string; parentMessageId: string }
+  | { status: 'settled' };
+
 export type AgentTriggerFailureCertainty = 'definite' | 'ambiguous';
 
 export interface AgentTriggerExecutionErrorOptions {
@@ -112,6 +116,12 @@ export interface AgentTriggerExecutionHostDeps {
     principal: AgentRunPrincipal,
     envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
   ) => MaybePromise<string | undefined>;
+  /** Optional server-owned resolver for durable internal continuation inputs.
+   * External/source-neutral envelopes remain unchanged when this returns undefined. */
+  prepareContinue?: (
+    envelope: AgentContinueTriggerEnvelope,
+    context: AgentTriggerDispatchContext,
+  ) => MaybePromise<AgentTriggerContinuePreparation | undefined>;
   fetch?: AgentTriggerFetch;
   /** Total bound for setup, admission, and the bounded response read. */
   timeoutMs?: number;
@@ -470,6 +480,29 @@ async function startRun(
   const mode = envelope.mode;
   const scope = abortScope(context.signal, timeoutMs);
   try {
+    const preparation =
+      mode === 'continue' && deps.prepareContinue != null
+        ? await setupValue(
+            () => deps.prepareContinue?.(envelope, context),
+            mode,
+            scope,
+            context.signal,
+          )
+        : undefined;
+    if (preparation?.status === 'settled') {
+      return {
+        mode,
+        status: 'settled',
+        conversationId: envelope.target.conversationId,
+      };
+    }
+    const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
+    const parentMessageId =
+      preparation?.status === 'ready'
+        ? preparation.parentMessageId
+        : mode === 'continue'
+          ? envelope.target.parentMessageId
+          : Constants.NO_PARENT;
     const [token, timezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
@@ -505,11 +538,10 @@ async function startRun(
           [GENERATION_PROTOCOL_HEADER]: '2',
         },
         body: JSON.stringify({
-          text: envelope.input,
+          text: input,
           endpoint: EModelEndpoint.agents,
           agent_id: envelope.target.agentId,
-          parentMessageId:
-            envelope.mode === 'continue' ? envelope.target.parentMessageId : Constants.NO_PARENT,
+          parentMessageId,
           ...(envelope.mode === 'continue' && {
             conversationId: envelope.target.conversationId,
           }),
