@@ -200,6 +200,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   let mockInitializeClient;
   let mockAddTitle;
   let capturedInit;
+  let subagentThreadTurnLease;
   let settle;
   let settled;
 
@@ -207,6 +208,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     jest.clearAllMocks();
 
     capturedInit = null;
+    subagentThreadTurnLease = undefined;
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
@@ -283,6 +285,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     app.use(express.json());
     app.use((req, _res, next) => {
       req.user = { id: USER_ID, tenantId: TENANT_ID };
+      req.subagentThreadTurnLease = subagentThreadTurnLease;
       req.config = {
         endpoints: { agents: { checkpointer: { type: 'mongo' } } },
         interfaceConfig: {},
@@ -817,6 +820,43 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   });
 
   describe('happy path: approve -> reconstruct -> resume -> finalize', () => {
+    it('retains a child-thread writer lease past the ACK until resume settlement', async () => {
+      let finishResume;
+      let markResumeStarted;
+      const resumeStarted = new Promise((resolve) => {
+        markResumeStarted = resolve;
+      });
+      const resumeGate = new Promise((resolve) => {
+        finishResume = resolve;
+      });
+      const retain = jest.fn();
+      const release = jest.fn();
+      subagentThreadTurnLease = { retain, release };
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          resumeCompletion: jest.fn(async () => {
+            markResumeStarted();
+            await resumeGate;
+          }),
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      await resumeStarted;
+
+      expect(res.status).toBe(200);
+      expect(retain).toHaveBeenCalledTimes(1);
+      expect(release).not.toHaveBeenCalled();
+
+      finishResume();
+      await settled;
+      await flush();
+
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
     it('ACKs immediately and claims the action atomically with the submitted actionId', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       const res = await post(approveBody());

@@ -817,13 +817,22 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   req._resumableStreamId = streamId;
   getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
-  // ACK immediately; the continuation streams over the client's existing SSE.
-  sendGenerationJson(
-    res,
-    200,
-    { streamId, conversationId, status: 'resuming' },
-    generationProtocolVersion,
-  );
+  /** The HTTP response is only an ACK. Keep a child-thread writer lease until the
+   * resumed provider run reaches this controller's terminal cleanup; otherwise the
+   * response `finish` hook releases it while `resumeCompletion` is still active. */
+  req.subagentThreadTurnLease?.retain();
+  try {
+    // ACK immediately; the continuation streams over the client's existing SSE.
+    sendGenerationJson(
+      res,
+      200,
+      { streamId, conversationId, status: 'resuming' },
+      generationProtocolVersion,
+    );
+  } catch (error) {
+    req.subagentThreadTurnLease?.release();
+    throw error;
+  }
 
   // Seed the original thread parent BEFORE initializeClient: initializeAgent scopes
   // thread files / code artifacts off `req.body.parentMessageId`, and the resume body
@@ -1123,13 +1132,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         disposeClient(client);
       }
     } finally {
-      await GenerationJobManager.markProviderExecutionDrained?.(
-        streamId,
-        job.createdAt,
-        providerExecutionId,
-      ).catch((drainError) => {
-        logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
-      });
+      try {
+        await GenerationJobManager.markProviderExecutionDrained?.(
+          streamId,
+          job.createdAt,
+          providerExecutionId,
+        ).catch((drainError) => {
+          logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
+        });
+      } finally {
+        req.subagentThreadTurnLease?.release();
+      }
     }
   }
 };
