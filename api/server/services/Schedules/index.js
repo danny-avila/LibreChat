@@ -35,6 +35,15 @@ function getService() {
         },
         { upsert: true, new: true },
       ).lean(),
+    // Compare-and-set: only initialize an existing record while its credit is still null.
+    // No upsert — a CAS miss must re-read the winner, not insert a fresh balance. `null`
+    // in the filter also matches a legacy record whose `tokenCredits` field is absent.
+    initializeNullBalance: (userId, { tokenCredits, sync }) =>
+      mongoose.models.Balance.findOneAndUpdate(
+        { user: userId, tokenCredits: null },
+        { $set: { tokenCredits, ...(sync && Object.keys(sync).length > 0 ? sync : {}) } },
+        { new: true },
+      ).lean(),
     enqueueAgentTrigger,
     resolveAgentFireAccess,
     // Reuse the merged trigger/deletion admission fence. A schedule fire and every
@@ -82,6 +91,7 @@ module.exports = {
   deleteScheduleForOwner: invoke('deleteScheduleForOwner'),
   quiesceUserSchedules: invoke('quiesceUserSchedules'),
   initializeScheduleEngine: invoke('initializeScheduleEngine'),
+  initializeScheduleErasureSweep: invoke('initializeScheduleErasureSweep'),
   recordExpiredScheduleApproval,
   isUserDeleting: async (userId) => {
     const methods = require('~/models');

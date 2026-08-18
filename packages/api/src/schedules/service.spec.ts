@@ -58,6 +58,7 @@ function makeService(
     findUserById: jest.fn(async () => null),
     findBalance: jest.fn(async () => null),
     upsertBalance: jest.fn(async () => null),
+    initializeNullBalance: jest.fn(async () => null),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     isUserDeleting: jest.fn(async () => false),
     enqueueAgentTrigger,
@@ -139,19 +140,29 @@ describe('balance initialization', () => {
     balance: { enabled: true, startBalance: 20000 },
   } as unknown as Awaited<ReturnType<SchedulesServiceDeps['getAppConfig']>>;
 
-  function serviceWithBalance(existing: Record<string, unknown> | null) {
+  function serviceWithBalance(
+    existing: Record<string, unknown> | null,
+    overrides: {
+      initializeNullBalance?: jest.Mock;
+      findBalance?: jest.Mock;
+    } = {},
+  ) {
     const upsertBalance = jest.fn(async () => ({ tokenCredits: 20000 }));
+    const initializeNullBalance =
+      overrides.initializeNullBalance ?? jest.fn(async () => ({ tokenCredits: 20000 }));
+    const findBalance = overrides.findBalance ?? jest.fn(async () => existing);
     const service = createSchedulesService({
       methods: {} as unknown as SchedulesServiceDeps['methods'],
       getAppConfig: (async () => balanceConfig) as SchedulesServiceDeps['getAppConfig'],
       findUserById: jest.fn(async () => null),
-      findBalance: jest.fn(async () => existing),
+      findBalance,
       upsertBalance,
+      initializeNullBalance,
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),
     } as unknown as SchedulesServiceDeps);
-    return { service, upsertBalance };
+    return { service, upsertBalance, initializeNullBalance, findBalance };
   }
 
   const updateFrom = (spy: jest.Mock) =>
@@ -159,6 +170,14 @@ describe('balance initialization', () => {
       spy.mock.calls[0] as unknown as [
         string,
         { set: Record<string, unknown>; setOnInsert: Record<string, unknown> },
+      ]
+    )[1];
+
+  const casUpdateFrom = (spy: jest.Mock) =>
+    (
+      spy.mock.calls[0] as unknown as [
+        string,
+        { tokenCredits: number; sync: Record<string, unknown> },
       ]
     )[1];
 
@@ -178,13 +197,90 @@ describe('balance initialization', () => {
     expect(update.set).not.toHaveProperty('tokenCredits');
   });
 
-  it('still $sets a null credit on an EXISTING record, which has no charge to clobber', async () => {
-    const { service, upsertBalance } = serviceWithBalance({ autoRefillEnabled: false });
+  /**
+   * The record was observed with a null credit, but the read and the write are separate
+   * statements: a concurrent initializer/charge could have set and spent it in between.
+   * The credit must go through a `{ tokenCredits: null }` CAS, never a blind `$set` that
+   * would restore spent credits.
+   */
+  it('initializes an EXISTING null credit through the CAS, never a blind $set', async () => {
+    const { service, upsertBalance, initializeNullBalance } = serviceWithBalance({
+      autoRefillEnabled: false,
+    });
 
     await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
 
+    expect(initializeNullBalance).toHaveBeenCalledTimes(1);
+    const cas = casUpdateFrom(initializeNullBalance);
+    expect(cas.tokenCredits).toBe(20000);
+    // The credit write goes ONLY through the CAS, never the unconditional upsert path.
+    expect(upsertBalance).not.toHaveBeenCalled();
+  });
+
+  /**
+   * When the CAS misses — a concurrent initializer/charge won — the preflight must re-read
+   * the winner's balance rather than restore the starting credit.
+   */
+  it('re-reads the winner on a CAS miss and never restores spent credits', async () => {
+    const initializeNullBalance = jest.fn(async () => null);
+    // First read observes a null credit; the winner's re-read returns the spent balance.
+    const findBalance = jest
+      .fn()
+      .mockResolvedValueOnce({ autoRefillEnabled: false, tokenCredits: null })
+      .mockResolvedValueOnce({ tokenCredits: 5 });
+    const { service } = serviceWithBalance(null, { initializeNullBalance, findBalance });
+
+    const outOfBalance = await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
+
+    expect(initializeNullBalance).toHaveBeenCalledTimes(1);
+    // Re-read after the miss (the two isOutOfBalance reads), and the small winner balance
+    // wins: > 0 credits means the user is not pre-skipped for balance.
+    expect(findBalance).toHaveBeenCalledTimes(2);
+    expect(outOfBalance).toBe(false);
+  });
+
+  /**
+   * A stale record whose credit is already set but whose refill config drifted still syncs
+   * that config, and the sync must not widen into a credit write.
+   */
+  it('syncs refill config on a credited record without writing tokenCredits', async () => {
+    const refillConfig = {
+      interfaceConfig: {},
+      balance: {
+        enabled: true,
+        startBalance: 20000,
+        autoRefillEnabled: true,
+        refillIntervalValue: 30,
+        refillIntervalUnit: 'days',
+        refillAmount: 10000,
+      },
+    } as unknown as Awaited<ReturnType<SchedulesServiceDeps['getAppConfig']>>;
+    const upsertBalance = jest.fn(async () => ({ tokenCredits: 100 }));
+    const initializeNullBalance = jest.fn(async () => null);
+    const service = createSchedulesService({
+      methods: {} as unknown as SchedulesServiceDeps['methods'],
+      getAppConfig: (async () => refillConfig) as SchedulesServiceDeps['getAppConfig'],
+      findUserById: jest.fn(async () => null),
+      findBalance: jest.fn(async () => ({
+        tokenCredits: 100,
+        autoRefillEnabled: false,
+        lastRefill: new Date('2026-01-01T00:00:00.000Z'),
+      })),
+      upsertBalance,
+      initializeNullBalance,
+      resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
+      isUserDeleting: jest.fn(async () => false),
+      enqueueAgentTrigger: jest.fn(async () => undefined),
+    } as unknown as SchedulesServiceDeps);
+
+    await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
+
+    // Credit is already set, so the CAS path is never taken.
+    expect(initializeNullBalance).not.toHaveBeenCalled();
+    expect(upsertBalance).toHaveBeenCalledTimes(1);
     const update = updateFrom(upsertBalance);
-    expect(update.set).toMatchObject({ tokenCredits: 20000 });
+    expect(update.set).toMatchObject({ autoRefillEnabled: true });
+    expect(update.set).not.toHaveProperty('tokenCredits');
     expect(update.setOnInsert).toEqual({});
   });
 });
@@ -987,6 +1083,7 @@ describe('scheduled resume capacity', () => {
       findUserById: jest.fn(async () => ({ _id: 'user-1', role: 'USER' })),
       findBalance: jest.fn(async () => null),
       upsertBalance: jest.fn(async () => null),
+      initializeNullBalance: jest.fn(async () => null),
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),

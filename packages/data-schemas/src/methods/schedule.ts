@@ -359,29 +359,49 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
      *  persist state derived from a row the other has already replaced. */
     options?: { expectedConfigRevision?: number },
   ): Promise<ISchedule | null> {
-    return Schedule()
+    const filter = {
+      id,
+      user: userId,
+      deleting: { $ne: true },
+      ...(options?.expectedConfigRevision !== undefined
+        ? { configRevision: options.expectedConfigRevision }
+        : {}),
+    };
+    const mutation = {
+      $set: { ...update, claimToken: randomUUID() },
+      // The ONLY writer of configRevision: an owner edit moves the config
+      // generation forward atomically with the claim-token rotation, so a run
+      // that started under the old config can detect it and skip bookkeeping.
+      // Worker/policy writes (claim, lease, advance, disable, bookkeeping) never
+      // bump it, and deletion deliberately does not either — a draining run must
+      // still be able to record its outcome before erasure.
+      $inc: { configRevision: 1 },
+    };
+    // FIRST branch: if the card still shows a pause, drop that projection in the SAME
+    // atomic write as the revision bump. A `requires_action` card present at edit time
+    // was projected by a run that captured the pre-edit revision; its terminal outcome
+    // is revision-fenced (projectLastRun), so once this bump lands it can never replace
+    // the card — and a disabling edit means no future occurrence will either, leaving it
+    // stuck on "Needs approval" for a dead action. The clear is fenced on the projection
+    // STILL being that pause (not a stale handler pre-read), so a terminal outcome or a
+    // newer occurrence that raced in fails this branch and is preserved by the second.
+    // DocumentDB rules out a conditional pipeline `$unset`, so this is a classic-operator
+    // CAS branch rather than one update.
+    const cleared = await Schedule()
       .findOneAndUpdate(
-        {
-          id,
-          user: userId,
-          deleting: { $ne: true },
-          ...(options?.expectedConfigRevision !== undefined
-            ? { configRevision: options.expectedConfigRevision }
-            : {}),
-        },
-        {
-          $set: { ...update, claimToken: randomUUID() },
-          // The ONLY writer of configRevision: an owner edit moves the config
-          // generation forward atomically with the claim-token rotation, so a run
-          // that started under the old config can detect it and skip bookkeeping.
-          // Worker/policy writes (claim, lease, advance, disable, bookkeeping) never
-          // bump it, and deletion deliberately does not either — a draining run must
-          // still be able to record its outcome before erasure.
-          $inc: { configRevision: 1 },
-          ...(unset ? { $unset: unset } : {}),
-        },
+        { ...filter, 'lastRun.status': 'requires_action' },
+        { ...mutation, $unset: { lastRun: 1, ...(unset ?? {}) } },
         { new: true },
       )
+      .lean<ISchedule>();
+    if (cleared != null) {
+      return cleared;
+    }
+    // SECOND branch: no dead pause to clear (terminal history survives untouched), or the
+    // row is gone / a concurrent edit moved the revision — a null here is the true
+    // gone/conflict signal the caller distinguishes.
+    return Schedule()
+      .findOneAndUpdate(filter, { ...mutation, ...(unset ? { $unset: unset } : {}) }, { new: true })
       .lean<ISchedule>();
   }
 

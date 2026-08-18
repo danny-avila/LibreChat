@@ -30,6 +30,7 @@ function makeService(base: Cfg, merged: Cfg = base) {
     findUserById: jest.fn(async () => null),
     findBalance: jest.fn(async () => null),
     upsertBalance: jest.fn(async () => null),
+    initializeNullBalance: jest.fn(async () => null),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     isUserDeleting: jest.fn(async () => false),
     enqueueAgentTrigger: jest.fn(async () => undefined),
@@ -152,6 +153,7 @@ describe('v1 experimental gate, asserted at real entry points', () => {
         findUserById: jest.fn(),
         findBalance: jest.fn(),
         upsertBalance: jest.fn(),
+        initializeNullBalance: jest.fn(),
         resolveAgentFireAccess: jest.fn(),
       } as unknown as SchedulesServiceDeps),
     ).toThrow(/isUserDeleting/);

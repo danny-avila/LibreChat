@@ -144,6 +144,18 @@ export interface SchedulesServiceDeps {
     userId: string,
     update: { set: Partial<BalanceUpdateFields>; setOnInsert: Partial<BalanceUpdateFields> },
   ) => Promise<IBalance | null>;
+  /**
+   * Compare-and-set initialization for an EXISTING balance whose `tokenCredits` is still
+   * null. Writes the starting credit (and any refill-config sync) only while
+   * `{ user, tokenCredits: null }` still matches — never an upsert — so a concurrent
+   * initializer/charge that already set credits between the read and this write is not
+   * clobbered. Returns the winning document, or `null` when the CAS did not match (the
+   * caller re-reads the winner rather than restoring credits).
+   */
+  initializeNullBalance: (
+    userId: string,
+    update: { tokenCredits: number; sync: Partial<BalanceUpdateFields> },
+  ) => Promise<IBalance | null>;
   resolveAgentFireAccess: (
     agentId: string,
     user: ScheduleUserContext,
@@ -211,6 +223,12 @@ export interface SchedulesService {
    *  the topology cannot be shown safe (process-local job store with no single-process
    *  assertion) — see isTopologySafeToArm. */
   initializeScheduleEngine: () => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
+  /** Starts erasure-ONLY maintenance for an entrypoint that never arms the engine (the
+   *  clustered worker). Idempotent per process and a no-op once the full engine is armed.
+   *  Arms nothing else — no claims, firing, cadence advancement, or absence-based
+   *  reconciliation — and refuses to infer owner death from a process-local missing job
+   *  (isTopologySafeToArm gates that). See startScheduleErasureSweep. */
+  initializeScheduleErasureSweep: () => void;
 }
 
 /** Test-only overrides for the service's bounded waits (drains, barriers). */
@@ -240,6 +258,7 @@ export function createSchedulesService(
     'findUserById',
     'findBalance',
     'upsertBalance',
+    'initializeNullBalance',
     'resolveAgentFireAccess',
     'isUserDeleting',
     'enqueueAgentTrigger',
@@ -368,26 +387,38 @@ export function createSchedulesService(
       if (balanceConfig.startBalance != null) {
         const updateFields = buildBalanceUpdateFields(balanceConfig, record, user.id);
         if (Object.keys(updateFields).length > 0) {
-          // The read above and this write are separate statements, and the credit
-          // fields are INITIALIZATION values: a concurrent charge that created the
-          // record in between would be overwritten by a blind `$set`, restoring credits
-          // the user had already spent. Route those through `$setOnInsert` so they only
-          // apply to a document this call actually creates. The refill-config fields are
-          // a genuine sync and stay on `$set`.
-          //
-          // Only when the record was ABSENT: an existing record with a null
-          // tokenCredits has no charge to clobber, so initializing it via `$set` is
-          // both safe and necessary (`$setOnInsert` would never fire for it).
+          // The read above and every write below are separate statements, and the credit
+          // field is an INITIALIZATION value: a concurrent charge that set-and-spent the
+          // record in between must never be handed back its starting balance. Each case
+          // fences the credit write so it can only create, never restore, credits. The
+          // refill-config fields are a genuine sync and never carry a credit.
           const { user: initUser, tokenCredits, ...syncFields } = updateFields;
-          const setOnInsert =
-            record == null
-              ? {
-                  ...(initUser != null ? { user: initUser } : {}),
-                  ...(tokenCredits != null ? { tokenCredits } : {}),
-                }
-              : {};
-          const set = record == null ? syncFields : updateFields;
-          record = await deps.upsertBalance(user.id, { set, setOnInsert });
+          if (record == null) {
+            // ABSENT record: upsert. The credit rides `$setOnInsert` so a document created
+            // by a concurrent charge keeps its charged balance; the refill-config sync is
+            // a legitimate `$set`.
+            record = await deps.upsertBalance(user.id, {
+              set: syncFields,
+              setOnInsert: {
+                ...(initUser != null ? { user: initUser } : {}),
+                ...(tokenCredits != null ? { tokenCredits } : {}),
+              },
+            });
+          } else if (tokenCredits != null) {
+            // EXISTING record with a null credit: a blind `$set` would restore credits a
+            // concurrent initializer/charge already set and spent between the read and
+            // here. Initialize under a `{ tokenCredits: null }` CAS; on a miss re-read the
+            // winner's balance instead of overwriting it.
+            const initialized = await deps.initializeNullBalance(user.id, {
+              tokenCredits,
+              sync: syncFields,
+            });
+            record = initialized ?? (await deps.findBalance(user.id)) ?? record;
+          } else if (Object.keys(syncFields).length > 0) {
+            // EXISTING record with a real credit: only refill-config sync remains, which
+            // never touches `tokenCredits` and is safe to `$set` directly.
+            record = await deps.upsertBalance(user.id, { set: syncFields, setOnInsert: {} });
+          }
         }
       }
       const credits = record?.tokenCredits ?? 0;
@@ -620,6 +651,18 @@ export function createSchedulesService(
       erasureSweep = undefined;
     }
     return engine;
+  }
+
+  /**
+   * The clustered entrypoint's ONLY schedule maintenance. Exposes the same erasure sweep
+   * the standard entrypoint falls back to, so a soft-deleted row whose delete/terminal
+   * erase-on-settle attempts missed still drains instead of retaining the owner's prompt
+   * forever. It shares startErasureFallback's idempotent startup guard, the sweep's own
+   * shutdown registration, and the topology-fenced owner-death policy — and arms nothing
+   * else, so running it in every clustered replica changes nothing about v1 scheduling.
+   */
+  function initializeScheduleErasureSweep(): void {
+    startErasureFallback();
   }
 
   /**
@@ -1396,5 +1439,6 @@ export function createSchedulesService(
     deleteScheduleForOwner,
     quiesceUserSchedules,
     initializeScheduleEngine,
+    initializeScheduleErasureSweep,
   };
 }

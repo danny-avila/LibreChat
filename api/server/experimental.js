@@ -37,7 +37,10 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
-const { recordExpiredScheduleApproval } = require('./services/Schedules');
+const {
+  recordExpiredScheduleApproval,
+  initializeScheduleErasureSweep,
+} = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -334,6 +337,13 @@ if (cluster.isMaster) {
     indexSync().catch((err) => {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
+
+    // This entrypoint deliberately does not arm the schedule engine, but DELETE stays
+    // open — so soft-deleted rows still accrue with no reconciler to erase them. Start
+    // the erasure-ONLY sweep (Mongo is up, GenerationJobManager was initialized above):
+    // it never claims, fires, advances, or infers owner death from a process-local
+    // missing job, and its idempotent guard makes this safe once per worker.
+    initializeScheduleErasureSweep();
 
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);

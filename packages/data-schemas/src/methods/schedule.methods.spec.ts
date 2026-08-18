@@ -1189,6 +1189,121 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
+describe('owner edit clears a dead paused card', () => {
+  const scheduledFor = new Date('2026-07-20T12:00:00Z');
+
+  /** Projects a `requires_action` card whose run captured revision 0, matching a real
+   *  fire: the reservation stamps the config generation on the run row. */
+  async function pauseUnderRevisionZero(): Promise<ISchedule> {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, configRevision: 0 }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-paused',
+      autoDisableAfterFailures: 3,
+    });
+    const paused = await getSchedule(schedule.id);
+    expect(paused.lastRun?.status).toBe('requires_action');
+    return schedule;
+  }
+
+  it('a rename drops the pause the stale approval can no longer clear', async () => {
+    const schedule = await pauseUnderRevisionZero();
+    const edited = await methods.updateScheduleById(schedule.id, schedule.user, {
+      name: 'renamed',
+    });
+    expect(edited?.name).toBe('renamed');
+    expect(edited?.configRevision).toBe(1);
+    expect(edited?.lastRun).toBeUndefined();
+  });
+
+  it('a disabling edit drops the pause (no future occurrence would repair it)', async () => {
+    const schedule = await pauseUnderRevisionZero();
+    const edited = await methods.updateScheduleById(schedule.id, schedule.user, { enabled: false });
+    expect(edited?.enabled).toBe(false);
+    expect(edited?.lastRun).toBeUndefined();
+  });
+
+  it('preserves a terminal success card across an edit', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, configRevision: 0 }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'convo-ok',
+      autoDisableAfterFailures: 3,
+    });
+    const edited = await methods.updateScheduleById(schedule.id, schedule.user, {
+      name: 'renamed',
+    });
+    expect(edited?.lastRun?.status).toBe('success');
+    expect(edited?.lastRun?.conversationId).toBe('convo-ok');
+  });
+
+  /** A resume terminalizes the paused occurrence between the handler's read and the
+   *  edit; the clear is fenced on the card STILL being the pause, so the settled result
+   *  survives rather than being cleared on a stale pre-read. */
+  it('preserves a terminal outcome that races the edit ahead of it', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.insertScheduleRun(runData(schedule, { scheduledFor, configRevision: 0 }));
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-1',
+      autoDisableAfterFailures: 3,
+    });
+    // The pause settles to interrupted before the edit lands.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'interrupted',
+      error: 'stopped',
+      autoDisableAfterFailures: 3,
+    });
+    const edited = await methods.updateScheduleById(schedule.id, schedule.user, {
+      name: 'renamed',
+    });
+    expect(edited?.lastRun?.status).toBe('interrupted');
+  });
+
+  it('a stale-revision pause cannot resurrect the cleared card', async () => {
+    const schedule = await pauseUnderRevisionZero();
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'renamed' });
+    // The run row is still `requires_action` under revision 0; a reconciliation re-affirm
+    // of the pause must not re-stamp the card now that the schedule advanced to revision 1.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-paused',
+      autoDisableAfterFailures: 3,
+    });
+    const after = await getSchedule(schedule.id);
+    expect(after.lastRun).toBeUndefined();
+  });
+
+  it('a stale old-revision terminal outcome cannot overwrite the edited card or counters', async () => {
+    const schedule = await pauseUnderRevisionZero();
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'renamed' });
+    // The dead occurrence (revision 0) finally settles; its bookkeeping is revision-fenced,
+    // so it neither re-projects the card nor advances counters on the revision-1 schedule.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'success',
+      conversationId: 'convo-paused',
+      autoDisableAfterFailures: 3,
+    });
+    const after = await getSchedule(schedule.id);
+    expect(after.lastRun).toBeUndefined();
+    expect(after.runCount).toBe(0);
+  });
+});
+
 describe('schedule deletion is retryable', () => {
   /**
    * The mark is the FIRST of several teardown steps (read active runs, abort their
