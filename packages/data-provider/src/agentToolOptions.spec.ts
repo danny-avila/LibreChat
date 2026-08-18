@@ -1,3 +1,4 @@
+import type { AgentToolOptions } from './types/assistants';
 import { removeCodeExecutionCaller } from './agentToolOptions';
 
 describe('removeCodeExecutionCaller', () => {
@@ -26,8 +27,8 @@ describe('removeCodeExecutionCaller', () => {
   });
 
   it('does not mutate its input', () => {
-    const input = {
-      search: { allowed_callers: ['code_execution'] as const, run_in_background: true },
+    const input: AgentToolOptions = {
+      search: { allowed_callers: ['code_execution'], run_in_background: true },
     };
 
     removeCodeExecutionCaller(input);
