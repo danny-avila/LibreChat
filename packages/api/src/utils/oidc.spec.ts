@@ -259,6 +259,34 @@ describe('OpenID Token Utilities', () => {
   });
 
   describe('processOpenIDPlaceholders', () => {
+    it('should not substitute an expired ID token for the ID token placeholder', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const tokenInfo = {
+        accessToken: 'fresh-access-token',
+        idToken: 'stale-id-token-value',
+        expiresAt: nowSeconds + 3600,
+        idTokenExpiresAt: nowSeconds - 3600,
+      };
+
+      const result = processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo);
+
+      expect(result).toBe('');
+    });
+
+    it('should substitute a current ID token for the ID token placeholder', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const tokenInfo = {
+        accessToken: 'fresh-access-token',
+        idToken: 'current-id-token-value',
+        expiresAt: nowSeconds + 3600,
+        idTokenExpiresAt: nowSeconds + 1800,
+      };
+
+      const result = processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo);
+
+      expect(result).toBe('current-id-token-value');
+    });
+
     it('should replace LIBRECHAT_OPENID_TOKEN with access token', () => {
       const tokenInfo = {
         accessToken: 'access-token-value',

@@ -5,6 +5,7 @@ export interface OpenIDTokenInfo {
   accessToken?: string;
   idToken?: string;
   expiresAt?: number;
+  idTokenExpiresAt?: number;
   userId?: string;
   userEmail?: string;
   userName?: string;
@@ -88,8 +89,11 @@ export function extractOpenIDTokenInfo(
         if (payload.sub) tokenInfo.userId = payload.sub;
         if (payload.email) tokenInfo.userEmail = payload.email;
         if (payload.name) tokenInfo.userName = payload.name;
-        if (payload.exp && tokenInfo.expiresAt == null) {
-          tokenInfo.expiresAt = payload.exp;
+        if (payload.exp) {
+          tokenInfo.idTokenExpiresAt = payload.exp;
+          if (tokenInfo.expiresAt == null) {
+            tokenInfo.expiresAt = payload.exp;
+          }
         }
       } catch (jwtError) {
         logger.warn('Could not parse ID token claims:', jwtError);
@@ -101,6 +105,13 @@ export function extractOpenIDTokenInfo(
     logger.error('Error extracting OpenID token info:', error);
     return null;
   }
+}
+
+function isIdTokenCurrent(tokenInfo: OpenIDTokenInfo): boolean {
+  if (!tokenInfo.idTokenExpiresAt) {
+    return true;
+  }
+  return Math.floor(Date.now() / 1000) < tokenInfo.idTokenExpiresAt;
 }
 
 export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
@@ -142,7 +153,7 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.accessToken || '';
         break;
       case 'ID_TOKEN':
-        replacementValue = tokenInfo.idToken || '';
+        replacementValue = isIdTokenCurrent(tokenInfo) ? tokenInfo.idToken || '' : '';
         break;
       case 'USER_ID':
         replacementValue = tokenInfo.userId || '';
