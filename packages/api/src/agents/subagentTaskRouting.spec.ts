@@ -4,6 +4,7 @@ import type {
   SubagentTaskSnapshot,
 } from '@librechat/agents';
 import type { Cluster, Redis } from 'ioredis';
+import type { SubagentTaskControlHandler } from './subagentTaskRouting';
 import {
   RedisSubagentTaskControlTransport,
   SubagentTaskOwnerUnavailableError,
@@ -14,8 +15,9 @@ type MessageListener = (channel: string, message: string) => void;
 class FakeRedisBus {
   readonly hashes = new Map<string, Map<string, string>>();
   readonly clients = new Set<FakeRedisClient>();
-  dropNextResponse = false;
+  dropResponses = 0;
   registrationFailures = 0;
+  registrationHook?: (taskId: string) => Promise<void>;
 
   createClient(): FakeRedisClient {
     const client = new FakeRedisClient(this);
@@ -24,8 +26,8 @@ class FakeRedisBus {
   }
 
   publish(channel: string, message: string): number {
-    if (this.dropNextResponse && channel.endsWith(':requester')) {
-      this.dropNextResponse = false;
+    if (this.dropResponses > 0 && channel.endsWith(':requester')) {
+      this.dropResponses -= 1;
       return 1;
     }
     let delivered = 0;
@@ -94,6 +96,9 @@ class FakeRedisClient {
         throw new Error('temporary registration failure');
       }
       const [taskId, ownerId, ttlMs] = args;
+      if (this.bus.registrationHook != null) {
+        await this.bus.registrationHook(taskId);
+      }
       hash.set(taskId, `${Date.now() + Number(ttlMs)}|${ownerId}`);
       this.bus.hashes.set(key, hash);
       return 1;
@@ -157,6 +162,18 @@ function snapshot(overrides: Partial<SubagentTaskSnapshot> = {}): SubagentTaskSn
   };
 }
 
+function taskHandler(
+  overrides: Partial<SubagentTaskControlHandler> = {},
+): SubagentTaskControlHandler {
+  return {
+    claim: () => ({ status: 'not_found' }),
+    control: () => ({ status: 'not_found' }),
+    list: () => [],
+    cancelScope: () => 0,
+    ...overrides,
+  };
+}
+
 describe('RedisSubagentTaskControlTransport', () => {
   it('routes list, claim, and controls to the owner and deduplicates a retried command', async () => {
     const bus = new FakeRedisBus();
@@ -179,8 +196,8 @@ describe('RedisSubagentTaskControlTransport', () => {
         }) satisfies SubagentTaskControlResult,
     );
     const claim = jest.fn(() => ({ status: 'running', task: snapshot() }) as const);
-    await owner.bind({ claim, control, list: () => [snapshot()] });
-    await requester.bind({ claim, control, list: () => [] });
+    await owner.bind(taskHandler({ claim, control, list: () => [snapshot()] }));
+    await requester.bind(taskHandler({ claim, control }));
     await owner.registerTask('scope-1', 'task-1', 60_000);
 
     await expect(requester.hasTasks('scope-1')).resolves.toBe(true);
@@ -189,7 +206,7 @@ describe('RedisSubagentTaskControlTransport', () => {
       status: 'running',
     });
 
-    bus.dropNextResponse = true;
+    bus.dropResponses = 1;
     await expect(
       requester.control('scope-1', 'task-1', {
         action: 'queue',
@@ -214,15 +231,14 @@ describe('RedisSubagentTaskControlTransport', () => {
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
     );
     const list = jest.fn(() => [snapshot()]);
-    const handler = {
+    const handler = taskHandler({
       claim: () => ({ status: 'running', task: snapshot() }) as const,
-      control: () => ({ status: 'not_found' }) as const,
       list,
-    };
+    });
     await owner.bind(handler);
     await requester.bind({ ...handler, list: () => [] });
     await owner.registerTask('scope-1', 'task-1', 60_000);
-    bus.dropNextResponse = true;
+    bus.dropResponses = 1;
 
     await expect(requester.list('scope-1')).resolves.toEqual([snapshot()]);
     expect(list).toHaveBeenCalledTimes(2);
@@ -242,11 +258,7 @@ describe('RedisSubagentTaskControlTransport', () => {
       asRedis(bus.createClient()),
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
     );
-    const handler = {
-      claim: () => ({ status: 'not_found' }) as const,
-      control: () => ({ status: 'not_found' }) as const,
-      list: () => [],
-    };
+    const handler = taskHandler();
     await owner.bind(handler);
     await requester.bind(handler);
     await owner.registerTask('scope-1', 'task-1', 60_000);
@@ -276,11 +288,10 @@ describe('RedisSubagentTaskControlTransport', () => {
       task: snapshot({ status: 'completed', resultAvailable: true }),
       result,
     }));
-    const handler = {
+    const handler = taskHandler({
       claim,
-      control: () => ({ status: 'not_found' }) as const,
       list: () => [snapshot({ status: 'completed', resultAvailable: true })],
-    };
+    });
     await owner.bind(handler);
     await requester.bind({ ...handler, list: () => [] });
     await owner.registerTask('scope-1', 'task-1', 60_000);
@@ -307,15 +318,13 @@ describe('RedisSubagentTaskControlTransport', () => {
       { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
     );
     const result = '\u0000'.repeat(100_000);
-    const handler = {
+    const handler = taskHandler({
       claim: (_scopeId: string, taskId: string) => ({
         status: 'completed' as const,
         task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
         result,
       }),
-      control: () => ({ status: 'not_found' }) as const,
-      list: () => [],
-    };
+    });
     await owner.bind(handler);
     await requester.bind(handler);
     const taskIds = Array.from({ length: 30 }, (_, index) => `task-${index + 1}`);
@@ -348,11 +357,10 @@ describe('RedisSubagentTaskControlTransport', () => {
       asRedis(bus.createClient()),
       { namespace: 'test', instanceId: 'requester' },
     );
-    const handler = {
+    const handler = taskHandler({
       claim: () => ({ status: 'running', task: snapshot() }) as const,
-      control: () => ({ status: 'not_found' }) as const,
       list: () => [snapshot()],
-    };
+    });
     await owner.bind(handler);
     await requester.bind({ ...handler, list: () => [] });
     await expect(owner.registerTask('scope-1', 'task-1', 60_000)).rejects.toThrow(
@@ -398,21 +406,13 @@ describe('RedisSubagentTaskControlTransport', () => {
     );
     const deadTask = snapshot({ taskId: 'dead-task' });
     const liveTask = snapshot({ taskId: 'live-task' });
-    await deadOwner.bind({
-      claim: () => ({ status: 'running', task: deadTask }),
-      control: () => ({ status: 'not_found' }),
-      list: () => [deadTask],
-    });
-    await liveOwner.bind({
-      claim: () => ({ status: 'running', task: liveTask }),
-      control: () => ({ status: 'not_found' }),
-      list: () => [liveTask],
-    });
-    await requester.bind({
-      claim: () => ({ status: 'not_found' }),
-      control: () => ({ status: 'not_found' }),
-      list: () => [],
-    });
+    await deadOwner.bind(
+      taskHandler({ claim: () => ({ status: 'running', task: deadTask }), list: () => [deadTask] }),
+    );
+    await liveOwner.bind(
+      taskHandler({ claim: () => ({ status: 'running', task: liveTask }), list: () => [liveTask] }),
+    );
+    await requester.bind(taskHandler());
     await deadOwner.registerTask('scope-1', deadTask.taskId, 20);
     await liveOwner.registerTask('scope-1', liveTask.taskId, 20);
     await deadOwner.destroy();
@@ -438,14 +438,13 @@ describe('RedisSubagentTaskControlTransport', () => {
     const tasks = Array.from({ length: 201 }, (_, index) =>
       snapshot({ taskId: `task-${index + 1}` }),
     );
-    const handler = {
+    const handler = taskHandler({
       claim: (_scopeId: string, taskId: string) => ({
         status: 'running' as const,
         task: snapshot({ taskId }),
       }),
-      control: () => ({ status: 'not_found' }) as const,
       list: () => tasks,
-    };
+    });
     await owner.bind(handler);
     await requester.bind({ ...handler, list: () => [] });
     await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
@@ -455,6 +454,220 @@ describe('RedisSubagentTaskControlTransport', () => {
       status: 'running',
       task: { taskId: 'task-201' },
     });
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('refreshes owner registrations in bounded parallel batches', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', registrationHeartbeatMs: 5 },
+    );
+    const taskIds = Array.from({ length: 80 }, (_, index) => `task-${index + 1}`);
+    const [staleTaskId, ...retainedTaskIds] = taskIds;
+    await owner.bind(
+      taskHandler({ list: () => retainedTaskIds.map((taskId) => snapshot({ taskId })) }),
+    );
+    await Promise.all(taskIds.map((taskId) => owner.registerTask('scope-1', taskId, 60_000)));
+
+    const started: string[] = [];
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    bus.registrationHook = async (taskId) => {
+      started.push(taskId);
+      await gate;
+    };
+
+    for (let attempt = 0; attempt < 100 && started.length < 32; attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    /** A serialized pass would hold exactly one refresh open; the batch bound, not
+     * the pass, is what limits concurrency. */
+    expect(started).toHaveLength(32);
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    expect(started).toHaveLength(32);
+
+    release();
+    for (
+      let attempt = 0;
+      attempt < 200 && new Set(started).size < retainedTaskIds.length;
+      attempt += 1
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    expect(new Set(started)).toEqual(new Set(retainedTaskIds));
+    const [registry] = [...bus.hashes.values()];
+    expect(registry.has(staleTaskId)).toBe(false);
+    expect(registry.size).toBe(retainedTaskIds.length);
+
+    bus.registrationHook = undefined;
+    await owner.destroy();
+  });
+
+  it('keeps refreshing other registrations when one registration fails', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', registrationHeartbeatMs: 5 },
+    );
+    const taskIds = ['task-1', 'task-2', 'task-3', 'task-4', 'task-5'];
+    await owner.bind(taskHandler({ list: () => taskIds.map((taskId) => snapshot({ taskId })) }));
+    await Promise.all(taskIds.map((taskId) => owner.registerTask('scope-1', taskId, 60_000)));
+
+    bus.hashes.clear();
+    bus.registrationHook = async (taskId) => {
+      if (taskId === 'task-1') {
+        throw new Error('registration failed');
+      }
+    };
+
+    const healthyTaskIds = taskIds.slice(1);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [registry] = [...bus.hashes.values()];
+      if (registry != null && registry.size >= healthyTaskIds.length) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    const [registry] = [...bus.hashes.values()];
+    expect([...registry.keys()].sort()).toEqual(healthyTaskIds);
+
+    bus.registrationHook = undefined;
+    await owner.destroy();
+  });
+
+  it('cancels every task in a scope beyond the model-facing list cap', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const tasks = Array.from({ length: 201 }, (_, index) =>
+      snapshot({ taskId: `task-${index + 1}`, threadId: `thread-${index + 1}` }),
+    );
+    const requests: Array<string[] | null> = [];
+    await owner.bind(
+      taskHandler({
+        list: () => tasks,
+        cancelScope: (_scopeId, threadIds) => {
+          requests.push(threadIds);
+          return threadIds == null ? tasks.length : threadIds.length;
+        },
+      }),
+    );
+    await requester.bind(taskHandler());
+    await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
+
+    /** The model-facing list stays capped, but cancellation still reaches every task. */
+    await expect(requester.list('scope-1')).resolves.toHaveLength(200);
+    await expect(requester.cancelScope('scope-1', null)).resolves.toBe(201);
+    expect(requests).toEqual([null]);
+
+    const threadIds = tasks.map((_task, index) => `thread-${index + 1}`);
+    await expect(requester.cancelScope('scope-1', threadIds)).resolves.toBe(201);
+    expect(requests.slice(1).map((batch) => batch?.length)).toEqual([200, 1]);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('never retains a live claim status behind a later poll', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    let settled = false;
+    await owner.bind(
+      taskHandler({
+        claim: (_scopeId: string, taskId: string) => {
+          if (!settled) {
+            return { status: 'running' as const, task: snapshot({ taskId }) };
+          }
+          return {
+            status: 'completed' as const,
+            task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+            result: 'child result',
+          };
+        },
+      }),
+    );
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'running',
+    });
+    settled = true;
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'child result',
+    });
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('returns a consumed result to a later claim after both responses are lost', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 60, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 60, retryDelayMs: 5 },
+    );
+    let claims = 0;
+    await owner.bind(
+      taskHandler({
+        claim: (_scopeId: string, taskId: string) => {
+          claims += 1;
+          return claims === 1
+            ? {
+                status: 'completed' as const,
+                task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+                result: 'child result',
+              }
+            : {
+                status: 'claimed' as const,
+                task: snapshot({ taskId, status: 'completed', resultClaimed: true }),
+              };
+        },
+      }),
+    );
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    /** Both the first response and its retry are lost after the owner consumed the result. */
+    bus.dropResponses = 2;
+    await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
+      SubagentTaskOwnerUnavailableError,
+    );
+    expect(claims).toBe(1);
+
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'child result',
+    });
+    expect(claims).toBe(1);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

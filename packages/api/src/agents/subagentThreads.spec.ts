@@ -71,6 +71,20 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
   }
 
   async list(scopeId: string): Promise<SubagentTaskSnapshot[]> {
+    return [...this.remoteOwners(scopeId)].flatMap((owner) => owner.handler?.list(scopeId) ?? []);
+  }
+
+  async cancelScope(scopeId: string, threadIds: string[] | null): Promise<number> {
+    let cancelled = 0;
+    for (const owner of this.remoteOwners(scopeId)) {
+      cancelled += owner.handler?.cancelScope(scopeId, threadIds) ?? 0;
+    }
+    return cancelled;
+  }
+
+  async destroy(): Promise<void> {}
+
+  private remoteOwners(scopeId: string): Set<TestTaskControlTransport> {
     const owners = new Set<TestTaskControlTransport>();
     const prefix = `${scopeId}\u0000`;
     for (const [key, owner] of this.hub.owners) {
@@ -78,10 +92,8 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
         owners.add(owner);
       }
     }
-    return [...owners].flatMap((owner) => owner.handler?.list(scopeId) ?? []);
+    return owners;
   }
-
-  async destroy(): Promise<void> {}
 }
 
 function taskRequest(
@@ -1440,6 +1452,49 @@ describe('SubagentThreadTaskStore', () => {
 
     await expect(
       deletingStore.cancelForConversationsAcrossReplicas(userId, [parentConversationId]),
+    ).resolves.toBe(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('routes cancellation for a deleted child thread to its remote owner', async () => {
+    const userId = 'routed-child-delete-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if ((await methods.getConvo(userId, threadId)) != null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(await methods.getConvo(userId, threadId)).not.toBeNull();
+
+    /** The parent survives this deletion, so the child's own thread is the only target. */
+    await expect(
+      deletingStore.cancelForConversationsAcrossReplicas(userId, [threadId]),
     ).resolves.toBe(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });

@@ -29,6 +29,7 @@ import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+import { createConcurrencyLimiter } from '~/utils/promise';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
@@ -37,6 +38,8 @@ const DEFAULT_LEASE_TTL_MS = 30_000;
 const DEFAULT_LEASE_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_DRAIN_TIMEOUT_MS = 45_000;
 const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
+/** Matches the deletion drain batch so cancellation cannot burst Redis. */
+const DELETION_CANCEL_CONCURRENCY = 32;
 /** Three missed 10-second transport heartbeats retire a crashed owner. */
 const DEFAULT_TASK_ROUTING_TTL_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
@@ -345,6 +348,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       claim: (scopeId, taskId) => super.claim(scopeId, taskId),
       control: (scopeId, taskId, command) => this.control(scopeId, taskId, command),
       list: (scopeId) => super.list(scopeId),
+      cancelScope: (scopeId, threadIds) => this.cancelForScope(scopeId, threadIds),
     });
     this.taskControlTransport = transport;
   }
@@ -633,45 +637,66 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ): Promise<number> {
     const targets = new Set(conversationIds);
     let cancelled = this.cancelForConversations(userId, targets, tenantId);
-    if (targets.size === 0 || this.taskControlTransport == null) {
+    const transport = this.taskControlTransport;
+    if (targets.size === 0 || transport == null) {
       return cancelled;
     }
 
-    const parentConversationIds = new Set(targets);
+    const targetIds = [...targets];
     const conversations = await Promise.all(
-      [...targets].map((conversationId) => this.methods.getConvo(userId, conversationId)),
+      targetIds.map((conversationId) => this.methods.getConvo(userId, conversationId)),
     );
-    for (const conversation of conversations) {
+    /** Deleting a parent takes its whole scope; a deleted child only cancels its own
+     * thread inside a parent scope that survives. */
+    const threadTargetsByParent = new Map<string, Set<string>>();
+    for (const [index, conversation] of conversations.entries()) {
+      const parentConversationId = conversation?.subagentThread?.parentConversationId;
       if (
-        conversation?.subagentThread?.parentConversationId != null &&
-        matchesTenant(conversation.tenantId, tenantId)
+        parentConversationId == null ||
+        targets.has(parentConversationId) ||
+        !matchesTenant(conversation?.tenantId, tenantId)
       ) {
-        parentConversationIds.add(conversation.subagentThread.parentConversationId);
+        continue;
       }
+      const threadIds = threadTargetsByParent.get(parentConversationId) ?? new Set<string>();
+      threadIds.add(targetIds[index]);
+      threadTargetsByParent.set(parentConversationId, threadIds);
     }
 
-    for (const parentConversationId of parentConversationIds) {
-      const scopeId = serializeScope({
+    /** Owners apply the predicate to their complete task set, so a scope holding more
+     * children than the model-facing list cap still cancels every one of them. */
+    const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
+    const scopeIdFor = (parentConversationId: string): string =>
+      serializeScope({
         userId,
         parentConversationId,
         ...(tenantId ? { tenantId } : {}),
       });
-      const tasks = await this.listTasks(scopeId);
-      for (const task of tasks) {
-        if (
-          task.status !== 'running' ||
-          (!targets.has(parentConversationId) &&
-            (task.threadId == null || !targets.has(task.threadId)))
-        ) {
-          continue;
-        }
-        const result = await this.controlTask(scopeId, task.taskId, { action: 'cancel' });
-        if (result.status === 'cancelled') {
-          cancelled += 1;
-        }
-      }
+    const cancellations = [
+      ...targetIds.map((parentConversationId) =>
+        cancelSlot(() => transport.cancelScope(scopeIdFor(parentConversationId), null)),
+      ),
+      ...[...threadTargetsByParent].map(([parentConversationId, threadIds]) =>
+        cancelSlot(() => transport.cancelScope(scopeIdFor(parentConversationId), [...threadIds])),
+      ),
+    ];
+    for (const count of await Promise.all(cancellations)) {
+      cancelled += count;
     }
     return cancelled;
+  }
+
+  /** Cancels this process's live children for one scope, optionally narrowed to threads. */
+  private cancelForScope(scopeId: string, threadIds: string[] | null): number {
+    const scope = parseScope(scopeId);
+    const targets = threadIds == null ? null : new Set(threadIds);
+    return this.cancelMatchingThreads(
+      (candidate, threadId) =>
+        candidate.userId === scope.userId &&
+        candidate.parentConversationId === scope.parentConversationId &&
+        matchesTenant(candidate.tenantId, scope.tenantId) &&
+        (targets == null || targets.has(threadId)),
+    );
   }
 
   /** Cancels every active child owned by a user before a delete-all operation. */

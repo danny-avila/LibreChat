@@ -7,6 +7,7 @@ import type {
   SubagentTaskSnapshot,
 } from '@librechat/agents';
 import type { Cluster, Redis } from 'ioredis';
+import { createConcurrencyLimiter } from '~/utils/promise';
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_REQUEST_TIMEOUT_MS = 2_000;
@@ -26,6 +27,9 @@ const MAX_THREAD_ID_CHARS = 256;
 const MAX_SUBAGENT_TYPE_CHARS = 256;
 const MAX_PROGRESS_LABEL_CHARS = 1_024;
 const MAX_TASK_SNAPSHOTS = 200;
+const MAX_CANCEL_THREAD_IDS = 200;
+/** Matches the deletion drain so bounded fan-out stays well inside the lease TTL. */
+const ROUTING_FANOUT_CONCURRENCY = 32;
 /** Contains every bounded response even when JSON escapes each retained character. */
 const MAX_ROUTED_MESSAGE_CHARS = 8 * 1_024 * 1_024;
 
@@ -78,6 +82,7 @@ type RoutedRequest = RoutedRequestBase &
     | { operation: 'claim'; taskId: string }
     | { operation: 'control'; taskId: string; command: SubagentTaskControlCommand }
     | { operation: 'list' }
+    | { operation: 'cancel'; threadIds: string[] | null }
   );
 
 type RoutedRequestPayload =
@@ -88,7 +93,8 @@ type RoutedRequestPayload =
       taskId: string;
       command: SubagentTaskControlCommand;
     }
-  | { operation: 'list'; scopeId: string };
+  | { operation: 'list'; scopeId: string }
+  | { operation: 'cancel'; scopeId: string; threadIds: string[] | null };
 
 interface RoutedResponse {
   version: typeof PROTOCOL_VERSION;
@@ -116,6 +122,10 @@ interface RoutedTaskList {
   truncated: boolean;
 }
 
+interface RoutedCancelResult {
+  cancelled: number;
+}
+
 interface OwnedTaskRegistration {
   scopeId: string;
   taskId: string;
@@ -130,6 +140,7 @@ export interface SubagentTaskControlHandler {
     command: SubagentTaskControlCommand,
   ): SubagentTaskControlResult;
   list(scopeId: string): SubagentTaskSnapshot[];
+  cancelScope(scopeId: string, threadIds: string[] | null): number;
 }
 
 /** Optional host transport for reaching the process that owns a live child task. */
@@ -144,6 +155,7 @@ export interface SubagentTaskControlTransport {
     command: SubagentTaskControlCommand,
   ): Promise<SubagentTaskControlResult | undefined>;
   list(scopeId: string): Promise<SubagentTaskSnapshot[]>;
+  cancelScope(scopeId: string, threadIds: string[] | null): Promise<number>;
   destroy(): Promise<void>;
 }
 
@@ -333,6 +345,30 @@ function isControlResult(value: unknown): value is SubagentTaskControlResult {
   );
 }
 
+function isCancelThreadIds(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= MAX_CANCEL_THREAD_IDS &&
+    value.every((threadId) => isBoundedString(threadId, MAX_THREAD_ID_CHARS))
+  );
+}
+
+function isCancelResult(value: unknown): value is RoutedCancelResult {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const { cancelled } = value as Partial<RoutedCancelResult>;
+  return Number.isSafeInteger(cancelled) && (cancelled as number) >= 0;
+}
+
+/** True once a claim has consumed the task's one-shot terminal result. */
+function consumesResult(result: SubagentTaskClaim): boolean {
+  return (
+    result.status === 'completed' || result.status === 'error' || result.status === 'cancelled'
+  );
+}
+
 function isRoutedTaskList(value: unknown): value is RoutedTaskList {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -369,6 +405,12 @@ function parseControlCommand(value: unknown): SubagentTaskControlCommand | undef
   return undefined;
 }
 
+function successResponse(requestId: string, result: string): string {
+  return `{"version":${PROTOCOL_VERSION},"kind":"response","requestId":${JSON.stringify(
+    requestId,
+  )},"ok":true,"result":${result}}`;
+}
+
 function parseRequest(value: unknown): RoutedRequest | undefined {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -382,13 +424,14 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     scopeId?: unknown;
     taskId?: unknown;
     command?: unknown;
+    threadIds?: unknown;
   };
   if (
     candidate.version !== PROTOCOL_VERSION ||
     candidate.kind !== 'request' ||
     !isBoundedString(candidate.requestId, 128) ||
     !isBoundedString(candidate.requesterId, 128) ||
-    !['claim', 'control', 'list'].includes(
+    !['claim', 'control', 'list', 'cancel'].includes(
       typeof candidate.operation === 'string' ? candidate.operation : '',
     ) ||
     !isBoundedString(candidate.scopeId, MAX_SCOPE_ID_CHARS)
@@ -403,6 +446,20 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
       requesterId: candidate.requesterId,
       operation: 'list',
       scopeId: candidate.scopeId,
+    };
+  }
+  if (candidate.operation === 'cancel') {
+    if (candidate.threadIds !== null && !isCancelThreadIds(candidate.threadIds)) {
+      return undefined;
+    }
+    return {
+      version: PROTOCOL_VERSION,
+      kind: 'request',
+      requestId: candidate.requestId,
+      requesterId: candidate.requesterId,
+      operation: 'cancel',
+      scopeId: candidate.scopeId,
+      threadIds: candidate.threadIds,
     };
   }
   if (!isBoundedString(candidate.taskId, MAX_TASK_ID_CHARS)) {
@@ -607,6 +664,58 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     return snapshots;
   }
 
+  /**
+   * Cancels live children on every other owner of this scope. The owner applies the
+   * predicate to its complete local task set, so deletion never depends on the
+   * bounded model-facing list and cannot miss a task beyond that cap.
+   */
+  async cancelScope(scopeId: string, threadIds: string[] | null): Promise<number> {
+    this.assertScope(scopeId);
+    if (threadIds != null && threadIds.length === 0) {
+      return 0;
+    }
+    await this.requireReady();
+    let ownersByTask: Record<string, string>;
+    try {
+      ownersByTask = await this.readActiveRegistrations(scopeId);
+    } catch (error) {
+      logger.warn('[subagentTaskRouting] Failed to read the task owner directory', error);
+      throw new SubagentTaskOwnerUnavailableError();
+    }
+    const owners = new Set(Object.values(ownersByTask));
+    owners.delete(this.instanceId);
+    if (owners.size === 0) {
+      return 0;
+    }
+    const batches: Array<string[] | null> = [];
+    if (threadIds == null) {
+      batches.push(null);
+    } else {
+      for (let index = 0; index < threadIds.length; index += MAX_CANCEL_THREAD_IDS) {
+        batches.push(threadIds.slice(index, index + MAX_CANCEL_THREAD_IDS));
+      }
+    }
+    const cancelSlot = createConcurrencyLimiter(ROUTING_FANOUT_CONCURRENCY);
+    const requests: Array<Promise<unknown>> = [];
+    for (const ownerId of owners) {
+      for (const batch of batches) {
+        requests.push(
+          cancelSlot(() =>
+            this.sendRequest(ownerId, { operation: 'cancel', scopeId, threadIds: batch }),
+          ),
+        );
+      }
+    }
+    let cancelled = 0;
+    for (const value of await Promise.all(requests)) {
+      if (!isCancelResult(value)) {
+        throw new SubagentTaskOwnerUnavailableError();
+      }
+      cancelled += value.cancelled;
+    }
+    return cancelled;
+  }
+
   async destroy(): Promise<void> {
     if (this.destroyed) {
       return;
@@ -669,54 +778,80 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   private async handleRequest(request: RoutedRequest): Promise<void> {
-    const cached = this.responseCache.get(request.requestId);
+    const operationKey = this.operationKey(request);
+    const cached = operationKey == null ? undefined : this.responseCache.get(operationKey);
     if (cached != null && cached.expiresAt > Date.now()) {
-      await this.publish(this.channel(request.requesterId), cached.value);
+      await this.publish(
+        this.channel(request.requesterId),
+        successResponse(request.requestId, cached.value),
+      );
       return;
     }
     const handler = this.handler;
     if (handler == null) {
       return;
     }
-    let response: RoutedResponse;
+    let serialized: string;
     try {
-      let result: SubagentTaskClaim | SubagentTaskControlResult | RoutedTaskList;
+      let result:
+        | SubagentTaskClaim
+        | SubagentTaskControlResult
+        | RoutedTaskList
+        | RoutedCancelResult;
+      /** A claim that consumed nothing stays uncached so a later poll still observes
+       * the task's live status. */
+      let replayable = operationKey != null;
       if (request.operation === 'list') {
         const tasks = handler.list(request.scopeId);
         result = {
           snapshots: tasks.slice(0, MAX_TASK_SNAPSHOTS).map(boundedSnapshot),
           truncated: tasks.length > MAX_TASK_SNAPSHOTS,
         };
+      } else if (request.operation === 'cancel') {
+        result = { cancelled: handler.cancelScope(request.scopeId, request.threadIds) };
       } else if (request.operation === 'claim') {
-        result = boundedClaim(handler.claim(request.scopeId, request.taskId));
+        const claim = boundedClaim(handler.claim(request.scopeId, request.taskId));
+        replayable = consumesResult(claim);
+        result = claim;
       } else {
         result = boundedControlResult(
           handler.control(request.scopeId, request.taskId, request.command),
         );
       }
-      response = {
-        version: PROTOCOL_VERSION,
-        kind: 'response',
-        requestId: request.requestId,
-        ok: true,
-        result,
-      };
+      const serializedResult = JSON.stringify(result);
+      /** Retaining the result rather than the envelope lets a later caller retry,
+       * which carries its own correlation id, recover a response it never received. */
+      if (operationKey != null && replayable) {
+        this.cacheResponse(operationKey, serializedResult);
+      }
+      serialized = successResponse(request.requestId, serializedResult);
     } catch (error) {
       logger.error('[subagentTaskRouting] Owner failed to process a routed command', error);
-      response = {
+      const response: RoutedResponse = {
         version: PROTOCOL_VERSION,
         kind: 'response',
         requestId: request.requestId,
         ok: false,
       };
-    }
-    const serialized = JSON.stringify(response);
-    /** Claims and controls need replay protection. Lists are idempotent and can
-     * be recomputed, so retaining their potentially large bodies only adds OOM risk. */
-    if (request.operation !== 'list') {
-      this.cacheResponse(request.requestId, serialized);
+      serialized = JSON.stringify(response);
     }
     await this.publish(this.channel(request.requesterId), serialized);
+  }
+
+  /**
+   * Identifies a destructive operation for replay. A claim consumes the one-shot
+   * result, so a caller retry issued under a new correlation id—including a later
+   * poll from another replica—still resolves to the response the owner produced.
+   * Lists are idempotent and recomputable, so their large bodies are never retained.
+   */
+  private operationKey(request: RoutedRequest): string | undefined {
+    if (request.operation === 'list') {
+      return undefined;
+    }
+    if (request.operation === 'claim') {
+      return `claim\u0000${shortHash(request.scopeId)}\u0000${request.taskId}`;
+    }
+    return `${request.operation}\u0000${request.requestId}`;
   }
 
   private async requestTaskOwner(
@@ -849,25 +984,40 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (handler == null || this.destroyed || this.ownedTasks.size === 0) {
       return;
     }
-    const registrationsByScope = new Map<string, OwnedTaskRegistration[]>();
+    const localTaskIdsByScope = new Map<string, Set<string>>();
+    const staleTaskIdsByScope = new Map<string, string[]>();
+    const retained: OwnedTaskRegistration[] = [];
     for (const registration of this.ownedTasks.values()) {
-      const registrations = registrationsByScope.get(registration.scopeId) ?? [];
-      registrations.push(registration);
-      registrationsByScope.set(registration.scopeId, registrations);
-    }
-    for (const [scopeId, registrations] of registrationsByScope) {
-      const localTaskIds = new Set(handler.list(scopeId).map((task) => task.taskId));
-      for (const registration of registrations) {
-        if (!localTaskIds.has(registration.taskId)) {
-          this.ownedTasks.delete(this.registrationKey(scopeId, registration.taskId));
-          await this.removeRegistrations(scopeId, [registration.taskId]);
-          continue;
-        }
-        await this.publishRegistration(registration).catch((error) => {
-          logger.warn('[subagentTaskRouting] Failed to refresh a child-task owner', error);
-        });
+      const { scopeId, taskId } = registration;
+      let localTaskIds = localTaskIdsByScope.get(scopeId);
+      if (localTaskIds == null) {
+        localTaskIds = new Set(handler.list(scopeId).map((task) => task.taskId));
+        localTaskIdsByScope.set(scopeId, localTaskIds);
       }
+      if (localTaskIds.has(taskId)) {
+        retained.push(registration);
+        continue;
+      }
+      this.ownedTasks.delete(this.registrationKey(scopeId, taskId));
+      const staleTaskIds = staleTaskIdsByScope.get(scopeId) ?? [];
+      staleTaskIds.push(taskId);
+      staleTaskIdsByScope.set(scopeId, staleTaskIds);
     }
+    /** Serializing one EVAL per registration can outlast the lease TTL, so a pass
+     * refreshes in bounded parallel batches and one failure cannot cancel the rest. */
+    const refreshSlot = createConcurrencyLimiter(ROUTING_FANOUT_CONCURRENCY);
+    await Promise.all([
+      ...[...staleTaskIdsByScope].map(([scopeId, taskIds]) =>
+        refreshSlot(() => this.removeRegistrations(scopeId, taskIds)),
+      ),
+      ...retained.map((registration) =>
+        refreshSlot(() =>
+          this.publishRegistration(registration).catch((error) => {
+            logger.warn('[subagentTaskRouting] Failed to refresh a child-task owner', error);
+          }),
+        ),
+      ),
+    ]);
   }
 
   private async publishRegistration(registration: OwnedTaskRegistration): Promise<void> {

@@ -307,7 +307,29 @@ const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or 
 
 Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
-const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
+/**
+ * `maxLength` is valid JSON Schema and is honored by providers, but the SDK's
+ * `JsonSchemaType` does not declare it, so the model-facing bounds are typed here.
+ * Runtime argument validation enforces the same limits as defense in depth.
+ */
+interface BoundedStringSchema {
+  type: 'string';
+  maxLength: number;
+  description: string;
+}
+
+interface CheckBackgroundTaskParameters {
+  type: 'object';
+  properties: {
+    background_task_id: BoundedStringSchema;
+    action: { type: 'string'; enum: string[]; description: string };
+    message: BoundedStringSchema;
+    control_id: BoundedStringSchema;
+  };
+  required: string[];
+}
+
+const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParameters>({
   type: 'object',
   properties: {
     background_task_id: {
