@@ -1068,6 +1068,28 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
+  it('rejects an oversized task id before local or cross-replica lookup', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn(),
+      controlTask: jest.fn(),
+      listTasks: jest.fn(),
+    });
+    const content = await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: { background_task_id: 'x'.repeat(257) },
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+
+    expect(JSON.parse(content)).toEqual({
+      status: 'invalid',
+      message: 'A background_task_id cannot exceed 256 characters.',
+    });
+    expect(store.claimTask).not.toHaveBeenCalled();
+    expect(store.controlTask).not.toHaveBeenCalled();
+    expect(store.listTasks).not.toHaveBeenCalled();
+  });
+
   it('returns a single task by id and lists all when omitted', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'poll_user',

@@ -38,6 +38,7 @@ class TestTaskRoutingHub {
 
 class TestTaskControlTransport implements SubagentTaskControlTransport {
   private handler?: SubagentTaskControlHandler;
+  readonly registrations: Array<{ scopeId: string; taskId: string; ttlMs: number }> = [];
 
   constructor(private readonly hub: TestTaskRoutingHub) {}
 
@@ -45,7 +46,8 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
     this.handler = handler;
   }
 
-  async registerTask(scopeId: string, taskId: string): Promise<void> {
+  async registerTask(scopeId: string, taskId: string, ttlMs: number): Promise<void> {
+    this.registrations.push({ scopeId, taskId, ttlMs });
     this.hub.owners.set(this.hub.key(scopeId, taskId), this);
   }
 
@@ -1366,7 +1368,8 @@ describe('SubagentThreadTaskStore', () => {
     const hub = new TestTaskRoutingHub();
     const ownerStore = new SubagentThreadTaskStore(methods);
     const requesterStore = new SubagentThreadTaskStore(methods);
-    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const ownerTransport = new TestTaskControlTransport(hub);
+    await ownerStore.configureTaskControlTransport(ownerTransport);
     await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
     const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
     let finish = (_value: { content: string }): void => undefined;
@@ -1380,6 +1383,11 @@ describe('SubagentThreadTaskStore', () => {
     );
     const taskId = requireAccepted(started).task.taskId;
     await Promise.resolve();
+    expect(ownerTransport.registrations).toContainEqual({
+      scopeId: config.scopeId,
+      taskId,
+      ttlMs: 30_000,
+    });
 
     await expect(requesterStore.hasTasks(config.scopeId)).resolves.toBe(true);
     await expect(requesterStore.listTasks(config.scopeId)).resolves.toEqual([

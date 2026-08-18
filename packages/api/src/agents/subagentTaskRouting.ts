@@ -15,6 +15,7 @@ const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const DEFAULT_REGISTRATION_HEARTBEAT_MS = 10_000;
 const MAX_PENDING_REQUESTS = 1_000;
 const MAX_RESPONSE_CACHE_ENTRIES = 2_000;
+const MAX_RESPONSE_CACHE_BYTES = 16 * 1024 * 1024;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
@@ -106,6 +107,7 @@ interface PendingRequest {
 
 interface CachedResponse {
   value: string;
+  bytes: number;
   expiresAt: number;
 }
 
@@ -462,6 +464,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private readonly registrationHeartbeatMs: number;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly responseCache = new Map<string, CachedResponse>();
+  private responseCacheBytes = 0;
   private readonly ownedTasks = new Map<string, OwnedTaskRegistration>();
   private handler?: SubagentTaskControlHandler;
   private ready?: Promise<void>;
@@ -616,6 +619,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
     this.pending.clear();
     this.responseCache.clear();
+    this.responseCacheBytes = 0;
     this.ownedTasks.clear();
     if (this.registrationHeartbeat != null) {
       clearInterval(this.registrationHeartbeat);
@@ -707,7 +711,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       };
     }
     const serialized = JSON.stringify(response);
-    this.cacheResponse(request.requestId, serialized);
+    /** Claims and controls need replay protection. Lists are idempotent and can
+     * be recomputed, so retaining their potentially large bodies only adds OOM risk. */
+    if (request.operation !== 'list') {
+      this.cacheResponse(request.requestId, serialized);
+    }
     await this.publish(this.channel(request.requesterId), serialized);
   }
 
@@ -780,22 +788,34 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
 
   private cacheResponse(requestId: string, value: string): void {
     const now = Date.now();
+    const bytes = Buffer.byteLength(value, 'utf8');
+    if (bytes > MAX_RESPONSE_CACHE_BYTES) {
+      return;
+    }
     for (const [id, cached] of this.responseCache) {
       if (cached.expiresAt <= now) {
         this.responseCache.delete(id);
+        this.responseCacheBytes -= cached.bytes;
       }
     }
-    while (this.responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES) {
+    while (
+      this.responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES ||
+      this.responseCacheBytes + bytes > MAX_RESPONSE_CACHE_BYTES
+    ) {
       const oldest = this.responseCache.keys().next().value as string | undefined;
       if (oldest == null) {
         break;
       }
+      const evicted = this.responseCache.get(oldest);
       this.responseCache.delete(oldest);
+      this.responseCacheBytes -= evicted?.bytes ?? 0;
     }
     this.responseCache.set(requestId, {
       value,
+      bytes,
       expiresAt: now + RESPONSE_CACHE_TTL_MS,
     });
+    this.responseCacheBytes += bytes;
   }
 
   private async publish(channel: string, value: string): Promise<void> {

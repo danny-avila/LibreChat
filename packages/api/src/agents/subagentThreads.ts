@@ -37,9 +37,8 @@ const DEFAULT_LEASE_TTL_MS = 30_000;
 const DEFAULT_LEASE_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_DRAIN_TIMEOUT_MS = 45_000;
 const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
-const DEFAULT_COMPLETED_TASK_TTL_MS = 60 * 60_000;
-const DEFAULT_TASK_TIMEOUT_MS = 30 * 60_000;
-const TASK_ROUTING_TTL_BUFFER_MS = 5 * 60_000;
+/** Three missed 10-second transport heartbeats retire a crashed owner. */
+const DEFAULT_TASK_ROUTING_TTL_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
   'messageId parentMessageId text createdAt +subagentTranscript +subagentTask';
@@ -106,6 +105,7 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   leaseHeartbeatMs?: number;
   ownerDrainTimeoutMs?: number;
   ownerDrainPollMs?: number;
+  taskRoutingTtlMs?: number;
   isOwnerActive?: (userId: string) => Promise<boolean>;
 }
 
@@ -332,10 +332,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       DEFAULT_OWNER_DRAIN_TIMEOUT_MS,
     );
     this.ownerDrainPollMs = positiveInteger(options.ownerDrainPollMs, DEFAULT_OWNER_DRAIN_POLL_MS);
-    this.taskRoutingTtlMs =
-      positiveInteger(options.taskTimeoutMs, DEFAULT_TASK_TIMEOUT_MS) +
-      positiveInteger(options.completedTtlMs, DEFAULT_COMPLETED_TASK_TTL_MS) +
-      TASK_ROUTING_TTL_BUFFER_MS;
+    this.taskRoutingTtlMs = positiveInteger(options.taskRoutingTtlMs, DEFAULT_TASK_ROUTING_TTL_MS);
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
   }
 

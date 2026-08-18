@@ -166,6 +166,15 @@ router.delete('/', configMiddleware, async (req, res) => {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
     const deletedConversationIds =
       dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
+    /** Root deletion closes new child admission. Cancel once more to catch a
+     * task admitted after the pre-delete snapshot but before that fence. */
+    if (deletedConversationIds.length > 0) {
+      await subagentThreadTaskStore
+        .cancelForConversationsAcrossReplicas(req.user.id, deletedConversationIds, tenantId)
+        .catch((error) => {
+          logger.warn('Post-delete subagent cancellation failed', error);
+        });
+    }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
     await deleteAgentCheckpoints(
@@ -194,6 +203,18 @@ router.delete('/all', configMiddleware, async (req, res) => {
         : undefined,
     );
     const dbResponse = await db.deleteConvos(req.user.id, {});
+    /** No new child can acquire a deleted parent; drain again to catch work
+     * admitted in the narrow gap after the pre-delete drain completed. */
+    await subagentThreadTaskStore
+      .cancelAndDrainForOwner(
+        req.user.id,
+        typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+          ? req.user.tenantId
+          : undefined,
+      )
+      .catch((error) => {
+        logger.warn('Post-delete subagent drain failed', error);
+      });
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

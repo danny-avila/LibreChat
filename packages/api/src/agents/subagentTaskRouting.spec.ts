@@ -201,6 +201,35 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
+  it('recomputes an idempotent list when its first response is lost', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const list = jest.fn(() => [snapshot()]);
+    const handler = {
+      claim: () => ({ status: 'running', task: snapshot() }) as const,
+      control: () => ({ status: 'not_found' }) as const,
+      list,
+    };
+    await owner.bind(handler);
+    await requester.bind({ ...handler, list: () => [] });
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    bus.dropNextResponse = true;
+
+    await expect(requester.list('scope-1')).resolves.toEqual([snapshot()]);
+    expect(list).toHaveBeenCalledTimes(2);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
   it('reports a registered but unreachable task owner as unavailable', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
@@ -261,6 +290,47 @@ describe('RedisSubagentTaskControlTransport', () => {
       result,
     });
     expect(claim).toHaveBeenCalledTimes(1);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('bounds retained destructive-response replays by serialized bytes', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const result = '\u0000'.repeat(100_000);
+    const handler = {
+      claim: (_scopeId: string, taskId: string) => ({
+        status: 'completed' as const,
+        task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+        result,
+      }),
+      control: () => ({ status: 'not_found' }) as const,
+      list: () => [],
+    };
+    await owner.bind(handler);
+    await requester.bind(handler);
+    const taskIds = Array.from({ length: 30 }, (_, index) => `task-${index + 1}`);
+    await Promise.all(taskIds.map((taskId) => owner.registerTask('scope-1', taskId, 60_000)));
+
+    for (const taskId of taskIds) {
+      await requester.claim('scope-1', taskId);
+    }
+
+    const cache = owner as unknown as {
+      responseCache: Map<string, unknown>;
+      responseCacheBytes: number;
+    };
+    expect(cache.responseCacheBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    expect(cache.responseCache.size).toBeLessThan(taskIds.length);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

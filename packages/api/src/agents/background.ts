@@ -67,6 +67,9 @@ export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 
 /** Log prefix for selection diagnostics, phrased in the spec's own field name. */
 const BACKGROUND_SELECTION_LABEL = '[background] runInBackground';
+const MAX_BACKGROUND_TASK_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_MESSAGE_CHARS = 64 * 1024;
 
 /**
  * `type` of the synthetic attachment emitted on a poll turn when a harvested
@@ -302,13 +305,14 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Execution leases remain available only while requests reach the owning server process; they do not survive a restart or cross-worker routing. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
   type: 'object',
   properties: {
     background_task_id: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_TASK_ID_CHARS,
       description:
         'The id returned when the tool or subagent was dispatched. Omit to list all background tasks in this thread.',
     },
@@ -319,10 +323,12 @@ const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchem
     },
     message: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_MESSAGE_CHARS,
       description: 'Required for steer, queue, or interrupt.',
     },
     control_id: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_ID_CHARS,
       description: 'Required for cancel_message; use the id returned by a prior control action.',
     },
   },
@@ -1085,12 +1091,16 @@ function buildSubagentControlCommand(
     return { action: 'cancel' };
   }
   if (action === 'cancel_message') {
-    return typeof args.control_id === 'string'
+    return typeof args.control_id === 'string' &&
+      args.control_id.length <= MAX_BACKGROUND_CONTROL_ID_CHARS
       ? { action: 'cancel_message', controlId: args.control_id }
       : undefined;
   }
   if (action === 'steer' || action === 'queue' || action === 'interrupt') {
-    return typeof args.message === 'string' ? { action, message: args.message } : undefined;
+    return typeof args.message === 'string' &&
+      args.message.length <= MAX_BACKGROUND_CONTROL_MESSAGE_CHARS
+      ? { action, message: args.message }
+      : undefined;
   }
   return undefined;
 }
@@ -1124,6 +1134,12 @@ export async function runCheckBackgroundTask(params: {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
   const rawId = args.background_task_id;
+  if (typeof rawId === 'string' && rawId.trim().length > MAX_BACKGROUND_TASK_ID_CHARS) {
+    return JSON.stringify({
+      status: 'invalid',
+      message: `A background_task_id cannot exceed ${MAX_BACKGROUND_TASK_ID_CHARS} characters.`,
+    });
+  }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
 
