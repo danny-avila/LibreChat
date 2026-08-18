@@ -2618,6 +2618,7 @@ describe('ResumableAgentController resume metadata', () => {
         return response;
       }),
     };
+    const subagentThreadTurnLease = { retain: jest.fn(), release: jest.fn() };
     const req = {
       user: { id: 'user-123' },
       body: {
@@ -2628,6 +2629,7 @@ describe('ResumableAgentController resume metadata', () => {
         endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
       },
       config: {},
+      subagentThreadTurnLease,
     };
 
     await AgentController(
@@ -2679,6 +2681,7 @@ describe('ResumableAgentController resume metadata', () => {
       mockGenerationJobManager.approvals.finishPausePersistence.mock.invocationCallOrder[0],
     );
     expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
+    expect(subagentThreadTurnLease.release).toHaveBeenCalledTimes(1);
   });
 
   it('finalizes the failed job before releasing the idempotency claim', async () => {

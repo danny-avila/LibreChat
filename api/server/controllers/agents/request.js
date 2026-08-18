@@ -177,6 +177,10 @@ function getAgentResponseModel(req, endpointOption) {
   return getEndpointResponseModel(endpointOption);
 }
 
+function releaseSubagentThreadTurn(req) {
+  req.subagentThreadTurnLease?.release();
+}
+
 async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
@@ -184,7 +188,7 @@ async function finishResumableRequest(req, userId) {
     try {
       await decrementPendingRequest(userId);
     } finally {
-      req.subagentThreadTurnLease?.release();
+      releaseSubagentThreadTurn(req);
     }
   }
 }
@@ -1559,9 +1563,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           // handleRunInterrupt already released the concurrency slot the moment it paused
           // (so a fast /resume isn't 429'd); only release here if that didn't happen.
           // Always run the MCP request-context cleanup.
-          await cleanupMCPRequestContextForReq(req);
-          if (!client?.pendingRequestReleased) {
-            await decrementPendingRequest(userId);
+          try {
+            await cleanupMCPRequestContextForReq(req);
+            if (!client?.pendingRequestReleased) {
+              await decrementPendingRequest(userId);
+            }
+          } finally {
+            releaseSubagentThreadTurn(req);
           }
           if (client) {
             disposeClient(client);

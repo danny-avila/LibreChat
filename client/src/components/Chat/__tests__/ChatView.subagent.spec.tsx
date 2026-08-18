@@ -1,8 +1,14 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import type { TConversation } from 'librechat-data-provider';
 import ChatView from '../ChatView';
 
 let mockConversation: Record<string, unknown> | null;
+const mockSetConversation = jest.fn();
+const mockUseGetConversationByIdQuery = jest.fn<
+  { data: TConversation | undefined },
+  [string, Record<string, unknown>?]
+>(() => ({ data: undefined }));
 
 jest.mock('react-router-dom', () => ({
   useParams: () => ({ conversationId: 'child-thread' }),
@@ -23,6 +29,12 @@ jest.mock('@librechat/client', () => ({
 jest.mock('librechat-data-provider', () => ({
   Constants: { NEW_CONVO: 'new', SEARCH: 'search' },
   buildTree: ({ messages }: { messages: unknown[] }) => messages,
+  isEphemeralAgentId: (agentId: string) => agentId.startsWith('ephemeral_'),
+}));
+
+jest.mock('librechat-data-provider/react-query', () => ({
+  useGetConversationByIdQuery: (id: string, config?: Record<string, unknown>) =>
+    mockUseGetConversationByIdQuery(id, config),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -33,6 +45,7 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useChatHelpers: () => ({
     conversation: mockConversation,
+    setConversation: mockSetConversation,
     getMessages: jest.fn(),
     ask: jest.fn(),
   }),
@@ -83,6 +96,11 @@ jest.mock('~/store', () => ({
 }));
 
 describe('ChatView child-thread execution identity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseGetConversationByIdQuery.mockReturnValue({ data: undefined });
+  });
+
   it('renders a child without a standalone identity as view-only', () => {
     mockConversation = {
       conversationId: 'child-thread',
@@ -98,6 +116,9 @@ describe('ChatView child-thread execution identity', () => {
     expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');
     expect(screen.getByTestId('header')).toHaveAttribute('data-read-only', 'true');
+    expect(mockUseGetConversationByIdQuery.mock.calls.at(-1)?.[1]).toMatchObject({
+      enabled: false,
+    });
   });
 
   it('keeps a saved-agent child runnable by the user', () => {
@@ -115,5 +136,35 @@ describe('ChatView child-thread execution identity', () => {
     expect(screen.getByTestId('chat-form')).toBeInTheDocument();
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(screen.getByTestId('header')).toHaveAttribute('data-read-only', 'false');
+  });
+
+  it('refreshes an open saved-agent child until detached settlement makes it writable', () => {
+    mockConversation = {
+      conversationId: 'child-thread',
+      title: 'Running saved agent child',
+      agent_id: 'saved-agent',
+      subagentThread: {
+        parentConversationId: 'parent-thread',
+        userRunnable: false,
+      },
+    };
+    const settledConversation = {
+      ...mockConversation,
+      subagentThread: {
+        parentConversationId: 'parent-thread',
+        userRunnable: true,
+      },
+    };
+    mockUseGetConversationByIdQuery.mockReturnValue({
+      data: settledConversation as TConversation,
+    });
+
+    render(<ChatView />);
+
+    expect(mockUseGetConversationByIdQuery.mock.calls.at(-1)?.[1]).toMatchObject({
+      enabled: true,
+      refetchOnMount: true,
+    });
+    expect(mockSetConversation).toHaveBeenCalledWith(settledConversation);
   });
 });

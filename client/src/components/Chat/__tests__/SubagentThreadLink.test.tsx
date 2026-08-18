@@ -1,4 +1,5 @@
 import React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import SubagentThreadLink from '../SubagentThreadLink';
 
@@ -13,8 +14,15 @@ jest.mock('lucide-react', () => ({
 }));
 
 describe('SubagentThreadLink', () => {
+  const renderLink = (element: React.ReactElement, basename = '/') =>
+    render(
+      <MemoryRouter basename={basename} initialEntries={[`${basename === '/' ? '' : basename}/`]}>
+        {element}
+      </MemoryRouter>,
+    );
+
   it('links a child chat back to its parent conversation', () => {
-    render(<SubagentThreadLink threadId="parent-thread" relation="parent" />);
+    renderLink(<SubagentThreadLink threadId="parent-thread" relation="parent" />);
 
     expect(screen.getByRole('link', { name: 'Back to parent chat' })).toHaveAttribute(
       'href',
@@ -24,7 +32,7 @@ describe('SubagentThreadLink', () => {
   });
 
   it('links a parent tool result to the host-issued child conversation', () => {
-    render(<SubagentThreadLink threadId="child/thread" relation="child" />);
+    renderLink(<SubagentThreadLink threadId="child/thread" relation="child" />);
 
     expect(screen.getByRole('link', { name: 'Open child chat' })).toHaveAttribute(
       'href',
@@ -34,7 +42,16 @@ describe('SubagentThreadLink', () => {
   });
 
   it('does not render an empty thread selector', () => {
-    const { container } = render(<SubagentThreadLink threadId="   " relation="child" />);
+    const { container } = renderLink(<SubagentThreadLink threadId="   " relation="child" />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('preserves the configured router basename', () => {
+    renderLink(<SubagentThreadLink threadId="child-thread" relation="child" />, '/librechat');
+
+    expect(screen.getByRole('link', { name: 'Open child chat' })).toHaveAttribute(
+      'href',
+      '/librechat/c/child-thread',
+    );
   });
 });

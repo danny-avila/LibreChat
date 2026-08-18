@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -26,8 +27,8 @@ export default function SubagentThreadLink({
   const Icon = isParent ? ChevronLeft : ChevronRight;
 
   return (
-    <a
-      href={`/c/${encodeURIComponent(normalizedThreadId)}`}
+    <Link
+      to={`/c/${encodeURIComponent(normalizedThreadId)}`}
       aria-label={label}
       title={label}
       className={cn(
@@ -38,6 +39,6 @@ export default function SubagentThreadLink({
       {isParent && <Icon size={16} aria-hidden="true" />}
       <span className={labelClassName}>{label}</span>
       {!isParent && <Icon size={16} aria-hidden="true" />}
-    </a>
+    </Link>
   );
 }

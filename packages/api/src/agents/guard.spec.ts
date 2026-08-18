@@ -171,4 +171,25 @@ describe('createSubagentThreadTurnGuard', () => {
     expect(busy.status).toBe(409);
     expect(busy.body.error).toContain('still running');
   });
+
+  it('rejects a provisionally leased child before its conversation is durable', async () => {
+    const store = makeStore();
+    const scopeId = JSON.stringify({
+      version: 1,
+      userId: 'user-1',
+      parentConversationId: 'parent-conversation',
+      tenantId: 'tenant-1',
+    });
+    const release = store.acquireUserTurn(scopeId, 'provisional-child');
+
+    const response = await request(
+      createApp('/api/agents/chat', jest.fn().mockResolvedValue(null), store),
+    )
+      .post('/api/agents/chat')
+      .send({ conversationId: 'provisional-child', agent_id: 'child-agent' });
+    release?.();
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toContain('still running');
+  });
 });

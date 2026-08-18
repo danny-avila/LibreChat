@@ -562,6 +562,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return this.activeThreads.has(`${scopeId}\u0000${threadId}`);
   }
 
+  /** Checks the bounded active set when a provisional child ID has a lease but
+   * no durable conversation yet, so owner-scoped requests cannot bypass it. */
+  isThreadActiveForOwner(userId: string, threadId: string, tenantId?: string): boolean {
+    const suffix = `\u0000${threadId}`;
+    for (const lockKey of this.activeThreads.keys()) {
+      if (!lockKey.endsWith(suffix)) {
+        continue;
+      }
+      const scope = parseScope(lockKey.slice(0, -suffix.length));
+      if (scope.userId === userId && matchesTenant(scope.tenantId, tenantId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Atomically excludes detached continuations for the lifetime of one
    * ordinary model-bound child turn. The returned idempotent release closure
    * deletes only the lease it created, never a later owner of the same key. */

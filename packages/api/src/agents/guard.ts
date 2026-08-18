@@ -65,11 +65,21 @@ export function createSubagentThreadTurnGuard({
       return;
     }
     const userId = String(rawUserId);
+    const tenantId =
+      typeof user?.tenantId === 'string' && user.tenantId !== '' ? user.tenantId : undefined;
 
     try {
       const conversation = await getConvo(userId, candidateConversationId);
-      const lineage = conversation?.subagentThread;
-      if (conversation == null || lineage == null) {
+      if (conversation == null) {
+        if (store.isThreadActiveForOwner(userId, candidateConversationId, tenantId)) {
+          rejectTurn(res, CHILD_BUSY_ERROR);
+          return;
+        }
+        next();
+        return;
+      }
+      const lineage = conversation.subagentThread;
+      if (lineage == null) {
         next();
         return;
       }
@@ -93,9 +103,7 @@ export function createSubagentThreadTurnGuard({
       const config = buildSubagentThreadTaskConfig(store, {
         userId,
         parentConversationId: lineage.parentConversationId,
-        ...(typeof user?.tenantId === 'string' && user.tenantId !== ''
-          ? { tenantId: user.tenantId }
-          : {}),
+        ...(tenantId == null ? {} : { tenantId }),
       });
       const release = store.acquireUserTurn(
         config.scopeId,

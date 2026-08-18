@@ -1,9 +1,10 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
-import { Constants, buildTree } from 'librechat-data-provider';
+import { useGetConversationByIdQuery } from 'librechat-data-provider/react-query';
+import { Constants, buildTree, isEphemeralAgentId } from 'librechat-data-provider';
 import type { TChatProject, TMessage } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
@@ -73,7 +74,43 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   );
 
   const chatHelpers = useChatHelpers(index, conversationId);
+  const setActiveConversation = chatHelpers.setConversation;
   const addedChatHelpers = useAddedResponse();
+
+  const activeConversation =
+    chatHelpers.conversation?.conversationId === conversationId
+      ? chatHelpers.conversation
+      : undefined;
+  const activeSubagentThread = activeConversation?.subagentThread;
+  /** Only saved-agent children can transition from temporarily read-only to
+   * user-runnable. Poll that bounded state while this child is open; graph and
+   * ephemeral/self children remain permanently view-only without polling. */
+  const shouldPollSubagentWritability =
+    activeSubagentThread != null &&
+    activeSubagentThread.userRunnable !== true &&
+    typeof activeConversation?.agent_id === 'string' &&
+    !isEphemeralAgentId(activeConversation.agent_id);
+  const { data: refreshedChildConversation } = useGetConversationByIdQuery(conversationId ?? '', {
+    enabled: shouldPollSubagentWritability,
+    refetchOnMount: true,
+    refetchInterval: (conversation) =>
+      conversation?.subagentThread?.userRunnable === true ? false : 1500,
+  });
+  useEffect(() => {
+    if (
+      shouldPollSubagentWritability &&
+      refreshedChildConversation != null &&
+      refreshedChildConversation?.conversationId === conversationId &&
+      refreshedChildConversation.subagentThread?.userRunnable === true
+    ) {
+      setActiveConversation(refreshedChildConversation);
+    }
+  }, [
+    conversationId,
+    refreshedChildConversation,
+    setActiveConversation,
+    shouldPollSubagentWritability,
+  ]);
 
   useAdaptiveSSE(rootSubmission, chatHelpers, false, index);
 
@@ -116,10 +153,6 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       : undefined;
   const pageHeading =
     isLandingPage || !conversationTitle ? localize('com_ui_new_chat') : conversationTitle;
-  const activeSubagentThread =
-    chatHelpers.conversation?.conversationId === conversationId
-      ? chatHelpers.conversation?.subagentThread
-      : undefined;
   const parentConversationId = activeSubagentThread?.parentConversationId;
   /** Only settled saved-agent children have enough standalone identity for an
    * ordinary user turn. Active leases, graph children, and ephemeral/self

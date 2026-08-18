@@ -261,6 +261,31 @@ describe('SubagentThreadTaskStore', () => {
     expect(store.acquireUserTurn(scopeId, 'child', 'attempt-2')).not.toBeNull();
   });
 
+  it('finds provisional child leases by trusted owner before the conversation exists', () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const scopeId = JSON.stringify({
+      version: 1,
+      userId: 'provisional-user',
+      parentConversationId: 'parent',
+      tenantId: 'tenant-a',
+    });
+    const release = store.acquireUserTurn(scopeId, 'provisional-child');
+
+    expect(store.isThreadActiveForOwner('provisional-user', 'provisional-child', 'tenant-a')).toBe(
+      true,
+    );
+    expect(store.isThreadActiveForOwner('different-user', 'provisional-child', 'tenant-a')).toBe(
+      false,
+    );
+    expect(store.isThreadActiveForOwner('provisional-user', 'provisional-child', 'tenant-b')).toBe(
+      false,
+    );
+    release?.();
+    expect(store.isThreadActiveForOwner('provisional-user', 'provisional-child', 'tenant-a')).toBe(
+      false,
+    );
+  });
+
   it('keeps a completed child writable when the optional sidebar refresh fails', async () => {
     const userId = 'user-refresh-failure';
     const parentConversationId = randomUUID();
