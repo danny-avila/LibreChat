@@ -61,10 +61,13 @@ jobs:
               jq -c '{files: .}' files.json > body.json
               RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN" \
                 -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select")
+              # fail_open reflects the JEST floors (root config, lockfile, stale graph); the
+              # e2e tiers come from the testid bridge and are valid whenever they computed at
+              # all. The old fail-open skip silently excused exactly the big backend merges
+              # whose trials matter most (LibreChat#14957's merge produced no vote because
+              # api/package.json tripped the jest floor). Tiers present => vote.
               if ! echo "$RESP" | jq -e '.e2e.skippable' >/dev/null 2>&1; then
                 echo "codegraph unavailable or no tiers; skipping"
-              elif echo "$RESP" | jq -e '.e2e.fail_open == true' >/dev/null 2>&1; then
-                echo "decision was fail-open; tiers untrusted for this merge; skipping"
               else
                 echo "$RESP" | jq -r '.e2e.skippable[]' | sed 's|^e2e/||' > skippable.txt
                 N=$(wc -l < skippable.txt | tr -d ' ')
