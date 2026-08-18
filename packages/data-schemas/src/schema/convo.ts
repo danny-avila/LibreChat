@@ -91,6 +91,7 @@ const convoSchema: Schema<IConversation> = new Schema(
 convoSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true });
+convoSchema.index({ tenantId: 1, isTemporary: 1, createdAt: -1, _id: -1 });
 convoSchema.index({ user: 1, _id: 1 });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
