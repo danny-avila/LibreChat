@@ -1692,6 +1692,33 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.json).toHaveBeenCalled();
       expect(mockRes.json.mock.calls[0][0].tool_options).toEqual({});
     });
+
+    test('revertAgentVersionHandler does not update unchanged tool options', async () => {
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        versions: [
+          {
+            name: 'Historical Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            tool_options: {},
+          },
+        ],
+      });
+      const db = require('~/models');
+      const updateAgentSpy = jest.spyOn(db, 'updateAgent');
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.json).toHaveBeenCalled();
+      expect(updateAgentSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('Mass Assignment Attack Scenarios', () => {

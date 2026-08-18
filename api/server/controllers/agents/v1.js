@@ -1797,10 +1797,13 @@ const revertAgentVersionHandler = async (req, res) => {
     }
 
     const effectiveRevertTools = revertUpdates.tools ?? updatedAgent.tools;
+    const hasCodeExecutionCaller = Object.values(updatedAgent.tool_options ?? {}).some((options) =>
+      options.allowed_callers?.includes('code_execution'),
+    );
     if (
       (!isCodeInterpreterCapabilityEnabled(req) ||
         !effectiveRevertTools?.includes(Tools.execute_code)) &&
-      updatedAgent.tool_options != null
+      hasCodeExecutionCaller
     ) {
       revertUpdates.tool_options = removeCodeExecutionCaller(updatedAgent.tool_options);
     }
