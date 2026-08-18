@@ -7,6 +7,7 @@ jest.mock('nanoid', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  writeAttachmentEvent: jest.fn(),
   GenerationJobManager: {
     emitChunk: jest.fn(),
   },
@@ -444,6 +445,7 @@ describe('createToolEndCallback', () => {
       name,
       toolName = 'execute_code',
       hostFileAuthoring = false,
+      created,
       codeExecutionContext,
     }) {
       return {
@@ -452,6 +454,8 @@ describe('createToolEndCallback', () => {
           tool_call_id: toolCallId,
           artifact: {
             ...(hostFileAuthoring ? { __librechat_file_authoring: true } : {}),
+            ...(created === undefined ? {} : { created }),
+            path: name,
             session_id: 'sess-1',
             files: [{ id: fileId, name, session_id: 'sess-1' }],
           },
@@ -667,8 +671,17 @@ describe('createToolEndCallback', () => {
           conversationId: 'thread789',
           messageId: 'run-create',
           toolCallId: 'tool-create',
-          status: 'ready',
+          status: 'pending',
         },
+        finalize: jest.fn().mockResolvedValue({
+          file_id: 'fid-created',
+          filename: 'created.txt',
+          filepath: '/uploads/created.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-create',
+          status: 'ready',
+        }),
       });
 
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
@@ -680,6 +693,7 @@ describe('createToolEndCallback', () => {
         name: 'created.txt',
         toolName: 'create_file',
         hostFileAuthoring: true,
+        created: true,
         codeExecutionContext: {
           baseUrl: 'https://code-stateful.example.com',
           executionProfile: 'stateful',
@@ -687,6 +701,7 @@ describe('createToolEndCallback', () => {
       });
       await toolEndCallback({ output: event.output }, event.metadata);
       await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(processCodeOutput).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -699,7 +714,139 @@ describe('createToolEndCallback', () => {
           executionProfile: 'stateful',
         }),
       );
+      expect(res.write).toHaveBeenCalledTimes(2);
+      expect(parseSseAttachment(res.write.mock.calls[0]).workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'created',
+        path: 'created.txt',
+      });
+      expect(parseSseAttachment(res.write.mock.calls[1]).workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'created',
+        path: 'created.txt',
+      });
+      await expect(artifactPromises[0]).resolves.toEqual(
+        expect.objectContaining({
+          workspaceChange: {
+            profile: 'stateful',
+            operation: 'created',
+            path: 'created.txt',
+          },
+        }),
+      );
+    });
+
+    it('does not mark stateless file authoring outputs as stateful workspace changes', async () => {
+      res.headersSent = true;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-default',
+          filename: 'default.txt',
+          filepath: '/uploads/default.txt',
+          type: 'text/plain',
+          conversationId: 'thread789',
+          messageId: 'run-default',
+          toolCallId: 'tool-default',
+          status: 'ready',
+        },
+      });
+
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-default',
+        threadId: 'thread789',
+        toolCallId: 'tool-default',
+        fileId: 'fid-default',
+        name: 'default.txt',
+        toolName: 'create_file',
+        hostFileAuthoring: true,
+        created: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code-default.example.com',
+          executionProfile: 'default',
+        },
+      });
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+
       expect(res.write).toHaveBeenCalledTimes(1);
+      expect(parseSseAttachment(res.write.mock.calls[0]).workspaceChange).toBeUndefined();
+    });
+
+    it('preserves stateful workspace changes in Open Responses attachment events', async () => {
+      const { writeAttachmentEvent } = require('@librechat/api');
+      const { createResponsesToolEndCallback } = require('../callbacks');
+      res.headersSent = true;
+      res.writableEnded = false;
+      processCodeOutput.mockResolvedValue({
+        file: {
+          file_id: 'fid-responses',
+          filename: 'summary.csv',
+          filepath: '/uploads/summary.csv',
+          type: 'text/csv',
+          conversationId: 'thread789',
+          messageId: 'run-responses',
+          toolCallId: 'tool-responses',
+          status: 'pending',
+        },
+        finalize: jest.fn().mockResolvedValue({
+          file_id: 'fid-responses',
+          filename: 'summary.csv',
+          filepath: '/uploads/summary.csv',
+          type: 'text/csv',
+          conversationId: 'thread789',
+          messageId: 'run-responses',
+          status: 'ready',
+        }),
+      });
+
+      const tracker = { nextSequence: jest.fn().mockReturnValueOnce(1).mockReturnValueOnce(2) };
+      const toolEndCallback = createResponsesToolEndCallback({
+        req,
+        res,
+        tracker,
+        artifactPromises,
+      });
+      const event = makeCodeExecutionEvent({
+        runId: 'run-responses',
+        threadId: 'thread789',
+        toolCallId: 'tool-responses',
+        fileId: 'fid-responses',
+        name: 'summary.csv',
+        toolName: 'edit_file',
+        hostFileAuthoring: true,
+        created: false,
+        codeExecutionContext: {
+          baseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        },
+      });
+      event.output.artifact.path = 'reports/summary.csv';
+
+      await toolEndCallback({ output: event.output }, event.metadata);
+      await Promise.all(artifactPromises);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(writeAttachmentEvent).toHaveBeenCalledTimes(2);
+      expect(writeAttachmentEvent.mock.calls[0][2].workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'updated',
+        path: 'reports/summary.csv',
+      });
+      expect(writeAttachmentEvent.mock.calls[1][2].workspaceChange).toEqual({
+        profile: 'stateful',
+        operation: 'updated',
+        path: 'reports/summary.csv',
+      });
+      await expect(artifactPromises[0]).resolves.toEqual(
+        expect.objectContaining({
+          workspaceChange: {
+            profile: 'stateful',
+            operation: 'updated',
+            path: 'reports/summary.csv',
+          },
+        }),
+      );
     });
 
     it('does not process arbitrary user tool artifacts named create_file as code outputs', async () => {
