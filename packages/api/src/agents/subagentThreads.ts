@@ -322,6 +322,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     string,
     { fingerprint: string; result: SubagentTaskControlResult }
   >();
+
   private readonly parentPersistence = new Map<string, Promise<unknown>>();
   private readonly maxThreadDepth: number;
   private readonly leaseTtlMs: number;
