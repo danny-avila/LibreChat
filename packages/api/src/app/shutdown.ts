@@ -113,11 +113,14 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   isShuttingDown = true;
   logger.info(`Received ${signal}, draining HTTP server...`);
 
-  forceExitTimer = setTimeout(() => {
+  /** Owned locally so a late `finally` from a superseded drain cannot clear the
+   *  safety net belonging to a shutdown that started after it. */
+  const forceExit = setTimeout(() => {
     logger.warn(`Graceful shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms, forcing exit`);
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
-  forceExitTimer.unref();
+  forceExit.unref();
+  forceExitTimer = forceExit;
 
   let exitCode = 0;
 
@@ -131,7 +134,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     await serverClosePromise;
     await runShutdownTasks('post-drain');
   } finally {
-    clearForceExitTimer();
+    clearTimeout(forceExit);
+    if (forceExitTimer === forceExit) {
+      forceExitTimer = null;
+    }
   }
 
   logger.info('Graceful shutdown complete, exiting');

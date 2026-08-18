@@ -368,4 +368,42 @@ describe('setupGracefulShutdown', () => {
       jest.useRealTimers();
     }
   });
+
+  it("keeps a later shutdown's safety net when an earlier drain settles late", async () => {
+    // `setImmediate` stays real so the first shutdown's continuation can actually
+    // reach its `finally`; only the force-exit timer is faked.
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      let releaseFirstClose: (() => void) | undefined;
+      jest.spyOn(server, 'close').mockImplementation((cb?: (err?: Error) => void) => {
+        if (cb) {
+          releaseFirstClose = () => cb();
+        }
+        return server;
+      });
+      setupGracefulShutdown(server);
+      triggerSignal('SIGTERM');
+      await flush();
+
+      // A second shutdown arms its own net after the first is reset away.
+      __resetShutdownStateForTests();
+      const secondServer = http.createServer();
+      Object.defineProperty(secondServer, 'listening', { value: true, configurable: true });
+      jest.spyOn(secondServer, 'close').mockImplementation(() => secondServer);
+      setupGracefulShutdown(secondServer);
+      triggerSignal('SIGTERM');
+      await flush();
+
+      // The first drain settles only now; its `finally` must not disarm the second.
+      releaseFirstClose?.();
+      await flush();
+      await flush();
+      await flush();
+
+      jest.advanceTimersByTime(120_000);
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
