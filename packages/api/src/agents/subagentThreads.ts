@@ -699,6 +699,50 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
   }
 
+  /**
+   * Second cancellation pass after a conversation cascade is deleted. One durable-lease
+   * read resolves every live child address, so catching a child admitted after the
+   * pre-delete snapshot never re-reads the deleted conversations or probes the owner
+   * directory once per removed id.
+   */
+  async cancelActiveLeasesForConversations(
+    userId: string,
+    conversationIds: Iterable<string>,
+    tenantId?: string,
+  ): Promise<number> {
+    const targets = new Set(conversationIds);
+    if (targets.size === 0) {
+      return 0;
+    }
+    const activeLeases = await this.methods.listActiveSubagentThreadLeases({
+      user: userId,
+      now: new Date(),
+      ...(tenantId == null ? {} : { tenantId }),
+    });
+    const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
+    const cancellations: Array<Promise<SubagentTaskControlResult>> = [];
+    for (const lease of activeLeases) {
+      if (!targets.has(lease.parentConversationId) && !targets.has(lease.conversationId)) {
+        continue;
+      }
+      const scopeId = serializeScope({
+        userId,
+        parentConversationId: lease.parentConversationId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      cancellations.push(
+        cancelSlot(() => this.controlTask(scopeId, lease.taskId, { action: 'cancel' })),
+      );
+    }
+    let cancelled = 0;
+    for (const result of await Promise.all(cancellations)) {
+      if (result.status === 'cancelled') {
+        cancelled += 1;
+      }
+    }
+    return cancelled;
+  }
+
   /** Cancels every active child owned by a user before a delete-all operation. */
   cancelForOwner(userId: string, tenantId?: string): number {
     return this.cancelMatchingThreads(

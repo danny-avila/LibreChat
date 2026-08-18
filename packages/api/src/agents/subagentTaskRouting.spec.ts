@@ -305,17 +305,17 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
-  it('bounds retained destructive-response replays by serialized bytes', async () => {
+  it('bounds unacknowledged claim replays by serialized bytes', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
       asRedis(bus.createClient()),
-      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 30, retryDelayMs: 5 },
     );
     const requester = new RedisSubagentTaskControlTransport(
       asRedis(bus.createClient()),
       asRedis(bus.createClient()),
-      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
     );
     const result = '\u0000'.repeat(100_000);
     const handler = taskHandler({
@@ -330,16 +330,19 @@ describe('RedisSubagentTaskControlTransport', () => {
     const taskIds = Array.from({ length: 30 }, (_, index) => `task-${index + 1}`);
     await Promise.all(taskIds.map((taskId) => owner.registerTask('scope-1', taskId, 60_000)));
 
+    /** Every response is lost, so no claim is ever acknowledged or released. */
+    bus.dropResponses = taskIds.length * 2;
     for (const taskId of taskIds) {
-      await requester.claim('scope-1', taskId);
+      await expect(requester.claim('scope-1', taskId)).rejects.toBeInstanceOf(
+        SubagentTaskOwnerUnavailableError,
+      );
     }
 
-    const cache = owner as unknown as {
-      responseCache: Map<string, unknown>;
-      responseCacheBytes: number;
+    const { claimReplays } = owner as unknown as {
+      claimReplays: { entries: Map<string, unknown>; bytes: number };
     };
-    expect(cache.responseCacheBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
-    expect(cache.responseCache.size).toBeLessThan(taskIds.length);
+    expect(claimReplays.bytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    expect(claimReplays.entries.size).toBeLessThan(taskIds.length);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
@@ -577,6 +580,64 @@ describe('RedisSubagentTaskControlTransport', () => {
     const threadIds = tasks.map((_task, index) => `thread-${index + 1}`);
     await expect(requester.cancelScope('scope-1', threadIds)).resolves.toBe(201);
     expect(requests.slice(1).map((batch) => batch?.length)).toEqual([200, 1]);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('releases a claim replay once the requester acknowledges it, and keeps it otherwise', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 30, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 30, retryDelayMs: 5 },
+    );
+    await owner.bind(
+      taskHandler({
+        claim: (_scopeId: string, taskId: string) => ({
+          status: 'completed' as const,
+          task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+          result: 'child result',
+        }),
+        control: (_scopeId: string, taskId: string) => ({
+          status: 'accepted' as const,
+          task: snapshot({ taskId }),
+          controlId: 'control-1',
+        }),
+      }),
+    );
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    await owner.registerTask('scope-1', 'task-2', 60_000);
+    const { claimReplays, controlReplays } = owner as unknown as {
+      claimReplays: { entries: Map<string, unknown> };
+      controlReplays: { entries: Map<string, unknown> };
+    };
+
+    /** A delivered result needs no replay copy. */
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+    });
+    for (let attempt = 0; attempt < 50 && claimReplays.entries.size > 0; attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    expect(claimReplays.entries.size).toBe(0);
+
+    /** An undelivered one is retained, and control traffic cannot displace it. */
+    bus.dropResponses = 2;
+    await expect(requester.claim('scope-1', 'task-2')).rejects.toBeInstanceOf(
+      SubagentTaskOwnerUnavailableError,
+    );
+    expect(claimReplays.entries.size).toBe(1);
+    for (let index = 0; index < 50; index += 1) {
+      await requester.control('scope-1', 'task-1', { action: 'queue', message: `m-${index}` });
+    }
+    expect(controlReplays.entries.size).toBe(50);
+    expect(claimReplays.entries.size).toBe(1);
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

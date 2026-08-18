@@ -15,8 +15,12 @@ const DEFAULT_RETRY_DELAY_MS = 500;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
 const DEFAULT_REGISTRATION_HEARTBEAT_MS = 10_000;
 const MAX_PENDING_REQUESTS = 1_000;
-const MAX_RESPONSE_CACHE_ENTRIES = 2_000;
-const MAX_RESPONSE_CACHE_BYTES = 16 * 1024 * 1024;
+/** A consumed claim is the only response whose loss destroys data, so it is retained
+ * apart from control replays and can never be evicted by unrelated command traffic. */
+const MAX_CLAIM_REPLAY_ENTRIES = 2_000;
+const MAX_CLAIM_REPLAY_BYTES = 16 * 1024 * 1024;
+const MAX_CONTROL_REPLAY_ENTRIES = 2_000;
+const MAX_CONTROL_REPLAY_BYTES = 4 * 1024 * 1024;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
@@ -104,6 +108,14 @@ interface RoutedResponse {
   result?: unknown;
 }
 
+/** Tells the owner a consumed result reached a caller and no longer needs retaining. */
+interface RoutedAck {
+  version: typeof PROTOCOL_VERSION;
+  kind: 'ack';
+  scopeId: string;
+  taskId: string;
+}
+
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
@@ -115,6 +127,13 @@ interface CachedResponse {
   value: string;
   bytes: number;
   expiresAt: number;
+}
+
+interface ReplayCache {
+  entries: Map<string, CachedResponse>;
+  bytes: number;
+  maxEntries: number;
+  maxBytes: number;
 }
 
 interface RoutedTaskList {
@@ -492,6 +511,31 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
   };
 }
 
+function createReplayCache(maxEntries: number, maxBytes: number): ReplayCache {
+  return { entries: new Map(), bytes: 0, maxEntries, maxBytes };
+}
+
+function parseAck(value: unknown): RoutedAck | undefined {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const candidate = value as Partial<RoutedAck>;
+  if (
+    candidate.version !== PROTOCOL_VERSION ||
+    candidate.kind !== 'ack' ||
+    !isBoundedString(candidate.scopeId, MAX_SCOPE_ID_CHARS) ||
+    !isBoundedString(candidate.taskId, MAX_TASK_ID_CHARS)
+  ) {
+    return undefined;
+  }
+  return {
+    version: PROTOCOL_VERSION,
+    kind: 'ack',
+    scopeId: candidate.scopeId,
+    taskId: candidate.taskId,
+  };
+}
+
 function parseResponse(value: unknown): RoutedResponse | undefined {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return undefined;
@@ -520,8 +564,16 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private readonly retryDelayMs: number;
   private readonly registrationHeartbeatMs: number;
   private readonly pending = new Map<string, PendingRequest>();
-  private readonly responseCache = new Map<string, CachedResponse>();
-  private responseCacheBytes = 0;
+  private readonly claimReplays = createReplayCache(
+    MAX_CLAIM_REPLAY_ENTRIES,
+    MAX_CLAIM_REPLAY_BYTES,
+  );
+
+  private readonly controlReplays = createReplayCache(
+    MAX_CONTROL_REPLAY_ENTRIES,
+    MAX_CONTROL_REPLAY_BYTES,
+  );
+
   private readonly ownedTasks = new Map<string, OwnedTaskRegistration>();
   private handler?: SubagentTaskControlHandler;
   private ready?: Promise<void>;
@@ -585,16 +637,20 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   async claim(scopeId: string, taskId: string): Promise<SubagentTaskClaim | undefined> {
-    const result = await this.requestTaskOwner(scopeId, taskId, 'claim');
-    if (result == null) {
+    const routed = await this.requestTaskOwner(scopeId, taskId, 'claim');
+    if (routed == null) {
       return undefined;
     }
+    const { ownerId, result } = routed;
     if (!isClaim(result)) {
       throw new SubagentTaskOwnerUnavailableError();
     }
     if (result.status === 'not_found') {
       await this.removeRegistrations(scopeId, [taskId]);
       return undefined;
+    }
+    if (consumesResult(result)) {
+      await this.acknowledgeClaim(ownerId, scopeId, taskId);
     }
     return result;
   }
@@ -604,10 +660,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     taskId: string,
     command: SubagentTaskControlCommand,
   ): Promise<SubagentTaskControlResult | undefined> {
-    const result = await this.requestTaskOwner(scopeId, taskId, 'control', command);
-    if (result == null) {
+    const routed = await this.requestTaskOwner(scopeId, taskId, 'control', command);
+    if (routed == null) {
       return undefined;
     }
+    const { result } = routed;
     if (!isControlResult(result)) {
       throw new SubagentTaskOwnerUnavailableError();
     }
@@ -727,8 +784,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       pending.reject(new SubagentTaskOwnerUnavailableError());
     }
     this.pending.clear();
-    this.responseCache.clear();
-    this.responseCacheBytes = 0;
+    for (const cache of [this.claimReplays, this.controlReplays]) {
+      cache.entries.clear();
+      cache.bytes = 0;
+    }
     this.ownedTasks.clear();
     if (this.registrationHeartbeat != null) {
       clearInterval(this.registrationHeartbeat);
@@ -752,6 +811,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     const response = parseResponse(parsed);
     if (response != null) {
       this.handleResponse(response);
+      return;
+    }
+    const ack = parseAck(parsed);
+    if (ack != null) {
+      this.releaseClaimReplay(ack.scopeId, ack.taskId);
       return;
     }
     const request = parseRequest(parsed);
@@ -778,8 +842,8 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   private async handleRequest(request: RoutedRequest): Promise<void> {
-    const operationKey = this.operationKey(request);
-    const cached = operationKey == null ? undefined : this.responseCache.get(operationKey);
+    const replay = this.replayFor(request);
+    const cached = replay?.cache.entries.get(replay.key);
     if (cached != null && cached.expiresAt > Date.now()) {
       await this.publish(
         this.channel(request.requesterId),
@@ -800,7 +864,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         | RoutedCancelResult;
       /** A claim that consumed nothing stays uncached so a later poll still observes
        * the task's live status. */
-      let replayable = operationKey != null;
+      let replayable = replay != null;
       if (request.operation === 'list') {
         const tasks = handler.list(request.scopeId);
         result = {
@@ -821,8 +885,8 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       const serializedResult = JSON.stringify(result);
       /** Retaining the result rather than the envelope lets a later caller retry,
        * which carries its own correlation id, recover a response it never received. */
-      if (operationKey != null && replayable) {
-        this.cacheResponse(operationKey, serializedResult);
+      if (replay != null && replayable) {
+        this.retainReplay(replay.cache, replay.key, serializedResult);
       }
       serialized = successResponse(request.requestId, serializedResult);
     } catch (error) {
@@ -839,19 +903,45 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   /**
-   * Identifies a destructive operation for replay. A claim consumes the one-shot
-   * result, so a caller retry issued under a new correlation id—including a later
-   * poll from another replica—still resolves to the response the owner produced.
-   * Lists are idempotent and recomputable, so their large bodies are never retained.
+   * Locates a destructive operation's replay slot. A claim consumes the one-shot
+   * result, so it is keyed by operation—stable across callers and replicas, so a
+   * later poll still resolves to the response the owner produced—and retained apart
+   * from control replays, which cannot then evict it. Lists are idempotent and
+   * recomputable, so their large bodies are never retained.
    */
-  private operationKey(request: RoutedRequest): string | undefined {
+  private replayFor(request: RoutedRequest): { cache: ReplayCache; key: string } | undefined {
     if (request.operation === 'list') {
       return undefined;
     }
     if (request.operation === 'claim') {
-      return `claim\u0000${shortHash(request.scopeId)}\u0000${request.taskId}`;
+      return {
+        cache: this.claimReplays,
+        key: this.claimReplayKey(request.scopeId, request.taskId),
+      };
     }
-    return `${request.operation}\u0000${request.requestId}`;
+    return { cache: this.controlReplays, key: `control\u0000${request.requestId}` };
+  }
+
+  private claimReplayKey(scopeId: string, taskId: string): string {
+    return `claim\u0000${shortHash(scopeId)}\u0000${taskId}`;
+  }
+
+  /** Frees a retained result once a caller holds it; an unacknowledged claim stays. */
+  private releaseClaimReplay(scopeId: string, taskId: string): void {
+    const key = this.claimReplayKey(scopeId, taskId);
+    const cached = this.claimReplays.entries.get(key);
+    if (cached == null) {
+      return;
+    }
+    this.claimReplays.entries.delete(key);
+    this.claimReplays.bytes -= cached.bytes;
+  }
+
+  private async acknowledgeClaim(ownerId: string, scopeId: string, taskId: string): Promise<void> {
+    const ack: RoutedAck = { version: PROTOCOL_VERSION, kind: 'ack', scopeId, taskId };
+    await this.publish(this.channel(ownerId), JSON.stringify(ack)).catch((error) => {
+      logger.warn('[subagentTaskRouting] Failed to acknowledge a claimed result', error);
+    });
   }
 
   private async requestTaskOwner(
@@ -859,7 +949,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     taskId: string,
     operation: 'claim' | 'control',
     command?: SubagentTaskControlCommand,
-  ): Promise<unknown | undefined> {
+  ): Promise<{ ownerId: string; result: unknown } | undefined> {
     this.assertTaskAddress(scopeId, taskId);
     await this.requireReady();
     let ownerId: string | null;
@@ -878,12 +968,15 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       return undefined;
     }
     if (operation === 'claim') {
-      return this.sendRequest(ownerId, { operation, scopeId, taskId });
+      return { ownerId, result: await this.sendRequest(ownerId, { operation, scopeId, taskId }) };
     }
     if (command == null) {
       throw new Error('A routed subagent control command is required.');
     }
-    return this.sendRequest(ownerId, { operation, scopeId, taskId, command });
+    return {
+      ownerId,
+      result: await this.sendRequest(ownerId, { operation, scopeId, taskId, command }),
+    };
   }
 
   private async sendRequest(ownerId: string, request: RoutedRequestPayload): Promise<unknown> {
@@ -921,36 +1014,29 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     });
   }
 
-  private cacheResponse(requestId: string, value: string): void {
+  private retainReplay(cache: ReplayCache, key: string, value: string): void {
     const now = Date.now();
     const bytes = Buffer.byteLength(value, 'utf8');
-    if (bytes > MAX_RESPONSE_CACHE_BYTES) {
+    if (bytes > cache.maxBytes) {
       return;
     }
-    for (const [id, cached] of this.responseCache) {
+    for (const [id, cached] of cache.entries) {
       if (cached.expiresAt <= now) {
-        this.responseCache.delete(id);
-        this.responseCacheBytes -= cached.bytes;
+        cache.entries.delete(id);
+        cache.bytes -= cached.bytes;
       }
     }
-    while (
-      this.responseCache.size >= MAX_RESPONSE_CACHE_ENTRIES ||
-      this.responseCacheBytes + bytes > MAX_RESPONSE_CACHE_BYTES
-    ) {
-      const oldest = this.responseCache.keys().next().value as string | undefined;
+    while (cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes) {
+      const oldest = cache.entries.keys().next().value as string | undefined;
       if (oldest == null) {
         break;
       }
-      const evicted = this.responseCache.get(oldest);
-      this.responseCache.delete(oldest);
-      this.responseCacheBytes -= evicted?.bytes ?? 0;
+      const evicted = cache.entries.get(oldest);
+      cache.entries.delete(oldest);
+      cache.bytes -= evicted?.bytes ?? 0;
     }
-    this.responseCache.set(requestId, {
-      value,
-      bytes,
-      expiresAt: now + RESPONSE_CACHE_TTL_MS,
-    });
-    this.responseCacheBytes += bytes;
+    cache.entries.set(key, { value, bytes, expiresAt: now + RESPONSE_CACHE_TTL_MS });
+    cache.bytes += bytes;
   }
 
   private async publish(channel: string, value: string): Promise<void> {

@@ -407,16 +407,21 @@ export function createConversationMethods(
       ...subagentLeaseTenantFilter(input.tenantId),
       'subagentThreadLease.expiresAt': { $gt: input.now },
     })
-      .select('subagentThread.parentConversationId +subagentThreadLease')
-      .lean<Array<Pick<IConversation, 'subagentThread' | 'subagentThreadLease'>>>();
+      .select('conversationId subagentThread.parentConversationId +subagentThreadLease')
+      .lean<
+        Array<Pick<IConversation, 'conversationId' | 'subagentThread' | 'subagentThreadLease'>>
+      >();
     return conversations.flatMap((conversation) => {
+      const { conversationId } = conversation;
       const parentConversationId = conversation.subagentThread?.parentConversationId;
       const taskId = conversation.subagentThreadLease?.taskId;
-      return typeof parentConversationId === 'string' &&
+      return typeof conversationId === 'string' &&
+        conversationId !== '' &&
+        typeof parentConversationId === 'string' &&
         parentConversationId !== '' &&
         typeof taskId === 'string' &&
         taskId !== ''
-        ? [{ parentConversationId, taskId }]
+        ? [{ conversationId, parentConversationId, taskId }]
         : [];
     });
   }

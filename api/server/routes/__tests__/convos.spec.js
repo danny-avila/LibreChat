@@ -278,13 +278,15 @@ describe('Convos Routes', () => {
         ['parent-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenNthCalledWith(
-        2,
+      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledTimes(1);
+      /** The removed conversations cannot be read back, so the second pass resolves
+       * live children from their durable leases instead of the deleted cascade. */
+      expect(subagentThreadStore.cancelActiveLeasesForConversations).toHaveBeenCalledWith(
         'test-user-123',
         ['parent-conversation', 'child-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledTimes(2);
+      expect(subagentThreadStore.cancelActiveLeasesForConversations).toHaveBeenCalledTimes(1);
       expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
         'parent-conversation',
         'child-conversation',

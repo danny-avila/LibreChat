@@ -167,10 +167,12 @@ router.delete('/', configMiddleware, async (req, res) => {
     const deletedConversationIds =
       dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
     /** Root deletion closes new child admission. Cancel once more to catch a
-     * task admitted after the pre-delete snapshot but before that fence. */
+     * task admitted after the pre-delete snapshot but before that fence. The removed
+     * conversations cannot be read back, so this pass resolves live children from
+     * their durable leases rather than from the deleted cascade. */
     if (deletedConversationIds.length > 0) {
       await subagentThreadTaskStore
-        .cancelForConversationsAcrossReplicas(req.user.id, deletedConversationIds, tenantId)
+        .cancelActiveLeasesForConversations(req.user.id, deletedConversationIds, tenantId)
         .catch((error) => {
           logger.warn('Post-delete subagent cancellation failed', error);
         });

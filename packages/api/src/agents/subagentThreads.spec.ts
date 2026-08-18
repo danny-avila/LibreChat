@@ -1505,6 +1505,52 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('cancels a child admitted after the deletion snapshot from its durable lease', async () => {
+    const userId = 'lease-cancel-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const leases = await methods.listActiveSubagentThreadLeases({
+        user: userId,
+        now: new Date(),
+      });
+      if (leases.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    /** The post-delete pass cannot read the removed conversations back, so it resolves
+     * this child from its durable lease instead. */
+    await expect(
+      deletingStore.cancelActiveLeasesForConversations(userId, [parentConversationId]),
+    ).resolves.toBe(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
   it('drains only active lease addresses when deleting every conversation across replicas', async () => {
     const userId = 'routed-owner-drain-user';
     const parentConversationId = randomUUID();

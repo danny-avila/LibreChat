@@ -3342,6 +3342,7 @@ describe('Conversation Operations', () => {
         methods.listActiveSubagentThreadLeases({ user: 'lease-user', now }),
       ).resolves.toEqual([
         {
+          conversationId,
           parentConversationId: 'parent',
           taskId: `task-${winner}`,
         },

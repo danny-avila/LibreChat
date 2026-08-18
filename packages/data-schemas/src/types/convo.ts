@@ -8,6 +8,7 @@ export interface ISubagentThreadLease {
 }
 
 export interface IActiveSubagentThreadLease {
+  conversationId: string;
   parentConversationId: string;
   taskId: string;
 }
