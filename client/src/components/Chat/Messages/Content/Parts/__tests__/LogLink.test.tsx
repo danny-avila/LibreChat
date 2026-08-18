@@ -56,7 +56,9 @@ describe('LogLink download routing', () => {
 
   it('uses the authorized file download route when stored metadata is available', async () => {
     const filename = 'file.pdf';
-    mockDownloadFromApi.mockResolvedValue({ data: 'https://cdn.example.com/signed/file.pdf' });
+    mockDownloadFromApi.mockResolvedValue({
+      data: { url: 'https://cdn.example.com/signed/file.pdf', filename },
+    });
 
     render(
       <LogLink
@@ -76,6 +78,68 @@ describe('LogLink download routing', () => {
       expect(mockTriggerDownload).toHaveBeenCalledWith(
         'https://cdn.example.com/signed/file.pdf',
         'file.pdf',
+      );
+    });
+    expect(mockDownloadFromApi).toHaveBeenCalledTimes(1);
+    expect(mockDownloadFromUrl).not.toHaveBeenCalled();
+  });
+
+  it('uses the filename returned by the authorized download route', async () => {
+    const filename = 'report.pdf';
+    mockDownloadFromApi.mockResolvedValue({
+      data: { url: 'blob:https://app.example.com/file', filename: 'report.txt' },
+    });
+
+    render(
+      <LogLink
+        user="user-1"
+        file_id="file-1"
+        filename={filename}
+        source={FileSources.local}
+        href="/api/files/user-1/file-1"
+      >
+        {filename}
+      </LogLink>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: filename }));
+
+    await waitFor(() => {
+      expect(mockTriggerDownload).toHaveBeenCalledWith(
+        'blob:https://app.example.com/file',
+        'report.txt',
+      );
+    });
+    expect(mockDownloadFromApi).toHaveBeenCalledTimes(1);
+    expect(mockDownloadFromUrl).not.toHaveBeenCalled();
+  });
+
+  it('routes persisted-text attachments through the file API, not their stale temp path', async () => {
+    /** The upload route deletes the Multer temp file once the extracted text is persisted,
+     *  so `filepath` points at nothing and only the download route can serve the file. */
+    const filename = 'librechat.yaml';
+    mockDownloadFromApi.mockResolvedValue({
+      data: { url: 'blob:https://app.example.com/text', filename },
+    });
+
+    render(
+      <LogLink
+        user="user-1"
+        file_id="file-1"
+        filename={filename}
+        source={FileSources.text}
+        href="/uploads/temp/user-1/librechat.yaml"
+      >
+        {filename}
+      </LogLink>,
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: filename }));
+
+    await waitFor(() => {
+      expect(mockTriggerDownload).toHaveBeenCalledWith(
+        'blob:https://app.example.com/text',
+        filename,
       );
     });
     expect(mockDownloadFromApi).toHaveBeenCalledTimes(1);

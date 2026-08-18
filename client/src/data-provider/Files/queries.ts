@@ -6,6 +6,7 @@ import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
 import { addFileToCache } from '~/utils';
 import store from '~/store';
+import { getDownloadFilename, type FileDownloadResult } from './download';
 
 export const useGetFiles = <TData = t.TFile[] | boolean>(
   config?: UseQueryOptions<t.TFile[], unknown, TData>,
@@ -72,9 +73,9 @@ export const useFileDownload = (
   userId?: string,
   file_id?: string,
   options: FileDownloadOptions = {},
-): QueryObserverResult<string> => {
+): QueryObserverResult<FileDownloadResult | undefined> => {
   const queryClient = useQueryClient();
-  return useQuery(
+  return useQuery<FileDownloadResult | undefined>(
     [QueryKeys.fileDownload, file_id, options.source ?? '', options.direct ?? true],
     async () => {
       if (!userId || !file_id) {
@@ -85,7 +86,7 @@ export const useFileDownload = (
         try {
           const directDownload = await dataService.getFileDownloadURL(userId, file_id);
           if (directDownload.url) {
-            return directDownload.url;
+            return { url: directDownload.url, filename: directDownload.filename };
           }
         } catch {
           // Fall back to the legacy proxied download for direct URL failures.
@@ -95,21 +96,25 @@ export const useFileDownload = (
       const response = await dataService.getFileDownload(userId, file_id);
       const blob = response.data;
       const downloadURL = window.URL.createObjectURL(blob);
+      let metadataFilename: string | undefined;
       try {
         const metadata: t.TFile | undefined = JSON.parse(
           decodeURIComponent(response.headers['x-file-metadata']),
         );
         if (!metadata) {
           console.warn('No metadata found for file download', response.headers);
-          return downloadURL;
+        } else {
+          metadataFilename = metadata.filename;
+          addFileToCache(queryClient, metadata);
         }
-
-        addFileToCache(queryClient, metadata);
       } catch (e) {
         console.error('Error parsing file metadata, skipped updating file query cache', e);
       }
 
-      return downloadURL;
+      return {
+        url: downloadURL,
+        filename: getDownloadFilename(response.headers['content-disposition']) ?? metadataFilename,
+      };
     },
     {
       enabled: false,
@@ -126,15 +131,18 @@ export const useFileDownload = (
 export const useSharedFileDownload = (
   shareId?: string,
   file_id?: string,
-): QueryObserverResult<string> => {
-  return useQuery(
+): QueryObserverResult<FileDownloadResult | undefined> => {
+  return useQuery<FileDownloadResult | undefined>(
     [QueryKeys.fileDownload, 'share', shareId ?? '', file_id ?? ''],
     async () => {
       if (!shareId || !file_id) {
         return;
       }
       const response = await dataService.getSharedFileDownload(shareId, file_id);
-      return window.URL.createObjectURL(response.data);
+      return {
+        url: window.URL.createObjectURL(response.data),
+        filename: getDownloadFilename(response.headers['content-disposition']),
+      };
     },
     {
       enabled: false,

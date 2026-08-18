@@ -5,9 +5,11 @@ const {
   logAxiosError,
   getApprovalTtlMs,
   refreshS3FileUrls,
+  pipeDownloadStream,
   handleFilesUsageRequest,
   shouldUseUploadSse,
   startUploadSseStream,
+  getTextDownloadFilename,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
@@ -368,7 +370,7 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       { baseUrl, executionProfile },
     );
     res.set(response.headers);
-    response.data.pipe(res);
+    pipeDownloadStream(response.data, res);
   } catch (error) {
     /* `logAxiosError` redacts buffer/stream response bodies — without
      * it, a stream-typed axios failure dumps the entire `Readable`'s
@@ -572,6 +574,30 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
+    const setHeaders = (downloadFilename = file.filename) => {
+      res.setHeader('Content-Disposition', getContentDisposition(downloadFilename));
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader(
+        'X-File-Metadata',
+        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
+      );
+    };
+
+    if (file.source === FileSources.text) {
+      const textFile = await db.findFileById(file_id);
+      if (typeof textFile?.text !== 'string') {
+        logger.warn(
+          `File download requested by user ${userId} has invalid text content: ${file_id}`,
+        );
+        return res.status(500).send('Error downloading file');
+      }
+
+      setHeaders(getTextDownloadFilename(file.filename));
+      /** Sent as a buffer so the body carries a `Content-Length`: a string body would make
+       *  Express append a charset to the octet-stream content type. */
+      return res.status(200).send(Buffer.from(textFile.text, 'utf8'));
+    }
+
     const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
     if (!getDownloadStream && !getDownloadURL) {
       logger.warn(
@@ -579,15 +605,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       );
       return res.status(501).send('Not Implemented');
     }
-
-    const setHeaders = () => {
-      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader(
-        'X-File-Metadata',
-        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
-      );
-    };
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
@@ -611,7 +628,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
           ? Readable.fromWeb(passThrough.body)
           : passThrough.body;
 
-      stream.pipe(res);
+      pipeDownloadStream(stream, res);
     } else {
       if (getDownloadURL && req.query.direct === 'true') {
         try {
@@ -637,12 +654,8 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
-      fileStream.on('error', (streamError) => {
-        logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
-      });
-
       setHeaders();
-      fileStream.pipe(res);
+      pipeDownloadStream(fileStream, res);
     }
   } catch (error) {
     logger.error('[DOWNLOAD ROUTE] Error downloading file:', error);

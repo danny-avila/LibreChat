@@ -169,14 +169,14 @@ export default function FilePreviewDialog({
 
     try {
       const result = await downloadFile();
-      if (cancelledRef.current || !result.data) {
+      if (cancelledRef.current || !result.data?.url) {
         if (!cancelledRef.current) {
           setPreviewError(true);
         }
         return;
       }
 
-      const resp = await fetch(result.data);
+      const resp = await fetch(result.data.url);
       const blob = await resp.blob();
 
       if (cancelledRef.current) {
@@ -207,10 +207,10 @@ export default function FilePreviewDialog({
     }
     try {
       const result = await downloadFile();
-      if (!result.data) {
+      if (!result.data?.url) {
         return;
       }
-      triggerDownload(result.data, fileName);
+      triggerDownload(result.data.url, result.data.filename ?? fileName);
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }
