@@ -16,17 +16,14 @@ image:
 
 global:
   librechat:
-    existingSecretName: ""
+    # All sensitive env vars (API keys, JWT/CREDS, OpenID secrets, storage
+    # connection string) live in this Secret, maintained out-of-band in the
+    # cluster — never in this file or in pipeline --set flags.
+    existingSecretName: "billechat-librechat-env"
     existingSecretApiKey: AZURE_AI_FOUNDRY_API_KEY
 
 librechat:
   configEnv:
-    # Secrets — overridden via --set in CI/CD pipeline
-    CREDS_KEY: "override-via-pipeline"
-    CREDS_IV: "override-via-pipeline"
-    JWT_SECRET: "override-via-pipeline"
-    JWT_REFRESH_SECRET: "override-via-pipeline"
-
     # Server
     HOST: "0.0.0.0"
     PORT: "3080"
@@ -44,35 +41,34 @@ librechat:
     APP_TITLE: "BilleChat"
     OPENID_IMAGE_URL: "/assets/billennium-b-icon-64.png"
 
-    # Azure AI Foundry — API key overridden via pipeline
-    AZURE_AI_FOUNDRY_API_KEY: "override-via-pipeline"
+    # File storage — Azure Blob (account stbillechatfiles, billechat-rg).
+    # AZURE_STORAGE_CONNECTION_STRING comes from the billechat-librechat-env
+    # Secret; strategy itself is `fileStrategy: azure_blob` in configYamlContent.
+    AZURE_CONTAINER_NAME: "files"
+    AZURE_STORAGE_PUBLIC_ACCESS: "false"
 
     # Anthropic via Azure AI Foundry (deployment names == model ids on the Foundry)
-    ANTHROPIC_API_KEY: "override-via-pipeline"
     ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic"
     ANTHROPIC_MODELS: "claude-opus-5,claude-fable-5,claude-opus-4-8,claude-opus-4-7,claude-opus-4-6"
 
     # RAG
     RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
-    RAG_OPENAI_API_KEY: "override-via-pipeline"
     EMBEDDINGS_PROVIDER: "azure"
     EMBEDDINGS_MODEL: "text-embedding-3-large"
-    AZURE_OPENAI_API_KEY: "override-via-pipeline"
     AZURE_OPENAI_ENDPOINT: "https://micha-mm146vwy-swedencentral.services.ai.azure.com"
     OPENAI_API_VERSION: "2024-12-01-preview"
 
     # Code Interpreter — self-hosted sandbox in this namespace.
     # Manifests: deploy/azure/code-interpreter/
     # Auth is EdDSA JWT only; LIBRECHAT_CODE_API_KEY is no longer read by the
-    # app. LibreChat signs with the private key below, codeapi verifies with the
-    # matching public key from the `codeapi-jwt-verifier` secret.
+    # app. LibreChat signs with CODEAPI_JWT_PRIVATE_KEY_BASE64 (in the Secret),
+    # codeapi verifies with the matching public key from `codeapi-jwt-verifier`.
     LIBRECHAT_CODE_BASEURL: "http://codeapi-api.billechat.svc.cluster.local:3112/v1"
     CODEAPI_AUTH_PROVIDER: "librechat-jwt"
     CODEAPI_JWT_KID: "billechat-codeapi-2026-08"
     CODEAPI_JWT_ISSUER: "librechat"
     CODEAPI_JWT_AUDIENCE: "codeapi"
     CODEAPI_JWT_ALGORITHM: "EdDSA"
-    CODEAPI_JWT_PRIVATE_KEY_BASE64: "override-via-pipeline"
 
     # Auth — Entra ID OpenID
     ALLOW_EMAIL_LOGIN: "false"
@@ -83,9 +79,7 @@ librechat:
     ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
 
     OPENID_CLIENT_ID: "f0aa5392-50f1-4319-9c10-4c817490bfd9"
-    OPENID_CLIENT_SECRET: "override-via-pipeline"
     OPENID_ISSUER: "https://login.microsoftonline.com/3912aa95-6d78-446d-8548-a49ffd73f550/v2.0"
-    OPENID_SESSION_SECRET: "override-via-pipeline"
     OPENID_SCOPE: "openid profile email offline_access api://f0aa5392-50f1-4319-9c10-4c817490bfd9/access_as_user"
     OPENID_CALLBACK_URL: "/oauth/openid/callback"
     OPENID_REDIRECT_URI: "https://billechat.135-225-229-32.nip.io/oauth/openid/callback"
@@ -112,6 +106,7 @@ librechat:
   configYamlContent: |
     version: 1.3.8
     cache: true
+    fileStrategy: azure_blob
     mcpSettings:
       allowedDomains:
         - http://ms365-mcp-server.billechat.svc.cluster.local:3000
@@ -275,12 +270,13 @@ meilisearch:
 librechat-rag-api:
   enabled: true
   rag:
+    # AZURE_OPENAI_API_KEY lives here, maintained out-of-band in the cluster.
+    existingSecret: "billechat-rag-env"
     configEnv:
       DB_PORT: "5432"
       EMBEDDINGS_PROVIDER: azure
       EMBEDDINGS_MODEL: text-embedding-3-large
       AZURE_OPENAI_ENDPOINT: "https://micha-mm146vwy-swedencentral.services.ai.azure.com"
-      AZURE_OPENAI_API_KEY: "override-via-pipeline"
       OPENAI_API_VERSION: "2024-12-01-preview"
   image:
     repository: danny-avila/librechat-rag-api-dev-lite

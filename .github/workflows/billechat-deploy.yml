@@ -96,18 +96,6 @@ jobs:
             --set image.registry=${{ secrets.ACR_LOGIN_SERVER }} \
             --set image.repository=${{ env.IMAGE_NAME }} \
             --set image.tag=${{ needs.build.outputs.image_tag }} \
-            --set librechat.configEnv.AZURE_AI_FOUNDRY_API_KEY=${{ secrets.AZURE_AI_FOUNDRY_API_KEY }} \
-            --set librechat.configEnv.ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }} \
-            --set librechat.configEnv.JWT_SECRET=${{ secrets.JWT_SECRET }} \
-            --set librechat.configEnv.JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }} \
-            --set librechat.configEnv.CREDS_KEY=${{ secrets.CREDS_KEY }} \
-            --set librechat.configEnv.CREDS_IV=${{ secrets.CREDS_IV }} \
-            --set librechat.configEnv.OPENID_CLIENT_SECRET=${{ secrets.OPENID_CLIENT_SECRET }} \
-            --set librechat.configEnv.OPENID_SESSION_SECRET=${{ secrets.OPENID_SESSION_SECRET }} \
-            --set librechat.configEnv.RAG_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
-            --set librechat.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }} \
-            --set librechat.configEnv.CODEAPI_JWT_PRIVATE_KEY_BASE64=${{ secrets.CODEAPI_JWT_PRIVATE_KEY_BASE64 }} \
-            --set librechat-rag-api.rag.configEnv.AZURE_OPENAI_API_KEY=${{ secrets.RAG_OPENAI_API_KEY }} \
             --timeout 10m \
             --wait
 
