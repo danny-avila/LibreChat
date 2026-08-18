@@ -1,8 +1,8 @@
 import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './types';
 import type { FireableSchedule } from './types';
 import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service';
-import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { getAgentTriggerIdempotencyKey } from '../agents/triggers/envelope';
+import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { buildFireClientRequestId, fireSchedule } from './fire';
 import { withCapacitySlot } from './capacity';
 
