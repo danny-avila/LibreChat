@@ -5,6 +5,7 @@ import { Search, ChevronDown } from 'lucide-react';
 import { SelectRenderer } from '@ariakit/react-components/select/select-renderer';
 import type { OptionWithIcon } from '~/common';
 import { usePopoverZIndex } from './OriginalDialog';
+import useRemScale from '~/hooks/useRemScale';
 import './AnimatePopover.css';
 import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
@@ -65,6 +66,7 @@ function ControlCombobox({
   portal = true,
 }: ControlComboboxProps): JSX.Element {
   const [searchValue, setSearchValue] = useState('');
+  const remScale = useRemScale();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
   const popoverZIndex = usePopoverZIndex();
@@ -201,7 +203,12 @@ function ControlCombobox({
         </div>
         <div className="max-h-[18.75rem] overflow-auto">
           <Ariakit.ComboboxList store={combobox}>
-            <SelectRenderer store={select} items={matches} itemSize={ROW_HEIGHT} overscan={5}>
+            <SelectRenderer
+              store={select}
+              items={matches}
+              itemSize={ROW_HEIGHT * remScale}
+              overscan={5}
+            >
               {({ value, icon, label, ...item }) => (
                 <Ariakit.ComboboxItem
                   key={item.id}
