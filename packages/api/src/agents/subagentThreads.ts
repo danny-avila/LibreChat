@@ -100,6 +100,7 @@ interface TaskThreadLease {
 interface UserTurnThreadLease {
   kind: 'user';
   leaseId: string;
+  idempotencyKey?: string;
 }
 
 type ActiveThreadLease = TaskThreadLease | UserTurnThreadLease;
@@ -564,12 +565,27 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   /** Atomically excludes detached continuations for the lifetime of one
    * ordinary model-bound child turn. The returned idempotent release closure
    * deletes only the lease it created, never a later owner of the same key. */
-  acquireUserTurn(scopeId: string, threadId: string): (() => void) | null {
+  acquireUserTurn(scopeId: string, threadId: string, idempotencyKey?: string): (() => void) | null {
     const lockKey = `${scopeId}\u0000${threadId}`;
-    if (this.activeThreads.has(lockKey)) {
+    const normalizedIdempotencyKey = idempotencyKey?.trim() || undefined;
+    const active = this.activeThreads.get(lockKey);
+    if (
+      active?.kind === 'user' &&
+      normalizedIdempotencyKey != null &&
+      active.idempotencyKey === normalizedIdempotencyKey
+    ) {
+      /** Let the controller's durable idempotency claim attach this retry to
+       * the original generation. A retry never owns or releases its lease. */
+      return () => undefined;
+    }
+    if (active != null) {
       return null;
     }
-    const lease: UserTurnThreadLease = { kind: 'user', leaseId: randomUUID() };
+    const lease: UserTurnThreadLease = {
+      kind: 'user',
+      leaseId: randomUUID(),
+      ...(normalizedIdempotencyKey == null ? {} : { idempotencyKey: normalizedIdempotencyKey }),
+    };
     this.activeThreads.set(lockKey, lease);
     return () => {
       if (this.activeThreads.get(lockKey) === lease) {

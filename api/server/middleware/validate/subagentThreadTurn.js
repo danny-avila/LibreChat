@@ -58,7 +58,11 @@ async function guardSubagentThreadTurn(req, res, next) {
         ? { tenantId: req.user.tenantId }
         : {}),
     });
-    const release = subagentThreadTaskStore.acquireUserTurn(config.scopeId, conversationId);
+    const release = subagentThreadTaskStore.acquireUserTurn(
+      config.scopeId,
+      conversationId,
+      typeof req.body?.clientRequestId === 'string' ? req.body.clientRequestId : undefined,
+    );
     if (release == null) {
       return rejectTurn(res, CHILD_BUSY_ERROR);
     }

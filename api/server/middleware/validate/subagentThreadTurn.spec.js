@@ -66,7 +66,11 @@ describe('guardSubagentThreadTurn', () => {
       parentConversationId: 'parent-conversation',
       tenantId: 'tenant-1',
     });
-    expect(mockAcquireUserTurn).toHaveBeenCalledWith('trusted-scope', 'child-conversation');
+    expect(mockAcquireUserTurn).toHaveBeenCalledWith(
+      'trusted-scope',
+      'child-conversation',
+      undefined,
+    );
     expect(release).toHaveBeenCalledTimes(1);
   });
 

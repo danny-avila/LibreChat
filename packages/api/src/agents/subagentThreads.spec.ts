@@ -247,6 +247,20 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(store, config.scopeId, detached);
   });
 
+  it('lets a same-attempt retry reach durable idempotency without owning the user lease', () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const scopeId = JSON.stringify({ version: 1, userId: 'retry-user', parentConversationId: 'p' });
+    const releaseOriginal = store.acquireUserTurn(scopeId, 'child', 'attempt-1');
+    const releaseRetry = store.acquireUserTurn(scopeId, 'child', 'attempt-1');
+
+    expect(releaseOriginal).not.toBeNull();
+    expect(releaseRetry).not.toBeNull();
+    releaseRetry?.();
+    expect(store.acquireUserTurn(scopeId, 'child', 'attempt-2')).toBeNull();
+    releaseOriginal?.();
+    expect(store.acquireUserTurn(scopeId, 'child', 'attempt-2')).not.toBeNull();
+  });
+
   it('keeps a completed child writable when the optional sidebar refresh fails', async () => {
     const userId = 'user-refresh-failure';
     const parentConversationId = randomUUID();
