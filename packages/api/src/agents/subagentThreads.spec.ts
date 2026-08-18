@@ -15,13 +15,13 @@ import type {
 } from '@librechat/agents';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
-import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
-import { createSubagentAttemptKey } from './subagentThreadIds';
 import type {
   SubagentTaskControlHandler,
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import { createSubagentAttemptKey } from './subagentThreadIds';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
@@ -1435,6 +1435,46 @@ describe('SubagentThreadTaskStore', () => {
     ).resolves.toBe(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('drains only active lease addresses when deleting every conversation across replicas', async () => {
+    const userId = 'routed-owner-drain-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods, { ownerDrainPollMs: 5 });
+    const deletingStore = new SubagentThreadTaskStore(methods, { ownerDrainPollMs: 5 });
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) => {
+          markEntered();
+          return new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          });
+        },
+      }),
+    );
+    await entered;
+
+    await deletingStore.cancelAndDrainForOwner(userId);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'cancelled',
+    });
 
     await Promise.all([
       ownerStore.destroyTaskControlTransport(),

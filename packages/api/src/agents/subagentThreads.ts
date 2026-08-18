@@ -25,9 +25,9 @@ import type {
   ConversationMethods,
 } from '@librechat/data-schemas';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
+import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
-import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { aggregateEmittedUsage } from './usage';
 
@@ -55,6 +55,7 @@ type SubagentThreadMethods = Pick<
   | 'deleteMessages'
   | 'getConvo'
   | 'getMessages'
+  | 'listActiveSubagentThreadLeases'
   | 'reserveSubagentThread'
   | 'releaseSubagentThreadLease'
   | 'renewSubagentThreadLease'
@@ -688,16 +689,28 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.cancelForOwner(userId, tenantId);
     const deadline = Date.now() + this.ownerDrainTimeoutMs;
     while (true) {
-      const active = await this.methods.countActiveSubagentThreadLeases({
+      const activeLeases = await this.methods.listActiveSubagentThreadLeases({
         user: userId,
         now: new Date(),
         ...(tenantId == null ? {} : { tenantId }),
       });
-      if (active === 0) {
+      if (activeLeases.length === 0) {
         return;
       }
       if (Date.now() >= deadline) {
         throw new Error('Timed out draining detached subagent tasks for account deletion.');
+      }
+      for (let index = 0; index < activeLeases.length; index += 32) {
+        await Promise.all(
+          activeLeases.slice(index, index + 32).map(({ parentConversationId, taskId }) => {
+            const scopeId = serializeScope({
+              userId,
+              parentConversationId,
+              ...(tenantId == null ? {} : { tenantId }),
+            });
+            return this.controlTask(scopeId, taskId, { action: 'cancel' });
+          }),
+        );
       }
       await new Promise<void>((resolve) => setTimeout(resolve, this.ownerDrainPollMs));
     }
@@ -1365,6 +1378,7 @@ export function createSubagentThreadTaskStore(
     | 'countActiveSubagentThreadLeases'
     | 'deleteConvos'
     | 'getConvo'
+    | 'listActiveSubagentThreadLeases'
     | 'releaseSubagentThreadLease'
     | 'reserveSubagentThread'
     | 'renewSubagentThreadLease'

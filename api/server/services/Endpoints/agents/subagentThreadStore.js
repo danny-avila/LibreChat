@@ -17,6 +17,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     deleteMessages: db.deleteMessages,
     getConvo: db.getConvo,
     getMessages: db.getMessages,
+    listActiveSubagentThreadLeases: db.listActiveSubagentThreadLeases,
     releaseSubagentThreadLease: db.releaseSubagentThreadLease,
     reserveSubagentThread: db.reserveSubagentThread,
     renewSubagentThreadLease: db.renewSubagentThreadLease,

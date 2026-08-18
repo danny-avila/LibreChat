@@ -7,6 +7,11 @@ export interface ISubagentThreadLease {
   expiresAt: Date;
 }
 
+export interface IActiveSubagentThreadLease {
+  parentConversationId: string;
+  taskId: string;
+}
+
 export interface ISubagentThreadReservation {
   conversation: IConversation;
   created: boolean;

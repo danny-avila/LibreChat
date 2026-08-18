@@ -65,10 +65,8 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
-      expect(subagentThreadStore.cancelForOwner).toHaveBeenCalledWith('test-user-123', undefined);
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledWith(
+      expect(subagentThreadStore.cancelAndDrainForOwner).toHaveBeenCalledWith(
         'test-user-123',
-        conversationIds,
         undefined,
       );
     });
@@ -135,6 +133,20 @@ describe('Convos Routes', () => {
       /** Verify error was logged */
       const { logger } = require('@librechat/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error clearing conversations', expect.any(Error));
+    });
+
+    it('does not delete conversations when cross-replica task draining fails', async () => {
+      subagentThreadStore.cancelAndDrainForOwner.mockRejectedValueOnce(
+        new Error('task owner unavailable'),
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(500);
+      expect(deleteConvos).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteToolCalls).not.toHaveBeenCalled();
+      expect(deleteAllSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
 
     it('should return 500 if deleteToolCalls fails', async () => {
@@ -265,12 +277,7 @@ describe('Convos Routes', () => {
         ['parent-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenNthCalledWith(
-        2,
-        'test-user-123',
-        ['parent-conversation', 'child-conversation'],
-        undefined,
-      );
+      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledTimes(1);
       expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
         'parent-conversation',
         'child-conversation',

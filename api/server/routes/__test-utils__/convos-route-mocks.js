@@ -123,6 +123,7 @@ module.exports = {
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
 
   subagentThreadStore: () => ({
+    cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
     cancelForConversationsAcrossReplicas: jest.fn().mockResolvedValue(0),
     cancelForOwner: jest.fn(),
   }),

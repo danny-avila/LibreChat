@@ -19,8 +19,8 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
-import { TOOL_SELECTION_WILDCARD } from './selection';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import { TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
 
 const mcpDef = (name: string): LCTool =>

@@ -1,23 +1,32 @@
-import { createHash, randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import type { Cluster, Redis } from 'ioredis';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   SubagentTaskClaim,
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
   SubagentTaskSnapshot,
 } from '@librechat/agents';
+import type { Cluster, Redis } from 'ioredis';
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_REQUEST_TIMEOUT_MS = 2_000;
 const DEFAULT_RETRY_DELAY_MS = 500;
 const DEFAULT_READY_TIMEOUT_MS = 10_000;
+const DEFAULT_REGISTRATION_HEARTBEAT_MS = 10_000;
 const MAX_PENDING_REQUESTS = 1_000;
 const MAX_RESPONSE_CACHE_ENTRIES = 2_000;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
 const MAX_CONTROL_MESSAGE_CHARS = 64 * 1_024;
+const MAX_RESULT_CHARS = 100_000;
+const MAX_ERROR_CHARS = 4 * 1_024;
+const MAX_THREAD_ID_CHARS = 256;
+const MAX_SUBAGENT_TYPE_CHARS = 256;
+const MAX_PROGRESS_LABEL_CHARS = 1_024;
+const MAX_TASK_SNAPSHOTS = 200;
+/** Contains every bounded response even when JSON escapes each retained character. */
+const MAX_ROUTED_MESSAGE_CHARS = 8 * 1_024 * 1_024;
 
 const REGISTER_TASK_SCRIPT =
   "redis.call('HSET', KEYS[1], ARGV[1], ARGV[2]); " +
@@ -70,6 +79,12 @@ interface CachedResponse {
   expiresAt: number;
 }
 
+interface OwnedTaskRegistration {
+  scopeId: string;
+  taskId: string;
+  ttlMs: number;
+}
+
 export interface SubagentTaskControlHandler {
   claim(scopeId: string, taskId: string): SubagentTaskClaim;
   control(
@@ -107,6 +122,7 @@ export interface RedisSubagentTaskControlTransportOptions {
   instanceId?: string;
   requestTimeoutMs?: number;
   retryDelayMs?: number;
+  registrationHeartbeatMs?: number;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -123,6 +139,73 @@ function isBoundedString(value: unknown, maxChars: number): value is string {
 
 function isStringWithin(value: unknown, maxChars: number): value is string {
   return typeof value === 'string' && value.length <= maxChars;
+}
+
+function truncateMiddle(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  const marker = '\n…[truncated]…\n';
+  const available = Math.max(0, maxChars - marker.length);
+  const head = Math.ceil(available / 2);
+  return `${value.slice(0, head)}${marker}${value.slice(value.length - (available - head))}`;
+}
+
+function boundedSnapshot(snapshot: SubagentTaskSnapshot): SubagentTaskSnapshot {
+  return {
+    taskId: truncateMiddle(snapshot.taskId, MAX_TASK_ID_CHARS),
+    ...(snapshot.threadId == null
+      ? {}
+      : { threadId: truncateMiddle(snapshot.threadId, MAX_THREAD_ID_CHARS) }),
+    subagentType: truncateMiddle(snapshot.subagentType, MAX_SUBAGENT_TYPE_CHARS),
+    status: snapshot.status,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    resultAvailable: snapshot.resultAvailable,
+    resultClaimed: snapshot.resultClaimed,
+    pendingControls: snapshot.pendingControls,
+    ...(snapshot.progress == null
+      ? {}
+      : {
+          progress: {
+            ...snapshot.progress,
+            ...(snapshot.progress.label == null
+              ? {}
+              : { label: truncateMiddle(snapshot.progress.label, MAX_PROGRESS_LABEL_CHARS) }),
+          },
+        }),
+    ...(snapshot.error == null ? {} : { error: truncateMiddle(snapshot.error, MAX_ERROR_CHARS) }),
+  };
+}
+
+function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
+  if (claim.status === 'not_found') {
+    return claim;
+  }
+  const task = boundedSnapshot(claim.task);
+  if (claim.status === 'completed') {
+    return { status: 'completed', task, result: truncateMiddle(claim.result, MAX_RESULT_CHARS) };
+  }
+  if (claim.status === 'error' || claim.status === 'cancelled') {
+    return { status: claim.status, task, error: truncateMiddle(claim.error, MAX_ERROR_CHARS) };
+  }
+  return { status: claim.status, task };
+}
+
+function boundedControlResult(result: SubagentTaskControlResult): SubagentTaskControlResult {
+  if (result.status === 'not_found') {
+    return result;
+  }
+  if (result.status === 'invalid') {
+    return { status: 'invalid', message: truncateMiddle(result.message, MAX_ERROR_CHARS) };
+  }
+  return {
+    status: result.status,
+    task: boundedSnapshot(result.task),
+    ...(result.status === 'accepted' && result.controlId != null
+      ? { controlId: truncateMiddle(result.controlId, MAX_TASK_ID_CHARS) }
+      : {}),
+  };
 }
 
 async function waitForRedisReady(client: RedisClient): Promise<void> {
@@ -329,10 +412,14 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private readonly namespaceHash: string;
   private readonly requestTimeoutMs: number;
   private readonly retryDelayMs: number;
+  private readonly registrationHeartbeatMs: number;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly responseCache = new Map<string, CachedResponse>();
+  private readonly ownedTasks = new Map<string, OwnedTaskRegistration>();
   private handler?: SubagentTaskControlHandler;
   private ready?: Promise<void>;
+  private registrationHeartbeat?: ReturnType<typeof setInterval>;
+  private registrationRefresh?: Promise<void>;
   private destroyed = false;
 
   constructor(
@@ -346,6 +433,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     this.retryDelayMs = Math.min(
       positiveInteger(options.retryDelayMs, DEFAULT_RETRY_DELAY_MS),
       Math.max(1, Math.floor(this.requestTimeoutMs / 2)),
+    );
+    this.registrationHeartbeatMs = positiveInteger(
+      options.registrationHeartbeatMs,
+      DEFAULT_REGISTRATION_HEARTBEAT_MS,
     );
   }
 
@@ -365,15 +456,14 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
 
   async registerTask(scopeId: string, taskId: string, ttlMs: number): Promise<void> {
     this.assertTaskAddress(scopeId, taskId);
-    await this.requireReady();
-    await this.publisher.eval(
-      REGISTER_TASK_SCRIPT,
-      1,
-      this.registryKey(scopeId),
+    const registration = {
+      scopeId,
       taskId,
-      this.instanceId,
-      positiveInteger(ttlMs, 1).toString(),
-    );
+      ttlMs: positiveInteger(ttlMs, 1),
+    };
+    this.ownedTasks.set(this.registrationKey(scopeId, taskId), registration);
+    this.ensureRegistrationHeartbeat();
+    await this.publishRegistration(registration);
   }
 
   async hasTasks(scopeId: string): Promise<boolean> {
@@ -477,13 +567,18 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     }
     this.pending.clear();
     this.responseCache.clear();
+    this.ownedTasks.clear();
+    if (this.registrationHeartbeat != null) {
+      clearInterval(this.registrationHeartbeat);
+      this.registrationHeartbeat = undefined;
+    }
     this.subscriber.off('message', this.onMessage);
     await this.subscriber.unsubscribe(this.channel(this.instanceId)).catch(() => undefined);
     this.subscriber.disconnect();
   }
 
   private readonly onMessage = (channel: string, message: string): void => {
-    if (channel !== this.channel(this.instanceId) || message.length > 256 * 1_024) {
+    if (channel !== this.channel(this.instanceId) || message.length > MAX_ROUTED_MESSAGE_CHARS) {
       return;
     }
     let parsed: unknown;
@@ -534,11 +629,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     try {
       let result: SubagentTaskClaim | SubagentTaskControlResult | SubagentTaskSnapshot[];
       if (request.operation === 'list') {
-        result = handler.list(request.scopeId);
+        result = handler.list(request.scopeId).slice(0, MAX_TASK_SNAPSHOTS).map(boundedSnapshot);
       } else if (request.operation === 'claim') {
-        result = handler.claim(request.scopeId, request.taskId);
+        result = boundedClaim(handler.claim(request.scopeId, request.taskId));
       } else {
-        result = handler.control(request.scopeId, request.taskId, request.command);
+        result = boundedControlResult(
+          handler.control(request.scopeId, request.taskId, request.command),
+        );
       }
       response = {
         version: PROTOCOL_VERSION,
@@ -647,6 +744,66 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     await this.publisher.publish(channel, value);
   }
 
+  private ensureRegistrationHeartbeat(): void {
+    if (this.registrationHeartbeat != null || this.destroyed) {
+      return;
+    }
+    this.registrationHeartbeat = setInterval(() => {
+      if (this.registrationRefresh != null) {
+        return;
+      }
+      const refresh = this.refreshRegistrations()
+        .catch((error) => {
+          logger.warn('[subagentTaskRouting] Failed to refresh child-task owners', error);
+        })
+        .finally(() => {
+          if (this.registrationRefresh === refresh) {
+            this.registrationRefresh = undefined;
+          }
+        });
+      this.registrationRefresh = refresh;
+    }, this.registrationHeartbeatMs);
+    this.registrationHeartbeat.unref?.();
+  }
+
+  private async refreshRegistrations(): Promise<void> {
+    const handler = this.handler;
+    if (handler == null || this.destroyed || this.ownedTasks.size === 0) {
+      return;
+    }
+    const registrationsByScope = new Map<string, OwnedTaskRegistration[]>();
+    for (const registration of this.ownedTasks.values()) {
+      const registrations = registrationsByScope.get(registration.scopeId) ?? [];
+      registrations.push(registration);
+      registrationsByScope.set(registration.scopeId, registrations);
+    }
+    for (const [scopeId, registrations] of registrationsByScope) {
+      const localTaskIds = new Set(handler.list(scopeId).map((task) => task.taskId));
+      for (const registration of registrations) {
+        if (!localTaskIds.has(registration.taskId)) {
+          this.ownedTasks.delete(this.registrationKey(scopeId, registration.taskId));
+          await this.removeRegistrations(scopeId, [registration.taskId]);
+          continue;
+        }
+        await this.publishRegistration(registration).catch((error) => {
+          logger.warn('[subagentTaskRouting] Failed to refresh a child-task owner', error);
+        });
+      }
+    }
+  }
+
+  private async publishRegistration(registration: OwnedTaskRegistration): Promise<void> {
+    await this.requireReady();
+    await this.publisher.eval(
+      REGISTER_TASK_SCRIPT,
+      1,
+      this.registryKey(registration.scopeId),
+      registration.taskId,
+      this.instanceId,
+      registration.ttlMs.toString(),
+    );
+  }
+
   private async removeRegistrations(scopeId: string, taskIds: string[]): Promise<void> {
     if (taskIds.length === 0) {
       return;
@@ -658,6 +815,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
 
   private registryKey(scopeId: string): string {
     return `subagent-task:{${shortHash(scopeId)}}:owners`;
+  }
+
+  private registrationKey(scopeId: string, taskId: string): string {
+    return `${scopeId}\u0000${taskId}`;
   }
 
   private channel(instanceId: string): string {
