@@ -30,7 +30,12 @@ export default function Settings({
 
   if (OptionComponent) {
     return (
-      <div className={cn('h-[31.25rem] overflow-y-auto md:mb-2 md:h-[21.875rem]', className)}>
+      <div
+        className={cn(
+          'h-[min(31.25rem,70vh)] overflow-y-auto md:mb-2 md:h-[min(21.875rem,70vh)]',
+          className,
+        )}
+      >
         <OptionComponent
           conversation={conversation}
           setOption={setOption}
@@ -50,7 +55,7 @@ export default function Settings({
   return (
     <div
       className={cn(
-        'hide-scrollbar h-[31.25rem] overflow-y-auto md:mb-2 md:h-[21.875rem]',
+        'hide-scrollbar h-[min(31.25rem,70vh)] overflow-y-auto md:mb-2 md:h-[min(21.875rem,70vh)]',
         className,
       )}
     >
