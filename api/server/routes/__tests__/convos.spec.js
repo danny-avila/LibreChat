@@ -66,6 +66,11 @@ describe('Convos Routes', () => {
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
       expect(subagentThreadStore.cancelForOwner).toHaveBeenCalledWith('test-user-123', undefined);
+      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenCalledWith(
+        'test-user-123',
+        conversationIds,
+        undefined,
+      );
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -254,13 +259,13 @@ describe('Convos Routes', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
+      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenNthCalledWith(
         1,
         'test-user-123',
         ['parent-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
+      expect(subagentThreadStore.cancelForConversationsAcrossReplicas).toHaveBeenNthCalledWith(
         2,
         'test-user-123',
         ['parent-conversation', 'child-conversation'],

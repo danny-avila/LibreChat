@@ -4089,7 +4089,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
                 if (backgroundControlEnabled && tc.name === CHECK_BACKGROUND_TASK_NAME) {
-                  const pollContent = runCheckBackgroundTask({
+                  const pollContent = await runCheckBackgroundTask({
                     userId: backgroundUserId,
                     conversationId: backgroundConversationId,
                     args: tc.args,

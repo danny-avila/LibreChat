@@ -8,10 +8,12 @@ import {
 } from '@librechat/agents/langchain/messages';
 import type {
   InMemorySubagentTaskStoreOptions,
+  SubagentTaskClaim,
   SubagentTaskConfig,
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
   SubagentTaskRuntime,
+  SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
 } from '@librechat/agents';
@@ -25,6 +27,7 @@ import type {
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
+import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { aggregateEmittedUsage } from './usage';
 
@@ -34,6 +37,9 @@ const DEFAULT_LEASE_TTL_MS = 30_000;
 const DEFAULT_LEASE_HEARTBEAT_MS = 10_000;
 const DEFAULT_OWNER_DRAIN_TIMEOUT_MS = 45_000;
 const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
+const DEFAULT_COMPLETED_TASK_TTL_MS = 60 * 60_000;
+const DEFAULT_TASK_TIMEOUT_MS = 30 * 60_000;
+const TASK_ROUTING_TTL_BUFFER_MS = 5 * 60_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
   'messageId parentMessageId text createdAt +subagentTranscript +subagentTask';
@@ -140,6 +146,10 @@ function parseScope(scopeId: string): SubagentThreadScope {
     parentConversationId: candidate.parentConversationId,
     ...(candidate.tenantId == null ? {} : { tenantId: candidate.tenantId }),
   };
+}
+
+function serializeScope(scope: Omit<SubagentThreadScope, 'version'>): string {
+  return JSON.stringify({ version: SCOPE_VERSION, ...scope });
 }
 
 function matchesTenant(actual: string | undefined, expected: string | undefined): boolean {
@@ -288,7 +298,7 @@ function safeErrorMessage(error: unknown): string {
   return `Subagent task failed: ${publicFailureDetail(error).slice(0, 2_000)}`;
 }
 
-/** Persists view-only logical child threads with process-local controls and a shared execution fence. */
+/** Persists view-only logical child threads with owner-routed controls and a shared execution fence. */
 export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   readonly supportsThreadContinuation = true;
   private readonly activeThreads = new Map<string, TaskThreadLease>();
@@ -298,7 +308,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly leaseHeartbeatMs: number;
   private readonly ownerDrainTimeoutMs: number;
   private readonly ownerDrainPollMs: number;
+  private readonly taskRoutingTtlMs: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
+  private taskControlTransport?: SubagentTaskControlTransport;
 
   constructor(
     private readonly methods: SubagentThreadMethods,
@@ -319,7 +331,30 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       DEFAULT_OWNER_DRAIN_TIMEOUT_MS,
     );
     this.ownerDrainPollMs = positiveInteger(options.ownerDrainPollMs, DEFAULT_OWNER_DRAIN_POLL_MS);
+    this.taskRoutingTtlMs =
+      positiveInteger(options.taskTimeoutMs, DEFAULT_TASK_TIMEOUT_MS) +
+      positiveInteger(options.completedTtlMs, DEFAULT_COMPLETED_TASK_TTL_MS) +
+      TASK_ROUTING_TTL_BUFFER_MS;
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
+  }
+
+  /** Enables optional cross-replica lookup after the host's Redis service is ready. */
+  async configureTaskControlTransport(transport: SubagentTaskControlTransport): Promise<void> {
+    if (this.taskControlTransport != null) {
+      throw new Error('Subagent task control transport is already configured.');
+    }
+    await transport.bind({
+      claim: (scopeId, taskId) => super.claim(scopeId, taskId),
+      control: (scopeId, taskId, command) => this.control(scopeId, taskId, command),
+      list: (scopeId) => super.list(scopeId),
+    });
+    this.taskControlTransport = transport;
+  }
+
+  async destroyTaskControlTransport(): Promise<void> {
+    const transport = this.taskControlTransport;
+    this.taskControlTransport = undefined;
+    await transport?.destroy();
   }
 
   /** Gates child creation on the ordinary parent write without retaining request state. */
@@ -487,7 +522,55 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     } else if (ownsLease && this.activeThreads.get(lockKey) === lease) {
       this.activeThreads.delete(lockKey);
     }
+    if (started.accepted && this.taskControlTransport != null) {
+      void this.taskControlTransport
+        .registerTask(request.scopeId, started.task.taskId, this.taskRoutingTtlMs)
+        .catch((error) => {
+          logger.warn('[subagentThreads] Failed to publish the child-task owner', error);
+        });
+    }
     return started;
+  }
+
+  /** Claims locally when possible, otherwise asks the registered owning replica. */
+  async claimTask(scopeId: string, taskId: string): Promise<SubagentTaskClaim> {
+    const local = super.claim(scopeId, taskId);
+    if (local.status !== 'not_found') {
+      return local;
+    }
+    return (await this.taskControlTransport?.claim(scopeId, taskId)) ?? local;
+  }
+
+  /** Controls locally when possible, otherwise asks the registered owning replica. */
+  async controlTask(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+  ): Promise<SubagentTaskControlResult> {
+    const local = this.control(scopeId, taskId, command);
+    if (local.status !== 'not_found') {
+      return local;
+    }
+    return (await this.taskControlTransport?.control(scopeId, taskId, command)) ?? local;
+  }
+
+  /** Returns this process's tasks plus tasks reported by registered remote owners. */
+  async listTasks(scopeId: string): Promise<SubagentTaskSnapshot[]> {
+    const local = super.list(scopeId);
+    const remote = (await this.taskControlTransport?.list(scopeId)) ?? [];
+    const byId = new Map(local.map((task) => [task.taskId, task]));
+    for (const task of remote) {
+      byId.set(task.taskId, task);
+    }
+    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt);
+  }
+
+  /** Fast capability probe used while deciding whether a later turn needs the poll tool. */
+  async hasTasks(scopeId: string): Promise<boolean> {
+    if (super.list(scopeId).length > 0) {
+      return true;
+    }
+    return (await this.taskControlTransport?.hasTasks(scopeId)) ?? false;
   }
 
   override control(
@@ -542,6 +625,55 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         matchesTenant(scope.tenantId, tenantId) &&
         (targets.has(scope.parentConversationId) || targets.has(threadId)),
     );
+  }
+
+  /** Cancels matching local and remote tasks before conversation data is removed. */
+  async cancelForConversationsAcrossReplicas(
+    userId: string,
+    conversationIds: Iterable<string>,
+    tenantId?: string,
+  ): Promise<number> {
+    const targets = new Set(conversationIds);
+    let cancelled = this.cancelForConversations(userId, targets, tenantId);
+    if (targets.size === 0 || this.taskControlTransport == null) {
+      return cancelled;
+    }
+
+    const parentConversationIds = new Set(targets);
+    const conversations = await Promise.all(
+      [...targets].map((conversationId) => this.methods.getConvo(userId, conversationId)),
+    );
+    for (const conversation of conversations) {
+      if (
+        conversation?.subagentThread?.parentConversationId != null &&
+        matchesTenant(conversation.tenantId, tenantId)
+      ) {
+        parentConversationIds.add(conversation.subagentThread.parentConversationId);
+      }
+    }
+
+    for (const parentConversationId of parentConversationIds) {
+      const scopeId = serializeScope({
+        userId,
+        parentConversationId,
+        ...(tenantId ? { tenantId } : {}),
+      });
+      const tasks = await this.listTasks(scopeId);
+      for (const task of tasks) {
+        if (
+          task.status !== 'running' ||
+          (!targets.has(parentConversationId) &&
+            (task.threadId == null || !targets.has(task.threadId)))
+        ) {
+          continue;
+        }
+        const result = await this.controlTask(scopeId, task.taskId, { action: 'cancel' });
+        if (result.status === 'cancelled') {
+          cancelled += 1;
+        }
+      }
+    }
+    return cancelled;
   }
 
   /** Cancels every active child owned by a user before a delete-all operation. */
@@ -1250,6 +1382,6 @@ export function buildSubagentThreadTaskConfig(
 ): SubagentTaskConfig {
   return {
     store,
-    scopeId: JSON.stringify({ version: SCOPE_VERSION, ...scope }),
+    scopeId: serializeScope(scope),
   };
 }

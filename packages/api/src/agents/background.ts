@@ -17,7 +17,10 @@
  * are lost on restart and are not shared across replicas (durable follow-up),
  * and ephemeral request-scoped MCP tools (runtime `{{LIBRECHAT_BODY_*}}`
  * placeholders) are never backgrounded — their connection is torn down at
- * request end, so the executor runs them in the foreground instead.
+ * request end, so the executor runs them in the foreground instead. Detached
+ * subagents use the separate host task store; Redis-backed hosts may route
+ * their poll/control operations to the owning process without moving the live
+ * executor or making ordinary background tool results durable.
  *
  * Opt-in mirrors `deferred_tools`: an admin capability
  * (`AgentCapabilities.run_in_background`) gates the feature, and a per-tool
@@ -43,6 +46,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
+  SubagentTaskStore,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
@@ -54,6 +58,7 @@ import {
 } from './selection';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
 import { truncateMiddle } from '~/utils';
 
@@ -1091,12 +1096,31 @@ function buildSubagentControlCommand(
 }
 
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
-export function runCheckBackgroundTask(params: {
+interface RoutedSubagentTaskStore {
+  claimTask(scopeId: string, taskId: string): Promise<SubagentTaskClaim>;
+  controlTask(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+  ): Promise<SubagentTaskControlResult>;
+  listTasks(scopeId: string): Promise<SubagentTaskSnapshot[]>;
+}
+
+function routedSubagentStore(store: SubagentTaskStore): RoutedSubagentTaskStore | undefined {
+  const candidate = store as SubagentTaskStore & Partial<RoutedSubagentTaskStore>;
+  return typeof candidate.claimTask === 'function' &&
+    typeof candidate.controlTask === 'function' &&
+    typeof candidate.listTasks === 'function'
+    ? (candidate as RoutedSubagentTaskStore)
+    : undefined;
+}
+
+export async function runCheckBackgroundTask(params: {
   userId: string;
   conversationId: string;
   args: unknown;
   subagentTasks?: SubagentTaskConfig;
-}): string {
+}): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
   const rawId = args.background_task_id;
@@ -1118,28 +1142,44 @@ export function runCheckBackgroundTask(params: {
 
     const subagentTasks = params.subagentTasks;
     if (subagentTasks != null) {
-      if (action === 'poll') {
-        const claimed = serializeSubagentClaim(
-          subagentTasks.store.claim(subagentTasks.scopeId, taskId),
-        );
-        if (claimed != null) {
-          return JSON.stringify(claimed);
+      try {
+        const routedStore = routedSubagentStore(subagentTasks.store);
+        if (action === 'poll') {
+          const claim =
+            routedStore == null
+              ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
+              : await routedStore.claimTask(subagentTasks.scopeId, taskId);
+          const claimed = serializeSubagentClaim(claim);
+          if (claimed != null) {
+            return JSON.stringify(claimed);
+          }
+        } else {
+          const command = buildSubagentControlCommand(args, action);
+          if (command == null) {
+            return JSON.stringify({
+              status: 'invalid',
+              background_task_id: taskId,
+              message: 'This subagent control action is unknown or missing its required argument.',
+            });
+          }
+          const result =
+            routedStore == null
+              ? subagentTasks.store.control(subagentTasks.scopeId, taskId, command)
+              : await routedStore.controlTask(subagentTasks.scopeId, taskId, command);
+          const controlled = serializeSubagentControl(result);
+          if (controlled != null) {
+            return JSON.stringify(controlled);
+          }
         }
-      } else {
-        const command = buildSubagentControlCommand(args, action);
-        if (command == null) {
+      } catch (error) {
+        if (error instanceof SubagentTaskOwnerUnavailableError) {
           return JSON.stringify({
-            status: 'invalid',
+            status: 'unavailable',
             background_task_id: taskId,
-            message: 'This subagent control action is unknown or missing its required argument.',
+            message: error.message,
           });
         }
-        const controlled = serializeSubagentControl(
-          subagentTasks.store.control(subagentTasks.scopeId, taskId, command),
-        );
-        if (controlled != null) {
-          return JSON.stringify(controlled);
-        }
+        throw error;
       }
     }
 
@@ -1158,10 +1198,22 @@ export function runCheckBackgroundTask(params: {
   }
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
-  const subagentTasks =
-    params.subagentTasks?.store
-      .list(params.subagentTasks.scopeId)
-      .map((task) => serializeSubagentSnapshot(task)) ?? [];
+  let subagentTasks: SerializedSubagentTask[] = [];
+  if (params.subagentTasks != null) {
+    try {
+      const routedStore = routedSubagentStore(params.subagentTasks.store);
+      const snapshots =
+        routedStore == null
+          ? params.subagentTasks.store.list(params.subagentTasks.scopeId)
+          : await routedStore.listTasks(params.subagentTasks.scopeId);
+      subagentTasks = snapshots.map((task) => serializeSubagentSnapshot(task));
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) {
+        return JSON.stringify({ status: 'unavailable', message: error.message });
+      }
+      throw error;
+    }
+  }
   logger.debug(
     `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
   );

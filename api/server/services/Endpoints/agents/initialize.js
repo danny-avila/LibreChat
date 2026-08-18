@@ -1210,7 +1210,7 @@ const initializeClient = async ({
   }
 
   /** Build detached execution only for an attributable owner/thread. New
-   * tasks still require a spawnable child, while an existing process-local
+   * tasks still require a spawnable child, while an existing registered live
    * task keeps its poll/control seam after agent configuration changes. The
    * SDK receives only this trusted host scope; models can select a child
    * `threadId`, never the owner or parent-thread namespace. */
@@ -1236,9 +1236,20 @@ const initializeClient = async ({
             : {}),
         })
       : undefined;
-  const hasExistingSubagentTask =
-    trustedSubagentTasks != null &&
-    trustedSubagentTasks.store.list(trustedSubagentTasks.scopeId).length > 0;
+  let hasExistingSubagentTask = false;
+  if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {
+    try {
+      hasExistingSubagentTask = await subagentThreadTaskStore.hasTasks(
+        trustedSubagentTasks.scopeId,
+      );
+    } catch (error) {
+      /** Keep the poll/control tool visible when the owner directory is briefly
+       * unavailable. The tool then returns an honest `unavailable` status
+       * instead of making a live task look nonexistent. */
+      logger.warn('[initializeClient] Failed to inspect routed subagent tasks', error);
+      hasExistingSubagentTask = true;
+    }
+  }
   const subagentTasks =
     trustedSubagentTasks != null &&
     ((subagentsAvailableForRun && hasSpawnableSubagent) || hasExistingSubagentTask)

@@ -20,6 +20,7 @@ import {
   RUN_IN_BACKGROUND_ARG,
 } from './background';
 import { TOOL_SELECTION_WILDCARD } from './selection';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { toolOptionsSchema } from './validation';
 
 const mcpDef = (name: string): LCTool =>
@@ -1056,8 +1057,8 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
 });
 
 describe('runCheckBackgroundTask (singleton)', () => {
-  it('returns not_found for an unknown id', () => {
-    const content = runCheckBackgroundTask({
+  it('returns not_found for an unknown id', async () => {
+    const content = await runCheckBackgroundTask({
       userId: 'poll_user',
       conversationId: 'poll_convo',
       args: { background_task_id: 'nope' },
@@ -1067,7 +1068,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('returns a single task by id and lists all when omitted', () => {
+  it('returns a single task by id and lists all when omitted', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'poll_user',
       conversationId: 'poll_convo2',
@@ -1082,7 +1083,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     });
 
     const single = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_convo2',
         args: { background_task_id: created.task.id },
@@ -1097,7 +1098,11 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
 
     const listed = JSON.parse(
-      runCheckBackgroundTask({ userId: 'poll_user', conversationId: 'poll_convo2', args: {} }),
+      await runCheckBackgroundTask({
+        userId: 'poll_user',
+        conversationId: 'poll_convo2',
+        args: {},
+      }),
     );
     expect(listed.tasks).toHaveLength(1);
     expect(listed.tasks[0].background_task_id).toBe(created.task.id);
@@ -1109,7 +1114,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
 
     // stringified args must still resolve the specific task (with its full result)
     const singleFromString = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_convo2',
         args: `{"background_task_id":"${created.task.id}"}`,
@@ -1120,7 +1125,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', () => {
+  it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', async () => {
     // Turn 1 dispatches under run-turn-1 and the result lands after the turn.
     const dispatched = backgroundTaskRegistry.create({
       userId: 'poll_user',
@@ -1139,7 +1144,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
 
     // Turn 2 (a later run) polls with just the id; get/list carry no run/turn scope.
     const polled = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_xturn',
         args: { background_task_id: dispatched.task.id },
@@ -1174,7 +1179,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     await waitForSubagentTaskToSettle(store, subagentTasks.scopeId, started.task.taskId);
 
     const first = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
@@ -1192,7 +1197,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
 
     const second = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
@@ -1227,7 +1232,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     await Promise.resolve();
 
     const queued = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'parent-thread',
         args: {
@@ -1243,7 +1248,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
 
     const cancelledMessage = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'parent-thread',
         args: {
@@ -1257,7 +1262,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(cancelledMessage.status).toBe('accepted');
 
     const cancelledTask = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId, action: 'cancel' },
@@ -1266,6 +1271,26 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(cancelledTask.status).toBe('cancelled');
     finish({ content: 'late result' });
+  });
+
+  it('reports an unreachable remote subagent owner without pretending the task is missing', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+      controlTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+      listTasks: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const content = await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: { background_task_id: 'remote-task' },
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+
+    expect(JSON.parse(content)).toEqual({
+      status: 'unavailable',
+      background_task_id: 'remote-task',
+      message: 'The process running this subagent task is temporarily unavailable.',
+    });
   });
 });
 

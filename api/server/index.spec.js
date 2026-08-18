@@ -136,6 +136,14 @@ describe('Startup readiness wiring', () => {
     expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
   });
 
+  it('configures subagent task routing before the server accepts requests', () => {
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(routingIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
+  });
+
   it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
     const shutdownRegistrationIndex = source.indexOf(
       "registerShutdownTask('generation job manager'",

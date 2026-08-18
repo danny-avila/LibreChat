@@ -5,7 +5,11 @@ import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { createMethods, createModels, logger } from '@librechat/data-schemas';
 import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import type {
+  SubagentTaskClaim,
+  SubagentTaskControlCommand,
+  SubagentTaskControlResult,
   SubagentTaskRuntime,
+  SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
 } from '@librechat/agents';
@@ -14,11 +18,69 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
 import { createSubagentAttemptKey } from './subagentThreadIds';
+import type {
+  SubagentTaskControlHandler,
+  SubagentTaskControlTransport,
+} from './subagentTaskRouting';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
 let methods: AllMethods;
 let loggerErrorSpy: jest.SpyInstance;
+
+class TestTaskRoutingHub {
+  readonly owners = new Map<string, TestTaskControlTransport>();
+
+  key(scopeId: string, taskId: string): string {
+    return `${scopeId}\u0000${taskId}`;
+  }
+}
+
+class TestTaskControlTransport implements SubagentTaskControlTransport {
+  private handler?: SubagentTaskControlHandler;
+
+  constructor(private readonly hub: TestTaskRoutingHub) {}
+
+  async bind(handler: SubagentTaskControlHandler): Promise<void> {
+    this.handler = handler;
+  }
+
+  async registerTask(scopeId: string, taskId: string): Promise<void> {
+    this.hub.owners.set(this.hub.key(scopeId, taskId), this);
+  }
+
+  async hasTasks(scopeId: string): Promise<boolean> {
+    const prefix = `${scopeId}\u0000`;
+    return [...this.hub.owners.keys()].some((key) => key.startsWith(prefix));
+  }
+
+  async claim(scopeId: string, taskId: string): Promise<SubagentTaskClaim | undefined> {
+    return this.hub.owners.get(this.hub.key(scopeId, taskId))?.handler?.claim(scopeId, taskId);
+  }
+
+  async control(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+  ): Promise<SubagentTaskControlResult | undefined> {
+    return this.hub.owners
+      .get(this.hub.key(scopeId, taskId))
+      ?.handler?.control(scopeId, taskId, command);
+  }
+
+  async list(scopeId: string): Promise<SubagentTaskSnapshot[]> {
+    const owners = new Set<TestTaskControlTransport>();
+    const prefix = `${scopeId}\u0000`;
+    for (const [key, owner] of this.hub.owners) {
+      if (key.startsWith(prefix) && owner !== this) {
+        owners.add(owner);
+      }
+    }
+    return [...owners].flatMap((owner) => owner.handler?.list(scopeId) ?? []);
+  }
+
+  async destroy(): Promise<void> {}
+}
 
 function taskRequest(
   scopeId: string,
@@ -1295,6 +1357,89 @@ describe('SubagentThreadTaskStore', () => {
       JSON.stringify(store.claim(config.scopeId, requireAccepted(started).task.taskId)),
     ).not.toContain('provider-secret');
     expect(JSON.stringify(loggerErrorSpy.mock.calls)).not.toContain('provider-secret');
+  });
+
+  it('routes live task polling and controls to the replica that owns the execution', async () => {
+    const userId = 'routed-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => result,
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    await expect(requesterStore.hasTasks(config.scopeId)).resolves.toBe(true);
+    await expect(requesterStore.listTasks(config.scopeId)).resolves.toEqual([
+      expect.objectContaining({ taskId, status: 'running' }),
+    ]);
+    await expect(
+      requesterStore.controlTask(config.scopeId, taskId, {
+        action: 'queue',
+        message: 'Verify the primary source too.',
+      }),
+    ).resolves.toMatchObject({ status: 'accepted' });
+
+    finish({ content: 'Cross-replica result.' });
+    await waitForSettled(ownerStore, config.scopeId, started);
+    await expect(requesterStore.claimTask(config.scopeId, taskId)).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Cross-replica result.',
+    });
+    await expect(requesterStore.claimTask(config.scopeId, taskId)).resolves.toMatchObject({
+      status: 'claimed',
+    });
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      requesterStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('routes conversation-deletion cancellation to a remote task owner', async () => {
+    const userId = 'routed-delete-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    await expect(
+      deletingStore.cancelForConversationsAcrossReplicas(userId, [parentConversationId]),
+    ).resolves.toBe(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
   });
 
   it('bounds durable delegation depth to one by default', async () => {
