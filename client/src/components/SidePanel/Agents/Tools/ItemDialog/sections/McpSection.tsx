@@ -3,6 +3,7 @@ import { Clock, Code2, Captions, Zap } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { Button, Spinner, Checkbox, Skeleton } from '@librechat/client';
 import {
+  AgentCapabilities,
   Constants,
   splitMCPToolKey,
   normalizeServerName,
@@ -83,11 +84,15 @@ export default function McpSection({ item }: Props) {
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
   const {
+    codeEnabled,
     deferredToolsEnabled,
     programmaticToolsEnabled,
     backgroundToolsEnabled,
     toolIntentsEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities);
+  const codeInterpreterSelected = useWatch({ control, name: AgentCapabilities.execute_code });
+  const programmaticToolsAvailable =
+    codeEnabled && programmaticToolsEnabled && codeInterpreterSelected === true;
   const {
     isToolDeferred,
     isToolProgrammatic,
@@ -274,6 +279,13 @@ export default function McpSection({ item }: Props) {
   const allSelected = hasTools && selectedTools.length === tools.length;
   const allDeferred = areAllToolsDeferred(tools);
   const allProgrammatic = areAllToolsProgrammatic(tools);
+  const programmaticBulkLabel = localize(
+    allProgrammatic ? 'com_ui_mcp_unprogrammatic_all' : 'com_ui_mcp_programmatic_all',
+  );
+  const programmaticBulkTooltip =
+    programmaticToolsAvailable || allProgrammatic
+      ? programmaticBulkLabel
+      : localize('com_ui_mcp_programmatic_requires_code');
   const allBackground = areAllToolsBackground(tools);
   /** Programmatic-only tools can never carry an intent label (the backend's
    *  `canInjectIntentParam` skips non-direct tools), so both the bulk toggle
@@ -450,12 +462,10 @@ export default function McpSection({ item }: Props) {
                   icon={Code2}
                   size="md"
                   pressed={allProgrammatic}
-                  label={localize(
-                    allProgrammatic
-                      ? 'com_ui_mcp_unprogrammatic_all'
-                      : 'com_ui_mcp_programmatic_all',
-                  )}
+                  label={programmaticBulkLabel}
                   activeClass="text-violet-600 dark:text-violet-500"
+                  tooltip={programmaticBulkTooltip}
+                  disabled={!programmaticToolsAvailable && !allProgrammatic}
                   onToggle={() => toggleProgrammaticAll(tools)}
                 />
               )}
@@ -533,6 +543,7 @@ export default function McpSection({ item }: Props) {
                   intentDisabled={isToolProgrammaticOnly(tool.tool_id)}
                   deferredToolsEnabled={deferredToolsEnabled}
                   programmaticToolsEnabled={programmaticToolsEnabled}
+                  programmaticToolsAvailable={programmaticToolsAvailable}
                   backgroundToolsEnabled={backgroundToolsEnabled}
                   toolIntentsEnabled={toolIntentsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}

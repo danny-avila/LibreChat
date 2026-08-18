@@ -1505,6 +1505,7 @@
   "com_ui_mcp_oauth_secret_reentry_required": "OAuth settings changed. Re-enter the client secret to save this MCP server.",
   "com_ui_mcp_oauth_timeout": "OAuth login timed out for {{0}}",
   "com_ui_mcp_programmatic": "Programmatic",
+  "com_ui_mcp_programmatic_requires_code": "Enable Code Interpreter before making MCP tools programmatic.",
   "com_ui_mcp_programmatic_all": "Mark all as programmatic",
   "com_ui_mcp_reauthentication_required": "MCP server '{{0}}' needs authentication. Reconnect to continue; if that fails, revoke its OAuth access and try again.",
   "com_ui_mcp_server": "MCP Server",

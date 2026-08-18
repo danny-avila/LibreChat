@@ -3,8 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ToolsMarketplaceDialog from '../ToolsMarketplaceDialog';
 
 const mockSetValue = jest.fn();
-const mockGetValues = jest.fn((): string[] => []);
+const mockGetValues = jest.fn((_: string): unknown => []);
 let mockWatchedTools: string[] = [];
+let mockExecuteCode = false;
 let mockMcpServersMap = new Map<string, object>();
 
 jest.mock('react-hook-form', () => ({
@@ -17,7 +18,7 @@ jest.mock('react-hook-form', () => ({
     const map: Record<string, unknown> = {
       tools: mockWatchedTools,
       skills: [],
-      execute_code: false,
+      execute_code: mockExecuteCode,
       web_search: false,
       file_search: false,
       artifacts: '',
@@ -156,6 +157,7 @@ describe('ToolsMarketplaceDialog', () => {
     mockGetValues.mockClear();
     mockGetValues.mockReturnValue([]);
     mockWatchedTools = [];
+    mockExecuteCode = false;
     mockMcpServersMap = new Map();
     mockToggleFavorite.mockClear();
     mockFavoriteKeys = new Set<string>();
@@ -180,6 +182,31 @@ describe('ToolsMarketplaceDialog', () => {
       'tools',
       expect.arrayContaining(['dalle']),
       expect.objectContaining({ shouldDirty: true }),
+    );
+  });
+
+  test('disabling Code Interpreter clears programmatic MCP callers immediately', () => {
+    mockExecuteCode = true;
+    mockGetValues.mockImplementation((name: string) =>
+      name === 'tool_options'
+        ? {
+            search: { allowed_callers: ['code_execution'], defer_loading: true },
+            direct: { allowed_callers: ['direct'] },
+          }
+        : [],
+    );
+
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_run_code/ }));
+
+    expect(mockSetValue).toHaveBeenCalledWith('execute_code', false, { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tool_options',
+      {
+        search: { defer_loading: true },
+        direct: { allowed_callers: ['direct'] },
+      },
+      { shouldDirty: true },
     );
   });
 
