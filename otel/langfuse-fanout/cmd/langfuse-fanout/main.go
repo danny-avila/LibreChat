@@ -658,6 +658,9 @@ func (g *gateway) patchMedia(ctx context.Context, dest destination, path string,
 }
 
 func (g *gateway) putMedia(ctx context.Context, dest uploadDestination, body []byte, originalHeaders http.Header) (int, error) {
+	if err := validateMediaUploadURL(dest.UploadURL); err != nil {
+		return 0, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, dest.UploadURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
@@ -680,7 +683,11 @@ func (g *gateway) putMedia(ctx context.Context, dest uploadDestination, body []b
 			req.Header.Set("x-amz-checksum-sha256", value)
 		}
 	}
-	resp, err := g.doUpstream(req, "media_upload", dest.Name)
+	uploadClient := *g.cfg.client
+	uploadClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := g.doUpstreamWithClient(&uploadClient, req, "media_upload", dest.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -706,8 +713,12 @@ func (g *gateway) doExpect2xx(operation string, destination string, req *http.Re
 }
 
 func (g *gateway) doUpstream(req *http.Request, operation string, destination string) (*http.Response, error) {
+	return g.doUpstreamWithClient(g.cfg.client, req, operation, destination)
+}
+
+func (g *gateway) doUpstreamWithClient(client *http.Client, req *http.Request, operation string, destination string) (*http.Response, error) {
 	startedAt := time.Now()
-	resp, err := g.cfg.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		duration := time.Since(startedAt)
 		if g.metrics != nil {
@@ -1139,6 +1150,17 @@ func isGCSUploadURL(value string) bool {
 	}
 	host := parsed.Hostname()
 	return host == "storage.googleapis.com" || strings.HasSuffix(host, ".storage.googleapis.com")
+}
+
+func validateMediaUploadURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Hostname() == "" {
+		return errors.New("media upload URL must be an absolute HTTPS URL")
+	}
+	if parsed.Scheme != "https" {
+		return errors.New("media upload URL must use HTTPS")
+	}
+	return nil
 }
 
 func isAzureUploadURL(value string) bool {
