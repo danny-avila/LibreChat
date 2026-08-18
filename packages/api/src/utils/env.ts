@@ -170,7 +170,7 @@ const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
  * users under that one string). Only for final resolution passes — staged
  * flows that resolve again later with more context must not strip.
  */
-function stripUnresolvedPlaceholders(value: string): string {
+export function stripUnresolvedPlaceholders(value: string): string {
   return value.replace(RESOLVABLE_PLACEHOLDER_PATTERN, '');
 }
 

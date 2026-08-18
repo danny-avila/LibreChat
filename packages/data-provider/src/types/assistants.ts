@@ -270,14 +270,41 @@ export type AgentToolOptions = Record<string, ToolOptions>;
 /**
  * Configuration for spawning subagents (isolated-context child agents) from an agent.
  * When `enabled` is true, the agent gets a subagent-spawn tool that can delegate work
- * to either itself (when `allowSelf` is true) and/or the listed `agent_ids`.
+ * to itself, listed single-agent targets, and/or explicit saved-agent teams.
  */
+export type AgentSubagentGraphEdge = Omit<
+  GraphEdge,
+  'edgeType' | 'condition' | 'prompt' | 'promptKey'
+> & {
+  edgeType: 'direct';
+  condition?: never;
+  prompt?: string;
+  promptKey?: never;
+};
+
+/** A bounded saved-agent team that can be spawned as one isolated child graph. */
+export type AgentSubagentGraph = {
+  /** Stable spawn-tool enum value for the team. */
+  type: string;
+  name: string;
+  description: string;
+  /** Member IDs. In create/update payloads, an empty ID refers to the current agent. */
+  agent_ids: string[];
+  edges: AgentSubagentGraphEdge[];
+  /** Entry member ID. In create/update payloads, an empty ID refers to the current agent. */
+  entry_agent_id: string;
+  /** Result member ID. In create/update payloads, an empty ID refers to the current agent. */
+  result_agent_id: string;
+};
+
 export type AgentSubagentsConfig = {
   enabled?: boolean;
   /** When true (default), the agent may spawn itself in an isolated context. */
   allowSelf?: boolean;
   /** Specific agents that may be spawned as subagents. */
   agent_ids?: string[];
+  /** Explicit saved-agent teams that may be spawned as bounded child graphs. */
+  graphs?: AgentSubagentGraph[];
 };
 
 export type Agent = {

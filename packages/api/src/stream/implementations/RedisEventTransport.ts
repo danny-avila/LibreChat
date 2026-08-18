@@ -36,6 +36,9 @@ const KEYS = {
   /** Owner-issued proof that this exact generation processed an abort. */
   abortAck: (streamId: string, generationId: number) =>
     `stream:{${streamId}}:abort-ack:${generationId}`,
+  /** Exact proof that a provider segment has fully unwound. */
+  providerDrain: (streamId: string, generationId: number, providerExecutionId: string) =>
+    `stream:{${streamId}}:provider-drain:${generationId}:${providerExecutionId}`,
 };
 
 /**
@@ -206,6 +209,7 @@ const MAX_BUFFER_SIZE = 100;
 const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
 /** Durable owner proof outlives receipt retries and process-local subscriptions. */
 const ABORT_ACK_TTL_SECONDS = 86400;
+const PROVIDER_DRAIN_TTL_SECONDS = 86400;
 
 /**
  * Subscriber state for a stream
@@ -1268,6 +1272,37 @@ export class RedisEventTransport implements IEventTransport {
       logger.error(`[RedisEventTransport] Failed to persist generation abort proof:`, error);
       return false;
     }
+  }
+
+  async recordProviderDrain(
+    streamId: string,
+    generationId: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    try {
+      await this.publisher.set(
+        KEYS.providerDrain(streamId, generationId, providerExecutionId),
+        '1',
+        'EX',
+        PROVIDER_DRAIN_TTL_SECONDS,
+      );
+      return true;
+    } catch (error) {
+      logger.error(`[RedisEventTransport] Failed to persist provider drain proof:`, error);
+      return false;
+    }
+  }
+
+  async hasProviderDrain(
+    streamId: string,
+    generationId: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    return (
+      (await this.publisher.get(
+        KEYS.providerDrain(streamId, generationId, providerExecutionId),
+      )) === '1'
+    );
   }
 
   private async publishAbortAcknowledgement(

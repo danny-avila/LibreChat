@@ -12,10 +12,12 @@ const {
 const {
   createRun,
   applyContextToAgent,
+  buildInitialToolSessions,
   buildToolSet,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   buildAgentScopedContext,
+  buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
   createSafeUser,
   initializeAgent,
@@ -26,8 +28,10 @@ const {
   recordCollectedUsage,
   createSubagentUsageSink,
   getTransactionsConfig,
+  resolveAgentTokenConfig,
   findPiiMatchInMessages,
   discoverConnectedAgents,
+  resolveSubagentGraphs,
   createToolExecuteHandler,
   getRemoteAgentPermissions,
   resolveAgentScopedSkillIds,
@@ -73,6 +77,7 @@ const {
   canAuthorSkillFiles,
   withDeploymentSkillIds,
   buildAgentToolContext,
+  resolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext,
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
@@ -370,11 +375,10 @@ const executeResponse = async (envelope, { req, res }) => {
 
     const conversationId = request.previous_response_id ?? uuidv4();
     const parentMessageId = null;
+    const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
 
     // Build allowed providers set
-    const allowedProviders = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
-    );
+    const allowedProviders = new Set(agentsEConfig?.allowedProviders);
 
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
@@ -403,9 +407,13 @@ const executeResponse = async (envelope, { req, res }) => {
       getSkillByName: skillDbMethods.getSkillByName,
     };
 
-    const enabledCapabilities = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
-    );
+    const enabledCapabilities = new Set(agentsEConfig?.capabilities);
+    const memoryAvailable = await resolveMemoryAvailability({
+      enabledCapabilities,
+      memoryConfig: appConfig?.memory,
+      user: req.user,
+      getRoleByName: db.getRoleByName,
+    });
     const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
     const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
     const accessibleSkillIds = skillsCapabilityEnabled
@@ -478,6 +486,8 @@ const executeResponse = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
+        memoryAvailable,
         skillStates,
         defaultActiveOnShare,
         manualSkills,
@@ -504,96 +514,125 @@ const executeResponse = async (envelope, { req, res }) => {
       buildAgentToolContext({ agent, config: primaryConfig }),
     );
 
-    // Only run BFS discovery (and pay `getModelsConfig` upfront) when the
-    // primary has edges to follow — the common API case is single-agent.
     let handoffAgentConfigs = new Map();
     let discoveredEdges = [];
     let discoveredMCPAuthMap;
-    if (primaryConfig.edges?.length) {
+    const subagentsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.subagents);
+    const primaryHasGraphSubagents =
+      subagentsCapabilityEnabled &&
+      primaryConfig.subagents?.enabled === true &&
+      (primaryConfig.subagents.graphs?.length ?? 0) > 0;
+    if (primaryConfig.edges?.length || primaryHasGraphSubagents) {
       const modelsConfig = await getModelsConfig(req);
-      ({
-        agentConfigs: handoffAgentConfigs,
-        edges: discoveredEdges,
-        userMCPAuthMap: discoveredMCPAuthMap,
-      } = await discoverConnectedAgents(
-        {
-          req,
-          res,
-          primaryConfig,
-          endpointOption,
-          allowedProviders,
-          modelsConfig,
-          loadTools,
-          requestFiles: [],
-          conversationId,
-          parentMessageId,
-          // The route enforces REMOTE_AGENT on the primary; every discovered
-          // sub-agent must clear the same sharing boundary, not the looser
-          // in-app AGENT one.
-          resourceType: ResourceType.REMOTE_AGENT,
-          computeAccessibleSkillIds: (handoffAgent) =>
-            resolveAgentScopedSkillIds({
+      const discoveryParams = {
+        req,
+        res,
+        primaryConfig,
+        endpointOption,
+        allowedProviders,
+        modelsConfig,
+        loadTools,
+        requestFiles: [],
+        conversationId,
+        parentMessageId,
+        resourceType: ResourceType.REMOTE_AGENT,
+        computeAccessibleSkillIds: (handoffAgent) =>
+          resolveAgentScopedSkillIds({
+            agent: handoffAgent,
+            accessibleSkillIds,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        computeSkillAuthoringAvailable: (handoffAgent) =>
+          canAuthorSkillFiles({
+            agent: handoffAgent,
+            scopedEditableSkillIds: resolveAgentScopedSkillIds({
               agent: handoffAgent,
-              accessibleSkillIds,
+              accessibleSkillIds: editableSkillIds,
               skillsCapabilityEnabled,
               ephemeralSkillsToggle,
             }),
-          computeSkillAuthoringAvailable: (handoffAgent) =>
-            canAuthorSkillFiles({
-              agent: handoffAgent,
-              scopedEditableSkillIds: resolveAgentScopedSkillIds({
-                agent: handoffAgent,
-                accessibleSkillIds: editableSkillIds,
-                skillsCapabilityEnabled,
-                ephemeralSkillsToggle,
-              }),
-              skillCreateAllowed,
-              skillsCapabilityEnabled,
-              ephemeralSkillsToggle,
-            }),
-          skillStates,
-          defaultActiveOnShare,
-          /** @see DiscoverConnectedAgentsParams.codeEnvAvailable */
-          codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
-          backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
-          toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
-          statefulSessionsAvailable: enabledCapabilities.has(
-            AgentCapabilities.stateful_code_sessions,
-          ),
+            skillCreateAllowed,
+            skillsCapabilityEnabled,
+            ephemeralSkillsToggle,
+          }),
+        skillStates,
+        defaultActiveOnShare,
+        codeEnvAvailable: enabledCapabilities.has(AgentCapabilities.execute_code),
+        backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
+        toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
+        statefulSessionsAvailable: enabledCapabilities.has(
+          AgentCapabilities.stateful_code_sessions,
+        ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
+        memoryAvailable,
+      };
+      const discoveryDeps = {
+        getAgent: db.getAgent,
+        checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
+          const permissions = await getRemoteAgentPermissions(
+            { getEffectivePermissions },
+            userId,
+            role,
+            resourceId,
+          );
+          return hasPermissions(permissions, requiredPermission);
         },
-        {
-          getAgent: db.getAgent,
-          // Use `getRemoteAgentPermissions` so sub-agent authorization
-          // matches what the route's `createCheckRemoteAgentAccess`
-          // middleware does for the primary: AGENT owners with the SHARE
-          // bit are treated as remotely authorized even without an
-          // explicit REMOTE_AGENT grant.
-          checkPermission: async ({ userId, role, resourceId, requiredPermission }) => {
-            const permissions = await getRemoteAgentPermissions(
-              { getEffectivePermissions },
-              userId,
-              role,
-              resourceId,
-            );
-            return hasPermissions(permissions, requiredPermission);
-          },
-          logViolation,
-          db: dbMethods,
-          onAgentInitialized: (agentId, handoffAgent, config) => {
-            agentToolContexts.set(agentId, buildAgentToolContext({ agent: handoffAgent, config }));
-          },
-          initializeAgent,
+        logViolation,
+        db: dbMethods,
+        onAgentInitialized: (loadedAgentId, loadedAgent, config) => {
+          agentToolContexts.set(
+            loadedAgentId,
+            buildAgentToolContext({ agent: loadedAgent, config }),
+          );
         },
-      ));
+        initializeAgent,
+      };
+      if (primaryConfig.edges?.length) {
+        ({
+          agentConfigs: handoffAgentConfigs,
+          edges: discoveredEdges,
+          userMCPAuthMap: discoveredMCPAuthMap,
+        } = await discoverConnectedAgents(discoveryParams, discoveryDeps));
+      }
+      if (subagentsCapabilityEnabled) {
+        discoveredMCPAuthMap = await resolveSubagentGraphs(
+          {
+            ...discoveryParams,
+            rootConfigs: [primaryConfig, ...handoffAgentConfigs.values()],
+          },
+          discoveryDeps,
+        );
+      }
     }
 
     primaryConfig.edges = discoveredEdges;
+    const endpointTokenConfigByAgentId = new Map();
+    for (const [agentId, context] of agentToolContexts) {
+      endpointTokenConfigByAgentId.set(agentId, context.endpointTokenConfig);
+    }
+    const resolveEndpointTokenConfig = (usage) =>
+      resolveAgentTokenConfig({
+        agentId: usage?.agentId,
+        byAgentId: endpointTokenConfigByAgentId,
+        fallback: primaryConfig.endpointTokenConfig,
+      });
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
+    const initialSessions = buildInitialToolSessions({ agents: runAgents });
+    const contextAgentsById = new Map(runAgents.map((runAgent) => [runAgent.id, runAgent]));
+    for (const runAgent of runAgents) {
+      for (const graph of runAgent.subagentGraphConfigs ?? []) {
+        for (const memberConfig of graph.memberConfigs) {
+          contextAgentsById.set(memberConfig.id, memberConfig);
+        }
+      }
+    }
+    const contextAgents = [...contextAgentsById.values()];
     const mergedMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
-    const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId(runAgents);
+    const agentContextAttachmentsByAgentId = buildAgentContextAttachmentsByAgentId(contextAgents);
     const agentScopedContext = await buildAgentScopedContext({
-      agentIds: runAgents.map(({ id }) => id),
+      agentIds: contextAgents.map(({ id }) => id),
       attachmentsByAgentId: agentContextAttachmentsByAgentId,
       req,
     });
@@ -602,16 +641,25 @@ const executeResponse = async (envelope, { req, res }) => {
     const configServers = await resolveConfigServers(req);
 
     await Promise.all(
-      runAgents.map((runAgent) =>
-        applyContextToAgent({
+      contextAgents.map(async (runAgent) => {
+        const memoryContext = await buildInlineMemoryContext({
+          agent: runAgent,
+          req,
+          userId: principal.userId,
+          memoryAvailable,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return applyContextToAgent({
           agent: runAgent,
           agentId: runAgent.id,
           logger,
           mcpManager,
           configServers,
-          sharedRunContext: agentScopedContext.get(runAgent.id) ?? '',
-        }),
-      ),
+          sharedRunContext: [memoryContext, agentScopedContext.get(runAgent.id)]
+            .filter(Boolean)
+            .join('\n\n'),
+        });
+      }),
     );
 
     // Determine if streaming is enabled (check both request and agent config)
@@ -804,6 +852,7 @@ const executeResponse = async (envelope, { req, res }) => {
         appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
+        initialSessions,
         requestBody: {
           messageId: responseId,
           conversationId,
@@ -812,7 +861,11 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
+          responsesHandlers.on_chat_model_end.handle('on_chat_model_end', {
+            output: { usage_metadata: usage },
+          });
+        }),
       });
 
       if (!run) {
@@ -864,6 +917,8 @@ const executeResponse = async (envelope, { req, res }) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          endpointTokenConfig: primaryConfig.endpointTokenConfig,
+          resolveEndpointTokenConfig,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);
@@ -987,6 +1042,7 @@ const executeResponse = async (envelope, { req, res }) => {
         appConfig,
         signal: abortController.signal,
         customHandlers: handlers,
+        initialSessions,
         requestBody: {
           messageId: responseId,
           conversationId,
@@ -995,7 +1051,11 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
+          aggregatorHandlers.on_chat_model_end.handle('on_chat_model_end', {
+            output: { usage_metadata: usage },
+          });
+        }),
       });
 
       if (!run) {
@@ -1046,6 +1106,8 @@ const executeResponse = async (envelope, { req, res }) => {
           balance: balanceConfig,
           transactions: transactionsConfig,
           model: primaryConfig.model || agent.model_parameters?.model,
+          endpointTokenConfig: primaryConfig.endpointTokenConfig,
+          resolveEndpointTokenConfig,
         },
       ).catch((err) => {
         logger.error('[Responses API] Error recording usage:', err);

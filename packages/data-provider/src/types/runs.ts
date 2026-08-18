@@ -361,16 +361,34 @@ export type SubagentUpdatePhase =
   | 'stop'
   | 'error';
 
+/** Structured root-to-leaf identity for one nested subagent execution. */
+export interface SubagentAncestryEntry {
+  readonly subagentRunId: string;
+  readonly subagentType: string;
+  readonly subagentKind: 'agent' | 'graph';
+  /** Execution subject ID; synthetic for graph subagents. */
+  readonly subagentAgentId: string;
+  readonly parentRunId: string;
+  readonly parentAgentId?: string;
+  readonly parentToolCallId?: string;
+}
+
 /** Single streamed subagent update forwarded by the SDK's SubagentExecutor. */
 export interface SubagentUpdateEvent {
   runId: string;
+  parentRunId?: string;
   subagentRunId: string;
   /** Parent-side `tool_call_id` for the `subagent` tool invocation that
    *  triggered this run. Surfaces from the SDK (`3.1.67-dev.2`+) so hosts
    *  can correlate child progress to the parent tool call deterministically. */
   parentToolCallId?: string;
   subagentType: string;
+  subagentKind?: 'agent' | 'graph';
+  /** Execution subject ID; synthetic for graph subagents. */
   subagentAgentId: string;
+  memberAgentId?: string;
+  depth?: number;
+  ancestry?: readonly SubagentAncestryEntry[];
   parentAgentId?: string;
   phase: SubagentUpdatePhase;
   data?: unknown;

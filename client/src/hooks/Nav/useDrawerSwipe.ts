@@ -343,7 +343,9 @@ export default function useDrawerSwipe({
         return;
       }
       drawer.style.willChange = 'transform';
-      pane.style.willChange = 'transform';
+      if (next) {
+        pane.style.willChange = 'transform';
+      }
       /** Armed BEFORE the frame below (id: null — no deadline yet) so the
        * staged write can verify its target is still wanted, and so a
        * touchstart in between defers to the pending settle. A retarget or
@@ -366,9 +368,22 @@ export default function useDrawerSwipe({
           return;
         }
         drawer.style.transition = SIDEBAR_TRANSITION;
-        pane.style.transition = SIDEBAR_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
-        pane.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
+        if (next) {
+          pane.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transform = 'translateX(100%)';
+        } else {
+          /** A programmatic close is a REVEAL: the pane repositions
+           * instantly beneath the opaque drawer's cover and only the
+           * drawer slides away, uncovering content already in place.
+           * Animating the pane in from the right made every
+           * tap-to-navigate close visibly shift the chat leftward while
+           * the new conversation committed into the moving layer
+           * mid-slide. The gesture keeps the paired both-move motion in
+           * `settle` — there a finger drags both surfaces. */
+          pane.style.transition = 'none';
+          pane.style.transform = 'none';
+        }
         void drawer.getBoundingClientRect();
         armed.id = setTimeout(() => {
           settleRef.current = null;

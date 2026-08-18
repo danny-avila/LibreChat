@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { TMessageContentParts, FunctionTool, FunctionToolCall } from './types/assistants';
+import type {
+  TMessageContentParts,
+  AgentSubagentGraph,
+  FunctionToolCall,
+  FunctionTool,
+} from './types/assistants';
 import type { SearchResultData } from './types/web';
 import type { TFile } from './types/files';
 import { TFeedback, feedbackSchema } from './feedback';
@@ -361,7 +366,12 @@ export const defaultAgentFormValues = {
   skills_enabled: undefined as boolean | undefined,
   /** `undefined` = feature disabled by default (no subagent tool injected). */
   subagents: undefined as
-    | { enabled?: boolean; allowSelf?: boolean; agent_ids?: string[] }
+    | {
+        enabled?: boolean;
+        allowSelf?: boolean;
+        agent_ids?: string[];
+        graphs?: AgentSubagentGraph[];
+      }
     | undefined,
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope: undefined as MemoryScope | undefined,
