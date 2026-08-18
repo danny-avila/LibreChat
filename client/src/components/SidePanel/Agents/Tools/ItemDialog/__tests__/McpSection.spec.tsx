@@ -13,6 +13,7 @@ const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
 const mockIsToolProgrammaticOnly = jest.fn((_toolId: string): boolean => false);
 const mockCapabilities = {
+  codeEnabled: false,
   deferredToolsEnabled: false,
   programmaticToolsEnabled: false,
   backgroundToolsEnabled: false,
@@ -21,9 +22,18 @@ const mockCapabilities = {
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
-  useWatch: ({ name }: { name: string }) =>
-    name === 'tool_options' ? mockGetToolOptions() : mockGetValues(),
+  useWatch: ({ name }: { name: string }) => {
+    if (name === 'tool_options') {
+      return mockGetToolOptions();
+    }
+    if (name === 'execute_code') {
+      return mockCodeInterpreterSelected();
+    }
+    return mockGetValues();
+  },
 }));
+
+const mockCodeInterpreterSelected = jest.fn((): boolean => false);
 
 jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({ mcpServersMap: mockMcpServersMap() }),
@@ -168,6 +178,12 @@ describe('McpSection', () => {
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
     mockMcpServersMap.mockReturnValue(new Map());
+    mockCodeInterpreterSelected.mockReset();
+    mockCodeInterpreterSelected.mockReturnValue(false);
+    mockCapabilities.codeEnabled = false;
+    mockCapabilities.deferredToolsEnabled = false;
+    mockCapabilities.programmaticToolsEnabled = false;
+    mockCapabilities.backgroundToolsEnabled = false;
     mockCapabilities.toolIntentsEnabled = false;
   });
 
@@ -403,6 +419,23 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_intent_all' }));
     expect(mockToggleIntentAll).toHaveBeenCalledWith(item.server.tools);
+  });
+
+  test('bulk programmatic toggle requires Code Interpreter to be available and selected', () => {
+    mockCapabilities.programmaticToolsEnabled = true;
+    const { unmount } = render(<McpSection item={item} />);
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_programmatic_all' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    unmount();
+
+    mockCapabilities.codeEnabled = true;
+    mockCodeInterpreterSelected.mockReturnValue(true);
+    render(<McpSection item={item} />);
+    expect(screen.getByRole('button', { name: 'com_ui_mcp_programmatic_all' })).not.toHaveAttribute(
+      'aria-disabled',
+    );
   });
 
   test('bulk intent skips programmatic-only tools (label can never reach them)', () => {

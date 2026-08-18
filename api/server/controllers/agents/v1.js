@@ -37,6 +37,7 @@ const {
   AgentCapabilities,
   EModelEndpoint,
   resolveAllowedStatefulCodeEnvironments,
+  removeCodeExecutionCaller,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -533,6 +534,10 @@ const createAgentHandler = async (req, res) => {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
+    if (!tools.includes(Tools.execute_code) && agentData.tool_options != null) {
+      agentData.tool_options = removeCodeExecutionCaller(agentData.tool_options);
+    }
+
     if (
       !validateStatefulCodeEnvironment(
         req,
@@ -818,7 +823,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.stateful_code_sessions !== undefined ||
       updateData.stateful_code_environment !== undefined;
     const includesToolsConfiguration = Array.isArray(updateData.tools);
-    if (includesStatefulConfiguration || includesToolsConfiguration) {
+    const includesToolOptionsConfiguration = updateData.tool_options !== undefined;
+    if (
+      includesStatefulConfiguration ||
+      includesToolsConfiguration ||
+      includesToolOptionsConfiguration
+    ) {
       existingAgent = await db.getAgent({ id });
       if (!existingAgent) {
         return res.status(404).json({ error: 'Agent not found' });
@@ -849,6 +859,14 @@ const updateAgentHandler = async (req, res) => {
           )
         ) {
           return;
+        }
+      }
+
+      if (includesToolsConfiguration || includesToolOptionsConfiguration) {
+        const effectiveTools = updateData.tools ?? existingAgent.tools;
+        const effectiveToolOptions = updateData.tool_options ?? existingAgent.tool_options;
+        if (!effectiveTools?.includes(Tools.execute_code) && effectiveToolOptions != null) {
+          updateData.tool_options = removeCodeExecutionCaller(effectiveToolOptions);
         }
       }
     }
