@@ -125,7 +125,7 @@ export default function WorkspaceChanges({
           aria-hidden="true"
         />
       </Button>
-      <div id={panelId} style={style}>
+      <div id={panelId} style={style} inert={!isExpanded ? '' : undefined}>
         <div className="overflow-hidden" ref={ref} aria-hidden={!isExpanded}>
           <div className="flex flex-col gap-2 pt-2">
             {attachments.map((attachment) => (

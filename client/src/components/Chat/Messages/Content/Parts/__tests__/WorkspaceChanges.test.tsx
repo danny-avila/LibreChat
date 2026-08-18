@@ -91,10 +91,13 @@ describe('WorkspaceChanges', () => {
     const toggle = screen.getByRole('button', {
       name: 'Workspace changes: 2 files changed',
     });
+    const panel = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).toHaveAttribute('inert');
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).not.toHaveAttribute('inert');
     expect(screen.getByText('summary.csv')).toBeInTheDocument();
     expect(screen.getByText('reports/summary.csv')).toBeInTheDocument();
 
