@@ -12,7 +12,11 @@ jest.mock('@librechat/api', () => ({
   sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   mergeQuotedTextForCount: jest.fn((text) => text),
+  CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
+  isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
 }));
+
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -65,6 +69,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
   it('preserves content-part metadata when editing its text', async () => {
     getMessages.mockResolvedValue([
       {
+        conversationId: 'conversation-1',
         tokenCount: 10,
         content: [
           {
@@ -101,6 +106,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
   it('clears the generated reasoning title when its reasoning text is edited', async () => {
     getMessages.mockResolvedValue([
       {
+        conversationId: 'conversation-1',
         tokenCount: 10,
         content: [
           {
@@ -152,6 +158,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
 
     getMessages.mockResolvedValue([
       {
+        conversationId: 'conversation-1',
         tokenCount: 10,
         content: [
           {

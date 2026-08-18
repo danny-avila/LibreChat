@@ -38,6 +38,9 @@ jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());
 jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
 jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
+  require(MOCKS).subagentThreadStore(),
+);
 
 describe('POST /api/convos/duplicate - Rate Limiting', () => {
   let app;

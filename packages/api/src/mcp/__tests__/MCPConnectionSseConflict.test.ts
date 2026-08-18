@@ -155,12 +155,12 @@ async function createConflictingServer(): Promise<ConflictTestServer> {
 }
 
 async function waitForCondition(
-  predicate: () => boolean,
+  predicate: () => boolean | Promise<boolean>,
   timeoutMs = 10000,
   intervalMs = 25,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) {
       throw new Error('Timed out waiting for condition');
     }
@@ -250,23 +250,24 @@ describe('MCPConnection standalone SSE stream conflict', () => {
   it('rebuilds the session so the connection recovers from the conflict', async () => {
     const srv = await createConflictingServer();
     server = srv;
-    conn = new MCPConnection({
+    const connection = new MCPConnection({
       serverName: 'test',
       serverConfig: { type: 'streamable-http', url: srv.url },
       useSSRFProtection: false,
     });
+    conn = connection;
 
-    await conn.connect();
-    const firstSessionId = (conn as unknown as { transport?: { sessionId?: string } }).transport
-      ?.sessionId;
+    await connection.connect();
+    const firstSessionId = (connection as unknown as { transport?: { sessionId?: string } })
+      .transport?.sessionId;
     expect(firstSessionId).toBeTruthy();
 
-    await waitForCondition(() => {
-      const current = (conn as unknown as { transport?: { sessionId?: string } }).transport
+    await waitForCondition(async () => {
+      const current = (connection as unknown as { transport?: { sessionId?: string } }).transport
         ?.sessionId;
-      return Boolean(current) && current !== firstSessionId;
+      return Boolean(current) && current !== firstSessionId && (await connection.isConnected());
     }, 15000);
 
-    expect(await conn.isConnected()).toBe(true);
+    expect(await connection.isConnected()).toBe(true);
   }, 25000);
 });

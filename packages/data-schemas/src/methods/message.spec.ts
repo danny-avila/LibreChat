@@ -511,6 +511,11 @@ describe('Message Operations', () => {
           usage: { input: 10, output: 20 },
           thoughtSignatures: { tool_1: 'opaque' },
         },
+        subagentTask: {
+          attemptKey: 'private-attempt',
+          requestFingerprint: 'private-fingerprint',
+          status: 'running',
+        },
         attachments: [
           {
             type: 'web_search',
@@ -566,6 +571,7 @@ describe('Message Operations', () => {
         'contextMeta',
         'langfuseSampled',
         'langfuseDestinationIds',
+        'subagentTask',
       ]) {
         expect(hidden[field]).toBeUndefined();
       }

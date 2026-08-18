@@ -308,6 +308,7 @@ const startServer = async () => {
   app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
   /* API Endpoints */
   app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+  app.use('/api/admin/insights', routes.insights);
   app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
   app.use('/api/admin/langfuse', routes.adminLangfuse);

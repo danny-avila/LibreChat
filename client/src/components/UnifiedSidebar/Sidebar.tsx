@@ -9,6 +9,7 @@ function Sidebar({
   expanded,
   onCollapse,
   onExpand,
+  onLeaveInsights,
   onResizeStart,
   onResizeKeyboard,
 }: {
@@ -16,6 +17,7 @@ function Sidebar({
   expanded: boolean;
   onCollapse: () => void;
   onExpand: () => void;
+  onLeaveInsights: () => void;
   onResizeStart: (e: React.MouseEvent) => void;
   onResizeKeyboard: (direction: 'shrink' | 'grow') => void;
 }) {
@@ -27,6 +29,7 @@ function Sidebar({
           expanded={expanded}
           onCollapse={onCollapse}
           onExpand={onExpand}
+          onLeaveInsights={onLeaveInsights}
         />
         <nav
           className={cn(

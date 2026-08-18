@@ -146,6 +146,29 @@ describe('forkConversation', () => {
     );
   });
 
+  test('detaches subagent lineage when forking a child conversation', async () => {
+    getConvo.mockResolvedValue({
+      ...mockConversation,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'researcher',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    });
+
+    await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: '3',
+      requestUserId: 'user1',
+      option: ForkOptions.DIRECT_PATH,
+    });
+
+    expect(bulkSaveConvos.mock.calls[0][0][0]).not.toHaveProperty('subagentThread');
+  });
+
   test('should fork conversation with branches', async () => {
     const result = await forkConversation({
       originalConvoId: 'abc123',
@@ -310,6 +333,27 @@ describe('duplicateConversation', () => {
 
     // bulkIncrementTagCounts will be called with empty array
     expect(bulkIncrementTagCounts).toHaveBeenCalledWith('user1', []);
+  });
+
+  test('detaches subagent lineage when duplicating a child conversation', async () => {
+    getConvo.mockResolvedValue({
+      ...mockConversation,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'researcher',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    });
+
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+    });
+
+    expect(bulkSaveConvos.mock.calls[0][0][0]).not.toHaveProperty('subagentThread');
   });
 });
 
