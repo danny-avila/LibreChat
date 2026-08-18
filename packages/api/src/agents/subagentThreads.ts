@@ -29,10 +29,10 @@ import type {
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { createConcurrencyLimiter } from '~/utils/promise';
-import { controlFingerprint } from './subagentTaskRouting';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
@@ -47,6 +47,8 @@ const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 const DELETION_CANCEL_CONCURRENCY = 32;
 /** Bounds retained control invocations; one entry per applied command. */
 const MAX_CONTROL_INVOCATIONS = 4_096;
+/** Bounds the search for a settled task's record before falling back to the oldest. */
+const INVOCATION_EVICTION_SCAN = 64;
 
 /** A cancellation target set resolved before the conversations are removed. */
 export interface SubagentCancellationPlan {
@@ -127,6 +129,7 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   ownerDrainPollMs?: number;
   taskRoutingTtlMs?: number;
   isOwnerActive?: (userId: string) => Promise<boolean>;
+  maxControlInvocations?: number;
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
 }
@@ -347,7 +350,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly activeThreads = new Map<string, TaskThreadLease>();
   private readonly controlInvocations = new Map<
     string,
-    { fingerprint: string; result: SubagentTaskControlResult }
+    { scopeId: string; taskId: string; fingerprint: string; result: SubagentTaskControlResult }
   >();
 
   private readonly parentPersistence = new Map<string, Promise<unknown>>();
@@ -357,6 +360,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly ownerDrainTimeoutMs: number;
   private readonly ownerDrainPollMs: number;
   private readonly taskRoutingTtlMs: number;
+  private readonly maxControlInvocations: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
   private readonly fenceOwnerAdmission?: (
     userId: string,
@@ -387,6 +391,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
     this.ownerDrainPollMs = positiveInteger(options.ownerDrainPollMs, DEFAULT_OWNER_DRAIN_POLL_MS);
     this.taskRoutingTtlMs = positiveInteger(options.taskRoutingTtlMs, DEFAULT_TASK_ROUTING_TTL_MS);
+    this.maxControlInvocations = positiveInteger(
+      options.maxControlInvocations,
+      MAX_CONTROL_INVOCATIONS,
+    );
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
@@ -632,7 +640,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return claim.status === 'claimed' ? (recoveredClaim(collected.message, claim) ?? claim) : claim;
   }
 
-  /** Assigns one durable terminal result to the invocation collecting it. */
+  /**
+   * Assigns one durable terminal result to the invocation collecting it. A failed
+   * write is not an absent record: handing the result over without recording its
+   * claimant would let another invocation acquire the same one-shot output once the
+   * database recovers, so this reports the retryable path and leaves the result
+   * unclaimed for a later poll.
+   */
   private async assignResultClaim(
     userId: string,
     threadId: string,
@@ -648,7 +662,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       });
     } catch (error) {
       logger.warn('[subagentThreads] Failed to record a collected child result', error);
-      return { status: 'not_found' };
+      throw new SubagentTaskOwnerUnavailableError();
     }
   }
 
@@ -702,14 +716,37 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (result.status === 'not_found') {
       return result;
     }
-    if (this.controlInvocations.size >= MAX_CONTROL_INVOCATIONS) {
-      const oldest = this.controlInvocations.keys().next().value as string | undefined;
-      if (oldest != null) {
-        this.controlInvocations.delete(oldest);
+    this.makeRoomForInvocation();
+    this.controlInvocations.set(key, { scopeId, taskId, fingerprint, result });
+    return result;
+  }
+
+  /**
+   * Frees one invocation slot, preferring records whose task the store no longer
+   * holds: evicting a live task's record would let a caller retry apply its command a
+   * second time. Only a full window of live records falls back to the oldest, which
+   * keeps the scan bounded rather than walking the whole map on every control.
+   */
+  private makeRoomForInvocation(): void {
+    if (this.controlInvocations.size < this.maxControlInvocations) {
+      return;
+    }
+    let oldest: string | undefined;
+    let scanned = 0;
+    for (const [key, invocation] of this.controlInvocations) {
+      oldest ??= key;
+      if (this.get(invocation.scopeId, invocation.taskId) == null) {
+        this.controlInvocations.delete(key);
+        return;
+      }
+      scanned += 1;
+      if (scanned >= INVOCATION_EVICTION_SCAN) {
+        break;
       }
     }
-    this.controlInvocations.set(key, { fingerprint, result });
-    return result;
+    if (oldest != null) {
+      this.controlInvocations.delete(oldest);
+    }
   }
 
   /** Returns this process's tasks plus tasks reported by registered remote owners. */

@@ -21,6 +21,7 @@ import type {
 } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { createSubagentUsageSink } from './usage';
 
@@ -1611,6 +1612,90 @@ describe('SubagentThreadTaskStore', () => {
     );
 
     await replayingStore.destroyTaskControlTransport();
+  });
+
+  it('reports a result as unavailable when its collection cannot be recorded', async () => {
+    const userId = 'unrecordable-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Recorded before it is handed over.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+
+    /** Handing the result over without recording its claimant would let another
+     * invocation collect the same one-shot output once the database recovers. */
+    const claimResult = jest
+      .spyOn(methods, 'claimSubagentTaskResult')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    try {
+      await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).rejects.toBeInstanceOf(
+        SubagentTaskOwnerUnavailableError,
+      );
+    } finally {
+      claimResult.mockRestore();
+    }
+
+    /** The result stays unclaimed, so a later poll still collects it exactly once. */
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Recorded before it is handed over.',
+    });
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject({
+      status: 'claimed',
+    });
+  });
+
+  it('keeps a live task’s control invocation when settled tasks fill the window', async () => {
+    const userId = 'invocation-eviction-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      maxControlInvocations: 2,
+      completedTtlMs: 20,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const live = store.start(taskRequest(config.scopeId, { run: async () => running }));
+    const liveTaskId = requireAccepted(live).task.taskId;
+    const settled = store.start(
+      taskRequest(config.scopeId, { run: async () => ({ content: 'done' }) }),
+    );
+    const settledTaskId = requireAccepted(settled).task.taskId;
+    await waitForSettled(store, config.scopeId, settled);
+
+    const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
+    const applied = store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live');
+    expect(applied).toMatchObject({ status: 'accepted' });
+    store.controlInvocation(config.scopeId, settledTaskId, steer, 'invocation-settled');
+
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (store.get(config.scopeId, settledTaskId) == null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(store.get(config.scopeId, settledTaskId)).toBeUndefined();
+
+    /** The window is full, so admitting another invocation evicts one. The record of a
+     * task this store no longer holds goes first: dropping the live task's record
+     * would let a caller retry steer that child a second time. */
+    store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-later');
+    expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live')).toEqual(
+      applied,
+    );
+    expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
+
+    finish({ content: 'done' });
+    await waitForSettled(store, config.scopeId, live);
   });
 
   it('cancels each drained task once and retries only unconfirmed deliveries', async () => {

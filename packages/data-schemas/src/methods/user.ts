@@ -14,6 +14,8 @@ import { signPayload } from '~/crypto';
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 /** Minimum age before an explicitly offline operator may recover an abandoned deletion fence. */
 export const USER_DELETION_FENCE_STALE_MS: number = 15 * 60_000;
+/** Bounds concurrent bulk deletions held for one owner at any moment. */
+const MAX_SUBAGENT_ADMISSION_FENCES = 32;
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
@@ -457,8 +459,11 @@ export function createUserMethods(
 
   /**
    * Closes subagent admission for one owner while a bulk conversation deletion drains
-   * its live children. The fence expires on its own so a process that dies mid-delete
-   * cannot lock the account out of running subagents.
+   * its live children. Every concurrent deletion holds its own fence, so admission
+   * reopens only once the last one finishes, in whatever order they complete. Each
+   * fence expires on its own, so a process that dies mid-delete cannot lock the
+   * account out of running subagents, and expired fences are pruned as new ones
+   * arrive rather than accumulating.
    */
   async function fenceSubagentAdmission(
     userId: string,
@@ -472,20 +477,38 @@ export function createUserMethods(
       throw new TypeError('A subagent admission fence needs a bounded owner token');
     }
     const User = mongoose.models.User;
-    await User.updateOne(
-      { _id: userId },
-      { $set: { subagentAdmissionFence: { token, expiresAt: fencedUntil } } },
-      { timestamps: false },
-    );
+    await User.updateOne({ _id: userId }, [
+      {
+        $set: {
+          subagentAdmissionFences: {
+            $slice: [
+              {
+                $concatArrays: [
+                  {
+                    $filter: {
+                      input: { $ifNull: ['$subagentAdmissionFences', []] },
+                      as: 'fence',
+                      cond: { $gt: ['$$fence.expiresAt', new Date()] },
+                    },
+                  },
+                  [{ token, expiresAt: fencedUntil }],
+                ],
+              },
+              -MAX_SUBAGENT_ADMISSION_FENCES,
+            ],
+          },
+        },
+      },
+    ]);
     await invalidateAuthUserDocCache(userId);
   }
 
-  /** Lifts only the fence this deletion took, so an overlapping one keeps its own. */
+  /** Lifts only this deletion's fence, so an overlapping one keeps admission closed. */
   async function releaseSubagentAdmission(userId: string, token: string): Promise<void> {
     const User = mongoose.models.User;
     const result = await User.updateOne(
-      { _id: userId, 'subagentAdmissionFence.token': token },
-      { $unset: { subagentAdmissionFence: 1 } },
+      { _id: userId },
+      { $pull: { subagentAdmissionFences: { token } } },
       { timestamps: false },
     );
     if (result.modifiedCount === 1) {
@@ -500,10 +523,7 @@ export function createUserMethods(
       (await User.exists({
         _id: userId,
         agentTriggerDeletionStartedAt: { $exists: false },
-        $or: [
-          { subagentAdmissionFence: { $exists: false } },
-          { 'subagentAdmissionFence.expiresAt': { $lte: new Date() } },
-        ],
+        subagentAdmissionFences: { $not: { $elemMatch: { expiresAt: { $gt: new Date() } } } },
       })) != null
     );
   }

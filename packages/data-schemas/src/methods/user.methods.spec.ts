@@ -721,13 +721,50 @@ describe('User Methods - Database Tests', () => {
       await methods.fenceSubagentAdmission(userId, 'deletion-a', fencedUntil);
       await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
 
-      /** An overlapping deletion owns the fence, so the first one cannot lift it. */
+      /** Each overlapping deletion holds its own fence, so admission reopens only
+       * once the last one finishes — in either completion order. */
       await methods.fenceSubagentAdmission(userId, 'deletion-b', fencedUntil);
       await methods.releaseSubagentAdmission(userId, 'deletion-a');
       await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
 
       await methods.releaseSubagentAdmission(userId, 'deletion-b');
       await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('keeps admission closed when the later deletion finishes first', async () => {
+      const user = await User.create({
+        name: 'Reverse Fence',
+        email: 'reverse-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const fencedUntil = new Date(Date.now() + 60_000);
+
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', fencedUntil);
+      await methods.fenceSubagentAdmission(userId, 'deletion-b', fencedUntil);
+
+      /** The deletion that started second finishes first; the first is still running. */
+      await methods.releaseSubagentAdmission(userId, 'deletion-b');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
+
+      await methods.releaseSubagentAdmission(userId, 'deletion-a');
+      await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(true);
+    });
+
+    test('prunes an expired fence when the next deletion takes one', async () => {
+      const user = await User.create({
+        name: 'Pruned Fence',
+        email: 'pruned-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+
+      await methods.fenceSubagentAdmission(userId, 'abandoned', new Date(Date.now() - 1));
+      await methods.fenceSubagentAdmission(userId, 'deletion-a', new Date(Date.now() + 60_000));
+
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(1);
+      expect(stored?.subagentAdmissionFences?.[0]?.token).toBe('deletion-a');
     });
 
     test('reopens admission once an abandoned fence expires', async () => {
