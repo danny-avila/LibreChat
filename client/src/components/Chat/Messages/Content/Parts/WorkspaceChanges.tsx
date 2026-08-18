@@ -1,4 +1,5 @@
 import { memo, useId, useMemo, useState } from 'react';
+import { Button, IconButton } from '@librechat/client';
 import { ChevronDown, Download, Files } from 'lucide-react';
 import type {
   TAttachment,
@@ -61,19 +62,17 @@ const WorkspaceChange = memo(({ attachment }: { attachment: StatefulWorkspaceAtt
           </div>
         )}
       </div>
-      <button
-        type="button"
+      <IconButton
         onClick={(event) => void handleDownload(event)}
-        aria-label={`${localize('com_ui_download')} ${filename}`}
+        label={`${localize('com_ui_download')} ${filename}`}
         title={localize('com_ui_download')}
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-md',
-          'text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-        )}
+        variant="ghost"
+        size="sm"
+        shape="square"
+        className="text-text-secondary"
       >
         <Download className="size-4" aria-hidden="true" />
-      </button>
+      </IconButton>
     </div>
   );
 });
@@ -104,17 +103,13 @@ export default function WorkspaceChanges({
 
   return (
     <div className="my-2 max-w-xl">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         aria-expanded={isExpanded}
         aria-controls={panelId}
         aria-label={`${localize('com_ui_workspace_changes')}: ${countLabel}`}
         onClick={() => setIsExpanded((previous) => !previous)}
-        className={cn(
-          'inline-flex max-w-full items-center gap-2 rounded-lg py-1 pr-2 text-sm',
-          'text-text-secondary transition-colors hover:text-text-primary',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-        )}
+        className="h-auto max-w-full justify-start py-1 pl-0 pr-2 font-normal text-text-secondary"
       >
         <Files className="size-4 shrink-0" aria-hidden="true" />
         <span className="shrink-0 font-medium">{localize('com_ui_workspace_changes')}</span>
@@ -129,7 +124,7 @@ export default function WorkspaceChanges({
           )}
           aria-hidden="true"
         />
-      </button>
+      </Button>
       <div id={panelId} style={style}>
         <div className="overflow-hidden" ref={ref} aria-hidden={!isExpanded}>
           <div className="flex flex-col gap-2 pt-2">
