@@ -1535,6 +1535,9 @@ const KEYS = {
   runningJobs: 'stream:running',
   /** Jobs paused for human review (global set - single slot) */
   requiresActionJobs: 'stream:requires_action',
+  /** Terminal jobs that still owe a durable host lifecycle hook (global set). Retains
+   *  the aborted approval-expiry job for cross-replica / post-restart hook retry. */
+  terminalHostActionJobs: 'stream:terminal_host_action',
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
@@ -2236,6 +2239,11 @@ export class RedisJobStore implements IJobStoreV2 {
         statusKey === KEYS.requiresActionJobs
           ? this.redis.sadd(KEYS.requiresActionJobs, streamId)
           : this.redis.srem(KEYS.requiresActionJobs, streamId),
+        // Terminal host-action membership follows the durable hash field, not status, so
+        // an aborted approval-expiry job stays enumerable for hook retry until acked.
+        job?.terminalHostActionPending === true
+          ? this.redis.sadd(KEYS.terminalHostActionJobs, streamId)
+          : this.redis.srem(KEYS.terminalHostActionJobs, streamId),
       ];
       for (const userJobsKey of observedUserKeys) {
         if (userJobsKey !== activeUserKey) {
@@ -2266,6 +2274,11 @@ export class RedisJobStore implements IJobStoreV2 {
       pipeline.sadd(KEYS.requiresActionJobs, streamId);
     } else {
       pipeline.srem(KEYS.requiresActionJobs, streamId);
+    }
+    if (job?.terminalHostActionPending === true) {
+      pipeline.sadd(KEYS.terminalHostActionJobs, streamId);
+    } else {
+      pipeline.srem(KEYS.terminalHostActionJobs, streamId);
     }
     for (const userJobsKey of observedUserKeys) {
       if (userJobsKey !== activeUserKey) {
@@ -2427,6 +2440,12 @@ export class RedisJobStore implements IJobStoreV2 {
     let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
     if (terminal && patch?.terminalPersistencePending === true) {
       ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
+    }
+    if (terminal && patch?.terminalHostActionPending === true) {
+      // A terminal job owing a host hook must outlive the normal completed TTL so cleanup
+      // can still enumerate and retry it across restarts; the pause backstop (24h) bounds
+      // the retry window. Cleared to the completed TTL on acknowledgement.
+      ttl = Math.max(ttl, this.ttl.requiresAction);
     }
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
@@ -2682,6 +2701,49 @@ export class RedisJobStore implements IJobStoreV2 {
     );
   }
 
+  async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
+    const streamIds = await this.redis.smembers(KEYS.terminalHostActionJobs);
+    if (streamIds.length === 0) {
+      return [];
+    }
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    // The durable hash field is the source of truth; a stale set entry (job reaped, or the
+    // marker already cleared) is filtered out and self-heals via reconcileJobMembership.
+    const stale: string[] = [];
+    const pending: SerializableJobData[] = [];
+    for (let i = 0; i < streamIds.length; i++) {
+      const job = jobs[i];
+      if (job != null && job.terminalHostActionPending === true) {
+        pending.push(job);
+      } else {
+        stale.push(streamIds[i]);
+      }
+    }
+    if (stale.length > 0) {
+      await this.redis.srem(KEYS.terminalHostActionJobs, ...stale).catch(() => undefined);
+    }
+    return pending;
+  }
+
+  async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    // Identity-fenced: only clear when the hash still holds this exact generation, so a
+    // replacement at the same streamId is never cleared through its predecessor. The HDEL
+    // and the completed-TTL reset happen atomically; membership is then reconciled to SREM.
+    const cleared = (await this.redis.eval(
+      'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
+        'redis.call("HDEL", KEYS[1], "terminalHostActionPending") ' +
+        'if tonumber(ARGV[2]) > 0 then redis.call("EXPIRE", KEYS[1], ARGV[2]) end ' +
+        'return 1',
+      1,
+      KEYS.job(streamId),
+      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+      String(this.ttl.completed),
+    )) as number;
+    if (cleared === 1) {
+      await this.redis.srem(KEYS.terminalHostActionJobs, streamId).catch(() => undefined);
+    }
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const streamIds = await this.redis.smembers(KEYS.runningJobs);
@@ -2849,6 +2911,10 @@ export class RedisJobStore implements IJobStoreV2 {
               patch: {
                 error: 'Approval expired before a decision was made',
                 completedAt: Date.now(),
+                // Store-won expiry: mark the host action pending (and extend retention via
+                // the TTL rule above) so the manager relay still runs its lifecycle hook on
+                // a replica that owns the runtime; cleared once that hook acknowledges.
+                terminalHostActionPending: true,
               },
               // Scope the CAS to the action we observed as stale: if the user resolved it
               // and the run re-paused on a fresh action between the read and here, the
@@ -4496,6 +4562,8 @@ export class RedisJobStore implements IJobStoreV2 {
         data.preserveForScheduleReconcile != null
           ? data.preserveForScheduleReconcile === '1'
           : undefined,
+      terminalHostActionPending:
+        data.terminalHostActionPending != null ? data.terminalHostActionPending === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot

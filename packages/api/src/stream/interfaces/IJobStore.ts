@@ -132,6 +132,14 @@ export interface SerializableJobData {
   scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
   scheduleOutcomeError?: string;
   preserveForScheduleReconcile?: boolean;
+  /**
+   * A terminal transition (currently approval expiry) still owes a durable host
+   * lifecycle hook. Set atomically with that transition and cleared only once the host
+   * adapter acknowledges success, so the job is retained (not reaped) and enumerable by
+   * cleanup across restarts and replicas until the hook completes. Generic: a host with
+   * no action clears it immediately on its no-op success, so nothing accumulates.
+   */
+  terminalHostActionPending?: boolean;
 
   /** Serialized final event for replay */
   finalEvent?: string;
@@ -681,6 +689,15 @@ export interface IJobStore {
   /** Optional durable paused-job enumeration. Built-in stores implement it so
    * the manager can own approval expiry even after the original runtime died. */
   getRequiresActionJobs?(): Promise<SerializableJobData[]>;
+  /** Optional durable enumeration of terminal jobs that still owe a host lifecycle
+   * hook (see `terminalHostActionPending`). Built-in stores implement it so cleanup can
+   * retry the host adapter after a restart / on another replica, even though the job is
+   * no longer in the requires_action index. */
+  getTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
+  /** Clears the pending-host-action marker once the adapter acknowledges success.
+   * Identity-fenced on `expectedCreatedAt` so a replacement generation at the same
+   * streamId is never cleared through its predecessor. */
+  clearTerminalHostAction?(streamId: string, expectedCreatedAt?: number): Promise<void>;
   cleanup(): Promise<number>;
   recordActivity?(streamId: string, expectedCreatedAt?: number): void;
   getJobCount(): Promise<number>;

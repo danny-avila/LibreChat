@@ -7024,6 +7024,9 @@ class GenerationJobManagerClass {
       streamId,
       actionId,
       expectedCreatedAt ?? observedJob?.createdAt,
+      // Only retain a durable host-action marker when a host adapter is installed to
+      // consume it — a store with no handler owes no action and accumulates nothing.
+      { markHostActionPending: this.approvalExpiredHandler != null },
     );
     if (expiredJob == null) {
       return false;
@@ -7040,10 +7043,15 @@ class GenerationJobManagerClass {
   ): Promise<void> {
     try {
       await this.approvalExpiredHandler?.(streamId, job);
+      // Success: the durable host action is settled. Clear its pending marker, fenced to
+      // this exact generation so a replacement at the same streamId keeps its own state.
+      // A no-op handler (or none) clears harmlessly, so non-scheduled jobs never linger.
+      await this.jobStore.clearTerminalHostAction?.(streamId, job.createdAt);
     } catch (err) {
-      // Expiry itself already won its exact CAS. Keep terminal notification moving;
-      // replica relays may deliver this idempotent hook again, and host-owned durable
-      // evidence remains available to that host's own recovery path.
+      // Expiry itself already won its exact CAS. Keep terminal notification moving; the
+      // `terminalHostActionPending` marker stays set so a later cleanup pass (this or
+      // another replica, across restarts) re-enumerates the job and retries this
+      // idempotent hook until it acknowledges.
       logger.error(`[GenerationJobManager] Approval-expiry host hook failed: ${streamId}`, err);
     }
   }
@@ -7102,6 +7110,19 @@ class GenerationJobManagerClass {
         logger.error('[GenerationJobManager] Failed to enumerate pending approvals', err);
       }
     }
+    // Also scan terminal jobs that still owe a host lifecycle hook. An expired approval is
+    // no longer in the requires_action index, so without this a failed host hook (e.g. the
+    // schedule outcome write) would never be retried on a replica or after a restart that
+    // has no local runtime — the exact clustered-entrypoint gap, which runs no reconciler.
+    if (this.jobStore.getTerminalHostActionJobs) {
+      try {
+        for (const job of await this.jobStore.getTerminalHostActionJobs()) {
+          candidates.set(job.streamId, job);
+        }
+      } catch (err) {
+        logger.error('[GenerationJobManager] Failed to enumerate pending host actions', err);
+      }
+    }
     const streamIds = new Set([...this.runtimeState.keys(), ...candidates.keys()]);
     for (const streamId of streamIds) {
       let job: SerializableJobData | null;
@@ -7123,7 +7144,13 @@ class GenerationJobManagerClass {
       // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
       const runtime = this.runtimeState.get(streamId);
       if (job?.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
-        await this.runApprovalExpiredHandler(streamId, job);
+        // Retry the durable host hook ONLY while its marker is unacknowledged, so a
+        // successful ack prevents duplicate work. The terminal SSE relay below is
+        // separately idempotent (emitError's errorEvent flag) and always runs so a
+        // loser-replica subscriber still gets a terminal event.
+        if (job.terminalHostActionPending === true) {
+          await this.runApprovalExpiredHandler(streamId, job);
+        }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
         changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
         continue;

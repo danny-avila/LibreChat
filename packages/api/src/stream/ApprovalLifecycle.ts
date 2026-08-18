@@ -391,6 +391,7 @@ export class ApprovalLifecycle {
     streamId: string,
     expectedActionId?: string,
     expectedCreatedAt?: number,
+    options?: { markHostActionPending?: boolean },
   ): Promise<SerializableJobData | null> {
     const job = await this.waitForPausePersistence(streamId, expectedCreatedAt);
     if (
@@ -410,8 +411,15 @@ export class ApprovalLifecycle {
       to: 'aborted',
       clear: ['pendingAction', 'pendingActionId'],
       // completedAt lets the stores' terminal-cleanup reclaim the job; without
-      // it an expired approval lingers in the in-memory map indefinitely.
-      patch: { error: 'Approval expired before a decision was made', completedAt: Date.now() },
+      // it an expired approval lingers in the in-memory map indefinitely. When a host
+      // action is owed, `terminalHostActionPending` retains the job (and keeps it
+      // enumerable) until the adapter acknowledges — set ATOMICALLY here so a crash right
+      // after this CAS still leaves the durable retry evidence.
+      patch: {
+        error: 'Approval expired before a decision was made',
+        completedAt: Date.now(),
+        ...(options?.markHostActionPending === true && { terminalHostActionPending: true }),
+      },
       expectActionId: expectedActionId,
       expectCreatedAt: createdAt,
     });
