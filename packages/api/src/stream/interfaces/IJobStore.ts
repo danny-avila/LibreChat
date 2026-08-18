@@ -140,6 +140,13 @@ export interface SerializableJobData {
    * no action clears it immediately on its no-op success, so nothing accumulates.
    */
   terminalHostActionPending?: boolean;
+  /**
+   * Last time a cleanup pass enumerated this pending host action for retry. Retention is
+   * measured from this rather than `completedAt`, so evidence survives as long as some
+   * replica is still actively retrying the hook (e.g. Mongo unreachable for days), while a
+   * deployment that stops retrying entirely still lets it age out instead of leaking.
+   */
+  terminalHostActionRefreshedAt?: number;
 
   /** Serialized final event for replay */
   finalEvent?: string;

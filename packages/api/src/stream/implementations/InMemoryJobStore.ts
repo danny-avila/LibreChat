@@ -1024,8 +1024,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
   async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
     const pending: SerializableJobData[] = [];
+    const now = Date.now();
     for (const job of this.jobs.values()) {
       if (job.terminalHostActionPending === true) {
+        // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
+        // dependency that is unreachable for longer than the retention window.
+        job.terminalHostActionRefreshedAt = now;
         pending.push(job);
       }
     }
@@ -1110,8 +1114,8 @@ export class InMemoryJobStore implements IJobStoreV2 {
       // but only within a bounded window, so a permanently-failing hook cannot leak.
       const hostActionHeld =
         job.terminalHostActionPending === true &&
-        job.completedAt != null &&
-        now - job.completedAt <= HOST_ACTION_RETENTION_MS;
+        now - (job.terminalHostActionRefreshedAt ?? job.completedAt ?? 0) <=
+          HOST_ACTION_RETENTION_MS;
       if (
         isFinished &&
         job.completedAt &&

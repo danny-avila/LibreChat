@@ -1085,6 +1085,27 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.getJobStatus(streamId)).toBe('aborted');
     });
 
+    test('retention is refreshed on each retry so a long host outage keeps the evidence', async () => {
+      const streamId = 'stream-host-refresh';
+      await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('mongo down')));
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      const before = (await jobStore.getJob(streamId))?.terminalHostActionRefreshedAt;
+
+      // A later cleanup pass re-enumerates it for retry; the hook still fails.
+      await sweep(manager);
+
+      const after = await jobStore.getJob(streamId);
+      // Still pending, and its retention basis moved forward — so the bounded retention
+      // window measures from the LAST retry, not from when the approval expired.
+      expect(after?.terminalHostActionPending).toBe(true);
+      expect(after?.terminalHostActionRefreshedAt).toEqual(expect.any(Number));
+      if (before != null) {
+        expect(after!.terminalHostActionRefreshedAt!).toBeGreaterThanOrEqual(before);
+      }
+    });
+
     test('a non-scheduled job with a no-op host hook accumulates no marker', async () => {
       const streamId = 'stream-host-nonsched';
       await manager.createJob(streamId, 'user-1'); // no schedule metadata

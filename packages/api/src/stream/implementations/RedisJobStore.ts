@@ -2722,6 +2722,16 @@ export class RedisJobStore implements IJobStoreV2 {
     if (stale.length > 0) {
       await this.redis.srem(KEYS.terminalHostActionJobs, ...stale).catch(() => undefined);
     }
+    // Enumerating IS the retry attempt: extend each pending job's TTL so unacknowledged
+    // host-action evidence outlives a host dependency (e.g. Mongo) that stays unreachable
+    // longer than the retention window. A deployment that stops sweeping lets it age out.
+    if (pending.length > 0 && this.ttl.requiresAction > 0) {
+      await Promise.all(
+        pending.map((job) =>
+          this.redis.expire(KEYS.job(job.streamId), this.ttl.requiresAction).catch(() => undefined),
+        ),
+      );
+    }
     return pending;
   }
 
