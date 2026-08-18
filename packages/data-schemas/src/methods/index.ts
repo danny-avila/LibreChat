@@ -123,6 +123,8 @@ import {
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
+/* Insights */
+import { createInsightsMethods, type InsightsMethods } from './insights';
 
 export {
   RoleConflictError,
@@ -193,7 +195,8 @@ export type AllMethods = UserMethods &
   ScheduleMethods &
   AgentMethods &
   ConfigMethods &
-  MCPAuthorityMethods;
+  MCPAuthorityMethods &
+  InsightsMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -335,6 +338,8 @@ export function createMethods(
     ...createConfigMethods(mongoose),
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
+    /* Insights */
+    ...createInsightsMethods(mongoose),
   };
 }
 
@@ -394,4 +399,5 @@ export type {
   MCPAuthorityMethodHooks,
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
+  InsightsMethods,
 };
