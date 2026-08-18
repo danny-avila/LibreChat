@@ -11,6 +11,7 @@ const {
   findShadowedServerNames,
   isNormalizationSensitiveName,
   buildInlineMemoryTool,
+  createSoraVideoTool,
   getCodeApiAuthHeaders,
   buildImageToolContext,
   SET_MEMORY_TOOL_NAME,
@@ -201,6 +202,11 @@ const loadTools = async ({
   };
 
   const customConstructors = {
+    video_gen_oai: async () => {
+      const authFields = getAuthFields('video_gen_oai');
+      const authValues = await loadAuthValues({ userId: user, authFields });
+      return [createSoraVideoTool({ ...authValues, isAgent: !!agent })];
+    },
     image_gen_oai: async (_toolContextMap, dynamicToolContextMap) => {
       const authFields = getAuthFields('image_gen_oai');
       const authValues = await loadAuthValues({ userId: user, authFields });

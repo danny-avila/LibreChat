@@ -67,6 +67,14 @@ const getImageEditPromptDescription = () => {
   return process.env.IMAGE_EDIT_OAI_PROMPT_DESCRIPTION || DEFAULT_IMAGE_EDIT_PROMPT_DESCRIPTION;
 };
 
+const DEFAULT_VIDEO_GEN_DESCRIPTION = `Generates a short video from a natural-language description using an Azure OpenAI Sora deployment.
+
+Use \`video_gen_oai\` when the user explicitly asks to create or generate a video. Do not use it for image generation.`;
+
+const getVideoGenDescription = () => {
+  return process.env.VIDEO_GEN_OAI_DESCRIPTION || DEFAULT_VIDEO_GEN_DESCRIPTION;
+};
+
 const imageGenOaiJsonSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -131,6 +139,34 @@ Guidelines:
   required: ['image_ids', 'prompt'],
 };
 
+const videoGenOaiJsonSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      maxLength: 32000,
+      description:
+        'Describe the desired scene, subjects, action, camera movement, lighting, and visual style.',
+    },
+    width: {
+      type: 'integer',
+      enum: [480, 720, 1080, 1920],
+      description: 'Output width in pixels. Defaults to 1920.',
+    },
+    height: {
+      type: 'integer',
+      enum: [480, 720, 1080, 1920],
+      description: 'Output height in pixels. Defaults to 1080.',
+    },
+    n_seconds: {
+      type: 'integer',
+      enum: [5, 10, 15, 20],
+      description: 'Video duration in seconds. Defaults to 5.',
+    },
+  },
+  required: ['prompt'],
+};
+
 export const oaiToolkit: {
   readonly image_gen_oai: {
     readonly name: 'image_gen_oai';
@@ -140,6 +176,12 @@ export const oaiToolkit: {
   };
   readonly image_edit_oai: {
     readonly name: 'image_edit_oai';
+    readonly description: string;
+    readonly schema: ExtendedJsonSchema;
+    readonly responseFormat: 'content_and_artifact';
+  };
+  readonly video_gen_oai: {
+    readonly name: 'video_gen_oai';
     readonly description: string;
     readonly schema: ExtendedJsonSchema;
     readonly responseFormat: 'content_and_artifact';
@@ -155,6 +197,12 @@ export const oaiToolkit: {
     name: 'image_edit_oai' as const,
     description: getImageEditDescription(),
     schema: imageEditOaiJsonSchema,
+    responseFormat: 'content_and_artifact' as const,
+  },
+  video_gen_oai: {
+    name: 'video_gen_oai' as const,
+    description: getVideoGenDescription(),
+    schema: videoGenOaiJsonSchema,
     responseFormat: 'content_and_artifact' as const,
   },
 } as const;

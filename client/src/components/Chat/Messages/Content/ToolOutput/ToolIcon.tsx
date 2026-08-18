@@ -3,6 +3,7 @@ import {
   Terminal,
   Globe,
   ImageIcon,
+  VideoIcon,
   ArrowRightLeft,
   FileSearch,
   FileText,
@@ -23,6 +24,7 @@ export type ToolIconType =
   | 'execute_code'
   | 'web_search'
   | 'image_gen'
+  | 'video_gen'
   | 'agent_handoff'
   | 'file_search'
   | 'skill'
@@ -37,6 +39,7 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   execute_code: Terminal,
   web_search: Globe,
   image_gen: ImageIcon,
+  video_gen: VideoIcon,
   agent_handoff: ArrowRightLeft,
   file_search: FileSearch,
   skill: ScrollText,
@@ -62,6 +65,9 @@ export function getToolIconType(name: string): ToolIconType {
   }
   if (name === 'image_gen_oai' || name === 'image_edit_oai' || name === 'gemini_image_gen') {
     return 'image_gen';
+  }
+  if (name === 'video_gen_oai') {
+    return 'video_gen';
   }
   if (name === 'file_search' || name === 'retrieval') {
     return 'file_search';

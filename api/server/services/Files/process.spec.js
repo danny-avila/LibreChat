@@ -149,11 +149,13 @@ const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
+const { determineFileType } = require('~/server/utils');
 const db = require('~/models');
 const {
   processAgentFileUpload,
   processDeleteRequest,
   processFileURL,
+  saveBase64File,
   sweepExpiredFiles,
   startExpiredFileSweep,
 } = require('./process');
@@ -213,6 +215,80 @@ const setupStoredFileUpload = (result = {}) => {
   getStrategyFunctions.mockReturnValue({ handleFileUpload });
   return handleFileUpload;
 };
+
+describe('saveBase64File', () => {
+  it('stores generated MP4 content with video metadata', async () => {
+    const saveBuffer = jest.fn().mockResolvedValue('/uploads/generated-video.mp4');
+    getStrategyFunctions.mockReturnValue({ saveBuffer });
+    determineFileType.mockResolvedValue({ ext: 'mp4', mime: 'video/mp4' });
+    const mp4 = Buffer.from('000000186674797069736f6d0000020069736f6d69736f32', 'hex');
+
+    await saveBase64File(`data:video/mp4;base64,${mp4.toString('base64')}`, {
+      req: makeReq(),
+      file_id: 'video-id',
+      filename: 'video_gen_oai_video',
+      context: FileContext.video_generation,
+    });
+
+    expect(saveBuffer).toHaveBeenCalledWith({
+      userId: 'user-123',
+      fileName: 'video-id-video_gen_oai_video.mp4',
+      buffer: mp4,
+      tenantId: 'tenant-a',
+    });
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        file_id: 'video-id',
+        type: 'video/mp4',
+        bytes: mp4.length,
+        context: FileContext.video_generation,
+        filepath: '/uploads/generated-video.mp4',
+      }),
+      true,
+    );
+  });
+
+  it.each([
+    ['a non-video MIME type', 'data:text/html;base64,PGh0bWw+'],
+    ['bytes that are not an MP4', 'data:video/mp4;base64,PGh0bWw+'],
+  ])('rejects %s before writing to storage', async (_label, url) => {
+    const saveBuffer = jest.fn();
+    getStrategyFunctions.mockReturnValue({ saveBuffer });
+    determineFileType.mockResolvedValue(null);
+
+    await expect(
+      saveBase64File(url, {
+        req: makeReq(),
+        filename: 'generated_video',
+        context: FileContext.video_generation,
+      }),
+    ).rejects.toThrow('Generated video');
+    expect(saveBuffer).not.toHaveBeenCalled();
+  });
+
+  it('rejects generated videos above the configured size limit', async () => {
+    const previousLimit = process.env.VIDEO_GEN_OAI_MAX_SIZE_BYTES;
+    process.env.VIDEO_GEN_OAI_MAX_SIZE_BYTES = '8';
+    determineFileType.mockClear();
+    const mp4 = Buffer.from('000000186674797069736f6d0000020069736f6d69736f32', 'hex');
+    try {
+      await expect(
+        saveBase64File(`data:video/mp4;base64,${mp4.toString('base64')}`, {
+          req: makeReq(),
+          filename: 'generated_video',
+          context: FileContext.video_generation,
+        }),
+      ).rejects.toThrow('size limit');
+      expect(determineFileType).not.toHaveBeenCalled();
+    } finally {
+      if (previousLimit == null) {
+        delete process.env.VIDEO_GEN_OAI_MAX_SIZE_BYTES;
+      } else {
+        process.env.VIDEO_GEN_OAI_MAX_SIZE_BYTES = previousLimit;
+      }
+    }
+  });
+});
 
 describe('processAgentFileUpload', () => {
   beforeEach(() => {
