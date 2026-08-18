@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { extractEnvVariable } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
@@ -151,16 +152,29 @@ export const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messag
  * literal is diagnosable) and `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}`, which is
  * resolved asynchronously via the OBO flow outside this pipeline.
  */
+const OPENID_PLACEHOLDER_NAMES = `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`;
+
 const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
   [
     `LIBRECHAT_USER_(?:${ALLOWED_USER_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
     `LIBRECHAT_BODY_(?:${ALLOWED_BODY_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
-    `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`,
+    OPENID_PLACEHOLDER_NAMES,
   ]
     .map((names) => `\\{\\{(?:${names})\\}\\}`)
     .join('|'),
   'g',
 );
+
+/**
+ * The subset of OpenID placeholders that cannot resolve without a usable token
+ * set. Identity metadata (`USER_ID`, `USER_EMAIL`, `USER_NAME`) comes from the
+ * user document and `EXPIRES_AT` is only ever a hint, so those must keep their
+ * pre-existing literal-then-strip behaviour when the token set is invalid
+ * rather than raising re-auth. Non-global so `exec` stays stateless, and
+ * unknown names are excluded so a typo stays literal and diagnosable.
+ */
+const OPENID_CREDENTIAL_PLACEHOLDER_PATTERN =
+  /\{\{LIBRECHAT_OPENID_(?:ACCESS_TOKEN|ID_TOKEN|TOKEN)\}\}/;
 
 /**
  * Replaces resolvable-but-unresolved placeholders with an empty string so
@@ -320,6 +334,16 @@ function processSingleValue({
   const openidTokenInfo = extractOpenIDTokenInfo(user);
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
     value = processOpenIDPlaceholders(value, openidTokenInfo);
+  } else if (openidTokenInfo) {
+    const unresolvable = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(value);
+    if (unresolvable) {
+      logger.warn(
+        `OpenID token is expired or unavailable; cannot resolve ${unresolvable[0]} for the current request`,
+      );
+      throw new Error(
+        `OpenID token is expired or unavailable; re-authentication is required to resolve ${unresolvable[0]}`,
+      );
+    }
   }
 
   if (body) {

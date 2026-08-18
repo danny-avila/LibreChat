@@ -162,6 +162,53 @@ describe('OpenID Token Utilities', () => {
       expect(result?.expiresAt).toBe(nowSeconds + 1800);
     });
 
+    it('should treat an ID token exp of 0 as present and expired', () => {
+      const idTokenPayload = Buffer.from(JSON.stringify({ sub: 'oidc-sub-456', exp: 0 })).toString(
+        'base64',
+      );
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'access-token-value',
+          id_token: `header.${idTokenPayload}.signature`,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.idTokenExpiresAt).toBe(0);
+      expect(result?.expiresAt).toBe(0);
+      expect(isOpenIDTokenValid(result)).toBe(false);
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', result)).toThrow(
+        /re-authentication is required/,
+      );
+    });
+
+    it('should ignore a non-numeric ID token exp', () => {
+      const idTokenPayload = Buffer.from(
+        JSON.stringify({ sub: 'oidc-sub-456', exp: '1700000000' }),
+      ).toString('base64');
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'access-token-value',
+          id_token: `header.${idTokenPayload}.signature`,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.idTokenExpiresAt).toBeUndefined();
+      expect(result?.expiresAt).toBeUndefined();
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', result)).toThrow(
+        /re-authentication is required/,
+      );
+    });
+
     it('should still enrich identity fields from ID token claims when expires_at is stored', () => {
       const nowSeconds = Math.floor(Date.now() / 1000);
       const idTokenPayload = Buffer.from(
@@ -246,7 +293,7 @@ describe('OpenID Token Utilities', () => {
       expect(isOpenIDTokenValid(tokenInfo)).toBe(false);
     });
 
-    it('should return true when token is just about to expire (within 1 second)', () => {
+    it('should return false when token expires within the expiry buffer', () => {
       const almostExpiredTimestamp = Math.floor(Date.now() / 1000) + 1;
       const tokenInfo = {
         accessToken: 'access-token-value',
@@ -254,7 +301,53 @@ describe('OpenID Token Utilities', () => {
         userId: 'oidc-sub-456',
       };
 
+      expect(isOpenIDTokenValid(tokenInfo)).toBe(false);
+    });
+
+    it('should return true when token expires beyond the expiry buffer', () => {
+      const beyondBufferTimestamp = Math.floor(Date.now() / 1000) + 120;
+      const tokenInfo = {
+        accessToken: 'access-token-value',
+        expiresAt: beyondBufferTimestamp,
+        userId: 'oidc-sub-456',
+      };
+
       expect(isOpenIDTokenValid(tokenInfo)).toBe(true);
+    });
+
+    it('should pin the buffer boundary at 30 seconds', () => {
+      const nowMs = 1_700_000_000_000;
+      const nowSeconds = Math.floor(nowMs / 1000);
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(nowMs);
+
+      try {
+        expect(
+          isOpenIDTokenValid({
+            accessToken: 'access-token-value',
+            expiresAt: nowSeconds + 29,
+            userId: 'oidc-sub-456',
+          }),
+        ).toBe(false);
+        expect(
+          isOpenIDTokenValid({
+            accessToken: 'access-token-value',
+            expiresAt: nowSeconds + 31,
+            userId: 'oidc-sub-456',
+          }),
+        ).toBe(true);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it('should return false when expiresAt is 0', () => {
+      const tokenInfo = {
+        accessToken: 'access-token-value',
+        expiresAt: 0,
+        userId: 'oidc-sub-456',
+      };
+
+      expect(isOpenIDTokenValid(tokenInfo)).toBe(false);
     });
   });
 
@@ -268,9 +361,9 @@ describe('OpenID Token Utilities', () => {
         idTokenExpiresAt: nowSeconds - 3600,
       };
 
-      const result = processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo);
-
-      expect(result).toBe('');
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo)).toThrow(
+        /re-authentication is required/,
+      );
     });
 
     it('should substitute a current ID token for the ID token placeholder', () => {
@@ -314,6 +407,7 @@ describe('OpenID Token Utilities', () => {
 
     it('should replace LIBRECHAT_OPENID_ID_TOKEN with id token', () => {
       const tokenInfo = {
+        idTokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
         idToken: 'id-token-value',
         userId: 'oidc-sub-456',
       };
@@ -363,6 +457,7 @@ describe('OpenID Token Utilities', () => {
       const tokenInfo = {
         accessToken: 'access-token-value',
         idToken: 'id-token-value',
+        idTokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
         userId: 'oidc-sub-456',
         userEmail: 'test@example.com',
       };
@@ -379,21 +474,43 @@ describe('OpenID Token Utilities', () => {
     it('should replace empty string when token field is undefined', () => {
       const tokenInfo = {
         accessToken: undefined,
-        idToken: undefined,
         userId: 'oidc-sub-456',
       };
 
-      const input =
-        'Access: {{LIBRECHAT_OPENID_TOKEN}}, ID: {{LIBRECHAT_OPENID_ID_TOKEN}}, User: {{LIBRECHAT_OPENID_USER_ID}}';
+      const input = 'Access: {{LIBRECHAT_OPENID_TOKEN}}, User: {{LIBRECHAT_OPENID_USER_ID}}';
       const result = processOpenIDPlaceholders(input, tokenInfo);
 
-      expect(result).toBe('Access: , ID: , User: oidc-sub-456');
+      expect(result).toBe('Access: , User: oidc-sub-456');
+    });
+
+    it('should throw for the ID token placeholder when no ID token is stored', () => {
+      const tokenInfo = {
+        accessToken: 'access-token-value',
+        userId: 'oidc-sub-456',
+      };
+
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo)).toThrow(
+        /re-authentication is required/,
+      );
+    });
+
+    it('should throw for the ID token placeholder when the ID token has no decodable exp', () => {
+      const tokenInfo = {
+        accessToken: 'access-token-value',
+        idToken: 'malformed-id-token',
+        userId: 'oidc-sub-456',
+      };
+
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', tokenInfo)).toThrow(
+        /re-authentication is required/,
+      );
     });
 
     it('should handle all placeholder types in one value', () => {
       const tokenInfo = {
         accessToken: 'access-token-value',
         idToken: 'id-token-value',
+        idTokenExpiresAt: Math.floor(Date.now() / 1000) + 3600,
         userId: 'oidc-sub-456',
         userEmail: 'test@example.com',
         userName: 'Test User',
@@ -470,11 +587,10 @@ describe('OpenID Token Utilities', () => {
         userName: undefined,
       };
 
-      const input =
-        'Access: {{LIBRECHAT_OPENID_TOKEN}}, ID: {{LIBRECHAT_OPENID_ID_TOKEN}}, User: {{LIBRECHAT_OPENID_USER_ID}}';
+      const input = 'Access: {{LIBRECHAT_OPENID_TOKEN}}, User: {{LIBRECHAT_OPENID_USER_ID}}';
       const result = processOpenIDPlaceholders(input, tokenInfo);
 
-      expect(result).toBe('Access: , ID: , User: oidc-sub-456');
+      expect(result).toBe('Access: , User: oidc-sub-456');
     });
 
     it('should return original value when tokenInfo is null', () => {
@@ -529,6 +645,11 @@ describe('OpenID Token Utilities', () => {
     });
 
     it('should resolve LIBRECHAT_OPENID_ID_TOKEN and LIBRECHAT_OPENID_ACCESS_TOKEN to different values', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const idTokenPayload = Buffer.from(
+        JSON.stringify({ sub: 'oidc-sub-456', exp: nowSeconds + 3600 }),
+      ).toString('base64');
+      const myIdToken = `header.${idTokenPayload}.signature`;
       const user: Partial<IUser> = {
         id: 'user-123',
         provider: 'openid',
@@ -537,22 +658,22 @@ describe('OpenID Token Utilities', () => {
         name: 'Test User',
         federatedTokens: {
           access_token: 'my-access-token',
-          id_token: 'my-id-token',
+          id_token: myIdToken,
           refresh_token: 'my-refresh-token',
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          expires_at: nowSeconds + 3600,
         },
       };
 
       const tokenInfo = extractOpenIDTokenInfo(user);
       expect(tokenInfo).not.toBeNull();
       expect(tokenInfo!.accessToken).toBe('my-access-token');
-      expect(tokenInfo!.idToken).toBe('my-id-token');
+      expect(tokenInfo!.idToken).toBe(myIdToken);
       expect(tokenInfo!.accessToken).not.toBe(tokenInfo!.idToken);
 
       const input = 'ACCESS={{LIBRECHAT_OPENID_ACCESS_TOKEN}}, ID={{LIBRECHAT_OPENID_ID_TOKEN}}';
       const result = processOpenIDPlaceholders(input, tokenInfo!);
 
-      expect(result).toBe('ACCESS=my-access-token, ID=my-id-token');
+      expect(result).toBe(`ACCESS=my-access-token, ID=${myIdToken}`);
       // Verify they are not the same value (the reported bug)
       expect(result).not.toBe('ACCESS=my-access-token, ID=my-access-token');
     });

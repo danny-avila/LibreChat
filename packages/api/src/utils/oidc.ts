@@ -41,6 +41,9 @@ export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
  */
 export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
 
+/** Mirrors OPENID_REUSE_EXPIRY_BUFFER_SECONDS: a token within the buffer would expire in transit and 401 downstream */
+export const OPENID_EXPIRY_BUFFER_SECONDS = 30;
+
 export function extractOpenIDTokenInfo(
   user: Partial<IUser> | null | undefined,
 ): OpenIDTokenInfo | null {
@@ -86,11 +89,13 @@ export function extractOpenIDTokenInfo(
         );
         tokenInfo.claims = payload;
 
+        /** Cached profile claims, not an authentication assertion: stale claims stay usable for identity fields even when the ID token itself is expired */
         if (payload.sub) tokenInfo.userId = payload.sub;
         if (payload.email) tokenInfo.userEmail = payload.email;
         if (payload.name) tokenInfo.userName = payload.name;
-        if (payload.exp) {
+        if (typeof payload.exp === 'number') {
           tokenInfo.idTokenExpiresAt = payload.exp;
+          /** Heuristic, not spec-derived: RFC 6749 leaves the default lifetime to the AS when expires_in is omitted. The ID token exp only approximates the access token expiry when no expires_at was stored. */
           if (tokenInfo.expiresAt == null) {
             tokenInfo.expiresAt = payload.exp;
           }
@@ -107,11 +112,12 @@ export function extractOpenIDTokenInfo(
   }
 }
 
+/** Advisory freshness check, not a security boundary: the ID token signature is not verified here. `exp` is REQUIRED in an ID token, so a missing value means the token is malformed or unparseable and fails closed. */
 function isIdTokenCurrent(tokenInfo: OpenIDTokenInfo): boolean {
-  if (!tokenInfo.idTokenExpiresAt) {
-    return true;
+  if (tokenInfo.idTokenExpiresAt == null) {
+    return false;
   }
-  return Math.floor(Date.now() / 1000) < tokenInfo.idTokenExpiresAt;
+  return Math.floor(Date.now() / 1000) < tokenInfo.idTokenExpiresAt - OPENID_EXPIRY_BUFFER_SECONDS;
 }
 
 export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
@@ -119,9 +125,9 @@ export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
     return false;
   }
 
-  if (tokenInfo.expiresAt) {
+  if (tokenInfo.expiresAt != null) {
     const now = Math.floor(Date.now() / 1000);
-    if (now >= tokenInfo.expiresAt) {
+    if (now >= tokenInfo.expiresAt - OPENID_EXPIRY_BUFFER_SECONDS) {
       logger.warn('OpenID token has expired');
       return false;
     }
@@ -153,7 +159,13 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.accessToken || '';
         break;
       case 'ID_TOKEN':
-        replacementValue = isIdTokenCurrent(tokenInfo) ? tokenInfo.idToken || '' : '';
+        if (!tokenInfo.idToken || !isIdTokenCurrent(tokenInfo)) {
+          logger.warn('OpenID ID token is expired or unavailable; re-authentication is required');
+          throw new Error(
+            'OpenID ID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          );
+        }
+        replacementValue = tokenInfo.idToken;
         break;
       case 'USER_ID':
         replacementValue = tokenInfo.userId || '';
@@ -165,6 +177,7 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.userName || '';
         break;
       case 'EXPIRES_AT':
+        /** Access token expiry when a token set expires_at was stored, ID token exp otherwise (see the fallback above) */
         replacementValue = tokenInfo.expiresAt ? String(tokenInfo.expiresAt) : '';
         break;
     }
