@@ -88,7 +88,9 @@ export function extractOpenIDTokenInfo(
         if (payload.sub) tokenInfo.userId = payload.sub;
         if (payload.email) tokenInfo.userEmail = payload.email;
         if (payload.name) tokenInfo.userName = payload.name;
-        if (payload.exp) tokenInfo.expiresAt = payload.exp;
+        if (payload.exp && tokenInfo.expiresAt == null) {
+          tokenInfo.expiresAt = payload.exp;
+        }
       } catch (jwtError) {
         logger.warn('Could not parse ID token claims:', jwtError);
       }

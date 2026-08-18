@@ -1,5 +1,5 @@
-import { extractOpenIDTokenInfo, isOpenIDTokenValid, processOpenIDPlaceholders } from './oidc';
 import type { IUser } from '@librechat/data-schemas';
+import { extractOpenIDTokenInfo, isOpenIDTokenValid, processOpenIDPlaceholders } from './oidc';
 
 describe('OpenID Token Utilities', () => {
   describe('extractOpenIDTokenInfo', () => {
@@ -115,6 +115,79 @@ describe('OpenID Token Utilities', () => {
       const result = extractOpenIDTokenInfo(user);
 
       expect(result?.userId).toBe('user-123');
+    });
+
+    it('should keep the stored access token expiry when the ID token carries an older exp', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const staleIdTokenPayload = Buffer.from(
+        JSON.stringify({ sub: 'oidc-sub-456', exp: nowSeconds - 3600 }),
+      ).toString('base64');
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'fresh-access-token',
+          id_token: `header.${staleIdTokenPayload}.signature`,
+          expires_at: nowSeconds + 3600,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.expiresAt).toBe(nowSeconds + 3600);
+      expect(isOpenIDTokenValid(result)).toBe(true);
+      expect(processOpenIDPlaceholders('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}', result)).toBe(
+        'Bearer fresh-access-token',
+      );
+    });
+
+    it('should use the ID token exp when no expires_at is stored', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const idTokenPayload = Buffer.from(
+        JSON.stringify({ sub: 'oidc-sub-456', exp: nowSeconds + 1800 }),
+      ).toString('base64');
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'access-token-value',
+          id_token: `header.${idTokenPayload}.signature`,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.expiresAt).toBe(nowSeconds + 1800);
+    });
+
+    it('should still enrich identity fields from ID token claims when expires_at is stored', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const idTokenPayload = Buffer.from(
+        JSON.stringify({
+          sub: 'claims-sub',
+          email: 'claims@example.com',
+          name: 'Claims Name',
+          exp: nowSeconds - 3600,
+        }),
+      ).toString('base64');
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'access-token-value',
+          id_token: `header.${idTokenPayload}.signature`,
+          expires_at: nowSeconds + 3600,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.userId).toBe('claims-sub');
+      expect(result?.userEmail).toBe('claims@example.com');
+      expect(result?.userName).toBe('Claims Name');
     });
   });
 
