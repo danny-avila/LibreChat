@@ -15,10 +15,10 @@ import {
 import type { DataTableProps, ProcessedDataRow } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
 import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
-import useRemScale from '~/hooks/useRemScale';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
+import useRemScale from '~/hooks/useRemScale';
 import { cn, logger } from '~/utils';
 import { Button } from '../Button';
 import { Label } from '../Label';

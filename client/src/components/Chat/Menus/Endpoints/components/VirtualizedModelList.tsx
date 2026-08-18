@@ -1,7 +1,7 @@
-import { useRemScale } from '@librechat/client';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { List } from 'react-virtualized';
 import * as Ariakit from '@ariakit/react';
+import { useRemScale } from '@librechat/client';
 import type { ListRowProps } from 'react-virtualized';
 import type { Endpoint } from '~/common';
 import { EndpointModelItem } from './EndpointModelItem';
