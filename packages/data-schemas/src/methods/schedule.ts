@@ -1713,13 +1713,42 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     await tenantSafeBulkWrite(Schedule(), ops as AnyBulkWriteOperation[], { ordered: false });
   }
 
+  const RESTORE_ATTEMPTS = 3;
+
   /**
    * Reverses {@link suspendUserSchedulesForDeletion} when a deletion attempt is cancelled.
    * Restores enabled/next-run from the snapshot and clears the suspension — but ONLY for
    * rows still carrying this exact attempt's token and not independently soft-deleted, so a
    * schedule the owner deleted (or a newer attempt re-suspended) is never resurrected.
+   *
+   * RETRIED, because its callers cannot retry it later. A cancelled deletion restores while
+   * the user-deletion fence is still armed and then releases that fence; once released,
+   * nothing re-drives this, and a single transient failure would strand the owner's live
+   * account with silently disabled, next-run-less schedules. Retrying is safe: every attempt
+   * re-reads only the rows STILL carrying this token, so a partially-applied unordered write
+   * converges on exactly the stragglers, and a fully-applied one finds nothing and returns.
+   * Throws the last failure so callers still surface it.
    */
   async function restoreUserSchedulesFromDeletion(
+    userId: string | Types.ObjectId,
+    token: string,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= RESTORE_ATTEMPTS; attempt++) {
+      try {
+        await restoreSuspendedBatch(userId, token);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < RESTORE_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  async function restoreSuspendedBatch(
     userId: string | Types.ObjectId,
     token: string,
   ): Promise<void> {

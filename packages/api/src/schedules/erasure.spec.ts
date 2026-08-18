@@ -29,6 +29,7 @@ async function sweepOnce(options: {
     methods: methods as unknown as ScheduleMethods,
     getJobStatus: jest.fn(async () => options.job ?? null),
     getTriggerDelivery: jest.fn(async () => null),
+    clearReconciledJob: jest.fn(async () => undefined),
     canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob,
   });
   await jest.advanceTimersByTimeAsync(5 * 60_000);
@@ -119,16 +120,18 @@ describe('topology-safe dead-delivery convergence', () => {
       ]),
     };
     const getTriggerDelivery = jest.fn(async () => options.delivery ?? null);
+    const clearReconciledJob = jest.fn(async () => undefined);
     const sweep = startScheduleErasureSweep({
       methods: methods as unknown as ScheduleMethods,
       getJobStatus: jest.fn(async () => options.job ?? null),
       getTriggerDelivery: getTriggerDelivery as never,
+      clearReconciledJob,
       // Defaults to the UNSAFE topology to prove this path never depends on it.
       canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob ?? false,
     });
     await jest.advanceTimersByTimeAsync(5 * 60_000);
     sweep.stop();
-    return { methods, getTriggerDelivery };
+    return { methods, getTriggerDelivery, clearReconciledJob };
   }
 
   it('settles a dead delivery as error even in an unsafe topology (positive evidence)', async () => {
@@ -173,6 +176,105 @@ describe('topology-safe dead-delivery convergence', () => {
     expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   });
 
+  /**
+   * The gap this closes: a generation that FINISHED but whose owner exhausted every Mongo
+   * outcome retry leaves a preserved terminal job as the only evidence. The armed engine's
+   * reconciler replays that; the clustered entrypoint arms no engine, so before this the run
+   * kept its `started` row — and its global capacity slot — until the job store expired it.
+   */
+  it('settles a live schedule from its retained terminal job, then releases the evidence', async () => {
+    const { methods, clearReconciledJob } = await convergeOnce({
+      job: {
+        status: 'complete',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduleId: 'schedule-1',
+        status: 'success',
+        conversationId: 'conversation-1',
+      }),
+    );
+    expect(clearReconciledJob).toHaveBeenCalledWith('conversation-1', {
+      scheduleId: 'schedule-1',
+      scheduledFor: new Date('2026-08-17T12:00:00.000Z'),
+    });
+  });
+
+  /** Presence of an identity-matched job is positive evidence in EVERY topology, so this
+   *  must not depend on the owner-death inference the unsafe fallback refuses. */
+  it('honors the owner-stamped outcome over the generic terminal status', async () => {
+    const { methods } = await convergeOnce({
+      job: {
+        status: 'complete',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        scheduleOutcome: 'skipped_balance',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'skipped_balance' }),
+    );
+  });
+
+  it('carries the stamped failure reason from a retained error job', async () => {
+    const { methods } = await convergeOnce({
+      job: {
+        status: 'error',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        scheduleOutcomeError: 'provider exploded',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', error: 'provider exploded' }),
+    );
+  });
+
+  /** A pre-start abort reserves a conversationId but never creates the conversation, so
+   *  projecting it would point the schedule card at a chat that does not exist. */
+  it('clears the reserved conversationId when the generation never emitted its created event', async () => {
+    const { methods } = await convergeOnce({
+      job: {
+        status: 'aborted',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        createdEventEmitted: false,
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'interrupted', clearConversationId: true }),
+    );
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.not.objectContaining({ conversationId: 'conversation-1' }),
+    );
+  });
+
+  /** A terminal job belonging to a REPLACEMENT turn (same conversationId, no scheduled
+   *  identity) must never finalize this run, nor have its evidence deleted for it. */
+  it("ignores a terminal job that lost this occurrence's identity", async () => {
+    const { methods, clearReconciledJob } = await convergeOnce({
+      job: { status: 'complete' } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+    expect(clearReconciledJob).not.toHaveBeenCalled();
+  });
+
+  it('never settles a terminal job while its abort is still in flight', async () => {
+    const { methods, clearReconciledJob } = await convergeOnce({
+      run: { abortRequestedAt: new Date() } as Partial<IScheduleRun>,
+      job: {
+        status: 'aborted',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+    expect(clearReconciledJob).not.toHaveBeenCalled();
+  });
+
   it('ignores a legacy reservation carrying no deliveryKey', async () => {
     const { methods, getTriggerDelivery } = await convergeOnce({
       run: { deliveryKey: undefined } as Partial<IScheduleRun>,
@@ -213,6 +315,7 @@ describe('dead-delivery certainty fence', () => {
         status: 'dead',
         lastError: { code: 'x', message: 'timed out', certainty: options.certainty },
       })) as never,
+      clearReconciledJob: jest.fn(async () => undefined),
       canInferOwnerDeathFromMissingJob: options.canInferOwnerDeathFromMissingJob,
     });
     await jest.advanceTimersByTimeAsync(5 * 60_000);

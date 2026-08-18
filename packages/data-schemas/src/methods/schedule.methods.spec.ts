@@ -1170,6 +1170,63 @@ describe('reversible account-deletion suspension', () => {
     expect(restored.deletionSuspension).toBeUndefined();
   });
 
+  /**
+   * The restore's callers cannot retry it later: a cancelled deletion restores while the
+   * user-deletion fence is still armed and then releases that fence, after which nothing
+   * re-drives this. A single transient write failure would therefore leave a LIVE account
+   * holding silently disabled, next-run-less schedules.
+   */
+  it('retries a transient write failure instead of stranding the rows disabled', async () => {
+    const armedAt = new Date('2030-01-01T00:00:00Z');
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: armedAt }));
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    const bulkWrite = jest.spyOn(Schedule, 'bulkWrite');
+    bulkWrite.mockImplementationOnce(() => {
+      throw new Error('transient primary stepdown');
+    });
+
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-1');
+    bulkWrite.mockRestore();
+
+    const restored = await getSchedule(schedule.id);
+    expect(restored.enabled).toBe(true);
+    expect(restored.nextRunAt?.getTime()).toBe(armedAt.getTime());
+    expect(restored.deletionSuspension).toBeUndefined();
+  });
+
+  /** Retrying is only safe because each attempt re-reads the rows STILL carrying the
+   *  token: a partially-applied unordered write converges on exactly the stragglers, and
+   *  an already-restored row is simply no longer in the set. */
+  it('converges on the stragglers of a partially applied restore', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const first = await methods.createSchedule(scheduleData({ user: userId }));
+    const second = await methods.createSchedule(scheduleData({ user: userId }));
+    await methods.suspendUserSchedulesForDeletion(userId, 'attempt-1');
+
+    // Exactly what a partially-applied unordered bulkWrite leaves behind: one row already
+    // restored and out of the token set, one still suspended.
+    await methods.restoreUserSchedulesFromDeletion(userId, 'attempt-1');
+    await Schedule.updateOne(
+      { id: second.id },
+      {
+        $set: {
+          enabled: false,
+          deletionSuspension: { token: 'attempt-1', enabled: true },
+        },
+        $unset: { nextRunAt: 1 },
+      },
+    );
+
+    await methods.restoreUserSchedulesFromDeletion(userId, 'attempt-1');
+
+    for (const id of [first.id, second.id]) {
+      const restored = await getSchedule(id);
+      expect(restored.enabled).toBe(true);
+      expect(restored.deletionSuspension).toBeUndefined();
+    }
+  });
+
   it('a successful deletion removes suspended rows and their snapshots', async () => {
     const userId = new mongoose.Types.ObjectId();
     const schedule = await methods.createSchedule(scheduleData({ user: userId }));

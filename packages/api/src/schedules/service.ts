@@ -646,6 +646,10 @@ export function createSchedulesService(
       // Positive-evidence delivery convergence: a dead delivery settles its reservation
       // and frees the global capacity slot even where no engine is armed.
       getTriggerDelivery: engineDeps.getTriggerDelivery,
+      // Releases a run's retained terminal job once its outcome is durable, so preserved
+      // evidence (kept without `completedAt`, and therefore invisible to the store's
+      // finished-job sweep) cannot outlive the run it belonged to.
+      clearReconciledJob: engineDeps.clearReconciledJob,
       // If topology itself prevented arming, this process's missing job says
       // nothing about peer liveness. If only index creation failed, the topology
       // proof still holds and the existing owner-death backstop remains valid.

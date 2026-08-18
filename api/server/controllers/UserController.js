@@ -485,8 +485,14 @@ const deleteUserController = async (req, res) => {
       try {
         await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
       } catch (restoreError) {
+        // Every retry is exhausted at this point. The fence is still released below on
+        // purpose: retaining it would refuse this live account's schedule writes AND make
+        // `beginAgentTriggerUserDeletion` report `in_progress` forever, blocking the retry
+        // that is the convergence path — a later attempt re-suspends by ADOPTING this
+        // snapshot, so its cancel restores these exact rows. Log the token so the state is
+        // recoverable directly if that never happens.
         logger.error(
-          '[deleteUserController] Failed to restore suspended schedules after a cancelled deletion',
+          `[deleteUserController] Failed to restore suspended schedules after a cancelled deletion; they remain disabled for user ${user.id} under suspension token ${scheduleSuspensionToken}`,
           restoreError,
         );
       }

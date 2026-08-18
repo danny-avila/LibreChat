@@ -88,6 +88,33 @@ export function hasResumeHandoffInFlight(
   );
 }
 
+/**
+ * The outcome the generation owner intended for a RETAINED `complete` job, or `success`
+ * when it left none (a fire from before the stamp, or a store that never carried it).
+ * An unrecognized value is treated as `success` rather than forwarded: it crossed a
+ * serialization boundary, and `recordRunOutcome` would reject a status outside its
+ * union — losing a rare refinement beats failing the recovery write outright.
+ */
+export function retainedOutcome(
+  jobState: JobState | null,
+  fallback: 'success' | 'error',
+): {
+  status: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  error?: string;
+} {
+  const stamped = jobState?.scheduleOutcome;
+  if (stamped === 'skipped_balance') {
+    return { status: 'skipped_balance' };
+  }
+  if (stamped === 'interrupted') {
+    return { status: 'interrupted', error: jobState?.scheduleOutcomeError };
+  }
+  if (stamped === 'error' || fallback === 'error') {
+    return { status: 'error', error: jobState?.scheduleOutcomeError ?? 'Run ended in error' };
+  }
+  return { status: fallback };
+}
+
 export function hasAbortInFlight(run: { abortRequestedAt?: Date }, now: number): boolean {
   if (run.abortRequestedAt == null) {
     return false;

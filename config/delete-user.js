@@ -240,9 +240,17 @@ async function gracefulExit(code = 0) {
     // schedule writes/claims are refused, so this restore cannot race an owner PATCH nor be
     // superseded by a second deletion attempt re-suspending these rows under a new token.
     if (scheduleSuspensionToken != null && !userDeleted) {
+      // Retried inside the method; the fence is still released below on purpose, since
+      // retaining it would block the retry that is the convergence path. Print the token
+      // so a restore that never converges stays recoverable by hand.
       await runAsSystem(() =>
         methods.restoreUserSchedulesFromDeletion(uid, scheduleSuspensionToken),
-      ).catch((error) => console.error('Failed to restore suspended schedules:', error));
+      ).catch((error) =>
+        console.error(
+          `Failed to restore suspended schedules; they remain disabled for user ${uid} under suspension token ${scheduleSuspensionToken}:`,
+          error,
+        ),
+      );
     }
     if (deletionFence != null && !userDeleted) {
       await runAsSystem(() => methods.cancelAgentTriggerUserPurge(uid, deletionFence)).catch(

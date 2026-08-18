@@ -1,7 +1,7 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { ScheduleMethods, IScheduleRun } from '@librechat/data-schemas';
 import type { JobState, ScheduleEngineDeps } from './types';
-import { hasResumeHandoffInFlight, hasAbortInFlight } from './types';
+import { hasResumeHandoffInFlight, hasAbortInFlight, retainedOutcome } from './types';
 import { registerShutdownTask } from '~/app/shutdown';
 
 const SWEEP_MS = 5 * 60_000;
@@ -10,9 +10,10 @@ const SWEEP_BATCH = 100;
 /** Runs with no readable job older than this are presumed owner-dead (matches the
  *  engine reconciler's orphan cutoff). */
 const ABANDONED_RUN_AGE_MS = 30 * 60_000;
-/** Grace before a jobless reservation's delivery is consulted, so an accepted delivery
- *  still creating its generation is never settled mid-handoff. */
-const DEAD_DELIVERY_MIN_AGE_MS = 2 * 60_000;
+/** Grace before a live schedule's reservation is converged, so an accepted delivery still
+ *  creating its generation — or an owner still writing its terminal outcome — is never
+ *  settled mid-handoff. */
+const STRANDED_RUN_MIN_AGE_MS = 2 * 60_000;
 
 /** Terminal job status → the run outcome it proves (mirror of the quiesce map). */
 const TERMINAL_JOB_OUTCOMES: Record<string, 'success' | 'error' | 'interrupted' | undefined> = {
@@ -41,6 +42,9 @@ export interface ScheduleErasureDeps {
    *  POSITIVE shared evidence that no generation owns the reservation, so settling on it
    *  is topology-safe (unlike absence). */
   getTriggerDelivery: ScheduleEngineDeps['getTriggerDelivery'];
+  /** Deletes a run's retained terminal job once its outcome is durable. Identity-guarded,
+   *  so a replacement generation reusing the conversationId is never destroyed. */
+  clearReconciledJob: ScheduleEngineDeps['clearReconciledJob'];
   /** Whether absence in this process's job store proves absence deployment-wide.
    * False for the process-local fallback whose scheduler refused unsafe topology. */
   canInferOwnerDeathFromMissingJob: boolean;
@@ -126,44 +130,104 @@ async function settleAbandonedRuns(deps: ScheduleErasureDeps, scheduleId: string
 }
 
 /**
- * Settles reservations whose durable trigger delivery is DEAD, for live (non-deleting)
- * schedules too.
+ * Settles a run from its OWN identity-matched terminal job, then releases the retained
+ * evidence — the clustered mirror of the engine reconciler's retained-job branch.
+ */
+async function settleFromRetainedJob(
+  deps: ScheduleErasureDeps,
+  run: IScheduleRun,
+  job: JobState,
+): Promise<void> {
+  const terminal = TERMINAL_JOB_OUTCOMES[job.status];
+  if (terminal == null) {
+    // `running`/`requires_action`: the owner is alive and owns the settlement.
+    return;
+  }
+  // An `aborted` job flips the moment abortJob wins its status CAS — BEFORE its owner
+  // unwinds and persists — so it is the abort fence, not this status, that decides. The
+  // in-flight check in the caller already deferred those; reaching here means the owner
+  // is past its presumed-alive window and this is the backstop.
+  const intended =
+    terminal === 'interrupted'
+      ? { status: 'interrupted' as const, error: undefined }
+      : retainedOutcome(job, terminal === 'error' ? 'error' : 'success');
+  await deps.methods.recordRunOutcome({
+    scheduleId: run.scheduleId,
+    scheduledFor: run.scheduledFor,
+    status: intended.status,
+    // A pre-start abort reserved a conversationId but never created the conversation;
+    // projecting it would point the card at a chat that does not exist.
+    ...(terminal === 'interrupted' && job.createdEventEmitted !== true
+      ? { clearConversationId: true }
+      : { conversationId: run.conversationId }),
+    error: intended.error,
+    autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+  });
+  // AFTER the outcome write, never before: the retained job is the only surviving
+  // evidence if that write fails, and a preserved job carries no `completedAt`, so the
+  // store's finished-job sweep can never reap it on its own.
+  await deps.clearReconciledJob(run.conversationId as string, {
+    scheduleId: run.scheduleId,
+    scheduledFor: run.scheduledFor,
+  });
+}
+
+/**
+ * Converges the stranded reservations of LIVE (non-deleting) schedules, on POSITIVE
+ * EVIDENCE ONLY.
  *
  * `fireSchedule` reserves the run and its global capacity slot before the delivery reaches
- * the chat route, so a pre-generation rejection (interactive limiter, PII, moderation) dead-
- * letters the delivery while the run stays `started`. The engine's reconciler maps that to an
- * `error`, but the clustered entrypoint arms no engine — a delivery that was queued before a
- * restart into clustered mode would otherwise hold its capacity slot indefinitely.
+ * the chat route, and the clustered entrypoint arms no engine — so two states would
+ * otherwise hold that slot indefinitely:
  *
- * This is POSITIVE-EVIDENCE-ONLY and therefore safe in every topology: a `dead` delivery is
- * durable shared state proving no generation owns the reservation. It never infers owner
- * death from a missing job, never claims, fires, or advances, and defers anything fenced by
- * an in-flight abort or resume hand-off. Auto-disable policy is deliberately NOT applied here
- * (the armed engine owns that); the failure is recorded and the slot released.
+ * - A RETAINED TERMINAL JOB. The generation finished, but its owner's Mongo outcome write
+ *   exhausted every retry (`recordScheduleOutcome` returns false) and left the preserved
+ *   job as the only surviving evidence. The armed engine's reconciler replays exactly
+ *   this; with no engine nothing did, so the run stayed `started` and its retained
+ *   generation evidence lived until store expiry.
+ * - A DEAD DELIVERY. A pre-generation rejection (interactive limiter, PII, moderation)
+ *   dead-letters the delivery while the run stays `started` with no job at all.
+ *
+ * Both are safe in EVERY topology because both read positive, durable evidence instead of
+ * inferring owner death from absence: an identity-matched job is authoritative wherever it
+ * is observed (a shared store shows the real generation; a process-local store can only be
+ * showing this process's own), and a `dead` delivery is shared state proving no generation
+ * owns the reservation. This never claims, fires, or advances, and defers anything fenced
+ * by an in-flight abort or resume hand-off. Auto-disable policy is deliberately NOT applied
+ * (the armed engine owns that): the run settles and frees its slot, the streak is untouched.
  */
-async function settleDeadDeliveries(deps: ScheduleErasureDeps): Promise<void> {
+async function settleStrandedRuns(deps: ScheduleErasureDeps): Promise<void> {
   const runs = await deps.methods.getRunsForReconciliation(
-    new Date(Date.now() - DEAD_DELIVERY_MIN_AGE_MS),
+    new Date(Date.now() - STRANDED_RUN_MIN_AGE_MS),
     SWEEP_BATCH,
   );
   const now = Date.now();
   for (const run of runs) {
     try {
-      if (run.status !== 'started' || !run.deliveryKey) {
+      // `started` is the capacity-consuming state this pass exists to release. A paused
+      // row holds no slot, and its approval-expiry path owns its own durable retry.
+      if (run.status !== 'started') {
         continue;
       }
       if (hasAbortInFlight(run, now) || hasResumeHandoffInFlight(run, now)) {
         continue;
       }
-      // A live generation owns the reservation regardless of delivery state; only an
-      // absent/unknown job leaves the delivery as the authority. Unknown defers.
       const job = run.conversationId
         ? await deps.getJobStatus(run.conversationId).then(
             (state) => ({ known: true, state }),
             () => ({ known: false, state: null }),
           )
         : { known: true, state: null };
-      if (!job.known || jobMatchesRun(job.state, run)) {
+      // Unknown is not gone: never settle on a failed job-store read.
+      if (!job.known) {
+        continue;
+      }
+      if (jobMatchesRun(job.state, run)) {
+        await settleFromRetainedJob(deps, run, job.state as JobState);
+        continue;
+      }
+      // No job of THIS occurrence's identity, so the durable delivery is the authority.
+      if (!run.deliveryKey) {
         continue;
       }
       const delivery = await deps.getTriggerDelivery(run.deliveryKey);
@@ -192,7 +256,7 @@ async function settleDeadDeliveries(deps: ScheduleErasureDeps): Promise<void> {
         autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
       });
     } catch (err) {
-      logger.warn(`[schedules] dead-delivery settle failed for ${run.scheduleId}:`, err);
+      logger.warn(`[schedules] stranded-run settle failed for ${run.scheduleId}:`, err);
     }
   }
 }
@@ -234,10 +298,11 @@ export function startScheduleErasureSweep(deps: ScheduleErasureDeps): ScheduleEr
         await deps.methods
           .markEraseAttempted(deleting.map((schedule) => schedule.id))
           .catch((err) => logger.warn('[schedules] failed to stamp erase attempts:', err));
-        // Live schedules too: converge reservations whose durable delivery is dead, so a
-        // pre-generation rejection cannot hold a global capacity slot where no engine is armed.
-        await settleDeadDeliveries(deps).catch((err) =>
-          logger.warn('[schedules] dead-delivery convergence pass failed:', err),
+        // Live schedules too: converge reservations left stranded by a retained terminal
+        // job or a dead delivery, so neither can hold a global capacity slot — and no
+        // generation evidence can outlive its run — where no engine is armed.
+        await settleStrandedRuns(deps).catch((err) =>
+          logger.warn('[schedules] stranded-run convergence pass failed:', err),
         );
       });
     } catch (err) {
