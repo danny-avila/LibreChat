@@ -51,6 +51,8 @@ function makeService(
     getActiveRunsForUser,
     countActiveRuns: jest.fn(async () => 0),
     requestRunAbort: jest.fn(async () => true),
+    getScheduleRunAbortState: jest.fn(async () => null),
+    markRunAbortPersisted: jest.fn(async () => undefined),
     recordRunOutcome,
   };
   const deps = {
@@ -68,6 +70,8 @@ function makeService(
   return createSchedulesService(deps, {
     drainTimeoutMs: 400,
     drainPollMs: 25,
+    stopBarrierTimeoutMs: 400,
+    stopBarrierPollMs: 25,
   });
 }
 
@@ -605,6 +609,124 @@ describe('erase-on-settle', () => {
       status: 'requires_action',
     });
     expect(methods.eraseScheduleIfDrained).not.toHaveBeenCalled();
+  });
+});
+
+describe('interactive Stop persistence barrier', () => {
+  function outcomeService() {
+    const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+    const methods = service.engineDeps.methods as unknown as {
+      getScheduleById: jest.Mock;
+      recordRunOutcome: jest.Mock;
+      eraseScheduleIfDrained: jest.Mock;
+      getScheduleRunAbortState: jest.Mock;
+      requestRunAbort: jest.Mock;
+      markRunAbortPersisted: jest.Mock;
+    };
+    methods.getScheduleById = jest.fn(async () => null);
+    methods.recordRunOutcome = jest.fn(async () => undefined);
+    methods.eraseScheduleIfDrained = jest.fn(async () => true);
+    return { service, methods };
+  }
+
+  it('beginScheduledStop stamps a serialized stop; acknowledge marks persistence', async () => {
+    const { service, methods } = outcomeService();
+    methods.requestRunAbort = jest.fn(async () => 'in_progress' as const);
+    methods.markRunAbortPersisted = jest.fn(async () => undefined);
+
+    const stamp = await service.beginScheduledStop({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+    });
+    expect(stamp).toBe('in_progress');
+    expect(methods.requestRunAbort).toHaveBeenCalledWith('s1', expect.any(Date), 'stop');
+
+    await service.acknowledgeScheduledStopPersistence({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+    });
+    expect(methods.markRunAbortPersisted).toHaveBeenCalledWith('s1', expect.any(Date));
+  });
+
+  it('owner terminal settlement waits until the Stop persistence is acknowledged', async () => {
+    const { service, methods } = outcomeService();
+    const fresh = new Date();
+    let reads = 0;
+    // Unresolved fresh stop for the first two reads, then acknowledged.
+    methods.getScheduleRunAbortState = jest.fn(async () => {
+      reads += 1;
+      return {
+        status: 'started',
+        abortSource: 'stop',
+        abortRequestedAt: fresh,
+        ...(reads > 2 ? { abortPersistedAt: new Date() } : {}),
+      };
+    });
+
+    await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'success',
+    });
+
+    // Polled until the acknowledgement landed, and only THEN recorded the outcome.
+    expect(reads).toBeGreaterThanOrEqual(3);
+    expect(methods.recordRunOutcome).toHaveBeenCalled();
+    expect(methods.getScheduleRunAbortState.mock.invocationCallOrder[0]).toBeLessThan(
+      methods.recordRunOutcome.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not wait on a non-stop abort source', async () => {
+    const { service, methods } = outcomeService();
+    methods.getScheduleRunAbortState = jest.fn(async () => ({
+      status: 'started',
+      abortSource: 'deletion',
+      abortRequestedAt: new Date(),
+    }));
+
+    await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'interrupted',
+    });
+
+    expect(methods.getScheduleRunAbortState).toHaveBeenCalledTimes(1);
+    expect(methods.recordRunOutcome).toHaveBeenCalled();
+  });
+
+  it('does not wait on a STALE stop stamp (route presumed dead)', async () => {
+    const { service, methods } = outcomeService();
+    // Older than ABORT_OWNER_PRESUMED_ALIVE_MS: the owner presumes the route dead.
+    const stale = new Date(Date.now() - 31 * 60_000);
+    methods.getScheduleRunAbortState = jest.fn(async () => ({
+      status: 'started',
+      abortSource: 'stop',
+      abortRequestedAt: stale,
+    }));
+
+    await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'error',
+    });
+
+    expect(methods.getScheduleRunAbortState).toHaveBeenCalledTimes(1);
+    expect(methods.recordRunOutcome).toHaveBeenCalled();
+  });
+
+  it('does not gate a pause (requires_action) on the Stop barrier', async () => {
+    const { service, methods } = outcomeService();
+    methods.getScheduleRunAbortState = jest.fn(async () => null);
+
+    await service.recordScheduleOutcome({
+      scheduleId: 's1',
+      scheduledFor: '2026-01-01T00:00:00.000Z',
+      status: 'requires_action',
+    });
+
+    // A pause is not a settlement, so the barrier is never consulted.
+    expect(methods.getScheduleRunAbortState).not.toHaveBeenCalled();
   });
 });
 

@@ -38,7 +38,11 @@ const {
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
 const { saveMessage } = require('~/models');
-const { recordScheduleOutcome } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  beginScheduledStop,
+  acknowledgeScheduledStopPersistence,
+} = require('~/server/services/Schedules');
 const responses = require('./responses');
 const openai = require('./openai');
 const { v1 } = require('./v1');
@@ -673,6 +677,27 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               throwOnError: true,
             })
           : undefined;
+      // Stamp a scheduled run's Stop BEFORE signalling the abort. `abortJob` flips the job
+      // to `aborted` immediately, then runs the partial-message/checkpoint persistence in
+      // `beforePublish`. Without this stamp the owner settlement, reconciliation, and
+      // schedule/account deletion could observe `aborted` and terminalize/erase the run
+      // mid-write. The stamp is serialized: a fresh Stop already owning it means another
+      // request is persisting, so we must not signal a second abort.
+      const stopScheduleId = job.metadata?.scheduleId;
+      const stopScheduledFor = job.metadata?.scheduledFor;
+      const isScheduledStop = stopScheduleId != null && stopScheduledFor != null;
+      let scheduledStopStamped = false;
+      if (isScheduledStop) {
+        const stopStamp = await beginScheduledStop({
+          scheduleId: stopScheduleId,
+          scheduledFor: stopScheduledFor,
+        });
+        if (stopStamp === 'in_progress') {
+          res.set('Retry-After', '1');
+          return res.status(409).json({ code: 'STOP_IN_PROGRESS', generationProtocolVersion });
+        }
+        scheduledStopStamped = stopStamp === true;
+      }
       const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
         expectedCreatedAt: job.createdAt,
         transformAbortContent: (content, abortJobData) => {
@@ -811,6 +836,18 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
           }
         },
       });
+      // The abort did not land (replaced/still-active/already-settled), so no persistence
+      // is in flight: release the Stop barrier we armed rather than deferring this
+      // occurrence's settlement for the full stale-owner window. A retry or a replacement
+      // generation re-stamps its own; the acknowledgement is fenced to the occurrence, not
+      // a generation, so it cannot settle a successor through its predecessor.
+      if (scheduledStopStamped && !abortResult.success) {
+        await acknowledgeScheduledStopPersistence({
+          scheduleId: stopScheduleId,
+          scheduledFor: stopScheduledFor,
+        });
+        scheduledStopStamped = false;
+      }
       if (abortResult.failureReason === 'generation_replaced') {
         return res.status(409).json({ code: 'RUN_REPLACED', generationProtocolVersion });
       }
@@ -862,11 +899,28 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         abortResultResponseMessageId: abortResult.jobData?.responseMessageId,
       });
 
+      // `beforePublish` has run: its partial-message and checkpoint writes have either
+      // landed or failed. Acknowledge the Stop ONLY on success — that releases the owner's
+      // settlement barrier so the run can terminalize. On a persistence failure we leave
+      // the barrier unresolved: the run stays preserved (client retries; the stale-owner
+      // timeout is the bounded recovery) rather than settling over an incomplete write.
+      if (scheduledStopStamped && !abortResult.persistenceFailed) {
+        await acknowledgeScheduledStopPersistence({
+          scheduleId: stopScheduleId,
+          scheduledFor: stopScheduledFor,
+        });
+      }
+
       // A paused generation has no live provider owner left to report the stop.
       // Persist its scheduled occurrence here, after abortJob's required partial
-      // response/checkpoint work, while running generations continue to settle from
-      // their owning request/resume controller.
-      if (job.status === 'requires_action' && job.metadata?.scheduleId) {
+      // response/checkpoint work AND its acknowledgement above, while running generations
+      // continue to settle from their owning request/resume controller. A failed
+      // persistence skips settlement so the incomplete run is not terminalized.
+      if (
+        job.status === 'requires_action' &&
+        job.metadata?.scheduleId &&
+        !abortResult.persistenceFailed
+      ) {
         await recordScheduleOutcome({
           scheduleId: job.metadata.scheduleId,
           scheduledFor: job.metadata.scheduledFor,

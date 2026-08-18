@@ -25,6 +25,10 @@ const mockGenerationJobManager = {
 
 const mockSaveMessage = jest.fn();
 
+const mockRecordScheduleOutcome = jest.fn();
+const mockBeginScheduledStop = jest.fn();
+const mockAcknowledgeScheduledStopPersistence = jest.fn();
+
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: mockLogger,
@@ -43,6 +47,13 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  beginScheduledStop: (...args) => mockBeginScheduledStop(...args),
+  acknowledgeScheduledStopPersistence: (...args) =>
+    mockAcknowledgeScheduledStopPersistence(...args),
 }));
 
 jest.mock('~/server/middleware', () => ({
@@ -86,6 +97,12 @@ describe('Agent Abort Endpoint', () => {
     mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
     mockSaveMessage.mockReset();
     mockSaveMessage.mockImplementation(async (_context, message) => message);
+    mockRecordScheduleOutcome.mockReset();
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockBeginScheduledStop.mockReset();
+    mockBeginScheduledStop.mockResolvedValue(true);
+    mockAcknowledgeScheduledStopPersistence.mockReset();
+    mockAcknowledgeScheduledStopPersistence.mockResolvedValue(undefined);
   });
 
   describe('POST /chat/abort', () => {
@@ -844,6 +861,111 @@ describe('Agent Abort Endpoint', () => {
           streamId: 'non-existent-job',
           generationProtocolVersion: 1,
         });
+      });
+    });
+
+    describe('Scheduled Stop persistence protocol', () => {
+      const scheduledJob = {
+        status: 'running',
+        createdAt: 111,
+        metadata: {
+          userId: 'test-user-123',
+          generationProtocolVersion: 2,
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+          conversationId: 'conv-1',
+        },
+      };
+
+      it('stamps the Stop before signalling abort, then acknowledges after persistence', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(mockBeginScheduledStop).toHaveBeenCalledWith({
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+        });
+        // Stamp BEFORE the abort signal; acknowledgement AFTER it (persistence done).
+        expect(mockBeginScheduledStop.mock.invocationCallOrder[0]).toBeLessThan(
+          mockGenerationJobManager.abortJob.mock.invocationCallOrder[0],
+        );
+        expect(mockAcknowledgeScheduledStopPersistence).toHaveBeenCalledWith({
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+        });
+        expect(mockGenerationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
+          mockAcknowledgeScheduledStopPersistence.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('returns STOP_IN_PROGRESS and never signals a second abort when a Stop is already live', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockBeginScheduledStop.mockResolvedValue('in_progress');
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(409);
+        expect(response.body.code).toBe('STOP_IN_PROGRESS');
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
+      });
+
+      it('does NOT acknowledge when the abort persistence failed (run stays preserved)', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          persistenceFailed: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(response.body.persistenceFailed).toBe(true);
+        expect(mockBeginScheduledStop).toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
+      });
+
+      it('leaves non-scheduled aborts untouched by the Stop protocol', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          status: 'running',
+          createdAt: 1,
+          metadata: { userId: 'test-user-123', generationProtocolVersion: 2 },
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-x' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-x', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(mockBeginScheduledStop).not.toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
       });
     });
   });

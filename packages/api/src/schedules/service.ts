@@ -174,6 +174,26 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
+  /**
+   * Stamps a scheduled run's interactive Stop BEFORE the abort is signalled, so the owner
+   * settlement barrier, reconciliation, and schedule/account deletion hold off settling or
+   * erasing until {@link acknowledgeScheduledStopPersistence}. Serialized: `'in_progress'`
+   * means a fresh Stop already owns the stamp and the caller must not signal a second abort;
+   * `false` means there is no active run to stop.
+   */
+  beginScheduledStop: (input: {
+    scheduleId: string;
+    scheduledFor: string | Date;
+  }) => Promise<boolean | 'in_progress'>;
+  /**
+   * Releases the Stop settlement barrier once the route's partial-message/checkpoint writes
+   * have landed. Call ONLY after persistence succeeds — a failed persistence must leave the
+   * barrier unresolved so the run stays preserved and recovers via the stale-owner timeout.
+   */
+  acknowledgeScheduledStopPersistence: (input: {
+    scheduleId: string;
+    scheduledFor: string | Date;
+  }) => Promise<void>;
   /** Re-enters a paused occurrence into the DB-enforced global/same-schedule
    * capacity set before its approval job is allowed to resume. */
   claimScheduleResume: (
@@ -243,6 +263,8 @@ export interface SchedulesService {
 export interface ScheduleServiceTimings {
   drainTimeoutMs?: number;
   drainPollMs?: number;
+  stopBarrierTimeoutMs?: number;
+  stopBarrierPollMs?: number;
 }
 
 /**
@@ -335,6 +357,13 @@ export function createSchedulesService(
   // never blocks indefinitely on an unreachable peer-worker run.
   const QUIESCE_DRAIN_TIMEOUT_MS = timings?.drainTimeoutMs ?? 10 * 1000;
   const QUIESCE_DRAIN_POLL_MS = timings?.drainPollMs ?? 250;
+  // The owner's terminal settlement waits (briefly, bounded) for an interactive Stop to
+  // acknowledge its partial-message/checkpoint persistence before releasing capacity or
+  // erasing evidence. Short: the Stop route's persistence is a couple of writes; if it
+  // does not land in this window the stale-owner timeout (ABORT_OWNER_PRESUMED_ALIVE_MS)
+  // takes over as the bounded recovery, so the settlement never blocks indefinitely.
+  const STOP_BARRIER_TIMEOUT_MS = timings?.stopBarrierTimeoutMs ?? 5 * 1000;
+  const STOP_BARRIER_POLL_MS = timings?.stopBarrierPollMs ?? 100;
 
   /**
    * Whether a refill would top up this zero-credit balance record right now,
@@ -726,6 +755,34 @@ export function createSchedulesService(
    * Mongo failure here is RETRIED (bounded) before giving up, and the failure is
    * surfaced to the caller (returns false) so it can keep the job when it matters.
    */
+  /**
+   * OWNER-SIDE Stop barrier. An interactive Stop stamps `abortSource: 'stop'` before it
+   * signals the abort, and only acknowledges (`abortPersistedAt`) once its partial-message
+   * and checkpoint writes have landed. A terminal settlement here in between would release
+   * the run's capacity — and let a concurrent schedule/account deletion erase the data —
+   * while that write is still in flight. Wait (bounded) for the acknowledgement. A resolved
+   * marker, a non-stop source, or a stamp gone stale (its route presumed dead) proceeds
+   * immediately, so the stale-owner timeout remains the bounded recovery path.
+   */
+  async function waitForStopPersistence(scheduleId: string, scheduledFor: Date): Promise<void> {
+    const deadline = Date.now() + STOP_BARRIER_TIMEOUT_MS;
+    for (;;) {
+      const state = await methods.getScheduleRunAbortState(scheduleId, scheduledFor);
+      if (
+        state == null ||
+        state.abortSource !== 'stop' ||
+        state.abortPersistedAt != null ||
+        !hasAbortInFlight(state, Date.now())
+      ) {
+        return;
+      }
+      if (Date.now() >= deadline) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, STOP_BARRIER_POLL_MS));
+    }
+  }
+
   async function recordScheduleOutcome({
     scheduleId,
     scheduledFor,
@@ -740,6 +797,10 @@ export function createSchedulesService(
       return true;
     }
     const terminal = status !== 'requires_action';
+    if (terminal) {
+      // Honor an in-flight interactive Stop's persistence before terminalizing.
+      await waitForStopPersistence(scheduleId, new Date(scheduledFor));
+    }
     if (terminal && streamId && jobCreatedAt != null) {
       try {
         await GenerationJobManager.updateMetadata(
@@ -826,6 +887,32 @@ export function createSchedulesService(
       }
     }
     return false;
+  }
+
+  async function beginScheduledStop({
+    scheduleId,
+    scheduledFor,
+  }: {
+    scheduleId: string;
+    scheduledFor: string | Date;
+  }): Promise<boolean | 'in_progress'> {
+    if (!scheduleId || !scheduledFor) {
+      return false;
+    }
+    return methods.requestRunAbort(scheduleId, new Date(scheduledFor), 'stop');
+  }
+
+  async function acknowledgeScheduledStopPersistence({
+    scheduleId,
+    scheduledFor,
+  }: {
+    scheduleId: string;
+    scheduledFor: string | Date;
+  }): Promise<void> {
+    if (!scheduleId || !scheduledFor) {
+      return;
+    }
+    await methods.markRunAbortPersisted(scheduleId, new Date(scheduledFor));
   }
 
   async function isScheduleLive(
@@ -1451,6 +1538,8 @@ export function createSchedulesService(
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
+    beginScheduledStop,
+    acknowledgeScheduledStopPersistence,
     claimScheduleResume,
     releaseScheduleResumeClaim,
     finalizeScheduleResumeClaim,

@@ -83,6 +83,8 @@ module.exports = {
   getLimits: invoke('getLimits'),
   fireScheduleNow: invoke('fireScheduleNow'),
   recordScheduleOutcome: invoke('recordScheduleOutcome'),
+  beginScheduledStop: invoke('beginScheduledStop'),
+  acknowledgeScheduledStopPersistence: invoke('acknowledgeScheduledStopPersistence'),
   claimScheduleResume: invoke('claimScheduleResume'),
   releaseScheduleResumeClaim: invoke('releaseScheduleResumeClaim'),
   finalizeScheduleResumeClaim: invoke('finalizeScheduleResumeClaim'),
