@@ -3146,9 +3146,14 @@ const RESERVED_MCP_TOOL_MARKERS: readonly string[] = [
 
 function isReservedMCPToolName(toolName: string): boolean {
   /** `mcp_` opens the server-scoped pluginKey namespace (`mcp_${serverName}`),
-   *  which pre-strip tool keys could never enter — they always began with the
-   *  server name itself. */
-  if (toolName.startsWith(`${Constants.mcp_prefix}`)) {
+   *  and `lc_transfer_to_` opens the agent-handoff namespace (the client
+   *  renders such calls as handoffs; the background and intent passes exclude
+   *  them) — pre-strip tool keys could never enter either, since they always
+   *  began with the server name itself. */
+  if (
+    toolName.startsWith(`${Constants.mcp_prefix}`) ||
+    toolName.startsWith(`${Constants.LC_TRANSFER_TO_}`)
+  ) {
     return true;
   }
   return RESERVED_MCP_TOOL_MARKERS.some(

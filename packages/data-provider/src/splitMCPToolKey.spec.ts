@@ -312,9 +312,13 @@ describe('stripServerNamePrefixes', () => {
     expect(
       stripServerNamePrefix(`acme_${Constants.mcp_server}${Constants.mcp_delimiter}reset`, 'acme'),
     ).toBe(`acme_${Constants.mcp_server}${Constants.mcp_delimiter}reset`);
-    /** `mcp_` opens the server-scoped pluginKey namespace, which pre-strip
-     *  tool keys could never enter. */
+    /** `mcp_` opens the server-scoped pluginKey namespace and
+     *  `lc_transfer_to_` the agent-handoff namespace — pre-strip tool keys
+     *  could never enter either. */
     expect(stripServerNamePrefix('acme_mcp_status', 'acme')).toBe('acme_mcp_status');
+    expect(stripServerNamePrefix('acme_lc_transfer_to_status', 'acme')).toBe(
+      'acme_lc_transfer_to_status',
+    );
   });
 
   it('never flips isActionTool classification for the produced key', () => {
