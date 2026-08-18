@@ -46,7 +46,8 @@ function makeService(
 ): ReturnType<typeof createSchedulesService> {
   recordRunOutcome = jest.fn(async () => undefined);
   const methods = {
-    disableUserSchedulesForDeletion: jest.fn(async () => undefined),
+    suspendUserSchedulesForDeletion: jest.fn(async () => undefined),
+    restoreUserSchedulesFromDeletion: jest.fn(async () => undefined),
     getActiveRunsForUser,
     countActiveRuns: jest.fn(async () => 0),
     requestRunAbort: jest.fn(async () => true),
@@ -685,7 +686,7 @@ describe('quiesceUserSchedules drain wait', () => {
       .mockResolvedValue([]); // subsequent polls: drained
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     // Each poll waits one interval; advance twice so the loop observes the drain.
     await jest.advanceTimersByTimeAsync(250);
     await jest.advanceTimersByTimeAsync(250);
@@ -705,7 +706,7 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([run()]); // never drains
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     // Advance past the full bounded timeout; the loop must give up, not hang, and must
     // report the drain as UNCONFIRMED so deletion defers rather than destroying.
     await jest.advanceTimersByTimeAsync(10_000);
@@ -738,7 +739,7 @@ describe('quiesceUserSchedules drain wait', () => {
       })),
     } as unknown as typeof mockJobStore;
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     // The pause hand-off's writes are still in flight; confirming the drain here
     // let the destructive cascade run before they landed. Deferral is bounded: the
@@ -770,7 +771,7 @@ describe('quiesceUserSchedules drain wait', () => {
       deleteJob,
     } as unknown as typeof mockJobStore;
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toBe(true);
 
@@ -812,7 +813,7 @@ describe('quiesceUserSchedules drain wait', () => {
       deleteJob: jest.fn(async () => undefined),
     } as unknown as typeof mockJobStore;
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     // Unconfirmed, so the caller defers deletion (503 + Retry-After) instead of
     // destroying data the owner is still writing.
@@ -841,7 +842,7 @@ describe('quiesceUserSchedules drain wait', () => {
       deleteJob: jest.fn(async () => undefined),
     } as unknown as typeof mockJobStore;
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toBe(true);
     expect(recordRunOutcome).toHaveBeenCalledWith(
@@ -867,7 +868,7 @@ describe('quiesceUserSchedules drain wait', () => {
     } as unknown as typeof mockJobStore;
     recordRunOutcome.mockRejectedValue(new Error('mongo down'));
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(11_000);
     // The row never settles, so the drain cannot confirm and deletion defers.
     await expect(pending).resolves.toBe(false);
@@ -883,7 +884,7 @@ describe('quiesceUserSchedules drain wait', () => {
 
     // Nothing to abort and nothing to drain, so the quiesce is trivially CONFIRMED and
     // the deletion cascade may proceed to its destructive steps.
-    await expect(service.quiesceUserSchedules('user-1')).resolves.toBe(true);
+    await expect(service.quiesceUserSchedules('user-1', 'attempt-1')).resolves.toBe(true);
     // Only the initial collection read; the drain loop is skipped for an empty set.
     expect(getActive).toHaveBeenCalledTimes(1);
   });
@@ -906,7 +907,7 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([pausedRun()]);
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     // Terminalizing here would drop the row out of the active set, so the drain would
     // report nothing to wait for and the destructive cascade could delete messages the
@@ -929,7 +930,7 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([pausedRun()]);
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     await pending;
     // An approval that will never be consumed must not keep the account undeletable.
@@ -948,7 +949,7 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([pausedRun()]);
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     // A thrown lookup is evidence of NOTHING. Reading it as "genuinely paused" would
     // terminalize a row whose resumed generation may still be running, and the drain
@@ -967,7 +968,7 @@ describe('quiesceUserSchedules drain wait', () => {
     const getActive = jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([pausedRun()]);
     const service = makeService(getActive);
 
-    const pending = service.quiesceUserSchedules('user-1');
+    const pending = service.quiesceUserSchedules('user-1', 'attempt-1');
     await jest.advanceTimersByTimeAsync(10_000);
     await pending;
     expect(recordRunOutcome).toHaveBeenCalled();

@@ -90,6 +90,7 @@ module.exports = {
   isScheduleLive: invoke('isScheduleLive'),
   deleteScheduleForOwner: invoke('deleteScheduleForOwner'),
   quiesceUserSchedules: invoke('quiesceUserSchedules'),
+  restoreUserSchedulesFromDeletion: invoke('restoreUserSchedulesFromDeletion'),
   initializeScheduleEngine: invoke('initializeScheduleEngine'),
   initializeScheduleErasureSweep: invoke('initializeScheduleErasureSweep'),
   recordExpiredScheduleApproval,

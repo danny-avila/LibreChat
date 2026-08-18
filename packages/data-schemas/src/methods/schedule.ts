@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { ScheduleRunStatus, ScheduleDisabledReason } from 'librechat-data-provider';
-import type { Model, Types } from 'mongoose';
+import type { Model, Types, AnyBulkWriteOperation } from 'mongoose';
 import type {
   ISchedule,
   IScheduleDocument,
   IScheduleRun,
   IScheduleRunDocument,
 } from '~/types/schedule';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { createIndexesWithRetry } from '~/utils/retry';
 
 const DUPLICATE_KEY = 11000;
@@ -240,7 +241,14 @@ export type ScheduleMethods = {
   markScheduleDeleting: (id: string, userId: string | Types.ObjectId) => Promise<ISchedule | null>;
   getActiveRunsForSchedule: (scheduleId: string) => Promise<IScheduleRun[]>;
   getActiveRunsForUser: (userId: string | Types.ObjectId) => Promise<IScheduleRun[]>;
-  disableUserSchedulesForDeletion: (userId: string | Types.ObjectId) => Promise<void>;
+  suspendUserSchedulesForDeletion: (
+    userId: string | Types.ObjectId,
+    token: string,
+  ) => Promise<void>;
+  restoreUserSchedulesFromDeletion: (
+    userId: string | Types.ObjectId,
+    token: string,
+  ) => Promise<void>;
   getDeletingSchedules: (limit: number) => Promise<ISchedule[]>;
   markEraseAttempted: (ids: string[]) => Promise<void>;
   getScheduleByClientRequestId: (
@@ -1644,14 +1652,99 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * the engine cannot fire a new occurrence while the cascade runs. Rotates each
    * claim token to fence any in-flight worker.
    */
-  async function disableUserSchedulesForDeletion(userId: string | Types.ObjectId): Promise<void> {
-    await Schedule().updateMany(
-      { user: userId, deleting: { $ne: true } },
-      {
-        $set: { enabled: false, deleting: true, claimToken: randomUUID() },
-        $unset: { nextRunAt: 1 },
+  /**
+   * REVERSIBLE quiesce ahead of account deletion. Snapshots each schedule's pre-suspension
+   * enabled/next-run state under this attempt's `token`, then fences firing (disable, clear
+   * `nextRunAt`, rotate `claimToken`). It deliberately does NOT set `deleting`: a suspended
+   * row must not be erased, because a deletion the controller later cancels has to restore
+   * it. On a successful deletion the hard-delete cascade removes the row (and this snapshot)
+   * anyway. Snapshotting needs each row's current values, which a classic (DocumentDB-safe)
+   * update cannot copy, so it reads then `bulkWrite`s — fenced per row so a row already
+   * suspended by this token, soft-deleted, or edited out from under the read is left alone.
+   */
+  async function suspendUserSchedulesForDeletion(
+    userId: string | Types.ObjectId,
+    token: string,
+  ): Promise<void> {
+    const schedules = await Schedule()
+      .find({
+        user: userId,
+        deleting: { $ne: true },
+        'deletionSuspension.token': { $ne: token },
+      })
+      .select('id enabled nextRunAt')
+      .lean<Array<Pick<ISchedule, 'id' | 'enabled' | 'nextRunAt'>>>();
+    if (schedules.length === 0) {
+      return;
+    }
+    const ops = schedules.map((schedule) => ({
+      updateOne: {
+        filter: {
+          id: schedule.id,
+          user: userId,
+          deleting: { $ne: true },
+          'deletionSuspension.token': { $ne: token },
+        },
+        update: {
+          $set: {
+            enabled: false,
+            claimToken: randomUUID(),
+            deletionSuspension: {
+              token,
+              enabled: schedule.enabled === true,
+              ...(schedule.nextRunAt != null ? { nextRunAt: schedule.nextRunAt } : {}),
+            },
+          },
+          $unset: { nextRunAt: 1 as const },
+        },
       },
-    );
+    }));
+    await tenantSafeBulkWrite(Schedule(), ops as AnyBulkWriteOperation[], { ordered: false });
+  }
+
+  /**
+   * Reverses {@link suspendUserSchedulesForDeletion} when a deletion attempt is cancelled.
+   * Restores enabled/next-run from the snapshot and clears the suspension — but ONLY for
+   * rows still carrying this exact attempt's token and not independently soft-deleted, so a
+   * schedule the owner deleted (or a newer attempt re-suspended) is never resurrected.
+   */
+  async function restoreUserSchedulesFromDeletion(
+    userId: string | Types.ObjectId,
+    token: string,
+  ): Promise<void> {
+    const suspended = await Schedule()
+      .find({ user: userId, 'deletionSuspension.token': token, deleting: { $ne: true } })
+      .select('id deletionSuspension')
+      .lean<Array<Pick<ISchedule, 'id' | 'deletionSuspension'>>>();
+    if (suspended.length === 0) {
+      return;
+    }
+    const ops = suspended.map((schedule) => {
+      const snapshot = schedule.deletionSuspension;
+      const restoreNextRunAt = snapshot?.nextRunAt;
+      return {
+        updateOne: {
+          filter: {
+            id: schedule.id,
+            user: userId,
+            'deletionSuspension.token': token,
+            deleting: { $ne: true },
+          },
+          update: {
+            $set: {
+              enabled: snapshot?.enabled === true,
+              claimToken: randomUUID(),
+              ...(restoreNextRunAt != null ? { nextRunAt: restoreNextRunAt } : {}),
+            },
+            $unset: {
+              deletionSuspension: 1 as const,
+              ...(restoreNextRunAt == null ? { nextRunAt: 1 as const } : {}),
+            },
+          },
+        },
+      };
+    });
+    await tenantSafeBulkWrite(Schedule(), ops as AnyBulkWriteOperation[], { ordered: false });
   }
 
   /**
@@ -1873,7 +1966,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     markScheduleDeleting,
     getActiveRunsForSchedule,
     getActiveRunsForUser,
-    disableUserSchedulesForDeletion,
+    suspendUserSchedulesForDeletion,
+    restoreUserSchedulesFromDeletion,
     getDeletingSchedules,
     markEraseAttempted,
     getScheduleByClientRequestId,

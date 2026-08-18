@@ -212,12 +212,20 @@ export interface SchedulesService {
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<ScheduleDeleteResult>;
   /**
-   * Quiesces all of a user's schedules ahead of account deletion (stop + abort + drain).
-   * Returns whether the drain was CONFIRMED: false means at least one run could not be
-   * confirmed settled, and the caller must NOT proceed to destructive deletion — the
-   * durable barrier keeps refusing new work while a later pass finishes the cascade.
+   * Quiesces all of a user's schedules ahead of account deletion (reversible suspension +
+   * abort + drain). `token` identifies this deletion attempt and is what a later
+   * {@link restoreUserSchedulesFromDeletion} restores against. Returns whether the drain was
+   * CONFIRMED: false means at least one run could not be confirmed settled, and the caller
+   * must NOT proceed to destructive deletion — the durable barrier keeps refusing new work
+   * while a later pass finishes the cascade.
    */
-  quiesceUserSchedules: (userId: string) => Promise<boolean>;
+  quiesceUserSchedules: (userId: string, token: string) => Promise<boolean>;
+  /**
+   * Reverses a quiesce whose account deletion was cancelled, re-enabling and re-arming only
+   * the rows this exact attempt suspended. Safe to call even if quiesce never suspended a
+   * row (no matching token → no-op).
+   */
+  restoreUserSchedulesFromDeletion: (userId: string, token: string) => Promise<void>;
   /** Arms the scheduler for THIS process. v1 is single-process only; the clustered
    *  entrypoint does not start it. Returns undefined when index creation failed, or when
    *  the topology cannot be shown safe (process-local job store with no single-process
@@ -1277,13 +1285,15 @@ export function createSchedulesService(
   }
 
   /**
-   * Quiesces every schedule of a user ahead of account deletion: marks them all
-   * non-claimable (so no new occurrence fires while the cascade runs) and aborts
-   * the loopback jobs of any in-flight runs, so a scheduled generation cannot keep
-   * persisting messages after the account's messages/conversations are deleted.
+   * Quiesces every schedule of a user ahead of account deletion: REVERSIBLY suspends them
+   * under the attempt `token` (non-claimable, so no new occurrence fires while the cascade
+   * runs) and aborts the loopback jobs of any in-flight runs, so a scheduled generation
+   * cannot keep persisting messages after the account's messages/conversations are deleted.
+   * The suspension is reversible so a cancelled deletion can restore it (see
+   * restoreUserSchedulesFromDeletion) rather than stranding a live user with erased rows.
    */
-  async function quiesceUserSchedules(userId: string): Promise<boolean> {
-    await methods.disableUserSchedulesForDeletion(userId);
+  async function quiesceUserSchedules(userId: string, token: string): Promise<boolean> {
+    await methods.suspendUserSchedulesForDeletion(userId, token);
     const active = await methods.getActiveRunsForUser(userId);
     const unconfirmed: string[] = [];
     for (const run of active) {
@@ -1426,6 +1436,16 @@ export function createSchedulesService(
     return confirmed;
   }
 
+  /**
+   * Reverses a quiesce whose account deletion was cancelled (a controller failure that
+   * released the user-deletion fence). Re-enables and re-arms only the rows this exact
+   * attempt suspended; a schedule the owner independently deleted, or one a newer attempt
+   * re-suspended, is left as-is.
+   */
+  async function restoreUserSchedulesFromDeletion(userId: string, token: string): Promise<void> {
+    await methods.restoreUserSchedulesFromDeletion(userId, token);
+  }
+
   return {
     getLimits,
     engineDeps,
@@ -1438,6 +1458,7 @@ export function createSchedulesService(
     isScheduleLive,
     deleteScheduleForOwner,
     quiesceUserSchedules,
+    restoreUserSchedulesFromDeletion,
     initializeScheduleEngine,
     initializeScheduleErasureSweep,
   };

@@ -33,7 +33,11 @@ const {
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
-const { quiesceUserSchedules } = require('~/server/services/Schedules');
+const { randomUUID } = require('node:crypto');
+const {
+  quiesceUserSchedules,
+  restoreUserSchedulesFromDeletion,
+} = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -361,6 +365,7 @@ const updateUserPluginsController = async (req, res) => {
 const deleteUserController = async (req, res) => {
   const { user } = req;
   let triggerDeletionFence;
+  let scheduleSuspensionToken;
   let userDeleted = false;
 
   try {
@@ -396,7 +401,12 @@ const deleteUserController = async (req, res) => {
     }
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
-    if (!(await quiesceUserSchedules(user.id))) {
+    // Reversibly suspend the user's schedules under a per-attempt token BEFORE draining.
+    // A later cascade step (or this drain) can still fail and cancel the deletion, and the
+    // catch below restores exactly this attempt's rows — so a failed deletion never leaves
+    // a live user with silently disabled, erasure-eligible schedules.
+    scheduleSuspensionToken = randomUUID();
+    if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
       throw new Error('Scheduled executions could not be confirmed stopped');
     }
     const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
@@ -473,6 +483,20 @@ const deleteUserController = async (req, res) => {
         await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
       } catch (fenceError) {
         logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
+      }
+    }
+    // The account survives this failed attempt, so its schedules must too: restore the
+    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
+    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
+    // successful deletion never reaches here (userDeleted short-circuits it).
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      try {
+        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
+      } catch (restoreError) {
+        logger.error(
+          '[deleteUserController] Failed to restore suspended schedules after a cancelled deletion',
+          restoreError,
+        );
       }
     }
     logger.error('[deleteUserController]', err);

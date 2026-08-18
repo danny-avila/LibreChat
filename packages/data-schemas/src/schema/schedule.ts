@@ -118,6 +118,22 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       type: Boolean,
       default: false,
     },
+    /**
+     * Reversible account-deletion suspension. Set at quiesce under a per-attempt token
+     * that snapshots the pre-suspension enabled/next-run state. A deletion cancelled by a
+     * controller failure restores exactly the rows carrying its token; a successful
+     * deletion hard-deletes the row (and this snapshot with it). Distinct from `deleting`:
+     * a suspended row is NOT eligible for erasure, so a failed attempt cannot lose it.
+     */
+    deletionSuspension: {
+      type: {
+        token: { type: String, required: true },
+        enabled: { type: Boolean, required: true },
+        nextRunAt: { type: Date },
+      },
+      default: undefined,
+      _id: false,
+    },
     /** Erased tombstone: content is gone, only the create-idempotency identity
      *  remains for a bounded retry window (TTL below). A delayed create retry that
      *  matches this key must answer "deleted", not resurrect the recurring work. */

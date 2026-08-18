@@ -1058,6 +1058,102 @@ describe('deleteSchedulesByUser', () => {
   });
 });
 
+describe('reversible account-deletion suspension', () => {
+  async function rawSchedule(id: string): Promise<ISchedule | null> {
+    return Schedule.findOne({ id }).lean<ISchedule>();
+  }
+
+  it('suspends under a token, fencing firing while snapshotting the prior state', async () => {
+    const armedAt = new Date('2030-01-01T00:00:00Z');
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: armedAt }));
+    const before = await getSchedule(schedule.id);
+
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    const after = await getSchedule(schedule.id);
+    expect(after.enabled).toBe(false);
+    expect(after.nextRunAt).toBeUndefined();
+    expect(after.claimToken).not.toBe(before.claimToken);
+    // Reversible, NOT destructive: never marked for erasure.
+    expect(after.deleting).not.toBe(true);
+    expect(after.deletionSuspension?.token).toBe('attempt-1');
+    expect(after.deletionSuspension?.enabled).toBe(true);
+    expect(after.deletionSuspension?.nextRunAt?.getTime()).toBe(armedAt.getTime());
+  });
+
+  it('restores enabled + next-run from the snapshot and clears the suspension', async () => {
+    const armedAt = new Date('2030-01-01T00:00:00Z');
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: armedAt }));
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-1');
+
+    const restored = await getSchedule(schedule.id);
+    expect(restored.enabled).toBe(true);
+    expect(restored.nextRunAt?.getTime()).toBe(armedAt.getTime());
+    expect(restored.deletionSuspension).toBeUndefined();
+  });
+
+  it('restores a previously DISABLED schedule as disabled with no next run', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ enabled: false }));
+    await Schedule.updateOne({ id: schedule.id }, { $unset: { nextRunAt: 1 } });
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-1');
+
+    const restored = await getSchedule(schedule.id);
+    expect(restored.enabled).toBe(false);
+    expect(restored.nextRunAt).toBeUndefined();
+    expect(restored.deletionSuspension).toBeUndefined();
+  });
+
+  it('restore is fenced to the exact attempt token', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    // A different attempt's restore must not touch this suspension.
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-2');
+
+    const after = await getSchedule(schedule.id);
+    expect(after.enabled).toBe(false);
+    expect(after.deletionSuspension?.token).toBe('attempt-1');
+  });
+
+  it('cannot resurrect a schedule the owner independently deleted mid-suspension', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+    // The owner deletes this one schedule while the account deletion is in flight.
+    await methods.markScheduleDeleting(schedule.id, schedule.user);
+
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-1');
+
+    const after = await rawSchedule(schedule.id);
+    expect(after?.deleting).toBe(true);
+    expect(after?.enabled).toBe(false); // NOT re-enabled by restore
+  });
+
+  it('is idempotent per token — a retry does not overwrite the snapshot', async () => {
+    const armedAt = new Date('2030-01-01T00:00:00Z');
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: armedAt }));
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+    // A retry of the SAME attempt must not re-snapshot the now-disabled state.
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    const after = await getSchedule(schedule.id);
+    expect(after.deletionSuspension?.enabled).toBe(true);
+    expect(after.deletionSuspension?.nextRunAt?.getTime()).toBe(armedAt.getTime());
+  });
+
+  it('a successful deletion removes suspended rows and their snapshots', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const schedule = await methods.createSchedule(scheduleData({ user: userId }));
+    await methods.suspendUserSchedulesForDeletion(userId, 'attempt-1');
+
+    await methods.deleteSchedulesByUser(userId);
+
+    expect(await rawSchedule(schedule.id)).toBeNull();
+  });
+});
+
 describe('acquireManualRunLease / releaseLease', () => {
   it('serializes concurrent run-now attempts and can be released without advancing', async () => {
     const schedule = await methods.createSchedule(

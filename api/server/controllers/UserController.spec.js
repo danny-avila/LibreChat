@@ -9,6 +9,7 @@ const mockCancelAgentTriggerUserPurge = jest.fn().mockResolvedValue(true);
 const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
 const mockCancelAndDrainSubagentThreads = jest.fn().mockResolvedValue(undefined);
 const mockQuiesceUserSchedules = jest.fn().mockResolvedValue(true);
+const mockRestoreUserSchedules = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -104,6 +105,7 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({
 
 jest.mock('~/server/services/Schedules', () => ({
   quiesceUserSchedules: (...args) => mockQuiesceUserSchedules(...args),
+  restoreUserSchedulesFromDeletion: (...args) => mockRestoreUserSchedules(...args),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -369,7 +371,7 @@ describe('deleteUserController', () => {
     );
     expect(mockDrainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(mockCancelAndDrainSubagentThreads).toHaveBeenCalledWith(userId.toString(), undefined);
-    expect(mockQuiesceUserSchedules).toHaveBeenCalledWith(userId.toString());
+    expect(mockQuiesceUserSchedules).toHaveBeenCalledWith(userId.toString(), expect.any(String));
     expect(beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
@@ -394,6 +396,8 @@ describe('deleteUserController', () => {
     expect(mockPurgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
+    // A successful deletion hard-deletes the schedules; it must never restore them.
+    expect(mockRestoreUserSchedules).not.toHaveBeenCalled();
   });
 
   it('aborts generations admitted before the deletion fence before erasing messages', async () => {
@@ -440,6 +444,11 @@ describe('deleteUserController', () => {
     expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(deleteUserById).not.toHaveBeenCalled();
+    // Account survives -> its suspended schedules are restored under the quiesce token.
+    expect(mockRestoreUserSchedules).toHaveBeenCalledWith(
+      userIdString,
+      mockQuiesceUserSchedules.mock.calls[0][1],
+    );
   });
 
   it('fails closed before data cleanup when detached subagents do not drain', async () => {
@@ -487,6 +496,11 @@ describe('deleteUserController', () => {
     expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(deleteUserById).not.toHaveBeenCalled();
+    // Account survives -> its suspended schedules are restored under the quiesce token.
+    expect(mockRestoreUserSchedules).toHaveBeenCalledWith(
+      userIdString,
+      mockQuiesceUserSchedules.mock.calls[0][1],
+    );
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

@@ -28,6 +28,16 @@ export interface ISchedule {
   /** Owner-config generation; bumped only by an owner edit. */
   configRevision?: number;
   deleting?: boolean;
+  /** Reversible account-deletion suspension. Set at quiesce under a per-attempt token
+   *  that snapshots the pre-suspension enabled/next-run state, so a deletion that is
+   *  later cancelled restores exactly this row (fenced to its token) instead of leaving
+   *  a live user with silently disabled schedules. Distinct from `deleting`, which marks
+   *  a row for erasure. */
+  deletionSuspension?: {
+    token: string;
+    enabled: boolean;
+    nextRunAt?: Date;
+  };
   erased?: boolean;
   erasedAt?: Date;
   slot?: number;
