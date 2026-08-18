@@ -1,9 +1,11 @@
 import { tenantStorage } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type {
+  AgentContinueTriggerEnvelope,
   AgentFireTriggerEnvelope,
   AgentSteerTriggerEnvelope,
   AgentTriggerEnvelope,
+  AgentTriggerMode,
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
@@ -33,7 +35,7 @@ export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Pro
 export type AgentTriggerFailureCertainty = 'definite' | 'ambiguous';
 
 export interface AgentTriggerExecutionErrorOptions {
-  mode: 'fire' | 'steer';
+  mode: AgentTriggerMode;
   certainty: AgentTriggerFailureCertainty;
   retryable: boolean;
   code?: string;
@@ -47,7 +49,7 @@ export interface AgentTriggerExecutionErrorOptions {
  * remains unchanged.
  */
 export class AgentTriggerExecutionError extends Error {
-  readonly mode: 'fire' | 'steer';
+  readonly mode: AgentTriggerMode;
   readonly certainty: AgentTriggerFailureCertainty;
   readonly retryable: boolean;
   readonly code?: string;
@@ -87,7 +89,18 @@ export interface AgentTriggerSteerResult {
   leftover?: boolean;
 }
 
-export type AgentTriggerExecutionResult = AgentTriggerFireResult | AgentTriggerSteerResult;
+export interface AgentTriggerContinueResult {
+  mode: 'continue';
+  status: FireStatus;
+  conversationId: string;
+  streamId?: string;
+  generationCreatedAt?: number;
+}
+
+export type AgentTriggerExecutionResult =
+  | AgentTriggerContinueResult
+  | AgentTriggerFireResult
+  | AgentTriggerSteerResult;
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
@@ -97,7 +110,7 @@ export interface AgentTriggerExecutionHostDeps {
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
   getTimezone?: (
     principal: AgentRunPrincipal,
-    envelope: AgentFireTriggerEnvelope,
+    envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
   ) => MaybePromise<string | undefined>;
   fetch?: AgentTriggerFetch;
   /** Total bound for setup, admission, and the bounded response read. */
@@ -163,7 +176,7 @@ function abortScope(parent: AbortSignal | undefined, timeoutMs: number): AbortSc
 }
 
 function abortError(
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
   stage: string,
@@ -183,7 +196,7 @@ function abortError(
 
 function observeAbort<T>(
   operation: () => MaybePromise<T>,
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
 ): Promise<T> {
@@ -213,7 +226,7 @@ function observeAbort<T>(
 
 async function setupValue<T>(
   operation: () => MaybePromise<T>,
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
 ): Promise<T> {
@@ -342,7 +355,7 @@ function abortCode(scope: AbortScope, parent: AbortSignal | undefined, fallback:
   return fallback;
 }
 
-function requireToken(value: unknown, mode: 'fire' | 'steer'): string {
+function requireToken(value: unknown, mode: AgentTriggerMode): string {
   if (typeof value !== 'string' || value.length === 0 || /\s/.test(value)) {
     throw executionError('Agent trigger token mint returned an invalid token', {
       mode,
@@ -354,7 +367,7 @@ function requireToken(value: unknown, mode: 'fire' | 'steer'): string {
   return value;
 }
 
-function triggerUrl(baseUrl: string, path: string, mode: 'fire' | 'steer'): string {
+function triggerUrl(baseUrl: string, path: string, mode: AgentTriggerMode): string {
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -384,6 +397,10 @@ function fireUrl(baseUrl: string): string {
   return triggerUrl(baseUrl, `/api/agents/chat/${EModelEndpoint.agents}`, 'fire');
 }
 
+function continueUrl(baseUrl: string): string {
+  return triggerUrl(baseUrl, `/api/agents/chat/${EModelEndpoint.agents}`, 'continue');
+}
+
 function steerUrl(baseUrl: string): string {
   return triggerUrl(baseUrl, '/api/agents/chat/steer/deliver', 'steer');
 }
@@ -402,7 +419,10 @@ function fireStatus(value: unknown): FireStatus | undefined {
     : undefined;
 }
 
-function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
+function parseStartResult(
+  payload: unknown,
+  mode: 'continue' | 'fire',
+): AgentTriggerContinueResult | AgentTriggerFireResult | undefined {
   if (payload == null || typeof payload !== 'object') {
     return undefined;
   }
@@ -421,7 +441,7 @@ function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
     'generationCreatedAt' in payload ? payload.generationCreatedAt : undefined,
   );
   return {
-    mode: 'fire',
+    mode,
     status,
     conversationId,
     ...(streamId != null && { streamId }),
@@ -429,33 +449,46 @@ function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
   };
 }
 
-async function fire(
+function startRun(
   envelope: AgentFireTriggerEnvelope,
   context: AgentTriggerDispatchContext,
   deps: AgentTriggerExecutionHostDeps,
   timeoutMs: number,
-): Promise<AgentTriggerFireResult> {
+): Promise<AgentTriggerFireResult>;
+function startRun(
+  envelope: AgentContinueTriggerEnvelope,
+  context: AgentTriggerDispatchContext,
+  deps: AgentTriggerExecutionHostDeps,
+  timeoutMs: number,
+): Promise<AgentTriggerContinueResult>;
+async function startRun(
+  envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
+  context: AgentTriggerDispatchContext,
+  deps: AgentTriggerExecutionHostDeps,
+  timeoutMs: number,
+): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
+  const mode = envelope.mode;
   const scope = abortScope(context.signal, timeoutMs);
   try {
     const [token, timezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
-        'fire',
+        mode,
         scope,
         context.signal,
-      ).then((value) => requireToken(value, 'fire')),
+      ).then((value) => requireToken(value, mode)),
       setupValue(
         () => deps.getTimezone?.(envelope.principal, envelope),
-        'fire',
+        mode,
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), 'fire', scope, context.signal),
+      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;
     });
-    const url = fireUrl(baseUrl);
+    const url = mode === 'fire' ? fireUrl(baseUrl) : continueUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
     try {
@@ -475,7 +508,11 @@ async function fire(
           text: envelope.input,
           endpoint: EModelEndpoint.agents,
           agent_id: envelope.target.agentId,
-          parentMessageId: Constants.NO_PARENT,
+          parentMessageId:
+            envelope.mode === 'continue' ? envelope.target.parentMessageId : Constants.NO_PARENT,
+          ...(envelope.mode === 'continue' && {
+            conversationId: envelope.target.conversationId,
+          }),
           isContinued: false,
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
@@ -489,9 +526,9 @@ async function fire(
       const definite = isDefiniteConnectFailure(error);
       const message = error instanceof Error ? error.message : String(error);
       throw executionError(
-        `Agent trigger fire ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
+        `Agent trigger ${mode} ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
         {
-          mode: 'fire',
+          mode,
           certainty: definite ? 'definite' : 'ambiguous',
           retryable: true,
           code: abortCode(scope, context.signal, 'NETWORK_ERROR'),
@@ -505,11 +542,11 @@ async function fire(
     } catch (error) {
       if (response.ok) {
         throw executionError(
-          `Agent trigger fire response has an unknown outcome: ${
+          `Agent trigger ${mode} response has an unknown outcome: ${
             error instanceof Error ? error.message : String(error)
           }`,
           {
-            mode: 'fire',
+            mode,
             certainty: 'ambiguous',
             retryable: true,
             code: abortCode(scope, context.signal, 'INVALID_RESPONSE'),
@@ -522,11 +559,15 @@ async function fire(
     if (!response.ok) {
       const message =
         errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
-      throw executionError(`Agent trigger fire was rejected (${response.status}): ${message}`, {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} was rejected (${response.status}): ${message}`, {
+        mode,
         certainty: 'definite',
-        retryable: isRetryableStatus(response.status),
-        code: errorCode(payload) ?? 'FIRE_REJECTED',
+        retryable:
+          isRetryableStatus(response.status) ||
+          (mode === 'continue' &&
+            response.status === 409 &&
+            errorCode(payload) === 'PARENT_NOT_READY'),
+        code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {
           retryAfter: response.headers.get('retry-after') ?? undefined,
@@ -534,8 +575,8 @@ async function fire(
       });
     }
     if (boundedBody.truncated) {
-      throw executionError('Agent trigger fire returned an oversized success response', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} returned an oversized success response`, {
+        mode,
         certainty: 'ambiguous',
         retryable: true,
         code: 'RESPONSE_TOO_LARGE',
@@ -548,18 +589,27 @@ async function fire(
       'status' in payload &&
       payload.status === 'aborted'
     ) {
-      throw executionError('Agent trigger fire was aborted before generation started', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} was aborted before generation started`, {
+        mode,
         certainty: 'definite',
         retryable: false,
         code: 'START_ABORTED',
         status: response.status,
       });
     }
-    const result = parseFireResult(payload);
+    const result = parseStartResult(payload, mode);
     if (result == null) {
-      throw executionError('Agent trigger fire returned an invalid success response', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} returned an invalid success response`, {
+        mode,
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+        status: response.status,
+      });
+    }
+    if (mode === 'continue' && result.conversationId !== envelope.target.conversationId) {
+      throw executionError('Agent trigger continue returned a mismatched conversation', {
+        mode,
         certainty: 'ambiguous',
         retryable: true,
         code: 'INVALID_RESPONSE',
@@ -800,7 +850,13 @@ export function createAgentTriggerExecutionHost(
           envelope,
           {
             fire: (normalized, context) =>
-              runAsPrincipal(normalized, context, () => fire(normalized, context, deps, timeoutMs)),
+              runAsPrincipal(normalized, context, () =>
+                startRun(normalized, context, deps, timeoutMs),
+              ),
+            continue: (normalized, context) =>
+              runAsPrincipal(normalized, context, () =>
+                startRun(normalized, context, deps, timeoutMs),
+              ),
             steer: (normalized, context) =>
               runAsPrincipal(normalized, context, () =>
                 steer(normalized, context, deps, timeoutMs),

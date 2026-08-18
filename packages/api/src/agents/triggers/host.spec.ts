@@ -44,6 +44,27 @@ const createSteerEnvelope = () =>
     input: 'The opponent moved. Take your turn.',
   });
 
+const createContinueEnvelope = () =>
+  createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: 'request-3',
+    deliveryId: 'delivery-3',
+    receivedAt: 35,
+    principal: { id: 'user-1', role: 'member', tenantId: 'tenant-1' },
+    target: {
+      agentId: 'agent-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+    },
+    event: {
+      id: 'event-3',
+      type: 'subagent.completed',
+      occurredAt: 31,
+      source: { id: 'subagent-completion', type: 'internal' },
+    },
+    input: 'Collect the completed child task.',
+  });
+
 function response(payload: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(payload), {
     status: 200,
@@ -452,6 +473,87 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
         });
       });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('createAgentTriggerExecutionHost continue adapter', () => {
+  it('appends an idempotent turn to the exact existing conversation branch', async () => {
+    const envelope = createContinueEnvelope();
+    const idempotencyKey = getAgentTriggerIdempotencyKey(envelope);
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        generationCreatedAt: 50,
+        status: 'started',
+      }),
+    );
+    const host = createAgentTriggerExecutionHost(deps(fetcher));
+
+    await expect(host.dispatch(envelope)).resolves.toEqual({
+      mode: 'continue',
+      streamId: 'conversation-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 50,
+      status: 'started',
+    });
+    const [input, init] = fetcher.mock.calls[0];
+    expect(String(input)).toBe('http://127.0.0.1:3080/api/agents/chat/agents');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: envelope.input,
+      endpoint: EModelEndpoint.agents,
+      agent_id: 'agent-1',
+      parentMessageId: 'response-1',
+      conversationId: 'conversation-1',
+      isContinued: false,
+      isRegenerate: false,
+      clientRequestId: idempotencyKey,
+      generationProtocolVersion: 2,
+    });
+  });
+
+  it('retries without consuming the logical delivery when the parent is not settled', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'PARENT_NOT_READY', error: 'The parent is still running.' },
+            { status: 409 },
+          ),
+        ),
+      ),
+    );
+
+    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'continue',
+        certainty: 'definite',
+        retryable: true,
+        code: 'PARENT_NOT_READY',
+        status: 409,
+      });
+    });
+  });
+
+  it('rejects a mismatched continued conversation as an ambiguous outcome', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response({ streamId: 'other', conversationId: 'other', status: 'started' }),
+        ),
+      ),
+    );
+
+    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'continue',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+      });
+    });
   });
 });
 

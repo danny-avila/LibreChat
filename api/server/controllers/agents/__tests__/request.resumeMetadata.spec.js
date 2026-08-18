@@ -519,6 +519,38 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('defers a trusted trigger resume while its parent generation is still active', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockGenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      metadata: { userId: 'user-123' },
+    });
+    const initializeClient = jest.fn();
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Collect the completed child.',
+        messageId: 'wakeup-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        clientRequestId: 'trigger_resume_1',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PARENT_NOT_READY' }));
+    expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+  });
+
   it('creates the job with the in-flight turn before MCP initialization can emit OAuth', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));

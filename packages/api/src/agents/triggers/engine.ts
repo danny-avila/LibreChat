@@ -211,6 +211,14 @@ function isAccountDeletionDeferral(error: unknown): boolean {
   );
 }
 
+function isParentGenerationDeferral(error: unknown): boolean {
+  return (
+    error instanceof AgentTriggerExecutionError &&
+    error.code === 'PARENT_NOT_READY' &&
+    error.status === 409
+  );
+}
+
 /** Durable, lease-fenced delivery runner shared by every trusted event source. */
 export function createAgentTriggerDeliveryEngine(
   deps: AgentTriggerDeliveryEngineDeps,
@@ -326,10 +334,12 @@ export function createAgentTriggerDeliveryEngine(
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
         const deletionRejected = isAccountDeletionDeferral(error);
+        const parentNotReady = isParentGenerationDeferral(error);
         if (
           error instanceof AgentTriggerDeliveryDeferredError ||
           deletionCancelled ||
-          deletionRejected
+          deletionRejected ||
+          parentNotReady
         ) {
           const delayMs =
             error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
@@ -342,9 +352,15 @@ export function createAgentTriggerDeliveryEngine(
             availableAt,
           });
           if (deferred) {
+            let reason = 'pre_dispatch';
+            if (deletionCancelled || deletionRejected) {
+              reason = 'account_deletion';
+            } else if (parentNotReady) {
+              reason = 'parent_generation';
+            }
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,
-              reason: deletionCancelled || deletionRejected ? 'account_deletion' : 'pre_dispatch',
+              reason,
               availableAt: availableAt.toISOString(),
             });
           }

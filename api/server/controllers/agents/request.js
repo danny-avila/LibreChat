@@ -301,6 +301,7 @@ function rejectPreliminaryParentMessageId(res, generationProtocolVersion) {
     res,
     409,
     {
+      code: 'PARENT_NOT_READY',
       error:
         'Cannot submit a follow-up while the selected parent response is still being saved. Please wait and try again.',
     },
@@ -471,6 +472,46 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   // Treat "new" as a placeholder that needs a real UUID (frontend may send "new" for new convos)
   const streamId = conversationId;
   req.body.conversationId = conversationId;
+
+  /** A durable continuation trigger appends below a completed parent response. If
+   * that response belongs to a still-running or paused generation, admitting
+   * another generation on the same conversation stream would replace it.
+   * Defer without claiming the continuation idempotency key so the delivery engine
+   * can retry after the parent reaches a terminal state. */
+  const isTriggerContinuation =
+    req._isAgentTrigger === true && !isNewConvo && parentMessageId !== Constants.NO_PARENT;
+  if (isTriggerContinuation) {
+    let parentJob;
+    try {
+      parentJob = await GenerationJobManager.getJob(streamId);
+    } catch (error) {
+      logger.warn('[ResumableAgentController] Trigger continuation parent lookup failed', error);
+      res.set('Retry-After', '1');
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        503,
+        { code: 'SERVER_NOT_READY', error: 'Parent generation state is temporarily unavailable.' },
+        generationProtocolVersion,
+      );
+    }
+    if (
+      parentJob != null &&
+      liveJobBelongsToRequester(parentJob, req.user) &&
+      (parentJob.status === 'running' ||
+        parentJob.status === 'requires_action' ||
+        parentJob.metadata?.terminalPersistencePending === true)
+    ) {
+      res.set('Retry-After', '1');
+      startupTelemetry?.end('rejected');
+      return sendGenerationJson(
+        res,
+        409,
+        { code: 'PARENT_NOT_READY', error: 'The parent generation has not settled yet.' },
+        generationProtocolVersion,
+      );
+    }
+  }
 
   // Idempotency: a lost/reset start-generation response makes the client re-POST the
   // identical payload, which would otherwise start a second fully-billed generation.

@@ -19,6 +19,7 @@ import type {
   SubagentTaskControlHandler,
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
+import type { SubagentTaskSettlement } from './subagentThreads';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
@@ -282,6 +283,63 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages[1].subagentTranscript).toMatchObject({
       taskId: requireAccepted(started).task.taskId,
       mode: 'append',
+    });
+  });
+
+  it('emits a host-safe completion only after the child result is durable', async () => {
+    const userId = 'wakeup-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const onTaskSettled = jest.fn(async (settlement: SubagentTaskSettlement) => {
+      const messages = await methods.getMessages({
+        user: userId,
+        conversationId: settlement.threadId,
+        messageId: `${settlement.taskId}:assistant`,
+      });
+      expect(messages).toHaveLength(1);
+    });
+    const store = new SubagentThreadTaskStore(methods, { onTaskSettled });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        parentRunId: 'parent-response-1',
+        parentAgentId: 'parent-agent-1',
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+
+    const settledTask = store.get(config.scopeId, requireAccepted(started).task.taskId);
+    expect(settledTask?.error).toBeUndefined();
+    expect(settledTask).toMatchObject({
+      status: 'completed',
+    });
+    expect(onTaskSettled).toHaveBeenCalledWith({
+      userId,
+      parentConversationId,
+      parentMessageId: 'parent-response-1',
+      parentAgentId: 'parent-agent-1',
+      taskId: requireAccepted(started).task.taskId,
+      threadId: requireThreadId(started),
+      subagentType: 'researcher-agent',
+      settledAt: expect.any(Number),
+      status: 'completed',
+    });
+  });
+
+  it('keeps a persisted child result collectable when wakeup enqueue fails', async () => {
+    const userId = 'wakeup-failure-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      onTaskSettled: async () => Promise.reject(new Error('trigger queue unavailable')),
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.claim(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'completed',
+      result: 'Completed the investigation.',
     });
   });
 

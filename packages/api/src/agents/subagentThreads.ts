@@ -141,7 +141,25 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  onTaskSettled?: (settlement: SubagentTaskSettlement) => Promise<void> | void;
 }
+
+interface SubagentTaskSettlementBase {
+  userId: string;
+  parentConversationId: string;
+  parentMessageId: string;
+  parentAgentId?: string;
+  tenantId?: string;
+  taskId: string;
+  threadId: string;
+  subagentType: string;
+  settledAt: number;
+}
+
+/** Durable, host-safe terminal event emitted only after the child transcript is persisted. */
+export type SubagentTaskSettlement =
+  | (SubagentTaskSettlementBase & { status: 'completed' })
+  | (SubagentTaskSettlementBase & { status: 'error' });
 
 function positiveInteger(value: number | undefined, fallback: number): number {
   return Number.isSafeInteger(value) && value != null && value > 0 ? value : fallback;
@@ -387,6 +405,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ) => Promise<boolean>;
 
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  private readonly onTaskSettled?: SubagentThreadTaskStoreOptions['onTaskSettled'];
   private taskControlTransport?: SubagentTaskControlTransport;
 
   constructor(
@@ -418,6 +437,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
     this.renewOwnerAdmission = options.renewOwnerAdmission;
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
+    this.onTaskSettled = options.onTaskSettled;
   }
 
   /** Enables optional cross-replica lookup after the host's Redis service is ready. */
@@ -1746,6 +1766,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       throw new Error('Unable to persist the child-thread result.');
     }
     await this.touchAfterMessage(scope, conversation.conversationId, taskId, 'completed');
+    await this.notifyTaskSettled(scope, conversation.conversationId, request, taskId, {
+      status: 'completed',
+    });
   }
 
   private async persistFailure(
@@ -1789,6 +1812,39 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       throw new Error('Unable to persist the child-thread failure.');
     }
     await this.touchAfterMessage(scope, threadId, taskId, 'failed');
+    await this.notifyTaskSettled(scope, threadId, request, taskId, {
+      status: 'error',
+    });
+  }
+
+  private async notifyTaskSettled(
+    scope: SubagentThreadScope,
+    threadId: string,
+    request: SubagentTaskStartRequest,
+    taskId: string,
+    outcome: { status: 'completed' } | { status: 'error' },
+  ): Promise<void> {
+    if (this.onTaskSettled == null) {
+      return;
+    }
+    try {
+      await this.onTaskSettled({
+        userId: scope.userId,
+        parentConversationId: scope.parentConversationId,
+        parentMessageId: request.parentRunId,
+        ...(request.parentAgentId == null ? {} : { parentAgentId: request.parentAgentId }),
+        ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+        taskId,
+        threadId,
+        subagentType: request.subagentType,
+        settledAt: Date.now(),
+        ...outcome,
+      });
+    } catch (error) {
+      /** The child result is already durable and remains manually collectable.
+       * A trigger outage must not rewrite a successful child as failed. */
+      logger.error('[subagentThreads] Failed to enqueue the parent completion wakeup', error);
+    }
   }
 
   private async persistCancellation(

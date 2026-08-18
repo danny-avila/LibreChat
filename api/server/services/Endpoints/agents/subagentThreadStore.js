@@ -4,9 +4,11 @@ const {
   registerShutdownTask,
   duplicateIoRedisClient,
   createSubagentThreadTaskStore,
+  createSubagentCompletionWakeupHandler,
   RedisSubagentTaskControlTransport,
 } = require('@librechat/api');
 const db = require('~/models');
+const { enqueueAgentTrigger } = require('../../Agents/triggers');
 
 /** Durable logical threads use normal LibreChat conversations/messages. Mongo
  * fences continuation; optional Redis routing reaches the live owning process. */
@@ -31,6 +33,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     fenceOwnerAdmission: db.fenceSubagentAdmission,
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
+    onTaskSettled: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
   },
 );
 
