@@ -11,6 +11,17 @@ const urls = cacheConfig.REDIS_URI?.split(',').map((uri) => new URL(uri)) || [];
 const username = urls?.[0]?.username || cacheConfig.REDIS_USERNAME;
 const password = urls?.[0]?.password || cacheConfig.REDIS_PASSWORD;
 const ca = cacheConfig.REDIS_CA;
+const protocols = new Set(urls.map((url) => url.protocol));
+const useTls = urls[0]?.protocol === 'rediss:';
+const isRedisCluster = urls.length !== 1 || cacheConfig.USE_REDIS_CLUSTER;
+
+if (cacheConfig.USE_REDIS && protocols.size > 1) {
+  throw new Error('All REDIS_URI entries must use the same protocol');
+}
+
+if (cacheConfig.USE_REDIS && ca && !useTls) {
+  throw new Error('REDIS_CA requires REDIS_URI to use rediss://');
+}
 
 let resolveKeyvRedisClientReady: (() => void) | undefined;
 let rejectKeyvRedisClientReady: ((reason?: unknown) => void) | undefined;
@@ -31,7 +42,7 @@ if (cacheConfig.USE_REDIS) {
   const redisOptions: Record<string, unknown> = {
     username: username,
     password: password,
-    tls: ca ? { ca } : undefined,
+    tls: useTls ? { ca: ca ?? undefined } : undefined,
     keyPrefix: `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`,
     maxListeners: cacheConfig.REDIS_MAX_LISTENERS,
     retryStrategy: (times: number) => {
@@ -64,7 +75,7 @@ if (cacheConfig.USE_REDIS) {
   };
 
   ioredisClient =
-    urls.length === 1 && !cacheConfig.USE_REDIS_CLUSTER
+    !isRedisCluster
       ? new IoRedis(cacheConfig.REDIS_URI!, redisOptions)
       : new IoRedis.Cluster(
           urls.map((url) => ({ host: url.hostname, port: parseInt(url.port, 10) || 6379 })),
@@ -177,8 +188,8 @@ if (cacheConfig.USE_REDIS) {
     username,
     password,
     socket: {
-      tls: ca != null,
-      ca,
+      ...(isRedisCluster ? { tls: useTls } : {}),
+      ...(ca ? { ca } : {}),
       connectTimeout: cacheConfig.REDIS_CONNECT_TIMEOUT,
       reconnectStrategy: (retries: number) => {
         if (
@@ -204,7 +215,7 @@ if (cacheConfig.USE_REDIS) {
   };
 
   keyvRedisClient =
-    urls.length === 1 && !cacheConfig.USE_REDIS_CLUSTER
+    !isRedisCluster
       ? createClient({ url: cacheConfig.REDIS_URI, ...redisOptions })
       : createCluster({
           rootNodes: urls.map((url) => ({ url: url.href })),
