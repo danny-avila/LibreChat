@@ -685,8 +685,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       await this.removeRegistrations(scopeId, [taskId]);
       return undefined;
     }
-    if (consumesResult(result)) {
-      await this.acknowledgeClaim(ownerId, scopeId, taskId);
+    if (consumesResult(result) && !(await this.acknowledgeClaim(ownerId, scopeId, taskId))) {
+      /** Delivery is not complete until the owner can release the result. It still
+       * holds it, so report the retryable path and let a later poll collect it. */
+      throw new SubagentTaskOwnerUnavailableError();
     }
     return result;
   }
@@ -985,11 +987,36 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     this.claimReplays.bytes -= cached.bytes;
   }
 
-  private async acknowledgeClaim(ownerId: string, scopeId: string, taskId: string): Promise<void> {
+  /**
+   * Confirms the owner may release a consumed result. Delivery to zero subscribers is
+   * not an acknowledgement, so this retries inside the ordinary request window and
+   * reports whether the owner actually received it.
+   */
+  private async acknowledgeClaim(
+    ownerId: string,
+    scopeId: string,
+    taskId: string,
+  ): Promise<boolean> {
     const ack: RoutedAck = { version: PROTOCOL_VERSION, kind: 'ack', scopeId, taskId };
-    await this.publish(this.channel(ownerId), JSON.stringify(ack)).catch((error) => {
-      logger.warn('[subagentTaskRouting] Failed to acknowledge a claimed result', error);
-    });
+    const serialized = JSON.stringify(ack);
+    const destination = this.channel(ownerId);
+    const deadline = Date.now() + this.requestTimeoutMs;
+    for (;;) {
+      try {
+        if ((await this.publish(destination, serialized)) > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warn('[subagentTaskRouting] Failed to acknowledge a claimed result', error);
+      }
+      if (Date.now() + this.retryDelayMs >= deadline) {
+        return false;
+      }
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, this.retryDelayMs);
+        timer.unref?.();
+      });
+    }
   }
 
   private async requestTaskOwner(
@@ -1122,8 +1149,9 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     cache.bytes += bytes;
   }
 
-  private async publish(channel: string, value: string): Promise<void> {
-    await this.publisher.publish(channel, value);
+  private async publish(channel: string, value: string): Promise<number> {
+    const delivered = await this.publisher.publish(channel, value);
+    return typeof delivered === 'number' ? delivered : 0;
   }
 
   private ensureRegistrationHeartbeat(): void {
@@ -1163,7 +1191,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         localTaskIds = new Set(handler.list(scopeId).map((task) => task.taskId));
         localTaskIdsByScope.set(scopeId, localTaskIds);
       }
-      if (localTaskIds.has(taskId)) {
+      /** A retained result is only reachable while its owner stays registered, so the
+       * address outlives the task itself until the result is acknowledged. */
+      if (
+        localTaskIds.has(taskId) ||
+        this.claimReplays.entries.has(this.claimReplayKey(scopeId, taskId))
+      ) {
         retained.push(registration);
         continue;
       }

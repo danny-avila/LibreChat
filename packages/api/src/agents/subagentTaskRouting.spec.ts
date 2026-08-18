@@ -16,6 +16,8 @@ class FakeRedisBus {
   readonly hashes = new Map<string, Map<string, string>>();
   readonly clients = new Set<FakeRedisClient>();
   dropResponses = 0;
+  /** Acknowledgements that reach nobody, as Redis reports during a resubscribe. */
+  ackFailures = 0;
   registrationFailures = 0;
   registrationHook?: (taskId: string) => Promise<void>;
 
@@ -29,6 +31,10 @@ class FakeRedisBus {
     if (this.dropResponses > 0 && channel.endsWith(':requester')) {
       this.dropResponses -= 1;
       return 1;
+    }
+    if (this.ackFailures > 0 && message.includes('"kind":"ack"')) {
+      this.ackFailures -= 1;
+      return 0;
     }
     let delivered = 0;
     for (const client of this.clients) {
@@ -759,6 +765,141 @@ describe('RedisSubagentTaskControlTransport', () => {
       clock.mockRestore();
     }
     expect(claim).toHaveBeenCalledTimes(1);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('holds a result the owner could not be told was delivered, until a later poll', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const claim = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'completed' as const,
+      task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+      result: 'child result',
+    }));
+    await owner.bind(taskHandler({ claim }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    const { claimReplays } = owner as unknown as {
+      claimReplays: { entries: Map<string, unknown> };
+    };
+
+    /** Every acknowledgement reaches nobody, so delivery is never confirmed. */
+    bus.ackFailures = 1_000;
+    await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
+      SubagentTaskOwnerUnavailableError,
+    );
+    expect(claimReplays.entries.size).toBe(1);
+
+    /** A later poll recovers the same result and acknowledges it. */
+    bus.ackFailures = 0;
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'child result',
+    });
+    for (let attempt = 0; attempt < 50 && claimReplays.entries.size > 0; attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    expect(claimReplays.entries.size).toBe(0);
+    /** The one-shot handler ran exactly once across both polls. */
+    expect(claim).toHaveBeenCalledTimes(1);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('retries an acknowledgement that briefly reaches no subscriber', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 5 },
+    );
+    const claim = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'completed' as const,
+      task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+      result: 'child result',
+    }));
+    await owner.bind(taskHandler({ claim }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    /** The first two acknowledgements land during a resubscribe; the third succeeds. */
+    bus.ackFailures = 2;
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+    });
+    expect(bus.ackFailures).toBe(0);
+    const { claimReplays } = owner as unknown as {
+      claimReplays: { entries: Map<string, unknown> };
+    };
+    for (let attempt = 0; attempt < 50 && claimReplays.entries.size > 0; attempt += 1) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    expect(claimReplays.entries.size).toBe(0);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
+  it('keeps an unacknowledged result addressable after its task leaves the store', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      {
+        namespace: 'test',
+        instanceId: 'owner',
+        requestTimeoutMs: 40,
+        retryDelayMs: 5,
+        registrationHeartbeatMs: 5,
+      },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    let retained = true;
+    await owner.bind(
+      taskHandler({
+        claim: (_scopeId: string, taskId: string) => ({
+          status: 'completed' as const,
+          task: snapshot({ taskId, status: 'completed', resultAvailable: true }),
+          result: 'child result',
+        }),
+        /** The task ages out of the store while its result is still unacknowledged. */
+        list: () => (retained ? [snapshot({ taskId: 'task-1' })] : []),
+      }),
+    );
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+
+    bus.ackFailures = 1_000;
+    await expect(requester.claim('scope-1', 'task-1')).rejects.toBeInstanceOf(
+      SubagentTaskOwnerUnavailableError,
+    );
+
+    retained = false;
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
+
+    bus.ackFailures = 0;
+    await expect(requester.claim('scope-1', 'task-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'child result',
+    });
 
     await Promise.all([owner.destroy(), requester.destroy()]);
   });

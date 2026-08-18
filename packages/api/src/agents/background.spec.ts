@@ -1295,6 +1295,56 @@ describe('runCheckBackgroundTask (singleton)', () => {
     finish({ content: 'late result' });
   });
 
+  it('carries the tool-call id as the control invocation identity', async () => {
+    const controlTask = jest.fn().mockResolvedValue({
+      status: 'not_running',
+      task: {
+        taskId: 'remote-task',
+        subagentType: 'researcher',
+        status: 'completed',
+        createdAt: 1,
+        updatedAt: 2,
+        resultAvailable: false,
+        resultClaimed: true,
+        pendingControls: 0,
+      },
+    });
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn(),
+      controlTask,
+      listTasks: jest.fn(),
+    });
+    const control = (toolCallId: string | undefined) =>
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: 'remote-task',
+          action: 'queue',
+          message: 'Check one more source.',
+        },
+        toolCallId,
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+      });
+
+    /** Replaying one tool call keeps its identity, so routing can replay the result. */
+    await control('call_abc');
+    await control('call_abc');
+    const [firstInvocation, replayedInvocation] = controlTask.mock.calls.map((call) => call[3]);
+    expect(firstInvocation).toBe('call_abc');
+    expect(replayedInvocation).toBe('call_abc');
+
+    /** A separate tool call is a separate command even with an identical payload. */
+    await control('call_def');
+    expect(controlTask.mock.calls[2][3]).toBe('call_def');
+
+    /** Without a tool-call id each invocation stays distinct rather than colliding. */
+    await control(undefined);
+    await control(undefined);
+    const [fallback, otherFallback] = controlTask.mock.calls.slice(3).map((call) => call[3]);
+    expect(fallback).not.toBe(otherFallback);
+  });
+
   it('reports an unreachable remote subagent owner without pretending the task is missing', async () => {
     const store = Object.assign(new InMemorySubagentTaskStore(), {
       claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),

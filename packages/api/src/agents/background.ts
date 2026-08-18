@@ -33,7 +33,7 @@
  * @module packages/api/src/agents/background
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
@@ -1127,6 +1127,21 @@ function buildSubagentControlCommand(
   return undefined;
 }
 
+/**
+ * One tool call is one control invocation. Reusing the provider's tool-call id keeps a
+ * replay of that same call idempotent, where a fresh id would apply the command twice;
+ * two distinct calls stay distinct even when their action and message are identical.
+ */
+function controlInvocationId(toolCallId: string | undefined): string {
+  const trimmed = toolCallId?.trim();
+  if (trimmed == null || trimmed === '') {
+    return randomUUID();
+  }
+  return trimmed.length <= MAX_BACKGROUND_TASK_ID_CHARS
+    ? trimmed
+    : createHash('sha256').update(trimmed).digest('base64url').slice(0, 32);
+}
+
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
 interface RoutedSubagentTaskStore {
   claimTask(scopeId: string, taskId: string): Promise<SubagentTaskClaim>;
@@ -1152,6 +1167,8 @@ export async function runCheckBackgroundTask(params: {
   userId: string;
   conversationId: string;
   args: unknown;
+  /** The provider's tool-call id: one control invocation, stable across replays. */
+  toolCallId?: string;
   subagentTasks?: SubagentTaskConfig;
 }): Promise<string> {
   const { userId, conversationId } = params;
@@ -1165,9 +1182,7 @@ export async function runCheckBackgroundTask(params: {
   }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
-  /** One tool call is one control invocation: routing may retransmit it, but a later
-   * call issuing the same action and message is a separate command. */
-  const invocationId = randomUUID();
+  const invocationId = controlInvocationId(params.toolCallId);
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);

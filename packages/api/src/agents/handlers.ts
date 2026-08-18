@@ -4093,6 +4093,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     userId: backgroundUserId,
                     conversationId: backgroundConversationId,
                     args: tc.args,
+                    toolCallId: tc.id,
                     subagentTasks,
                   });
                   /** Deliver a completed task's artifact through THIS live poll
