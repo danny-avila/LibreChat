@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const { logger, getTenantId, runAsSystem } = require('@librechat/data-schemas');
 const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
@@ -18,7 +18,7 @@ const {
   getHttpsProxyAgent,
   math,
 } = require('@librechat/api');
-const { updateUser, findUser } = require('~/models');
+const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 const getOpenIdJwtAudience = () => {
@@ -173,6 +173,13 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          if (!(await runAsSystem(() => isAgentTriggerPrincipalActive(user.id)))) {
+            done(null, false, {
+              message: 'Account deletion is in progress',
+              code: 'ACCOUNT_DELETION_IN_PROGRESS',
+            });
+            return;
+          }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;
 

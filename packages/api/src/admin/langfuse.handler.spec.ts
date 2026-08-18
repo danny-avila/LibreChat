@@ -957,5 +957,119 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.body).toEqual({ success: false, errorCode: 'missing_secret' });
       expect(global.fetch).not.toHaveBeenCalled();
     });
+
+    it('sends the deployment headers on both verification requests', async () => {
+      /** Single-tenant topology with one configured Langfuse origin — the
+       *  self-hosted-behind-a-proxy case — so the header map is unambiguous. */
+      delete process.env.TENANT_ISOLATION_STRICT;
+      delete process.env.LANGFUSE_FANOUT_ENABLED;
+      delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'proxy-client' } } },
+        }),
+        res,
+      );
+
+      expect(res.body).toEqual({ success: true });
+      const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+      expect(projectsInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
+      expect(projectsInit.headers.Authorization).toMatch(/^Basic /);
+      const [, ingestionInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
+      expect(ingestionInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
+      expect(ingestionInit.headers.Authorization).toBe('Bearer pk');
+      delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
+    });
+
+    it('withholds deployment headers when several Langfuse origins are configured', async () => {
+      /** The collector from `beforeEach` plus an explicit tenant URL: the map
+       *  does not say which of them it authenticates to, so neither gets it. */
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'ambiguous-token' } } },
+        }),
+        res,
+      );
+
+      expect(JSON.stringify((global.fetch as unknown as jest.Mock).mock.calls)).not.toContain(
+        'ambiguous-token',
+      );
+      delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
+    });
+
+    it('withholds deployment headers when verifying an unconfigured destination', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'internal-gateway' } } },
+        }),
+        res,
+      );
+
+      /** `eu` here is the built-in Langfuse Cloud default; an admin selecting it
+       *  must not ship the internal gateway credential to that origin. */
+      const calls = (global.fetch as unknown as jest.Mock).mock.calls;
+      expect(JSON.stringify(calls)).not.toContain('internal-gateway');
+    });
+
+    it.each(['Authorization', 'authorization'])(
+      'keeps the Langfuse authorization when a deployment %s header collides',
+      async (headerName) => {
+        global.fetch = jest
+          .fn()
+          .mockResolvedValueOnce(projectResponse())
+          .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+        const { handlers } = createHandlers();
+        const res = mockRes();
+
+        delete process.env.TENANT_ISOLATION_STRICT;
+        delete process.env.LANGFUSE_FANOUT_ENABLED;
+        delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+        process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
+        await handlers.testConnection(
+          mockReq({
+            body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+            config: { langfuse: { headers: { [headerName]: 'Bearer proxy-token' } } },
+          }),
+          res,
+        );
+        delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
+
+        const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+        const headers = projectsInit.headers as Record<string, string>;
+        /** A surviving case variant would be appended by fetch rather than
+         *  replaced, sending both credentials in one combined value. */
+        expect(
+          Object.keys(headers).filter((key) => key.toLowerCase() === 'authorization'),
+        ).toHaveLength(1);
+        expect(Object.values(headers)).not.toContain('Bearer proxy-token');
+        expect(Object.values(headers).some((value) => value.startsWith('Basic '))).toBe(true);
+      },
+    );
   });
 });

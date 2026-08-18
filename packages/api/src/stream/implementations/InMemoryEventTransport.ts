@@ -13,6 +13,18 @@ interface StreamState {
  */
 export class InMemoryEventTransport implements IEventTransport {
   private streams = new Map<string, StreamState>();
+  private providerDrainProofs = new Map<string, number>();
+  private providerDrainWrites = 0;
+
+  private static readonly PROVIDER_DRAIN_PROOF_TTL_MS = 5 * 60_000;
+
+  private providerDrainKey(
+    streamId: string,
+    generationId: number,
+    providerExecutionId: string,
+  ): string {
+    return `${streamId}:${generationId}:${providerExecutionId}`;
+  }
 
   private getOrCreateStream(streamId: string): StreamState {
     let state = this.streams.get(streamId);
@@ -110,6 +122,44 @@ export class InMemoryEventTransport implements IEventTransport {
     }
   }
 
+  async recordProviderDrain(
+    streamId: string,
+    generationId: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    const now = Date.now();
+    this.providerDrainWrites++;
+    if (this.providerDrainWrites % 256 === 0) {
+      for (const [key, expiresAt] of this.providerDrainProofs) {
+        if (expiresAt <= now) {
+          this.providerDrainProofs.delete(key);
+        }
+      }
+    }
+    this.providerDrainProofs.set(
+      this.providerDrainKey(streamId, generationId, providerExecutionId),
+      now + InMemoryEventTransport.PROVIDER_DRAIN_PROOF_TTL_MS,
+    );
+    return true;
+  }
+
+  async hasProviderDrain(
+    streamId: string,
+    generationId: number,
+    providerExecutionId: string,
+  ): Promise<boolean> {
+    const key = this.providerDrainKey(streamId, generationId, providerExecutionId);
+    const expiresAt = this.providerDrainProofs.get(key);
+    if (expiresAt == null) {
+      return false;
+    }
+    if (expiresAt <= Date.now()) {
+      this.providerDrainProofs.delete(key);
+      return false;
+    }
+    return true;
+  }
+
   getSubscriberCount(streamId: string): number {
     const state = this.streams.get(streamId);
     return state?.emitter.listenerCount('chunk') ?? 0;
@@ -186,6 +236,8 @@ export class InMemoryEventTransport implements IEventTransport {
       state.emitter.removeAllListeners();
     }
     this.streams.clear();
+    this.providerDrainProofs.clear();
+    this.providerDrainWrites = 0;
     logger.debug('[InMemoryEventTransport] Destroyed');
   }
 }

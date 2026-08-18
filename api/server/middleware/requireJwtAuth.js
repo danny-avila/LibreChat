@@ -17,6 +17,7 @@ const hasPassportStrategy = (strategy) =>
 const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.toString?.();
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
+const ACCOUNT_DELETION_CODE = 'ACCOUNT_DELETION_IN_PROGRESS';
 
 const getAuthTokenSource = (req) => {
   const authorization = req.headers.authorization;
@@ -166,6 +167,7 @@ const requireJwtAuth = (req, res, next) => {
         logAuthenticationFailure({ strategy, info, status, err });
         return res.status(status || 401).json({
           message: info?.message || 'Unauthorized',
+          ...(info?.code === ACCOUNT_DELETION_CODE && { code: ACCOUNT_DELETION_CODE }),
         });
       }
       if (strategy === 'openidJwt' && getAuthenticatedUserId(user) !== openIdReuseUserId) {

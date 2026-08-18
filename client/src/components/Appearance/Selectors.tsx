@@ -4,15 +4,19 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
+type PortalElement = ((element: HTMLElement) => HTMLElement | null) | HTMLElement | null;
+
 export const ThemeSelector = ({
   theme,
   onChange,
   portal = true,
+  portalElement,
   popoverClassName,
 }: {
   theme: string;
   onChange: (value: string) => void;
   portal?: boolean;
+  portalElement?: PortalElement;
   popoverClassName?: string;
 }) => {
   const localize = useLocalize();
@@ -37,6 +41,7 @@ export const ThemeSelector = ({
         testId="theme-selector"
         aria-labelledby={labelId}
         portal={portal}
+        portalElement={portalElement}
       />
     </div>
   );
@@ -46,11 +51,13 @@ export const LangSelector = ({
   langcode,
   onChange,
   portal = true,
+  portalElement,
   popoverClassName,
 }: {
   langcode: string;
   onChange: (value: string) => void;
   portal?: boolean;
+  portalElement?: PortalElement;
   popoverClassName?: string;
 }) => {
   const localize = useLocalize();
@@ -120,13 +127,11 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses={cn(
-            'z-50 [--anchor-max-height:256px] max-h-[60vh] w-[220px]',
-            popoverClassName,
-          )}
+          sizeClasses={cn('z-50 w-[220px]', popoverClassName)}
           options={languageOptions}
           aria-labelledby={labelId}
           portal={portal}
+          portalElement={portalElement}
           searchable
           searchPlaceholder={localize('com_ui_search_language')}
           searchEmptyText={localize('com_ui_no_results_found')}

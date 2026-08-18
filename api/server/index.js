@@ -56,6 +56,7 @@ const initializeOAuthReconnectManager = require('./services/initializeOAuthRecon
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
+const { initializeAgentTriggerService } = require('./services/Agents/triggers');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
@@ -397,6 +398,7 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
+      await initializeAgentTriggerService({ address: server.address() });
       serverReady = true;
       logger.info('Server readiness checks passing.');
     } catch (initErr) {

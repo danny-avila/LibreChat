@@ -45,6 +45,7 @@ export * from './approval';
 export * from './steer';
 export * from './activityLabels';
 export * from './runStepDuration';
+export * from './toolCallPhase';
 export * from './documentTitle';
 export * from './reasoningLabels';
 export * from './numbers';

@@ -8,13 +8,17 @@ import {
 import { ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 
 interface AskQuestionsFormState {
+  /** Index of the question currently on screen. Lives beside the answers so the
+   *  composer popover and the chat card resume on the same step when one
+   *  surface hands over to the other. */
+  step: number;
   text: Record<string, string>;
   selected: Record<string, string[]>;
 }
 
 const askQuestionsFormState = atomFamily<AskQuestionsFormState, string>({
   key: 'askQuestionsFormState',
-  default: { text: {}, selected: {} },
+  default: { step: 0, text: {}, selected: {} },
 });
 
 function ownValue<T>(record: Record<string, T>, key: string): T | undefined {
@@ -35,6 +39,7 @@ export default function useAskQuestionsForm(
   const setText = useCallback(
     (question: Agents.AskUserQuestionBatchItem, value: string) => {
       setState((previous) => ({
+        ...previous,
         text: { ...previous.text, [question.id]: value },
         selected:
           question.multiSelect === true || value.length === 0
@@ -56,6 +61,7 @@ export default function useAskQuestionsForm(
             : [...current, value];
         }
         return {
+          ...previous,
           text:
             question.multiSelect === true ? previous.text : { ...previous.text, [question.id]: '' },
           selected: { ...previous.selected, [question.id]: selected },
@@ -63,6 +69,16 @@ export default function useAskQuestionsForm(
       });
     },
     [setState],
+  );
+
+  const goToStep = useCallback(
+    (index: number) => {
+      const bounded = Math.min(Math.max(index, 0), Math.max(questions.length - 1, 0));
+      setState((previous) =>
+        previous.step === bounded ? previous : { ...previous, step: bounded },
+      );
+    },
+    [questions.length, setState],
   );
 
   const answers = useMemo(() => {
@@ -81,7 +97,7 @@ export default function useAskQuestionsForm(
       }
     }
     return resolved;
-  }, [questions, state]);
+  }, [questions, state.text, state.selected]);
 
   const canSubmit =
     !locked && questions.every((question) => (ownValue(answers, question.id)?.length ?? 0) > 0);
@@ -107,11 +123,14 @@ export default function useAskQuestionsForm(
 
   return {
     state,
+    step: Math.min(state.step, Math.max(questions.length - 1, 0)),
     status,
     locked,
+    answers,
     canSubmit,
     setText,
     selectOption,
+    goToStep,
     submit,
     skip,
   };

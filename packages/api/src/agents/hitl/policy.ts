@@ -278,6 +278,7 @@ const SENSITIVE_PARAM_KEYS = new Set([
   'httpagent',
   'httpsagent',
   'callbacks',
+  'endpoint',
   'endpointhost',
   'endpoint_host',
 ]);
@@ -511,6 +512,38 @@ export function applyResumeContext(
       body[key] = ctx[key];
     } else {
       delete body[key];
+    }
+  }
+}
+
+/** Request-envelope fields that resolved provider params must never replace. */
+const RESUME_REQUEST_CONTROL_KEYS = new Set<string>([
+  ...RESUME_CONTEXT_KEYS,
+  'conversationId',
+  'generationCreatedAt',
+  'generationProtocolVersion',
+  'actionId',
+  'decisions',
+  'answer',
+  'answers',
+  'isTemporary',
+]);
+
+/**
+ * Replay captured generation parameters without allowing provider configuration to
+ * replace routing, graph identity, or resume-action fields. This guard also makes
+ * pending actions captured by older versions safe to resume after an upgrade.
+ */
+export function applyResumeModelParameters(
+  body: Record<string, unknown> | undefined | null,
+  params: unknown,
+): void {
+  if (body == null || params == null || typeof params !== 'object' || Array.isArray(params)) {
+    return;
+  }
+  for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+    if (!RESUME_REQUEST_CONTROL_KEYS.has(key)) {
+      body[key] = value;
     }
   }
 }

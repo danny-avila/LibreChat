@@ -494,7 +494,7 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     kickDrawerAnimation(false, jest.fn());
 
     expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
-    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+    expect(harness.pane.style.transform).toBe('none');
 
     harness.rerender({ open: false, enabled: true });
     jest.runAllTimers();
@@ -610,6 +610,33 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.advanceTimersByTime(400);
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.pane.style.transform).toBe('translateX(100%)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /**
+   * A programmatic close is a REVEAL: the pane repositions instantly under
+   * the opaque drawer's cover and only the drawer animates away. Animating
+   * the pane in from the right made every tap-to-navigate close visibly
+   * shift the chat leftward while the new conversation committed into the
+   * moving layer mid-slide. The gesture keeps the paired motion — a finger
+   * drags both — via `settle`, which this does not touch.
+   */
+  it('reveals on a programmatic close: pane snaps under cover, only the drawer slides', () => {
+    jest.useFakeTimers();
+    const harness = setup(true);
+
+    kickDrawerAnimation(false, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
+    expect(harness.drawer.style.transition).not.toBe('none');
+    expect(harness.pane.style.transform).toBe('none');
+    expect(harness.pane.style.transition).toBe('none');
+
+    harness.rerender({ open: false, enabled: true });
+    jest.runAllTimers();
+    expect(harness.pane.style.transition).not.toBe('none');
+    expect(harness.drawer.style.transform).toBe('');
     jest.useRealTimers();
     harness.unmount();
   });

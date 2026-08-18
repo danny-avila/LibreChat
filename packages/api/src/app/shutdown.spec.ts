@@ -2,6 +2,7 @@
 import http from 'http';
 import {
   setupGracefulShutdown,
+  isShutdownInProgress,
   registerShutdownTask,
   __resetShutdownStateForTests,
 } from './shutdown';
@@ -158,6 +159,26 @@ describe('setupGracefulShutdown', () => {
     triggerSignal('SIGTERM');
     await flush();
     expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes shutdown state before pre-drain work begins', async () => {
+    let observedDuringPreDrain = false;
+    jest.spyOn(server, 'close').mockImplementation(() => server);
+    registerShutdownTask(
+      'observe-shutdown',
+      () => {
+        observedDuringPreDrain = isShutdownInProgress();
+      },
+      { phase: 'pre-drain' },
+    );
+    setupGracefulShutdown(server);
+
+    expect(isShutdownInProgress()).toBe(false);
+    triggerSignal('SIGTERM');
+    await flush();
+
+    expect(observedDuringPreDrain).toBe(true);
+    expect(isShutdownInProgress()).toBe(true);
   });
 
   it('force-exits with code 1 if shutdown exceeds the timeout', () => {

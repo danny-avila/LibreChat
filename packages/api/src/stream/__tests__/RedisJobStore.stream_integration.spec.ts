@@ -138,7 +138,13 @@ describe('RedisJobStore Integration Tests', () => {
       const store = new RedisJobStore(ioredisClient);
       await store.initialize();
       const streamId = `test-replaced-owner-${Date.now()}`;
-      const predecessor = await store.createJob(streamId, 'user-1', streamId);
+      const providerExecutionId = 'provider-before-replacement';
+      const predecessor = await store.createJob(streamId, 'user-1', streamId, undefined, {
+        providerExecutionId,
+      });
+      await expect(
+        store.beginProviderExecution(streamId, predecessor.createdAt, providerExecutionId),
+      ).resolves.toBe(true);
       await store.transitionStatus(streamId, {
         from: 'running',
         to: 'requires_action',
@@ -155,12 +161,20 @@ describe('RedisJobStore Integration Tests', () => {
         status: 'requires_action',
         conversationId: streamId,
       });
+      expect(replacement.replacedJob).toMatchObject({
+        providerExecutionId,
+        providerDrained: false,
+      });
       // The receipt is durably reconstructed for lost-reply recovery, but it
       // remains non-enumerable so ordinary job serializers cannot expose it.
       const durableReplacement = await store.getJob(streamId);
       expect((durableReplacement as typeof replacement).replacedJob).toEqual(
         replacement.replacedJob,
       );
+      expect((durableReplacement as typeof replacement).replacedJob).toMatchObject({
+        providerExecutionId,
+        providerDrained: false,
+      });
       expect(Object.getOwnPropertyDescriptor(durableReplacement!, 'replacedJob')).toMatchObject({
         enumerable: false,
       });

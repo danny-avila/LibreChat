@@ -2,7 +2,7 @@ const path = require('path');
 const axios = require('axios');
 const yaml = require('js-yaml');
 const keyBy = require('lodash/keyBy');
-const { loadYaml } = require('@librechat/api');
+const { loadYaml, redactConfigSecretMaps } = require('@librechat/api');
 const { Providers } = require('@librechat/agents');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -156,9 +156,12 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
     process.exit(1);
   } else {
     if (printConfig) {
+      // Masks map-valued secrets (e.g. `langfuse.headers`) so literal gateway
+      // credentials are not copied into application logs on every startup.
+      const loggableConfig = redactConfigSecretMaps(customConfig);
       logger.info('Custom config file loaded:');
-      logger.info(JSON.stringify(customConfig, null, 2));
-      logger.debug('Custom config:', customConfig);
+      logger.info(JSON.stringify(loggableConfig, null, 2));
+      logger.debug('Custom config:', loggableConfig);
     }
   }
 

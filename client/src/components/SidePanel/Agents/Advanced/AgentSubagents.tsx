@@ -23,6 +23,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
   const enabled = value.enabled === true;
   const allowSelf = value.allowSelf !== false;
   const agentIds = useMemo(() => value.agent_ids ?? [], [value.agent_ids]);
+  const graphCount = value.graphs?.length ?? 0;
 
   const { options, getAgent } = useSelectableAgents({ currentAgentId, exclude: agentIds });
 
@@ -36,12 +37,13 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
        * `enabled: false` flows through as a real update.
        */
       field.onChange({
+        ...value,
         enabled: next,
         allowSelf: value.allowSelf ?? true,
         agent_ids: value.agent_ids ?? [],
       });
     },
-    [field, value.allowSelf, value.agent_ids],
+    [field, value],
   );
 
   const setAllowSelf = useCallback(
@@ -77,7 +79,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
   };
 
   const selfId = 'subagents-self-toggle';
-  const nothingToSpawn = enabled && !allowSelf && agentIds.length === 0;
+  const nothingToSpawn = enabled && !allowSelf && agentIds.length === 0 && graphCount === 0;
 
   return (
     <OrchestrationPattern

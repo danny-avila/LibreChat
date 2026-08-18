@@ -901,6 +901,38 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.tools).not.toContain(Tools.execute_code);
     });
 
+    test('rejects graph topology that becomes invalid after self-placeholder rewrite', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: { agents: { capabilities: ['subagents'] } },
+      };
+      mockReq.body = {
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          graphs: [
+            {
+              type: 'collapsed_team',
+              name: 'Collapsed team',
+              description: 'Becomes invalid after placeholder replacement',
+              agent_ids: ['', existingAgentId],
+              edges: [{ from: '', to: existingAgentId, edgeType: 'direct' }],
+              entry_agent_id: '',
+              result_agent_id: existingAgentId,
+            },
+          ],
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Invalid request data' }),
+      );
+    });
+
     test('should sanitize corrupt numeric model_parameters on update', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
@@ -2819,6 +2851,76 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.agent_ids).toContain(targetAgent.id);
     });
 
+    test('createAgentHandler should reject a missing graph-subagent member', async () => {
+      const missingMemberId = 'agent_missing_graph_member';
+      mockReq.config = {
+        endpoints: { agents: { capabilities: ['subagents'] } },
+      };
+      mockReq.body = {
+        name: 'Graph Parent',
+        provider: 'openai',
+        model: 'gpt-4',
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          graphs: [
+            {
+              type: 'research_team',
+              name: 'Research team',
+              description: 'Researches before answering',
+              agent_ids: [targetAgent.id, missingMemberId],
+              edges: [{ from: targetAgent.id, to: missingMemberId, edgeType: 'direct' }],
+              entry_agent_id: targetAgent.id,
+              result_agent_id: missingMemberId,
+            },
+          ],
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'One or more agents referenced in subagents do not exist',
+        agent_ids: [missingMemberId],
+      });
+    });
+
+    test('createAgentHandler should rewrite a graph self placeholder to the generated ID', async () => {
+      mockReq.config = {
+        endpoints: { agents: { capabilities: ['subagents'] } },
+      };
+      mockReq.body = {
+        name: 'Self Graph Parent',
+        provider: 'openai',
+        model: 'gpt-4',
+        subagents: {
+          enabled: true,
+          graphs: [
+            {
+              type: 'self_review',
+              name: 'Self review',
+              description: 'Runs the new agent in an isolated context',
+              agent_ids: [''],
+              edges: [],
+              entry_agent_id: '',
+              result_agent_id: '',
+            },
+          ],
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.subagents.graphs[0]).toMatchObject({
+        agent_ids: [createdAgent.id],
+        entry_agent_id: createdAgent.id,
+        result_agent_id: createdAgent.id,
+      });
+    });
+
     test('createAgentHandler should succeed when user has VIEW on all edge-referenced agents', async () => {
       const permMap = new Map([[targetAgent._id.toString(), 1]]);
       getResourcePermissionsMap.mockResolvedValueOnce(permMap);
@@ -2980,6 +3082,50 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       ]);
     });
 
+    test('duplicateAgentHandler should rewrite and allow a graph-team self member', async () => {
+      const sourceAgentId = `agent_${nanoid()}`;
+      await Agent.create({
+        id: sourceAgentId,
+        author: mockReq.user.id,
+        name: 'Self Graph Clone Source',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          graphs: [
+            {
+              type: 'self_team',
+              name: 'Self team',
+              description: 'Contains the parent and a worker',
+              agent_ids: [sourceAgentId, targetAgent.id],
+              edges: [{ from: sourceAgentId, to: targetAgent.id, edgeType: 'direct' }],
+              entry_agent_id: sourceAgentId,
+              result_agent_id: targetAgent.id,
+            },
+          ],
+        },
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(
+        new Map([[targetAgent._id.toString(), PermissionBits.VIEW]]),
+      );
+      jest.spyOn(require('~/models'), 'getActions').mockResolvedValueOnce([]);
+      mockReq.config = { endpoints: { agents: { capabilities: ['subagents'] } } };
+      mockReq.params = { id: sourceAgentId };
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent } = mockRes.json.mock.calls[0][0];
+      expect(agent.subagents.graphs[0]).toMatchObject({
+        agent_ids: [agent.id, targetAgent.id],
+        edges: [{ from: agent.id, to: targetAgent.id, edgeType: 'direct' }],
+        entry_agent_id: agent.id,
+        result_agent_id: targetAgent.id,
+      });
+    });
+
     test('duplicateAgentHandler should return 400 for a missing handoff target', async () => {
       const missingTargetId = `agent_${nanoid()}`;
       const sourceAgent = await Agent.create({
@@ -3024,6 +3170,44 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(mockRes.status).toHaveBeenCalledWith(403);
       expect(mockRes.json).toHaveBeenCalledWith({
         error: 'You do not have access to one or more agents referenced in edges',
+        agent_ids: [targetAgent.id],
+      });
+      expect(await Agent.countDocuments()).toBe(2);
+    });
+
+    test('duplicateAgentHandler should return 403 without VIEW access to a graph-subagent member', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${nanoid()}`,
+        author: mockReq.user.id,
+        name: 'Restricted Graph Clone Source',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          graphs: [
+            {
+              type: 'restricted_team',
+              name: 'Restricted team',
+              description: 'Contains a restricted member',
+              agent_ids: [targetAgent.id],
+              edges: [],
+              entry_agent_id: targetAgent.id,
+              result_agent_id: targetAgent.id,
+            },
+          ],
+        },
+      });
+      getResourcePermissionsMap.mockResolvedValueOnce(new Map());
+      mockReq.config = { endpoints: { agents: { capabilities: ['subagents'] } } };
+      mockReq.params = { id: sourceAgent.id };
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'You do not have access to one or more agents referenced in subagents',
         agent_ids: [targetAgent.id],
       });
       expect(await Agent.countDocuments()).toBe(2);
@@ -3132,6 +3316,55 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
       const persisted = await Agent.findOne({ id: agentId }).lean();
       expect(persisted.name).toBe('Current Router');
+    });
+
+    test('revertAgentVersionHandler should return 400 before restoring a missing graph-subagent member', async () => {
+      const agentId = `agent_${nanoid()}`;
+      const missingMemberId = `agent_${nanoid()}`;
+      await Agent.create({
+        id: agentId,
+        author: mockReq.user.id,
+        name: 'Current Graph Parent',
+        provider: 'openai',
+        model: 'gpt-4',
+        tools: [],
+        versions: [
+          {
+            name: 'Historical Graph Parent',
+            provider: 'openai',
+            model: 'gpt-4',
+            tools: [],
+            subagents: {
+              enabled: true,
+              allowSelf: false,
+              graphs: [
+                {
+                  type: 'missing_team',
+                  name: 'Missing team',
+                  description: 'Contains a deleted member',
+                  agent_ids: [missingMemberId],
+                  edges: [],
+                  entry_agent_id: missingMemberId,
+                  result_agent_id: missingMemberId,
+                },
+              ],
+            },
+          },
+        ],
+      });
+      mockReq.config = { endpoints: { agents: { capabilities: ['subagents'] } } };
+      mockReq.params = { id: agentId };
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: 'One or more agents referenced in subagents do not exist',
+        agent_ids: [missingMemberId],
+      });
+      const persisted = await Agent.findOne({ id: agentId }).lean();
+      expect(persisted.name).toBe('Current Graph Parent');
     });
 
     test('revertAgentVersionHandler should return 403 before restoring a restricted handoff target', async () => {

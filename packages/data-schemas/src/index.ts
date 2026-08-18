@@ -32,6 +32,7 @@ export {
   MAX_AUDIT_LOG_LIMIT,
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
+  AgentTriggerDeliveryConflictError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,

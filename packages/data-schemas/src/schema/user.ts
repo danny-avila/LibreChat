@@ -131,6 +131,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Date,
       default: null,
     },
+    agentTriggerDeletionStartedAt: {
+      type: Date,
+      select: false,
+    },
     personalization: {
       type: {
         memories: {

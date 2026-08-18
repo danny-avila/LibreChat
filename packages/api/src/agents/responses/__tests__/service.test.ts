@@ -1,5 +1,42 @@
-import { convertInputToMessages } from '../service';
 import type { InputItem } from '../types';
+import {
+  convertInputToMessages,
+  createAggregatorEventHandlers,
+  createResponseAggregator,
+} from '../service';
+
+describe('response usage aggregation', () => {
+  it('accumulates usage across parent and subagent model calls', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: {
+        usage_metadata: {
+          input_tokens: 100,
+          output_tokens: 40,
+          input_token_details: { cache_read: 10 },
+        },
+      },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: {
+        usage_metadata: {
+          input_tokens: 25,
+          output_tokens: 15,
+          cache_read_input_tokens: 5,
+        },
+      },
+    });
+
+    expect(aggregator.usage).toEqual({
+      inputTokens: 125,
+      outputTokens: 55,
+      reasoningTokens: 0,
+      cachedTokens: 15,
+    });
+  });
+});
 
 describe('convertInputToMessages', () => {
   // ── String input shorthand ─────────────────────────────────────────

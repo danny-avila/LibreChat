@@ -13,6 +13,16 @@ describe('Experimental server configuration', () => {
     expect(listenIndex).toBeLessThan(timeoutConfigIndex);
   });
 
+  it('lets each worker drain registered services before cluster shutdown', () => {
+    const listenIndex = source.indexOf('const server = app.listen');
+    const gracefulShutdownIndex = source.indexOf('setupGracefulShutdown(server);');
+
+    expect(gracefulShutdownIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeLessThan(gracefulShutdownIndex);
+    expect(source).toContain('if (shuttingDown) {');
+    expect(source).toMatch(/if \(shuttingDown\) \{[\s\S]*?return;[\s\S]*?Starting a new worker/);
+  });
+
   it('runs cross-tenant startup work in the system context', () => {
     expect(source).toContain('await runAsSystem(seedDatabase);');
     expect(source).toMatch(
