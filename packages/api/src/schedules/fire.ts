@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import type { ScheduleEngineDeps, ScheduleLimits, FireResult, FireableSchedule } from './types';
 import type { JsonValue } from '../agents/json';
-import { AgentTriggerEnvelopeError, createAgentTriggerEnvelope } from '../agents/triggers/envelope';
+import type { AgentTriggerEnvelope } from '../agents/triggers/envelope';
+import {
+  AgentTriggerEnvelopeError,
+  createAgentTriggerEnvelope,
+  getAgentTriggerIdempotencyKey,
+} from '../agents/triggers/envelope';
 import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service';
 import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { computeNextRunAt, cadenceIntervalMinutes } from './cadence';
@@ -32,15 +37,21 @@ class ScheduleFireError extends Error {
   }
 }
 
-async function enqueueScheduleTrigger(
-  deps: ScheduleEngineDeps,
+/**
+ * Builds the durable trigger envelope for one occurrence. Pure and deterministic in the
+ * fields that {@link getAgentTriggerIdempotencyKey} hashes (only `requestId`/`receivedAt`
+ * vary), so the `deliveryKey` derived from it is stable across retries and is stored on
+ * the reservation BEFORE enqueue — that lets schedule reconciliation read the durable
+ * delivery state even for an ambiguously-committed enqueue.
+ */
+function buildScheduleTriggerEnvelope(
   schedule: FireableSchedule,
   user: NonNullable<Awaited<ReturnType<ScheduleEngineDeps['getUserContext']>>>,
   scheduledFor: Date,
   files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
   conversationId: string,
   manual: boolean,
-): Promise<void> {
+): AgentTriggerEnvelope {
   const occurrenceId = buildFireClientRequestId(schedule.id, scheduledFor);
   const triggerFiles: JsonValue[] = files.map((file) => {
     const value: { [key: string]: JsonValue } = { file_id: file.file_id };
@@ -52,7 +63,7 @@ async function enqueueScheduleTrigger(
     if (file.source != null) value.source = file.source;
     return value;
   });
-  const envelope = createAgentTriggerEnvelope({
+  return createAgentTriggerEnvelope({
     mode: 'fire',
     requestId: randomUUID(),
     deliveryId: occurrenceId,
@@ -82,8 +93,15 @@ async function enqueueScheduleTrigger(
       },
     },
   });
+}
+
+async function enqueueScheduleTrigger(
+  deps: ScheduleEngineDeps,
+  envelope: AgentTriggerEnvelope,
+  orderingKey: string,
+): Promise<void> {
   try {
-    await deps.enqueueTrigger(envelope, { orderingKey: schedule.id });
+    await deps.enqueueTrigger(envelope, { orderingKey });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const definite =
@@ -374,6 +392,35 @@ export async function fireSchedule(
     // rejects a second `started` run for the schedule, so a concurrent occurrence
     // surfaces as 'overlap' with no read-then-insert race.
     const conversationId = randomUUID();
+    // Build the durable trigger envelope NOW so the deterministic deliveryKey can be
+    // stored on the reservation below — before enqueue. That way schedule reconciliation
+    // can read the delivery state (live vs dead) even when the enqueue commits ambiguously,
+    // instead of orphaning a still-live delivery after the 30-minute cutoff. A schedule
+    // whose envelope cannot be built can never fire, so skip WITHOUT reserving a phantom
+    // `started` run (a definite, retry-invariant failure).
+    let triggerEnvelope: AgentTriggerEnvelope;
+    try {
+      triggerEnvelope = buildScheduleTriggerEnvelope(
+        schedule,
+        user,
+        scheduledFor,
+        files,
+        conversationId,
+        options?.manual === true,
+      );
+    } catch (envelopeError) {
+      logger.error(`[schedules] trigger envelope build failed for ${schedule.id}:`, envelopeError);
+      if (options?.manual) {
+        await releaseManualLease();
+      } else {
+        await advance();
+      }
+      return {
+        fired: false,
+        error: envelopeError instanceof Error ? envelopeError.message : String(envelopeError),
+      };
+    }
+    const deliveryKey = getAgentTriggerIdempotencyKey(triggerEnvelope);
     // The GLOBAL fireConcurrency cap is enforced by claiming a unique capacity slot in
     // the SAME insert that reserves the run, so it is decided by the DB rather than by
     // a count read before the write. The allocator advances to the next free slot when
@@ -395,6 +442,7 @@ export async function fireSchedule(
           conversationId,
           firedAt: new Date(),
           capacitySlot,
+          deliveryKey,
           ...(typeof schedule.configRevision === 'number'
             ? { configRevision: schedule.configRevision }
             : {}),
@@ -500,15 +548,7 @@ export async function fireSchedule(
     }
 
     try {
-      await enqueueScheduleTrigger(
-        deps,
-        schedule,
-        user,
-        scheduledFor,
-        files,
-        conversationId,
-        options?.manual === true,
-      );
+      await enqueueScheduleTrigger(deps, triggerEnvelope, schedule.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const ambiguous = error instanceof ScheduleFireError && error.ambiguous;

@@ -81,6 +81,7 @@ function makeDeps(
     hasScheduleAccess: async () => true,
     resolveFiles: async () => [],
     enqueueTrigger: jest.fn(async () => undefined),
+    getTriggerDelivery: async () => null,
     runInTenantContext: (_user, fn) => fn(),
     getJobStatus: async () => null,
     abortScheduledJob: async () => undefined,
@@ -221,6 +222,84 @@ describe('runTick error handling', () => {
     // Advancing on a failed disable would leave `enabled: true` with no nextRunAt
     // and no disabledReason: permanently unclaimable and invisible to its owner.
     expect(methods.advanceSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe('reconciliation consults the durable trigger delivery', () => {
+  const YOUNG = () => new Date(Date.now() - 5 * 60_000); // past reconcile min, before orphan cutoff
+  const OLD = () => new Date(Date.now() - 60 * 60_000); // past the 30-minute orphan cutoff
+
+  function joblessRun(firedAt: Date, deliveryKey: string | undefined = 'dk1') {
+    return {
+      scheduleId: 's1',
+      scheduledFor: new Date('2026-01-01T00:00:00.000Z'),
+      user: 'u1',
+      status: 'started',
+      conversationId: 'conv-1',
+      firedAt,
+      ...(deliveryKey != null ? { deliveryKey } : {}),
+    };
+  }
+
+  async function runReconcile(
+    run: ReturnType<typeof joblessRun>,
+    getTriggerDelivery: ScheduleEngineDeps['getTriggerDelivery'],
+  ) {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([run]);
+    await tickOnce(makeDeps(methods, { getJobStatus: async () => null, getTriggerDelivery }));
+    return methods;
+  }
+
+  it('settles a DEAD delivery as error promptly, before the 30-minute orphan age', async () => {
+    const methods = await runReconcile(joblessRun(YOUNG()), async () => ({
+      status: 'dead',
+      lastError: 'rate limited',
+    }));
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 's1', status: 'error', error: 'rate limited' }),
+    );
+  });
+
+  it('does NOT orphan a PENDING delivery past the cutoff (Retry-After may still fire it)', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'pending' }));
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does NOT orphan a LEASED delivery past the cutoff', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'leased' }));
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does NOT orphan a STAGING delivery past the cutoff', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'staging' }));
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the legacy interrupted orphan for a SUCCEEDED delivery past the cutoff', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => ({ status: 'succeeded' }));
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 's1', status: 'interrupted' }),
+    );
+  });
+
+  it('does not prematurely orphan a SUCCEEDED delivery before the cutoff', async () => {
+    const methods = await runReconcile(joblessRun(YOUNG()), async () => ({ status: 'succeeded' }));
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('uses the legacy orphan policy when the delivery record is gone (null)', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => null);
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'interrupted' }),
+    );
+  });
+
+  it('DEFERS (stays reconcilable) when the delivery lookup fails', async () => {
+    const methods = await runReconcile(joblessRun(OLD()), async () => {
+      throw new Error('delivery store unavailable');
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
   });
 });
 

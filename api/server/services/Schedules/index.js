@@ -13,7 +13,10 @@ function getService() {
   const mongoose = require('mongoose');
   const { createSchedulesService } = require('@librechat/api');
   const { getAppConfig } = require('~/server/services/Config/app');
-  const { enqueueAgentTrigger } = require('~/server/services/Agents/triggers');
+  const {
+    enqueueAgentTrigger,
+    getAgentTriggerDelivery,
+  } = require('~/server/services/Agents/triggers');
   const { resolveAgentFireAccess } = require('./access');
   const methods = require('~/models');
   const isUserDeleting = async (userId) => !(await methods.isAgentTriggerPrincipalActive(userId));
@@ -45,6 +48,9 @@ function getService() {
         { new: true },
       ).lean(),
     enqueueAgentTrigger,
+    // Reconciliation reads the durable delivery to tell a still-live admission (a
+    // deferred Retry-After) or a dead-letter apart from a genuinely orphaned run.
+    getTriggerDelivery: getAgentTriggerDelivery,
     resolveAgentFireAccess,
     // Reuse the merged trigger/deletion admission fence. A schedule fire and every
     // generic trigger now fail closed on the same durable principal state.

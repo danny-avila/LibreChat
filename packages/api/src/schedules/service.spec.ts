@@ -65,6 +65,7 @@ function makeService(
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     isUserDeleting: jest.fn(async () => false),
     enqueueAgentTrigger,
+    getTriggerDelivery: jest.fn(async () => null),
   } as unknown as SchedulesServiceDeps;
   // Short bounded waits so fail-closed drain paths resolve in test time.
   return createSchedulesService(deps, {
@@ -166,6 +167,7 @@ describe('balance initialization', () => {
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),
+      getTriggerDelivery: jest.fn(async () => null),
     } as unknown as SchedulesServiceDeps);
     return { service, upsertBalance, initializeNullBalance, findBalance };
   }
@@ -276,6 +278,7 @@ describe('balance initialization', () => {
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),
+      getTriggerDelivery: jest.fn(async () => null),
     } as unknown as SchedulesServiceDeps);
 
     await service.engineDeps.isOutOfBalance({ id: 'user-1' } as never);
@@ -1210,6 +1213,7 @@ describe('scheduled resume capacity', () => {
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),
+      getTriggerDelivery: jest.fn(async () => null),
     } as unknown as SchedulesServiceDeps);
     return { service, methods };
   }

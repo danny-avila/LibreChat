@@ -1,4 +1,8 @@
-import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
+import type {
+  ScheduleMethods,
+  ISchedule,
+  AgentTriggerDeliveryStatus,
+} from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { AgentTriggerEnqueueOptions, AgentTriggerEnvelope } from '../agents/triggers';
 import type { SlotClaimResult } from './capacity';
@@ -137,6 +141,15 @@ export interface ScheduleEngineDeps {
     envelope: AgentTriggerEnvelope,
     options?: AgentTriggerEnqueueOptions,
   ) => Promise<unknown>;
+  /**
+   * Reads the durable trigger delivery for a reservation's `deliveryKey`, so
+   * reconciliation can tell a still-live admission (`staging`/`pending`/`leased`, which a
+   * `Retry-After` can defer up to 24h) or a dead-letter (`dead`, with its `lastError`)
+   * apart from a genuinely orphaned jobless run. Null when no delivery record exists.
+   */
+  getTriggerDelivery: (
+    deliveryKey: string,
+  ) => Promise<{ status: AgentTriggerDeliveryStatus; lastError?: string } | null>;
   /** Runs fn inside the owner's tenant ALS context. */
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
   /**

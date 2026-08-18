@@ -164,6 +164,9 @@ export interface SchedulesServiceDeps {
   isUserDeleting: (userId: string) => Promise<boolean>;
   /** Shared durable trigger admission from the merged agent-trigger service. */
   enqueueAgentTrigger: ScheduleEngineDeps['enqueueTrigger'];
+  /** Reads a durable trigger delivery by key from the merged agent-trigger service, for
+   *  reconciliation's live-vs-dead delivery check. */
+  getTriggerDelivery: ScheduleEngineDeps['getTriggerDelivery'];
 }
 
 export interface SchedulesService {
@@ -292,6 +295,7 @@ export function createSchedulesService(
     'resolveAgentFireAccess',
     'isUserDeleting',
     'enqueueAgentTrigger',
+    'getTriggerDelivery',
   ];
   for (const key of REQUIRED_DEPS) {
     if (deps[key] == null) {
@@ -501,6 +505,7 @@ export function createSchedulesService(
       }));
     },
     enqueueTrigger: deps.enqueueAgentTrigger,
+    getTriggerDelivery: deps.getTriggerDelivery,
     runInTenantContext: (user, fn) =>
       tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, fn),
     getJobStatus: async (conversationId) => {

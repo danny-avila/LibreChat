@@ -218,20 +218,60 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               await clearRetainedJob();
               continue;
             }
-            // A `started` run whose job is gone (jobStatus null) is an orphan. Every run
-            // records its conversationId up front, so getJobStatus above already
-            // liveness-checked it: a live long-running fire reads as `running` and is left
-            // alone. v1 is single-process, so a null job genuinely means gone. A fresh
-            // abort also DELETES the job (account-deletion quiesce), so absence carries
-            // the same abort fence as `aborted` above.
+            // A `started` run whose job is gone (jobStatus null). Every run records its
+            // conversationId up front, so getJobStatus above already liveness-checked it: a
+            // live long-running fire reads as `running` and is left alone. A fresh abort
+            // also DELETES the job (account-deletion quiesce), so absence carries the same
+            // abort fence as `aborted` above.
+            //
+            // But a jobless run is NOT automatically an orphan: fireSchedule reserves the
+            // run and its capacity BEFORE the durable trigger delivery reaches the chat
+            // route, and that delivery can be deferred (a `Retry-After` up to 24h, far past
+            // the 30-minute cutoff) or dead-lettered by a pre-generation rejection (an
+            // interactive limiter, PII, or moderation). Consult the durable delivery keyed
+            // by the reservation before deciding.
             if (
               run.status === 'started' &&
               jobStatus == null &&
-              ageMs > ORPHAN_RUN_AGE_MS &&
               !hasAbortInFlight(run, Date.now()) &&
               !hasResumeHandoffInFlight(run, Date.now())
             ) {
-              await finalize('interrupted');
+              let delivery: Awaited<ReturnType<typeof deps.getTriggerDelivery>> | null = null;
+              try {
+                delivery = run.deliveryKey ? await deps.getTriggerDelivery(run.deliveryKey) : null;
+              } catch (deliveryError) {
+                // Unknown is not gone: defer rather than orphan a possibly-live delivery.
+                logger.warn(
+                  `[schedules] delivery lookup failed for ${run.scheduleId}@${run.scheduledFor?.toISOString?.() ?? run.scheduledFor}; deferring:`,
+                  deliveryError,
+                );
+                continue;
+              }
+              const deliveryStatus = delivery?.status;
+              if (
+                deliveryStatus === 'staging' ||
+                deliveryStatus === 'pending' ||
+                deliveryStatus === 'leased'
+              ) {
+                // Admission is still live; the delivery will fire or dead-letter later.
+                continue;
+              }
+              if (deliveryStatus === 'dead') {
+                // Definitively failed before a generation ever existed. Record the error
+                // PROMPTLY from the durable lastError and release capacity through the
+                // ordinary outcome path — no need to wait the 30-minute orphan age.
+                await finalize(
+                  'error',
+                  delivery?.lastError ?? 'Scheduled delivery failed before running',
+                );
+                continue;
+              }
+              // `succeeded` (a generation ran; its own job/outcome evidence is the
+              // authority) or NO delivery record (a legacy fire): only a genuinely aged
+              // jobless run is an orphan.
+              if (ageMs > ORPHAN_RUN_AGE_MS) {
+                await finalize('interrupted');
+              }
               continue;
             }
             if (

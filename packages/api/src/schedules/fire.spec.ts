@@ -2,6 +2,7 @@ import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './
 import type { FireableSchedule } from './types';
 import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service';
 import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
+import { getAgentTriggerIdempotencyKey } from '../agents/triggers/envelope';
 import { buildFireClientRequestId, fireSchedule } from './fire';
 import { withCapacitySlot } from './capacity';
 
@@ -86,6 +87,7 @@ function makeMethods() {
         scheduledFor: Date;
         conversationId?: string;
         capacitySlot?: number;
+        deliveryKey?: string;
       }) => {
         const k = key(data.scheduleId, data.scheduledFor);
         if (runs.has(k)) {
@@ -282,6 +284,30 @@ describe('fireSchedule', () => {
     expect(result.fired).toBe(true);
     expect(enqueueTrigger).toHaveBeenCalledTimes(1);
     expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'claim-holder-1');
+  });
+
+  it('stamps the deterministic deliveryKey on the reservation (== the enqueued key)', async () => {
+    const { methods } = makeMethods();
+    const enqueueTrigger = jest.fn<
+      ReturnType<ScheduleEngineDeps['enqueueTrigger']>,
+      Parameters<ScheduleEngineDeps['enqueueTrigger']>
+    >(async () => undefined);
+
+    const result = await fireSchedule(
+      makeDeps(methods, { enqueueTrigger }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
+
+    expect(result.fired).toBe(true);
+    const reservation = (methods.reserveStartedRun as jest.Mock).mock.calls[0][0];
+    const envelope = enqueueTrigger.mock.calls[0][0];
+    // Stored BEFORE enqueue and equal to the enqueued delivery's idempotency key, so
+    // reconciliation can read the durable delivery for THIS occurrence even if the enqueue
+    // committed ambiguously.
+    expect(reservation.deliveryKey).toEqual(expect.any(String));
+    expect(reservation.deliveryKey).toBe(getAgentTriggerIdempotencyKey(envelope));
   });
 
   it('marks a Run Now trigger as manual for downstream limiter policy', async () => {

@@ -83,6 +83,11 @@ export interface IScheduleRun {
   conversationId?: string;
   status: ScheduleRunStatus;
   error?: string;
+  /** Deterministic durable-trigger delivery key for this occurrence, stamped at
+   *  reservation (before enqueue). Lets reconciliation read the delivery's live/dead
+   *  state instead of orphan-settling a jobless run that is merely deferred (Retry-After)
+   *  or that dead-lettered before a generation ever started. */
+  deliveryKey?: string;
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;
