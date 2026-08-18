@@ -1,5 +1,10 @@
 import type { IUser } from '@librechat/data-schemas';
-import { extractOpenIDTokenInfo, isOpenIDTokenValid, processOpenIDPlaceholders } from './oidc';
+import {
+  OpenIDReauthRequiredError,
+  extractOpenIDTokenInfo,
+  isOpenIDTokenValid,
+  processOpenIDPlaceholders,
+} from './oidc';
 
 describe('OpenID Token Utilities', () => {
   describe('extractOpenIDTokenInfo', () => {
@@ -142,7 +147,7 @@ describe('OpenID Token Utilities', () => {
       );
     });
 
-    it('should use the ID token exp when no expires_at is stored', () => {
+    it('should leave expiresAt unset when no expires_at is stored, regardless of the ID token exp', () => {
       const nowSeconds = Math.floor(Date.now() / 1000);
       const idTokenPayload = Buffer.from(
         JSON.stringify({ sub: 'oidc-sub-456', exp: nowSeconds + 1800 }),
@@ -159,10 +164,40 @@ describe('OpenID Token Utilities', () => {
 
       const result = extractOpenIDTokenInfo(user);
 
-      expect(result?.expiresAt).toBe(nowSeconds + 1800);
+      expect(result?.expiresAt).toBeUndefined();
+      expect(result?.idTokenExpiresAt).toBe(nowSeconds + 1800);
+      expect(isOpenIDTokenValid(result)).toBe(true);
     });
 
-    it('should treat an ID token exp of 0 as present and expired', () => {
+    it('should keep an opaque access token valid when the stored ID token is already expired', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const staleIdTokenPayload = Buffer.from(
+        JSON.stringify({ sub: 'oidc-sub-456', exp: nowSeconds - 3600 }),
+      ).toString('base64');
+      const user: Partial<IUser> = {
+        id: 'user-123',
+        provider: 'openid',
+        openidId: 'oidc-sub-456',
+        federatedTokens: {
+          access_token: 'opaque-access-token',
+          id_token: `header.${staleIdTokenPayload}.signature`,
+        },
+      };
+
+      const result = extractOpenIDTokenInfo(user);
+
+      expect(result?.expiresAt).toBeUndefined();
+      expect(result?.idTokenExpiresAt).toBe(nowSeconds - 3600);
+      expect(isOpenIDTokenValid(result)).toBe(true);
+      expect(processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ACCESS_TOKEN}}', result)).toBe(
+        'opaque-access-token',
+      );
+      expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', result)).toThrow(
+        OpenIDReauthRequiredError,
+      );
+    });
+
+    it('should gate only the ID token on an exp of 0, leaving access token validity untouched', () => {
       const idTokenPayload = Buffer.from(JSON.stringify({ sub: 'oidc-sub-456', exp: 0 })).toString(
         'base64',
       );
@@ -179,8 +214,8 @@ describe('OpenID Token Utilities', () => {
       const result = extractOpenIDTokenInfo(user);
 
       expect(result?.idTokenExpiresAt).toBe(0);
-      expect(result?.expiresAt).toBe(0);
-      expect(isOpenIDTokenValid(result)).toBe(false);
+      expect(result?.expiresAt).toBeUndefined();
+      expect(isOpenIDTokenValid(result)).toBe(true);
       expect(() => processOpenIDPlaceholders('{{LIBRECHAT_OPENID_ID_TOKEN}}', result)).toThrow(
         /re-authentication is required/,
       );

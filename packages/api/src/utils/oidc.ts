@@ -41,8 +41,24 @@ export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
  */
 export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
 
-/** Mirrors OPENID_REUSE_EXPIRY_BUFFER_SECONDS: a token within the buffer would expire in transit and 401 downstream */
+/** Shared with AuthController's OpenID session reuse check: a token within the buffer would expire in transit and 401 downstream */
 export const OPENID_EXPIRY_BUFFER_SECONDS = 30;
+
+/**
+ * Signals that the stored OpenID credentials cannot satisfy a placeholder, so the user must
+ * re-authenticate. `ErrorController` maps this to a 401, and `statusCode` additionally lets
+ * status-reading callers (the agent generation path's `getInitializationFailure`) answer 401
+ * instead of a bare 500. Deliberately carries no `body`, so the structural `isCustomError`
+ * guard cannot capture it ahead of the explicit mapping.
+ */
+export class OpenIDReauthRequiredError extends Error {
+  readonly statusCode = 401;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'OpenIDReauthRequiredError';
+  }
+}
 
 export function extractOpenIDTokenInfo(
   user: Partial<IUser> | null | undefined,
@@ -95,10 +111,6 @@ export function extractOpenIDTokenInfo(
         if (payload.name) tokenInfo.userName = payload.name;
         if (typeof payload.exp === 'number') {
           tokenInfo.idTokenExpiresAt = payload.exp;
-          /** Heuristic, not spec-derived: RFC 6749 leaves the default lifetime to the AS when expires_in is omitted. The ID token exp only approximates the access token expiry when no expires_at was stored. */
-          if (tokenInfo.expiresAt == null) {
-            tokenInfo.expiresAt = payload.exp;
-          }
         }
       } catch (jwtError) {
         logger.warn('Could not parse ID token claims:', jwtError);
@@ -161,7 +173,7 @@ export function processOpenIDPlaceholders(
       case 'ID_TOKEN':
         if (!tokenInfo.idToken || !isIdTokenCurrent(tokenInfo)) {
           logger.warn('OpenID ID token is expired or unavailable; re-authentication is required');
-          throw new Error(
+          throw new OpenIDReauthRequiredError(
             'OpenID ID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
           );
         }
@@ -177,8 +189,8 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.userName || '';
         break;
       case 'EXPIRES_AT':
-        /** Access token expiry when a token set expires_at was stored, ID token exp otherwise (see the fallback above) */
-        replacementValue = tokenInfo.expiresAt ? String(tokenInfo.expiresAt) : '';
+        /** The stored token-set expires_at only: the ID token exp never stands in for it */
+        replacementValue = tokenInfo.expiresAt != null ? String(tokenInfo.expiresAt) : '';
         break;
     }
 

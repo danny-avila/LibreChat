@@ -2257,7 +2257,7 @@ describe('resolveHeaders stripUnresolved', () => {
     expect(result['X-Convo']).toBe('');
   });
 
-  it('strips OpenID token placeholders when no valid token is available', () => {
+  it('omits OpenID credential headers when no valid token is available', () => {
     const result = resolveHeaders({
       headers: {
         'X-Access': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
@@ -2267,8 +2267,35 @@ describe('resolveHeaders stripUnresolved', () => {
       stripUnresolved: true,
     });
 
-    expect(result['X-Access']).toBe('');
-    expect(result['X-Token']).toBe('');
+    expect(result).not.toHaveProperty('X-Access');
+    expect(result).not.toHaveProperty('X-Token');
+  });
+
+  it('omits the credential header but strips identity placeholders to empty', () => {
+    const result = resolveHeaders({
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Org': '{{LIBRECHAT_OPENID_USER_ID}}',
+      },
+      user: createTestUser({ id: 'user-123' }),
+      stripUnresolved: true,
+    });
+
+    expect(result).not.toHaveProperty('Authorization');
+    expect(result['X-Org']).toBe('');
+  });
+
+  it('preserves credential placeholders literally when stripUnresolved is false', () => {
+    const result = resolveHeaders({
+      headers: {
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Org': '{{LIBRECHAT_OPENID_USER_ID}}',
+      },
+      user: createTestUser({ id: 'user-123' }),
+    });
+
+    expect(result.Authorization).toBe('Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}');
+    expect(result['X-Org']).toBe('{{LIBRECHAT_OPENID_USER_ID}}');
   });
 
   it('leaves unknown and non-resolvable placeholders untouched', () => {

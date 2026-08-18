@@ -8,6 +8,7 @@ import {
   isOpenIDTokenValid,
   extractOpenIDTokenInfo,
   processOpenIDPlaceholders,
+  OpenIDReauthRequiredError,
 } from './oidc';
 
 /**
@@ -145,6 +146,8 @@ export function createSafeUser(
  */
 export const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] as const;
 
+const OPENID_PLACEHOLDER_NAMES = `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`;
+
 /**
  * Matches every placeholder this module knows how to resolve: the enumerated
  * `{{LIBRECHAT_USER_*}}`, `{{LIBRECHAT_BODY_*}}`, and `{{LIBRECHAT_OPENID_*}}`
@@ -152,8 +155,6 @@ export const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messag
  * literal is diagnosable) and `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}`, which is
  * resolved asynchronously via the OBO flow outside this pipeline.
  */
-const OPENID_PLACEHOLDER_NAMES = `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`;
-
 const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
   [
     `LIBRECHAT_USER_(?:${ALLOWED_USER_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
@@ -340,7 +341,7 @@ function processSingleValue({
       logger.warn(
         `OpenID token is expired or unavailable; cannot resolve ${unresolvable[0]} for the current request`,
       );
-      throw new Error(
+      throw new OpenIDReauthRequiredError(
         `OpenID token is expired or unavailable; re-authentication is required to resolve ${unresolvable[0]}`,
       );
     }
@@ -634,7 +635,22 @@ export function resolveHeaders(options?: {
         body,
         isHeader: true, // Important: Enable header encoding
       });
-      resolvedHeaders[key] = stripUnresolved ? stripUnresolvedPlaceholders(processed) : processed;
+      if (!stripUnresolved) {
+        resolvedHeaders[key] = processed;
+        return;
+      }
+
+      /** Reached only when the credential guard did not fire, i.e. the user has no OpenID identity at all: blanking the credential would emit `Authorization: Bearer `, which RFC 6750 rejects for a missing b64token */
+      const unresolvedCredential = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(processed);
+      if (unresolvedCredential) {
+        logger.warn(
+          `Omitting header "${key}": ${unresolvedCredential[0]} could not be resolved for the current request`,
+        );
+        delete resolvedHeaders[key];
+        return;
+      }
+
+      resolvedHeaders[key] = stripUnresolvedPlaceholders(processed);
     });
   }
 

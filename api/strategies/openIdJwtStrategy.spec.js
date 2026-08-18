@@ -383,6 +383,28 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.expires_at).not.toBe(payload.exp);
   });
 
+  it('should store an opaque session access token with no expiry alongside a decodable stale ID token', async () => {
+    const staleIdToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: Math.floor(Date.now() / 1000) - 3600 }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: 'opaque-session-access',
+          idToken: staleIdToken,
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe('opaque-session-access');
+    expect(user.federatedTokens.id_token).toBe(staleIdToken);
+    expect(user.federatedTokens.expires_at).toBeUndefined();
+  });
+
   it('should set id_token to undefined when not available in session or cookies', async () => {
     const req = {
       headers: {
