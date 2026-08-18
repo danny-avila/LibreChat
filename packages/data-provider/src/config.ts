@@ -1891,6 +1891,22 @@ export const webSearchSchema = z.object({
         .optional(),
     })
     .optional(),
+  searxngSearchOptions: z
+    .object({
+      engines: z
+        .union([z.string(), z.array(z.string())])
+        .transform((value) => {
+          const engines = (Array.isArray(value) ? value : value.split(','))
+            .map((engine) => engine.trim())
+            .filter(Boolean);
+          return engines.length ? engines.join(',') : undefined;
+        })
+        .optional(),
+      language: z.string().optional(),
+      timeRange: z.enum(['day', 'month', 'year']).optional(),
+      timeout: z.number().int().positive().max(120000).optional(),
+    })
+    .optional(),
   tavilySearchOptions: z
     .object({
       searchDepth: z.enum(['basic', 'advanced', 'fast', 'ultra-fast']).optional(),

@@ -93,6 +93,23 @@ describe('loadWebSearchConfig', () => {
       expect(result?.searchProvider).toBe('serper');
       expect(result?.serperApiKey).toBe('test-key');
     });
+
+    it('should preserve searxngSearchOptions', () => {
+      const config: TCustomConfig['webSearch'] = {
+        searchProvider: SearchProviders.SEARXNG,
+        searxngSearchOptions: {
+          engines: 'google,bing,startpage,qwant',
+          language: 'en',
+        },
+      };
+
+      const result = loadWebSearchConfig(config);
+
+      expect(result?.searxngSearchOptions).toEqual({
+        engines: 'google,bing,startpage,qwant',
+        language: 'en',
+      });
+    });
   });
 
   describe('safeSearch', () => {
