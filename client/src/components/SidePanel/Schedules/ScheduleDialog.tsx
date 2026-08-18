@@ -63,9 +63,6 @@ const BASE_MINUTES = [0, 15, 30, 45];
 
 const FORM_ID = 'schedule-form';
 
-/** Matches the Input primitive so every control in the form reads as one field set. */
-const FIELD_CLASS = 'h-10 w-full rounded-lg border border-border-light bg-transparent';
-
 const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
   if (!schedule) {
     return {
@@ -390,11 +387,7 @@ export default function ScheduleDialog({
                       // trap fighting Ariakit for focus locks the page up.
                       portal={false}
                       matchTriggerWidth={true}
-                      containerClassName="w-full px-0"
-                      className={cn(
-                        FIELD_CLASS,
-                        'justify-start px-3 text-sm hover:bg-surface-hover',
-                      )}
+                      variant="field"
                     />
                   )}
                 />
@@ -475,7 +468,7 @@ export default function ScheduleDialog({
                         value={String(field.value)}
                         onChange={(value) => field.onChange(Number(value))}
                         options={dayOptions}
-                        className={FIELD_CLASS}
+                        variant="field"
                         portal={false}
                         aria-labelledby="schedule-day-label"
                         testId="schedule-day-select"
@@ -509,7 +502,7 @@ export default function ScheduleDialog({
                           value={String(field.value)}
                           onChange={(value) => field.onChange(Number(value))}
                           options={hourOptions}
-                          className={FIELD_CLASS}
+                          variant="field"
                           portal={false}
                           ariaLabel={localize('com_ui_schedule_hour')}
                           testId="schedule-hour-select"
@@ -525,7 +518,7 @@ export default function ScheduleDialog({
                         value={String(field.value)}
                         onChange={(value) => field.onChange(Number(value))}
                         options={minuteOptions}
-                        className={FIELD_CLASS}
+                        variant="field"
                         portal={false}
                         ariaLabel={localize('com_ui_schedule_minute')}
                         testId="schedule-minute-select"
@@ -541,7 +534,7 @@ export default function ScheduleDialog({
                           value={field.value}
                           onChange={field.onChange}
                           options={meridiemOptions}
-                          className={FIELD_CLASS}
+                          variant="field"
                           portal={false}
                           ariaLabel={localize('com_ui_schedule_meridiem')}
                           testId="schedule-meridiem-select"
