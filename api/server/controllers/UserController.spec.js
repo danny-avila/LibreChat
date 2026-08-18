@@ -7,6 +7,7 @@ const mockDrainAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undef
 const mockPrepareAgentTriggerUserPurge = jest.fn().mockResolvedValue(undefined);
 const mockCancelAgentTriggerUserPurge = jest.fn().mockResolvedValue(true);
 const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
+const mockCancelAndDrainSubagentThreads = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -93,6 +94,10 @@ jest.mock('~/server/services/Agents/triggers', () => ({
   prepareAgentTriggerUserPurge: (...args) => mockPrepareAgentTriggerUserPurge(...args),
   cancelAgentTriggerUserPurge: (...args) => mockCancelAgentTriggerUserPurge(...args),
   purgeAgentTriggerDeliveriesForUser: (...args) => mockPurgeAgentTriggerDeliveriesForUser(...args),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({
+  cancelAndDrainForOwner: (...args) => mockCancelAndDrainSubagentThreads(...args),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -355,6 +360,7 @@ describe('deleteUserController', () => {
       undefined,
     );
     expect(mockDrainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
+    expect(mockCancelAndDrainSubagentThreads).toHaveBeenCalledWith(userId.toString(), undefined);
     expect(beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
@@ -362,6 +368,9 @@ describe('deleteUserController', () => {
       mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
     );
     expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCancelAndDrainSubagentThreads.mock.invocationCallOrder[0],
+    );
+    expect(mockCancelAndDrainSubagentThreads.mock.invocationCallOrder[0]).toBeLessThan(
       deleteMessages.mock.invocationCallOrder[0],
     );
     expect(deleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
@@ -418,6 +427,29 @@ describe('deleteUserController', () => {
     const deletionFence = beginAgentTriggerUserDeletion.mock.calls[0][1];
     expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(userIdString, deletionFence);
+    expect(deleteUserById).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before data cleanup when detached subagents do not drain', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    mockCancelAndDrainSubagentThreads.mockRejectedValueOnce(new Error('child drain timed out'));
+    const req = {
+      user: {
+        id: userId.toString(),
+        _id: userId,
+        email: 'active-child@test.com',
+        tenantId: 'tenant-1',
+      },
+    };
+
+    await deleteUserController(req, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(deleteMessages).not.toHaveBeenCalled();
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
+      userId.toString(),
+      expect.any(Date),
+    );
     expect(deleteUserById).not.toHaveBeenCalled();
   });
 

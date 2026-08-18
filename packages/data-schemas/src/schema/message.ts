@@ -124,6 +124,31 @@ const messageSchema: Schema<IMessage> = new Schema(
       type: String,
     },
     metadata: { type: mongoose.Schema.Types.Mixed },
+    subagentTranscript: {
+      type: {
+        taskId: { type: String, required: true },
+        mode: { type: String, enum: ['append', 'replace'], required: true },
+        messagesJson: { type: String, required: true },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
+    /** Durable, server-only marker used to make detached retries at-most-once. */
+    subagentTask: {
+      type: {
+        attemptKey: { type: String, required: true },
+        requestFingerprint: { type: String },
+        status: {
+          type: String,
+          enum: ['running', 'completed', 'error', 'cancelled'],
+          required: true,
+        },
+      },
+      _id: false,
+      select: false,
+      default: undefined,
+    },
     contextMeta: {
       type: {
         calibrationRatio: { type: Number },

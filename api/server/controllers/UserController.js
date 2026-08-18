@@ -25,6 +25,7 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const {
   drainAgentTriggerDeliveriesForUser,
   prepareAgentTriggerUserPurge,
@@ -393,6 +394,7 @@ const deleteUserController = async (req, res) => {
       await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
     }
     await drainAgentTriggerDeliveriesForUser(user.id);
+    await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
     const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
       user.id,
       user.tenantId,

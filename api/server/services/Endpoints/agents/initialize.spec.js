@@ -138,6 +138,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   const makeReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_1', files: [] },
+    resolvedConversation: null,
     config: { endpoints: {} },
     _resumableStreamId: null,
   });
@@ -645,6 +646,7 @@ describe('initializeClient — subagent loading', () => {
   const makeSubagentReq = () => ({
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_sub', files: [] },
+    resolvedConversation: null,
     config: {
       endpoints: {
         agents: {
@@ -713,6 +715,118 @@ describe('initializeClient — subagent loading', () => {
     await grantView(agent);
     return agent;
   };
+
+  it('creates one trusted durable thread scope for detached subagents', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
+    expect(agentClientArgs.subagentTasks.store.supportsThreadContinuation).toBe(true);
+    expect(JSON.parse(agentClientArgs.subagentTasks.scopeId)).toEqual({
+      version: 1,
+      userId: testUser._id.toString(),
+      parentConversationId: 'conv_sub',
+    });
+  });
+
+  it('keeps an existing detached task controllable after subagent config is disabled', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const initialReq = makeSubagentReq();
+    initialReq.config.endpoints.agents.capabilities.push('run_in_background');
+    await initializeClient({
+      req: initialReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const existingConfig = agentClientArgs.subagentTasks;
+    const listSpy = jest.spyOn(existingConfig.store, 'list').mockReturnValueOnce([
+      {
+        taskId: 'existing-task',
+        threadId: 'existing-thread',
+        subagentType: 'researcher',
+        status: 'running',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        resultAvailable: false,
+        resultClaimed: false,
+        pendingControls: 0,
+      },
+    ]);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    const changedReq = makeSubagentReq();
+    changedReq.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req: changedReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
+    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    listSpy.mockRestore();
+  });
+
+  it('disables every nested subagent path at the durable child-thread depth limit', async () => {
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
+    req.resolvedConversation = {
+      conversationId: 'conv_sub',
+      subagentThread: { depth: 1 },
+    };
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+  });
+
+  it('keeps detached subagents disabled without the admin background capability', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toBeUndefined();
+    expect(capturedToolExecuteOptions.subagentTasks).toBeUndefined();
+  });
 
   it('defers pure-subagent MCP initialization until the descriptor is selected', async () => {
     const subAgent = await createAgent({
@@ -1210,8 +1324,10 @@ describe('initializeClient — subagent loading', () => {
       Promise.resolve(agent.id === PRIMARY_ID ? primaryConfig : memberConfigs.get(agent.id)),
     );
 
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('run_in_background');
     const { userMCPAuthMap } = await initializeClient({
-      req: makeSubagentReq(),
+      req,
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
@@ -1224,6 +1340,7 @@ describe('initializeClient — subagent loading', () => {
       },
     ]);
     expect(memberIds.every((id) => !agentClientArgs.agentConfigs.has(id))).toBe(true);
+    expect(agentClientArgs.subagentTasks).toBe(capturedToolExecuteOptions.subagentTasks);
     expect(userMCPAuthMap).toEqual({
       server_0: { token: 'token_0' },
       server_1: { token: 'token_1' },

@@ -22,6 +22,7 @@ const { forkConversation, duplicateConversation } = require('~/server/utils/impo
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
 
@@ -149,16 +150,32 @@ router.delete('/', configMiddleware, async (req, res) => {
   }
 
   try {
+    const tenantId =
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined;
+    if (filter.conversationId) {
+      subagentThreadTaskStore.cancelForConversations(
+        req.user.id,
+        [filter.conversationId],
+        tenantId,
+      );
+    }
     const dbResponse = await db.deleteConvos(req.user.id, filter);
+    const deletedConversationIds =
+      dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
+    subagentThreadTaskStore.cancelForConversations(req.user.id, deletedConversationIds, tenantId);
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
     await deleteAgentCheckpoints(
-      dbResponse.conversationIds,
+      deletedConversationIds,
       req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
     );
     if (filter.conversationId) {
-      await db.deleteToolCalls(req.user.id, filter.conversationId);
-      await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
+      await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));
+      await Promise.all(
+        deletedConversationIds.map((id) => deleteConvoSharedLinksWithCleanup(req.user.id, id)),
+      );
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -169,6 +186,12 @@ router.delete('/', configMiddleware, async (req, res) => {
 
 router.delete('/all', configMiddleware, async (req, res) => {
   try {
+    subagentThreadTaskStore.cancelForOwner(
+      req.user.id,
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined,
+    );
     const dbResponse = await db.deleteConvos(req.user.id, {});
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(

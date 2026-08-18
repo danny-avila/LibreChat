@@ -70,10 +70,11 @@ function getInitializationFailure(error) {
   };
 }
 
-function resolveConversationCreatedAt({ userId, conversationId, isNewConvo }) {
+function resolveConversationCreatedAt({ userId, conversationId, isNewConvo, conversation }) {
   return resolveConversationAnchor({
     isNewConversation: isNewConvo,
-    loadConversation: () => getConvo(userId, conversationId),
+    loadConversation: () =>
+      conversation !== undefined ? Promise.resolve(conversation) : getConvo(userId, conversationId),
     onLoadError: (error) => {
       logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
         conversationId,
@@ -443,6 +444,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     userId,
     conversationId,
     isNewConvo,
+    conversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+      ? req.resolvedConversation
+      : undefined,
   });
 
   if (

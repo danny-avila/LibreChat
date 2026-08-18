@@ -174,6 +174,7 @@ const HoverButtons = ({
   }
 
   const { isCreatedByUser, error } = message;
+  const isSubagentThreadReadOnly = conversation.subagentThread != null;
 
   const onEdit = () => {
     if (isEditing) {
@@ -227,7 +228,7 @@ const HoverButtons = ({
       )}
 
       {/* Edit Button */}
-      {isEditableEndpoint && !hideEditButton && (
+      {!isSubagentThreadReadOnly && isEditableEndpoint && !hideEditButton && (
         <HoverButton
           id={`edit-${message.messageId}`}
           onClick={onEdit}
@@ -256,7 +257,7 @@ const HoverButtons = ({
       )}
 
       {/* Regenerate Button */}
-      {regenerateEnabled && (
+      {!isSubagentThreadReadOnly && regenerateEnabled && (
         <HoverButton
           onClick={regenerate}
           title={localize('com_ui_regenerate')}
@@ -268,7 +269,7 @@ const HoverButtons = ({
       )}
 
       {/* Continue Button */}
-      {continueSupported && (
+      {!isSubagentThreadReadOnly && continueSupported && (
         <HoverButton
           onClick={(e) => e && handleContinue(e)}
           title={localize('com_ui_continue')}
