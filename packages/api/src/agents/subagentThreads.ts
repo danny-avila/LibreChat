@@ -29,7 +29,11 @@ import type {
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import {
+  boundedClaim,
+  controlFingerprint,
+  SubagentTaskOwnerUnavailableError,
+} from './subagentTaskRouting';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { createConcurrencyLimiter } from '~/utils/promise';
@@ -129,6 +133,7 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   isOwnerActive?: (userId: string) => Promise<boolean>;
   maxControlInvocations?: number;
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
+  renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
 }
 
@@ -325,11 +330,13 @@ function recoveredClaim(
 ): SubagentTaskClaim | undefined {
   const status = message.subagentTask?.status;
   const content = message.text ?? '';
+  /** A durable child message keeps the untruncated output, so recovering one applies
+   * the same bounds a routed response would have. */
   if (status === 'completed') {
-    return { status: 'completed', task: claim.task, result: content };
+    return boundedClaim({ status: 'completed', task: claim.task, result: content });
   }
   if (status === 'error' || status === 'cancelled') {
-    return { status, task: claim.task, error: content };
+    return boundedClaim({ status, task: claim.task, error: content });
   }
   return undefined;
 }
@@ -366,6 +373,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     fencedUntil: Date,
   ) => Promise<void>;
 
+  private readonly renewOwnerAdmission?: (
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ) => Promise<boolean>;
+
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
   private taskControlTransport?: SubagentTaskControlTransport;
 
@@ -395,6 +408,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
+    this.renewOwnerAdmission = options.renewOwnerAdmission;
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
   }
 
@@ -896,14 +910,29 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     removedConversationIds: Iterable<string> = [],
   ): Promise<number> {
     const { userId, tenantId } = plan;
-    let cancelled = this.cancelForConversations(userId, plan.conversationIds, tenantId);
+    const planned = new Set(plan.conversationIds);
+    const removed = new Set(removedConversationIds);
+    /** A cascade can remove descendants the plan never named — a grandchild lives in
+     * its own parent's scope, not the deleted root's — so every removed conversation
+     * is cancelled as a scope of its own. */
+    const targets = [...new Set([...planned, ...removed])];
+    let cancelled = this.cancelForConversations(userId, targets, tenantId);
     const transport = this.taskControlTransport;
     if (transport == null) {
       return cancelled;
     }
-    const removed = new Set(removedConversationIds);
     const cancelSlot = createConcurrencyLimiter(DELETION_CANCEL_CONCURRENCY);
-    const scopeCancellations = plan.scopes.map((scope) =>
+    const cascadeScopes = [...removed]
+      .filter((conversationId) => !planned.has(conversationId))
+      .map((parentConversationId) => ({
+        scopeId: serializeScope({
+          userId,
+          parentConversationId,
+          ...(tenantId ? { tenantId } : {}),
+        }),
+        threadIds: null,
+      }));
+    const scopeCancellations = [...plan.scopes, ...cascadeScopes].map((scope) =>
       cancelSlot(() => transport.cancelScope(scope.scopeId, scope.threadIds)),
     );
     const leaseCancellations = plan.leases
@@ -968,13 +997,28 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     tenantId: string | undefined,
     deletion: () => Promise<T>,
   ): Promise<T> {
-    const fencedUntil = new Date(Date.now() + this.ownerDrainTimeoutMs + OWNER_FENCE_GRACE_MS);
+    const fenceWindowMs = this.ownerDrainTimeoutMs + OWNER_FENCE_GRACE_MS;
     const token = randomUUID();
-    await this.fenceOwnerAdmission?.(userId, token, fencedUntil);
+    await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
+    /** A very large account, or a stalled database, can outlast one fence window, and
+     * a fence that expires mid-deletion lets another replica admit a child against
+     * conversations being deleted. It is renewed for as long as the work runs. */
+    const renewal = setInterval(
+      () => {
+        void this.renewOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs)).catch(
+          (error) => {
+            logger.warn('[subagentThreads] Failed to renew the owner admission fence', error);
+          },
+        );
+      },
+      Math.max(1, Math.floor(fenceWindowMs / 3)),
+    );
+    renewal.unref?.();
     try {
       await this.cancelAndDrainForOwner(userId, tenantId);
       return await deletion();
     } finally {
+      clearInterval(renewal);
       /** Only this deletion's own fence is lifted: an overlapping deletion that took a
        * later one keeps admission closed until it finishes. */
       await this.releaseOwnerAdmission?.(userId, token).catch((error) => {

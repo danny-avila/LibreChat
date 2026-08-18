@@ -23,6 +23,8 @@ const MAX_CLAIM_REPLAY_BYTES = 16 * 1024 * 1024;
 const MAX_CONTROL_REPLAY_ENTRIES = 2_000;
 const MAX_CONTROL_REPLAY_BYTES = 4 * 1024 * 1024;
 const RESPONSE_CACHE_TTL_MS = 5 * 60_000;
+/** Absorbs ordinary clock drift between replicas when honouring a request deadline. */
+const REQUEST_CLOCK_SKEW_MS = 30_000;
 const MAX_SCOPE_ID_CHARS = 4_096;
 const MAX_TASK_ID_CHARS = 256;
 const MAX_CONTROL_MESSAGE_CHARS = 64 * 1_024;
@@ -80,6 +82,8 @@ interface RoutedRequestBase {
   requestId: string;
   requesterId: string;
   scopeId: string;
+  /** Epoch milliseconds after which the requester has stopped waiting. */
+  expiresAt: number;
 }
 
 type RoutedRequest = RoutedRequestBase &
@@ -257,7 +261,8 @@ function boundedSnapshot(snapshot: SubagentTaskSnapshot): SubagentTaskSnapshot {
   };
 }
 
-function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
+/** Applies the routed result and snapshot bounds to a claim from any source. */
+export function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
   if (claim.status === 'not_found') {
     return claim;
   }
@@ -485,6 +490,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     command?: unknown;
     threadIds?: unknown;
     invocationId?: unknown;
+    expiresAt?: unknown;
   };
   if (
     candidate.version !== PROTOCOL_VERSION ||
@@ -494,16 +500,19 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     !['claim', 'control', 'list', 'cancel'].includes(
       typeof candidate.operation === 'string' ? candidate.operation : '',
     ) ||
-    !isBoundedString(candidate.scopeId, MAX_SCOPE_ID_CHARS)
+    !isBoundedString(candidate.scopeId, MAX_SCOPE_ID_CHARS) ||
+    !Number.isSafeInteger(candidate.expiresAt)
   ) {
     return undefined;
   }
+  const expiresAt = candidate.expiresAt as number;
   if (candidate.operation === 'list') {
     return {
       version: PROTOCOL_VERSION,
       kind: 'request',
       requestId: candidate.requestId,
       requesterId: candidate.requesterId,
+      expiresAt,
       operation: 'list',
       scopeId: candidate.scopeId,
     };
@@ -517,6 +526,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
       kind: 'request',
       requestId: candidate.requestId,
       requesterId: candidate.requesterId,
+      expiresAt,
       operation: 'cancel',
       scopeId: candidate.scopeId,
       threadIds: candidate.threadIds,
@@ -531,6 +541,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
       kind: 'request',
       requestId: candidate.requestId,
       requesterId: candidate.requesterId,
+      expiresAt,
       operation: 'claim',
       scopeId: candidate.scopeId,
       taskId: candidate.taskId,
@@ -545,6 +556,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     kind: 'request',
     requestId: candidate.requestId,
     requesterId: candidate.requesterId,
+    expiresAt,
     operation: 'control',
     scopeId: candidate.scopeId,
     taskId: candidate.taskId,
@@ -888,6 +900,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   private async handleRequest(request: RoutedRequest): Promise<void> {
+    if (Date.now() > request.expiresAt + REQUEST_CLOCK_SKEW_MS) {
+      /** The caller stopped waiting for this long ago and has been told it was
+       * unavailable, so applying it now would steer a child it believes untouched. */
+      logger.warn('[subagentTaskRouting] Dropped a routed command past its deadline');
+      return;
+    }
     const replay = this.replayFor(request);
     const cached = replay?.cache.entries.get(replay.key);
     /** A retransmission replays; the same id carrying different content is a caller
@@ -1072,11 +1090,15 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       throw new SubagentTaskOwnerUnavailableError();
     }
     const requestId = randomUUID();
+    /** Carried so a request the caller has stopped waiting for cannot be applied
+     * later: a disconnected publisher queues the envelope offline and delivers it
+     * after this deadline, by which time the caller has been told `unavailable`. */
     const envelope: RoutedRequest = {
       version: PROTOCOL_VERSION,
       kind: 'request',
       requestId,
       requesterId: this.instanceId,
+      expiresAt: Date.now() + this.requestTimeoutMs,
       ...request,
     };
     const serialized = JSON.stringify(envelope);

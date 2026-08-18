@@ -1571,6 +1571,33 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('bounds a result recovered from its durable child message', async () => {
+    const userId = 'large-result-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'x'.repeat(150_000) }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+    });
+
+    /** The durable message keeps the child's untruncated output, so recovering it
+     * must apply the same bound a routed response would have. */
+    const recovered = await store.claimTask(config.scopeId, taskId, 'poll-1');
+    expect(recovered.status).toBe('completed');
+    if (recovered.status === 'completed') {
+      expect(recovered.result.length).toBeLessThanOrEqual(100_000);
+    }
+  });
+
   it('tells a second invocation a retained result was already collected', async () => {
     const userId = 'duplicate-claim-user';
     const parentConversationId = randomUUID();
@@ -1612,6 +1639,83 @@ describe('SubagentThreadTaskStore', () => {
     );
 
     await replayingStore.destroyTaskControlTransport();
+  });
+
+  it('renews its own fence while a long deletion is still running', async () => {
+    const userId = 'long-deletion-user';
+    const renewals: string[] = [];
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainPollMs: 1,
+      ownerDrainTimeoutMs: 30,
+      fenceOwnerAdmission: async () => undefined,
+      renewOwnerAdmission: async (_userId: string, token: string) => {
+        renewals.push(token);
+        return true;
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    const listLeases = jest.spyOn(methods, 'listActiveSubagentThreadLeases').mockResolvedValue([]);
+    try {
+      await store.withOwnerDeletionFence(userId, undefined, async () => {
+        /** A deletion outlasting one fence window must not let the fence lapse. */
+        await new Promise<void>((resolve) => setTimeout(resolve, 400));
+        return 'deleted';
+      });
+    } finally {
+      listLeases.mockRestore();
+    }
+
+    expect(renewals.length).toBeGreaterThan(0);
+    expect(new Set(renewals).size).toBe(1);
+  });
+
+  it('cancels a grandchild whose own conversation the cascade removed', async () => {
+    const userId = 'cascade-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods, { maxThreadDepth: 3 });
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const childConversationId = randomUUID();
+    await saveParent(userId, childConversationId, {
+      subagentThread: {
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentAgentId: 'parent-agent',
+        subagentType: 'researcher',
+        depth: 1,
+      },
+    });
+    /** The grandchild runs inside the child's scope, which a plan naming only the
+     * deleted root never covers. */
+    const config = buildSubagentThreadTaskConfig(ownerStore, {
+      userId,
+      parentConversationId: childConversationId,
+    });
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(taskRequest(config.scopeId, { run: async () => running }));
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await expect(
+      deletingStore.cancelPlan(plan, [parentConversationId, childConversationId]),
+    ).resolves.toBeGreaterThanOrEqual(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    finish({ content: 'late' });
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
   });
 
   it('reports a result as unavailable when its collection cannot be recorded', async () => {
@@ -1745,12 +1849,17 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'fenced-user';
     const order: string[] = [];
     const tokens: string[] = [];
+    const renewed: string[] = [];
     const released: string[] = [];
     const store = new SubagentThreadTaskStore(methods, {
       ownerDrainPollMs: 1,
       fenceOwnerAdmission: async (_userId: string, token: string) => {
         tokens.push(token);
         order.push('fence');
+      },
+      renewOwnerAdmission: async (_userId: string, token: string) => {
+        renewed.push(token);
+        return true;
       },
       releaseOwnerAdmission: async (_userId: string, token: string) => {
         released.push(token);

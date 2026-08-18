@@ -27,6 +27,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
   {
     isOwnerActive: db.isSubagentOwnerAdmissible,
     fenceOwnerAdmission: db.fenceSubagentAdmission,
+    renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
   },
 );

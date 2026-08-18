@@ -132,6 +132,7 @@ export function createUserMethods(
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
   fenceSubagentAdmission: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
+  renewSubagentAdmission: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseSubagentAdmission: (userId: string, token: string) => Promise<void>;
   isSubagentOwnerAdmissible: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
@@ -501,6 +502,24 @@ export function createUserMethods(
     await invalidateAuthUserDocCache(userId);
   }
 
+  /** Extends only this deletion's own fence while its work is still running. */
+  async function renewSubagentAdmission(
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ): Promise<boolean> {
+    if (!(fencedUntil instanceof Date) || !Number.isFinite(fencedUntil.getTime())) {
+      throw new TypeError('fencedUntil must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, 'subagentAdmissionFences.token': token },
+      { $set: { 'subagentAdmissionFences.$.expiresAt': fencedUntil } },
+      { timestamps: false },
+    );
+    return result.matchedCount === 1;
+  }
+
   /** Lifts only this deletion's fence, so an overlapping one keeps admission closed. */
   async function releaseSubagentAdmission(userId: string, token: string): Promise<void> {
     const User = mongoose.models.User;
@@ -782,6 +801,7 @@ export function createUserMethods(
     cancelAgentTriggerUserDeletion,
     isAgentTriggerPrincipalActive,
     fenceSubagentAdmission,
+    renewSubagentAdmission,
     releaseSubagentAdmission,
     isSubagentOwnerAdmissible,
     deleteUserById,

@@ -910,6 +910,65 @@ describe('RedisSubagentTaskControlTransport', () => {
     );
   });
 
+  it('drops a routed command whose caller already stopped waiting', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 40, retryDelayMs: 5 },
+    );
+    const control = jest.fn((_scopeId: string, taskId: string) => ({
+      status: 'accepted' as const,
+      task: snapshot({ taskId }),
+      controlId: 'control-1',
+    }));
+    await owner.bind(taskHandler({ control }));
+    await requester.bind(taskHandler());
+    await owner.registerTask('scope-1', 'task-1', 60_000);
+    const ownerChannel = [...bus.clients]
+      .flatMap((client) => [...client.channels])
+      .find((channel) => channel.endsWith(':owner'));
+    expect(ownerChannel).toBeDefined();
+
+    /** A disconnected publisher queues an envelope offline and delivers it after the
+     * caller has already been told the owner was unavailable. */
+    bus.publish(
+      ownerChannel as string,
+      JSON.stringify({
+        version: 1,
+        kind: 'request',
+        requestId: 'stale-request',
+        requesterId: 'requester',
+        expiresAt: Date.now() - 10 * 60_000,
+        operation: 'control',
+        scopeId: 'scope-1',
+        taskId: 'task-1',
+        command: { action: 'queue', message: 'a steer the caller gave up on' },
+        invocationId: 'invocation-stale',
+      }),
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(control).not.toHaveBeenCalled();
+
+    /** A command still inside its deadline applies normally. */
+    await expect(
+      requester.control(
+        'scope-1',
+        'task-1',
+        { action: 'queue', message: 'Check one more source.' },
+        'invocation-fresh',
+      ),
+    ).resolves.toMatchObject({ status: 'accepted' });
+    expect(control).toHaveBeenCalledTimes(1);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
   it('never answers one invocation id from a different command it already ran', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
