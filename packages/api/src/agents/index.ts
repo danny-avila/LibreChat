@@ -13,6 +13,7 @@ export * from './errors';
 export * from './envelope';
 export * from './execution';
 export * from './handlers';
+export * from './guard';
 export * from './harvest';
 export * from './initialize';
 export * from './legacy';
