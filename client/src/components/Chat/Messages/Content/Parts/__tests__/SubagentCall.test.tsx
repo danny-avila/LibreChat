@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type {
@@ -649,15 +650,17 @@ describe('SubagentCall — dialog content', () => {
         'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
     });
     render(
-      <RecoilRoot>
-        <SubagentCall
-          toolCallId="call_detached"
-          initialProgress={1}
-          isSubmitting={false}
-          args={{ subagent_type: 'self', run_in_background: true }}
-          output={output}
-        />
-      </RecoilRoot>,
+      <MemoryRouter>
+        <RecoilRoot>
+          <SubagentCall
+            toolCallId="call_detached"
+            initialProgress={1}
+            isSubmitting={false}
+            args={{ subagent_type: 'self', run_in_background: true }}
+            output={output}
+          />
+        </RecoilRoot>
+      </MemoryRouter>,
     );
 
     openSubagentDialog();
