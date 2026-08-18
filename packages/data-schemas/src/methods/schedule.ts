@@ -1672,33 +1672,44 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
         deleting: { $ne: true },
         'deletionSuspension.token': { $ne: token },
       })
-      .select('id enabled nextRunAt')
-      .lean<Array<Pick<ISchedule, 'id' | 'enabled' | 'nextRunAt'>>>();
+      .select('id enabled nextRunAt deletionSuspension')
+      .lean<Array<Pick<ISchedule, 'id' | 'enabled' | 'nextRunAt' | 'deletionSuspension'>>>();
     if (schedules.length === 0) {
       return;
     }
-    const ops = schedules.map((schedule) => ({
-      updateOne: {
-        filter: {
-          id: schedule.id,
-          user: userId,
-          deleting: { $ne: true },
-          'deletionSuspension.token': { $ne: token },
-        },
-        update: {
-          $set: {
-            enabled: false,
-            claimToken: randomUUID(),
-            deletionSuspension: {
-              token,
-              enabled: schedule.enabled === true,
-              ...(schedule.nextRunAt != null ? { nextRunAt: schedule.nextRunAt } : {}),
-            },
+    const ops = schedules.map((schedule) => {
+      // A row already suspended by an ABANDONED earlier attempt (its process died before
+      // restoring) still holds the only record of the true pre-suspension state. Carry that
+      // snapshot forward and merely take ownership with this attempt's token — re-reading
+      // the row's CURRENT values would snapshot the suspended state itself (disabled, no
+      // next run) and permanently strand the schedule when this attempt later restores.
+      const existing = schedule.deletionSuspension;
+      const snapshotEnabled =
+        existing != null ? existing.enabled === true : schedule.enabled === true;
+      const snapshotNextRunAt = existing != null ? existing.nextRunAt : schedule.nextRunAt;
+      return {
+        updateOne: {
+          filter: {
+            id: schedule.id,
+            user: userId,
+            deleting: { $ne: true },
+            'deletionSuspension.token': { $ne: token },
           },
-          $unset: { nextRunAt: 1 as const },
+          update: {
+            $set: {
+              enabled: false,
+              claimToken: randomUUID(),
+              deletionSuspension: {
+                token,
+                enabled: snapshotEnabled,
+                ...(snapshotNextRunAt != null ? { nextRunAt: snapshotNextRunAt } : {}),
+              },
+            },
+            $unset: { nextRunAt: 1 as const },
+          },
         },
-      },
-    }));
+      };
+    });
     await tenantSafeBulkWrite(Schedule(), ops as AnyBulkWriteOperation[], { ordered: false });
   }
 

@@ -470,6 +470,27 @@ const deleteUserController = async (req, res) => {
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
+    // The account survives this failed attempt, so its schedules must too: restore the
+    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
+    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
+    // successful deletion never reaches here (userDeleted short-circuits it).
+    //
+    // RESTORE BEFORE RELEASING THE DELETION FENCE. That fence is what refuses new schedule
+    // writes/claims for this user; releasing it first opens a window where an owner PATCH
+    // could edit a still-suspended row and then have its enabled/next-run state overwritten
+    // by this older snapshot, and where a second deletion attempt could re-suspend these
+    // rows under a new token — making this restore a no-op and stranding the disabled
+    // snapshot permanently.
+    if (scheduleSuspensionToken != null && !userDeleted) {
+      try {
+        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
+      } catch (restoreError) {
+        logger.error(
+          '[deleteUserController] Failed to restore suspended schedules after a cancelled deletion',
+          restoreError,
+        );
+      }
+    }
     if (triggerDeletionFence != null && !userDeleted) {
       try {
         await cancelAgentTriggerUserPurge(user.id, triggerDeletionFence);
@@ -483,20 +504,6 @@ const deleteUserController = async (req, res) => {
         await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
       } catch (fenceError) {
         logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
-      }
-    }
-    // The account survives this failed attempt, so its schedules must too: restore the
-    // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
-    // to the token, so a schedule the owner deleted meanwhile is not resurrected. A
-    // successful deletion never reaches here (userDeleted short-circuits it).
-    if (scheduleSuspensionToken != null && !userDeleted) {
-      try {
-        await restoreUserSchedulesFromDeletion(user.id, scheduleSuspensionToken);
-      } catch (restoreError) {
-        logger.error(
-          '[deleteUserController] Failed to restore suspended schedules after a cancelled deletion',
-          restoreError,
-        );
       }
     }
     logger.error('[deleteUserController]', err);

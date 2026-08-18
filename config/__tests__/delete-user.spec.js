@@ -14,7 +14,8 @@ const mockMethods = {
   beginAgentTriggerUserDeletion: jest.fn(),
   recoverStaleAgentTriggerUserDeletion: jest.fn(),
   prepareAgentTriggerUserPurge: jest.fn(),
-  disableUserSchedulesForDeletion: jest.fn(),
+  suspendUserSchedulesForDeletion: jest.fn(),
+  restoreUserSchedulesFromDeletion: jest.fn(),
   countActiveAgentTriggerDeliveriesByUser: jest.fn(),
   deleteSchedulesByUser: jest.fn(),
   deleteUserById: jest.fn(),
@@ -91,7 +92,8 @@ describe('Delete user CLI', () => {
     mockMethods.beginAgentTriggerUserDeletion.mockReset().mockResolvedValue('acquired');
     mockMethods.recoverStaleAgentTriggerUserDeletion.mockReset().mockResolvedValue('acquired');
     mockMethods.prepareAgentTriggerUserPurge.mockReset().mockResolvedValue(undefined);
-    mockMethods.disableUserSchedulesForDeletion.mockReset().mockResolvedValue(undefined);
+    mockMethods.suspendUserSchedulesForDeletion.mockReset().mockResolvedValue(undefined);
+    mockMethods.restoreUserSchedulesFromDeletion.mockReset().mockResolvedValue(undefined);
     mockMethods.countActiveAgentTriggerDeliveriesByUser.mockReset().mockResolvedValue(0);
     mockMethods.deleteSchedulesByUser.mockReset().mockResolvedValue(undefined);
     mockMethods.deleteUserById.mockReset().mockResolvedValue({ deletedCount: 1 });
@@ -122,14 +124,17 @@ describe('Delete user CLI', () => {
       expect.any(Date),
       'tenant-1',
     );
-    expect(mockMethods.disableUserSchedulesForDeletion).toHaveBeenCalledWith(USER_ID);
+    expect(mockMethods.suspendUserSchedulesForDeletion).toHaveBeenCalledWith(
+      USER_ID,
+      expect.any(String),
+    );
     expect(mockMethods.beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockMethods.prepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
     );
     expect(mockMethods.prepareAgentTriggerUserPurge.mock.invocationCallOrder[0]).toBeLessThan(
-      mockMethods.disableUserSchedulesForDeletion.mock.invocationCallOrder[0],
+      mockMethods.suspendUserSchedulesForDeletion.mock.invocationCallOrder[0],
     );
-    expect(mockMethods.disableUserSchedulesForDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockMethods.suspendUserSchedulesForDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockMethods.countActiveAgentTriggerDeliveriesByUser.mock.invocationCallOrder[0],
     );
     expect(
@@ -154,7 +159,7 @@ describe('Delete user CLI', () => {
   });
 
   it('deletes nothing and releases both fences when schedule quiescing fails', async () => {
-    mockMethods.disableUserSchedulesForDeletion.mockRejectedValueOnce(
+    mockMethods.suspendUserSchedulesForDeletion.mockRejectedValueOnce(
       new Error('schedule write failed'),
     );
 
@@ -166,6 +171,33 @@ describe('Delete user CLI', () => {
     const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
     expect(mockMethods.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(USER_ID, deletionFence);
     expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(USER_ID, deletionFence);
+  });
+
+  /**
+   * The suspension is reversible, so a CLI attempt that does not commit must restore the
+   * rows it suspended — and must do so while the user-deletion fence still refuses new
+   * schedule writes, or an owner edit (or a second attempt re-suspending under a new token)
+   * can race the restore and strand the disabled snapshot.
+   */
+  it('restores suspended schedules BEFORE releasing the deletion fence on failure', async () => {
+    mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
+    mockAbortJob.mockRejectedValueOnce(new Error('provider drain failed'));
+
+    expect(await runCli()).toBe(1);
+
+    const token = mockMethods.suspendUserSchedulesForDeletion.mock.calls[0][1];
+    expect(token).toEqual(expect.any(String));
+    expect(mockMethods.restoreUserSchedulesFromDeletion).toHaveBeenCalledWith(USER_ID, token);
+    expect(mockMethods.restoreUserSchedulesFromDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.cancelAgentTriggerUserDeletion.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('never restores schedules after a committed deletion', async () => {
+    expect(await runCli()).toBe(0);
+
+    expect(mockMethods.deleteSchedulesByUser).toHaveBeenCalledWith(USER_ID);
+    expect(mockMethods.restoreUserSchedulesFromDeletion).not.toHaveBeenCalled();
   });
 
   it('deletes nothing and releases both fences when provider drain fails', async () => {

@@ -449,6 +449,12 @@ describe('deleteUserController', () => {
       userIdString,
       mockQuiesceUserSchedules.mock.calls[0][1],
     );
+    // BEFORE the deletion fence is released: that fence is what refuses new schedule writes,
+    // so restoring after it would let an owner PATCH — or a second deletion attempt
+    // re-suspending under a new token — race the restore and strand the disabled snapshot.
+    expect(mockRestoreUserSchedules.mock.invocationCallOrder[0]).toBeLessThan(
+      cancelAgentTriggerUserDeletion.mock.invocationCallOrder[0],
+    );
   });
 
   it('fails closed before data cleanup when detached subagents do not drain', async () => {
@@ -500,6 +506,12 @@ describe('deleteUserController', () => {
     expect(mockRestoreUserSchedules).toHaveBeenCalledWith(
       userIdString,
       mockQuiesceUserSchedules.mock.calls[0][1],
+    );
+    // BEFORE the deletion fence is released: that fence is what refuses new schedule writes,
+    // so restoring after it would let an owner PATCH — or a second deletion attempt
+    // re-suspending under a new token — race the restore and strand the disabled snapshot.
+    expect(mockRestoreUserSchedules.mock.invocationCallOrder[0]).toBeLessThan(
+      cancelAgentTriggerUserDeletion.mock.invocationCallOrder[0],
     );
   });
 

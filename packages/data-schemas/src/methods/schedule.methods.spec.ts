@@ -1143,6 +1143,33 @@ describe('reversible account-deletion suspension', () => {
     expect(after.deletionSuspension?.nextRunAt?.getTime()).toBe(armedAt.getTime());
   });
 
+  /**
+   * A crash between suspend and restore leaves an ABANDONED suspension. A later attempt
+   * must adopt that attempt's snapshot rather than re-snapshotting the row's current
+   * (already-suspended) state — otherwise the true pre-suspension state is lost and the
+   * schedule stays disabled forever once the second attempt restores.
+   */
+  it('a second attempt adopts the abandoned snapshot instead of capturing suspended state', async () => {
+    const armedAt = new Date('2030-01-01T00:00:00Z');
+    const schedule = await methods.createSchedule(scheduleData({ nextRunAt: armedAt }));
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-1');
+
+    // attempt-1's process died without restoring; attempt-2 now suspends the same rows.
+    await methods.suspendUserSchedulesForDeletion(schedule.user, 'attempt-2');
+
+    const suspended = await getSchedule(schedule.id);
+    expect(suspended.deletionSuspension?.token).toBe('attempt-2');
+    // The ORIGINAL pre-suspension state, not the suspended state attempt-2 observed.
+    expect(suspended.deletionSuspension?.enabled).toBe(true);
+    expect(suspended.deletionSuspension?.nextRunAt?.getTime()).toBe(armedAt.getTime());
+
+    await methods.restoreUserSchedulesFromDeletion(schedule.user, 'attempt-2');
+    const restored = await getSchedule(schedule.id);
+    expect(restored.enabled).toBe(true);
+    expect(restored.nextRunAt?.getTime()).toBe(armedAt.getTime());
+    expect(restored.deletionSuspension).toBeUndefined();
+  });
+
   it('a successful deletion removes suspended rows and their snapshots', async () => {
     const userId = new mongoose.Types.ObjectId();
     const schedule = await methods.createSchedule(scheduleData({ user: userId }));
