@@ -87,7 +87,12 @@ interface RoutedRequestBase {
 type RoutedRequest = RoutedRequestBase &
   (
     | { operation: 'claim'; taskId: string }
-    | { operation: 'control'; taskId: string; command: SubagentTaskControlCommand }
+    | {
+        operation: 'control';
+        taskId: string;
+        command: SubagentTaskControlCommand;
+        invocationId: string;
+      }
     | { operation: 'list' }
     | { operation: 'cancel'; threadIds: string[] | null }
   );
@@ -99,6 +104,7 @@ type RoutedRequestPayload =
       scopeId: string;
       taskId: string;
       command: SubagentTaskControlCommand;
+      invocationId: string;
     }
   | { operation: 'list'; scopeId: string }
   | { operation: 'cancel'; scopeId: string; threadIds: string[] | null };
@@ -129,7 +135,8 @@ interface PendingRequest {
 interface CachedResponse {
   value: string;
   bytes: number;
-  expiresAt: number;
+  /** Absent while the owner still holds a consumed result nobody has acknowledged. */
+  expiresAt?: number;
 }
 
 interface ReplayCache {
@@ -139,6 +146,8 @@ interface ReplayCache {
   maxBytes: number;
   /** Consumed results are admitted only when they fit, so none is ever displaced. */
   evictable: boolean;
+  /** Consumed results are released by acknowledgement rather than by elapsed time. */
+  expires: boolean;
 }
 
 interface RoutedTaskList {
@@ -177,6 +186,7 @@ export interface SubagentTaskControlTransport {
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    invocationId: string,
   ): Promise<SubagentTaskControlResult | undefined>;
   list(scopeId: string): Promise<SubagentTaskSnapshot[]>;
   cancelScope(scopeId: string, threadIds: string[] | null): Promise<number>;
@@ -459,6 +469,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     taskId?: unknown;
     command?: unknown;
     threadIds?: unknown;
+    invocationId?: unknown;
   };
   if (
     candidate.version !== PROTOCOL_VERSION ||
@@ -511,7 +522,7 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     };
   }
   const command = parseControlCommand(candidate.command);
-  if (command == null) {
+  if (command == null || !isBoundedString(candidate.invocationId, 128)) {
     return undefined;
   }
   return {
@@ -523,27 +534,17 @@ function parseRequest(value: unknown): RoutedRequest | undefined {
     scopeId: candidate.scopeId,
     taskId: candidate.taskId,
     command,
+    invocationId: candidate.invocationId,
   };
 }
 
-function createReplayCache(maxEntries: number, maxBytes: number, evictable: boolean): ReplayCache {
-  return { entries: new Map(), bytes: 0, maxEntries, maxBytes, evictable };
-}
-
-/**
- * Identifies the logical control a caller issued. The transport's own retry reuses
- * one envelope, but a caller that saw `unavailable` reissues the command under a new
- * correlation id; keying by the command itself keeps that retry from steering,
- * queueing, or interrupting the child a second time.
- */
-function controlIdentity(command: SubagentTaskControlCommand): string {
-  if (command.action === 'cancel') {
-    return 'cancel';
-  }
-  if (command.action === 'cancel_message') {
-    return `cancel_message\u0000${command.controlId}`;
-  }
-  return `${command.action}\u0000${shortHash(command.message)}`;
+function createReplayCache(
+  maxEntries: number,
+  maxBytes: number,
+  evictable: boolean,
+  expires: boolean,
+): ReplayCache {
+  return { entries: new Map(), bytes: 0, maxEntries, maxBytes, evictable, expires };
 }
 
 function parseAck(value: unknown): RoutedAck | undefined {
@@ -599,11 +600,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     MAX_CLAIM_REPLAY_ENTRIES,
     MAX_CLAIM_REPLAY_BYTES,
     false,
+    false,
   );
 
   private readonly controlReplays = createReplayCache(
     MAX_CONTROL_REPLAY_ENTRIES,
     MAX_CONTROL_REPLAY_BYTES,
+    true,
     true,
   );
 
@@ -692,8 +695,9 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    invocationId: string,
   ): Promise<SubagentTaskControlResult | undefined> {
-    const routed = await this.requestTaskOwner(scopeId, taskId, 'control', command);
+    const routed = await this.requestTaskOwner(scopeId, taskId, 'control', command, invocationId);
     if (routed == null) {
       return undefined;
     }
@@ -877,7 +881,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   private async handleRequest(request: RoutedRequest): Promise<void> {
     const replay = this.replayFor(request);
     const cached = replay?.cache.entries.get(replay.key);
-    if (cached != null && cached.expiresAt > Date.now()) {
+    if (cached != null && (cached.expiresAt == null || cached.expiresAt > Date.now())) {
       await this.publish(
         this.channel(request.requesterId),
         successResponse(request.requestId, cached.value),
@@ -956,19 +960,21 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (request.operation === 'cancel') {
       return { cache: this.controlReplays, key: `cancel\u0000${request.requestId}` };
     }
-    return {
-      cache: this.controlReplays,
-      key: `control\u0000${shortHash(request.scopeId)}\u0000${request.taskId}\u0000${controlIdentity(
-        request.command,
-      )}`,
-    };
+    /** One tool invocation is one command. The transport's retry republishes the same
+     * envelope, so it replays; two intentional identical controls arrive under distinct
+     * invocation ids and both apply. */
+    return { cache: this.controlReplays, key: `control\u0000${request.invocationId}` };
   }
 
   private claimReplayKey(scopeId: string, taskId: string): string {
     return `claim\u0000${shortHash(scopeId)}\u0000${taskId}`;
   }
 
-  /** Frees a retained result once a caller holds it; an unacknowledged claim stays. */
+  /**
+   * Releases a consumed result once a caller confirms holding it. Until that
+   * acknowledgement the owner keeps it as task-owned state, so a lost response never
+   * destroys the only copy; ordinary cleanup applies only after it is handed over.
+   */
   private releaseClaimReplay(scopeId: string, taskId: string): void {
     const key = this.claimReplayKey(scopeId, taskId);
     const cached = this.claimReplays.entries.get(key);
@@ -991,6 +997,7 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     taskId: string,
     operation: 'claim' | 'control',
     command?: SubagentTaskControlCommand,
+    invocationId?: string,
   ): Promise<{ ownerId: string; result: unknown } | undefined> {
     this.assertTaskAddress(scopeId, taskId);
     await this.requireReady();
@@ -1012,12 +1019,18 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (operation === 'claim') {
       return { ownerId, result: await this.sendRequest(ownerId, { operation, scopeId, taskId }) };
     }
-    if (command == null) {
-      throw new Error('A routed subagent control command is required.');
+    if (command == null || invocationId == null) {
+      throw new Error('A routed subagent control command and invocation id are required.');
     }
     return {
       ownerId,
-      result: await this.sendRequest(ownerId, { operation, scopeId, taskId, command }),
+      result: await this.sendRequest(ownerId, {
+        operation,
+        scopeId,
+        taskId,
+        command,
+        invocationId,
+      }),
     };
   }
 
@@ -1066,9 +1079,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
   }
 
   private pruneExpiredReplays(cache: ReplayCache): void {
+    if (!cache.expires) {
+      return;
+    }
     const now = Date.now();
     for (const [id, cached] of cache.entries) {
-      if (cached.expiresAt <= now) {
+      if (cached.expiresAt != null && cached.expiresAt <= now) {
         cache.entries.delete(id);
         cache.bytes -= cached.bytes;
       }
@@ -1098,7 +1114,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
         cache.bytes -= evicted?.bytes ?? 0;
       }
     }
-    cache.entries.set(key, { value, bytes, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
+    cache.entries.set(key, {
+      value,
+      bytes,
+      ...(cache.expires ? { expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS } : {}),
+    });
     cache.bytes += bytes;
   }
 

@@ -543,17 +543,25 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return (await this.taskControlTransport?.claim(scopeId, taskId)) ?? local;
   }
 
-  /** Controls locally when possible, otherwise asks the registered owning replica. */
+  /**
+   * Controls locally when possible, otherwise asks the registered owning replica.
+   * `invocationId` identifies one caller invocation: a routed retransmission of that
+   * invocation replays the owner's result, while a fresh invocation applies again even
+   * when its action and message are identical.
+   */
   async controlTask(
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    invocationId: string = randomUUID(),
   ): Promise<SubagentTaskControlResult> {
     const local = this.control(scopeId, taskId, command);
     if (local.status !== 'not_found') {
       return local;
     }
-    return (await this.taskControlTransport?.control(scopeId, taskId, command)) ?? local;
+    return (
+      (await this.taskControlTransport?.control(scopeId, taskId, command, invocationId)) ?? local
+    );
   }
 
   /** Returns this process's tasks plus tasks reported by registered remote owners. */

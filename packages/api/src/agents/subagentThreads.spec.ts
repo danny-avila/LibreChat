@@ -64,6 +64,7 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    _invocationId: string,
   ): Promise<SubagentTaskControlResult | undefined> {
     return this.hub.owners
       .get(this.hub.key(scopeId, taskId))

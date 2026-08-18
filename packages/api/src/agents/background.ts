@@ -1134,6 +1134,7 @@ interface RoutedSubagentTaskStore {
     scopeId: string,
     taskId: string,
     command: SubagentTaskControlCommand,
+    invocationId: string,
   ): Promise<SubagentTaskControlResult>;
   listTasks(scopeId: string): Promise<SubagentTaskSnapshot[]>;
 }
@@ -1164,6 +1165,9 @@ export async function runCheckBackgroundTask(params: {
   }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
+  /** One tool call is one control invocation: routing may retransmit it, but a later
+   * call issuing the same action and message is a separate command. */
+  const invocationId = randomUUID();
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);
@@ -1203,7 +1207,7 @@ export async function runCheckBackgroundTask(params: {
           const result =
             routedStore == null
               ? subagentTasks.store.control(subagentTasks.scopeId, taskId, command)
-              : await routedStore.controlTask(subagentTasks.scopeId, taskId, command);
+              : await routedStore.controlTask(subagentTasks.scopeId, taskId, command, invocationId);
           const controlled = serializeSubagentControl(result);
           if (controlled != null) {
             return JSON.stringify(controlled);
