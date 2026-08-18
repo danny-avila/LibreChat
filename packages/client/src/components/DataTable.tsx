@@ -16,8 +16,8 @@ import {
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
 import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
-import useRemScale from '~/hooks/useRemScale';
 import AnimatedSearchInput from './AnimatedSearchInput';
+import useRemScale from '~/hooks/useRemScale';
 import { TrashIcon, Spinner } from '~/svgs';
 import { Skeleton } from './Skeleton';
 

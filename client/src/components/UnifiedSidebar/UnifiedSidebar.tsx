@@ -1,7 +1,6 @@
 import { useCallback, useState, useEffect, useRef, memo } from 'react';
-import { pxToRem, useRemScale } from '@librechat/client';
 import { useForm } from 'react-hook-form';
-import { useMediaQuery } from '@librechat/client';
+import { pxToRem, useRemScale, useMediaQuery } from '@librechat/client';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
