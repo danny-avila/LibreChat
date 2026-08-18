@@ -20,7 +20,6 @@ const {
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
   createStatefulCodeEnvironmentPolicyError,
-  createSubagentThreadTaskStore,
   buildSubagentThreadTaskConfig,
 } = require('@librechat/api');
 const {
@@ -62,18 +61,11 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { checkPermission, findAccessibleResources } = require('~/server/services/PermissionService');
 const AgentClient = require('~/server/controllers/agents/client');
 const { processAddedConvo } = require('./addedConvo');
+const subagentThreadTaskStore = require('./subagentThreadStore');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
 const SUBAGENT_GRAPH_LOAD_CONCURRENCY = 4;
-/** Durable logical threads backed by normal LibreChat conversations/messages;
- * active execution leases and controls remain bounded to this process. */
-const subagentThreadTaskStore = createSubagentThreadTaskStore({
-  getConvo: db.getConvo,
-  getMessages: db.getMessages,
-  saveConvo: db.saveConvo,
-  saveMessage: db.saveMessage,
-});
 
 /**
  * Creates a tool loader function for the agent.
@@ -428,39 +420,6 @@ const initializeClient = async ({
     requestConversationPromise,
   ]);
   delete endpointOption.agent;
-
-  if (
-    requestConversation?.subagentThread != null &&
-    requestConversation.subagentThread.userRunnable !== true
-  ) {
-    throw Object.assign(
-      new Error(
-        'This child thread is view-only. Continue it from its parent agent using the saved thread history.',
-      ),
-      { status: 409 },
-    );
-  }
-  if (
-    requestConversation?.subagentThread != null &&
-    typeof conversationId === 'string' &&
-    conversationId !== ''
-  ) {
-    const activeThreadConfig = buildSubagentThreadTaskConfig(subagentThreadTaskStore, {
-      userId: req.user.id,
-      parentConversationId: requestConversation.subagentThread.parentConversationId,
-      ...(typeof req.user?.tenantId === 'string' && req.user.tenantId !== ''
-        ? { tenantId: req.user.tenantId }
-        : {}),
-    });
-    if (subagentThreadTaskStore.isThreadActive(activeThreadConfig.scopeId, conversationId)) {
-      throw Object.assign(
-        new Error(
-          'This child thread is still running. Wait for it to settle before starting a user turn.',
-        ),
-        { status: 409 },
-      );
-    }
-  }
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);

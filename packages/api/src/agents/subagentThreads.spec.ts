@@ -201,6 +201,52 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('atomically excludes detached and ordinary turns with the same child lease', async () => {
+    const userId = 'user-shared-lease';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const first = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, first);
+    if (!first.accepted) return;
+    const threadId = requireThreadId(first);
+
+    const releaseUserTurn = store.acquireUserTurn(config.scopeId, threadId);
+    expect(releaseUserTurn).not.toBeNull();
+    expect(
+      store.start(taskRequest(config.scopeId, { threadId, input: 'Blocked by the user turn.' })),
+    ).toEqual({ accepted: false, reason: 'capacity' });
+    releaseUserTurn?.();
+
+    let releaseDetached = (_value: { content: string; messages: BaseMessage[] }): void => undefined;
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const detachedResult = new Promise<{ content: string; messages: BaseMessage[] }>((resolve) => {
+      releaseDetached = resolve;
+    });
+    const detached = store.start(
+      taskRequest(config.scopeId, {
+        threadId,
+        input: 'Hold the detached lease.',
+        run: async () => {
+          markEntered();
+          return detachedResult;
+        },
+      }),
+    );
+    if (!detached.accepted) return;
+    await entered;
+    expect(store.acquireUserTurn(config.scopeId, threadId)).toBeNull();
+    releaseDetached({
+      content: 'Detached lease complete.',
+      messages: [new AIMessage('Detached lease complete.')],
+    });
+    await waitForSettled(store, config.scopeId, detached);
+  });
+
   it('keeps a completed child writable when the optional sidebar refresh fails', async () => {
     const userId = 'user-refresh-failure';
     const parentConversationId = randomUUID();
@@ -243,6 +289,43 @@ describe('SubagentThreadTaskStore', () => {
         (message) => message.text,
       ),
     ).toContain('Completed the investigation.');
+  });
+
+  it('lets child deletion win over a concurrently settling detached result', async () => {
+    const userId = 'user-delete-during-settlement';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let deletedThreadId = '';
+    const deletingMethods = {
+      ...methods,
+      saveMessage: jest.fn(async (...args: Parameters<AllMethods['saveMessage']>) => {
+        const message = args[1];
+        if (message.text === 'Result after deletion.') {
+          deletedThreadId = message.conversationId ?? '';
+          await methods.deleteConvos(userId, { conversationId: deletedThreadId });
+        }
+        return methods.saveMessage(...args);
+      }),
+    };
+    const store = new SubagentThreadTaskStore(deletingMethods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({
+          content: 'Result after deletion.',
+          messages: [new AIMessage('Result after deletion.')],
+        }),
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    if (!started.accepted) return;
+
+    expect(deletedThreadId).toBe(requireThreadId(started));
+    expect(await methods.getConvo(userId, deletedThreadId)).toBeNull();
+    expect(await methods.getMessages({ user: userId, conversationId: deletedThreadId })).toEqual(
+      [],
+    );
+    expect(store.claim(config.scopeId, started.task.taskId)).toMatchObject({ status: 'error' });
   });
 
   it('bills detached usage independently and persists its rollup on the child result', async () => {
@@ -512,6 +595,27 @@ describe('SubagentThreadTaskStore', () => {
     expect(failingStore.isThreadActive(failedConfig.scopeId, threadId)).toBe(false);
     if (!failed.accepted) return;
     expect(failingStore.claim(failedConfig.scopeId, failed.task.taskId)).toMatchObject({
+      status: 'error',
+    });
+  });
+
+  it('removes a newly created child when setup cannot commit its first input', async () => {
+    const userId = 'user-initial-setup-failure';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const failingStore = new SubagentThreadTaskStore({
+      ...methods,
+      getMessages: jest.fn().mockRejectedValue(new Error('initial transcript read failed')),
+    });
+    const config = buildSubagentThreadTaskConfig(failingStore, { userId, parentConversationId });
+    const failed = failingStore.start(taskRequest(config.scopeId));
+    await waitForSettled(failingStore, config.scopeId, failed);
+    if (!failed.accepted) return;
+    const threadId = requireThreadId(failed);
+
+    expect(await methods.getConvo(userId, threadId)).toBeNull();
+    expect(await methods.getMessages({ user: userId, conversationId: threadId })).toEqual([]);
+    expect(failingStore.claim(config.scopeId, failed.task.taskId)).toMatchObject({
       status: 'error',
     });
   });
@@ -918,6 +1022,30 @@ describe('SubagentThreadTaskStore', () => {
         status: 'error',
       });
     }
+
+    await methods.saveConvo(
+      { userId },
+      {
+        conversationId: requireThreadId(created),
+        endpoint: EModelEndpoint.agents,
+        title: 'Changed child identity',
+        agent_id: 'different-child-agent',
+      },
+      { noUpsert: true },
+    );
+    const changedIdentityRun = jest.fn(taskRequest(config.scopeId).run);
+    const changedIdentity = store.start(
+      taskRequest(config.scopeId, {
+        threadId: requireThreadId(created),
+        run: changedIdentityRun,
+      }),
+    );
+    await waitForSettled(store, config.scopeId, changedIdentity);
+    expect(changedIdentityRun).not.toHaveBeenCalled();
+    if (!changedIdentity.accepted) return;
+    expect(store.claim(config.scopeId, changedIdentity.task.taskId)).toMatchObject({
+      status: 'error',
+    });
   });
 
   it('does not persist arbitrary executor error details into the visible child chat', async () => {
@@ -952,6 +1080,48 @@ describe('SubagentThreadTaskStore', () => {
     });
     expect(JSON.stringify(claim)).not.toContain('provider-secret');
     expect(JSON.stringify(loggerErrorSpy.mock.calls)).not.toContain('provider-secret');
+  });
+
+  it('retries the required writability restore after a failed child run', async () => {
+    const userId = 'user-failure-restore-retry';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let runnableAttempts = 0;
+    const retryingMethods = {
+      ...methods,
+      saveConvo: jest.fn(async (...args: Parameters<AllMethods['saveConvo']>) => {
+        const lineage = args[1].subagentThread;
+        if (
+          lineage != null &&
+          typeof lineage === 'object' &&
+          'userRunnable' in lineage &&
+          lineage.userRunnable === true
+        ) {
+          runnableAttempts += 1;
+          if (runnableAttempts === 1) {
+            throw new Error('transient writability update failure');
+          }
+        }
+        return methods.saveConvo(...args);
+      }),
+    };
+    const store = new SubagentThreadTaskStore(retryingMethods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => {
+          throw new Error('child failed');
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    if (!started.accepted) return;
+
+    expect(runnableAttempts).toBeGreaterThanOrEqual(2);
+    expect(await methods.getConvo(userId, requireThreadId(started))).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+    expect(store.claim(config.scopeId, started.task.taskId)).toMatchObject({ status: 'error' });
   });
 
   it('bounds durable delegation depth to one by default', async () => {

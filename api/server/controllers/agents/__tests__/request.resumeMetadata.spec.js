@@ -683,6 +683,42 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
+  it('retains a child-thread writer lease past the HTTP ACK and releases it on settlement', async () => {
+    let rejectInitialization;
+    const initialization = new Promise((_resolve, reject) => {
+      rejectInitialization = reject;
+    });
+    const initializeClient = jest.fn(() => initialization);
+    const retain = jest.fn();
+    const release = jest.fn();
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Continue this child thread.',
+        messageId: 'user-message',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+      subagentThreadTurnLease: { retain, release },
+    };
+    const res = createResumableResponse();
+
+    const controller = AgentController(req, res, jest.fn(), initializeClient, null);
+    await nextTick();
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'started', streamId: 'conversation-123' }),
+    );
+    expect(retain).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+
+    rejectInitialization(new Error('stop after acknowledgement'));
+    await controller;
+
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
   it('does not start a provider when account deletion or replacement wins the startup CAS', async () => {
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(false);
     const req = {

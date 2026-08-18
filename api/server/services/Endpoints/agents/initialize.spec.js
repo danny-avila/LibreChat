@@ -810,30 +810,6 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.agent.subagents).toBeUndefined();
   });
 
-  it('rejects an ordinary turn in a child without a standalone execution identity', async () => {
-    mockInitializeAgent.mockResolvedValue(
-      makePrimaryConfig({ subagents: { enabled: true, allowSelf: true, agent_ids: [] } }),
-    );
-    const req = makeSubagentReq();
-    req.resolvedConversation = {
-      conversationId: 'conv_sub',
-      subagentThread: { depth: 1, userRunnable: false },
-    };
-
-    await expect(
-      initializeClient({
-        req,
-        res: {},
-        signal: new AbortController().signal,
-        endpointOption: makeEndpointOption(),
-      }),
-    ).rejects.toMatchObject({
-      status: 409,
-      message: expect.stringContaining('view-only'),
-    });
-    expect(agentClientArgs).toBeUndefined();
-  });
-
   it('keeps detached subagents disabled without the admin background capability', async () => {
     mockInitializeAgent.mockResolvedValue(
       makePrimaryConfig({

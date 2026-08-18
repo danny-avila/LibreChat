@@ -45,10 +45,11 @@ const TRANSCRIPT_SELECT =
   'messageId parentMessageId text content files attachments quotes isCreatedByUser error createdAt +subagentTranscript';
 
 class SubagentThreadPublicError extends Error {}
+class SubagentThreadDeletedError extends SubagentThreadPublicError {}
 
 type SubagentThreadMethods = Pick<
   AllMethods,
-  'getConvo' | 'getMessages' | 'saveConvo' | 'saveMessage'
+  'deleteConvos' | 'deleteMessages' | 'getConvo' | 'getMessages' | 'saveConvo' | 'saveMessage'
 >;
 
 interface SubagentThreadScope {
@@ -88,12 +89,20 @@ type ThreadMessage = Pick<
   quotes?: TMessage['quotes'];
 };
 
-interface ActiveThreadLease {
+interface TaskThreadLease {
+  kind: 'task';
   idempotencyKey: string;
   taskId: string;
   running: boolean;
   settling: boolean;
 }
+
+interface UserTurnThreadLease {
+  kind: 'user';
+  leaseId: string;
+}
+
+type ActiveThreadLease = TaskThreadLease | UserTurnThreadLease;
 
 export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStoreOptions {
   maxThreadDepth?: number;
@@ -403,14 +412,18 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const lockKey = `${request.scopeId}\u0000${threadId}`;
     const idempotencyKey = request.idempotencyKey.trim();
     const active = this.activeThreads.get(lockKey);
-    if (active != null && active.idempotencyKey !== idempotencyKey) {
+    if (
+      active?.kind === 'user' ||
+      (active?.kind === 'task' && active.idempotencyKey !== idempotencyKey)
+    ) {
       return { accepted: false, reason: 'capacity' };
     }
 
     /** Install a provisional lease before delegating to the in-memory store.
      * Its executor may enter synchronously up to the first await, so setting
      * the lock only after `super.start` returns leaves a cancellation race. */
-    const lease: ActiveThreadLease = active ?? {
+    const lease: TaskThreadLease = active ?? {
+      kind: 'task',
       idempotencyKey,
       taskId: '',
       running: false,
@@ -524,7 +537,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const snapshot = this.get(scopeId, taskId);
     const lockKey = snapshot?.threadId == null ? undefined : `${scopeId}\u0000${snapshot.threadId}`;
     const lease = lockKey == null ? undefined : this.activeThreads.get(lockKey);
-    if (lease?.taskId === taskId && lease.settling) {
+    if (lease?.kind === 'task' && lease.taskId === taskId && lease.settling) {
       return { status: 'not_running', task: snapshot };
     }
     const result = super.control(scopeId, taskId, command);
@@ -536,7 +549,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       /** A task cancelled before its executor ever entered has no `finally`
        * path to release the provisional lease. Once running, retain the lock
        * until the executor actually exits—even if it ignores AbortSignal. */
-      if (lockKey != null && lease?.taskId === taskId && !lease.running) {
+      if (lockKey != null && lease?.kind === 'task' && lease.taskId === taskId && !lease.running) {
         this.activeThreads.delete(lockKey);
       }
     }
@@ -546,6 +559,23 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   /** Process-local guard for ordinary user turns racing an active child lease. */
   isThreadActive(scopeId: string, threadId: string): boolean {
     return this.activeThreads.has(`${scopeId}\u0000${threadId}`);
+  }
+
+  /** Atomically excludes detached continuations for the lifetime of one
+   * ordinary model-bound child turn. The returned idempotent release closure
+   * deletes only the lease it created, never a later owner of the same key. */
+  acquireUserTurn(scopeId: string, threadId: string): (() => void) | null {
+    const lockKey = `${scopeId}\u0000${threadId}`;
+    if (this.activeThreads.has(lockKey)) {
+      return null;
+    }
+    const lease: UserTurnThreadLease = { kind: 'user', leaseId: randomUUID() };
+    this.activeThreads.set(lockKey, lease);
+    return () => {
+      if (this.activeThreads.get(lockKey) === lease) {
+        this.activeThreads.delete(lockKey);
+      }
+    };
   }
 
   /** Whether a durable child may be created below the supplied conversation depth. */
@@ -569,94 +599,101 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       throw new SubagentThreadPublicError('Parent thread is unavailable.');
     }
 
-    let conversation = existing;
-    if (conversation == null && isContinuation) {
-      throw new SubagentThreadPublicError(
-        'Child thread is unavailable for this subagent and parent scope.',
-      );
-    }
-    if (conversation == null) {
-      const parentDepth = parent.subagentThread?.depth ?? 0;
-      if (!this.canCreateChildThread(parentDepth)) {
+    let createdThread = false;
+    try {
+      let conversation = existing;
+      if (conversation == null && isContinuation) {
         throw new SubagentThreadPublicError(
-          `Subagent thread depth exceeds the configured limit of ${this.maxThreadDepth}.`,
+          'Child thread is unavailable for this subagent and parent scope.',
         );
       }
-      const depth = parentDepth + 1;
-      const agentId = childAgentId(request);
-      const saved = await this.methods.saveConvo(
+      if (conversation == null) {
+        const parentDepth = parent.subagentThread?.depth ?? 0;
+        if (!this.canCreateChildThread(parentDepth)) {
+          throw new SubagentThreadPublicError(
+            `Subagent thread depth exceeds the configured limit of ${this.maxThreadDepth}.`,
+          );
+        }
+        const depth = parentDepth + 1;
+        const agentId = childAgentId(request);
+        const saved = await this.methods.saveConvo(
+          { userId: scope.userId },
+          {
+            conversationId: threadId,
+            endpoint: EModelEndpoint.agents,
+            title: `Subagent: ${request.subagentType}`.slice(0, 120),
+            ...(agentId == null ? {} : { agent_id: agentId }),
+            ...retentionFields(parent),
+            subagentThread: {
+              rootConversationId:
+                parent.subagentThread?.rootConversationId ?? scope.parentConversationId,
+              parentConversationId: scope.parentConversationId,
+              parentMessageId: request.parentRunId || request.parentToolCallId,
+              parentToolCallId: request.parentToolCallId,
+              ...(request.parentAgentId == null ? {} : { parentAgentId: request.parentAgentId }),
+              subagentType: request.subagentType,
+              subagentKind: request.subagentKind,
+              depth,
+              /** Remain read-only until the detached execution lease settles. */
+              userRunnable: false,
+            },
+          },
+          { context: 'SubagentThreadTaskStore.prepareThread' },
+        );
+        if (saved == null || 'message' in saved) {
+          throw new Error('Unable to create the child thread.');
+        }
+        conversation = saved;
+        createdThread = true;
+      }
+
+      this.assertContinuation(scope, request, conversation);
+      const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
+      const allMessages = (await this.methods.getMessages(
+        { conversationId: threadId, user: scope.userId },
+        TRANSCRIPT_SELECT,
+        { sort: { createdAt: 1, _id: 1 } },
+      )) as ThreadMessage[];
+      const branch = selectLatestBranch(allMessages);
+      const restored = restoreThreadMessages(branch);
+      const initialMessages = restored.messages;
+      const userMessageId = `${taskId}:user`;
+      const parentMessageId = branch[branch.length - 1]?.messageId ?? Constants.NO_PARENT;
+      const savedUserMessage = await this.methods.saveMessage(
         { userId: scope.userId },
         {
+          messageId: userMessageId,
           conversationId: threadId,
+          parentMessageId,
+          sender: 'User',
+          text: request.input,
           endpoint: EModelEndpoint.agents,
-          title: `Subagent: ${request.subagentType}`.slice(0, 120),
-          ...(agentId == null ? {} : { agent_id: agentId }),
-          ...retentionFields(parent),
-          subagentThread: {
-            rootConversationId:
-              parent.subagentThread?.rootConversationId ?? scope.parentConversationId,
-            parentConversationId: scope.parentConversationId,
-            parentMessageId: request.parentRunId || request.parentToolCallId,
-            parentToolCallId: request.parentToolCallId,
-            ...(request.parentAgentId == null ? {} : { parentAgentId: request.parentAgentId }),
-            subagentType: request.subagentType,
-            subagentKind: request.subagentKind,
-            depth,
-            /** Remain read-only until the detached execution lease settles. */
-            userRunnable: false,
-          },
+          isCreatedByUser: true,
+          ...retentionFields(conversation),
         },
         { context: 'SubagentThreadTaskStore.prepareThread' },
       );
-      if (saved == null || 'message' in saved) {
-        throw new Error('Unable to create the child thread.');
+      if (savedUserMessage == null) {
+        throw new Error('Unable to persist the child-thread input.');
       }
-      conversation = saved;
+      /** The process-local active lease rejects concurrent ordinary writes while
+       * setup reads history. Flip the durable UI flag only after the new input is
+       * committed, so a setup failure cannot strand an already-runnable child. */
+      if (conversation.subagentThread?.userRunnable === true) {
+        conversation = await this.refreshConversationRequired(scope.userId, conversation, false);
+      }
+      return {
+        conversation,
+        initialMessages,
+        initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
+        forceTranscriptReplacement: restored.hasVisibleTail,
+        userRunnableAfterSettlement,
+        userMessageId,
+      };
+    } catch (error) {
+      await this.rollbackPreparation(scope, threadId, taskId, request, createdThread);
+      throw error;
     }
-
-    this.assertContinuation(scope, request, conversation);
-    const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
-    const allMessages = (await this.methods.getMessages(
-      { conversationId: threadId, user: scope.userId },
-      TRANSCRIPT_SELECT,
-      { sort: { createdAt: 1, _id: 1 } },
-    )) as ThreadMessage[];
-    const branch = selectLatestBranch(allMessages);
-    const restored = restoreThreadMessages(branch);
-    const initialMessages = restored.messages;
-    const userMessageId = `${taskId}:user`;
-    const parentMessageId = branch[branch.length - 1]?.messageId ?? Constants.NO_PARENT;
-    const savedUserMessage = await this.methods.saveMessage(
-      { userId: scope.userId },
-      {
-        messageId: userMessageId,
-        conversationId: threadId,
-        parentMessageId,
-        sender: 'User',
-        text: request.input,
-        endpoint: EModelEndpoint.agents,
-        isCreatedByUser: true,
-        ...retentionFields(conversation),
-      },
-      { context: 'SubagentThreadTaskStore.prepareThread' },
-    );
-    if (savedUserMessage == null) {
-      throw new Error('Unable to persist the child-thread input.');
-    }
-    /** The process-local active lease rejects concurrent ordinary writes while
-     * setup reads history. Flip the durable UI flag only after the new input is
-     * committed, so a setup failure cannot strand an already-runnable child. */
-    if (conversation.subagentThread?.userRunnable === true) {
-      conversation = await this.refreshConversation(scope.userId, conversation, false);
-    }
-    return {
-      conversation,
-      initialMessages,
-      initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
-      forceTranscriptReplacement: restored.hasVisibleTail,
-      userRunnableAfterSettlement,
-      userMessageId,
-    };
   }
 
   private assertContinuation(
@@ -677,8 +714,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     conversation: IConversation,
   ): boolean {
     const lineage = conversation.subagentThread;
+    const expectedAgentId = childAgentId(request);
+    const agentIdentityMatches =
+      request.subagentKind === 'graph'
+        ? conversation.agent_id == null
+        : conversation.agent_id === expectedAgentId;
     return !(
       lineage == null ||
+      conversation.endpoint !== EModelEndpoint.agents ||
+      !agentIdentityMatches ||
       lineage.parentConversationId !== scope.parentConversationId ||
       lineage.parentAgentId !== request.parentAgentId ||
       lineage.subagentType !== request.subagentType ||
@@ -706,9 +750,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     /** Restoring ordinary-child writability is part of the successful commit,
      * not part of the best-effort sidebar refresh below. Commit it before the
      * result so a completed task can never leave the child permanently locked. */
-    const settledConversation = prepared.userRunnableAfterSettlement
-      ? await this.refreshConversation(scope.userId, prepared.conversation, true)
-      : prepared.conversation;
+    const settledConversation = await this.refreshConversationRequired(
+      scope.userId,
+      prepared.conversation,
+      prepared.userRunnableAfterSettlement,
+    );
     const savedAssistantMessage = await this.methods.saveMessage(
       { userId: scope.userId },
       {
@@ -729,16 +775,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (savedAssistantMessage == null) {
       throw new Error('Unable to persist the child-thread result.');
     }
-    await this.refreshConversation(
-      scope.userId,
+    await this.refreshAfterMessage(
+      scope,
       settledConversation,
       prepared.userRunnableAfterSettlement,
-    ).catch((error) => {
-      /** The permission transition is already durable and the result is
-       * queryable by conversation id. A stale sidebar timestamp/message-id
-       * cache is preferable to rewriting a successful result as a failure. */
-      logger.error('[subagentThreads] Failed to refresh completed child thread', error);
-    });
+      taskId,
+      'completed',
+    );
   }
 
   private async persistFailure(
@@ -761,6 +804,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (userMessage.length === 0) {
       return;
     }
+    const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
+    const settledConversation = await this.refreshConversationRequired(
+      scope.userId,
+      conversation,
+      userRunnableAfterSettlement,
+    );
     const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedFailure = await this.methods.saveMessage(
       { userId: scope.userId },
@@ -775,17 +824,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         unfinished: false,
         error: true,
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(conversation),
+        ...retentionFields(settledConversation),
       },
       { context: 'SubagentThreadTaskStore.persistFailure' },
     );
     if (savedFailure == null) {
       throw new Error('Unable to persist the child-thread failure.');
     }
-    await this.refreshConversation(
-      scope.userId,
-      conversation,
-      isUserRunnableChild(request, childAgentId(request)),
+    await this.refreshAfterMessage(
+      scope,
+      settledConversation,
+      userRunnableAfterSettlement,
+      taskId,
+      'failed',
     );
   }
 
@@ -808,6 +859,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (userMessage.length === 0) {
       return;
     }
+    const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
+    const settledConversation = await this.refreshConversationRequired(
+      scope.userId,
+      conversation,
+      userRunnableAfterSettlement,
+    );
     const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedCancellation = await this.methods.saveMessage(
       { userId: scope.userId },
@@ -821,18 +878,100 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         isCreatedByUser: false,
         unfinished: false,
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(conversation),
+        ...retentionFields(settledConversation),
       },
       { context: 'SubagentThreadTaskStore.persistCancellation' },
     );
     if (savedCancellation == null) {
       throw new Error('Unable to persist the child-thread cancellation.');
     }
-    await this.refreshConversation(
-      scope.userId,
-      conversation,
-      isUserRunnableChild(request, childAgentId(request)),
+    await this.refreshAfterMessage(
+      scope,
+      settledConversation,
+      userRunnableAfterSettlement,
+      taskId,
+      'cancelled',
     );
+  }
+
+  private async rollbackPreparation(
+    scope: SubagentThreadScope,
+    threadId: string,
+    taskId: string,
+    request: SubagentTaskStartRequest,
+    createdThread: boolean,
+  ): Promise<void> {
+    try {
+      if (createdThread) {
+        await this.methods.deleteConvos(scope.userId, { conversationId: threadId });
+        return;
+      }
+      await this.deleteTaskMessages(scope, threadId, taskId);
+      const conversation = await this.methods.getConvo(scope.userId, threadId);
+      if (
+        conversation != null &&
+        this.isContinuationAllowed(scope, request, conversation) &&
+        isUserRunnableChild(request, childAgentId(request))
+      ) {
+        await this.refreshConversationRequired(scope.userId, conversation, true);
+      }
+    } catch (cleanupError) {
+      logger.error('[subagentThreads] Failed to roll back child-thread setup', cleanupError);
+    }
+  }
+
+  private async deleteTaskMessages(
+    scope: SubagentThreadScope,
+    threadId: string,
+    taskId: string,
+  ): Promise<void> {
+    await this.methods.deleteMessages({
+      user: scope.userId,
+      conversationId: threadId,
+      messageId: { $in: [`${taskId}:user`, `${taskId}:assistant`] },
+    });
+  }
+
+  private async refreshAfterMessage(
+    scope: SubagentThreadScope,
+    conversation: IConversation,
+    userRunnable: boolean,
+    taskId: string,
+    outcome: 'cancelled' | 'completed' | 'failed',
+  ): Promise<void> {
+    try {
+      await this.refreshConversation(scope.userId, conversation, userRunnable);
+    } catch (error) {
+      if (error instanceof SubagentThreadDeletedError) {
+        await this.deleteTaskMessages(scope, conversation.conversationId, taskId);
+        throw error;
+      }
+      /** The permission transition is already durable and the outcome message
+       * is queryable by conversation id. Only the sidebar cache refresh failed. */
+      logger.error(`[subagentThreads] Failed to refresh ${outcome} child thread`, error);
+    }
+  }
+
+  private async refreshConversationRequired(
+    userId: string,
+    conversation: IConversation,
+    userRunnable: boolean,
+  ): Promise<IConversation> {
+    let lastError: unknown = new Error('Unable to refresh the child thread.');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.refreshConversation(userId, conversation, userRunnable);
+      } catch (error) {
+        if (error instanceof SubagentThreadDeletedError) {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < 2) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+        }
+      }
+    }
+    throw lastError;
   }
 
   private async refreshConversation(
@@ -854,9 +993,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         ...(subagentThread == null ? {} : { subagentThread }),
         ...retentionFields(conversation),
       },
-      { context: 'SubagentThreadTaskStore.refreshConversation' },
+      { context: 'SubagentThreadTaskStore.refreshConversation', noUpsert: true },
     );
-    if (saved == null || 'message' in saved) {
+    if (saved == null) {
+      throw new SubagentThreadDeletedError('Child thread was deleted before settlement.');
+    }
+    if ('message' in saved) {
       throw new Error('Unable to refresh the child thread.');
     }
     return saved;
@@ -870,8 +1012,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 }
 
 export function createSubagentThreadTaskStore(
-  methods: Pick<ConversationMethods, 'getConvo' | 'saveConvo'> &
-    Pick<MessageMethods, 'getMessages' | 'saveMessage'>,
+  methods: Pick<ConversationMethods, 'deleteConvos' | 'getConvo' | 'saveConvo'> &
+    Pick<MessageMethods, 'deleteMessages' | 'getMessages' | 'saveMessage'>,
   options?: SubagentThreadTaskStoreOptions,
 ): SubagentThreadTaskStore {
   return new SubagentThreadTaskStore(methods, options);

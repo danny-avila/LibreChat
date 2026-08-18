@@ -181,7 +181,11 @@ async function finishResumableRequest(req, userId) {
   try {
     await cleanupMCPRequestContextForReq(req);
   } finally {
-    await decrementPendingRequest(userId);
+    try {
+      await decrementPendingRequest(userId);
+    } finally {
+      req.subagentThreadTurnLease?.release();
+    }
   }
 }
 
@@ -855,6 +859,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     return sendGenerationJson(res, 429, violationInfo, generationProtocolVersion);
   }
   startupTelemetry?.mark('request_admitted');
+  /** Child conversations share the same process-local writer lease as parent-driven
+   * continuations. The HTTP response is only an ACK; retain the lease until the
+   * generation reaches finishResumableRequest (terminal, pause, abort, or error). */
+  req.subagentThreadTurnLease?.retain();
 
   let client = null;
   let jobCreatedAt;
