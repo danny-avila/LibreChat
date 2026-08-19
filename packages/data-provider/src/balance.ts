@@ -44,3 +44,18 @@ export function getRefillEligibilityDate(
     }
   }
 }
+
+/**
+ * Returns the date a user's balance will next refill, never in the past.
+ * Once the eligibility date has passed, the refill applies on the next spend,
+ * so an elapsed eligibility date is reported as `now` rather than a stale past time.
+ */
+export function getNextRefillDate(
+  lastRefill: Date,
+  value: number,
+  unit: RefillIntervalUnit,
+  now: Date,
+): Date {
+  const eligibility = getRefillEligibilityDate(lastRefill, value, unit);
+  return eligibility.getTime() < now.getTime() ? now : eligibility;
+}
