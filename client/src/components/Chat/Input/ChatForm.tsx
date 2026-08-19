@@ -23,7 +23,9 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
+import PastedTextDialog from './Files/PastedTextDialog';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
@@ -196,6 +198,8 @@ const ChatForm = memo(function ChatForm({
     // when the question resolves.
     draftId: answerMode.draftId,
   });
+
+  const pastedTextEdit = usePastedTextEdit({ files, setFiles, textAreaRef });
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
@@ -590,6 +594,13 @@ const ChatForm = memo(function ChatForm({
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
+                onEditPastedText={pastedTextEdit.openEditor}
+                onMovePastedTextInline={pastedTextEdit.moveInline}
+              />
+              <PastedTextDialog
+                edit={pastedTextEdit.editing}
+                onClose={pastedTextEdit.closeEditor}
+                onSave={pastedTextEdit.saveEdit}
               />
               {endpoint && (
                 <div className={cn('flex', isRTL ? 'flex-row-reverse' : 'flex-row')}>

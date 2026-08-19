@@ -5,6 +5,7 @@ import type { MouseEvent } from 'react';
 const mockNewConversation = jest.fn();
 const mockClearMessagesCache = jest.fn();
 const mockInvalidateQueries = jest.fn();
+const mockClearAllDrafts = jest.fn();
 
 jest.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
@@ -21,6 +22,8 @@ jest.mock('~/hooks/useNewConvo', () => ({
 
 jest.mock('~/utils', () => ({
   clearMessagesCache: (...args: unknown[]) => mockClearMessagesCache(...args),
+  clearAllDrafts: (...args: unknown[]) => mockClearAllDrafts(...args),
+  getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
 }));
 
 jest.mock('~/store', () => ({
@@ -57,6 +60,26 @@ describe('useNewChat', () => {
     expect(mockClearMessagesCache).toHaveBeenCalledWith(expect.anything(), 'convo-1');
     expect(mockInvalidateQueries).toHaveBeenCalledWith(['messages']);
     expect(mockNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the unsaved-chat draft before the reset restores from it', () => {
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
+    expect(mockClearAllDrafts.mock.invocationCallOrder[0]).toBeLessThan(
+      mockNewConversation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('drops only its own pane unsaved-chat draft', () => {
+    const { result } = renderHook(() => useNewChat({ index: 1 }));
+
+    act(() => result.current.startNewChat());
+
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('new:1');
+    expect(mockClearAllDrafts).not.toHaveBeenCalledWith('new');
   });
 
   it('runs the optional callback after the reset', () => {

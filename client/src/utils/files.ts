@@ -494,6 +494,16 @@ export const PASTE_AS_FILE_MIN_LENGTH = 2500;
 
 export const PASTED_TEXT_FILENAME = 'pasted-text.txt';
 
+/** Matches every name `nextPastedTextFilename` can produce, and nothing else. */
+const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-\d+)?\.txt$/;
+
+/**
+ * Whether an attachment came from a long paste rather than a deliberate upload. The name is the
+ * only marker that survives a reload: `source` is `text` for every "Upload as Text" file too.
+ */
+export const isPastedTextFilename = (filename?: string | null): boolean =>
+  filename != null && PASTED_TEXT_FILENAME_PATTERN.test(filename);
+
 export type PasteAsFileContext = {
   /** The user's `pasteLongTextAsFile` preference. */
   enabled: boolean;
@@ -511,7 +521,7 @@ export type PasteAsFileContext = {
  * alone for pastes and reject a second, different paste that merely matched the first one's
  * length. Numbering keeps every paste attachable while staying readable in the UI.
  */
-const nextPastedTextFilename = (taken: Set<string>): string => {
+export const nextPastedTextFilename = (taken: Set<string>): string => {
   let candidate = PASTED_TEXT_FILENAME;
   let suffix = 1;
   while (taken.has(candidate)) {

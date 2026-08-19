@@ -3,6 +3,8 @@ import type { FileConfig } from 'librechat-data-provider';
 import {
   getViableUploadOptions,
   resolvePastedTextFile,
+  isPastedTextFilename,
+  nextPastedTextFilename,
   PASTE_AS_FILE_MIN_LENGTH,
   PASTED_TEXT_FILENAME,
   type UploadOptionContext,
@@ -198,5 +200,39 @@ describe('resolvePastedTextFile', () => {
     resolvePastedTextFile(shortText, baseCtx({ getOptions }));
 
     expect(getOptions).not.toHaveBeenCalled();
+  });
+});
+
+describe('isPastedTextFilename', () => {
+  it('accepts every name the paste flow generates', () => {
+    const attachedFilenames = new Set<string>();
+    const generated = Array.from({ length: 4 }, () => {
+      const name = nextPastedTextFilename(attachedFilenames);
+      attachedFilenames.add(name);
+      return name;
+    });
+
+    expect(generated).toEqual([
+      PASTED_TEXT_FILENAME,
+      'pasted-text-2.txt',
+      'pasted-text-3.txt',
+      'pasted-text-4.txt',
+    ]);
+    expect(generated.every(isPastedTextFilename)).toBe(true);
+  });
+
+  it.each([
+    ['a deliberate upload that merely mentions pasting', 'my-pasted-text.txt'],
+    ['a different extension', 'pasted-text.md'],
+    ['a suffix that is not a paste number', 'pasted-text-final.txt'],
+    ['a name with the marker in the middle', 'notes-pasted-text.txt'],
+    ['an empty name', ''],
+  ])('rejects %s', (_label, filename) => {
+    expect(isPastedTextFilename(filename)).toBe(false);
+  });
+
+  it('rejects a missing name rather than throwing', () => {
+    expect(isPastedTextFilename(undefined)).toBe(false);
+    expect(isPastedTextFilename(null)).toBe(false);
   });
 });

@@ -20,11 +20,15 @@ function FileFormChat({
   files,
   setFiles,
   setFilesLoading,
+  onEditPastedText,
+  onMovePastedTextInline,
 }: {
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  onEditPastedText?: (file: ExtendedFile) => void;
+  onMovePastedTextInline?: (file: ExtendedFile) => void;
 }) {
   const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
   const { endpoint: _endpoint } = conversation ?? { endpoint: null };
@@ -46,6 +50,8 @@ function FileFormChat({
         setFilesLoading={setFilesLoading}
         isRTL={isRTL}
         Wrapper={ChatFileRowWrapper}
+        onEditPastedText={onEditPastedText}
+        onMovePastedTextInline={onMovePastedTextInline}
       />
     </>
   );

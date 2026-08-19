@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { MouseEvent } from 'react';
 
 import useNewConvo from '~/hooks/useNewConvo';
-import { clearMessagesCache } from '~/utils';
+import { clearAllDrafts, clearMessagesCache, getNewConversationDraftId } from '~/utils';
 import store from '~/store';
 
 export type UseNewChatParams = {
@@ -42,9 +42,14 @@ export default function useNewChat({
   const startNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
+    /** `newConversation` empties the composer, but the unsaved-chat draft key outlives it and
+     * `useAutoSave` restores from that key on the way in, so an unsent paste came back on every
+     * later new chat. Dropping the key first makes an explicit new chat an actual clean slate,
+     * for the text draft and its attachments alike. Per-conversation drafts are untouched. */
+    clearAllDrafts(getNewConversationDraftId(index));
     newConversation();
     onNewChat?.();
-  }, [queryClient, conversationId, newConversation, onNewChat]);
+  }, [queryClient, conversationId, newConversation, onNewChat, index]);
 
   const handleNewChatClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {

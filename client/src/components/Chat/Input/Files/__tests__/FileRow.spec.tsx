@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { FileSources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
@@ -22,6 +23,8 @@ jest.mock('~/utils', () => ({
     log: jest.fn(),
   },
   getCachedPreview: jest.fn(() => undefined),
+  /** Real predicate: which names count as a paste is the thing under test here. */
+  isPastedTextFilename: jest.requireActual('~/utils/files').isPastedTextFilename,
 }));
 
 jest.mock('../Image', () => {
@@ -37,10 +40,20 @@ jest.mock('../Image', () => {
 });
 
 jest.mock('../FileContainer', () => {
-  return function MockFileContainer({ file }: any) {
+  return function MockFileContainer({ file, onClick, ariaLabel, subtitleAction }: any) {
     return (
       <div data-testid="mock-file-container">
         <span data-testid="file-name">{file.filename}</span>
+        {onClick != null && (
+          <button type="button" aria-label={ariaLabel} onClick={onClick}>
+            {file.filename}
+          </button>
+        )}
+        {subtitleAction != null && (
+          <button type="button" aria-label={subtitleAction.label} onClick={subtitleAction.onClick}>
+            {subtitleAction.label}
+          </button>
+        )}
       </div>
     );
   };
@@ -358,6 +371,103 @@ describe('FileRow', () => {
       expect(imageUrl).toBe(
         '/images/68c98b26901ebe2d87c193a2/c0fe1b93-ba3d-456c-80be-9a492bfd9ed0__image.png',
       );
+    });
+  });
+  describe('Pasted-text editing', () => {
+    const pastedFile = (overrides: Partial<ExtendedFile> = {}) =>
+      createMockFile({
+        file_id: 'pasted-file',
+        type: 'text/plain',
+        filename: 'pasted-text.txt',
+        preview: undefined,
+        filepath: '/uploads/user123/pasted-text.txt',
+        ...overrides,
+      });
+
+    const renderWithEditor = (
+      file: ExtendedFile,
+      onEditPastedText?: (f: ExtendedFile) => void,
+      onMovePastedTextInline?: (f: ExtendedFile) => void,
+    ) => {
+      const filesMap = new Map<string, ExtendedFile>();
+      filesMap.set(file.file_id, file);
+      return render(
+        <FileRow
+          files={filesMap}
+          setFiles={mockSetFiles}
+          setFilesLoading={mockSetFilesLoading}
+          onEditPastedText={onEditPastedText}
+          onMovePastedTextInline={onMovePastedTextInline}
+        />,
+      );
+    };
+
+    it('opens the editor with the chip that was clicked', async () => {
+      const onEditPastedText = jest.fn();
+      const file = pastedFile();
+      renderWithEditor(file, onEditPastedText);
+
+      await userEvent.click(screen.getByRole('button', { name: 'com_ui_pasted_text_edit_chip' }));
+
+      expect(onEditPastedText).toHaveBeenCalledWith(file);
+    });
+
+    it('names the action rather than just the file for screen readers', () => {
+      renderWithEditor(pastedFile(), jest.fn());
+
+      expect(screen.getByRole('button').getAttribute('aria-label')).toBe(
+        'com_ui_pasted_text_edit_chip',
+      );
+    });
+
+    it('numbered pastes are editable too', () => {
+      renderWithEditor(pastedFile({ filename: 'pasted-text-2.txt' }), jest.fn());
+
+      expect(screen.getByRole('button')).toBeInTheDocument();
+    });
+
+    it('leaves a deliberate text upload inert', () => {
+      renderWithEditor(pastedFile({ filename: 'notes.txt' }), jest.fn());
+
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('waits for the upload to finish before offering the editor', () => {
+      renderWithEditor(pastedFile({ progress: 0.4 }), jest.fn());
+
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('stays inert where no editor is wired up', () => {
+      renderWithEditor(pastedFile());
+
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    });
+
+    it('offers returning the paste to the composer from the chip subtitle', async () => {
+      const onMovePastedTextInline = jest.fn();
+      const file = pastedFile();
+      renderWithEditor(file, jest.fn(), onMovePastedTextInline);
+
+      await userEvent.click(screen.getByRole('button', { name: 'com_ui_pasted_text_move_inline' }));
+
+      expect(onMovePastedTextInline).toHaveBeenCalledWith(file);
+    });
+
+    it('offers no subtitle action for a deliberate text upload', () => {
+      renderWithEditor(pastedFile({ filename: 'notes.txt' }), jest.fn(), jest.fn());
+
+      expect(
+        screen.queryByRole('button', { name: 'com_ui_pasted_text_move_inline' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('offers no subtitle action where no handler is wired up', () => {
+      renderWithEditor(pastedFile(), jest.fn());
+
+      expect(
+        screen.queryByRole('button', { name: 'com_ui_pasted_text_move_inline' }),
+      ).not.toBeInTheDocument();
     });
   });
 });

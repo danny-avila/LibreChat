@@ -3,7 +3,7 @@ import { useToastContext } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
-import { logger, getCachedPreview } from '~/utils';
+import { logger, getCachedPreview, isPastedTextFilename } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
 import { useLocalize } from '~/hooks';
@@ -29,6 +29,8 @@ export default function FileRow({
   fileFilter,
   isRTL = false,
   Wrapper,
+  onEditPastedText,
+  onMovePastedTextInline,
 }: {
   files: Map<string, ExtendedFile> | undefined;
   abortUpload?: (fileId?: string) => void;
@@ -40,6 +42,10 @@ export default function FileRow({
   tool_resource?: EToolResources;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
+  /** Opens the paste editor. Only the composer passes it, so other rows stay inert chips. */
+  onEditPastedText?: (file: ExtendedFile) => void;
+  /** Returns a paste to the composer, offered from the chip's subtitle line. */
+  onMovePastedTextInline?: (file: ExtendedFile) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -133,6 +139,9 @@ export default function FileRow({
               deleteFile({ file, setFiles });
             };
             const isImage = file.type?.startsWith('image') ?? false;
+            /** An upload still in flight has no stored text to open yet. */
+            const isEditablePaste =
+              onEditPastedText != null && file.progress >= 1 && isPastedTextFilename(file.filename);
 
             return (
               <div
@@ -151,7 +160,24 @@ export default function FileRow({
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  <FileContainer
+                    file={file}
+                    onDelete={handleDelete}
+                    onClick={isEditablePaste ? () => onEditPastedText(file) : undefined}
+                    ariaLabel={
+                      isEditablePaste
+                        ? localize('com_ui_pasted_text_edit_chip', { 0: file.filename ?? '' })
+                        : undefined
+                    }
+                    subtitleAction={
+                      isEditablePaste && onMovePastedTextInline != null
+                        ? {
+                            label: localize('com_ui_pasted_text_move_inline'),
+                            onClick: () => onMovePastedTextInline(file),
+                          }
+                        : undefined
+                    }
+                  />
                 )}
               </div>
             );
