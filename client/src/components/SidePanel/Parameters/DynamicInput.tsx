@@ -102,7 +102,10 @@ function DynamicInput({
    *  through the same debouncer replaces its arguments, so the queued write
    *  becomes the corrected one. */
   const rangeKey = range != null ? `${range.min}:${range.max}:${range.positiveMin ?? ''}` : '';
-  const appliedRangeRef = useRef(rangeKey);
+  /** Null rather than the first key, so a stored value that the shared range
+   *  allowed but the selected model does not is normalized on mount too, not
+   *  only once the user switches models or blurs the field. */
+  const appliedRangeRef = useRef<string | null>(null);
   useEffect(() => {
     if (appliedRangeRef.current === rangeKey) {
       return;
