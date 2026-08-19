@@ -66,6 +66,8 @@ const DEFAULT_TASK_ROUTING_TTL_MS = 30_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
   'messageId parentMessageId text createdAt +subagentTranscript +subagentTask';
+const DURABLE_RESULT_SELECT =
+  'messageId conversationId sender text createdAt updatedAt +subagentTask';
 
 class SubagentThreadPublicError extends Error {}
 class SubagentThreadDeletedError extends SubagentThreadPublicError {}
@@ -635,8 +637,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       local.status !== 'not_found'
         ? local
         : ((await this.taskControlTransport?.claim(scopeId, taskId)) ?? local);
-    const threadId = claim.status === 'not_found' ? undefined : claim.task.threadId;
-    if (invocationId == null || claim.status === 'running' || threadId == null || threadId === '') {
+    if (invocationId == null || claim.status === 'running') {
+      return claim;
+    }
+    if (claim.status === 'not_found') {
+      return this.claimDurableTaskResult(scopeId, taskId, invocationId);
+    }
+    const threadId = claim.task.threadId;
+    if (threadId == null || threadId === '') {
       return claim;
     }
     /** The durable record decides who holds this one-shot result. The invocation that
@@ -656,6 +664,100 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       return claim;
     }
     return claim.status === 'claimed' ? (recoveredClaim(collected.message, claim) ?? claim) : claim;
+  }
+
+  /**
+   * Recovers a terminal task after its owning process and Redis registration are gone.
+   * The task id locates only a candidate; durable child lineage re-establishes the
+   * trusted parent scope before the one-shot result is claimed.
+   */
+  private async claimDurableTaskResult(
+    scopeId: string,
+    taskId: string,
+    invocationId: string,
+  ): Promise<SubagentTaskClaim> {
+    const scope = parseScope(scopeId);
+    let message: IMessage | undefined;
+    try {
+      [message] = await this.methods.getMessages(
+        {
+          user: scope.userId,
+          messageId: `${taskId}:assistant`,
+          'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+        },
+        DURABLE_RESULT_SELECT,
+        { limit: 1, sort: false },
+      );
+    } catch (error) {
+      logger.warn('[subagentThreads] Failed to locate a durable child result', error);
+      throw new SubagentTaskOwnerUnavailableError();
+    }
+    const threadId = message?.conversationId;
+    const status = message?.subagentTask?.status;
+    if (
+      message == null ||
+      !isNonEmptyString(threadId) ||
+      !isNonEmptyString(message.sender) ||
+      (status !== 'completed' && status !== 'error' && status !== 'cancelled')
+    ) {
+      return { status: 'not_found' };
+    }
+
+    let parent: IConversation | null;
+    let conversation: IConversation | null;
+    try {
+      [parent, conversation] = await Promise.all([
+        this.methods.getConvo(scope.userId, scope.parentConversationId),
+        this.methods.getConvo(scope.userId, threadId),
+      ]);
+    } catch (error) {
+      logger.warn('[subagentThreads] Failed to verify durable child lineage', error);
+      throw new SubagentTaskOwnerUnavailableError();
+    }
+    const lineage = conversation?.subagentThread;
+    if (
+      parent == null ||
+      conversation == null ||
+      lineage == null ||
+      conversation.endpoint !== EModelEndpoint.agents ||
+      lineage.parentConversationId !== scope.parentConversationId ||
+      lineage.subagentType !== message.sender ||
+      lineage.depth > this.maxThreadDepth ||
+      !matchesTenant(parent.tenantId, scope.tenantId) ||
+      !matchesTenant(conversation.tenantId, scope.tenantId)
+    ) {
+      return { status: 'not_found' };
+    }
+
+    const createdAt = message.createdAt?.getTime();
+    const updatedAt = message.updatedAt?.getTime() ?? createdAt;
+    if (createdAt == null || updatedAt == null) {
+      return { status: 'not_found' };
+    }
+    const task: SubagentTaskSnapshot = {
+      taskId,
+      threadId,
+      subagentType: lineage.subagentType,
+      status,
+      createdAt,
+      updatedAt,
+      resultAvailable: true,
+      resultClaimed: true,
+      pendingControls: 0,
+      ...(status === 'completed' ? {} : { error: message.text ?? '' }),
+    };
+    const collected = await this.assignResultClaim(scope.userId, threadId, taskId, invocationId);
+    if (collected.status === 'not_found') {
+      return { status: 'not_found' };
+    }
+    if (collected.status === 'claimed') {
+      return { status: 'claimed', task };
+    }
+    return (
+      recoveredClaim(collected.message, { status: 'claimed', task }) ?? {
+        status: 'not_found',
+      }
+    );
   }
 
   /**

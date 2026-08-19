@@ -3,6 +3,7 @@ import type {
   SubagentTaskControlResult,
   SubagentTaskSnapshot,
 } from '@librechat/agents';
+import { EventEmitter } from 'node:events';
 import type { Cluster, Redis } from 'ioredis';
 import type { SubagentTaskControlHandler } from './subagentTaskRouting';
 import {
@@ -182,6 +183,30 @@ function taskHandler(
 }
 
 describe('RedisSubagentTaskControlTransport', () => {
+  it('waits for the fail-fast publisher before reporting itself bound', async () => {
+    const bus = new FakeRedisBus();
+    const publisher = new EventEmitter() as EventEmitter & { status: string };
+    publisher.status = 'connecting';
+    const transport = new RedisSubagentTaskControlTransport(
+      publisher as unknown as Redis,
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'waiting-owner' },
+    );
+
+    let bound = false;
+    const binding = transport.bind(taskHandler()).then(() => {
+      bound = true;
+    });
+    await Promise.resolve();
+    expect(bound).toBe(false);
+
+    publisher.status = 'ready';
+    publisher.emit('ready');
+    await binding;
+    expect(bound).toBe(true);
+    await transport.destroy();
+  });
+
   it('routes list, claim, and controls to the owner and deduplicates a retried command', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(

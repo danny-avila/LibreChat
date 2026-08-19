@@ -348,6 +348,13 @@ async function waitForRedisReady(client: RedisClient): Promise<void> {
     timeout.unref?.();
     client.once('ready', onReady);
     client.once('end', onEnd);
+    /** Close the status-check/listener-registration race: ioredis may become ready
+     * synchronously between the check above and installing these listeners. */
+    if (client.status === 'ready') {
+      onReady();
+    } else if (client.status === 'end') {
+      onEnd();
+    }
   });
 }
 
@@ -689,7 +696,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       throw new Error('Subagent task control transport is already bound.');
     }
     this.handler = handler;
-    await waitForRedisReady(this.subscriber);
+    /** The publisher fails fast instead of queueing commands, so opening HTTP
+     * admission before it is ready would turn healthy startup lag into false
+     * `unavailable` results. Both dedicated connections are part of readiness. */
+    await Promise.all([waitForRedisReady(this.publisher), waitForRedisReady(this.subscriber)]);
     this.subscriber.on('message', this.onMessage);
     this.ready = this.subscriber.subscribe(this.channel(this.instanceId)).then(() => undefined);
     await this.ready;

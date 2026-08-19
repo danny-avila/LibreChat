@@ -1687,6 +1687,51 @@ describe('SubagentThreadTaskStore', () => {
     }
   });
 
+  it('recovers a durable result after the owning process and registration are gone', async () => {
+    const userId = 'restarted-owner-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Recovered without owner memory.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(ownerStore, config.scopeId, started);
+
+    /** A fresh store has neither the in-memory task nor a Redis owner registration. */
+    const restartedStore = new SubagentThreadTaskStore(methods);
+    const unrelatedParentConversationId = randomUUID();
+    await saveParent(userId, unrelatedParentConversationId);
+    const unrelatedConfig = buildSubagentThreadTaskConfig(restartedStore, {
+      userId,
+      parentConversationId: unrelatedParentConversationId,
+    });
+    await expect(
+      restartedStore.claimTask(unrelatedConfig.scopeId, taskId, 'wrong-parent-poll'),
+    ).resolves.toEqual({ status: 'not_found' });
+
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      {
+        status: 'completed',
+        result: 'Recovered without owner memory.',
+      },
+    );
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      {
+        status: 'completed',
+        result: 'Recovered without owner memory.',
+      },
+    );
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject(
+      {
+        status: 'claimed',
+      },
+    );
+  });
+
   it('tells a second invocation a retained result was already collected', async () => {
     const userId = 'duplicate-claim-user';
     const parentConversationId = randomUUID();
