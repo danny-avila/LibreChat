@@ -12,6 +12,7 @@ const db = require('~/models');
 const subagentThreadTaskStore = createSubagentThreadTaskStore(
   {
     acquireSubagentThreadLease: db.acquireSubagentThreadLease,
+    claimSubagentTaskResult: db.claimSubagentTaskResult,
     countActiveSubagentThreadLeases: db.countActiveSubagentThreadLeases,
     deleteConvos: db.deleteConvos,
     deleteMessages: db.deleteMessages,
@@ -43,19 +44,28 @@ async function configureSubagentTaskRouting() {
     throw new Error('Redis subagent task routing requires a dedicated subscriber connection.');
   }
   const subscriber = ioredisClient.duplicate();
-  const transport = new RedisSubagentTaskControlTransport(ioredisClient, subscriber, {
+  /** A dedicated publisher without the offline queue: the shared client would hold a
+   * command issued during a disconnect and deliver it after the caller gave up, so a
+   * steer the caller was told had failed could still reach the child. Failing fast
+   * turns that into the honest `unavailable` the caller already handles. */
+  const publisher = ioredisClient.duplicate({ enableOfflineQueue: false });
+  const transport = new RedisSubagentTaskControlTransport(publisher, subscriber, {
     namespace: cacheConfig.REDIS_KEY_PREFIX,
   });
   try {
     await subagentThreadTaskStore.configureTaskControlTransport(transport);
   } catch (error) {
     subscriber.disconnect();
+    publisher.disconnect();
     throw error;
   }
   taskRoutingConfigured = true;
   registerShutdownTask(
     'subagent task control transport',
-    () => subagentThreadTaskStore.destroyTaskControlTransport(),
+    async () => {
+      await subagentThreadTaskStore.destroyTaskControlTransport();
+      publisher.disconnect();
+    },
     { priority: 90 },
   );
 }

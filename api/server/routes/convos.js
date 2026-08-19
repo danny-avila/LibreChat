@@ -118,6 +118,26 @@ router.get('/gen_title/:conversationId', async (req, res) => {
   }
 });
 
+const POST_DELETE_CANCEL_ATTEMPTS = 3;
+const POST_DELETE_CANCEL_BACKOFF_MS = 250;
+
+/** Replays a cancellation plan after deletion, retrying a transiently unreachable
+ * owner rather than losing the only pass that can stop a late-admitted child. */
+async function retryPostDeleteCancellation(cancellationPlan, deletedConversationIds) {
+  for (let attempt = 1; attempt <= POST_DELETE_CANCEL_ATTEMPTS; attempt += 1) {
+    try {
+      await subagentThreadTaskStore.cancelPlan(cancellationPlan, deletedConversationIds);
+      return;
+    } catch (error) {
+      if (attempt === POST_DELETE_CANCEL_ATTEMPTS) {
+        logger.warn('Post-delete subagent cancellation failed', error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, POST_DELETE_CANCEL_BACKOFF_MS * attempt));
+    }
+  }
+}
+
 router.delete('/', configMiddleware, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
@@ -179,11 +199,10 @@ router.delete('/', configMiddleware, async (req, res) => {
      * admitted after the first pass but before that fence, extended with the cascade
      * this deletion reported. */
     if (cancellationPlan != null && deletedConversationIds.length > 0) {
-      await subagentThreadTaskStore
-        .cancelPlan(cancellationPlan, deletedConversationIds)
-        .catch((error) => {
-          logger.warn('Post-delete subagent cancellation failed', error);
-        });
+      /** The conversations are gone, so this pass is the only thing that can still
+       * stop a child admitted after the first one. It cannot fail the request — the
+       * deletion already committed — so it retries briefly before giving up. */
+      await retryPostDeleteCancellation(cancellationPlan, deletedConversationIds);
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.

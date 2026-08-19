@@ -1008,11 +1008,20 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
      * conversations being deleted. It is renewed for as long as the work runs. */
     const renewal = setInterval(
       () => {
-        void this.renewOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs)).catch(
-          (error) => {
-            logger.warn('[subagentThreads] Failed to renew the owner admission fence', error);
-          },
-        );
+        void (async () => {
+          const held = await this.renewOwnerAdmission?.(
+            userId,
+            token,
+            new Date(Date.now() + fenceWindowMs),
+          );
+          if (held === false) {
+            /** The entry is gone — expired, or pruned by another deletion — so this
+             * deletion takes its fence again rather than running on unfenced. */
+            await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
+          }
+        })().catch((error) => {
+          logger.warn('[subagentThreads] Failed to hold the owner admission fence', error);
+        });
       },
       Math.max(1, Math.floor(fenceWindowMs / 3)),
     );
@@ -1757,6 +1766,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   }
 }
 
+const REQUIRED_THREAD_METHODS = [
+  'acquireSubagentThreadLease',
+  'claimSubagentTaskResult',
+  'countActiveSubagentThreadLeases',
+  'deleteConvos',
+  'deleteMessages',
+  'getConvo',
+  'getMessages',
+  'listActiveSubagentThreadLeases',
+  'releaseSubagentThreadLease',
+  'renewSubagentThreadLease',
+  'reserveSubagentThread',
+  'saveConvo',
+  'saveMessage',
+] as const;
+
 export function createSubagentThreadTaskStore(
   methods: Pick<
     ConversationMethods,
@@ -1776,6 +1801,15 @@ export function createSubagentThreadTaskStore(
     >,
   options?: SubagentThreadTaskStoreOptions,
 ): SubagentThreadTaskStore {
+  /** The host wires this from JavaScript, where the parameter type checks nothing. A
+   * method missing there would otherwise surface as a routed failure at claim time,
+   * long after startup, so the omission is caught here instead. */
+  const missing = REQUIRED_THREAD_METHODS.filter(
+    (name) => typeof (methods as Record<string, unknown>)[name] !== 'function',
+  );
+  if (missing.length > 0) {
+    throw new Error(`Subagent thread task store is missing methods: ${missing.join(', ')}`);
+  }
   return new SubagentThreadTaskStore(methods, options);
 }
 

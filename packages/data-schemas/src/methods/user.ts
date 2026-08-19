@@ -517,6 +517,9 @@ export function createUserMethods(
       { $set: { 'subagentAdmissionFences.$.expiresAt': fencedUntil } },
       { timestamps: false },
     );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+    }
     return result.matchedCount === 1;
   }
 

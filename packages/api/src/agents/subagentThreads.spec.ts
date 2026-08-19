@@ -20,7 +20,11 @@ import type {
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import {
+  buildSubagentThreadTaskConfig,
+  createSubagentThreadTaskStore,
+  SubagentThreadTaskStore,
+} from './subagentThreads';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { createSubagentUsageSink } from './usage';
@@ -1639,6 +1643,19 @@ describe('SubagentThreadTaskStore', () => {
     );
 
     await replayingStore.destroyTaskControlTransport();
+  });
+
+  it('refuses to build a store the host wired without a required method', () => {
+    const { claimSubagentTaskResult: _omitted, ...incomplete } = methods;
+
+    /** The host wires this from JavaScript, so a missing method has to fail at
+     * startup rather than as an unavailable result the first time a task settles. */
+    expect(() =>
+      createSubagentThreadTaskStore(
+        incomplete as unknown as Parameters<typeof createSubagentThreadTaskStore>[0],
+      ),
+    ).toThrow('claimSubagentTaskResult');
+    expect(() => createSubagentThreadTaskStore(methods)).not.toThrow();
   });
 
   it('renews its own fence while a long deletion is still running', async () => {

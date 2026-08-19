@@ -1139,6 +1139,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       return;
     }
     this.pruneExpiredReplays(cache);
+    /** Replacing a key is not an additional entry: leaving the old one counted would
+     * inflate the cache's byte total permanently and evict unrelated responses. */
+    const replaced = cache.entries.get(key);
+    if (replaced != null) {
+      cache.entries.delete(key);
+      cache.bytes -= replaced.bytes;
+    }
     while (cache.entries.size >= cache.maxEntries || cache.bytes + bytes > cache.maxBytes) {
       const oldest = cache.entries.keys().next().value as string | undefined;
       if (oldest == null) {
