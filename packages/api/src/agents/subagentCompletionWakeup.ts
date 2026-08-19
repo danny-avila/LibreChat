@@ -35,7 +35,10 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
 
 interface GenerationState {
   status?: unknown;
-  metadata?: { terminalPersistencePending?: unknown };
+  metadata?: {
+    idempotencyClientRequestId?: unknown;
+    terminalPersistencePending?: unknown;
+  };
 }
 
 export interface SubagentCompletionWakeupResolverDeps {
@@ -201,7 +204,10 @@ export function createSubagentCompletionWakeupResolver({
         { code: 'PARENT_STATE_UNAVAILABLE', retryable: true },
       );
     }
-    if (isParentActive(parentJob)) {
+    if (
+      isParentActive(parentJob) &&
+      parentJob?.metadata?.idempotencyClientRequestId !== context.idempotencyKey
+    ) {
       throw executionError('The parent generation has not settled yet.', {
         code: 'PARENT_NOT_READY',
         retryable: true,
@@ -213,14 +219,9 @@ export function createSubagentCompletionWakeupResolver({
 
     const userId = envelope.principal.userId;
     const tenantId = envelope.principal.tenantId;
-    const [parent, child, parentMessages, taskMessages] = await Promise.all([
+    const [parent, child, taskMessages] = await Promise.all([
       methods.getConvo(userId, envelope.target.conversationId),
       methods.getConvo(userId, registration.threadId),
-      methods.getMessages(
-        { user: userId, conversationId: envelope.target.conversationId },
-        MESSAGE_SELECT,
-        { sort: { createdAt: 1, _id: 1 } },
-      ),
       methods.getMessages(
         {
           user: userId,
@@ -243,7 +244,6 @@ export function createSubagentCompletionWakeupResolver({
       child == null ||
       !sameTenant(child.tenantId, tenantId) ||
       lineage?.parentConversationId !== envelope.target.conversationId ||
-      lineage.parentMessageId !== envelope.target.parentMessageId ||
       lineage.parentAgentId !== envelope.target.agentId ||
       lineage.subagentType !== registration.subagentType
     ) {
@@ -284,6 +284,19 @@ export function createSubagentCompletionWakeupResolver({
         status: 404,
       });
     }
+    if (terminal.subagentTask?.parentRunId !== envelope.target.parentMessageId) {
+      throw executionError('The child task lineage is no longer available.', {
+        code: 'CHILD_TASK_MISSING',
+        retryable: false,
+        status: 404,
+      });
+    }
+
+    const parentMessages = await methods.getMessages(
+      { user: userId, conversationId: envelope.target.conversationId },
+      MESSAGE_SELECT,
+      { sort: { createdAt: 1, _id: 1 } },
+    );
 
     const parentMessageId = latestAssistantDescendant(
       parentMessages,
@@ -308,6 +321,19 @@ export function createSubagentCompletionWakeupResolver({
       return { status: 'settled' };
     }
     if (claim.message.subagentTask?.status === 'cancelled') {
+      const released = await methods.releaseSubagentTaskResultClaim({
+        userId,
+        conversationId: registration.threadId,
+        taskId: registration.taskId,
+        kind: 'wakeup',
+        claimId: context.idempotencyKey,
+      });
+      if (!released) {
+        throw executionError('The cancelled child result claim could not be released.', {
+          code: 'RESULT_CLAIM_RELEASE_FAILED',
+          retryable: true,
+        });
+      }
       return { status: 'settled' };
     }
     return {

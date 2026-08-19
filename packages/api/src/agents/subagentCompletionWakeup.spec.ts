@@ -147,6 +147,7 @@ function wakeupEnvelope(): AgentContinueTriggerEnvelope {
 function resolverMethods() {
   const subagentTask: IMessage['subagentTask'] = {
     attemptKey: 'attempt-1',
+    parentRunId: 'response-1',
     status: 'completed',
   };
   const terminal = {
@@ -230,6 +231,21 @@ describe('createSubagentCompletionWakeupResolver', () => {
     expect(methods.claimSubagentTaskResult).not.toHaveBeenCalled();
   });
 
+  it('lets a lost-receipt retry reach HTTP dedup for its own active continuation', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({
+        status: 'requires_action',
+        metadata: { idempotencyClientRequestId: 'trigger_claim_1' },
+      }),
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).resolves.toMatchObject({ status: 'ready' });
+  });
+
   it('bounds a persisted child result before rendering model input', async () => {
     const { methods, terminal } = resolverMethods();
     terminal.text = 'x'.repeat(200_000);
@@ -288,6 +304,37 @@ describe('createSubagentCompletionWakeupResolver', () => {
       stale(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
     ).rejects.toMatchObject({ code: 'CHILD_TASK_ABANDONED', retryable: false, status: 410 });
     expect(methods.claimSubagentTaskResult).not.toHaveBeenCalled();
+    expect(
+      methods.getMessages.mock.calls.filter(
+        ([filter]) => filter.conversationId === 'conversation-1',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('validates a continued child against its per-task parent instead of original lineage', async () => {
+    const { methods } = resolverMethods();
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) =>
+      conversationId === 'conversation-1'
+        ? { conversationId, tenantId: 'tenant-1' }
+        : {
+            conversationId,
+            tenantId: 'tenant-1',
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'original-response',
+              parentAgentId: 'agent_parent_1',
+              subagentType: 'researcher',
+            },
+          },
+    );
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).resolves.toMatchObject({ status: 'ready' });
   });
 
   it('claims the durable result and chains onto the latest assistant descendant', async () => {
@@ -348,5 +395,29 @@ describe('createSubagentCompletionWakeupResolver', () => {
     await expect(
       resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
     ).resolves.toEqual({ status: 'settled' });
+  });
+
+  it('releases a cancelled wakeup result for later explicit collection', async () => {
+    const { methods, terminal } = resolverMethods();
+    terminal.subagentTask = { ...terminal.subagentTask!, status: 'cancelled' };
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'acquired',
+      message: terminal,
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).resolves.toEqual({ status: 'settled' });
+    expect(methods.releaseSubagentTaskResultClaim).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'thread-1',
+      taskId: 'task-1',
+      kind: 'wakeup',
+      claimId: 'trigger_claim_1',
+    });
   });
 });

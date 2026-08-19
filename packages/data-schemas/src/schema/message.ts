@@ -138,6 +138,7 @@ const messageSchema: Schema<IMessage> = new Schema(
     subagentTask: {
       type: {
         attemptKey: { type: String, required: true },
+        parentRunId: { type: String },
         requestFingerprint: { type: String },
         status: {
           type: String,

@@ -105,6 +105,9 @@ interface PreparedThread {
   replay?: {
     status: 'completed' | 'error' | 'cancelled';
     content: string;
+    taskId: string;
+    parentRunId: string;
+    createdAt: number;
   };
 }
 
@@ -535,12 +538,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               runtime.taskId,
               lease,
             );
-            await this.registerTaskWakeup(
-              scope,
-              prepared.conversation.conversationId,
-              request,
-              runtime.taskId,
-            );
+            await this.registerTaskWakeup(scope, prepared.conversation.conversationId, request, {
+              taskId: prepared.replay?.taskId ?? runtime.taskId,
+              parentRunId: prepared.replay?.parentRunId ?? request.parentRunId,
+              createdAt: prepared.replay?.createdAt ?? Date.now(),
+            });
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
@@ -1582,6 +1584,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           .reverse()
           .find((message) => message.subagentTask?.status !== 'running');
         if (terminal?.subagentTask != null) {
+          const canonicalTaskId = terminal.messageId.endsWith(':assistant')
+            ? terminal.messageId.slice(0, -':assistant'.length)
+            : '';
+          if (canonicalTaskId === '') {
+            throw new Error('The prior subagent result has an invalid task identity.');
+          }
+          const canonicalStart = priorAttempt.find(
+            (message) => message.messageId === `${canonicalTaskId}:user`,
+          );
+          const createdAt = (canonicalStart?.createdAt ?? terminal.createdAt)?.getTime();
+          if (createdAt == null) {
+            throw new Error('The prior subagent result has no durable occurrence time.');
+          }
           return {
             conversation,
             initialMessages: [],
@@ -1589,6 +1604,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             attemptKey,
             replay: {
               status: terminal.subagentTask.status as 'completed' | 'error' | 'cancelled',
+              taskId: canonicalTaskId,
+              parentRunId: terminal.subagentTask.parentRunId ?? request.parentRunId,
+              createdAt,
               content:
                 terminal.text ??
                 (terminal.subagentTask.status === 'completed'
@@ -1617,6 +1635,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             error: true,
             subagentTask: {
               attemptKey,
+              parentRunId: request.parentRunId,
               ...(requestFingerprint == null ? {} : { requestFingerprint }),
               status: 'error',
             },
@@ -1633,7 +1652,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           initialMessages: [],
           initialStoredMessages: [],
           attemptKey,
-          replay: { status: 'error', content: abandonedMessage },
+          replay: {
+            status: 'error',
+            content: abandonedMessage,
+            taskId,
+            parentRunId: request.parentRunId,
+            createdAt: savedAbandoned.createdAt?.getTime() ?? Date.now(),
+          },
         };
       }
       const branch = selectLatestBranch(allMessages);
@@ -1660,6 +1685,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           isCreatedByUser: true,
           subagentTask: {
             attemptKey,
+            parentRunId: request.parentRunId,
             ...(requestFingerprint == null ? {} : { requestFingerprint }),
             status: 'running',
           },
@@ -1761,6 +1787,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
         subagentTask: {
           attemptKey: prepared.attemptKey,
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),
@@ -1804,6 +1831,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         error: true,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),
@@ -1824,7 +1852,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     scope: SubagentThreadScope,
     threadId: string,
     request: SubagentTaskStartRequest,
-    taskId: string,
+    task: { taskId: string; parentRunId: string; createdAt: number },
   ): Promise<void> {
     if (this.onTaskPrepared == null) {
       return;
@@ -1832,13 +1860,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     await this.onTaskPrepared({
       userId: scope.userId,
       parentConversationId: scope.parentConversationId,
-      parentMessageId: request.parentRunId,
+      parentMessageId: task.parentRunId,
       ...(request.parentAgentId == null ? {} : { parentAgentId: request.parentAgentId }),
       ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
-      taskId,
+      taskId: task.taskId,
       threadId,
       subagentType: request.subagentType,
-      createdAt: Date.now(),
+      createdAt: task.createdAt,
     });
   }
 
@@ -1867,6 +1895,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         unfinished: false,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),

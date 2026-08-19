@@ -51,6 +51,8 @@ export interface IMessage extends Document {
   /** Server-private durable idempotency marker for one detached subagent turn. */
   subagentTask?: {
     attemptKey: string;
+    /** Parent response that initiated this exact child task. */
+    parentRunId?: string;
     requestFingerprint?: string;
     status: 'running' | 'completed' | 'error' | 'cancelled';
     resultClaim?: {

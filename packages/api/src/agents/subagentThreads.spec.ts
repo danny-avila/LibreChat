@@ -515,22 +515,35 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'durable-idempotency-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const firstWorker = new SubagentThreadTaskStore(methods);
-    const secondWorker = new SubagentThreadTaskStore(methods);
+    const firstWakeup = jest.fn(async (_registration: SubagentTaskWakeupRegistration) => undefined);
+    const replayWakeup = jest.fn(
+      async (_registration: SubagentTaskWakeupRegistration) => undefined,
+    );
+    const firstWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: firstWakeup });
+    const secondWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: replayWakeup });
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
     const firstRun = jest.fn(async () => ({
       content: 'Original durable result.',
       messages: [new HumanMessage('Run once.'), new AIMessage('Original durable result.')],
     }));
+    const firstParentRunId = 'original-parent-response';
     const first = firstWorker.start(
       taskRequest(config.scopeId, {
         idempotencyKey: 'cross-worker-attempt',
+        parentRunId: firstParentRunId,
         requestFingerprint: 'same-inputs',
         input: 'Run once.',
         run: firstRun,
       }),
     );
     await waitForSettled(firstWorker, config.scopeId, first);
+    const durableAttempt = await methods.getMessages(
+      { user: userId, conversationId: requireThreadId(first) },
+      '+subagentTask',
+    );
+    expect(durableAttempt[durableAttempt.length - 1]?.subagentTask?.parentRunId).toBe(
+      firstParentRunId,
+    );
 
     const replayRun = jest.fn(taskRequest(config.scopeId).run);
     const replay = secondWorker.start(
@@ -546,6 +559,14 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(firstRun).toHaveBeenCalledTimes(1);
     expect(replayRun).not.toHaveBeenCalled();
+    expect(firstWakeup).toHaveBeenCalledTimes(1);
+    expect(replayWakeup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: requireAccepted(first).task.taskId,
+        parentMessageId: firstParentRunId,
+        createdAt: expect.any(Number),
+      }),
+    );
     expect(secondWorker.claim(config.scopeId, requireAccepted(replay).task.taskId)).toMatchObject({
       status: 'completed',
       result: 'Original durable result.',
