@@ -291,6 +291,7 @@ describe('createAgentTriggerDeliveryEngine', () => {
               mode: 'continue',
               certainty: 'definite',
               retryable: true,
+              deferWithoutAttempt: true,
               code: 'PARENT_NOT_READY',
               status: 409,
             }),

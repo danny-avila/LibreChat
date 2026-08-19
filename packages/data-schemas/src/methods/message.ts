@@ -550,6 +550,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       taskId.length > 256 ||
       conversationId.length === 0 ||
       conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
       claimId.length === 0 ||
       claimId.length > 128
     ) {

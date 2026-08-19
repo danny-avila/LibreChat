@@ -212,11 +212,7 @@ function isAccountDeletionDeferral(error: unknown): boolean {
 }
 
 function isRuntimeReadinessDeferral(error: unknown): boolean {
-  return (
-    error instanceof AgentTriggerExecutionError &&
-    (error.code === 'PARENT_NOT_READY' || error.code === 'CHILD_NOT_READY') &&
-    error.status === 409
-  );
+  return error instanceof AgentTriggerExecutionError && error.deferWithoutAttempt;
 }
 
 /** Durable, lease-fenced delivery runner shared by every trusted event source. */
@@ -356,10 +352,7 @@ export function createAgentTriggerDeliveryEngine(
             if (deletionCancelled || deletionRejected) {
               reason = 'account_deletion';
             } else if (runtimeNotReady) {
-              reason =
-                error instanceof AgentTriggerExecutionError && error.code === 'CHILD_NOT_READY'
-                  ? 'child_task'
-                  : 'parent_generation';
+              reason = 'runtime_readiness';
             }
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,

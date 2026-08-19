@@ -221,7 +221,71 @@ describe('createSubagentCompletionWakeupResolver', () => {
 
     await expect(
       resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
-    ).rejects.toMatchObject({ code: 'PARENT_NOT_READY', retryable: true });
+    ).rejects.toMatchObject({
+      code: 'PARENT_NOT_READY',
+      retryable: true,
+      deferWithoutAttempt: true,
+    });
+    expect(methods.claimSubagentTaskResult).not.toHaveBeenCalled();
+  });
+
+  it('bounds a persisted child result before rendering model input', async () => {
+    const { methods, terminal } = resolverMethods();
+    terminal.text = 'x'.repeat(200_000);
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const prepared = await resolve(wakeupEnvelope(), {
+      idempotencyKey: 'trigger_claim_1',
+    } as never);
+
+    expect(prepared).toMatchObject({ status: 'ready' });
+    expect(prepared?.status === 'ready' && prepared.input.length).toBeLessThan(110_000);
+  });
+
+  it('dead-letters a child whose process disappeared after the task timeout grace', async () => {
+    const { methods } = resolverMethods();
+    methods.getMessages.mockImplementation(async (filter: { conversationId: string }) =>
+      filter.conversationId === 'conversation-1'
+        ? [
+            {
+              messageId: 'response-1',
+              parentMessageId: 'user-1',
+              isCreatedByUser: false,
+              createdAt: new Date(NOW - 30),
+            },
+          ]
+        : [
+            {
+              messageId: 'task-1:user',
+              conversationId: 'thread-1',
+              isCreatedByUser: true,
+            },
+          ],
+    );
+    const fresh = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+      now: () => NOW + 60_000,
+    });
+    const stale = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+      now: () => NOW + 36 * 60_000,
+    });
+
+    await expect(
+      fresh(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({
+      code: 'CHILD_NOT_READY',
+      retryable: true,
+      deferWithoutAttempt: true,
+    });
+    await expect(
+      stale(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_TASK_ABANDONED', retryable: false, status: 410 });
     expect(methods.claimSubagentTaskResult).not.toHaveBeenCalled();
   });
 
@@ -256,7 +320,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
         ...terminal,
         subagentTask: {
           ...terminal.subagentTask,
-          resultClaim: { kind: 'manual', claimedAt: new Date(NOW) },
+          resultClaim: { kind: 'manual', claimId: 'poll-1', claimedAt: new Date(NOW) },
         },
       },
     });

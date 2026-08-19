@@ -42,6 +42,8 @@ export interface AgentTriggerExecutionErrorOptions {
   mode: AgentTriggerMode;
   certainty: AgentTriggerFailureCertainty;
   retryable: boolean;
+  /** Release the delivery lease without consuming its logical retry budget. */
+  deferWithoutAttempt?: boolean;
   code?: string;
   status?: number;
   retryAfter?: string;
@@ -56,6 +58,7 @@ export class AgentTriggerExecutionError extends Error {
   readonly mode: AgentTriggerMode;
   readonly certainty: AgentTriggerFailureCertainty;
   readonly retryable: boolean;
+  readonly deferWithoutAttempt: boolean;
   readonly code?: string;
   readonly status?: number;
   readonly retryAfter?: string;
@@ -66,6 +69,7 @@ export class AgentTriggerExecutionError extends Error {
     this.mode = options.mode;
     this.certainty = options.certainty;
     this.retryable = options.retryable;
+    this.deferWithoutAttempt = options.deferWithoutAttempt === true;
     this.code = options.code;
     this.status = options.status;
     this.retryAfter = options.retryAfter;
@@ -607,6 +611,10 @@ async function startRun(
           (mode === 'continue' &&
             response.status === 409 &&
             errorCode(payload) === 'PARENT_NOT_READY'),
+        deferWithoutAttempt:
+          mode === 'continue' &&
+          response.status === 409 &&
+          errorCode(payload) === 'PARENT_NOT_READY',
         code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {

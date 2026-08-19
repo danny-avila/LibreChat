@@ -9,10 +9,13 @@ import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
+import { boundedSubagentTaskResult } from './subagentTaskRouting';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
+/** SDK tasks time out after 30 minutes; this grace covers terminal persistence. */
+const CHILD_READY_WAIT_MS = 35 * 60_000;
 const SOURCE_ID = 'subagent-completion';
 const EVENT_TYPE = 'subagent.completion';
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
@@ -35,6 +38,7 @@ interface GenerationState {
 export interface SubagentCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
+  now?: () => number;
 }
 
 function payloadRegistration(
@@ -70,7 +74,13 @@ function payloadRegistration(
 
 function executionError(
   message: string,
-  options: { code: string; retryable: boolean; status?: number; retryAfter?: string },
+  options: {
+    code: string;
+    retryable: boolean;
+    deferWithoutAttempt?: boolean;
+    status?: number;
+    retryAfter?: string;
+  },
 ): AgentTriggerExecutionError {
   return new AgentTriggerExecutionError(message, {
     mode: 'continue',
@@ -147,7 +157,7 @@ function renderWakeupInput(
       subagent_thread_id: registration.threadId,
       subagent_type: registration.subagentType,
       status,
-      result: terminal.text ?? '',
+      result: boundedSubagentTaskResult(terminal.text ?? ''),
     }),
   ].join('\n');
 }
@@ -158,6 +168,7 @@ function renderWakeupInput(
 export function createSubagentCompletionWakeupResolver({
   methods,
   getGenerationJob,
+  now = Date.now,
 }: SubagentCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -193,6 +204,7 @@ export function createSubagentCompletionWakeupResolver({
         retryable: true,
         status: 409,
         retryAfter: '1',
+        deferWithoutAttempt: true,
       });
     }
 
@@ -248,11 +260,19 @@ export function createSubagentCompletionWakeupResolver({
         (message) => message.messageId === `${registration.taskId}:user`,
       );
       if (started) {
+        if (now() - envelope.event.occurredAt > CHILD_READY_WAIT_MS) {
+          throw executionError('The child task owner disappeared before settlement.', {
+            code: 'CHILD_TASK_ABANDONED',
+            retryable: false,
+            status: 410,
+          });
+        }
         throw executionError('The child task has not settled yet.', {
           code: 'CHILD_NOT_READY',
           retryable: true,
           status: 409,
           retryAfter: '1',
+          deferWithoutAttempt: true,
         });
       }
       throw executionError('The child task no longer exists.', {
