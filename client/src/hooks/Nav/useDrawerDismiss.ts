@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, RefObject } from 'react';
 import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -33,23 +33,30 @@ export default function useDrawerDismiss({
   const wasExpandedRef = useRef(expanded);
   const wasSmallScreenRef = useRef(isSmallScreen);
 
-  useEffect(() => {
+  /** Layout rather than passive: the guard below has to be armed in the frame
+   *  the close commits. A passive effect runs after paint, leaving one frame
+   *  where the pane has dropped `inert` and the scrim has not yet taken the
+   *  pointer back, which is a tap reaching a control still sliding past. */
+  useLayoutEffect(() => {
     const wasExpanded = wasExpandedRef.current;
     const wasSmallScreen = wasSmallScreenRef.current;
     wasExpandedRef.current = expanded;
     wasSmallScreenRef.current = isSmallScreen;
 
-    /** Crossing the breakpoint derives the drawer closed with nothing to
-     *  animate, so reading it as a close would leave a transparent
-     *  full-screen scrim swallowing taps for the whole guard. */
-    if (!isSmallScreen || !wasSmallScreen || !wasExpanded || expanded) {
+    if (!isSmallScreen || !wasExpanded || expanded) {
       return;
     }
 
+    /** Runs for a breakpoint crossing too: the expanded desktop sidebar is
+     *  replaced by the closed mobile drawer, so focus inside it is dropped
+     *  just as surely as by a deliberate close. */
     restoreDrawerFocus(paneRef.current);
 
-    /** Both surfaces snap under reduced motion, so nothing is still moving. */
-    if (prefersReducedMotion) {
+    /** Crossing the breakpoint derives the drawer closed with nothing to
+     *  animate, and both surfaces snap under reduced motion. In neither case
+     *  is anything still moving, and arming anyway would leave a transparent
+     *  full-screen scrim swallowing taps for the length of the guard. */
+    if (!wasSmallScreen || prefersReducedMotion) {
       return;
     }
 

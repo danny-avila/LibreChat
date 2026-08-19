@@ -313,8 +313,9 @@ export default function useDrawerSwipe({
           onOpenChangeRef.current(next);
           const id = setTimeout(() => {
             settleRef.current = null;
-            gesture.drawer.style.transition = MOBILE_DRAWER_TRANSITION;
-            gesture.pane.style.transition = SIDEBAR_TRANSITION;
+            const settled = settledTransitions();
+            gesture.drawer.style.transition = settled.drawer;
+            gesture.pane.style.transition = settled.pane;
           }, SETTLE_BUFFER_MS);
           settleRef.current = { id, target: next, drawer: gesture.drawer, pane: gesture.pane };
         }

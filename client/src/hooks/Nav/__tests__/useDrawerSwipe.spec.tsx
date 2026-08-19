@@ -237,6 +237,27 @@ describe('useDrawerSwipe — opening from the chat pane', () => {
     harness.unmount();
   });
 
+  /**
+   * Nor once the flip settles: the strip setting changes the drawer's width
+   * without passing through any of these paths, so a transition handed back
+   * here would leave that change animating for a user who asked for none.
+   */
+  it('leaves no transition behind after a snap settles', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, true);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 240, y: 100, t: 50 },
+    ]);
+
+    jest.runAllTimers();
+
+    expect(harness.drawer.style.transition).toBe('none');
+    expect(harness.pane.style.transition).toBe('none');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
   it('reverts cleanly when the browser cancels the touch', () => {
     const harness = setup(false);
     harness.swipe(

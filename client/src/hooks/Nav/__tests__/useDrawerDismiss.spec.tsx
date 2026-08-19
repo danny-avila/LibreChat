@@ -172,6 +172,34 @@ describe('useDrawerDismiss', () => {
       expect(document.activeElement).toBe(opener);
     });
 
+    /**
+     * The expanded desktop sidebar is replaced by the closed mobile drawer, so
+     * focus inside it is dropped. The guard is right to stay disarmed there,
+     * since nothing animates, but the focus handoff still has to run.
+     */
+    it('restores focus when an expanded desktop sidebar crosses into mobile', () => {
+      const opener = addOpener();
+      const { result, rerender } = setup({ expanded: true, isSmallScreen: false });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(document.activeElement).toBe(opener);
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    it('restores focus on a close that snaps under reduced motion', () => {
+      const opener = addOpener();
+      const { rerender } = setup({
+        expanded: true,
+        isSmallScreen: true,
+        prefersReducedMotion: true,
+      });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: true });
+
+      expect(document.activeElement).toBe(opener);
+    });
+
     it('reclaims focus stranded inside the drawer once it goes inert', () => {
       const opener = addOpener();
       const drawer = document.createElement('div');
