@@ -870,6 +870,8 @@ describe('SubagentThreadTaskStore', () => {
       }),
     };
     const options = { leaseTtlMs: 500, leaseHeartbeatMs: 50 };
+    const intervalSpy = jest.spyOn(global, 'setInterval');
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
     const firstWorker = new SubagentThreadTaskStore(slowMethods, options);
     const secondWorker = new SubagentThreadTaskStore(methods, options);
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
@@ -887,6 +889,20 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     await preparing;
+    const heartbeatCall = intervalSpy.mock.calls.find(([, delay]) => delay === 50);
+    const heartbeatIndex =
+      heartbeatCall == null ? -1 : intervalSpy.mock.calls.indexOf(heartbeatCall);
+    const heartbeat = intervalSpy.mock.results[heartbeatIndex]?.value as NodeJS.Timeout | undefined;
+    const warningCall = timeoutSpy.mock.calls.find(([, delay]) => delay === 5_000);
+    const warningIndex = warningCall == null ? -1 : timeoutSpy.mock.calls.indexOf(warningCall);
+    const warning = timeoutSpy.mock.results[warningIndex]?.value as NodeJS.Timeout | undefined;
+    try {
+      expect(heartbeat?.hasRef()).toBe(true);
+      expect(warning?.hasRef()).toBe(true);
+    } finally {
+      intervalSpy.mockRestore();
+      timeoutSpy.mockRestore();
+    }
     /** Wait for evidence rather than a fixed delay: a renewal that succeeds after the
      * acquired lease's own deadline proves the heartbeat carried it past expiry. */
     await waitUntil(() => renewedPastDeadline, 'the shared lease to outlive its original deadline');

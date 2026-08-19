@@ -388,7 +388,6 @@ async function observeSlowPreparation<T>(
   const warning = setTimeout(() => {
     logger.warn('[subagentThreads] Child-thread preparation is still waiting', context);
   }, SLOW_PREPARATION_WARN_MS);
-  warning.unref?.();
   try {
     return await operation;
   } finally {
@@ -1408,7 +1407,6 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       shared.heartbeatInFlight = renewal;
     };
     shared.heartbeat = setInterval(heartbeat, this.leaseHeartbeatMs);
-    shared.heartbeat.unref?.();
   }
 
   private async renewSharedLease(
@@ -1593,10 +1591,18 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         lost: false,
         expiresAt: now.getTime() + this.leaseTtlMs,
       };
+      /** A detached child has no request or stream handle after its parent returns.
+       * Keep the lease heartbeat referenced until settlement so Node cannot retire
+       * the execution context while its provider promise is still pending. */
       this.startSharedLeaseHeartbeat(scopeId, scope, threadId, lease);
       /** Account deletion can fence the owner after the optimistic probe but before
        * this lease exists. Once the lease is visible, revalidate so deletion either
        * observes and drains us or wins before any provider work can begin. */
+      logger.debug('[subagentThreads] Child-thread preparation entered stage', {
+        stage: 'owner_recheck',
+        taskId,
+        threadId,
+      });
       if (
         !(await observeSlowPreparation(this.isOwnerActive(scope.userId), {
           stage: 'owner_recheck',
@@ -1606,6 +1612,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       ) {
         throw new SubagentThreadDeletedError('The thread owner is unavailable.');
       }
+      logger.debug('[subagentThreads] Child-thread preparation entered stage', {
+        stage: 'transcript_read',
+        taskId,
+        threadId,
+      });
       const allMessages = (await observeSlowPreparation(
         this.methods.getMessages(
           { conversationId: threadId, user: scope.userId },
@@ -1725,6 +1736,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           break;
         }
       }
+      logger.debug('[subagentThreads] Child-thread preparation entered stage', {
+        stage: 'seed_write',
+        taskId,
+        threadId,
+      });
       const savedUserMessage = await observeSlowPreparation(
         this.methods.saveMessage(
           { userId: scope.userId },
