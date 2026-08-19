@@ -223,6 +223,32 @@ describe('generateDynamicSchema with positiveMin', () => {
   });
 });
 
+describe('positiveMin default validation', () => {
+  const definition = (defaultValue: number): SettingsConfiguration => [
+    {
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'slider',
+      optionType: 'custom',
+      default: defaultValue,
+      range: { min: -1, max: 32768, step: 1, positiveMin: 128 },
+    },
+  ];
+
+  it('rejects a default between the sentinel and the positive floor', () => {
+    for (const invalid of [0, 127]) {
+      expect(() => validateSettingDefinitions(definition(invalid))).toThrow(
+        /Must be -1 or at least 128/,
+      );
+    }
+  });
+
+  it('accepts the sentinel itself and any value at or above the floor', () => {
+    expect(() => validateSettingDefinitions(definition(-1))).not.toThrow();
+    expect(() => validateSettingDefinitions(definition(128))).not.toThrow();
+  });
+});
+
 describe('clampSettingRange', () => {
   const proThinkingBudget = { min: -1, max: 32768, step: 1, positiveMin: 128 };
 
@@ -252,6 +278,31 @@ describe('clampSettingRange', () => {
     const flash = { min: -1, max: 24576, step: 1, positiveMin: 0 };
     expect(clampSettingRange(0, flash)).toBe(0);
     expect(clampSettingRange(-1, flash)).toBe(-1);
+  });
+
+  /**
+   * The generated schema admits the sentinel or the positive floor and nothing
+   * between them, so a stored fraction has to resolve to one of those rather
+   * than survive a normalization the schema then rejects.
+   */
+  it('resolves a value between the sentinel and the floor to the sentinel', () => {
+    const settings: SettingsConfiguration = [
+      {
+        key: 'thinkingBudget',
+        type: 'number',
+        component: 'slider',
+        optionType: 'model',
+        range: proThinkingBudget,
+      },
+    ];
+    const schema = generateDynamicSchema(settings);
+
+    for (const stored of [-0.5, -0.001]) {
+      const clamped = clampSettingRange(stored, proThinkingBudget);
+      expect(clamped).toBe(-1);
+      expect(schema.safeParse({ thinkingBudget: stored }).success).toBe(false);
+      expect(schema.safeParse({ thinkingBudget: clamped }).success).toBe(true);
+    }
   });
 });
 

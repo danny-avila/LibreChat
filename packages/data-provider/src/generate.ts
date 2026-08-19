@@ -113,7 +113,13 @@ export interface SettingRange {
 }
 
 export function clampSettingRange(value: number, range: SettingRange): number {
-  if (range.positiveMin != null && value >= 0) {
+  if (range.positiveMin != null) {
+    /** Nothing between the sentinel and the floor is admissible, so a negative
+     *  value resolves to the sentinel rather than staying where the generated
+     *  schema would later reject it. */
+    if (value < 0) {
+      return range.min;
+    }
     return Math.min(Math.max(value, range.positiveMin), range.max);
   }
   return Math.min(Math.max(value, range.min), range.max);
@@ -559,6 +565,20 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
       errors.push({
         code: ZodIssueCode.custom,
         message: `Invalid default value for setting ${setting.key}. Must be within the range [${setting.range.min}, ${setting.range.max}].`,
+        path: ['default'],
+      });
+    }
+
+    if (
+      setting.type === SettingTypes.Number &&
+      setting.range?.positiveMin != null &&
+      typeof setting.default === 'number' &&
+      setting.default !== setting.range.min &&
+      setting.default < setting.range.positiveMin
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid default value for setting ${setting.key}. Must be ${setting.range.min} or at least ${setting.range.positiveMin}.`,
         path: ['default'],
       });
     }
