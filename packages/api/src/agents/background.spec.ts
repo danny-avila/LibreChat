@@ -1147,6 +1147,67 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
+  it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {
+    const ordinary = backgroundTaskRegistry.create({
+      userId: 'partial-list-owner',
+      conversationId: 'partial-list-parent',
+      toolCallId: 'ordinary-call',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in ordinary) {
+      throw new Error('unexpected capacity');
+    }
+
+    const store = new InMemorySubagentTaskStore();
+    const started = store.start({
+      scopeId: 'partial-list-owner:partial-list-parent',
+      idempotencyKey: 'partial-list-run:parent-agent:subagent-call',
+      parentRunId: 'partial-list-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'subagent-call',
+      input: 'Keep working locally.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => ({ content: 'local result' }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await waitForSubagentTaskToSettle(
+      store,
+      'partial-list-owner:partial-list-parent',
+      started.task.taskId,
+    );
+
+    const routedStore = Object.assign(store, {
+      claimTask: jest.fn(),
+      controlTask: jest.fn(),
+      listTasks: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'partial-list-owner',
+        conversationId: 'partial-list-parent',
+        args: {},
+        subagentTasks: {
+          store: routedStore,
+          scopeId: 'partial-list-owner:partial-list-parent',
+        },
+      }),
+    );
+
+    expect(listed).toEqual(
+      expect.objectContaining({
+        partial: true,
+        warning:
+          'Cross-replica subagent tasks could not be listed: The process running this subagent task is temporarily unavailable.',
+      }),
+    );
+    expect(
+      listed.tasks.map((task: { background_task_id: string }) => task.background_task_id),
+    ).toEqual(expect.arrayContaining([ordinary.task.id, started.task.taskId]));
+  });
+
   it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', async () => {
     // Turn 1 dispatches under run-turn-1 and the result lands after the turn.
     const dispatched = backgroundTaskRegistry.create({
