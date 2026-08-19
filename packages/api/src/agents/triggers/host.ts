@@ -495,7 +495,7 @@ function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
   if (error.code === 'START_ABORTED' || error.status == null) {
     return true;
   }
-  if (error.code === 'PARENT_NOT_READY') {
+  if (error.code === 'PARENT_NOT_READY' || error.code === 'PARENT_STATE_UNAVAILABLE') {
     return true;
   }
   return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;

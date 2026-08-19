@@ -551,6 +551,38 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).not.toHaveBeenCalled();
   });
 
+  it('labels a trigger parent-state lookup failure as provably pre-admission', async () => {
+    const conversationId = 'conversation-123';
+    mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);
+    mockGenerationJobManager.getJob.mockRejectedValue(new Error('redis unavailable'));
+    const initializeClient = jest.fn();
+    const req = {
+      _isAgentTrigger: true,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Collect the completed child.',
+        messageId: 'wakeup-user-message',
+        parentMessageId: 'persisted-response_',
+        conversationId,
+        clientRequestId: 'trigger_resume_1',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '1');
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'PARENT_STATE_UNAVAILABLE' }),
+    );
+    expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(initializeClient).not.toHaveBeenCalled();
+  });
+
   it('deduplicates the active continuation whose admission response was lost', async () => {
     const conversationId = 'conversation-123';
     mockGetMessages.mockResolvedValue([{ _id: 'persisted-parent' }]);

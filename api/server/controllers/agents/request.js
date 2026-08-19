@@ -484,7 +484,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return sendGenerationJson(
           res,
           503,
-          { code: 'SERVER_NOT_READY', error: 'Parent generation state is unavailable.' },
+          { code: 'PARENT_STATE_UNAVAILABLE', error: 'Parent generation state is unavailable.' },
           generationProtocolVersion,
         );
       }
@@ -536,7 +536,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       return sendGenerationJson(
         res,
         503,
-        { code: 'SERVER_NOT_READY', error: 'Parent generation state is temporarily unavailable.' },
+        {
+          code: 'PARENT_STATE_UNAVAILABLE',
+          error: 'Parent generation state is temporarily unavailable.',
+        },
         generationProtocolVersion,
       );
     }

@@ -613,6 +613,36 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
   });
 
+  it('releases a prepared durable result when parent state fails before admission', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'PARENT_STATE_UNAVAILABLE', error: 'Parent state is unavailable.' },
+            { status: 503, headers: { 'retry-after': '1' } },
+          ),
+        ),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: true,
+      code: 'PARENT_STATE_UNAVAILABLE',
+      status: 503,
+    });
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
+  });
+
   it('retains a prepared durable result when an earlier admitted run was replaced', async () => {
     const releaseOnDefiniteFailure = jest.fn(async () => undefined);
     const host = createAgentTriggerExecutionHost(
