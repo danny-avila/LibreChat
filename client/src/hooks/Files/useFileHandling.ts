@@ -249,7 +249,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             {
               progress: 1,
               file_id: data.file_id,
-              temp_file_id: data.temp_file_id,
+              /** The stored temporary id has to stay the one this entry is keyed
+               * by: removal reads `file_id` and `temp_file_id` off the value and
+               * deletes those keys, and the draft restore correlates the cached
+               * record by the key it saved. Keeping the server's echo here would
+               * leave a chip that Remove deletes server-side but cannot clear. */
+              temp_file_id: fileId,
               filepath: data.filepath,
               type: data.type,
               height: data.height,
@@ -416,6 +421,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       clearUploadTimer(extendedFile.file_id);
       takeUploadRecovery(extendedFile.file_id)?.onError?.(extendedFile.file_id);
       deleteFileById(extendedFile.file_id);
+      /** Reservations are released by the render that observes the file in the
+       * shared state, which a decode failing before that render never reaches —
+       * and once the file is gone no later render can either. A leaked one is
+       * merged into every subsequent batch's validation, so re-picking the same
+       * file reads as a duplicate and its size keeps counting against the limit. */
+      uploadScope.recent.delete(extendedFile.file_id);
       removePreviewEntry(extendedFile.file_id);
       URL.revokeObjectURL(preview);
       setError('com_error_files_process');

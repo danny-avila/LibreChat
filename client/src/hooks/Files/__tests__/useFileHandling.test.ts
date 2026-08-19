@@ -1227,6 +1227,85 @@ describe('useFileHandling', () => {
      * sent with; `temp_file_id` is only the server's echo of it. Reconciling
      * against the echo strands the attachment when the two disagree.
      */
+    it('keys the completed attachment temporary id to the id the request was sent with', async () => {
+      jest.useFakeTimers();
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const fileId = uploadBody.get('file_id') as string;
+
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: 'an-id-the-client-never-sent',
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.txt',
+            type: 'text/plain',
+            filename: 'notes.txt',
+            source: 'local',
+            embedded: false,
+          },
+          uploadBody,
+        );
+      });
+      act(() => {
+        jest.runAllTimers();
+      });
+      jest.useRealTimers();
+
+      /** Removal deletes by the value's own ids, so a temporary id that is not the
+       * map key leaves a chip the user cannot clear. */
+      const [, completion] = mockUpdateFileById.mock.calls.at(-1) as [string, { progress: number }];
+      expect(completion).toMatchObject({ progress: 1, temp_file_id: fileId });
+      consoleLog.mockRestore();
+    });
+
+    it('releases the upload reservation when a decode fails', async () => {
+      /** A stable setter so both batches share one upload scope, and a file map that
+       * never observes the file — the render that would release the reservation
+       * cannot happen once the failed decode has removed it. */
+      const sharedState = {
+        files: new Map(),
+        setFiles: jest.fn(),
+        setFilesLoading: mockSetFilesLoading,
+      };
+      const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+      const { result, rerender } = renderHook(() =>
+        useFileHandlingNoChatContext(undefined, sharedState),
+      );
+      const pick = () => new File(['broken'], 'photo.png', { type: 'image/png' });
+
+      mockImageDecodes = false;
+      await act(async () => {
+        await result.current.handleFiles([pick()]);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      rerender();
+      mockValidateFileDuplicates.mockClear();
+      mockImageDecodes = true;
+      await act(async () => {
+        await result.current.handleFiles([pick()]);
+      });
+
+      /** A reservation the failed decode left behind is merged into the next batch's
+       * validation, so re-picking the same file reads as a duplicate and its size
+       * keeps counting against the composer's limits. */
+      const [{ files: validatedAgainst }] = mockValidateFileDuplicates.mock.calls[0];
+      expect(validatedAgainst.size).toBe(0);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
     it('completes the attachment against the id the request was sent with', async () => {
       const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       const useFileHandling = await loadHook();
