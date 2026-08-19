@@ -1,9 +1,9 @@
+import { EventEmitter } from 'node:events';
 import type {
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
   SubagentTaskSnapshot,
 } from '@librechat/agents';
-import { EventEmitter } from 'node:events';
 import type { Cluster, Redis } from 'ioredis';
 import type { SubagentTaskControlHandler } from './subagentTaskRouting';
 import {
