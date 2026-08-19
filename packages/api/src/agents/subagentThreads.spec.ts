@@ -1862,9 +1862,13 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'merged-list-cap-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    /** The base store admits ten concurrent runs per scope by default; this test is
-     * about what the merge returns, not about admission, so it starts them all. */
-    const store = new SubagentThreadTaskStore(methods, { maxRunningPerScope: 150 });
+    /** The base store caps concurrent runs twice over — ten per scope and a hundred
+     * across the store — and this test is about what the merge returns rather than
+     * about admission, so both are raised to admit every task it starts. */
+    const store = new SubagentThreadTaskStore(methods, {
+      maxRunningPerScope: 150,
+      maxRunningTotal: 150,
+    });
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
     const remote = Array.from({ length: 150 }, (_unused, index) =>
       threadSnapshot(`remote-task-${index + 1}`),
