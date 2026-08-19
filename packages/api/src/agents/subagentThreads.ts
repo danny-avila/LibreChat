@@ -630,10 +630,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 }
                 throw error;
               }
-              logger.error(
-                '[subagentThreads] Child-thread execution failed',
-                publicFailureDetail(error),
-              );
+              logger.error('[subagentThreads] Child-thread execution failed', {
+                detail: publicFailureDetail(error),
+                errorName: error instanceof Error ? error.name : typeof error,
+                ...(error instanceof Error && error.stack != null ? { stack: error.stack } : {}),
+              });
               if (mayPersist) {
                 await this.persistFailure(
                   scope,
