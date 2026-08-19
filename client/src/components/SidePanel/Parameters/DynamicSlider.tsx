@@ -125,6 +125,19 @@ function DynamicSlider({
     return String(defaultValue ?? '');
   }, [defaultValue, enumMappings, localize]);
 
+  /** A typed value can land in the gap between a sentinel minimum and its
+   *  positive floor, which the generated schema rejects. Corrected on blur
+   *  rather than while the number is still being typed. */
+  const handleNumberBlur = useCallback(() => {
+    if (range != null && inputValue != null && inputValue !== '') {
+      const numeric = Number(inputValue);
+      if (Number.isFinite(numeric)) {
+        setInputValue(clampSettingRange(numeric, range));
+      }
+    }
+    flushInputValue();
+  }, [range, inputValue, setInputValue, flushInputValue]);
+
   const handleValueChange = useCallback(
     (value: number) => {
       if (isEnum) {
@@ -179,7 +192,7 @@ function DynamicSlider({
                 onChange={(value) => setInputValue(Number(value))}
                 /** Clicking Save blurs this first, so the pending edit is
                  *  committed before submitPreset reads the preset. */
-                onBlur={flushInputValue}
+                onBlur={handleNumberBlur}
                 max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
                 step={range ? (range.step ?? 1) : 1}

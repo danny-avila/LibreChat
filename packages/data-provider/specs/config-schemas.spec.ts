@@ -66,6 +66,19 @@ describe('paramDefinitionSchema', () => {
     });
   });
 
+  /** The floor would admit nothing but the sentinel while the clamp maps every
+   *  non-negative input onto a maximum the generated schema then rejects. */
+  it('rejects a positiveMin above the range maximum', () => {
+    const result = paramDefinitionSchema.safeParse({
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'slider',
+      range: { min: -1, max: 100, positiveMin: 200 },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects columns > 4', () => {
     const result = paramDefinitionSchema.safeParse({
       key: 'test',

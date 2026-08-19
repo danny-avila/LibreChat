@@ -572,6 +572,18 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
     if (
       setting.type === SettingTypes.Number &&
       setting.range?.positiveMin != null &&
+      setting.range.positiveMin > setting.range.max
+    ) {
+      errors.push({
+        code: ZodIssueCode.custom,
+        message: `Invalid range for setting ${setting.key}. positiveMin (${setting.range.positiveMin}) cannot exceed max (${setting.range.max}).`,
+        path: ['range'],
+      });
+    }
+
+    if (
+      setting.type === SettingTypes.Number &&
+      setting.range?.positiveMin != null &&
       typeof setting.default === 'number' &&
       setting.default !== setting.range.min &&
       setting.default < setting.range.positiveMin

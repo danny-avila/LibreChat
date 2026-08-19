@@ -108,14 +108,27 @@ function DynamicInput({
   /** Null rather than the first pair, so a stored value that the shared range
    *  allowed but the selected model does not is normalized on mount too, not
    *  only once the user switches models or blurs the field. */
-  const normalizedRef = useRef<{ identity: string; range: string } | null>(null);
+  const normalizedRef = useRef<{
+    identity: string;
+    range: string;
+    stored: unknown;
+  } | null>(null);
+  const storedValue = conversation?.[settingKey];
   useEffect(() => {
     const normalized = normalizedRef.current;
-    if (normalized?.identity === identityKey && normalized.range === rangeKey) {
+    const identityChanged = normalized == null || normalized.identity !== identityKey;
+    const rangeChanged = normalized == null || normalized.range !== rangeKey;
+    /** Applying a preset over the open conversation replaces the stored value
+     *  without touching either key, and useParameterEffects then pushes it into
+     *  this field. The user's own edits reach the conversation through this
+     *  same field, so by the time they land the two agree and the value stays
+     *  on the blur-clamped path rather than being corrected mid-edit. */
+    const replacedExternally =
+      normalized != null && normalized.stored !== storedValue && storedValue !== inputValue;
+    normalizedRef.current = { identity: identityKey, range: rangeKey, stored: storedValue };
+    if (!identityChanged && !rangeChanged && !replacedExternally) {
       return;
     }
-    const identityChanged = normalized == null || normalized.identity !== identityKey;
-    normalizedRef.current = { identity: identityKey, range: rangeKey };
     if (type !== SettingTypes.Number || range == null) {
       return;
     }
@@ -125,12 +138,11 @@ function DynamicInput({
     if (range.modelSpecific !== true) {
       return;
     }
-    /** After a navigation the local value still belongs to the conversation
-     *  being left, until useParameterEffects reseeds it on the next commit, so
-     *  read what the incoming one stores. A range change is the opposite case:
-     *  a write typed just before the model switch is still queued in the local
-     *  value and has to be corrected there. */
-    const candidate = identityChanged ? conversation?.[settingKey] : inputValue;
+    /** A range change is the one trigger where the local value is what matters:
+     *  a write typed just before the model switch is still queued in it. The
+     *  others are a value arriving from outside this field, which the local one
+     *  has not caught up to yet. */
+    const candidate = identityChanged || replacedExternally ? storedValue : inputValue;
     if (candidate === '' || candidate == null || candidate === '-') {
       return;
     }
@@ -145,7 +157,7 @@ function DynamicInput({
     setInputValue(clamped, true);
     setOption?.(settingKey)(clamped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identityKey, rangeKey]);
+  }, [identityKey, rangeKey, storedValue]);
 
   const placeholderText = placeholderCode
     ? localize(placeholder as TranslationKeys) || placeholder

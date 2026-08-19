@@ -237,6 +237,56 @@ describe('DynamicInput', () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
+  /**
+   * Applying a preset over the open conversation keeps the conversation id and
+   * the model, so neither key moves; the value simply arrives.
+   */
+  it('normalizes a stored value replaced under an unchanged conversation', () => {
+    const range: SettingRange = {
+      min: -1,
+      max: 24576,
+      step: 1,
+      positiveMin: 0,
+      modelSpecific: true,
+    };
+    const { navigate, input, commit } = setupNavigable(range, {
+      conversationId: 'convo-a',
+      thinkingBudget: 2048,
+    });
+
+    navigate({ conversationId: 'convo-a', thinkingBudget: 32000 });
+
+    expect(input()).toHaveValue('24576');
+    expect(commit).toHaveBeenLastCalledWith(24576);
+  });
+
+  /**
+   * A typed value reaches the conversation through this same field, so the two
+   * agree by the time it lands. Correcting it there would fight the user
+   * mid-edit, which is why clamping belongs on blur.
+   */
+  it('leaves the value the user typed to the blur clamp when it lands', () => {
+    const range: SettingRange = {
+      min: -1,
+      max: 32768,
+      step: 1,
+      positiveMin: 128,
+      modelSpecific: true,
+    };
+    const { navigate, input, commit } = setupNavigable(range, {
+      conversationId: 'convo-a',
+      thinkingBudget: 2048,
+    });
+
+    fireEvent.change(input(), { target: { value: '50' } });
+    /** The debounced write reaching the conversation, which is what the
+     *  normalization would otherwise read as an external replacement. */
+    navigate({ conversationId: 'convo-a', thinkingBudget: 50 });
+
+    expect(input()).toHaveValue('50');
+    expect(commit).not.toHaveBeenCalledWith(128);
+  });
+
   it('clamps a positive thinkingBudget below the model floor on blur', () => {
     const { input, commit } = setup({
       type: 'number',

@@ -104,4 +104,25 @@ describe('DynamicSlider', () => {
 
     expect(commit).toHaveBeenLastCalledWith(2049);
   });
+
+  /** The adjacent number input reaches the same gap the track does. */
+  it('lifts a typed value out of the sentinel gap on blur', () => {
+    const { commit } = setupSentinel(-1);
+    const input = screen.getByRole('spinbutton');
+
+    fireEvent.change(input, { target: { value: '50' } });
+    fireEvent.blur(input);
+
+    expect(commit).toHaveBeenLastCalledWith(128);
+  });
+
+  it('leaves a typed value outside the gap alone on blur', () => {
+    const { commit } = setupSentinel(-1);
+    const input = screen.getByRole('spinbutton');
+
+    fireEvent.change(input, { target: { value: '2048' } });
+    fireEvent.blur(input);
+
+    expect(commit).toHaveBeenLastCalledWith(2048);
+  });
 });

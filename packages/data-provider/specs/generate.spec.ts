@@ -249,6 +249,22 @@ describe('positiveMin default validation', () => {
   });
 });
 
+describe('positiveMin range validation', () => {
+  it('rejects a positive floor above the maximum', () => {
+    const settings: SettingsConfiguration = [
+      {
+        key: 'thinkingBudget',
+        type: 'number',
+        component: 'slider',
+        optionType: 'custom',
+        range: { min: -1, max: 100, step: 1, positiveMin: 200 },
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settings)).toThrow(/cannot exceed max/);
+  });
+});
+
 describe('clampSettingRange', () => {
   const proThinkingBudget = { min: -1, max: 32768, step: 1, positiveMin: 128 };
 
