@@ -1028,6 +1028,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       metadata: fileInfoMetadata,
       type: file.mimetype,
       embedded,
+      /* Record the owner the chunks were embedded under, and only when
+       * something was embedded: `entity_id` also feeds entity-partitioned
+       * storage for tool resources that never touch the vector store. Without
+       * this value a later delete cannot scope itself and silently orphans
+       * every chunk (#14988). */
+      entity_id: tool_resource === EToolResources.file_search ? entity_id : undefined,
       source,
       height,
       width,

@@ -54,6 +54,15 @@ const file: Schema<IMongoFile> = new Schema(
     embedded: {
       type: Boolean,
     },
+    entity_id: {
+      /* The owner the vector chunks were embedded under (an agent id today).
+       * rag_api deletes with `delete_scoped(ids, owners)`, so a delete that
+       * cannot name this value matches nothing, answers 404, and orphans every
+       * chunk. Absent for user-owned embeds, whose owner is the user id the
+       * request's token already carries. See issue #14988. */
+      type: String,
+      index: true,
+    },
     type: {
       type: String,
       required: true,

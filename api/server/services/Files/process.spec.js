@@ -723,6 +723,75 @@ describe('processAgentFileUpload', () => {
     });
   });
 
+  /* PR 0 / issue #14988: the embed owner exists only in the vector store, so
+   * a delete cannot scope itself and silently orphans the chunks. The upload
+   * that chose the owner is the only place that knows it. */
+  describe('recording the embed owner on the File row', () => {
+    test('persists the agent as the file"s entity_id for an agent file-search upload', async () => {
+      setupStoredFileUpload();
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ entity_id: 'agent-abc' }),
+        true,
+      );
+    });
+
+    test('persists exactly the entity the vectors were embedded under', async () => {
+      setupStoredFileUpload();
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search },
+      });
+
+      const embeddedUnder = uploadVectors.mock.calls[0][0].entity_id;
+      const persisted = db.createFile.mock.calls[0][0].entity_id;
+      expect(persisted).toBe(embeddedUnder);
+    });
+
+    test('records no entity for a message attachment, whose chunks are owned by the user', async () => {
+      setupStoredFileUpload();
+      const req = makeReq({ mimetype: 'text/plain', ocrConfig: null });
+
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          ...makeMetadata(),
+          tool_resource: EToolResources.file_search,
+          message_file: true,
+        },
+      });
+
+      expect(uploadVectors.mock.calls[0][0].entity_id).toBeUndefined();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.not.objectContaining({ entity_id: expect.anything() }),
+        true,
+      );
+    });
+
+    test('records no entity for an agent upload that embeds nothing', async () => {
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(uploadVectors).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.not.objectContaining({ entity_id: expect.anything() }),
+        true,
+      );
+    });
+  });
+
   /* Phase C / option α regression: the upload must persist its sandbox
    * pointer under `metadata.codeEnvRef` (the post-cutover schema). The
    * legacy `metadata.fileIdentifier` key is silently stripped by mongoose

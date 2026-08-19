@@ -120,6 +120,12 @@ export type TFile = {
   temp_file_id?: string;
   bytes: number;
   embedded: boolean;
+  /**
+   * Owner the file's vector chunks were embedded under (an agent id today).
+   * Absent for user-owned embeds. Carried on delete so rag_api's scoped
+   * delete can match the chunks — see issue #14988.
+   */
+  entity_id?: string;
   filename: string;
   filepath: string;
   object: 'file';

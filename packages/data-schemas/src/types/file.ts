@@ -55,6 +55,13 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   storageRegion?: string;
   object: 'file';
   embedded?: boolean;
+  /**
+   * Owner the vector chunks were embedded under — an agent id today. Absent
+   * when the embed is owned by the user, which is every message attachment and
+   * every pre-#14988 upload. A delete must send this value as `entity_id` or
+   * rag_api's scoped delete matches nothing and the chunks survive.
+   */
+  entity_id?: string;
   type: string;
   context?: string;
   usage: number;
