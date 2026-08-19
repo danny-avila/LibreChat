@@ -94,6 +94,31 @@ describe('deleteRagFile', () => {
     });
   });
 
+  describe('when the file borrows embeddings from another file', () => {
+    it('deletes the vector document it points at, not its own id', async () => {
+      const file = { file_id: 'copy-1', vectorId: 'original-1', embedded: true };
+      mockedAxios.delete.mockResolvedValueOnce({ status: 200 });
+
+      const result = await deleteRagFile({ userId: 'user123', file });
+
+      expect(result).toBe(true);
+      expect(mockedAxios.delete).toHaveBeenCalledWith(
+        'http://localhost:8000/documents',
+        expect.objectContaining({ data: ['original-1'] }),
+      );
+      expect(mockedLogger.debug).toHaveBeenCalledWith(
+        '[deleteRagFile] Successfully deleted document original-1 from RAG API',
+      );
+    });
+
+    it('skips RAG deletion once the caller has cleared embedded', async () => {
+      const file = { file_id: 'copy-1', vectorId: 'original-1', embedded: false };
+
+      await expect(deleteRagFile({ userId: 'user123', file })).resolves.toBe(true);
+      expect(mockedAxios.delete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('when file is not embedded', () => {
     it('should skip RAG deletion and return true', async () => {
       const file = { file_id: 'file-123', embedded: false };

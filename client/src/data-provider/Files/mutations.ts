@@ -44,10 +44,19 @@ export const useUploadFileMutation = (
     },
     ...options,
     onSuccess: (data, formData, context) => {
-      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
-        data,
-        ...(_files ?? []),
-      ]);
+      /* This list is `GET /files`, scoped to the requesting user and left
+       * unrefetched on mount, focus and reconnect. An upload of content the
+       * agent already holds answers with that record, which a collaborator
+       * may own, so only the uploader's own files belong here — and when one
+       * does, it replaces any entry it matches rather than stacking a second
+       * copy of itself. */
+      const cachedUserId = queryClient.getQueryData<t.TUser>([QueryKeys.user])?.id;
+      if (!data.user || !cachedUserId || data.user === cachedUserId) {
+        queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
+          data,
+          ...(_files ?? []).filter((file) => file.file_id !== data.file_id),
+        ]);
+      }
 
       const endpoint = formData.get('endpoint');
       const message_file = formData.get('message_file');
@@ -73,13 +82,15 @@ export const useUploadFileMutation = (
           ] ?? {
             file_ids: [],
           };
-          if (!prevResource.file_ids) {
-            prevResource.file_ids = [];
-          }
-          prevResource.file_ids.push(data.file_id);
+          const prevFileIds = prevResource.file_ids ?? [];
           update['tool_resources'] = {
             ...prevResources,
-            [tool_resource]: prevResource,
+            [tool_resource]: {
+              ...prevResource,
+              file_ids: prevFileIds.includes(data.file_id)
+                ? prevFileIds
+                : [...prevFileIds, data.file_id],
+            },
           };
           if (!agent.tools?.includes(tool_resource)) {
             update['tools'] = [...(agent.tools ?? []), tool_resource];
