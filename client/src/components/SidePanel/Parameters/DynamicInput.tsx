@@ -102,15 +102,20 @@ function DynamicInput({
    *  through the same debouncer replaces its arguments, so the queued write
    *  becomes the corrected one. */
   const rangeKey = range != null ? `${range.min}:${range.max}:${range.positiveMin ?? ''}` : '';
-  /** Null rather than the first key, so a stored value that the shared range
+  /** The panel stays mounted while navigating, so the stored value can be
+   *  replaced under an unchanged range. */
+  const identityKey = preset?.presetId ?? conversation?.conversationId ?? '';
+  /** Null rather than the first pair, so a stored value that the shared range
    *  allowed but the selected model does not is normalized on mount too, not
    *  only once the user switches models or blurs the field. */
-  const appliedRangeRef = useRef<string | null>(null);
+  const normalizedRef = useRef<{ identity: string; range: string } | null>(null);
   useEffect(() => {
-    if (appliedRangeRef.current === rangeKey) {
+    const normalized = normalizedRef.current;
+    if (normalized?.identity === identityKey && normalized.range === rangeKey) {
       return;
     }
-    appliedRangeRef.current = rangeKey;
+    const identityChanged = normalized == null || normalized.identity !== identityKey;
+    normalizedRef.current = { identity: identityKey, range: rangeKey };
     if (type !== SettingTypes.Number || range == null) {
       return;
     }
@@ -120,10 +125,16 @@ function DynamicInput({
     if (range.modelSpecific !== true) {
       return;
     }
-    if (inputValue === '' || inputValue == null || inputValue === '-') {
+    /** After a navigation the local value still belongs to the conversation
+     *  being left, until useParameterEffects reseeds it on the next commit, so
+     *  read what the incoming one stores. A range change is the opposite case:
+     *  a write typed just before the model switch is still queued in the local
+     *  value and has to be corrected there. */
+    const candidate = identityChanged ? conversation?.[settingKey] : inputValue;
+    if (candidate === '' || candidate == null || candidate === '-') {
       return;
     }
-    const numeric = Number(inputValue);
+    const numeric = Number(candidate);
     if (Number.isNaN(numeric)) {
       return;
     }
@@ -134,7 +145,7 @@ function DynamicInput({
     setInputValue(clamped, true);
     setOption?.(settingKey)(clamped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeKey]);
+  }, [identityKey, rangeKey]);
 
   const placeholderText = placeholderCode
     ? localize(placeholder as TranslationKeys) || placeholder

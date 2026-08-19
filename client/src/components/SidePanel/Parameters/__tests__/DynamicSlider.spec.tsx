@@ -29,6 +29,27 @@ function setup(conversationValue: number) {
   return { slider: screen.getByRole('slider'), commit };
 }
 
+const sentinelRange: SettingRange = { min: -1, max: 32768, step: 1, positiveMin: 128 };
+
+function setupSentinel(conversationValue: number) {
+  const commit = jest.fn();
+  const setOption = jest.fn(() => commit) as unknown as TSetOption;
+  render(
+    <ChatContext.Provider value={chatContextValue}>
+      <DynamicSlider
+        settingKey="thinkingBudget"
+        label="Thinking budget"
+        type="number"
+        range={sentinelRange}
+        defaultValue={-1}
+        setOption={setOption}
+        conversation={{ thinkingBudget: conversationValue }}
+      />
+    </ChatContext.Provider>,
+  );
+  return { slider: screen.getByRole('slider'), commit };
+}
+
 describe('DynamicSlider', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -61,5 +82,26 @@ describe('DynamicSlider', () => {
 
     expect(commit).toHaveBeenCalledTimes(1);
     expect(commit).toHaveBeenLastCalledWith(1);
+  });
+
+  /**
+   * A configured sentinel range leaves a gap the track steps straight through,
+   * and `generateDynamicSchema` rejects exactly those values, so the UI must not
+   * be able to persist one.
+   */
+  it('lifts a committed value out of the sentinel gap', () => {
+    const { slider, commit } = setupSentinel(-1);
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+
+    expect(commit).toHaveBeenLastCalledWith(128);
+  });
+
+  it('leaves a committed value outside the gap alone', () => {
+    const { slider, commit } = setupSentinel(2048);
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+
+    expect(commit).toHaveBeenLastCalledWith(2049);
   });
 });

@@ -36,6 +36,28 @@ function setup({
   return { input: screen.getByRole('textbox'), commit };
 }
 
+function setupNavigable(range: SettingRange, conversation: Record<string, unknown>) {
+  const commit = jest.fn();
+  const setOption = jest.fn(() => commit) as unknown as TSetOption;
+  const tree = (next: Record<string, unknown>) => (
+    <ChatContext.Provider value={chatContextValue}>
+      <DynamicInput
+        settingKey="thinkingBudget"
+        type="number"
+        range={range}
+        setOption={setOption}
+        conversation={next}
+      />
+    </ChatContext.Provider>
+  );
+  const { rerender } = render(tree(conversation));
+  return {
+    commit,
+    input: () => screen.getByRole('textbox'),
+    navigate: (next: Record<string, unknown>) => rerender(tree(next)),
+  };
+}
+
 describe('DynamicInput', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -169,6 +191,49 @@ describe('DynamicInput', () => {
     });
 
     expect(input).toHaveValue('32000');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The panel stays mounted across conversations, so a legacy value can arrive
+   * under a range that never changed. Keying only on the range left it above
+   * the model ceiling, savable and sendable.
+   */
+  it('normalizes when a navigation brings in a value the same range rejects', () => {
+    const range: SettingRange = {
+      min: -1,
+      max: 24576,
+      step: 1,
+      positiveMin: 0,
+      modelSpecific: true,
+    };
+    const { navigate, input, commit } = setupNavigable(range, {
+      conversationId: 'convo-a',
+      thinkingBudget: 2048,
+    });
+    expect(commit).not.toHaveBeenCalled();
+
+    navigate({ conversationId: 'convo-b', thinkingBudget: 32000 });
+
+    expect(input()).toHaveValue('24576');
+    expect(commit).toHaveBeenLastCalledWith(24576);
+  });
+
+  it('leaves a navigation alone when the incoming value fits the range', () => {
+    const range: SettingRange = {
+      min: -1,
+      max: 24576,
+      step: 1,
+      positiveMin: 0,
+      modelSpecific: true,
+    };
+    const { navigate, commit } = setupNavigable(range, {
+      conversationId: 'convo-a',
+      thinkingBudget: 2048,
+    });
+
+    navigate({ conversationId: 'convo-b', thinkingBudget: 4096 });
+
     expect(commit).not.toHaveBeenCalled();
   });
 

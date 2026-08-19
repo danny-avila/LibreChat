@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import { OptionTypes } from 'librechat-data-provider';
+import { OptionTypes, clampSettingRange } from 'librechat-data-provider';
 import { Label, Slider, HoverCard, Input, InputNumber, HoverCardTrigger } from '@librechat/client';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
@@ -220,8 +220,19 @@ function DynamicSlider({
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
             /** Fires once the drag or keypress settles, which is the point the
-             *  chosen value should be in the preset rather than pending. */
-            onValueCommit={() => flushInputValue()}
+             *  chosen value should be in the preset rather than pending. It is
+             *  set again here before flushing because the keyboard path commits
+             *  before it reports the change, leaving the debouncer empty for a
+             *  flush that only follows the drag path. The track also steps
+             *  straight through the gap between a sentinel minimum and its
+             *  positive floor, which the generated schema rejects, so the
+             *  released value has to land outside it. */
+            onValueCommit={(value) => {
+              if (!isEnum && range != null) {
+                setInputValue(clampSettingRange(value[0], range));
+              }
+              flushInputValue();
+            }}
             /** The browser dispatches this after the second release, so the
              *  commit above has already fired and the reset would otherwise sit
              *  in the debouncer while an action clicked next reads the old
