@@ -41,7 +41,6 @@ function isSmallViewport(): boolean {
 
 const localStorageAtoms = {
   // General settings
-  autoScroll: atomWithLocalStorage('autoScroll', false),
   sidebarExpanded: atomWithLocalStorage(
     'unifiedSidebarExpanded',
     !isSmallViewport(),

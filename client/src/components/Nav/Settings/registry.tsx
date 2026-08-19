@@ -43,6 +43,7 @@ import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import ImageResize from '../SettingsTabs/Chat/ImageResize';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
+import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
@@ -352,7 +353,7 @@ export const registry: SettingEntry[] = [
     section: 'conversations',
     labelKey: 'com_nav_auto_scroll',
     Component: toggleControl({
-      stateAtom: store.autoScroll,
+      stateAtom: autoScrollAtom,
       localizationKey: 'com_nav_auto_scroll',
       switchId: 'autoScroll',
     }),
