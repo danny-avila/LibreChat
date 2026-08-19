@@ -134,7 +134,10 @@
     "migrate:orphaned-agent-files:batch": "node config/migrate-orphaned-agent-files.js --batch-size=50",
     "migrate:code-file-duplicates:dry-run": "node config/migrate-code-file-duplicates.js --dry-run",
     "migrate:code-file-duplicates": "node config/migrate-code-file-duplicates.js",
-    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50"
+    "migrate:code-file-duplicates:batch": "node config/migrate-code-file-duplicates.js --batch-size=50",
+    "migrate:embed-owners:dry-run": "node config/migrate-embed-owners.js --dry-run",
+    "migrate:embed-owners": "node config/migrate-embed-owners.js",
+    "migrate:embed-owners:batch": "node config/migrate-embed-owners.js --batch-size=50"
   },
   "repository": {
     "type": "git",
