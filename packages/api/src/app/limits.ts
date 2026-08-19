@@ -5,7 +5,7 @@ import type { TCustomConfig } from 'librechat-data-provider';
  *
  * @param rateLimits
  */
-export const handleRateLimits = (rateLimits?: TCustomConfig['rateLimits']) => {
+export const handleRateLimits = (rateLimits?: TCustomConfig['rateLimits']): void => {
   if (!rateLimits) {
     return;
   }

@@ -14,15 +14,17 @@ import type {
   TStartupConfig,
   TModelsConfig,
   TConversation,
+  TMessage,
 } from 'librechat-data-provider';
 import {
   clearModelForNonEphemeralAgent,
   getDefaultEndpoint,
-  clearMessagesCache,
   buildDefaultConvo,
+  requestChatFocus,
   logger,
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
+import { startupConfigKey } from '~/data-provider';
 import store from '~/store';
 
 const useNavigateToConvo = (index = 0) => {
@@ -31,8 +33,7 @@ const useNavigateToConvo = (index = 0) => {
   const clearAllConversations = store.useClearConvoState();
   const applyModelSpecEffects = useApplyModelSpecEffects();
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
-  const clearAllLatestMessages = store.useClearLatestMessages(`useNavigateToConvo ${index}`);
-  const { hasSetConversation, setConversation: setConvo } = store.useCreateConversationAtom(index);
+  const { hasSetConversation, setConversation: setConvo } = store.useSetConversationAtom(index);
 
   const setConversation = useCallback(
     (conversation: TConversation) => {
@@ -41,7 +42,7 @@ const useNavigateToConvo = (index = 0) => {
         return;
       }
 
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       applyModelSpecEffects({
         startupConfig,
         specName: conversation?.spec,
@@ -65,12 +66,18 @@ const useNavigateToConvo = (index = 0) => {
       const convoData = { ...data };
       clearModelForNonEphemeralAgent(convoData);
       setConversation(convoData);
-      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
+      requestChatFocus();
+      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`);
     } catch (error) {
       console.error('Error fetching conversation data on navigation', error);
       if (conversation) {
+        /** The conversation fetch failed (deleted convo, lost access): drop the
+         * warm message cache so stale contents can't render as current when the
+         * background revalidation fails too. */
+        queryClient.removeQueries([QueryKeys.messages, conversationId]);
         setConversation(conversation as TConversation);
-        navigate(`/c/${conversationId}`, { state: { focusChat: true } });
+        requestChatFocus();
+        navigate(`/c/${conversationId}`);
       }
     }
   };
@@ -78,7 +85,6 @@ const useNavigateToConvo = (index = 0) => {
   const navigateToConvo = (
     conversation?: TConversation | null,
     options?: {
-      resetLatestMessage?: boolean;
       currentConvoId?: string;
     },
   ) => {
@@ -86,14 +92,10 @@ const useNavigateToConvo = (index = 0) => {
       logger.warn('conversation', 'Conversation not provided to `navigateToConvo`');
       return;
     }
-    const { resetLatestMessage = true, currentConvoId } = options || {};
+    const { currentConvoId } = options || {};
     logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
     setSubmission(null);
-    if (resetLatestMessage) {
-      logger.log('latest_message', 'Clearing all latest messages');
-      clearAllLatestMessages();
-    }
 
     let convo = { ...conversation };
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
@@ -122,13 +124,37 @@ const useNavigateToConvo = (index = 0) => {
       });
     }
     clearAllConversations(true);
-    clearMessagesCache(queryClient, currentConvoId);
+    /**
+     * Invalidate (not remove) the departing conversation's messages so
+     * switching back renders the warm cache instantly while a background
+     * refetch reconciles; the NEW_CONVO cache still resets for immediate
+     * optimistic messages. `refetchType: 'none'` because this observer is
+     * still mounted mid-switch — the default would immediately refetch the
+     * chat being LEFT; marking stale defers the fetch to the next mount.
+     */
+    if (currentConvoId != null && currentConvoId !== Constants.NEW_CONVO) {
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.messages, currentConvoId],
+        exact: true,
+        refetchType: 'none',
+      });
+    }
+    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
     if (convo.conversationId !== Constants.NEW_CONVO && convo.conversationId) {
+      /**
+       * Invalidate the target's messages: ChatView's query mounts with
+       * `refetchOnMount: true`, so a cached conversation renders immediately
+       * and revalidates in the background instead of unmounting into a
+       * spinner (the old removeQueries path), including when navigating in
+       * from a non-chat route (e.g. /projects).
+       */
+      queryClient.invalidateQueries([QueryKeys.messages, convo.conversationId]);
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       fetchFreshData(convo);
     } else {
       setConversation(convo);
-      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, { state: { focusChat: true } });
+      requestChatFocus();
+      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
     }
   };
 

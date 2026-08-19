@@ -1,9 +1,14 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods } from './message';
+import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
+import logger from '~/config/winston';
+
+const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -17,10 +22,12 @@ let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
+let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
 let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'];
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
+let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -34,10 +41,12 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   updateMessage = methods.updateMessage;
+  updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
   bulkSaveMessages = methods.bulkSaveMessages;
   updateMessageText = methods.updateMessageText;
   deleteMessagesSince = methods.deleteMessagesSince;
+  recordMessage = methods.recordMessage;
 
   await mongoose.connect(mongoUri);
 });
@@ -51,7 +60,7 @@ describe('Message Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
-    interfaceConfig?: { temporaryChatRetention?: number };
+    interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockMessageData: Partial<IMessage> = {
     messageId: 'msg123',
@@ -61,6 +70,8 @@ describe('Message Operations', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     // Clear database
     await Message.deleteMany({});
 
@@ -103,6 +114,18 @@ describe('Message Operations', () => {
       const result = await saveMessage(mockCtx, mockMessageData);
       expect(result).toBeUndefined();
     });
+
+    it('should not log message params for invalid conversation IDs', async () => {
+      mockMessageData.conversationId = 'invalid-id';
+      mockMessageData.text = 'Sensitive prompt text';
+
+      await saveMessage(mockCtx, mockMessageData, { context: 'message-save-test' });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Invalid conversation ID: invalid-id (context: message-save-test)',
+      );
+      expect(logger.info).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateMessageText', () => {
@@ -137,10 +160,279 @@ describe('Message Operations', () => {
       expect(updatedMessage?.text).toBe('Updated text');
     });
 
+    it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        langfuseSampled: true,
+        langfuseDestinationIds: ['destination-1'],
+      });
+
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsUp', tag: undefined },
+      });
+
+      expect(result?.langfuseSampled).toBe(true);
+      expect(result?.langfuseDestinationIds).toEqual(['destination-1']);
+    });
+
     it('should throw an error if message is not found', async () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),
       ).rejects.toThrow('Message not found or user not authorized.');
+    });
+  });
+
+  describe('updateToolCallResult', () => {
+    const toolCallContent = () => [
+      { type: 'text', text: 'intro' },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'call_bg',
+          name: 'execute_code',
+          args: '{"lang":"py","code":"print(1)"}',
+          output: '{"background_task_id":"task-1"}',
+          progress: 1,
+        },
+      },
+      {
+        type: 'tool_call',
+        tool_call: { id: 'call_other', name: 'execute_code', args: '{}', output: 'untouched' },
+      },
+    ];
+
+    it('patches only the matching tool_call part and appends attachments atomically', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      });
+      expect(result).toEqual({ matched: true, unfinished: false });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{
+        type: string;
+        tool_call?: { id: string; output?: string };
+      }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+      expect(content[2].tool_call?.output).toBe('untouched');
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+    });
+
+    it('appends to existing attachments instead of replacing them', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent(),
+        attachments: [{ file_id: 'existing' }] as unknown as IMessage['attachments'],
+      });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [{ file_id: 'f2' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'existing' }, { file_id: 'f2' }]);
+    });
+
+    it('is idempotent: re-applying the same patch does not duplicate attachments', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+        attachments: [{ file_id: 'f1', toolCallId: 'call_bg' }],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('stdout:\nhello');
+    });
+
+    it('dedupes download-fallback attachments (no file_id) by filepath on re-apply', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const patch = {
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [
+          {
+            filepath: '/api/files/code/download/sess-1/f1',
+            filename: 'big.zip',
+            toolCallId: 'call_bg',
+          },
+          { file_id: 'f2', toolCallId: 'call_bg' },
+        ],
+      };
+      await updateToolCallResult(patch);
+      await updateToolCallResult(patch);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        {
+          filepath: '/api/files/code/download/sess-1/f1',
+          filename: 'big.zip',
+          toolCallId: 'call_bg',
+        },
+        { file_id: 'f2', toolCallId: 'call_bg' },
+      ]);
+    });
+
+    it('returns false when the message row does not exist yet (caller retries)', async () => {
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'missing-msg',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout',
+      });
+      expect(result.matched).toBe(false);
+    });
+
+    it('scopes the patch by agentId when provider ids repeat across agents', async () => {
+      /* Handoff runs append multiple agents' parts to ONE response message,
+       * and provider ids like call_0 repeat per model response. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          {
+            type: 'tool_call',
+            agentId: 'agent_a',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-a' },
+          },
+          {
+            type: 'tool_call',
+            agentId: 'agent_b',
+            tool_call: { id: 'call_0', name: 'execute_code', output: 'handle-b' },
+          },
+        ],
+      });
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_0',
+        agentId: 'agent_b',
+        output: 'stdout-b',
+      });
+      expect(result.matched).toBe(true);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[0].tool_call?.output).toBe('handle-a');
+      expect(content[1].tool_call?.output).toBe('stdout-b');
+    });
+
+    it('flags unfinished partial rows so callers keep re-applying until finalize', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent(),
+        unfinished: true,
+      } as Parameters<typeof saveMessage>[1]);
+
+      const result = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'stdout:\nhello',
+      });
+      /** The patch still lands (idempotent), but the finalize save will
+       *  overwrite this partial row with in-memory content. */
+      expect(result).toEqual({ matched: true, unfinished: true });
+    });
+
+    it('keeps a sibling AGENT’s attachment when both id and file key collide', async () => {
+      /* Handoff agents can share a provider tool-call id AND a claimed
+       * file_id (same filename in one conversation); the second agent's
+       * anchor must not evict the first agent's card-scoped attachment. */
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_a',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' }],
+      });
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'agent_b',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_a' },
+        { file_id: 'shared', toolCallId: 'call_bg', agentId: 'agent_b' },
+      ]);
+    });
+
+    it('keeps a sibling tool call’s attachment when file ids repeat across calls', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_bg' }],
+      });
+      /** A second background call regenerated the same filename — same
+       *  claimed file_id, different tool call. The first card must keep
+       *  its attachment (the client anchors by toolCallId). */
+      await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_other',
+        attachments: [{ file_id: 'shared', toolCallId: 'call_other' }],
+      });
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(saved?.attachments).toEqual([
+        { file_id: 'shared', toolCallId: 'call_bg' },
+        { file_id: 'shared', toolCallId: 'call_other' },
+      ]);
+    });
+
+    it('does not match another user’s message', async () => {
+      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+      const result = await updateToolCallResult({
+        userId: 'someone-else',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: 'hijacked',
+      });
+      expect(result.matched).toBe(false);
+
+      const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      const content = saved?.content as Array<{ tool_call?: { output?: string } }>;
+      expect(content[1].tool_call?.output).toBe('{"background_task_id":"task-1"}');
     });
   });
 
@@ -162,6 +454,8 @@ describe('Message Operations', () => {
         text: 'Second message',
         user: 'user123',
       });
+
+      await waitForTimestampTick();
 
       await saveMessage(mockCtx, {
         messageId: 'msg3',
@@ -193,6 +487,140 @@ describe('Message Operations', () => {
     });
   });
 
+  describe('CLIENT_MESSAGE_SELECT projection', () => {
+    it('strips server-internal fields and dead SERP verticals, keeping rendered data', async () => {
+      const conversationId = uuidv4();
+      await Message.create({
+        messageId: 'projected-msg',
+        conversationId,
+        user: 'user123',
+        isCreatedByUser: false,
+        sender: 'Agent',
+        text: 'visible text',
+        content: [{ type: 'text', text: 'part text' }],
+        tokenCount: 42,
+        conversationSignature: 'sig',
+        clientId: 'client-1',
+        invocationId: 7,
+        summary: 'legacy summary',
+        summaryTokenCount: 11,
+        contextMeta: { anything: true },
+        langfuseSampled: true,
+        langfuseDestinationIds: ['lf-1'],
+        metadata: {
+          usage: { input: 10, output: 20 },
+          thoughtSignatures: { tool_1: 'opaque' },
+        },
+        subagentTask: {
+          attemptKey: 'private-attempt',
+          requestFingerprint: 'private-fingerprint',
+          status: 'running',
+        },
+        attachments: [
+          {
+            type: 'web_search',
+            toolCallId: 'tool_1',
+            web_search: {
+              turn: 0,
+              organic: [
+                {
+                  title: 'Result',
+                  link: 'https://example.com',
+                  snippet: 'snippet',
+                  sitelinks: [{ title: 'sub', link: 'https://example.com/sub' }],
+                  highlights: ['raw scrape'],
+                },
+              ],
+              topStories: [{ title: 'Story', link: 'https://example.com/s', highlights: ['x'] }],
+              references: [{ link: 'https://example.com', title: 'Result', type: 'link' }],
+              images: [{ imageUrl: 'https://example.com/i.png' }],
+              answerBox: { answer: '42' },
+              knowledgeGraph: { title: 'KG' },
+              peopleAlsoAsk: [{ question: 'q' }],
+              relatedSearches: ['related'],
+              news: [{ title: 'n' }],
+              videos: [{ title: 'v' }],
+              places: [{ title: 'p' }],
+              shopping: [{ title: 's' }],
+            },
+          },
+        ],
+      });
+
+      const [message] = await getMessages(
+        { conversationId, user: 'user123' },
+        CLIENT_MESSAGE_SELECT,
+      );
+
+      expect(message.text).toBe('visible text');
+      expect(message.content).toHaveLength(1);
+      expect(message.tokenCount).toBe(42);
+      const metadata = message.metadata as Record<string, unknown>;
+      expect(metadata.usage).toBeDefined();
+      expect(metadata.thoughtSignatures).toBeUndefined();
+
+      const hidden = message as unknown as Record<string, unknown>;
+      for (const field of [
+        '_id',
+        'user',
+        'conversationSignature',
+        'clientId',
+        'invocationId',
+        'summary',
+        'summaryTokenCount',
+        'contextMeta',
+        'langfuseSampled',
+        'langfuseDestinationIds',
+        'subagentTask',
+      ]) {
+        expect(hidden[field]).toBeUndefined();
+      }
+
+      type ProjectedWebSearch = {
+        turn: number;
+        organic: Array<Record<string, unknown>>;
+        topStories: Array<Record<string, unknown>>;
+        references: unknown[];
+        images: unknown[];
+      } & Record<string, unknown>;
+      const webSearch = (message.attachments?.[0] as { web_search: ProjectedWebSearch }).web_search;
+      expect(webSearch.turn).toBe(0);
+      expect(webSearch.organic[0].title).toBe('Result');
+      expect(webSearch.organic[0].link).toBe('https://example.com');
+      expect(webSearch.organic[0].snippet).toBe('snippet');
+      expect(webSearch.organic[0].sitelinks).toBeUndefined();
+      expect(webSearch.organic[0].highlights).toBeUndefined();
+      expect(webSearch.topStories[0].title).toBe('Story');
+      expect(webSearch.topStories[0].highlights).toBeUndefined();
+      expect(webSearch.references).toHaveLength(1);
+      expect(webSearch.images).toHaveLength(1);
+      /** `videos` stays: `turn…video…` citation markers resolve against it
+       *  (the clipboard refTypeMap addresses it explicitly). */
+      expect(webSearch.videos).toHaveLength(1);
+      expect(webSearch.answerBox).toBeDefined();
+      for (const vertical of [
+        'knowledgeGraph',
+        'peopleAlsoAsk',
+        'relatedSearches',
+        'news',
+        'places',
+        'shopping',
+      ]) {
+        expect(webSearch[vertical]).toBeUndefined();
+      }
+    });
+  });
+
+  describe('conversation fetch index', () => {
+    it('declares the compound index that serves the conversation fetch and its sort', () => {
+      const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
+      expect(indexes).toContainEqual([
+        { conversationId: 1, user: 1, createdAt: 1 },
+        expect.anything(),
+      ]);
+    });
+  });
+
   describe('getMessages', () => {
     it('should retrieve messages with the correct filter', async () => {
       const conversationId = uuidv4();
@@ -213,6 +641,37 @@ describe('Message Operations', () => {
       });
 
       const messages = await getMessages({ conversationId });
+      expect(messages).toHaveLength(2);
+      expect(messages[0].text).toBe('First message');
+      expect(messages[1].text).toBe('Second message');
+    });
+
+    it('should limit retrieved messages when requested', async () => {
+      const conversationId = uuidv4();
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg1',
+        conversationId,
+        text: 'First message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg2',
+        conversationId,
+        text: 'Second message',
+        user: 'user123',
+      });
+
+      await saveMessage(mockCtx, {
+        messageId: 'msg3',
+        conversationId,
+        text: 'Third message',
+        user: 'user123',
+      });
+
+      const messages = await getMessages({ conversationId }, undefined, { limit: 2 });
+
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
@@ -400,7 +859,7 @@ describe('Message Operations', () => {
       const result = await saveMessage(mockCtx, mockMessageData);
 
       expect(result?.messageId).toBe('msg123');
-      expect(result?.expiredAt).toBeNull();
+      expect(result?.expiredAt).toBeUndefined();
     });
 
     it('should use custom retention period from config', async () => {
@@ -470,6 +929,61 @@ describe('Message Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         expectedExpirationTime.getTime() + 1000,
       );
+    });
+
+    it('should set expiredAt for non-temporary message when retentionMode is ALL', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).toBeInstanceOf(Date);
+    });
+
+    it('should mark retained message non-temporary when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.isTemporary).toBe(false);
+    });
+
+    it('should preserve existing temporary flag when retentionMode is ALL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = true;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.ALL,
+      };
+
+      const firstSave = await saveMessage(mockCtx, mockMessageData);
+
+      mockCtx.isTemporary = undefined;
+      const secondSave = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: 'Updated text',
+      });
+
+      expect(firstSave?.isTemporary).toBe(true);
+      expect(secondSave?.text).toBe('Updated text');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toBeDefined();
+    });
+
+    it('should not set expiredAt when retentionMode is temporary and not isTemporary', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.TEMPORARY,
+      };
+      const result = await saveMessage(mockCtx, mockMessageData);
+      expect(result?.expiredAt).toBeNull();
     });
 
     it('should handle missing config gracefully', async () => {
@@ -568,6 +1082,22 @@ describe('Message Operations', () => {
       );
     });
 
+    it('should preserve temporary retention when saving without isTemporary', async () => {
+      mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
+
+      mockCtx.isTemporary = true;
+      const firstSave = await saveMessage(mockCtx, mockMessageData);
+      const originalExpiredAt = firstSave?.expiredAt;
+
+      mockCtx.isTemporary = undefined;
+      const updatedData = { ...mockMessageData, text: 'Updated text' };
+      const secondSave = await saveMessage(mockCtx, updatedData);
+
+      expect(secondSave?.text).toBe('Updated text');
+      expect(secondSave?.isTemporary).toBe(true);
+      expect(secondSave?.expiredAt).toEqual(originalExpiredAt);
+    });
+
     it('should handle bulk operations with temporary messages', async () => {
       // This test verifies bulkSaveMessages doesn't interfere with expiredAt
       const messages = [
@@ -623,7 +1153,7 @@ describe('Message Operations', () => {
         createdAt,
         updatedAt: createdAt,
       });
-      return Message.findOne({ messageId }).lean();
+      return Message.findOne({ messageId }).lean<IMessage>();
     };
 
     /**
@@ -935,6 +1465,88 @@ describe('Message Operations', () => {
 
       // All messages should be returned
       expect(result?.messages).toHaveLength(5);
+    });
+  });
+
+  describe('tenantId stripping', () => {
+    it('saveMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      const result = await saveMessage(
+        { userId: 'user123' },
+        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+      );
+
+      expect(result).not.toBeNull();
+      expect(result).toBeDefined();
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Tenant test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('bulkSaveMessages should not overwrite tenantId via update payload', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await Message.create({
+          messageId,
+          conversationId,
+          user: 'user123',
+          text: 'Original',
+        });
+      });
+
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        await bulkSaveMessages([
+          {
+            messageId,
+            conversationId,
+            user: 'user123',
+            text: 'Updated',
+            tenantId: 'malicious-tenant',
+          },
+        ]);
+      });
+
+      const doc = await runAsSystem(async () => Message.findOne({ messageId }).lean());
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Updated');
+      expect(doc?.tenantId).toBe('real-tenant');
+    });
+
+    it('recordMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      await recordMessage({
+        user: 'user123',
+        messageId,
+        conversationId,
+        text: 'Record tenant test',
+        tenantId: 'malicious-tenant',
+      });
+
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc).not.toBeNull();
+      expect(doc?.text).toBe('Record tenant test');
+      expect(doc?.tenantId).toBeUndefined();
+    });
+
+    it('updateMessage should not write caller-supplied tenantId to the document', async () => {
+      const messageId = uuidv4();
+      const conversationId = uuidv4();
+      await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
+
+      await updateMessage('user123', {
+        messageId,
+        text: 'Updated',
+        tenantId: 'malicious-tenant',
+      });
+
+      const doc = await Message.findOne({ messageId }).lean();
+      expect(doc?.text).toBe('Updated');
+      expect(doc?.tenantId).toBeUndefined();
     });
   });
 });

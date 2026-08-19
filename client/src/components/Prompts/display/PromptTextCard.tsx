@@ -5,7 +5,7 @@ import rehypeKatex from 'rehype-katex';
 import supersub from 'remark-supersub';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
-import { Copy, Check, FileText } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
 import { codeNoExecution } from '~/components/Chat/Messages/Content/MarkdownComponents';
 import { PromptVariableGfm } from '../editor/Markdown';
@@ -52,14 +52,8 @@ const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
   }, [mainText, showToast, localize, isCopied]);
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-border-light bg-transparent shadow-md">
-      <header className="flex shrink-0 items-center justify-between border-b border-border-light p-3">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-text-secondary" aria-hidden="true" />
-          <h3 className="text-base font-semibold text-text-primary">
-            {localize('com_ui_prompt_text')}
-          </h3>
-        </div>
+    <div className="relative flex h-full flex-col rounded-xl border border-border-medium bg-transparent">
+      <div className="absolute right-2 top-2 z-10">
         <TooltipAnchor
           description={isCopied ? localize('com_ui_copied') : localize('com_ui_copy')}
           render={
@@ -74,14 +68,14 @@ const PromptTextCard = ({ mainText }: PromptTextCardProps) => {
               aria-live="polite"
             >
               {isCopied ? (
-                <Check className="size-4" aria-hidden="true" />
+                <Check className="size-4 text-text-secondary" aria-hidden="true" />
               ) : (
-                <Copy className="size-4" aria-hidden="true" />
+                <Copy className="size-4 text-text-secondary" aria-hidden="true" />
               )}
             </Button>
           }
         />
-      </header>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <ReactMarkdown
           remarkPlugins={[

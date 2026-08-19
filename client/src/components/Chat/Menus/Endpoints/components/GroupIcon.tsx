@@ -1,6 +1,7 @@
 import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { IconMapProps } from '~/common';
+import { getKnownEndpointAsset, hasKnownEndpointIcon } from '~/hooks/Endpoint/UnknownIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 
 interface GroupIconProps {
@@ -32,7 +33,7 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
         </div>
         {imageError && iconURL && (
           <div
-            className="absolute flex items-center justify-center rounded-full bg-red-500"
+            className="absolute flex items-center justify-center rounded-full bg-surface-destructive"
             style={{ width: '14px', height: '14px', top: 0, right: 0 }}
           >
             <AlertCircle size={10} className="text-white" />
@@ -42,13 +43,27 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
     );
   }
 
+  const resolvedIconURL = getKnownEndpointAsset(iconURL);
+
+  if (!resolvedIconURL && hasKnownEndpointIcon(iconURL)) {
+    const Icon: IconType = icons.unknown as IconType;
+    return (
+      <Icon
+        size={20}
+        endpoint={iconURL}
+        context="menu-item"
+        className="icon-md shrink-0 text-text-primary"
+      />
+    );
+  }
+
   return (
     <div
       className="icon-md shrink-0 overflow-hidden rounded-full"
       style={{ width: 20, height: 20 }}
     >
       <img
-        src={iconURL}
+        src={resolvedIconURL || iconURL}
         alt={groupName}
         className="h-full w-full object-cover"
         onError={handleImageError}

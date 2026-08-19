@@ -418,7 +418,7 @@ describe('Premium pricing parity', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = 100000;
     const completionTokens = 500;
 
@@ -445,7 +445,7 @@ describe('Premium pricing parity', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = 250000;
     const completionTokens = 500;
 
@@ -473,7 +473,7 @@ describe('Premium pricing parity', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const promptTokens = (premiumTokenValues as Record<string, Record<string, number>>)[model]
       .threshold;
     const completionTokens = 500;
@@ -540,7 +540,7 @@ describe('Multi-entry batch parity', () => {
     const initialBalance = 100000000;
     await Balance.create({ user: userId, tokenCredits: initialBalance });
 
-    const model = 'claude-opus-4-6';
+    const model = 'gemini-3.1';
     const tokenUsage = {
       promptTokens: { input: 200000, write: 10000, read: 5000 },
       completionTokens: 1000,

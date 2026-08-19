@@ -1,7 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
-import { Button, Input, Label, OGDialog, OGDialogTemplate } from '@librechat/client';
+import { Button, Input, Label, SecretInput, OGDialog, OGDialogTemplate } from '@librechat/client';
 import type { ConfigFieldDetail } from '~/common';
+import {
+  CONFIG_HTML_BLOCK_TAGS,
+  CONFIG_HTML_CLASS_ATTR,
+  createConfigHtmlSanitizer,
+} from '~/utils/configHtml';
 import { useLocalize } from '~/hooks';
 
 interface MCPConfigDialogProps {
@@ -34,6 +39,15 @@ export default function MCPConfigDialog({
   } = useForm<Record<string, string>>({
     defaultValues: initialValues,
   });
+
+  const sanitize = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_BLOCK_TAGS,
+        allowedAttr: CONFIG_HTML_CLASS_ATTR,
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -70,39 +84,56 @@ export default function MCPConfigDialog({
                   name={key}
                   control={control}
                   defaultValue={initialValues[key] || ''}
-                  render={({ field }) => (
-                    <Input
-                      id={key}
-                      type="text"
-                      {...field}
-                      placeholder={localize('com_ui_mcp_enter_var', { 0: details.title })}
-                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:text-sm"
-                    />
-                  )}
+                  render={({ field }) => {
+                    const placeholder = localize('com_ui_mcp_enter_var', { 0: details.title });
+                    const className =
+                      'w-full rounded-md border-border-medium shadow-sm focus:border-border-heavy focus:ring-ring-primary sm:text-sm';
+                    if (details.sensitive === false) {
+                      return (
+                        <Input
+                          id={key}
+                          {...field}
+                          type="text"
+                          placeholder={placeholder}
+                          className={className}
+                        />
+                      );
+                    }
+                    return (
+                      <SecretInput
+                        id={key}
+                        {...field}
+                        autoComplete="new-password"
+                        data-lpignore="true"
+                        data-1p-ignore="true"
+                        controlsOnHover
+                        placeholder={placeholder}
+                        className={className}
+                      />
+                    );
+                  }}
                 />
                 {details.description && (
                   <p
-                    className="text-xs text-text-secondary [&_a]:text-blue-500 [&_a]:hover:text-blue-600 dark:[&_a]:text-blue-400 dark:[&_a]:hover:text-blue-300"
-                    dangerouslySetInnerHTML={{ __html: details.description }}
+                    className="text-xs text-text-secondary [&_a]:text-link [&_a]:hover:text-link-hover"
+                    dangerouslySetInnerHTML={{ __html: sanitize(details.description) }}
                   />
                 )}
-                {errors[key] && <p className="text-xs text-red-500">{errors[key]?.message}</p>}
+                {errors[key] && (
+                  <p className="text-xs text-text-destructive">{errors[key]?.message}</p>
+                )}
               </div>
             ))}
           </form>
         }
         selection={{
           selectHandler: handleSubmit(onFormSubmit),
-          selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
+          selectClasses: 'bg-surface-submit text-white hover:bg-surface-submit-hover',
           selectText: isSubmitting ? localize('com_ui_saving') : localize('com_ui_save'),
         }}
         buttons={
           onRevoke && (
-            <Button
-              onClick={handleRevoke}
-              className="bg-red-600 text-white hover:bg-red-700 dark:hover:bg-red-800"
-              disabled={isSubmitting}
-            >
+            <Button variant="destructive" onClick={handleRevoke} disabled={isSubmitting}>
               {localize('com_ui_revoke')}
             </Button>
           )

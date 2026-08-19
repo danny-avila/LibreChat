@@ -1,14 +1,52 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { ContentTypes } = require('librechat-data-provider');
-const { unescapeLaTeX, countTokens } = require('@librechat/api');
+const { logger, CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
+const {
+  ContentTypes,
+  feedbackSchema,
+  isAssistantsEndpoint,
+  stripReasoningLabelMetadata,
+} = require('librechat-data-provider');
+const {
+  unescapeLaTeX,
+  countTokens,
+  sendFeedbackScore,
+  traceIdForMessage,
+  mergeQuotedTextForCount,
+  CHILD_THREAD_READ_ONLY_ERROR,
+  isSubagentThreadWriteBlocked,
+} = require('@librechat/api');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
-const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const {
+  requireJwtAuth,
+  validateMessageReq,
+  configMiddleware,
+  sendValidationResponse,
+  prepareMessageRequestValidation,
+} = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
 router.use(requireJwtAuth);
+
+async function rejectSubagentThreadWrite(req, res, conversationId) {
+  const blocked = await isSubagentThreadWriteBlocked(
+    { getConvo: db.getConvo, store: subagentThreadTaskStore },
+    {
+      userId: req.user.id,
+      conversationId,
+      ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? { tenantId: req.user.tenantId }
+        : {}),
+    },
+  );
+  if (!blocked) {
+    return false;
+  }
+  res.status(409).json({ error: CHILD_THREAD_READ_ONLY_ERROR });
+  return true;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -117,6 +155,10 @@ router.post('/branch', async (req, res) => {
       return res.status(404).json({ error: 'Source message not found' });
     }
 
+    if (await rejectSubagentThreadWrite(req, res, sourceMessage.conversationId)) {
+      return;
+    }
+
     if (sourceMessage.isCreatedByUser) {
       return res.status(400).json({ error: 'Cannot branch from user messages' });
     }
@@ -198,6 +240,10 @@ router.post('/artifact/:messageId', async (req, res) => {
       return res.status(404).json({ error: 'Message not found' });
     }
 
+    if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
+      return;
+    }
+
     const artifacts = findAllArtifacts(message);
     if (index >= artifacts.length) {
       return res.status(400).json({ error: 'Artifact index out of bounds' });
@@ -265,11 +311,30 @@ router.post('/artifact/:messageId', async (req, res) => {
   }
 });
 
-/* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
-router.get('/:conversationId', validateMessageReq, async (req, res) => {
+router.get('/:conversationId', prepareMessageRequestValidation, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const messages = await db.getMessages({ conversationId }, '-_id -__v -user');
+    const validation = req.messageRequestValidation;
+    // This intentionally starts a user-scoped read before validation resolves;
+    // the response remains gated on validation success below.
+    const messagesPromise = validation.shouldFetchMessages
+      ? db.getMessages({ conversationId, user: req.user.id }, CLIENT_MESSAGE_SELECT).then(
+          (messages) => ({ messages }),
+          (error) => ({ error }),
+        )
+      : null;
+
+    const validationResult = await validation.promise;
+    if (!validationResult.ok) {
+      return sendValidationResponse(res, validationResult);
+    }
+
+    const messagesResult = await messagesPromise;
+    if (messagesResult?.error) {
+      throw messagesResult.error;
+    }
+
+    const messages = messagesResult?.messages ?? [];
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
@@ -279,7 +344,10 @@ router.get('/:conversationId', validateMessageReq, async (req, res) => {
 
 router.post('/:conversationId', validateMessageReq, async (req, res) => {
   try {
-    const message = req.body;
+    if (await rejectSubagentThreadWrite(req, res, req.params.conversationId)) {
+      return;
+    }
+    const message = { ...req.body, conversationId: req.params.conversationId };
     const reqCtx = {
       userId: req?.user?.id,
       isTemporary: req?.body?.isTemporary,
@@ -293,7 +361,15 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     if (!savedMessage) {
       return res.status(400).json({ error: 'Message not saved' });
     }
-    await db.saveConvo(reqCtx, savedMessage, { context: 'POST /api/messages/:conversationId' });
+    const conversationUpdate = {
+      conversationId: savedMessage.conversationId,
+      ...(message.endpoint !== undefined && { endpoint: savedMessage.endpoint }),
+      ...(message.model !== undefined && { model: savedMessage.model }),
+      ...(message.iconURL !== undefined && { iconURL: savedMessage.iconURL }),
+    };
+    await db.saveConvo(reqCtx, conversationUpdate, {
+      context: 'POST /api/messages/:conversationId',
+    });
     res.status(201).json(savedMessage);
   } catch (error) {
     logger.error('Error saving message:', error);
@@ -304,7 +380,10 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
 router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
-    const message = await db.getMessages({ conversationId, messageId }, '-_id -__v -user');
+    const message = await db.getMessages(
+      { conversationId, messageId, user: req.user.id },
+      CLIENT_MESSAGE_SELECT,
+    );
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
@@ -318,23 +397,37 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
 router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
+    const message = (
+      await db.getMessages(
+        { messageId, user: req.user.id },
+        'conversationId content tokenCount quotes isCreatedByUser',
+      )
+    )?.[0];
+    if (!message || message.conversationId !== conversationId) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    if (await rejectSubagentThreadWrite(req, res, message.conversationId)) {
+      return;
+    }
     const { text, index, model } = req.body;
 
     if (index === undefined) {
-      const tokenCount = await countTokens(text, model);
+      /** A user turn's persisted `quotes` are re-prepended into the prompt on
+       *  every send, but this edit only changes `text`. Count the merged
+       *  text+quotes so the stored `tokenCount` stays authoritative (matching the
+       *  send path); a plain text-only count under-reports by the quote block. */
+      const textToCount = mergeQuotedTextForCount(
+        text,
+        message.quotes,
+        message.isCreatedByUser === true,
+      );
+      const tokenCount = await countTokens(textToCount, model);
       const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
       return res.status(200).json(result);
     }
 
     if (typeof index !== 'number' || index < 0) {
       return res.status(400).json({ error: 'Invalid index' });
-    }
-
-    const message = (
-      await db.getMessages({ conversationId, messageId }, 'content tokenCount')
-    )?.[0];
-    if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
     }
 
     const existingContent = message.content;
@@ -352,8 +445,21 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
       return res.status(400).json({ error: 'Cannot update non-text content' });
     }
 
-    const oldText = updatedContent[index][currentPartType];
-    updatedContent[index] = { type: currentPartType, [currentPartType]: text };
+    /** A text part is `string | { value, annotations }`. The Assistants thread sync
+     *  persists the structured form with its file citations intact, and the editor
+     *  reads it through the same union, so an edit has to be written into `value`
+     *  rather than over the whole part. The same object is what gets counted below,
+     *  and the tokenizer measures `length`, which an object does not have. */
+    const currentPart = updatedContent[index];
+    const currentValue = currentPart[currentPartType];
+    const isStructuredValue = currentValue != null && typeof currentValue === 'object';
+    const oldText = isStructuredValue ? (currentValue.value ?? '') : currentValue;
+    const editedPart = {
+      ...currentPart,
+      [currentPartType]: isStructuredValue ? { ...currentValue, value: text } : text,
+    };
+    updatedContent[index] =
+      currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {
@@ -374,34 +480,70 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
-router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
-  try {
-    const { conversationId, messageId } = req.params;
-    const { feedback } = req.body;
+router.put(
+  '/:conversationId/:messageId/feedback',
+  validateMessageReq,
+  configMiddleware,
+  async (req, res) => {
+    try {
+      const { conversationId, messageId } = req.params;
+      const { feedback } = req.body;
+      const feedbackResult = feedback == null ? null : feedbackSchema.safeParse(feedback);
 
-    const updatedMessage = await db.updateMessage(
-      req?.user?.id,
-      {
+      if (feedbackResult && !feedbackResult.success) {
+        return res.status(400).json({ error: 'Invalid feedback' });
+      }
+
+      const updatedMessage = await db.updateMessage(
+        req?.user?.id,
+        {
+          messageId,
+          feedback: feedbackResult?.data ?? null,
+        },
+        { context: 'updateFeedback' },
+      );
+
+      // Best-effort: Assistants messages do not have deterministic AgentRun traces.
+      if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
+        sendFeedbackScore({
+          traceId: traceIdForMessage(messageId),
+          sampled: updatedMessage.langfuseSampled,
+          destinationIds: updatedMessage.langfuseDestinationIds,
+          feedback: updatedMessage.feedback,
+          appConfig: req.config,
+          metadata: {
+            messageId: updatedMessage.messageId ?? messageId,
+            parentMessageId: updatedMessage.parentMessageId,
+            conversationId: updatedMessage.conversationId ?? conversationId,
+            sessionId: updatedMessage.conversationId ?? conversationId,
+            userId: req?.user?.id,
+            tenantId: req?.user?.tenantId,
+            endpoint: updatedMessage.endpoint,
+            sender: updatedMessage.sender,
+            isCreatedByUser: updatedMessage.isCreatedByUser,
+            tokenCount: updatedMessage.tokenCount,
+          },
+        }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
+      }
+
+      res.json({
         messageId,
-        feedback: feedback || null,
-      },
-      { context: 'updateFeedback' },
-    );
-
-    res.json({
-      messageId,
-      conversationId,
-      feedback: updatedMessage.feedback,
-    });
-  } catch (error) {
-    logger.error('Error updating message feedback:', error);
-    res.status(500).json({ error: 'Failed to update feedback' });
-  }
-});
+        conversationId,
+        feedback: updatedMessage.feedback,
+      });
+    } catch (error) {
+      logger.error('Error updating message feedback:', error);
+      res.status(500).json({ error: 'Failed to update feedback' });
+    }
+  },
+);
 
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
+    if (await rejectSubagentThreadWrite(req, res, conversationId)) {
+      return;
+    }
     await db.deleteMessages({ messageId, conversationId, user: req.user.id });
     res.status(204).send();
   } catch (error) {

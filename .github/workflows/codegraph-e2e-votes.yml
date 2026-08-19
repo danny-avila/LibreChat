@@ -1,0 +1,195 @@
+# Codegraph e2e VOTES — observe-only, post-merge, time-boxed.
+#
+# Playwright never runs on pushes to dev, so evidence for the e2e skip election would
+# otherwise wait on rare organic PR spec failures. This workflow runs EXACTLY the skippable
+# tier the merged PR's selection computed — every merge becomes a direct trial of "would
+# skipping these specs have missed a failure". A green run is a confirmation vote; a failing
+# spec here is a tier-miss vote counted AGAINST enabling skipping. The shadow evaluator on
+# the codegraph droplet harvests these runs and attributes them back to the merged PR.
+#
+# It cannot fail the branch: the tier lookup exits 0 on every path and the test step is
+# continue-on-error. The newest merge cancels older vote runs. The whole campaign switches
+# off by setting repo variable CODEGRAPH_E2E_VOTES=off once the election passes.
+name: Codegraph E2E Votes
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - '**'
+      - '!**.md'
+      - '!.github/workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codegraph-e2e-votes
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=6144'
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+jobs:
+  vote:
+    name: vote (skippable tier)
+    if: vars.CODEGRAPH_E2E_VOTES != 'off'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      E2E_CHROMIUM_CHANNEL: chrome
+      E2E_STREAM_STORE: memory
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Ask codegraph for this merge's skippable tier
+        id: tiers
+        env:
+          URL: ${{ secrets.CODEGRAPH_URL }}
+          TOKEN: ${{ secrets.CODEGRAPH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          N=0
+          if [ -n "$URL" ] && [ -n "$TOKEN" ]; then
+            gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" \
+              --jq '[.files[] | {path: .filename, status: .status}]' > files.json 2>/dev/null
+            if [ -s files.json ]; then
+              jq -c '{files: .}' files.json > body.json
+              RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN" \
+                -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select")
+              # fail_open reflects the JEST floors (root config, lockfile, stale graph); the
+              # e2e tiers come from the testid bridge and are valid whenever they computed at
+              # all. The old fail-open skip silently excused exactly the big backend merges
+              # whose trials matter most (LibreChat#14957's merge produced no vote because
+              # api/package.json tripped the jest floor). Tiers present => vote.
+              if ! echo "$RESP" | jq -e '.e2e.skippable' >/dev/null 2>&1; then
+                echo "codegraph unavailable or no tiers; skipping"
+              else
+                echo "$RESP" | jq -r '.e2e.skippable[]' | sed 's|^e2e/||' > skippable.txt
+                N=$(wc -l < skippable.txt | tr -d ' ')
+              fi
+            else
+              echo "could not read merge commit files; skipping"
+            fi
+          else
+            echo "no codegraph config; skipping"
+          fi
+          echo "codegraph-votes: running $N skippable specs"
+          echo "count=$N" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Use Node.js 24.16.0
+        if: steps.tiers.outputs.count != '0'
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+
+      - name: Restore node_modules cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+            packages/api/node_modules
+            api/node_modules
+          key: node-modules-e2e-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.tiers.outputs.count != '0' && steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Restore data-provider build cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-data-provider
+        uses: actions/cache@v5
+        with:
+          path: packages/data-provider/dist
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build data-provider
+        if: steps.tiers.outputs.count != '0' && steps.cache-data-provider.outputs.cache-hit != 'true'
+        run: npm run build:data-provider
+
+      - name: Restore data-schemas build cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-data-schemas
+        uses: actions/cache@v5
+        with:
+          path: packages/data-schemas/dist
+          key: build-data-schemas-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build data-schemas
+        if: steps.tiers.outputs.count != '0' && steps.cache-data-schemas.outputs.cache-hit != 'true'
+        run: npm run build:data-schemas
+
+      - name: Restore api build cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-api
+        uses: actions/cache@v5
+        with:
+          path: packages/api/dist
+          key: build-api-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/tsdown.config.mjs', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json') }}
+
+      - name: Build api
+        if: steps.tiers.outputs.count != '0' && steps.cache-api.outputs.cache-hit != 'true'
+        run: npm run build:api
+
+      - name: Restore client-package build cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-client-package
+        uses: actions/cache@v5
+        with:
+          path: packages/client/dist
+          key: build-client-package-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build client-package
+        if: steps.tiers.outputs.count != '0' && steps.cache-client-package.outputs.cache-hit != 'true'
+        run: npm run build:client-package
+
+      - name: Restore client app build cache
+        if: steps.tiers.outputs.count != '0'
+        id: cache-client-app
+        uses: actions/cache@v5
+        with:
+          path: client/dist
+          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/scripts/post-build.cjs', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build client app
+        if: steps.tiers.outputs.count != '0' && steps.cache-client-app.outputs.cache-hit != 'true'
+        run: npm run build:client
+
+      - name: Verify Chrome is present
+        if: steps.tiers.outputs.count != '0'
+        run: google-chrome --version
+
+      # ffmpeg for retry video — see the note in playwright-mock.yml.
+      - name: Install Playwright ffmpeg (best effort)
+        if: steps.tiers.outputs.count != '0'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: timeout -k 10 90 npx playwright install ffmpeg
+
+      # Optional fonts only — see the note in playwright-mock.yml.
+      - name: Install optional Playwright font dependencies (best effort)
+        if: steps.tiers.outputs.count != '0'
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
+
+      - name: Vote — run the skippable tier (cannot fail the branch)
+        if: steps.tiers.outputs.count != '0'
+        continue-on-error: true
+        run: npx playwright test --config=e2e/playwright.config.mock.ts $(tr '\n' ' ' < skippable.txt)
+
+      - name: Done
+        if: always()
+        run: 'echo "codegraph-votes: complete"'

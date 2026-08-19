@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
 import { IUser } from '~/types';
 
 // Session sub-schema
@@ -23,7 +23,7 @@ const BackupCodeSchema = new Schema(
   { _id: false },
 );
 
-const userSchema = new Schema<IUser>(
+const userSchema: Schema<IUser> = new Schema<IUser>(
   {
     name: {
       type: String,
@@ -72,6 +72,9 @@ const userSchema = new Schema<IUser>(
       type: String,
     },
     openidId: {
+      type: String,
+    },
+    openidIssuer: {
       type: String,
     },
     samlId: {
@@ -124,11 +127,24 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    termsAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+    agentTriggerDeletionStartedAt: {
+      type: Date,
+      select: false,
+    },
     personalization: {
       type: {
         memories: {
           type: Boolean,
           default: true,
+        },
+        statefulCodeEnvironment: {
+          type: String,
+          enum: STATEFUL_CODE_ENVIRONMENTS,
+          default: 'user',
         },
       },
       default: {},
@@ -137,12 +153,18 @@ const userSchema = new Schema<IUser>(
       type: [
         {
           _id: false,
-          agentId: String, // for agent
-          model: String, // for model
-          endpoint: String, // for model
+          agentId: { type: String, maxlength: 256 },
+          model: { type: String, maxlength: 256 },
+          endpoint: { type: String, maxlength: 256 },
+          spec: { type: String, maxlength: 256 },
         },
       ],
       default: [],
+    },
+    skillStates: {
+      type: Map,
+      of: Boolean,
+      default: () => new Map(),
     },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
@@ -159,6 +181,7 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
+userSchema.index({ idOnTheSource: 1, openidIssuer: 1, tenantId: 1 });
 
 const oAuthIdFields = [
   'googleId',
@@ -172,6 +195,14 @@ const oAuthIdFields = [
 ] as const;
 
 for (const field of oAuthIdFields) {
+  if (field === 'openidId') {
+    userSchema.index(
+      { openidId: 1, openidIssuer: 1, tenantId: 1 },
+      { unique: true, partialFilterExpression: { openidId: { $exists: true } } },
+    );
+    continue;
+  }
+
   userSchema.index(
     { [field]: 1, tenantId: 1 },
     { unique: true, partialFilterExpression: { [field]: { $exists: true } } },

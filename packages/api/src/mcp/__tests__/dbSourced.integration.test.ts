@@ -37,11 +37,19 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/auth', () => ({
   createSSRFSafeUndiciConnect: jest.fn(() => undefined),
+  isOAuthUrlAllowed: jest.fn(() => false),
+  isSSRFTarget: jest.fn(() => false),
   resolveHostnameSSRF: jest.fn(async () => false),
 }));
 
 jest.mock('~/mcp/mcpConfig', () => ({
-  mcpConfig: { CONNECTION_CHECK_TTL: 0 },
+  mcpConfig: {
+    CONNECTION_CHECK_TTL: 0,
+    TOOLS_LIST_MAX_PAGES: 50,
+    TOOLS_LIST_MAX_TOOLS: 1000,
+    TOOLS_LIST_MAX_BYTES: 5 * 1024 * 1024,
+    TOOLS_LIST_TIMEOUT_MS: 30000,
+  },
 }));
 
 /** Track all Agents for cleanup */

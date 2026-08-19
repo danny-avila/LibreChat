@@ -7,8 +7,8 @@ import {
   ScraperProviders,
   SearchCategories,
 } from 'librechat-data-provider';
-import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import type { UseFormRegister, UseFormHandleSubmit } from 'react-hook-form';
+import type { SearchApiKeyFormData } from '~/hooks/Plugins/useAuthSearchTool';
 import InputSection, { type DropdownOption } from './InputSection';
 import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
@@ -75,6 +75,20 @@ export default function ApiKeyDialog({
         searxngApiKey: {
           placeholder: localize('com_ui_web_search_searxng_api_key'),
           type: 'password' as const,
+        },
+      },
+    },
+    {
+      key: SearchProviders.TAVILY,
+      label: localize('com_ui_web_search_provider_tavily'),
+      inputs: {
+        tavilyApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://app.tavily.com/home',
+            text: localize('com_ui_web_search_provider_tavily_key'),
+          },
         },
       },
     },
@@ -148,6 +162,20 @@ export default function ApiKeyDialog({
           link: {
             url: 'https://serper.dev/api-keys',
             text: localize('com_ui_web_search_scraper_serper_key'),
+          },
+        },
+      },
+    },
+    {
+      key: ScraperProviders.TAVILY,
+      label: localize('com_ui_web_search_scraper_tavily'),
+      inputs: {
+        tavilyApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://app.tavily.com/home',
+            text: localize('com_ui_web_search_scraper_tavily_key'),
           },
         },
       },
@@ -245,16 +273,12 @@ export default function ApiKeyDialog({
         }
         selection={{
           selectHandler: handleSubmit(onSubmit),
-          selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
+          selectClasses: 'bg-surface-submit hover:bg-surface-submit-hover text-white',
           selectText: localize('com_ui_save'),
         }}
         buttons={
           isToolAuthenticated && (
-            <Button
-              onClick={onRevoke}
-              className="bg-red-500 text-white hover:bg-red-600"
-              aria-label={localize('com_ui_revoke')}
-            >
+            <Button variant="destructive" onClick={onRevoke} aria-label={localize('com_ui_revoke')}>
               {localize('com_ui_revoke')}
             </Button>
           )

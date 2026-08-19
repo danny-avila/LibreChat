@@ -42,13 +42,16 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
-  const { data: mcpData } = useMCPToolsQuery({
+  const { data: mcpData, isFetching: mcpToolsFetching } = useMCPToolsQuery({
     enabled:
       !isEphemeralAgent(agent_id) &&
       !isLoading &&
       availableMCPServers != null &&
       availableMCPServers.length > 0,
   });
+  /** Tools are still arriving when the query is in flight and nothing is cached
+   * yet (e.g., right after a hard refresh). Lets the MCP dialog show a skeleton. */
+  const mcpToolsLoading = mcpToolsFetching && mcpData == null;
 
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const mcpServerNames = useMemo(
@@ -96,6 +99,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           tools,
           isConfigured: configuredServers.has(serverName),
           isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
+          requestScoped: serverConfig?.requestScoped,
           metadata,
           consumeOnly: serverConfig?.consumeOnly,
         });
@@ -127,6 +131,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         isConfigured: true,
         serverName: mcpServerName,
         isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+        requestScoped: serverConfig?.requestScoped,
         consumeOnly: serverConfig?.consumeOnly,
       });
     }
@@ -148,6 +153,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
     agentsConfig,
     startupConfig,
     mcpServersMap,
+    mcpToolsLoading,
     setActivePanel,
     endpointsConfig,
     setCurrentAgentId,

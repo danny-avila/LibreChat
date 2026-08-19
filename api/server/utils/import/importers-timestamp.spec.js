@@ -7,18 +7,18 @@ const { getImporter } = require('./importers');
 jest.mock('~/models', () => ({
   bulkSaveConvos: jest.fn(),
   bulkSaveMessages: jest.fn(),
+  bulkIncrementTagCounts: jest.fn(),
 }));
-jest.mock('~/cache/getLogStores');
-const getLogStores = require('~/cache/getLogStores');
-const mockedCacheGet = jest.fn();
-getLogStores.mockImplementation(() => ({
-  get: mockedCacheGet,
+
+const mockGetEndpointsConfig = jest.fn().mockResolvedValue(null);
+jest.mock('~/server/services/Config', () => ({
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
 }));
 
 describe('Import Timestamp Ordering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedCacheGet.mockResolvedValue(null);
+    mockGetEndpointsConfig.mockResolvedValue(null);
   });
 
   describe('LibreChat Import - Timestamp Issues', () => {

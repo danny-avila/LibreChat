@@ -56,6 +56,10 @@ describe('loadWebSearchConfig', () => {
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
         safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: undefined,
+        tavilyApiKey: '${TAVILY_API_KEY}',
+        tavilySearchUrl: '${TAVILY_SEARCH_URL}',
+        tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
       });
     });
 

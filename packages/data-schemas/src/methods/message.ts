@@ -1,11 +1,52 @@
+import { RetentionMode } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
-import logger from '~/config/winston';
-import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
-import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import type { AppConfig, IMessage } from '~/types';
+import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
+import { createFallbackRetentionDate } from '~/utils/retention';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Exclusion projection for message reads that feed the chat client (the
+ * conversation GET and shared-link reads). Every excluded field is either
+ * server-internal (ids, replay signatures, legacy summarization state) or a
+ * web_search SERP vertical no citation marker or UI can address: markers
+ * resolve `search|image|news|video|ref|file` through organic/images/
+ * topStories/videos/references (all kept — `news` markers read topStories,
+ * never the `news` collection). The JSON export mirrors this cache, so
+ * fields removed here also leave user exports.
+ */
+export const CLIENT_MESSAGE_SELECT: string = [
+  '-_id',
+  '-__v',
+  '-user',
+  '-clientId',
+  '-invocationId',
+  '-conversationSignature',
+  '-summary',
+  '-summaryTokenCount',
+  '-contextMeta',
+  '-langfuseSampled',
+  '-langfuseDestinationIds',
+  '-metadata.thoughtSignatures',
+  '-attachments.web_search.knowledgeGraph',
+  '-attachments.web_search.peopleAlsoAsk',
+  '-attachments.web_search.relatedSearches',
+  '-attachments.web_search.shopping',
+  '-attachments.web_search.places',
+  '-attachments.web_search.news',
+  '-attachments.web_search.organic.sitelinks',
+  '-attachments.web_search.organic.highlights',
+  '-attachments.web_search.topStories.highlights',
+].join(' ');
+
+interface MessageQueryOptions {
+  limit?: number;
+  sort?: Record<string, 1 | -1> | false;
+}
 
 export interface MessageMethods {
   saveMessage(
@@ -26,6 +67,16 @@ export interface MessageMethods {
     [key: string]: unknown;
   }): Promise<IMessage | null>;
   updateMessageText(userId: string, params: { messageId: string; text: string }): Promise<void>;
+  updateToolCallResult(params: {
+    userId: string;
+    messageId: string;
+    conversationId: string;
+    toolCallId: string;
+    agentId?: string;
+    output?: string;
+    attachments?: unknown[];
+    markBackgrounded?: boolean;
+  }): Promise<{ matched: boolean; unfinished: boolean }>;
   updateMessage(
     userId: string,
     message: Partial<IMessage> & { newMessageId?: string },
@@ -35,7 +86,11 @@ export interface MessageMethods {
     userId: string,
     params: { messageId: string; conversationId: string },
   ): Promise<DeleteResult>;
-  getMessages(filter: FilterQuery<IMessage>, select?: string): Promise<IMessage[]>;
+  getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options?: MessageQueryOptions,
+  ): Promise<IMessage[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -77,9 +132,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
 
     const conversationId = params.conversationId as string | undefined;
     if (!conversationId || !UUID_REGEX.test(conversationId)) {
-      logger.warn(`Invalid conversation ID: ${conversationId}`);
-      logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-      logger.info(`---Invalid conversation ID Params: ${JSON.stringify(params, null, 2)}`);
+      logger.warn(
+        `Invalid conversation ID: ${conversationId} (context: ${metadata?.context ?? 'n/a'})`,
+      );
       return;
     }
 
@@ -91,15 +146,28 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         messageId: params.newMessageId || params.messageId,
       };
 
-      if (isTemporary) {
+      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+        if (typeof isTemporary === 'boolean') {
+          update.isTemporary = isTemporary;
+        }
         try {
           update.expiredAt = createTempChatExpirationDate(interfaceConfig);
         } catch (err) {
           logger.error('Error creating temporary chat expiration date:', err);
           logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
-          update.expiredAt = null;
+          update.expiredAt = createFallbackRetentionDate();
         }
-      } else {
+      } else if (isTemporary === true) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
+      } else if (isTemporary === false) {
+        update.isTemporary = false;
         update.expiredAt = null;
       }
 
@@ -115,6 +183,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         update,
         { upsert: true, new: true },
       );
+
+      if (
+        interfaceConfig?.retentionMode === RetentionMode.ALL &&
+        typeof isTemporary !== 'boolean' &&
+        (message.isTemporary == null ||
+          (message.isTemporary === false && message.$isDefault('isTemporary')))
+      ) {
+        await Message.updateOne(
+          { _id: message._id, isTemporary: { $ne: false } },
+          { $set: { isTemporary: false } },
+        );
+        message.isTemporary = false;
+      }
 
       return message.toObject();
     } catch (err: unknown) {
@@ -230,6 +311,173 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Patches a persisted tool_call content part in place and appends attachments,
+   * for results that settle after the turn's message was finalized (background
+   * tool calls). Atomic single update so two tasks completing concurrently on
+   * the same message cannot lose each other's attachments, and IDEMPOTENT
+   * (attachments dedupe by `file_id ?? filepath`, scoped to this tool call so
+   * sibling calls sharing a filename keep their own entries) so it can be
+   * re-applied to heal a later full-row save that reverted the patch.
+   *
+   * Returns `matched: false` when the message row does not exist yet (the
+   * dispatch turn has not finalized) and surfaces `unfinished` when the
+   * matched row is a mid-turn partial save (client disconnect) — the eventual
+   * finalize will overwrite the patch with in-memory content, so callers
+   * should keep re-applying until a finalized row is patched.
+   */
+  async function updateToolCallResult({
+    userId,
+    messageId,
+    conversationId,
+    toolCallId,
+    agentId,
+    output,
+    attachments,
+    markBackgrounded,
+  }: {
+    userId: string;
+    messageId: string;
+    conversationId: string;
+    toolCallId: string;
+    /** Scopes the part match when provider tool-call ids repeat across
+     *  agents in one response message (e.g. `call_0` per response); a part
+     *  without agent identity matches any caller (single-agent runs). */
+    agentId?: string;
+    output?: string;
+    attachments?: unknown[];
+    /**
+     * Stamps `backgrounded: true` onto the patched tool call. Replacing the
+     * dispatch-handle output with the settled task's stdout destroys the only
+     * signal renderers had that this call ran detached (the handle JSON and
+     * the live status-marker attachment are both transient), so the patch
+     * that erases it must persist a durable one alongside.
+     */
+    markBackgrounded?: boolean;
+  }): Promise<{ matched: boolean; unfinished: boolean }> {
+    const stages: Record<string, unknown>[] = [];
+    if (output !== undefined) {
+      stages.push({
+        $set: {
+          content: {
+            $map: {
+              input: { $ifNull: ['$content', []] },
+              as: 'part',
+              in: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$$part.type', 'tool_call'] },
+                      { $eq: ['$$part.tool_call.id', toolCallId] },
+                      ...(agentId != null
+                        ? [
+                            {
+                              $in: [
+                                { $ifNull: ['$$part.agentId', '$$part.tool_call.agentId'] },
+                                [null, agentId],
+                              ],
+                            },
+                          ]
+                        : []),
+                    ],
+                  },
+                  {
+                    $mergeObjects: [
+                      '$$part',
+                      {
+                        tool_call: {
+                          $mergeObjects: [
+                            '$$part.tool_call',
+                            {
+                              output: { $literal: output },
+                              ...(markBackgrounded === true ? { backgrounded: true } : {}),
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                  '$$part',
+                ],
+              },
+            },
+          },
+        },
+      });
+    }
+    if (attachments !== undefined && attachments.length > 0) {
+      /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
+       *  download-fallback attachments (no `file_id`, only a filepath) stay
+       *  idempotent across re-applications instead of duplicating per poll. */
+      const attachmentKeys = attachments
+        .map((attachment) => {
+          const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
+          return typeof file_id === 'string' ? file_id : filepath;
+        })
+        .filter((key): key is string => typeof key === 'string');
+      stages.push({
+        $set: {
+          attachments: {
+            $concatArrays: [
+              {
+                $filter: {
+                  input: { $ifNull: ['$attachments', []] },
+                  as: 'existing',
+                  /** Replace only THIS tool call's prior entries: sibling calls
+                   *  can legitimately share a `file_id` (the filename claim is
+                   *  per-conversation), and the client anchors attachments to
+                   *  cards by `toolCallId`. */
+                  cond: {
+                    $not: [
+                      {
+                        $and: [
+                          {
+                            $in: [
+                              { $ifNull: ['$$existing.file_id', '$$existing.filepath'] },
+                              { $literal: attachmentKeys },
+                            ],
+                          },
+                          { $eq: ['$$existing.toolCallId', toolCallId] },
+                          /** Provider tool-call ids repeat across agents in
+                           *  handoff messages; a sibling agent's attachment
+                           *  under the same id/key must survive (missing
+                           *  agent identity = legacy wildcard). */
+                          ...(agentId != null
+                            ? [
+                                {
+                                  $in: [{ $ifNull: ['$$existing.agentId', null] }, [null, agentId]],
+                                },
+                              ]
+                            : []),
+                        ],
+                      },
+                    ],
+                  },
+                },
+              },
+              { $literal: attachments },
+            ],
+          },
+        },
+      });
+    }
+    if (stages.length === 0) {
+      return { matched: false, unfinished: false };
+    }
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const result = await Message.findOneAndUpdate(
+        { messageId, user: userId, conversationId },
+        stages,
+        { new: true, projection: { unfinished: 1 } },
+      ).lean<{ unfinished?: boolean } | null>();
+      return { matched: result != null, unfinished: result?.unfinished === true };
+    } catch (err) {
+      logger.error('Error updating tool call result:', err);
+      throw err;
+    }
+  }
+
+  /**
    * Updates a message and returns sanitized fields.
    */
   async function updateMessage(
@@ -257,6 +505,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         isCreatedByUser: updatedMessage.isCreatedByUser,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
+        endpoint: updatedMessage.endpoint,
+        langfuseSampled: updatedMessage.langfuseSampled,
+        langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
       };
     } catch (err) {
       logger.error('Error updating message:', err);
@@ -276,7 +527,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const message = await Message.findOne({ messageId, user: userId }).lean();
+      const message = await Message.findOne({ messageId, user: userId }).lean<IMessage>();
 
       if (message) {
         const query = Message.find({ conversationId, user: userId });
@@ -294,14 +545,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   /**
    * Retrieves messages from the database.
    */
-  async function getMessages(filter: FilterQuery<IMessage>, select?: string) {
+  async function getMessages(
+    filter: FilterQuery<IMessage>,
+    select?: string,
+    options: MessageQueryOptions = {},
+  ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const query = Message.find(filter);
       if (select) {
-        return await Message.find(filter).select(select).sort({ createdAt: 1 }).lean();
+        query.select(select);
+      }
+      if (options.sort !== false) {
+        query.sort(options.sort ?? { createdAt: 1 });
+      }
+      if (options.limit != null && options.limit > 0) {
+        query.limit(options.limit);
       }
 
-      return await Message.find(filter).sort({ createdAt: 1 }).lean();
+      return await query.lean<IMessage[]>();
     } catch (err) {
       logger.error('Error getting messages:', err);
       throw err;
@@ -314,7 +576,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function getMessage({ user, messageId }: { user: string; messageId: string }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      return await Message.findOne({ user, messageId }).lean();
+      return await Message.findOne({ user, messageId }).lean<IMessage>();
     } catch (err) {
       logger.error('Error getting message:', err);
       throw err;
@@ -355,13 +617,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const messages = await Message.find(queryFilter)
       .sort({ [sortField]: sortOrder })
       .limit(limit + 1)
-      .lean();
+      .lean<IMessage[]>();
 
     let nextCursor: string | null = null;
     if (messages.length > limit) {
       messages.pop();
-      const last = messages[messages.length - 1] as Record<string, unknown>;
-      nextCursor = String(last[sortField] ?? '');
+      const last = messages[messages.length - 1];
+      const cursorValue =
+        sortField === 'createdAt' ? last.createdAt : last[sortField as keyof IMessage];
+      nextCursor = String(cursorValue ?? '');
     }
     return { messages, nextCursor };
   }
@@ -389,6 +653,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     bulkSaveMessages,
     recordMessage,
     updateMessageText,
+    updateToolCallResult,
     updateMessage,
     deleteMessagesSince,
     getMessages,

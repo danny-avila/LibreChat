@@ -7,7 +7,17 @@ const {
   sessionCache,
   standardCache,
   violationCache,
+  userPrincipalsCache,
+  registerShutdownTask,
 } = require('@librechat/api');
+
+/** No-op store registered when the user principals cache is disabled (TTL of 0). */
+const disabledCache = {
+  get: async () => undefined,
+  set: async () => undefined,
+  delete: async () => undefined,
+  clear: async () => undefined,
+};
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -35,6 +45,7 @@ const namespaces = {
   [CacheKeys.SAML_SESSION]: sessionCache(CacheKeys.SAML_SESSION),
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
+  [CacheKeys.USER_PRINCIPALS]: userPrincipalsCache() ?? disabledCache,
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),
@@ -52,6 +63,7 @@ const namespaces = {
     CacheKeys.OPENID_EXCHANGED_TOKENS,
     Time.TEN_MINUTES,
   ),
+  [CacheKeys.AUTH_USER_DOC]: standardCache(CacheKeys.AUTH_USER_DOC),
   [CacheKeys.ADMIN_OAUTH_EXCHANGE]: standardCache(
     CacheKeys.ADMIN_OAUTH_EXCHANGE,
     Time.THIRTY_SECONDS,
@@ -195,23 +207,16 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
     cleanupIntervals.add(monitor);
   }
 
-  const dispose = () => {
+  // Register cleanup with the centralized graceful-shutdown coordinator
+  // (see packages/api/src/app/shutdown.ts) rather than attaching a direct
+  // signal handler — multiple competing handlers race the HTTP drain.
+  registerShutdownTask('cache cleanup', async () => {
     cacheConfig.DEBUG_MEMORY_CACHE && console.log('[Cache] Cleaning up and shutting down...');
     cleanupIntervals.forEach((interval) => clearInterval(interval));
     cleanupIntervals.clear();
-
-    // One final cleanup before exit
-    clearAllExpiredFromCache().then(() => {
-      cacheConfig.DEBUG_MEMORY_CACHE && console.log('[Cache] Final cleanup completed');
-      process.exit(0);
-    });
-  };
-
-  // Handle various termination signals
-  process.on('SIGTERM', dispose);
-  process.on('SIGINT', dispose);
-  process.on('SIGQUIT', dispose);
-  process.on('SIGHUP', dispose);
+    await clearAllExpiredFromCache();
+    cacheConfig.DEBUG_MEMORY_CACHE && console.log('[Cache] Final cleanup completed');
+  });
 }
 
 /**

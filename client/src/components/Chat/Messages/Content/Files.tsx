@@ -46,6 +46,7 @@ const Files = ({ message }: { message?: TMessage }) => {
         onOpenChange={handleClose}
         fileName={selectedFile?.filename ?? ''}
         fileId={selectedFile?.file_id}
+        filePath={selectedFile?.filepath}
         fileType={selectedFile?.type ?? undefined}
         fileSize={(selectedFile as TFile)?.bytes}
       />

@@ -1,5 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
 import { Readable } from 'stream';
+import { FileSources } from 'librechat-data-provider';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -298,6 +298,145 @@ describe('text', () => {
         text: mockText,
         bytes: mockBytes,
         source: FileSources.text,
+      });
+    });
+
+    it.each([
+      { mimetype: 'text/markdown', originalname: 'notes.md' },
+      { mimetype: 'text/x-markdown', originalname: 'notes.md' },
+      { mimetype: 'text/md', originalname: 'notes' },
+      { mimetype: 'application/markdown', originalname: 'notes.md' },
+      { mimetype: 'application/x-markdown', originalname: 'notes.md' },
+      { mimetype: 'text/plain', originalname: 'notes.md' },
+      { mimetype: 'application/octet-stream', originalname: 'README.md' },
+      { mimetype: 'application/octet-stream', originalname: 'GUIDE.MARKDOWN' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mdown' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mkdn' },
+      { mimetype: 'application/octet-stream', originalname: 'post.mkd' },
+      { mimetype: 'application/octet-stream', originalname: 'docs.mdwn' },
+      { mimetype: 'text/markdown; charset=utf-8', originalname: 'notes' },
+      { mimetype: 'TEXT/MARKDOWN', originalname: 'notes' },
+      { mimetype: '  text/markdown ; charset=UTF-8  ', originalname: 'notes' },
+      { mimetype: '', originalname: 'notes.md' },
+    ])(
+      'should short-circuit to native parsing for markdown file (%o)',
+      async ({ mimetype, originalname }) => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        const mockText = '# Heading\n\n**bold** text';
+        const mockBytes = Buffer.byteLength(mockText, 'utf8');
+
+        mockedReadFileAsString.mockResolvedValue({
+          content: mockText,
+          bytes: mockBytes,
+        });
+
+        const result = await parseText({
+          req: mockReq,
+          file: { ...mockFile, mimetype, originalname },
+          file_id: mockFileId,
+        });
+
+        expect(mockedAxios.get).not.toHaveBeenCalled();
+        expect(mockedAxios.post).not.toHaveBeenCalled();
+        expect(mockedReadFileAsString).toHaveBeenCalledWith('/tmp/test.txt', {
+          fileSize: 100,
+        });
+        expect(result).toEqual({
+          text: mockText,
+          bytes: mockBytes,
+          source: FileSources.text,
+        });
+      },
+    );
+
+    it('should still call the RAG API for non-markdown text files', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+      const mockText = 'plain text content';
+
+      mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
+      mockedAxios.post.mockResolvedValue({ data: { text: mockText } });
+
+      await parseText({
+        req: mockReq,
+        file: mockFile,
+        file_id: mockFileId,
+      });
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        'http://rag-api.test/text',
+        expect.any(Object),
+        expect.objectContaining({ timeout: 300000 }),
+      );
+    });
+
+    describe('allowNativeFallback: false', () => {
+      const docFile = {
+        ...mockFile,
+        mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        originalname: 'report.docx',
+      } as Express.Multer.File;
+
+      it('should throw instead of native parsing when RAG_API_URL is not defined', async () => {
+        await expect(
+          parseText({
+            req: mockReq,
+            file: docFile,
+            file_id: mockFileId,
+            allowNativeFallback: false,
+          }),
+        ).rejects.toThrow('native fallback is disabled');
+        expect(mockedReadFileAsString).not.toHaveBeenCalled();
+      });
+
+      it('should throw instead of native parsing when the health check fails', async () => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        mockedAxios.get.mockRejectedValue(new Error('Health check failed'));
+
+        await expect(
+          parseText({
+            req: mockReq,
+            file: docFile,
+            file_id: mockFileId,
+            allowNativeFallback: false,
+          }),
+        ).rejects.toThrow('native fallback is disabled');
+        expect(mockedReadFileAsString).not.toHaveBeenCalled();
+      });
+
+      it('should throw instead of native parsing when the RAG text call fails', async () => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
+        mockedAxios.post.mockRejectedValue(new Error('RAG boom'));
+
+        await expect(
+          parseText({
+            req: mockReq,
+            file: docFile,
+            file_id: mockFileId,
+            allowNativeFallback: false,
+          }),
+        ).rejects.toThrow('native fallback is disabled');
+        expect(mockedReadFileAsString).not.toHaveBeenCalled();
+      });
+
+      it('should return the RAG result when RAG is available', async () => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        const mockText = 'extracted docx text';
+        mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
+        mockedAxios.post.mockResolvedValue({ data: { text: mockText } });
+
+        const result = await parseText({
+          req: mockReq,
+          file: docFile,
+          file_id: mockFileId,
+          allowNativeFallback: false,
+        });
+
+        expect(result).toEqual({
+          text: mockText,
+          bytes: Buffer.byteLength(mockText, 'utf8'),
+          source: FileSources.text,
+        });
       });
     });
   });

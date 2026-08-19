@@ -1,5 +1,13 @@
-const { Constants } = require('librechat-data-provider');
-const { initializeFakeClient } = require('./FakeClient');
+const { Constants, ContentTypes } = require('librechat-data-provider');
+const { FakeClient, initializeFakeClient } = require('./FakeClient');
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 jest.mock('~/db/connect');
 jest.mock('~/server/services/Config', () => ({
@@ -38,7 +46,7 @@ jest.mock('~/models', () => ({
   updateFileUsage: jest.fn(),
 }));
 
-const { getConvo, saveConvo, saveMessage } = require('~/models');
+const { getConvo, getFiles, getMessages, saveConvo, saveMessage } = require('~/models');
 
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
@@ -622,6 +630,27 @@ describe('BaseClient', () => {
       expect(chatMessages2[chatMessages2.length - 1].text).toEqual("What's up");
     });
 
+    test('loadHistory should scope database reads to the current user', async () => {
+      const user = 'user-123';
+      TestClient = new FakeClient(apiKey, options);
+      TestClient.user = user;
+      getMessages.mockResolvedValueOnce([
+        {
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Hello',
+          messageId: '1',
+          conversationId,
+        },
+      ]);
+
+      const chatMessages = await TestClient.loadHistory(conversationId, '1');
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user });
+      expect(chatMessages).toHaveLength(1);
+      expect(chatMessages[0].text).toBe('Hello');
+    });
+
     /* Most of the new sendMessage logic revolving around edited/continued AI messages
      *  can be summarized by the following test. The condition will load the entire history up to
      *  the message that is being edited, which will trigger the AI API to 'continue' the response.
@@ -660,6 +689,53 @@ describe('BaseClient', () => {
       expect(currentMessages2[currentMessages2.length - 1].messageId).toEqual(
         overrideParentMessageId,
       );
+    });
+
+    it('applies edited reasoning content from its typed payload before regeneration', async () => {
+      const responseMessageId = 'response-with-reasoning';
+      const newHistory = [
+        ...messageHistory,
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          messageId: responseMessageId,
+          parentMessageId: '3',
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Original reasoning',
+              phase: 'analysis',
+              reasoning_label: 'Inspecting the original path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 2,
+              reasoning_label_submitted_chars: 18,
+              reasoning_label_revision: 2,
+              reasoning_label_status: 'complete',
+            },
+            { type: ContentTypes.TEXT, text: 'Original response' },
+          ],
+        },
+      ];
+
+      TestClient = initializeFakeClient(apiKey, options, newHistory);
+      await TestClient.sendMessage('test message', {
+        isEdited: true,
+        overrideParentMessageId: 'user-message-id',
+        parentMessageId: '3',
+        responseMessageId,
+        editedContent: {
+          index: 0,
+          type: ContentTypes.THINK,
+          [ContentTypes.THINK]: 'Updated reasoning',
+        },
+      });
+
+      const editedResponse = TestClient.currentMessages[TestClient.currentMessages.length - 1];
+      expect(editedResponse.content[0]).toEqual({
+        type: ContentTypes.THINK,
+        think: 'Updated reasoning',
+        phase: 'analysis',
+      });
     });
 
     test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
@@ -723,6 +799,170 @@ describe('BaseClient', () => {
         saveOptions,
         user,
       );
+    });
+
+    test('does not start the completed response write when terminal ownership is denied', async () => {
+      const hookStarted = deferred();
+      const terminalDecision = deferred();
+      const beforeResponsePersistence = jest.fn(() => {
+        hookStarted.resolve();
+        return terminalDecision.promise;
+      });
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      const responsePromise = TestClient.sendMessage('Race Stop against completion.', {
+        user: {},
+        beforeResponsePersistence,
+      });
+      await hookStarted.promise;
+
+      expect(beforeResponsePersistence).toHaveBeenCalledTimes(1);
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+
+      terminalDecision.resolve(false);
+      const response = await responsePromise;
+
+      expect(beforeResponsePersistence).toHaveBeenCalledWith(response);
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+      expect(TestClient.savedMessageIds.has(response.messageId)).toBe(false);
+      await expect(response.databasePromise).resolves.toEqual({ persistenceSkipped: true });
+    });
+
+    test('starts the completed response write only after terminal ownership is granted', async () => {
+      const hookStarted = deferred();
+      const terminalDecision = deferred();
+      const beforeResponsePersistence = jest.fn(() => {
+        hookStarted.resolve();
+        return terminalDecision.promise;
+      });
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      const responsePromise = TestClient.sendMessage('Complete after winning ownership.', {
+        user: {},
+        beforeResponsePersistence,
+      });
+      await hookStarted.promise;
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(0);
+
+      terminalDecision.resolve(true);
+      const response = await responsePromise;
+
+      expect(
+        saveSpy.mock.calls.filter(([message]) => message?.isCreatedByUser === false),
+      ).toHaveLength(1);
+      await expect(response.databasePromise).resolves.toEqual(expect.any(Object));
+    });
+
+    test('persists the generation-time Langfuse sampling decision for agent responses', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
+    });
+
+    test('persists the Langfuse sampling decision for agent clients using a provider endpoint', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      const previousClientName = TestClient.clientName;
+      const previousEndpoint = TestClient.options.endpoint;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.clientName = 'agents';
+      TestClient.options.endpoint = 'bedrock';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            endpoint: 'bedrock',
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+        TestClient.clientName = previousClientName;
+        TestClient.options.endpoint = previousEndpoint;
+      }
+    });
+
+    test('persists no Langfuse destination when a sampled trace has no configured export', async () => {
+      const envKeys = [
+        'LANGFUSE_PUBLIC_KEY',
+        'LANGFUSE_SECRET_KEY',
+        'LANGFUSE_FANOUT_ENABLED',
+        'LANGFUSE_FANOUT_COLLECTOR_URL',
+        'TENANT_ISOLATION_STRICT',
+      ];
+      const previousEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      envKeys.forEach((key) => delete process.env[key]);
+      process.env.LANGFUSE_SAMPLE_RATE = '1';
+      TestClient.options.endpoint = 'agents';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(true);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            langfuseSampled: true,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        for (const [key, value] of Object.entries(previousEnv)) {
+          if (value == null) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+      }
     });
 
     test('should handle existing conversation when getConvo retrieves one', async () => {
@@ -815,6 +1055,15 @@ describe('BaseClient', () => {
         anotherExistingField: 'anotherValue',
         temperature: 0.7,
         modelLabel: 'GPT-3.5',
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
       };
 
       getConvo.mockResolvedValue(existingConvo);
@@ -849,6 +1098,7 @@ describe('BaseClient', () => {
 
       // Only check that someExistingField is in unsetFields
       expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
+      expect(saveOptions.unsetFields).not.toHaveProperty('subagentThread');
 
       // Mock saveConvo to return the expected fields
       saveConvo.mockImplementation((req, fields) => {
@@ -882,6 +1132,18 @@ describe('BaseClient', () => {
       const opts = {};
       await TestClient.sendMessage('Hello, world!', opts);
       expect(TestClient.sendCompletion).toHaveBeenCalledWith(payload, opts);
+    });
+
+    test('records history and message-build startup milestones', async () => {
+      const startupTelemetry = { mark: jest.fn() };
+      TestClient.options.startupTelemetry = startupTelemetry;
+
+      await TestClient.sendMessage('Hello, world!', {});
+
+      expect(startupTelemetry.mark.mock.calls.map(([milestone]) => milestone)).toEqual([
+        'history_loaded',
+        'messages_built',
+      ]);
     });
 
     test('getTokenCount for response is called with the correct arguments', async () => {
@@ -950,6 +1212,45 @@ describe('BaseClient', () => {
       TestClient.options = savedOptions;
       saveMessage.mockReset();
       saveConvo.mockReset();
+    });
+
+    test('saveMessageToDatabase reuses conversation resolved on the request', async () => {
+      const existingConvo = {
+        conversationId: 'cached-convo-id',
+        endpoint: 'openai',
+        endpointType: 'openai',
+        temperature: 0.7,
+      };
+      const user = { id: 'user-id' };
+      const req = { user, resolvedConversation: existingConvo };
+
+      getConvo.mockClear();
+      saveMessage.mockResolvedValue({ messageId: 'msg-1' });
+      saveConvo.mockResolvedValue(existingConvo);
+
+      TestClient = initializeFakeClient(apiKey, { ...options, endpoint: 'openai', req }, []);
+
+      await TestClient.saveMessageToDatabase(
+        {
+          messageId: 'msg-1',
+          conversationId: existingConvo.conversationId,
+          isCreatedByUser: true,
+          text: 'hi',
+        },
+        { endpoint: 'openai' },
+        user,
+      );
+
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(req).not.toHaveProperty('resolvedConversation');
+      expect(TestClient.fetchedConvo).toBe(true);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: existingConvo.conversationId }),
+        expect.objectContaining({
+          unsetFields: expect.objectContaining({ temperature: 1 }),
+        }),
+      );
     });
 
     test('userMessagePromise is awaited before saving response message', async () => {
@@ -1025,6 +1326,80 @@ describe('BaseClient', () => {
       expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
         expect.objectContaining({
           model: instanceModel,
+        }),
+      );
+    });
+  });
+
+  /**
+   * The `transactions.enabled` guard lives in `createTransaction`, which reads it off
+   * the object it is handed. Dropping the config anywhere between here and there
+   * silently re-enables the writes rather than failing, so pin the wiring itself.
+   */
+  describe('recordTokenUsage transactions config', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+
+    const arrangeFallbackPath = () => {
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    };
+
+    /** `options` is shared across this file's tests, so an endpoint left behind by an earlier
+     * case would route the balance-enabled arrangement into `checkBalance`. */
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      delete TestClient.options.endpoint;
+      delete TestClient.options.endpointType;
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('should forward the resolved transactions config to recordTokenUsage', async () => {
+      TestClient.options.req = { config: { transactions: { enabled: false } } };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: false },
+        }),
+      );
+    });
+
+    test('should default to enabled transactions when no app config is present', async () => {
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
+        }),
+      );
+    });
+
+    test('should forward transactions as enabled when balance tracking overrides the setting', async () => {
+      TestClient.options.req = {
+        config: { transactions: { enabled: false }, balance: { enabled: true } },
+      };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
         }),
       );
     });
@@ -1254,6 +1629,451 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].files).toHaveLength(1);
       expect(userSave[0].files[0].file_id).toBe('file-abc');
+    });
+  });
+
+  describe('addPreviousAttachments authorization', () => {
+    const ownerFile = {
+      file_id: 'owner-file',
+      filename: 'owner.txt',
+      filepath: '/uploads/owner.txt',
+      source: 'local',
+      type: 'text/plain',
+      bytes: 100,
+      object: 'file',
+      user: 'user-1',
+      embedded: false,
+      usage: 0,
+      text: 'authorized owner text',
+      _id: 'owner-mongo-id',
+      metadata: {
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'owner-session',
+          file_id: 'owner-code-file',
+        },
+      },
+    };
+
+    beforeEach(() => {
+      getFiles.mockReset();
+      TestClient.options.resendFiles = true;
+      TestClient.options.attachments = undefined;
+      TestClient.options.req = {
+        user: {
+          id: 'user-1',
+          tenantId: 'tenant-a',
+        },
+      };
+      TestClient.addFileContextToMessage = jest.fn(async (message, files) => {
+        const text = files
+          .map((file) => file.text)
+          .filter(Boolean)
+          .join('\n');
+        if (text) {
+          message.fileContext = text;
+        }
+      });
+      TestClient.processAttachments = jest.fn(async (_message, files) => files);
+      TestClient.checkVisionRequest = jest.fn();
+    });
+
+    test('rehydrates historical file refs from owner-scoped DB rows only', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          text: 'Use the attachment',
+          files: [
+            {
+              file_id: 'owner-file',
+              filename: 'attacker-controlled-owner-name.txt',
+              filepath: '/forged/owner.txt',
+              text: 'forged owner text',
+            },
+            {
+              file_id: 'victim-file',
+              filename: 'victim.txt',
+              filepath: '/victim/private.txt',
+              text: 'victim private text',
+            },
+          ],
+          attachments: [
+            {
+              file_id: 'victim-file',
+              filename: 'victim-output.csv',
+              text: 'victim output text',
+            },
+          ],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file', 'victim-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(TestClient.processAttachments).toHaveBeenCalledWith(message, [ownerFile]);
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(message.files).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+        }),
+      ]);
+      expect(message.files[0].text).toBeUndefined();
+      expect(message.files[0]._id).toBeUndefined();
+      expect(message.attachments).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('victim');
+      expect(JSON.stringify(message)).not.toContain('forged owner text');
+    });
+
+    test('strips historical file context when no authenticated owner scope is available', async () => {
+      TestClient.options.req = {};
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-2',
+          files: [{ file_id: 'victim-file', filename: 'victim.txt' }],
+          fileContext: 'stale victim private text',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.files).toBeUndefined();
+      expect(message.fileContext).toBeUndefined();
+    });
+
+    test('preserves repeated owner-authorized historical file refs after the first context use', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [firstMessage, secondMessage] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-repeat-1',
+          files: [{ file_id: 'owner-file', filename: 'first-forged.txt' }],
+        },
+        {
+          messageId: 'msg-repeat-2',
+          files: [{ file_id: 'owner-file', filename: 'second-forged.txt' }],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledTimes(1);
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledWith(firstMessage, [ownerFile]);
+      expect(secondMessage.fileContext).toBeUndefined();
+      expect(firstMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(secondMessage.files).toEqual([
+        expect.objectContaining({ file_id: 'owner-file', filename: 'owner.txt' }),
+      ]);
+      expect(JSON.stringify(secondMessage)).not.toContain('second-forged');
+    });
+
+    test('extracts historical file context while encoding provider attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+      const fileContext = deferred();
+      const providerAttachments = deferred();
+      let completed = false;
+
+      TestClient.addFileContextToMessage.mockImplementation(async (message) => {
+        await fileContext.promise;
+        message.fileContext = 'authorized owner text';
+      });
+      TestClient.processAttachments.mockImplementation(() => providerAttachments.promise);
+
+      const messagesPromise = TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-concurrent-file-work',
+          files: [{ file_id: 'owner-file', filename: 'owner.txt' }],
+        },
+      ]).then((messages) => {
+        completed = true;
+        return messages;
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(TestClient.addFileContextToMessage).toHaveBeenCalledTimes(1);
+      expect(TestClient.processAttachments).toHaveBeenCalledTimes(1);
+
+      providerAttachments.resolve([ownerFile]);
+      await Promise.resolve();
+      expect(completed).toBe(false);
+
+      fileContext.resolve();
+      const [message] = await messagesPromise;
+
+      expect(message.fileContext).toBe('authorized owner text');
+      expect(TestClient.message_file_map['msg-concurrent-file-work']).toEqual([ownerFile]);
+    });
+
+    test('preserves download-only historical attachments without trusting file fields', async () => {
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-download-only',
+          attachments: [
+            {
+              filename: 'report.csv',
+              filepath: '/api/files/code/download/session/file',
+              expiresAt: 123456,
+              conversationId: 'conversation-1',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-1',
+              text: 'untrusted text should not survive',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+            },
+          ],
+          fileContext: 'stale context',
+        },
+      ]);
+
+      expect(getFiles).not.toHaveBeenCalled();
+      expect(message.fileContext).toBeUndefined();
+      expect(message.attachments).toEqual([
+        {
+          filename: 'report.csv',
+          filepath: '/api/files/code/download/session/file',
+          expiresAt: 123456,
+          conversationId: 'conversation-1',
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-1',
+        },
+      ]);
+      expect(JSON.stringify(message)).not.toContain('untrusted text');
+      expect(JSON.stringify(message)).not.toContain('forged-source');
+      expect(JSON.stringify(message)).not.toContain('victim');
+    });
+
+    test('merges safe per-message metadata onto authorized DB-backed attachments', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-artifact',
+          attachments: [
+            {
+              file_id: 'owner-file',
+              filename: 'forged-artifact.csv',
+              filepath: '/forged/artifact.csv',
+              source: 'forged-source',
+              metadata: { codeEnvRef: { id: 'victim' } },
+              text: 'forged artifact text',
+              messageId: 'assistant-message',
+              toolCallId: 'tool-call-2',
+            },
+          ],
+        },
+      ]);
+
+      expect(message.attachments).toEqual([
+        expect.objectContaining({
+          file_id: 'owner-file',
+          filename: 'owner.txt',
+          filepath: '/uploads/owner.txt',
+          source: 'local',
+          metadata: ownerFile.metadata,
+          messageId: 'assistant-message',
+          toolCallId: 'tool-call-2',
+        }),
+      ]);
+      expect(message.attachments[0].text).toBeUndefined();
+      expect(message.attachments[0]._id).toBeUndefined();
+      expect(JSON.stringify(message)).not.toContain('forged-artifact');
+      expect(JSON.stringify(message)).not.toContain('forged artifact text');
+    });
+  });
+
+  describe('sendMessage quote references', () => {
+    // The blockquote merge itself lives in AgentClient.buildMessages / prependQuotes
+    // (covered by packages/api specs). BaseClient's job is to attach the normalized
+    // quotes onto the user message early and keep the stored text clean.
+    test('attaches normalized quotes before getReqData fires and keeps stored text clean', async () => {
+      TestClient.options.req = { body: { quotes: ['  the selected text  ', '', 42] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+      let captured;
+      await TestClient.sendMessage('What does this mean?', {
+        getReqData: (data) => {
+          if (data.userMessage) {
+            captured = { text: data.userMessage.text, quotes: data.userMessage.quotes };
+          }
+        },
+      });
+
+      // Quotes are present (trimmed, non-strings dropped) at getReqData time, and
+      // the user text is never mutated by the merge.
+      expect(captured).toBeDefined();
+      expect(captured.quotes).toEqual(['the selected text']);
+      expect(captured.text).toBe('What does this mean?');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('What does this mean?');
+      expect(userSave[0].quotes).toEqual(['the selected text']);
+    });
+
+    test('persists multiple quotes in order on the saved message', async () => {
+      TestClient.options.req = { body: { quotes: ['first excerpt', 'second excerpt'] } };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Compare these');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('Compare these');
+      expect(userSave[0].quotes).toEqual(['first excerpt', 'second excerpt']);
+    });
+
+    test('leaves the message untouched when no quotes are provided', async () => {
+      TestClient.options.req = { body: {} };
+      TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+      await TestClient.sendMessage('Just a question');
+
+      const userSave = TestClient.saveMessageToDatabase.mock.calls.find(
+        ([msg]) => msg.isCreatedByUser,
+      );
+      expect(userSave[0].text).toBe('Just a question');
+      expect(userSave[0].quotes).toBeUndefined();
+    });
+  });
+
+  describe('mergeEditedContent phase boundaries', () => {
+    test('carries the new reasoning label when adjacent THINK parts merge', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued reasoning.',
+          reasoning_label: 'Tracing the regenerated path',
+          reasoning_label_step_id: 'new-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 20,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'streaming',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          ...completion[0],
+          think: 'Retained reasoning. Continued reasoning.',
+        },
+      ]);
+    });
+
+    test('clears a retained reasoning label when the merged THINK has no label', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          agentId: 'agent-1',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ]);
+    });
+
+    test('does not merge commentary into a final answer', () => {
+      const existing = [
+        { type: ContentTypes.TEXT, text: 'Checked the deployment. ', phase: 'commentary' },
+      ];
+      const completion = [
+        { type: ContentTypes.TEXT, text: 'Everything is healthy.', phase: 'final_answer' },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label_type: 'phase',
+          activity_start_index: 0,
+          activity_end_index: 1,
+          activity_label: 'Verified deployment health',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+        { ...completion[1], activity_start_index: 1, activity_end_index: 2 },
+      ]);
+    });
+
+    test.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ])('does not merge phased and unphased text (%s → %s)', (existingPhase, completionPhase) => {
+      const existing = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'Retained text. ',
+          ...(existingPhase != null && { phase: existingPhase }),
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'New text.',
+          ...(completionPhase != null && { phase: completionPhase }),
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+      ]);
     });
   });
 });

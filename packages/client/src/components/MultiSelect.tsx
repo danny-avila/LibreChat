@@ -9,6 +9,7 @@ import {
   SelectProvider,
 } from '@ariakit/react';
 import './AnimatePopover.css';
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 type MultiSelectItem<T extends string> = T | { label: string; value: T };
@@ -84,7 +85,7 @@ export default function MultiSelect<T extends string>({
   selectedValues = [],
   setSelectedValues,
   renderItemContent,
-}: MultiSelectProps<T>) {
+}: MultiSelectProps<T>): JSX.Element {
   const selectRef = useRef<HTMLButtonElement>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
@@ -113,7 +114,7 @@ export default function MultiSelect<T extends string>({
           className={cn(
             'flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm',
             'bg-surface-tertiary text-text-primary shadow-sm hover:cursor-pointer hover:bg-surface-hover',
-            'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white',
+            'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             selectClassName,
             selectedValues.length > 0 && selectItemsClassName != null && selectItemsClassName,
           )}
@@ -150,7 +151,7 @@ export default function MultiSelect<T extends string>({
             const label = getItemLabel(item);
             const defaultContent = (
               <>
-                <SelectItemCheck className="mr-0.5 text-primary" />
+                <SelectItemCheck className="mr-0.5 text-text-primary" />
                 <span className="truncate">{label}</span>
               </>
             );
@@ -162,8 +163,8 @@ export default function MultiSelect<T extends string>({
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-2 py-1.5 hover:cursor-pointer',
                   'scroll-m-1 outline-none transition-colors',
-                  'hover:bg-black/[0.075] dark:hover:bg-white/10',
-                  'data-[active-item]:bg-black/[0.075] dark:data-[active-item]:bg-white/10',
+                  'hover:bg-surface-hover',
+                  'data-[active-item]:bg-surface-active',
                   'w-full min-w-0 text-sm',
                   itemClassName,
                 )}

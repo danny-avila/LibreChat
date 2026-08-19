@@ -1,0 +1,43 @@
+import type { ReactNode } from 'react';
+import { cn } from '~/utils';
+
+export function parseShortcutKeys(display: string): string[] {
+  return display.split(/([+\s]+)/).filter((key) => key.trim().length > 0 && key !== '+');
+}
+
+function ShortcutKbd({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return (
+    <kbd
+      className={cn(
+        'inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-border-light bg-surface-primary-alt px-1.5 font-sans text-[11px] font-medium leading-none text-text-primary',
+        className,
+      )}
+    >
+      {children}
+    </kbd>
+  );
+}
+
+export default function ShortcutKeyCombo({
+  display,
+  keys,
+  className = '',
+  keyClassName = '',
+}: {
+  display?: string;
+  keys?: string[];
+  className?: string;
+  keyClassName?: string;
+}) {
+  const shortcutKeys = keys ?? parseShortcutKeys(display ?? '');
+
+  return (
+    <div className={cn('flex items-center gap-1', className)}>
+      {shortcutKeys.map((key, idx) => (
+        <ShortcutKbd key={`${key}-${idx}`} className={keyClassName}>
+          {key}
+        </ShortcutKbd>
+      ))}
+    </div>
+  );
+}

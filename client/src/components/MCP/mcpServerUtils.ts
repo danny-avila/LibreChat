@@ -79,42 +79,42 @@ export function getStatusColor(
 ): string {
   // In-progress states: blue
   if (isInitializing?.(serverName)) {
-    return 'bg-blue-500';
+    return 'bg-status-info';
   }
 
   const status = connectionStatus?.[serverName];
   if (!status) {
-    return 'bg-gray-400';
+    return 'bg-status-neutral';
   }
 
   const { connectionState, requiresOAuth } = status;
 
   // Connecting: blue (in progress)
   if (connectionState === 'connecting') {
-    return 'bg-blue-500';
+    return 'bg-status-info';
   }
 
   // Connected: green (success)
   if (connectionState === 'connected') {
-    return 'bg-green-500';
+    return 'bg-status-success';
   }
 
   // Error: red
   if (connectionState === 'error') {
-    return 'bg-red-500';
+    return 'bg-status-error';
   }
 
   // Disconnected: check if needs action or just inactive
   if (connectionState === 'disconnected') {
     // Needs OAuth = amber (requires user action)
     if (requiresOAuth) {
-      return 'bg-amber-500';
+      return 'bg-status-warning';
     }
     // Simply disconnected = gray (neutral/inactive)
-    return 'bg-gray-400';
+    return 'bg-status-neutral';
   }
 
-  return 'bg-gray-400';
+  return 'bg-status-neutral';
 }
 
 export function getStatusTextKey(
@@ -187,7 +187,9 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
 
   // Show for disconnected/error (can reconnect/configure)
   if (connectionState === 'disconnected' || connectionState === 'error') return true;
-  // Don't show connecting spinner (no action)
+  // Show a cancel action for pending OAuth connections.
+  if (connectionState === 'connecting' && requiresOAuth && canCancel) return true;
+  // Don't show connecting spinner when no action is available.
   if (connectionState === 'connecting') return false;
   // Connected: only show if there's config to manage
   if (connectionState === 'connected') return hasCustomUserVars || requiresOAuth;

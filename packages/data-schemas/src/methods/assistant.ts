@@ -1,7 +1,19 @@
 import type { FilterQuery, Model } from 'mongoose';
 import type { IAssistant } from '~/types';
 
-export function createAssistantMethods(mongoose: typeof import('mongoose')) {
+export function createAssistantMethods(mongoose: typeof import('mongoose')): {
+  updateAssistantDoc: (
+    searchParams: FilterQuery<IAssistant>,
+    updateData: Partial<IAssistant>,
+  ) => Promise<IAssistant | null>;
+  deleteAssistant: (searchParams: FilterQuery<IAssistant>) => Promise<IAssistant | null>;
+  deleteAssistants: (searchParams: FilterQuery<IAssistant>) => Promise<number>;
+  getAssistants: (
+    searchParams: FilterQuery<IAssistant>,
+    select?: string | Record<string, number> | null,
+  ) => Promise<IAssistant[]>;
+  getAssistant: (searchParams: FilterQuery<IAssistant>) => Promise<IAssistant | null>;
+} {
   /**
    * Update an assistant with new data without overwriting existing properties,
    * or create a new assistant if it doesn't exist.
@@ -12,11 +24,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
   ): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     const options = { new: true, upsert: true };
-    return (await Assistant.findOneAndUpdate(
-      searchParams,
-      updateData,
-      options,
-    ).lean()) as IAssistant | null;
+    return await Assistant.findOneAndUpdate(searchParams, updateData, options).lean<IAssistant>();
   }
 
   /**
@@ -24,7 +32,7 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
    */
   async function getAssistant(searchParams: FilterQuery<IAssistant>): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
-    return (await Assistant.findOne(searchParams).lean()) as IAssistant | null;
+    return await Assistant.findOne(searchParams).lean<IAssistant>();
   }
 
   /**
@@ -37,13 +45,15 @@ export function createAssistantMethods(mongoose: typeof import('mongoose')) {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     const query = Assistant.find(searchParams);
 
-    return (await (select ? query.select(select) : query).lean()) as IAssistant[];
+    return await (select ? query.select(select) : query).lean<IAssistant[]>();
   }
 
   /**
    * Deletes an assistant based on the provided search params.
    */
-  async function deleteAssistant(searchParams: FilterQuery<IAssistant>) {
+  async function deleteAssistant(
+    searchParams: FilterQuery<IAssistant>,
+  ): Promise<IAssistant | null> {
     const Assistant = mongoose.models.Assistant as Model<IAssistant>;
     return await Assistant.findOneAndDelete(searchParams);
   }

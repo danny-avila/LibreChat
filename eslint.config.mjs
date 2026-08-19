@@ -25,7 +25,6 @@ const compat = new FlatCompat({
 export default [
   {
     ignores: [
-      'client/vite.config.ts',
       'client/dist/**/*',
       'client/public/**/*',
       'client/coverage/**/*',
@@ -43,6 +42,7 @@ export default [
       'data-node/**/*',
       'meili_data/**/*',
       '**/node_modules/**/*',
+      'venv/**/*',
       '.devcontainer/**/*',
     ],
   },
@@ -121,7 +121,7 @@ export default [
       'jsx-a11y/img-redundant-alt': 'off',
       'jsx-a11y/no-noninteractive-tabindex': 'off',
       // common rules
-      'no-nested-ternary': 'warn',
+      'no-nested-ternary': 'error',
       'no-constant-binary-expression': 'warn',
       'no-unused-vars': [
         'warn',
@@ -170,11 +170,14 @@ export default [
     },
   },
   {
-    files: ['**/rollup.config.js', '**/.eslintrc.js', '**/jest.config.js'],
+    files: ['**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
     languageOptions: {
       globals: {
         ...globals.node,
       },
+    },
+    rules: {
+      'import/no-cycle': 'off',
     },
   },
   {
@@ -217,7 +220,10 @@ export default [
     })),
   {
     files: ['**/*.ts', '**/*.tsx'],
-    ignores: ['packages/**/*'],
+    // e2e specs are not part of `client/tsconfig.json`'s program, so typed
+    // linting them errors with "file not found in project"; they still get
+    // the non-type-checked recommended rules from the block above.
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
@@ -345,7 +351,7 @@ export default [
     },
   },
   {
-    // **New Data-schemas configuration block**
+    // **Data-schemas — shared rules for all TS files**
     files: ['./packages/data-schemas/**/*.ts'],
     languageOptions: {
       parser: tsParser,
@@ -363,6 +369,27 @@ export default [
           varsIgnorePattern: '^_',
           caughtErrorsIgnorePattern: '^_',
           destructuredArrayIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+  {
+    // **Data-schemas — ban raw bulkWrite/collection.* in production code**
+    // Tests and the tenantSafeBulkWrite wrapper itself are excluded.
+    files: ['./packages/data-schemas/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.test.ts', '**/utils/tenantBulkWrite.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.property.name='bulkWrite']",
+          message:
+            'Use tenantSafeBulkWrite() instead of Model.bulkWrite() — Mongoose middleware does not fire for bulkWrite, so the tenant isolation plugin cannot intercept it.',
+        },
+        {
+          selector: "MemberExpression[property.name='collection'][parent.type='MemberExpression']",
+          message:
+            'Avoid Model.collection.* — raw driver calls bypass all Mongoose middleware including tenant isolation. Use Mongoose model methods or tenantSafeBulkWrite() instead.',
         },
       ],
     },

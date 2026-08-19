@@ -1,19 +1,33 @@
-import { loadToolDefinitions } from './definitions';
-import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
-import { getToolDefinition } from './registry/definitions';
+import { Providers, WebSearchToolDefinition } from '@librechat/agents';
 import type {
   LoadToolDefinitionsParams,
   LoadToolDefinitionsDeps,
   ActionToolDefinition,
 } from './definitions';
+import { toolkitExpansion, toolkitParent } from './toolkits/mapping';
+import { getToolDefinition } from './registry/definitions';
+import { loadToolDefinitions } from './definitions';
+
+const MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH = 1024;
 
 describe('definitions.ts', () => {
-  const mockLoadAuthValues = jest.fn().mockResolvedValue({});
   const mockGetOrFetchMCPServerTools = jest.fn().mockResolvedValue(null);
   const mockIsBuiltInTool = jest.fn().mockReturnValue(false);
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('keeps the registered web_search description within common API limits', () => {
+    const definition = getToolDefinition(WebSearchToolDefinition.name);
+
+    if (definition == null) {
+      throw new Error('Expected web_search tool definition to be registered');
+    }
+
+    expect(definition.description).toBe(WebSearchToolDefinition.description);
+    expect(definition.description).toMatch(/search/i);
+    expect(definition.description.length).toBeLessThanOrEqual(MAX_PROVIDER_TOOL_DESCRIPTION_LENGTH);
   });
 
   describe('loadToolDefinitions', () => {
@@ -27,7 +41,6 @@ describe('definitions.ts', () => {
       const deps: LoadToolDefinitionsDeps = {
         getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
         isBuiltInTool: mockIsBuiltInTool,
-        loadAuthValues: mockLoadAuthValues,
       };
 
       const result = await loadToolDefinitions(params, deps);
@@ -65,7 +78,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -106,7 +118,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -117,6 +128,38 @@ describe('definitions.ts', () => {
         );
         expect(actionDef).toBeDefined();
         expect(actionDef?.parameters).toBeUndefined();
+      });
+
+      it('should not classify MCP tools with _action in name as action tools', async () => {
+        const mockGetActionToolDefinitions = jest.fn();
+        const mcpTool = 'get_action_mcp_myserver';
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue({
+          tools: [
+            {
+              name: 'get_action',
+              description: 'Gets an action',
+              inputSchema: { type: 'object', properties: {} },
+            },
+          ],
+        });
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: [mcpTool],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+          getActionToolDefinitions: mockGetActionToolDefinitions,
+        };
+
+        await loadToolDefinitions(params, deps);
+
+        expect(mockGetActionToolDefinitions).not.toHaveBeenCalled();
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalled();
       });
 
       it('should not call getActionToolDefinitions when no action tools present', async () => {
@@ -132,7 +175,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -155,7 +197,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -165,7 +206,13 @@ describe('definitions.ts', () => {
         expect(calcDef?.parameters).toBeDefined();
       });
 
-      it('should include parameters for execute_code native tool', async () => {
+      it('does not resolve `execute_code` as a builtin tool definition (registered by initializeAgent instead)', async () => {
+        /* Phase 8: the legacy `CodeExecutionToolDefinition` is no longer in
+           the registry. `execute_code` stays in `agent.tools` as the
+           capability-trigger marker, but its tool definitions (`bash_tool`
+           + `read_file`) are added by `registerCodeExecutionTools` during
+           `initializeAgent` — not here. `loadToolDefinitions` must silently
+           drop the name so nothing shadows that path. */
         mockIsBuiltInTool.mockImplementation((name) => name === 'execute_code');
 
         const params: LoadToolDefinitionsParams = {
@@ -177,18 +224,13 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
 
         const execCodeDef = result.toolDefinitions.find((d) => d.name === 'execute_code');
-        expect(execCodeDef).toBeDefined();
-        expect(execCodeDef?.parameters).toBeDefined();
-        expect(execCodeDef?.parameters?.properties).toHaveProperty('lang');
-        expect(execCodeDef?.parameters?.properties).toHaveProperty('code');
-        expect(execCodeDef?.parameters?.required).toContain('lang');
-        expect(execCodeDef?.parameters?.required).toContain('code');
+        expect(execCodeDef).toBeUndefined();
+        expect(result.toolRegistry.has('execute_code')).toBe(false);
       });
 
       it('should include parameters for web_search native tool', async () => {
@@ -203,7 +245,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -227,7 +268,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -251,7 +291,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -273,7 +312,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -286,7 +324,199 @@ describe('definitions.ts', () => {
       });
     });
 
+    describe('programmatic tool calling capability gate', () => {
+      const mcpToolName = 'run_report_mcp_server_one';
+      const serverTools = {
+        [mcpToolName]: {
+          function: {
+            name: mcpToolName,
+            description: 'Run report',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      };
+
+      it('does not add Bash PTC definitions unless both code and programmatic capabilities are enabled', async () => {
+        mockGetOrFetchMCPServerTools.mockResolvedValueOnce(serverTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [mcpToolName],
+            toolOptions: {
+              [mcpToolName]: { allowed_callers: ['code_execution'] },
+            },
+            codeExecutionEnabled: true,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(false);
+        expect(result.toolRegistry.has('run_tools_with_bash')).toBe(false);
+      });
+
+      it('adds Bash PTC definitions when code and programmatic capabilities are enabled', async () => {
+        mockGetOrFetchMCPServerTools.mockResolvedValueOnce(serverTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [mcpToolName],
+            toolOptions: {
+              [mcpToolName]: { allowed_callers: ['code_execution'] },
+            },
+            programmaticToolsEnabled: true,
+            codeExecutionEnabled: true,
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(result.toolDefinitions.some((d) => d.name === 'run_tools_with_bash')).toBe(true);
+        expect(result.toolRegistry.has('run_tools_with_bash')).toBe(true);
+      });
+    });
+
     describe('MCP tool definitions with server name variants', () => {
+      it('treats a server pin with no selected tools as intentionally empty', async () => {
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: ['sys__server__sys_mcp_warehouse'],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(mockGetOrFetchMCPServerTools).not.toHaveBeenCalled();
+        expect(result.toolDefinitions).toEqual([]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 0, resolvedToolCount: 0 });
+      });
+
+      it('refreshes a non-empty server catalog once when the selected tool is missing', async () => {
+        const selectedTool = 'run_query_mcp_warehouse';
+        const staleTools = {
+          list_sources_mcp_warehouse: {
+            function: {
+              name: 'list_sources_mcp_warehouse',
+              description: 'List databases',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshedTools = {
+          ...staleTools,
+          [selectedTool]: {
+            function: {
+              name: selectedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue(staleTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [selectedTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(refreshMCPServerTools).toHaveBeenCalledWith('user-123', 'warehouse');
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: selectedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
+      it('refreshes an empty server catalog once when a selected tool is expected', async () => {
+        const selectedTool = 'run_query_mcp_warehouse';
+        const refreshedTools = {
+          [selectedTool]: {
+            function: {
+              name: selectedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue({});
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [selectedTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: selectedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
+      it('refreshes an empty server catalog once when all server tools are expected', async () => {
+        const wildcardTool = 'sys__all__sys_mcp_warehouse';
+        const refreshedTool = 'run_query_mcp_warehouse';
+        const refreshedTools = {
+          [refreshedTool]: {
+            function: {
+              name: refreshedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue({});
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [wildcardTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: refreshedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
       it('should load MCP tools with underscored server names (server_one)', async () => {
         const mockServerTools = {
           list_items_mcp_server_one: {
@@ -327,7 +557,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -344,6 +573,69 @@ describe('definitions.ts', () => {
         const getItemDef = result.toolDefinitions.find((d) => d.name === 'get_item_mcp_server_one');
         expect(getItemDef).toBeDefined();
         expect(getItemDef?.description).toBe('Get a specific item');
+      });
+
+      it('union-flattens MCP tool schemas for Google, but preserves unions otherwise', async () => {
+        const mockServerTools = {
+          issue_write_mcp_github: {
+            function: {
+              name: 'issue_write_mcp_github',
+              description: 'Write an issue',
+              parameters: {
+                type: 'object',
+                properties: {
+                  repo: { type: 'string' },
+                  payload: {
+                    anyOf: [
+                      {
+                        type: 'object',
+                        properties: { action: { const: 'create' }, title: { type: 'string' } },
+                      },
+                      {
+                        type: 'object',
+                        properties: { action: { const: 'update' }, number: { type: 'number' } },
+                      },
+                    ],
+                  },
+                },
+                required: ['repo'],
+              },
+            },
+          },
+        };
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const googleResult = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: ['issue_write_mcp_github'],
+            provider: Providers.GOOGLE,
+          },
+          deps,
+        );
+        const googleDef = googleResult.toolDefinitions.find(
+          (d) => d.name === 'issue_write_mcp_github',
+        );
+        expect(JSON.stringify(googleDef?.parameters)).not.toContain('anyOf');
+        expect(
+          (googleDef?.parameters as { properties: Record<string, { properties: object }> })
+            .properties.payload.properties,
+        ).toEqual({ action: { type: 'string', enum: ['create'] }, title: { type: 'string' } });
+
+        const defaultResult = await loadToolDefinitions(
+          { userId: 'user-123', agentId: 'agent-123', tools: ['issue_write_mcp_github'] },
+          deps,
+        );
+        const defaultDef = defaultResult.toolDefinitions.find(
+          (d) => d.name === 'issue_write_mcp_github',
+        );
+        expect(JSON.stringify(defaultDef?.parameters)).toContain('anyOf');
       });
 
       it('should load MCP tools with hyphenated server names (server-one)', async () => {
@@ -386,7 +678,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -430,7 +721,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -462,7 +752,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -473,6 +762,184 @@ describe('definitions.ts', () => {
         const toolDef = result.toolDefinitions[0];
         expect(toolDef.name).toBe('list_items_mcp_my-server');
         expect((toolDef as { serverName?: string }).serverName).toBe('my-server');
+      });
+
+      it('resolves normalized keys to the RAW server for lookups and definition metadata', async () => {
+        /** Config lookups and `serverName` metadata (server instructions are
+         *  keyed by raw config names) must carry the raw name even though the
+         *  key embeds the normalized form. Resolution is direct-first, so the
+         *  raw alias is consulted only after the parsed name yields nothing. */
+        const mockServerTools = {
+          search_mcp_Connector__Company: {
+            function: {
+              name: 'search_mcp_Connector__Company',
+              description: 'Search',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockImplementation(async (_userId: string, name: string) =>
+          name === 'Connector: Company' ? mockServerTools : null,
+        );
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector: Company');
+        expect(result.toolDefinitions).toHaveLength(1);
+        const toolDef = result.toolDefinitions[0];
+        expect(toolDef.name).toBe('search_mcp_Connector__Company');
+        expect((toolDef as { serverName?: string }).serverName).toBe('Connector: Company');
+      });
+
+      it('does not alias-fallback when the parsed name IS a known accessible server', async () => {
+        /** A null fetch for a KNOWN server means it is temporarily
+         *  unavailable (OAuth pending, missing vars) — rerouting to the raw
+         *  alias would emit the other server's definitions under its names. */
+        mockGetOrFetchMCPServerTools.mockResolvedValue(null);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+          accessibleServerNames: ['Connector__Company', 'Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector__Company');
+        expect(result.toolDefinitions).toHaveLength(0);
+      });
+
+      it('prefers a server resolving under the parsed name as-is over the raw alias', async () => {
+        /** A user-DB server may be named exactly like an operator server's
+         *  normalized form; its tools must keep its own identity instead of
+         *  being rerouted to the operator server. */
+        const dbServerTools = {
+          search_mcp_Connector__Company: {
+            function: {
+              name: 'search_mcp_Connector__Company',
+              description: 'DB server tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockImplementation(async (_userId: string, name: string) =>
+          name === 'Connector__Company' ? dbServerTools : null,
+        );
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['search_mcp_Connector__Company'],
+          mcpServerNames: ['Connector__Company'],
+          rawServerNames: ['Connector: Company'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(mockGetOrFetchMCPServerTools).toHaveBeenCalledWith('user-123', 'Connector__Company');
+        const toolDef = result.toolDefinitions[0];
+        expect((toolDef as { serverName?: string }).serverName).toBe('Connector__Company');
+      });
+
+      it('should convert empty MCP tool descriptions to undefined', async () => {
+        const mockServerTools = {
+          no_desc_tool_mcp_asana: {
+            function: {
+              name: 'no_desc_tool_mcp_asana',
+              description: '',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+          has_desc_tool_mcp_asana: {
+            function: {
+              name: 'has_desc_tool_mcp_asana',
+              description: 'List tasks',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['sys__all__sys_mcp_asana'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const noDef = result.toolDefinitions.find((d) => d.name === 'no_desc_tool_mcp_asana');
+        expect(noDef).toBeDefined();
+        expect(noDef?.description).toBeUndefined();
+
+        const hasDef = result.toolDefinitions.find((d) => d.name === 'has_desc_tool_mcp_asana');
+        expect(hasDef).toBeDefined();
+        expect(hasDef?.description).toBe('List tasks');
+      });
+
+      it('should convert empty description to undefined for directly named MCP tool', async () => {
+        const toolName = 'no_desc_tool_mcp_asana';
+        mockGetOrFetchMCPServerTools.mockResolvedValue({
+          [toolName]: {
+            function: {
+              name: toolName,
+              description: '',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        });
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: [toolName],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        const def = result.toolDefinitions.find((d) => d.name === toolName);
+        expect(def).toBeDefined();
+        expect(def?.description).toBeUndefined();
       });
     });
 
@@ -489,7 +956,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -515,7 +981,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
         };
 
         const result = await loadToolDefinitions(params, deps);
@@ -570,7 +1035,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 
@@ -603,7 +1067,6 @@ describe('definitions.ts', () => {
         const deps: LoadToolDefinitionsDeps = {
           getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
           isBuiltInTool: mockIsBuiltInTool,
-          loadAuthValues: mockLoadAuthValues,
           getActionToolDefinitions: mockGetActionToolDefinitions,
         };
 

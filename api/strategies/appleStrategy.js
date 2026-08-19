@@ -34,16 +34,28 @@ const getProfileDetails = ({ idToken, profile }) => {
 
 // Initialize the social login handler for Apple
 const appleLogin = socialLogin('apple', getProfileDetails);
+const appleAdminLogin = socialLogin('apple', getProfileDetails, { existingUsersOnly: true });
 
-module.exports = () =>
+const getAppleConfig = (callbackURL) => ({
+  clientID: process.env.APPLE_CLIENT_ID,
+  teamID: process.env.APPLE_TEAM_ID,
+  callbackURL,
+  keyID: process.env.APPLE_KEY_ID,
+  privateKeyLocation: process.env.APPLE_PRIVATE_KEY_PATH,
+  passReqToCallback: false,
+});
+
+const appleStrategy = () =>
   new AppleStrategy(
-    {
-      clientID: process.env.APPLE_CLIENT_ID,
-      teamID: process.env.APPLE_TEAM_ID,
-      callbackURL: `${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`,
-      keyID: process.env.APPLE_KEY_ID,
-      privateKeyLocation: process.env.APPLE_PRIVATE_KEY_PATH,
-      passReqToCallback: false, // Set to true if you need to access the request in the callback
-    },
+    getAppleConfig(`${process.env.DOMAIN_SERVER}${process.env.APPLE_CALLBACK_URL}`),
     appleLogin,
   );
+
+const appleAdminStrategy = () =>
+  new AppleStrategy(
+    getAppleConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/apple/callback`),
+    appleAdminLogin,
+  );
+
+module.exports = appleStrategy;
+module.exports.appleAdminLogin = appleAdminStrategy;

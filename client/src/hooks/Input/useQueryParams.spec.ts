@@ -93,19 +93,23 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
-// Mock data-provider hooks
-jest.mock('~/data-provider', () => ({
-  useGetAgentByIdQuery: jest.fn(() => ({
-    data: null,
-    isLoading: false,
-    error: null,
-  })),
-  useListAgentsQuery: jest.fn(() => ({
-    data: null,
-    isLoading: false,
-    error: null,
-  })),
-}));
+// Mock data-provider hooks while preserving real exports like startupConfigKey
+jest.mock('~/data-provider', () => {
+  const actual = jest.requireActual<typeof import('~/data-provider')>('~/data-provider');
+  return {
+    ...actual,
+    useGetAgentByIdQuery: jest.fn(() => ({
+      data: null,
+      isLoading: false,
+      error: null,
+    })),
+    useListAgentsQuery: jest.fn(() => ({
+      data: null,
+      isLoading: false,
+      error: null,
+    })),
+  };
+});
 
 // Mock global window.history
 global.window = Object.create(window);

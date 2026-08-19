@@ -1,5 +1,5 @@
-const { Tool } = require('@langchain/core/tools');
 const { logger } = require('@librechat/data-schemas');
+const { Tool } = require('@librechat/agents/langchain/tools');
 const { SearchClient, AzureKeyCredential } = require('@azure/search-documents');
 
 const azureAISearchJsonSchema = {

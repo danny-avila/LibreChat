@@ -1,8 +1,10 @@
 const axios = require('axios');
+const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
   generateShortLivedToken: jest.fn(),
+  logAxiosError: jest.fn(),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -21,8 +23,32 @@ jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn((options) => Promise.resolve(options.files)),
 }));
 
-const { createFileSearchTool } = require('~/app/clients/tools/util/fileSearch');
+const { createFileSearchTool, primeFiles } = require('~/app/clients/tools/util/fileSearch');
 const { generateShortLivedToken } = require('@librechat/api');
+
+describe('fileSearch.js - agent file authorization', () => {
+  it('uses the permission resource type established by the calling route', async () => {
+    const { getFiles } = require('~/models');
+    const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+    const files = [{ file_id: 'owner-file', filename: 'owner.pdf', user: 'agent-owner' }];
+    getFiles.mockResolvedValueOnce(files);
+
+    await primeFiles({
+      req: { user: { id: 'remote-viewer', role: 'USER' } },
+      agentId: 'agent-123',
+      agentResourceType: ResourceType.REMOTE_AGENT,
+      tool_resources: { file_search: { file_ids: ['owner-file'] } },
+    });
+
+    expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+      files,
+      userId: 'remote-viewer',
+      role: 'USER',
+      agentId: 'agent-123',
+      resourceType: ResourceType.REMOTE_AGENT,
+    });
+  });
+});
 
 describe('fileSearch.js - tuple return validation', () => {
   beforeEach(() => {
@@ -228,5 +254,65 @@ describe('fileSearch.js - tuple return validation', () => {
       expect(artifact.file_search.sources[0].fileId).toBe('file-2');
       expect(artifact.file_search.sources[1].fileId).toBe('file-1');
     });
+  });
+});
+
+describe('entity_id scoping by file origin', () => {
+  const ORIGINAL_RAG_API_URL = process.env.RAG_API_URL;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.RAG_API_URL = 'http://localhost:8000';
+    generateShortLivedToken.mockReturnValue('mock-jwt-token');
+    axios.post.mockResolvedValue({ data: [] });
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_RAG_API_URL === undefined) {
+      delete process.env.RAG_API_URL;
+    } else {
+      process.env.RAG_API_URL = ORIGINAL_RAG_API_URL;
+    }
+  });
+
+  function bodiesSent() {
+    return axios.post.mock.calls
+      .filter(([url]) => String(url).endsWith('/query'))
+      .map(([, body]) => body);
+  }
+
+  it('sends entity_id only for agent knowledge-base files', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [
+        { file_id: 'kb-1', filename: 'kb.pdf', fromAgent: true },
+        { file_id: 'user-1', filename: 'attachment.txt', fromAgent: false },
+      ],
+    });
+    await tool.func({ query: 'q' });
+
+    const bodies = bodiesSent();
+    expect(bodies.find((b) => b.file_id === 'kb-1').entity_id).toBe('agent_123');
+    expect(bodies.find((b) => b.file_id === 'user-1').entity_id).toBeUndefined();
+  });
+
+  it('omits entity_id when fromAgent is not set (safe default)', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'legacy-1', filename: 'legacy.pdf' }],
+    });
+    await tool.func({ query: 'q' });
+    expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('sends no entity_id when none is provided', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt', fromAgent: true }],
+    });
+    await tool.func({ query: 'q' });
+    expect(bodiesSent()[0].entity_id).toBeUndefined();
   });
 });

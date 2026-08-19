@@ -1,17 +1,18 @@
 import { useEffect } from 'react';
 import { FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { Button, TextareaAutosize, Input } from '@librechat/client';
 import { useForm, Controller, FormProvider } from 'react-hook-form';
 import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import CategorySelector from '../fields/CategorySelector';
+import { Button, Spinner, TextareaAutosize, Input, useMediaQuery } from '@librechat/client';
+import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import VariablesDropdown from '../editor/VariablesDropdown';
+import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
-import Description from '../fields/Description';
 import { usePromptGroupsContext } from '~/Providers';
 import { useLocalize, useHasAccess } from '~/hooks';
-import Command from '../fields/Command';
 import { useCreatePrompt } from '~/data-provider';
+import Description from '../fields/Description';
+import Command from '../fields/Command';
 import { cn } from '~/utils';
 
 type CreateFormValues = {
@@ -34,12 +35,18 @@ const defaultPrompt: CreateFormValues = {
 
 const CreatePromptForm = ({
   defaultValues = defaultPrompt,
+  onSuccess,
+  isDialog = false,
 }: {
   defaultValues?: CreateFormValues;
+  onSuccess?: (groupId: string) => void;
+  /** Drops the page-level chrome (sidebar toggle, page padding) when hosted in a dialog */
+  isDialog?: boolean;
 }) => {
   const localize = useLocalize();
   const navigate = useNavigate();
-  const { hasAccess: hasUseAccess } = usePromptGroupsContext();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const { hasAccess: hasUseAccess } = usePromptGroupsContext() ?? {};
   const hasCreateAccess = useHasAccess({
     permissionType: PermissionTypes.PROMPTS,
     permission: Permissions.CREATE,
@@ -48,7 +55,7 @@ const CreatePromptForm = ({
 
   useEffect(() => {
     let timeoutId: ReturnType<typeof setTimeout>;
-    if (!hasAccess) {
+    if (!hasAccess && !onSuccess) {
       timeoutId = setTimeout(() => {
         navigate('/c/new');
       }, 1000);
@@ -56,7 +63,7 @@ const CreatePromptForm = ({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [hasAccess, navigate]);
+  }, [hasAccess, navigate, onSuccess]);
 
   const methods = useForm({
     defaultValues: {
@@ -74,11 +81,20 @@ const CreatePromptForm = ({
 
   const createPromptMutation = useCreatePrompt({
     onSuccess: (response) => {
-      navigate(`/d/prompts/${response.prompt.groupId}`, { replace: true });
+      const groupId = response.prompt.groupId;
+      if (onSuccess && groupId) {
+        onSuccess(groupId);
+      } else {
+        navigate(`/prompts/${groupId}`, { replace: true });
+      }
     },
   });
 
   const promptText = watch('prompt');
+  const isCreating = createPromptMutation.isLoading;
+  const isBlocked = !isDirty || isSubmitting || !isValid || isCreating;
+  /** Floating labels notch out the surface behind them: the dialog sits on `surface-primary`, the page on `presentation` */
+  const labelBgClassName = isDialog ? 'bg-surface-primary' : 'bg-presentation';
 
   const onSubmit = (data: CreateFormValues) => {
     const { name, category, oneliner, command, ...rest } = data;
@@ -104,8 +120,14 @@ const CreatePromptForm = ({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} className="w-full px-4 py-2">
-        <h1 className="sr-only">{localize('com_ui_create_prompt_page')}</h1>
+      <form onSubmit={handleSubmit(onSubmit)} className={cn('w-full', !isDialog && 'px-4 py-2')}>
+        {!isDialog && <h1 className="sr-only">{localize('com_ui_create_prompt_page')}</h1>}
+        {isSmallScreen ? (
+          <div className="mb-2 flex items-center justify-between gap-2">
+            {!isDialog && <OpenSidebar />}
+            <CategorySelector portal={!isDialog} />
+          </div>
+        ) : null}
         <div className="mb-1 flex flex-col items-center justify-between font-bold sm:text-xl md:mb-0 md:text-2xl">
           <div className="flex w-full flex-col items-center justify-between sm:flex-row">
             <Controller
@@ -118,7 +140,7 @@ const CreatePromptForm = ({
                     {...field}
                     id="prompt-name"
                     type="text"
-                    className="peer mr-2 w-full border border-border-light p-2 text-2xl text-text-primary"
+                    className="peer mr-2 w-full border border-border-medium p-2 text-2xl text-text-primary"
                     placeholder=" "
                     tabIndex={0}
                     aria-label={localize('com_ui_prompt_name')}
@@ -126,13 +148,16 @@ const CreatePromptForm = ({
                   />
                   <label
                     htmlFor="prompt-name"
-                    className="pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded bg-surface-primary px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+                    className={cn(
+                      'pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded px-1 text-base text-text-secondary transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-focus:text-text-primary peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75',
+                      labelBgClassName,
+                    )}
                   >
                     {localize('com_ui_prompt_name')}*
                   </label>
                   <div
                     className={cn(
-                      'mt-1 w-56 text-sm text-red-500',
+                      'mt-1 w-56 text-sm text-text-destructive',
                       errors.name ? 'visible h-auto' : 'invisible h-0',
                     )}
                   >
@@ -141,12 +166,16 @@ const CreatePromptForm = ({
                 </div>
               )}
             />
-            <CategorySelector />
+            {!isSmallScreen && (
+              <div>
+                <CategorySelector portal={!isDialog} />
+              </div>
+            )}
           </div>
         </div>
         <div className="flex w-full flex-col gap-4 md:mt-[1.075rem]">
           <div className="flex flex-col">
-            <header className="flex items-center justify-between rounded-t-xl border border-border-light bg-transparent p-2">
+            <header className="flex items-center justify-between rounded-t-xl border border-border-medium bg-transparent p-2">
               <div className="ml-1 flex items-center gap-2">
                 <FileText className="size-4 text-text-secondary" aria-hidden="true" />
                 <h2 className="text-sm font-semibold text-text-primary">
@@ -154,10 +183,10 @@ const CreatePromptForm = ({
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <VariablesDropdown fieldName="prompt" />
+                <VariablesDropdown fieldName="prompt" portal={!isDialog} />
               </div>
             </header>
-            <div className="min-h-32 rounded-b-xl border border-t-0 border-border-light p-3 sm:p-4">
+            <div className="min-h-32 rounded-b-xl border border-t-0 border-border-medium p-3 sm:p-4">
               <Controller
                 name="prompt"
                 control={control}
@@ -167,7 +196,7 @@ const CreatePromptForm = ({
                     <TextareaAutosize
                       {...field}
                       className="w-full resize-none overflow-y-auto bg-transparent font-mono text-sm leading-relaxed text-text-primary placeholder:text-text-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary sm:text-base"
-                      minRows={4}
+                      minRows={isDialog ? 10 : 4}
                       maxRows={16}
                       tabIndex={0}
                       placeholder={localize('com_ui_prompt_input')}
@@ -176,7 +205,7 @@ const CreatePromptForm = ({
                     />
                     <div
                       className={cn(
-                        'mt-1 text-sm text-red-500',
+                        'mt-1 text-sm text-text-destructive',
                         errors.prompt ? 'visible h-auto' : 'invisible h-0',
                       )}
                     >
@@ -191,24 +220,29 @@ const CreatePromptForm = ({
           <Description
             onValueChange={(value) => methods.setValue('oneliner', value)}
             tabIndex={0}
+            labelBgClassName={labelBgClassName}
           />
-          <Command onValueChange={(value) => methods.setValue('command', value)} tabIndex={0} />
+          <Command
+            onValueChange={(value) => methods.setValue('command', value)}
+            tabIndex={0}
+            labelBgClassName={labelBgClassName}
+          />
           <div className="mt-4 flex justify-end">
             <Button
+              variant="submit"
               aria-label={localize('com_ui_create_prompt')}
-              className={cn(
-                'w-full sm:w-auto',
-                (!isDirty || isSubmitting || !isValid) && 'opacity-50',
-              )}
+              className={cn('w-full gap-2 sm:w-auto', isBlocked && 'opacity-50')}
               tabIndex={0}
               type="submit"
-              aria-disabled={!isDirty || isSubmitting || !isValid || undefined}
+              aria-disabled={isBlocked || undefined}
+              aria-busy={isCreating || undefined}
               onClick={(e: React.MouseEvent) => {
-                if (!isDirty || isSubmitting || !isValid) {
+                if (isBlocked) {
                   e.preventDefault();
                 }
               }}
             >
+              {isCreating && <Spinner className="size-4" aria-hidden="true" />}
               {localize('com_ui_create_prompt')}
             </Button>
           </div>

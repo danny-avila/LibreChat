@@ -279,6 +279,115 @@ const getGroupOwners = async (accessToken, sub, groupId) => {
     return [];
   }
 };
+
+/**
+ * Get detailed information for specific Entra ID groups using batch requests
+ * Efficiently fetches group details for multiple groups in batches of 20 (Microsoft Graph limit)
+ * @param {string} accessToken - OpenID Connect access token
+ * @param {string} sub - Subject identifier
+ * @param {string[]} groupIds - Array of group IDs (GUIDs) to fetch details for
+ * @returns {Promise<Array<{id: string, name: string, description?: string, email?: string}>>} Array of group details
+ */
+const getEntraGroupDetailsBatch = async (accessToken, sub, groupIds) => {
+  try {
+    if (!groupIds || groupIds.length === 0) {
+      return [];
+    }
+
+    // Safety check: warn if user has an unusually large number of groups
+    const MAX_REASONABLE_GROUPS = 200;
+    if (groupIds.length > MAX_REASONABLE_GROUPS) {
+      logger.warn(
+        `[getEntraGroupDetailsBatch] User has ${groupIds.length} groups (>${MAX_REASONABLE_GROUPS}). This may impact performance.`,
+      );
+    }
+
+    const graphClient = await createGraphClient(accessToken, sub);
+    const batchSize = 20; // Microsoft Graph batch API limit
+    const maxConcurrent = 5; // Limit concurrent batch requests
+
+    // Helper function to process a single batch with retry logic for throttling
+    const processBatch = async (batchIds, retryCount = 0) => {
+      const batchRequest = {
+        requests: batchIds.map((id) => ({
+          id,
+          method: 'GET',
+          url: `/groups/${id}?$select=id,displayName,mail,description`,
+        })),
+      };
+
+      try {
+        const batchResponse = await graphClient.api('/$batch').post(batchRequest);
+        const results = [];
+        const throttledIds = [];
+
+        // Process batch responses
+        if (batchResponse.responses) {
+          for (const response of batchResponse.responses) {
+            if (response.status === 200 && response.body) {
+              results.push({
+                id: response.body.id,
+                name: response.body.displayName,
+                email:
+                  typeof response.body.mail === 'string'
+                    ? response.body.mail.toLowerCase()
+                    : response.body.mail,
+                description: response.body.description,
+              });
+            } else if (response.status === 429 || response.status === 503) {
+              // Track throttled/unavailable groups for retry
+              throttledIds.push(response.id);
+              logger.warn(
+                `[getEntraGroupDetailsBatch] Group ${response.id} throttled/unavailable (${response.status}), will retry`,
+              );
+            } else {
+              logger.warn(
+                `[getEntraGroupDetailsBatch] Failed to fetch group ${response.id}. Status: ${response.status}`,
+              );
+            }
+          }
+        }
+
+        // Retry throttled requests after a brief delay (max 2 retries)
+        if (throttledIds.length > 0 && retryCount < 2) {
+          const retryAfter = 1000 * (retryCount + 1); // Exponential backoff: 1s, 2s
+          logger.info(
+            `[getEntraGroupDetailsBatch] Retrying ${throttledIds.length} throttled groups after ${retryAfter}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, retryAfter));
+          const retryResults = await processBatch(throttledIds, retryCount + 1);
+          results.push(...retryResults);
+        }
+
+        return results;
+      } catch (batchError) {
+        logger.error(`[getEntraGroupDetailsBatch] Error processing batch:`, batchError);
+        return [];
+      }
+    };
+
+    // Split groups into batches and process with limited concurrency
+    const batches = [];
+    for (let i = 0; i < groupIds.length; i += batchSize) {
+      batches.push(groupIds.slice(i, i + batchSize));
+    }
+
+    // Process batches with controlled concurrency
+    const allGroupDetails = [];
+    for (let i = 0; i < batches.length; i += maxConcurrent) {
+      const batchSlice = batches.slice(i, i + maxConcurrent);
+      const batchPromises = batchSlice.map((batch) => processBatch(batch));
+      const batchResults = await Promise.all(batchPromises);
+      allGroupDetails.push(...batchResults.flat());
+    }
+
+    return allGroupDetails;
+  } catch (error) {
+    logger.error('[getEntraGroupDetailsBatch] Error fetching group details:', error);
+    return [];
+  }
+};
+
 /**
  * Search for contacts (users only) using Microsoft Graph /me/people endpoint
  * Returns mapped TPrincipalSearchResult objects for users only
@@ -535,6 +644,7 @@ module.exports = {
   createGraphClient,
   getUserEntraGroups,
   getUserOwnedEntraGroups,
+  getEntraGroupDetailsBatch,
   testGraphApiAccess,
   searchEntraIdPrincipals,
   exchangeTokenForGraphAccess,

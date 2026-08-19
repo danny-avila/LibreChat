@@ -768,14 +768,14 @@ describe('spendTokens', () => {
   });
 
   describe('premium token pricing', () => {
-    it('should charge standard rates for claude-opus-4-6 when prompt tokens are below threshold', async () => {
+    it('should charge standard rates for gemini-3.1 when prompt tokens are below threshold', async () => {
       const initialBalance = 100000000;
       await Balance.create({
         user: userId,
         tokenCredits: initialBalance,
       });
 
-      const model = 'claude-opus-4-6';
+      const model = 'gemini-3.1';
       const promptTokens = 100000;
       const completionTokens = 500;
 
@@ -796,7 +796,7 @@ describe('spendTokens', () => {
       expect(balance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
-    it('should charge premium rates for claude-opus-4-6 when prompt tokens exceed threshold', async () => {
+    it('should charge standard rates for claude-opus-4-6 when prompt tokens exceed the former premium threshold', async () => {
       const initialBalance = 100000000;
       await Balance.create({
         user: userId,
@@ -818,14 +818,13 @@ describe('spendTokens', () => {
       await spendTokens(txData, { promptTokens, completionTokens });
 
       const expectedCost =
-        promptTokens * premiumTokenValues[model].prompt +
-        completionTokens * premiumTokenValues[model].completion;
+        promptTokens * tokenValues[model].prompt + completionTokens * tokenValues[model].completion;
 
       const balance = await Balance.findOne({ user: userId });
       expect(balance?.tokenCredits).toBeCloseTo(initialBalance - expectedCost, 0);
     });
 
-    it('should charge premium rates for both prompt and completion in structured tokens when above threshold', async () => {
+    it('should charge standard rates for Claude structured tokens above the former premium threshold', async () => {
       const initialBalance = 100000000;
       await Balance.create({
         user: userId,
@@ -852,16 +851,16 @@ describe('spendTokens', () => {
 
       const result = await spendStructuredTokens(txData, tokenUsage);
 
-      const premiumPromptRate = premiumTokenValues[model].prompt;
-      const premiumCompletionRate = premiumTokenValues[model].completion;
+      const standardPromptRate = tokenValues[model].prompt;
+      const standardCompletionRate = tokenValues[model].completion;
       const writeRate = getCacheMultiplier({ model, cacheType: 'write' });
       const readRate = getCacheMultiplier({ model, cacheType: 'read' });
 
       const expectedPromptCost =
-        tokenUsage.promptTokens.input * premiumPromptRate +
+        tokenUsage.promptTokens.input * standardPromptRate +
         tokenUsage.promptTokens.write * (writeRate ?? 0) +
         tokenUsage.promptTokens.read * (readRate ?? 0);
-      const expectedCompletionCost = tokenUsage.completionTokens * premiumCompletionRate;
+      const expectedCompletionCost = tokenUsage.completionTokens * standardCompletionRate;
 
       expect(result).not.toBeNull();
       expect(result!.prompt!.prompt).toBeCloseTo(-expectedPromptCost, 0);
@@ -875,7 +874,7 @@ describe('spendTokens', () => {
         tokenCredits: initialBalance,
       });
 
-      const model = 'claude-opus-4-6';
+      const model = 'gemini-3.1';
       const txData = {
         user: userId,
         conversationId: 'test-structured-standard',
@@ -1106,7 +1105,7 @@ describe('spendTokens', () => {
         tokenCredits: initialBalance,
       });
 
-      const model = 'claude-opus-4-6';
+      const model = 'gemini-3.1';
       const promptTokens = 250000;
       const completionTokens = 500;
 
@@ -1163,7 +1162,7 @@ describe('spendTokens', () => {
         tokenCredits: initialBalance,
       });
 
-      const model = 'claude-opus-4-6';
+      const model = 'gemini-3.1';
       const txData = {
         user: userId,
         conversationId: 'test-negative-no-premium',

@@ -1,10 +1,9 @@
 {
   "compilerOptions": {
     "noImplicitAny": false,
-    "baseUrl": ".",
     "outDir": "./dist",
     "strict": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "target": "es6",
     "module": "esnext",

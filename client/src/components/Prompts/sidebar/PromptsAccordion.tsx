@@ -1,21 +1,26 @@
-import { usePromptGroupsContext } from '~/Providers';
+import { SystemRoles } from 'librechat-data-provider';
 import AutoSendPrompt from '../buttons/AutoSendPrompt';
+import { AdminSettings } from '~/components/Prompts';
 import PromptSidePanel from './GroupSidePanel';
+import { PanelFooter } from '~/components/ui';
 import FilterPrompts from './FilterPrompts';
+import { useAuthContext } from '~/hooks';
 
 export default function PromptsAccordion() {
-  const groupsNav = usePromptGroupsContext();
+  const { user } = useAuthContext();
   return (
-    <div className="flex h-auto w-full flex-col px-3 pb-3">
-      <PromptSidePanel
-        className="h-auto space-y-2 md:mr-0 md:min-w-0 lg:w-full xl:w-full"
-        {...groupsNav}
-      >
-        <FilterPrompts />
-        <div className="flex w-full items-center justify-end">
-          <AutoSendPrompt />
-        </div>
-      </PromptSidePanel>
-    </div>
+    <PromptSidePanel
+      className="space-y-2 pt-2"
+      footer={
+        user?.role === SystemRoles.ADMIN ? (
+          <PanelFooter>
+            <AdminSettings />
+          </PanelFooter>
+        ) : null
+      }
+    >
+      <FilterPrompts />
+      <AutoSendPrompt />
+    </PromptSidePanel>
   );
 }

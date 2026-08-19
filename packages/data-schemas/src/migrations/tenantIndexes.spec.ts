@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 describe('dropSupersededTenantIndexes', () => {
-  describe('with pre-existing single-field unique indexes (simulates upgrade)', () => {
+  describe('with pre-existing superseded unique indexes (simulates upgrade)', () => {
     beforeAll(async () => {
       const db = mongoose.connection.db!;
 
@@ -35,6 +35,10 @@ describe('dropSupersededTenantIndexes', () => {
         { unique: true, sparse: true, name: 'facebookId_1' },
       );
       await users.createIndex({ openidId: 1 }, { unique: true, sparse: true, name: 'openidId_1' });
+      await users.createIndex(
+        { openidId: 1, tenantId: 1 },
+        { unique: true, name: 'openidId_1_tenantId_1' },
+      );
       await users.createIndex({ samlId: 1 }, { unique: true, sparse: true, name: 'samlId_1' });
       await users.createIndex({ ldapId: 1 }, { unique: true, sparse: true, name: 'ldapId_1' });
       await users.createIndex({ githubId: 1 }, { unique: true, sparse: true, name: 'githubId_1' });
@@ -109,6 +113,11 @@ describe('dropSupersededTenantIndexes', () => {
           { idOnTheSource: 1, source: 1 },
           { unique: true, name: 'idOnTheSource_1_source_1' },
         );
+
+      await db.createCollection('skillsyncstatuses');
+      await db
+        .collection('skillsyncstatuses')
+        .createIndex({ provider: 1, sourceId: 1 }, { unique: true, name: 'provider_1_sourceId_1' });
     });
 
     it('drops all superseded indexes', async () => {
@@ -139,6 +148,7 @@ describe('dropSupersededTenantIndexes', () => {
       expect(indexNames).not.toContain('email_1');
       expect(indexNames).not.toContain('googleId_1');
       expect(indexNames).not.toContain('openidId_1');
+      expect(indexNames).not.toContain('openidId_1_tenantId_1');
       expect(indexNames).toContain('_id_');
     });
 
@@ -154,6 +164,13 @@ describe('dropSupersededTenantIndexes', () => {
       const indexNames = indexes.map((idx) => idx.name);
 
       expect(indexNames).not.toContain('conversationId_1_user_1');
+    });
+
+    it('old skill sync status unique index is gone', async () => {
+      const indexes = await mongoose.connection.db!.collection('skillsyncstatuses').indexes();
+      const indexNames = indexes.map((idx) => idx.name);
+
+      expect(indexNames).not.toContain('provider_1_sourceId_1');
     });
   });
 
@@ -282,6 +299,7 @@ describe('dropSupersededTenantIndexes', () => {
         'mcpservers',
         'files',
         'groups',
+        'skillsyncstatuses',
       ];
 
       for (const col of expectedCollections) {
@@ -290,11 +308,12 @@ describe('dropSupersededTenantIndexes', () => {
       }
     });
 
-    it('users collection lists all 9 OAuth ID indexes plus email', () => {
-      expect(SUPERSEDED_INDEXES.users).toHaveLength(9);
+    it('users collection lists all superseded OAuth and email indexes', () => {
+      expect(SUPERSEDED_INDEXES.users).toHaveLength(10);
       expect(SUPERSEDED_INDEXES.users).toContain('email_1');
       expect(SUPERSEDED_INDEXES.users).toContain('googleId_1');
       expect(SUPERSEDED_INDEXES.users).toContain('openidId_1');
+      expect(SUPERSEDED_INDEXES.users).toContain('openidId_1_tenantId_1');
     });
   });
 });

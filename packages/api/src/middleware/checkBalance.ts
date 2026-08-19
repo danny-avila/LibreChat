@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { ViolationTypes } from 'librechat-data-provider';
-import type { ServerRequest } from '~/types/http';
+import { getRefillEligibilityDate, ViolationTypes } from 'librechat-data-provider';
+import type { BalanceConfig, IBalanceUpdate } from '@librechat/data-schemas';
+import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Response } from 'express';
-
-type TimeUnit = 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
+import type { ServerRequest } from '~/types/http';
 
 interface BalanceRecord {
   tokenCredits: number;
@@ -11,7 +11,7 @@ interface BalanceRecord {
   refillAmount?: number;
   lastRefill?: Date;
   refillIntervalValue?: number;
-  refillIntervalUnit?: TimeUnit;
+  refillIntervalUnit?: RefillIntervalUnit;
 }
 
 interface TxData {
@@ -38,33 +38,10 @@ export interface CheckBalanceDeps {
     errorMessage: Record<string, unknown>,
     score: number,
   ) => Promise<void>;
-}
-
-function addIntervalToDate(date: Date, value: number, unit: TimeUnit): Date {
-  const result = new Date(date);
-  switch (unit) {
-    case 'seconds':
-      result.setSeconds(result.getSeconds() + value);
-      break;
-    case 'minutes':
-      result.setMinutes(result.getMinutes() + value);
-      break;
-    case 'hours':
-      result.setHours(result.getHours() + value);
-      break;
-    case 'days':
-      result.setDate(result.getDate() + value);
-      break;
-    case 'weeks':
-      result.setDate(result.getDate() + value * 7);
-      break;
-    case 'months':
-      result.setMonth(result.getMonth() + value);
-      break;
-    default:
-      break;
-  }
-  return result;
+  /** Balance config for lazy initialization when no record exists */
+  balanceConfig?: BalanceConfig;
+  /** Upsert function for lazy initialization when no record exists */
+  upsertBalanceFields?: (userId: string, fields: IBalanceUpdate) => Promise<BalanceRecord | null>;
 }
 
 /** Checks a user's balance record and handles auto-refill if needed. */
@@ -84,6 +61,37 @@ async function checkBalanceRecord(
 
   const record = await deps.findBalanceByUser(user);
   if (!record) {
+    if (deps.balanceConfig?.startBalance != null && deps.upsertBalanceFields) {
+      logger.debug('[Balance.check] Lazy-initializing balance record for user', {
+        user,
+        startBalance: deps.balanceConfig.startBalance,
+      });
+      try {
+        const fields: IBalanceUpdate = {
+          user,
+          tokenCredits: deps.balanceConfig.startBalance,
+        };
+        const config = deps.balanceConfig;
+        if (
+          config.autoRefillEnabled &&
+          config.refillIntervalValue != null &&
+          config.refillIntervalUnit != null &&
+          config.refillAmount != null
+        ) {
+          fields.autoRefillEnabled = config.autoRefillEnabled;
+          fields.refillIntervalValue = config.refillIntervalValue;
+          fields.refillIntervalUnit = config.refillIntervalUnit;
+          fields.refillAmount = config.refillAmount;
+          fields.lastRefill = new Date();
+        }
+        const created = await deps.upsertBalanceFields(user, fields);
+        const balance = created?.tokenCredits ?? deps.balanceConfig.startBalance;
+        return { canSpend: balance >= tokenCost, balance, tokenCost };
+      } catch (error) {
+        logger.error('[Balance.check] Failed to lazy-initialize balance record', { user, error });
+        return { canSpend: false, balance: 0, tokenCost };
+      }
+    }
     logger.debug('[Balance.check] No balance record found for user', { user });
     return { canSpend: false, balance: 0, tokenCost };
   }
@@ -112,7 +120,7 @@ async function checkBalanceRecord(
     if (
       isNaN(lastRefillDate.getTime()) ||
       now >=
-        addIntervalToDate(
+        getRefillEligibilityDate(
           lastRefillDate,
           record.refillIntervalValue ?? 0,
           record.refillIntervalUnit ?? 'days',

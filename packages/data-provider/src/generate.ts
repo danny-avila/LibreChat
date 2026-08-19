@@ -614,7 +614,9 @@ export const generateGoogleSchema = (customGoogle: GoogleSettings) => {
         promptPrefix: obj.promptPrefix ?? null,
         examples: obj.examples ?? [{ input: { content: '' }, output: { content: '' } }],
         temperature: obj.temperature ?? defaults.temperature.default,
-        maxOutputTokens: obj.maxOutputTokens ?? defaults.maxOutputTokens.default,
+        maxOutputTokens:
+          obj.maxOutputTokens ??
+          defaults.maxOutputTokens.reset(obj.model ?? defaults.model.default),
         topP: obj.topP ?? defaults.topP.default,
         topK: obj.topK ?? defaults.topK.default,
         maxContextTokens: obj.maxContextTokens ?? undefined,

@@ -44,6 +44,9 @@ const processChildren = (children: React.ReactNode): React.ReactNode => {
 
   if (React.isValidElement(children)) {
     const element = children as React.ReactElement<{ children?: React.ReactNode }>;
+    if (typeof element.type !== 'string' || element.type === 'code') {
+      return children;
+    }
     if (element.props.children) {
       return React.cloneElement(element, {
         ...element.props,

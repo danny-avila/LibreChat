@@ -1,14 +1,16 @@
 import type { BedrockDocumentFormat } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Readable } from 'stream';
+import type { DownloadURLParams } from '~/storage/types';
 import type { ServerRequest } from './http';
 export interface STTService {
   getInstance(): Promise<STTService>;
-  getProviderSchema(req: ServerRequest): Promise<[string, object]>;
+  getProviderSchema(req: ServerRequest): Promise<[string, object, string[] | undefined]>;
   sttRequest(
     provider: string,
     schema: object,
     params: { audioBuffer: Buffer; audioFile: AudioFileInfo },
+    allowedAddresses?: string[],
   ): Promise<string>;
 }
 
@@ -170,6 +172,18 @@ export interface ProcessedFile {
   };
 }
 
+/** Subset of storage strategy functions needed by download and delete access flows. */
 export interface StrategyFunctions {
   getDownloadStream: (req: ServerRequest, filepath: string) => Promise<Readable>;
+  getDownloadURL?: (params: DownloadURLParams) => Promise<string>;
+  deleteFile?: (
+    req: ServerRequest,
+    file: {
+      filepath: string;
+      storageKey?: string | null;
+      storageRegion?: string | null;
+      user?: string;
+      tenantId?: string | null;
+    },
+  ) => Promise<void>;
 }

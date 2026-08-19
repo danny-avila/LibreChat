@@ -1,3 +1,4 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 export default function BedrockIcon({
@@ -6,7 +7,7 @@ export default function BedrockIcon({
 }: {
   size?: number;
   className?: string;
-}) {
+}): JSX.Element {
   return (
     <svg
       width={size}

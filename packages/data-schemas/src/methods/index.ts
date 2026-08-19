@@ -1,12 +1,18 @@
+import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
+import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
-import type { RoleMethods, RoleDeps } from './role';
-import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createKeyMethods, type KeyMethods } from './key';
-import { createFileMethods, type FileMethods } from './file';
 /* Memories */
 import { createMemoryMethods, type MemoryMethods } from './memory';
+/* Tool Favorites */
+import {
+  createToolFavoriteMethods,
+  MAX_TOOL_FAVORITES,
+  type ToolFavoriteMethods,
+} from './favorite';
 /* Agent Categories */
 import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCategory';
 /* Agent API Keys */
@@ -17,9 +23,17 @@ import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
-import { createUserGroupMethods, type UserGroupMethods } from './userGroup';
-import { createAclEntryMethods, type AclEntryMethods } from './aclEntry';
+import { createUserGroupMethods, type UserGroupMethods, type UserGroupDeps } from './userGroup';
+import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
+import {
+  createAuditLogMethods,
+  AUDIT_SCHEMA_VERSION,
+  MAX_AUDIT_EXPORT_ROWS,
+  MAX_AUDIT_LOG_LIMIT,
+  MAX_AUDIT_VERIFY_ROWS,
+  type AuditLogMethods,
+} from './auditLog';
 import { createShareMethods, type ShareMethods } from './share';
 /* Tier 1 — Simple CRUD */
 import { createActionMethods, type ActionMethods } from './action';
@@ -30,8 +44,19 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
-import { createMessageMethods, type MessageMethods } from './message';
+import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
+import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+export type {
+  AssignConversationToProjectResult,
+  ChatProjectSortBy,
+  ChatProjectSortDirection,
+  CreateChatProjectInput,
+  DeleteChatProjectResult,
+  ListChatProjectsOptions,
+  ListChatProjectsResult,
+  UpdateChatProjectInput,
+} from './chatProject';
 /* Tier 3 — Complex (heavier injection) */
 import {
   createTxMethods,
@@ -45,13 +70,91 @@ import {
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
 import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
+import {
+  createSkillMethods,
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
+  type SkillMethods,
+  type SkillDeps,
+  type CreateSkillInput,
+  type CreateSkillResult,
+  type UpdateSkillInput,
+  type UpsertSkillFileInput,
+  type ListSkillsByAccessParams,
+  type ListSkillsByAccessResult,
+  type UpdateSkillResult,
+  type ValidationIssue,
+} from './skill';
+import {
+  createAgentTriggerDeliveryMethods,
+  AgentTriggerDeliveryConflictError,
+  type AgentTriggerDeliveryMethods,
+} from './triggerDelivery';
+import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import type {
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+} from './skillSync';
 /* Tier 5 — Agent */
 import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
+import {
+  createMCPAuthorityMethods,
+  MCPAuthorityProofError,
+  MAX_MCP_AUTHORITY_TARGETS,
+  createMCPAuthorityBootRevision,
+  createMCPAuthorityConfigSourceRevision,
+  createMCPAuthorityCredentialRevision,
+  createMCPAuthorityDatabaseSourceRevision,
+  digestMCPAuthorityValue,
+  type MCPAuthorityMethods,
+  type MCPAuthorityMethodHooks,
+  type MCPAuthorityConfigSourceDocument,
+  type MCPAuthorityCredentialSourceDocument,
+} from './mcpAuthority';
+/* Insights */
+import { createInsightsMethods, type InsightsMethods } from './insights';
 
-export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
-export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate };
+export {
+  RoleConflictError,
+  MCPAuthorityProofError,
+  MAX_MCP_AUTHORITY_TARGETS,
+  DEFAULT_REFRESH_TOKEN_EXPIRY,
+  DEFAULT_SESSION_EXPIRY,
+  createMCPAuthorityBootRevision,
+  createMCPAuthorityConfigSourceRevision,
+  createMCPAuthorityCredentialRevision,
+  createMCPAuthorityDatabaseSourceRevision,
+  digestMCPAuthorityValue,
+};
+export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
+export { permissionBitSupersets };
+export { CLIENT_MESSAGE_SELECT };
+export {
+  partitionIssues,
+  validateSkillName,
+  validateSkillBody,
+  validateRelativePath,
+  validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
+  validateSkillDescription,
+  deriveStructuredFrontmatterFields,
+  inferSkillFileCategory,
+};
+export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
+export { MAX_TOOL_FAVORITES };
+export { AgentTriggerDeliveryConflictError };
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -60,12 +163,14 @@ export type AllMethods = UserMethods &
   KeyMethods &
   FileMethods &
   MemoryMethods &
+  ToolFavoriteMethods &
   AgentCategoryMethods &
   AgentApiKeyMethods &
   MCPServerMethods &
   UserGroupMethods &
   AclEntryMethods &
   SystemGrantMethods &
+  AuditLogMethods &
   ShareMethods &
   AccessRoleMethods &
   PluginAuthMethods &
@@ -78,12 +183,18 @@ export type AllMethods = UserMethods &
   ConversationTagMethods &
   MessageMethods &
   ConversationMethods &
+  ChatProjectMethods &
   TxMethods &
   TransactionMethods &
   SpendTokensMethods &
   PromptMethods &
+  SkillMethods &
+  SkillSyncMethods &
+  AgentTriggerDeliveryMethods &
   AgentMethods &
-  ConfigMethods;
+  ConfigMethods &
+  MCPAuthorityMethods &
+  InsightsMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -98,6 +209,8 @@ export interface CreateMethodsDeps {
   removeAllPermissions?: (params: { resourceType: string; resourceId: unknown }) => Promise<void>;
   /** Returns a cache store for the given key. From getLogStores. */
   getCache?: RoleDeps['getCache'];
+  /** Recognizes agent skill IDs supplied by an external, non-database registry. */
+  isExternalSkillId?: AgentDeps['isExternalSkillId'];
 }
 
 /**
@@ -154,8 +267,15 @@ export function createMethods(
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
 
+  const skillDeps: SkillDeps = {
+    removeAllPermissions,
+    getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+  };
+  const skillMethods = createSkillMethods(mongoose, skillDeps);
+
   // Role methods with optional cache injection
   const roleDeps: RoleDeps = { getCache: deps.getCache };
+  const userGroupDeps: UserGroupDeps = { getCache: deps.getCache };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
 
   // Tier 1: action methods (created as variable for agent dependency)
@@ -166,24 +286,27 @@ export function createMethods(
     removeAllPermissions,
     getActions: actionMethods.getActions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
 
   return {
-    ...createUserMethods(mongoose),
+    ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
     ...createMemoryMethods(mongoose),
+    ...createToolFavoriteMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
-    ...createUserGroupMethods(mongoose),
+    ...createUserGroupMethods(mongoose, userGroupDeps),
     ...aclEntryMethods,
     ...systemGrantMethods,
+    ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
@@ -197,15 +320,23 @@ export function createMethods(
     ...createConversationTagMethods(mongoose),
     ...messageMethods,
     ...conversationMethods,
+    ...createChatProjectMethods(mongoose),
     /* Tier 3 */
     ...txMethods,
     ...transactionMethods,
     ...spendTokensMethods,
     ...promptMethods,
+    ...skillMethods,
+    ...createSkillSyncMethods(mongoose),
+    ...createAgentTriggerDeliveryMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
     ...createConfigMethods(mongoose),
+    /* MCP authority proofs */
+    ...createMCPAuthorityMethods(mongoose),
+    /* Insights */
+    ...createInsightsMethods(mongoose),
   };
 }
 
@@ -216,13 +347,16 @@ export type {
   RoleMethods,
   KeyMethods,
   FileMethods,
+  FileOwnerScope,
   MemoryMethods,
+  ToolFavoriteMethods,
   AgentCategoryMethods,
   AgentApiKeyMethods,
   MCPServerMethods,
   UserGroupMethods,
   AclEntryMethods,
   SystemGrantMethods,
+  AuditLogMethods,
   ShareMethods,
   AccessRoleMethods,
   PluginAuthMethods,
@@ -235,10 +369,31 @@ export type {
   ConversationTagMethods,
   MessageMethods,
   ConversationMethods,
+  ChatProjectMethods,
   TxMethods,
   TransactionMethods,
   SpendTokensMethods,
   PromptMethods,
+  SkillMethods,
+  SkillDeps,
+  CreateSkillInput,
+  CreateSkillResult,
+  UpdateSkillInput,
+  UpsertSkillFileInput,
+  ListSkillsByAccessParams,
+  ListSkillsByAccessResult,
+  UpdateSkillResult,
+  ValidationIssue,
+  SkillSyncStatusInput,
+  SkillSyncCredentialSummary,
+  UpsertSkillSyncCredentialInput,
+  SkillSyncMethods,
+  AgentTriggerDeliveryMethods,
   AgentMethods,
   ConfigMethods,
+  MCPAuthorityMethods,
+  MCPAuthorityMethodHooks,
+  MCPAuthorityConfigSourceDocument,
+  MCPAuthorityCredentialSourceDocument,
+  InsightsMethods,
 };

@@ -2,7 +2,13 @@ import { Types } from 'mongoose';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
-import { resolveHeaders, resolveNestedObject, processMCPEnv, encodeHeaderValue } from './env';
+import {
+  resolveNestedObject,
+  encodeHeaderValue,
+  resolveHeaders,
+  createSafeUser,
+  processMCPEnv,
+} from './env';
 
 function isStdioOptions(options: MCPOptions): options is Extract<MCPOptions, { type?: 'stdio' }> {
   return !options.type || options.type === 'stdio';
@@ -990,6 +996,7 @@ describe('processMCPEnv', () => {
     process.env.OAUTH_CLIENT_ID = 'oauth-client-id-value';
     process.env.OAUTH_CLIENT_SECRET = 'oauth-client-secret-value';
     process.env.MCP_SERVER_URL = 'https://mcp.example.com';
+    process.env.MCP_PROXY_URL = 'http://proxy.example.com:8080';
   });
 
   afterEach(() => {
@@ -998,6 +1005,7 @@ describe('processMCPEnv', () => {
     delete process.env.OAUTH_CLIENT_ID;
     delete process.env.OAUTH_CLIENT_SECRET;
     delete process.env.MCP_SERVER_URL;
+    delete process.env.MCP_PROXY_URL;
   });
 
   it('should return null/undefined as-is', () => {
@@ -1045,6 +1053,47 @@ describe('processMCPEnv', () => {
     });
   });
 
+  it('should process outbound proxy for remote MCP options', () => {
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy: '${MCP_PROXY_URL}',
+    };
+
+    const result = processMCPEnv({ options });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy: 'http://proxy.example.com:8080',
+    });
+  });
+
+  it('should not process user-controlled placeholders in outbound proxy', () => {
+    const user = createTestUser({ id: 'user-proxy-target' });
+    const body = { conversationId: 'conv-1', parentMessageId: 'parent-1', messageId: 'msg-1' };
+    const options: MCPOptions = {
+      type: 'sse',
+      url: '${MCP_SERVER_URL}/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
+    };
+
+    const result = processMCPEnv({
+      options,
+      user,
+      body,
+      customUserVars: { CUSTOM_PROXY_PATH: 'tenant-proxy' },
+    });
+
+    expect(result).toEqual({
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      proxy:
+        'http://proxy.example.com/{{CUSTOM_PROXY_PATH}}/{{LIBRECHAT_USER_ID}}/{{LIBRECHAT_BODY_MESSAGEID}}',
+    });
+  });
+
   it('should process OAuth configuration with environment variables', () => {
     const options: MCPOptions = {
       type: 'streamable-http',
@@ -1080,6 +1129,42 @@ describe('processMCPEnv', () => {
         redirect_uri: 'http://localhost:3000/callback',
         token_exchange_method: TokenExchangeMethodEnum.DefaultPost,
       },
+    });
+  });
+
+  it('should process user placeholders in oauth_headers', () => {
+    const user = createTestUser({ id: 'user-123', email: 'test@example.com' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      oauth_headers: {
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+        'X-Static': 'static-value',
+      },
+    };
+
+    const result = processMCPEnv({ options, user });
+
+    expect('oauth_headers' in result! && result.oauth_headers).toEqual({
+      'X-User-Id': 'user-123',
+      'X-Static': 'static-value',
+    });
+  });
+
+  it('should NOT resolve user placeholders in oauth_headers when dbSourced', () => {
+    const user = createTestUser({ id: 'user-123' });
+    const options: MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/api',
+      oauth_headers: {
+        'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+      },
+    };
+
+    const result = processMCPEnv({ options, user, dbSourced: true });
+
+    expect('oauth_headers' in result! && result.oauth_headers).toEqual({
+      'X-User-Id': '{{LIBRECHAT_USER_ID}}',
     });
   });
 
@@ -2043,5 +2128,168 @@ describe('processMCPEnv', () => {
         throw new Error('Expected streamable-http options');
       }
     });
+  });
+});
+
+describe('createSafeUser', () => {
+  it('returns an empty object for null/undefined users', () => {
+    expect(createSafeUser(null)).toEqual({});
+    expect(createSafeUser(undefined)).toEqual({});
+  });
+
+  it('falls back to _id (ObjectId) when the virtual id is absent', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, email: 'lean@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe(objectId.toString());
+    expect(safeUser.email).toBe('lean@example.com');
+  });
+
+  it('falls back to a string _id when the virtual id is absent', () => {
+    const user = { _id: 'string-id-123', email: 'lean@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe('string-id-123');
+  });
+
+  it('leaves a truthy id untouched and does not use _id', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, id: 'real-id', email: 'user@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe('real-id');
+    expect(safeUser.id).not.toBe(objectId.toString());
+  });
+
+  it('replaces a falsy (empty-string) id with _id', () => {
+    const objectId = new Types.ObjectId();
+    const user = { _id: objectId, id: '', email: 'user@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBe(objectId.toString());
+  });
+
+  it('leaves id undefined when _id is absent', () => {
+    const user = { email: 'no-id@example.com' } as unknown as IUser;
+
+    const safeUser = createSafeUser(user);
+
+    expect(safeUser.id).toBeUndefined();
+  });
+
+  it('leaves id undefined when _id is nullish and does not throw', () => {
+    const user = { _id: null, email: 'null-id@example.com' } as unknown as IUser;
+
+    expect(() => createSafeUser(user)).not.toThrow();
+    expect(createSafeUser(user).id).toBeUndefined();
+  });
+});
+
+describe('resolveHeaders stripUnresolved', () => {
+  const templateHeaders = {
+    'X-OpenID-Id': '{{LIBRECHAT_USER_OPENIDID}}',
+    'X-User-Id': '{{LIBRECHAT_USER_ID}}',
+    'Content-Type': 'application/json',
+  };
+
+  it('strips user placeholders when user context is missing entirely', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders }, stripUnresolved: true });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips user placeholders when the safe user is an empty object (issue #14580)', () => {
+    const result = resolveHeaders({
+      headers: { ...templateHeaders },
+      user: createSafeUser(undefined),
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': '',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips placeholders for fields the user lacks while substituting present fields', () => {
+    const localUser = createSafeUser({ id: 'user-123', email: 'me@example.com' } as IUser);
+
+    const result = resolveHeaders({
+      headers: { ...templateHeaders, 'X-Email': '{{LIBRECHAT_USER_EMAIL}}' },
+      user: localUser,
+      stripUnresolved: true,
+    });
+
+    expect(result).toEqual({
+      'X-OpenID-Id': '',
+      'X-User-Id': 'user-123',
+      'X-Email': 'me@example.com',
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('strips only the placeholder within a composite header value', () => {
+    const result = resolveHeaders({
+      headers: { Authorization: 'Bearer {{LIBRECHAT_USER_OPENIDID}}' },
+      stripUnresolved: true,
+    });
+
+    expect(result.Authorization).toBe('Bearer ');
+  });
+
+  it('strips body placeholders when no body context is available', () => {
+    const result = resolveHeaders({
+      headers: { 'X-Convo': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Convo']).toBe('');
+  });
+
+  it('strips OpenID token placeholders when no valid token is available', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Access': '{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        'X-Token': '{{LIBRECHAT_OPENID_TOKEN}}',
+      },
+      user: { id: 'user-123' },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Access']).toBe('');
+    expect(result['X-Token']).toBe('');
+  });
+
+  it('leaves unknown and non-resolvable placeholders untouched', () => {
+    const result = resolveHeaders({
+      headers: {
+        'X-Typo': '{{LIBRECHAT_USER_NONEXISTENT}}',
+        'X-Graph': '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}',
+        'X-Custom': '{{MY_CUSTOM_VAR}}',
+      },
+      stripUnresolved: true,
+    });
+
+    expect(result['X-Typo']).toBe('{{LIBRECHAT_USER_NONEXISTENT}}');
+    expect(result['X-Graph']).toBe('{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}');
+    expect(result['X-Custom']).toBe('{{MY_CUSTOM_VAR}}');
+  });
+
+  it('preserves unresolved placeholders by default (staged flows resolve later)', () => {
+    const result = resolveHeaders({ headers: { ...templateHeaders } });
+
+    expect(result['X-OpenID-Id']).toBe('{{LIBRECHAT_USER_OPENIDID}}');
+    expect(result['X-User-Id']).toBe('{{LIBRECHAT_USER_ID}}');
   });
 });

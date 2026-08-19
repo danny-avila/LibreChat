@@ -2,7 +2,7 @@ import { isValidFieldPath, getTopLevelSection } from './config';
 
 describe('isValidFieldPath', () => {
   it('accepts simple dot paths', () => {
-    expect(isValidFieldPath('interface.endpointsMenu')).toBe(true);
+    expect(isValidFieldPath('interface.modelSelect')).toBe(true);
     expect(isValidFieldPath('registration.socialLogins')).toBe(true);
     expect(isValidFieldPath('a')).toBe(true);
     expect(isValidFieldPath('a.b.c.d')).toBe(true);
@@ -43,11 +43,18 @@ describe('isValidFieldPath', () => {
     expect(isValidFieldPath('prototypeChain')).toBe(true);
     expect(isValidFieldPath('a.myConstructor')).toBe(true);
   });
+
+  it('rejects MongoDB operator segments', () => {
+    expect(isValidFieldPath('webSearch.$[].serperApiKey')).toBe(false);
+    expect(isValidFieldPath('speech.tts.$.apiKey')).toBe(false);
+    expect(isValidFieldPath('a.$set')).toBe(false);
+    expect(isValidFieldPath('$')).toBe(false);
+  });
 });
 
 describe('getTopLevelSection', () => {
   it('returns first segment of a dot path', () => {
-    expect(getTopLevelSection('interface.endpointsMenu')).toBe('interface');
+    expect(getTopLevelSection('interface.modelSelect')).toBe('interface');
     expect(getTopLevelSection('registration.socialLogins.github')).toBe('registration');
   });
 

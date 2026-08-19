@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search } from 'lucide-react';
-import { TranslationKeys, useLocalize } from '~/hooks';
+import { JSX } from 'react/jsx-runtime';
+import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AnimatedSearchInput = ({
@@ -13,7 +14,7 @@ const AnimatedSearchInput = ({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isSearching?: boolean;
   placeholder: string;
-}) => {
+}): JSX.Element => {
   const isSearching = searching === true;
   const hasValue = value != null && value.length > 0;
   const localize = useLocalize();
@@ -27,7 +28,7 @@ const AnimatedSearchInput = ({
             <Search
               className={cn(
                 `h-4 w-4 transition-all duration-500 ease-in-out`,
-                isSearching && hasValue ? 'text-blue-400' : 'text-gray-500',
+                isSearching && hasValue ? 'text-accent-primary' : 'text-text-secondary',
               )}
             />
           </div>
@@ -39,12 +40,12 @@ const AnimatedSearchInput = ({
             onChange={onChange}
             placeholder={placeholder}
             aria-label={localize('com_ui_search')}
-            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-gray-500 focus:ring-ring`}
+            className={`peer relative z-20 w-full rounded-lg bg-surface-secondary py-2 pl-10 outline-none backdrop-blur-sm transition-all duration-500 ease-in-out placeholder:text-text-secondary focus:ring-text-primary`}
           />
 
           {/* Gradient overlay */}
           <div
-            className={`pointer-events-none absolute inset-0 z-20 rounded-lg bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 transition-all duration-500 ease-in-out ${isSearching && hasValue ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'} `}
+            className={`pointer-events-none absolute inset-0 z-20 rounded-lg bg-gradient-to-r from-accent-primary/20 via-accent-primary/10 to-accent-primary/20 transition-all duration-500 ease-in-out ${isSearching && hasValue ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'} `}
           />
 
           {/* Animated loading indicator */}
@@ -52,8 +53,8 @@ const AnimatedSearchInput = ({
             className={`absolute right-3 top-1/2 z-20 -translate-y-1/2 transition-all duration-500 ease-in-out ${isSearching && hasValue ? 'scale-100 opacity-100' : 'scale-0 opacity-0'} `}
           >
             <div className="relative h-2 w-2">
-              <div className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
-              <div className="absolute inset-0 rounded-full bg-blue-500" />
+              <div className="absolute inset-0 animate-ping rounded-full bg-accent-primary/60" />
+              <div className="absolute inset-0 rounded-full bg-accent-primary" />
             </div>
           </div>
         </div>
@@ -65,15 +66,15 @@ const AnimatedSearchInput = ({
       >
         <div className="absolute inset-0">
           <div
-            className={`bg-gradient-radial absolute inset-0 from-blue-500/10 to-transparent transition-opacity duration-700 ease-in-out ${isSearching && hasValue ? 'animate-pulse-slow opacity-100' : 'opacity-0'} `}
+            className={`bg-gradient-radial absolute inset-0 from-accent-primary/10 to-transparent transition-opacity duration-700 ease-in-out ${isSearching && hasValue ? 'animate-pulse-slow opacity-100' : 'opacity-0'} `}
           />
           <div
-            className={`absolute inset-0 bg-gradient-to-r from-purple-500/5 via-blue-500/5 to-purple-500/5 blur-xl transition-all duration-700 ease-in-out ${isSearching && hasValue ? 'animate-gradient-x opacity-100' : 'opacity-0'} `}
+            className={`absolute inset-0 bg-gradient-to-r from-accent-primary/5 via-accent-primary/10 to-accent-primary/5 blur-xl transition-all duration-700 ease-in-out ${isSearching && hasValue ? 'animate-gradient-x opacity-100' : 'opacity-0'} `}
           />
         </div>
       </div>
       <div
-        className={`absolute inset-0 -z-20 scale-100 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-blue-500/10 opacity-0 blur-xl transition-all duration-500 ease-in-out peer-focus:scale-105 peer-focus:opacity-100`}
+        className={`absolute inset-0 -z-20 scale-100 bg-gradient-to-r from-accent-primary/10 via-accent-primary/10 to-accent-primary/10 opacity-0 blur-xl transition-all duration-500 ease-in-out peer-focus:scale-105 peer-focus:opacity-100`}
       />
     </div>
   );

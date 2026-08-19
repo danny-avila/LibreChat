@@ -11,6 +11,7 @@ const {
   marketplacePermissionsSchema,
   peoplePickerPermissionsSchema,
   remoteAgentsPermissionsSchema,
+  skillPermissionsSchema,
 } = require('librechat-data-provider');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { updateRoleByName, getRoleByName } = require('~/models');
@@ -60,6 +61,11 @@ const permissionConfigs = {
     permissionType: PermissionTypes.REMOTE_AGENTS,
     errorMessage: 'Invalid remote agents permissions.',
   },
+  skills: {
+    schema: skillPermissionsSchema,
+    permissionType: PermissionTypes.SKILLS,
+    errorMessage: 'Invalid skill permissions.',
+  },
 };
 
 /**
@@ -71,9 +77,7 @@ const createPermissionUpdateHandler = (permissionKey) => {
   const config = permissionConfigs[permissionKey];
 
   return async (req, res) => {
-    const { roleName: _r } = req.params;
-    // TODO: TEMP, use a better parsing for roleName
-    const roleName = _r.toUpperCase();
+    const { roleName } = req.params;
     const updates = req.body;
 
     try {
@@ -110,19 +114,31 @@ const createPermissionUpdateHandler = (permissionKey) => {
  * Get a specific role by name
  */
 router.get('/:roleName', async (req, res) => {
-  const { roleName: _r } = req.params;
-  // TODO: TEMP, use a better parsing for roleName
-  const roleName = _r.toUpperCase();
+  const { roleName } = req.params;
 
   try {
-    let hasReadRoles = false;
-    try {
-      hasReadRoles = await hasCapability(req.user, SystemCapabilities.READ_ROLES);
-    } catch (err) {
-      logger.warn(`[GET /roles/:roleName] capability check failed: ${err.message}`);
-    }
-    if (!hasReadRoles && (roleName === SystemRoles.ADMIN || !roleDefaults[roleName])) {
-      return res.status(403).send({ message: 'Unauthorized' });
+    const isOwnRole = req.user?.role === roleName;
+    const isDefaultRole = Object.hasOwn(roleDefaults, roleName);
+    /** READ_ROLES only gates reading other roles; own role and non-admin default roles skip the probe */
+    const requiresReadRoles = !isOwnRole && (roleName === SystemRoles.ADMIN || !isDefaultRole);
+    if (requiresReadRoles) {
+      let hasReadRoles = false;
+      try {
+        hasReadRoles = await hasCapability(
+          {
+            id: req.user?.id ?? req.user?._id?.toString() ?? '',
+            role: req.user?.role ?? '',
+            tenantId: req.user?.tenantId,
+            idOnTheSource: req.user?.idOnTheSource ?? null,
+          },
+          SystemCapabilities.READ_ROLES,
+        );
+      } catch (err) {
+        logger.warn(`[GET /roles/:roleName] capability check failed: ${err.message}`);
+      }
+      if (!hasReadRoles) {
+        return res.status(403).send({ message: 'Unauthorized' });
+      }
     }
 
     const role = await getRoleByName(roleName, '-_id -__v');
@@ -178,5 +194,11 @@ router.put('/:roleName/marketplace', manageRoles, createPermissionUpdateHandler(
  * Update remote agents (API) permissions for a specific role
  */
 router.put('/:roleName/remote-agents', manageRoles, createPermissionUpdateHandler('remote-agents'));
+
+/**
+ * PUT /api/roles/:roleName/skills
+ * Update skill permissions for a specific role
+ */
+router.put('/:roleName/skills', manageRoles, createPermissionUpdateHandler('skills'));
 
 module.exports = router;

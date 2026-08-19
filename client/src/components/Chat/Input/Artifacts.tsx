@@ -1,10 +1,11 @@
 import React, { memo, useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { CheckboxButton } from '@librechat/client';
-import { ArtifactModes } from 'librechat-data-provider';
 import { WandSparkles, ChevronDown } from 'lucide-react';
+import { ArtifactModes, defaultAgentCapabilities } from 'librechat-data-provider';
+import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { badgeAccents } from './accents';
 import { cn } from '~/utils';
 
 interface ArtifactsToggleState {
@@ -14,8 +15,12 @@ interface ArtifactsToggleState {
 
 function Artifacts() {
   const localize = useLocalize();
-  const { artifacts } = useBadgeRowContext();
-  const { toggleState, debouncedChange, isPinned } = artifacts;
+  const context = useBadgeRowContext();
+  const { toggleState, debouncedChange, isPinned } = context?.artifacts ?? {};
+
+  const { artifactsEnabled } = useAgentCapabilities(
+    context?.agentsConfig?.capabilities ?? defaultAgentCapabilities,
+  );
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [isButtonExpanded, setIsButtonExpanded] = useState(false);
@@ -32,6 +37,7 @@ function Artifacts() {
   const isCustomEnabled = currentState.mode === ArtifactModes.CUSTOM;
 
   const handleToggle = useCallback(() => {
+    if (!debouncedChange) return;
     if (isEnabled) {
       debouncedChange({ value: '' });
       setIsButtonExpanded(false);
@@ -55,6 +61,7 @@ function Artifacts() {
   }, [isPopoverOpen]);
 
   const handleShadcnToggle = useCallback(() => {
+    if (!debouncedChange) return;
     if (isShadcnEnabled) {
       debouncedChange({ value: ArtifactModes.DEFAULT });
     } else {
@@ -63,12 +70,17 @@ function Artifacts() {
   }, [isShadcnEnabled, debouncedChange]);
 
   const handleCustomToggle = useCallback(() => {
+    if (!debouncedChange) return;
     if (isCustomEnabled) {
       debouncedChange({ value: ArtifactModes.DEFAULT });
     } else {
       debouncedChange({ value: ArtifactModes.CUSTOM });
     }
   }, [isCustomEnabled, debouncedChange]);
+
+  if (!artifactsEnabled) {
+    return null;
+  }
 
   if (!isEnabled && !isPinned) {
     return null;
@@ -77,11 +89,11 @@ function Artifacts() {
   return (
     <div className="flex">
       <CheckboxButton
-        className={cn('max-w-fit', isEnabled && 'rounded-r-none border-r-0')}
+        className={cn(isEnabled && 'rounded-r-none border-r-0')}
         checked={isEnabled}
         setValue={handleToggle}
         label={localize('com_ui_artifacts')}
-        isCheckedClassName="border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10"
+        isCheckedClassName={badgeAccents.amber}
         icon={<WandSparkles className="icon-md" aria-hidden="true" />}
       />
 
@@ -90,7 +102,7 @@ function Artifacts() {
           <Ariakit.MenuButton
             className={cn(
               'w-7 rounded-l-none rounded-r-full border-b border-l-0 border-r border-t border-border-light md:w-6',
-              'border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10',
+              badgeAccents.amber,
               'transition-colors',
             )}
             onClick={handleMenuButtonClick}

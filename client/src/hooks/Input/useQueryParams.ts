@@ -19,9 +19,11 @@ import {
   logger,
 } from '~/utils';
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
+import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import { useGetAgentByIdQuery } from '~/data-provider';
 import store from '~/store';
+
+const PROJECT_ID_SEARCH_PARAM = 'projectId';
 
 const injectAgentIntoAgentsMap = (queryClient: QueryClient, agent: any) => {
   const editCacheKey = [QueryKeys.agents, { requiredPermission: PermissionBits.EDIT }];
@@ -72,6 +74,15 @@ export default function useQueryParams({
   const urlAgentId = searchParams.get('agent_id') || '';
   const { data: urlAgent } = useGetAgentByIdQuery(urlAgentId);
 
+  const getPreservedSearchParams = useCallback(() => {
+    const preservedParams = new URLSearchParams();
+    const projectId = searchParams.get(PROJECT_ID_SEARCH_PARAM);
+    if (projectId) {
+      preservedParams.set(PROJECT_ID_SEARCH_PARAM, projectId);
+    }
+    return preservedParams;
+  }, [searchParams]);
+
   /**
    * Applies settings from URL query parameters to create a new conversation.
    * Handles model spec lookup, endpoint normalization, and conversation switching logic.
@@ -84,16 +95,17 @@ export default function useQueryParams({
       }
       let newPreset = removeUnavailableTools(_newPreset, availableTools);
       if (newPreset.spec != null && newPreset.spec !== '') {
-        const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+        const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
         const modelSpecs = startupConfig?.modelSpecs?.list ?? [];
         const spec = modelSpecs.find((s) => s.name === newPreset.spec);
         if (!spec) {
           return;
         }
-        const { preset } = spec;
-        preset.iconURL = getModelSpecIconURL(spec);
-        preset.spec = spec.name;
-        newPreset = preset;
+        newPreset = {
+          ...spec.preset,
+          iconURL: getModelSpecIconURL(spec),
+          spec: spec.name,
+        } as TPreset;
       }
 
       let newEndpoint = newPreset.endpoint ?? '';
@@ -161,13 +173,16 @@ export default function useQueryParams({
         newConversation({
           template: currentConvo,
           preset: newPreset,
-          keepLatestMessage: true,
           keepAddedConvos: true,
         });
         return;
       }
 
-      newConversation({ preset: newPreset, keepAddedConvos: true });
+      newConversation({
+        template: { chatProjectId: conversation?.chatProjectId ?? null },
+        preset: newPreset,
+        keepAddedConvos: true,
+      });
     },
     [
       queryClient,
@@ -223,8 +238,8 @@ export default function useQueryParams({
       }
     })();
 
-    setSearchParams(new URLSearchParams(), { replace: true });
-  }, [methods, submitMessage, setSearchParams]);
+    setSearchParams(getPreservedSearchParams(), { replace: true });
+  }, [methods, submitMessage, setSearchParams, getPreservedSearchParams]);
 
   useEffect(() => {
     const processQueryParams = () => {
@@ -239,6 +254,7 @@ export default function useQueryParams({
       delete queryParams.prompt;
       delete queryParams.q;
       delete queryParams.submit;
+      delete queryParams[PROJECT_ID_SEARCH_PARAM];
       const validSettings = processValidSettings(queryParams);
 
       return { decodedPrompt, validSettings, shouldAutoSubmit };
@@ -258,7 +274,7 @@ export default function useQueryParams({
       if (!textAreaRef.current) {
         return;
       }
-      const startupConfig = queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]);
+      const startupConfig = queryClient.getQueryData<TStartupConfig>(startupConfigKey(true));
       if (!startupConfig) {
         return;
       }
@@ -266,7 +282,10 @@ export default function useQueryParams({
       const { decodedPrompt, validSettings, shouldAutoSubmit } = processQueryParams();
       const hasSettings = Object.keys(validSettings).length > 0;
 
-      if (!shouldAutoSubmit) {
+      const autoSubmitAllowed = startupConfig.interface?.autoSubmitFromUrl !== false;
+      const willAutoSubmit = shouldAutoSubmit && autoSubmitAllowed;
+
+      if (!willAutoSubmit) {
         submissionHandledRef.current = true;
       }
 
@@ -278,7 +297,7 @@ export default function useQueryParams({
 
         // Defer URL cleanup until after submission completes (processSubmission handles it)
         if (!pendingSubmitRef.current) {
-          setSearchParams(new URLSearchParams(), { replace: true });
+          setSearchParams(getPreservedSearchParams(), { replace: true });
         }
       };
 
@@ -291,7 +310,7 @@ export default function useQueryParams({
       }
 
       // Handle auto-submission
-      if (shouldAutoSubmit && decodedPrompt) {
+      if (willAutoSubmit && decodedPrompt) {
         if (hasSettings) {
           // Settings are changing, defer submission
           pendingSubmitRef.current = true;
@@ -346,6 +365,7 @@ export default function useQueryParams({
     newConversation,
     submitMessage,
     setSearchParams,
+    getPreservedSearchParams,
     queryClient,
     processSubmission,
     areSettingsApplied,

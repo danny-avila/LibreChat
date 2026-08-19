@@ -2,8 +2,18 @@ import { Keyv } from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import type { StoredDataNoRaw } from 'keyv';
 import type { FlowState, FlowMetadata, FlowManagerOptions } from './types';
+import { registerShutdownTask } from '../app/shutdown';
+import { math } from '~/utils/math';
 
-export const PENDING_STALE_MS = 2 * 60 * 1000;
+/**
+ * Lifetime of a PENDING OAuth flow: how long the auth button stays valid and an
+ * in-flight flow can be reused before it is replaced. Mirrors
+ * `mcpConfig.OAUTH_HANDLING_TIMEOUT` (`MCP_OAUTH_HANDLING_TIMEOUT`) so the reuse
+ * window matches the wait the server grants the user. Default: 10 minutes.
+ */
+export const PENDING_STALE_MS: number = math(
+  process.env.MCP_OAUTH_HANDLING_TIMEOUT ?? 10 * 60 * 1000,
+);
 
 const SECONDS_THRESHOLD = 1e10;
 
@@ -18,19 +28,23 @@ export function normalizeExpiresAt(timestamp: number): number {
 export class FlowStateManager<T = unknown> {
   private keyv: Keyv;
   private ttl: number;
+  private monitorTimeout: number;
+  private retainedFailureTypes: Set<string>;
   private intervals: Set<NodeJS.Timeout>;
 
   constructor(store: Keyv, options?: FlowManagerOptions) {
     if (!options) {
       options = { ttl: 60000 * 3 };
     }
-    const { ci = false, ttl } = options;
+    const { ci = false, ttl, monitorTimeout = ttl, retainedFailureTypes = [] } = options;
 
     if (!ci && !(store instanceof Keyv)) {
       throw new Error('Invalid store provided to FlowStateManager');
     }
 
     this.ttl = ttl;
+    this.monitorTimeout = monitorTimeout;
+    this.retainedFailureTypes = new Set(retainedFailureTypes);
     this.keyv = store;
     this.intervals = new Set();
 
@@ -40,17 +54,14 @@ export class FlowStateManager<T = unknown> {
   }
 
   private setupCleanupHandlers() {
-    const cleanup = () => {
+    // Register cleanup with the centralized graceful-shutdown coordinator
+    // (see ../app/shutdown.ts) rather than attaching direct signal
+    // handlers — multiple competing handlers race the HTTP drain.
+    registerShutdownTask('flow manager cleanup', () => {
       logger.info('Cleaning up FlowStateManager intervals...');
       this.intervals.forEach((interval) => clearInterval(interval));
       this.intervals.clear();
-      process.exit(0);
-    };
-
-    process.on('SIGTERM', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGQUIT', cleanup);
-    process.on('SIGHUP', cleanup);
+    });
   }
 
   /**
@@ -138,7 +149,6 @@ export class FlowStateManager<T = unknown> {
   private monitorFlow(flowKey: string, type: string, signal?: AbortSignal): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const checkInterval = 2000;
-      let elapsedTime = 0;
       let isCleanedUp = false;
       let intervalId: NodeJS.Timeout | null = null;
       let missingStateRetried = false;
@@ -223,20 +233,35 @@ export class FlowStateManager<T = unknown> {
             if (flowState.status === 'COMPLETED' && flowState.result !== undefined) {
               resolve(flowState.result);
             } else if (flowState.status === 'FAILED') {
-              await this.keyv.delete(flowKey);
+              if (!this.retainedFailureTypes.has(type)) {
+                await this.keyv.delete(flowKey);
+              }
               reject(new Error(flowState.error ?? `${type} flow failed`));
             }
             return;
           }
 
-          elapsedTime += checkInterval;
-          if (elapsedTime >= this.ttl) {
+          const elapsedTime = Date.now() - flowState.createdAt;
+          if (elapsedTime >= this.monitorTimeout) {
             cleanup();
             logger.error(
-              `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | TTL: ${this.ttl}`,
+              `[${flowKey}] Flow timed out | Elapsed time: ${elapsedTime} | Timeout: ${this.monitorTimeout}`,
             );
-            await this.keyv.delete(flowKey);
-            reject(new Error(`${type} flow timed out`));
+            const message = `${type} flow timed out`;
+            if (this.retainedFailureTypes.has(type)) {
+              const remainingTtl = Math.max(1, this.ttl - elapsedTime);
+              const timedOutState: FlowState<T> = {
+                ...flowState,
+                status: 'FAILED',
+                error: message,
+                failedAt: Date.now(),
+              };
+              await this.keyv.set(flowKey, timedOutState, remainingTtl);
+            } else {
+              await this.keyv.delete(flowKey);
+            }
+            reject(new Error(message));
+            return;
           }
           logger.debug(`[${flowKey}] Flow state elapsed time: ${elapsedTime}, checking again...`);
         } catch (error) {
@@ -347,6 +372,17 @@ export class FlowStateManager<T = unknown> {
       return false;
     }
 
+    if (flowState.status === 'COMPLETED') {
+      logger.debug(
+        '[FlowStateManager] Flow already completed, skipping failure to prevent overwrite',
+        {
+          flowId,
+          type,
+        },
+      );
+      return true;
+    }
+
     const updatedState: FlowState = {
       ...flowState,
       status: 'FAILED',
@@ -406,6 +442,10 @@ export class FlowStateManager<T = unknown> {
     try {
       const result = await handler();
       await this.completeFlow(flowId, type, result);
+      const completedState = (await this.keyv.get(flowKey)) as FlowState<T> | undefined;
+      if (completedState?.status === 'COMPLETED' && completedState.result !== undefined) {
+        return completedState.result;
+      }
       return result;
     } catch (error) {
       await this.failFlow(flowId, type, error instanceof Error ? error : new Error(String(error)));

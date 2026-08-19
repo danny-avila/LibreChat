@@ -5,6 +5,7 @@ import {
   PermissionBits,
   AccessRoleIds,
 } from 'librechat-data-provider';
+import { SYSTEM_TENANT_ID, getTenantId, permissionBitSupersets } from '@librechat/data-schemas';
 import type { PipelineStage, AnyBulkWriteOperation } from 'mongoose';
 
 export interface Principal {
@@ -22,7 +23,7 @@ export interface Principal {
 export interface EnricherDependencies {
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<Record<string, unknown>[]>;
   bulkWriteAclEntries: (
-    ops: AnyBulkWriteOperation<unknown>[],
+    ops: AnyBulkWriteOperation[],
     options?: Record<string, unknown>,
   ) => Promise<unknown>;
   findRoleByIdentifier: (
@@ -36,6 +37,13 @@ export interface EnrichResult {
   entriesToBackfill: Types.ObjectId[];
 }
 
+function matchesCurrentTenant(principal: Record<string, unknown>, tenantId?: string): boolean {
+  if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
+    return true;
+  }
+  return principal.tenantId === tenantId;
+}
+
 /** Enriches REMOTE_AGENT principals with implicit AGENT owners */
 export async function enrichRemoteAgentPrincipals(
   deps: EnricherDependencies,
@@ -46,14 +54,20 @@ export async function enrichRemoteAgentPrincipals(
     typeof resourceId === 'string' && /^[a-f\d]{24}$/i.test(resourceId)
       ? Types.ObjectId.createFromHexString(resourceId)
       : resourceId;
+  const tenantId = getTenantId();
 
+  /**
+   * Filter `permBits` with `$in: permissionBitSupersets(SHARE)` instead of
+   * `$bitsAllSet` for Cosmos DB for MongoDB compatibility. `$in` is indexable
+   * and, for the current 4-bit permission set, expands to at most 8 values.
+   */
   const agentOwnerEntries = await deps.aggregateAclEntries([
     {
       $match: {
         resourceType: ResourceType.AGENT,
         resourceId: resourceObjectId,
         principalType: PrincipalType.USER,
-        permBits: { $bitsAllSet: PermissionBits.SHARE },
+        permBits: { $in: permissionBitSupersets(PermissionBits.SHARE) },
       },
     },
     {
@@ -81,6 +95,10 @@ export async function enrichRemoteAgentPrincipals(
     }
 
     const userInfo = entry.userInfo as Record<string, unknown>;
+    if (!matchesCurrentTenant(userInfo, tenantId)) {
+      continue;
+    }
+
     const principalId = entry.principalId as Types.ObjectId;
 
     const alreadyIncluded = enrichedPrincipals.some(

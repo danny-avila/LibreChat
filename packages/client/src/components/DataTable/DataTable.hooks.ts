@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, SetStateAction, Dispatch, CSSProperties } from 'react';
 import type { TableColumn } from './DataTable.types';
 
-export function useDebounced<T>(value: T, delay: number) {
+export function useDebounced<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
@@ -12,7 +12,9 @@ export function useDebounced<T>(value: T, delay: number) {
   return debounced;
 }
 
-export const useOptimizedRowSelection = (initialSelection: Record<string, boolean> = {}) => {
+export const useOptimizedRowSelection = (
+  initialSelection: Record<string, boolean> = {},
+): readonly [Record<string, boolean>, Dispatch<SetStateAction<Record<string, boolean>>>] => {
   const [selection, setSelection] = useState(initialSelection);
   return [selection, setSelection] as const;
 };
@@ -21,7 +23,7 @@ export const useColumnStyles = <TData, TValue>(
   columns: TableColumn<TData, TValue>[],
   isSmallScreen: boolean,
   containerRef: React.RefObject<HTMLDivElement>,
-) => {
+): Record<string, CSSProperties> => {
   const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
@@ -83,13 +85,20 @@ export const useColumnStyles = <TData, TValue>(
   }, [columns, containerWidth, isSmallScreen]);
 };
 
-export const useDynamicColumnWidths = useColumnStyles;
+export const useDynamicColumnWidths: <TData, TValue>(
+  columns: TableColumn<TData, TValue>[],
+  isSmallScreen: boolean,
+  containerRef: React.RefObject<HTMLDivElement>,
+) => Record<string, CSSProperties> = useColumnStyles;
 
 export const useKeyboardNavigation = (
   tableRef: React.RefObject<HTMLDivElement>,
   rowCount: number,
   onRowSelect?: (index: number) => void,
-) => {
+): {
+  focusedRowIndex: number;
+  setFocusedRowIndex: Dispatch<SetStateAction<number>>;
+} => {
   const [focusedRowIndex, setFocusedRowIndex] = useState<number>(-1);
 
   useEffect(() => {

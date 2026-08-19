@@ -37,7 +37,7 @@ const DeleteConfirmDialog = ({
                 e.stopPropagation();
               }}
             >
-              <Trash2 className="size-4" aria-hidden="true" />
+              <Trash2 className="size-5" aria-hidden="true" />
             </Button>
           }
         />

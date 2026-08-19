@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { openAISchema } from 'librechat-data-provider';
-import type { TConfig } from 'librechat-data-provider';
+import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
 import type { OpenAIClientOptions, Providers } from '@librechat/agents';
-import type { BindToolsInput } from '@langchain/core/language_models/chat_models';
+import type { TConfig } from 'librechat-data-provider';
 import type { AzureOptions } from './azure';
 
 export type OpenAIParameters = z.infer<typeof openAISchema>;
@@ -16,6 +16,8 @@ export interface OpenAIConfigOptions {
   modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
   reverseProxyUrl?: string | null;
+  baseURLIsUserProvided?: boolean;
+  allowedAddresses?: string[] | null;
   defaultQuery?: Record<string, string | undefined>;
   headers?: Record<string, string>;
   proxy?: string | null;
@@ -28,9 +30,14 @@ export interface OpenAIConfigOptions {
 
 export type OpenAIConfiguration = OpenAIClientOptions['configuration'];
 
-export type OAIClientOptions = OpenAIClientOptions & {
+export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
   include_reasoning?: boolean;
+  /** Replays `reasoning_content` on tool-bearing turns (DeepSeek thinking-mode, #13366). */
+  includeReasoningContent?: boolean;
+  promptCache?: boolean;
+  promptCacheTtl?: '5m' | '1h';
   _lc_stream_delay?: number;
+  verbosity?: string | null;
 };
 
 /**

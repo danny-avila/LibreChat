@@ -1,6 +1,11 @@
-const { ToolMessage } = require('@langchain/core/messages');
+const { ATTACHMENT_ONLY_TEXT } = require('@librechat/api');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
-const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/messages');
+const {
+  AIMessage,
+  ToolMessage,
+  HumanMessage,
+  SystemMessage,
+} = require('@librechat/agents/langchain/messages');
 
 /**
  * Formats a message to OpenAI Vision API payload format.
@@ -14,12 +19,18 @@ const { HumanMessage, AIMessage, SystemMessage } = require('@langchain/core/mess
  * @returns {(Object)} - The formatted message.
  */
 const formatVisionMessage = ({ message, image_urls, endpoint }) => {
+  // Omit an empty text part for image-only messages. Anthropic rejects empty
+  // text content blocks with HTTP 400, and an empty block adds nothing for
+  // other providers either.
+  const hasText = typeof message.content === 'string' && message.content.trim() !== '';
+  const textPart = hasText ? [{ type: ContentTypes.TEXT, text: message.content }] : [];
+
   if (endpoint === EModelEndpoint.anthropic) {
-    message.content = [...image_urls, { type: ContentTypes.TEXT, text: message.content }];
+    message.content = [...image_urls, ...textPart];
     return message;
   }
 
-  message.content = [{ type: ContentTypes.TEXT, text: message.content }, ...image_urls];
+  message.content = [...textPart, ...image_urls];
 
   return message;
 };
@@ -65,6 +76,15 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
       image_urls: message.image_urls,
       endpoint,
     });
+  }
+
+  /**
+   * An attachment-only turn whose files reach the model out-of-band (RAG,
+   * code environment) leaves nothing in the content itself, and providers
+   * such as Anthropic reject an empty user message outright.
+   */
+  if (role === 'user' && content === '' && message.files?.length > 0) {
+    formattedMessage.content = ATTACHMENT_ONLY_TEXT;
   }
 
   if (_name) {
@@ -152,6 +172,17 @@ const formatAgentMessages = (payload) => {
 
     let currentContent = [];
     let lastAIMessage = null;
+    /**
+     * Every AIMessage produced from this TMessage that received `tool_calls`,
+     * in order. Multi-step tool turns (where the agent loop cycles the LLM
+     * multiple times with intervening tool results) produce one AIMessage per
+     * cycle, each owning a different `tool_call_id`. We attach persisted
+     * Vertex Gemini 3 thought signatures (`metadata.thoughtSignatures`,
+     * keyed by `tool_call_id`) onto each one so every step has its right
+     * signature on resume — Vertex validates per-step, not per-turn
+     * (issue #13006 follow-up).
+     */
+    const toolBearingAIMessages = [];
 
     let hasReasoning = false;
     for (const part of message.content) {
@@ -186,12 +217,17 @@ const formatAgentMessages = (payload) => {
         }
 
         // Note: `tool_calls` list is defined when constructed by `AIMessage` class, and outputs should be excluded from it
-        const { output, args: _args, ...tool_call } = part.tool_call;
+        const {
+          output,
+          args: _args,
+          inputValidationError: _inputValidationError,
+          ...tool_call
+        } = part.tool_call;
         // TODO: investigate; args as dictionary may need to be provider-or-tool-specific
         let args = _args;
         try {
           args = JSON.parse(_args);
-        } catch (e) {
+        } catch (_e) {
           if (typeof _args === 'string') {
             args = { input: _args };
           }
@@ -199,6 +235,9 @@ const formatAgentMessages = (payload) => {
 
         tool_call.args = args;
         lastAIMessage.tool_calls.push(tool_call);
+        if (toolBearingAIMessages[toolBearingAIMessages.length - 1] !== lastAIMessage) {
+          toolBearingAIMessages.push(lastAIMessage);
+        }
 
         // Add the corresponding ToolMessage
         messages.push(
@@ -211,7 +250,49 @@ const formatAgentMessages = (payload) => {
       } else if (part.type === ContentTypes.THINK) {
         hasReasoning = true;
         continue;
-      } else if (part.type === ContentTypes.ERROR || part.type === ContentTypes.AGENT_UPDATE) {
+      } else if (part.type === ContentTypes.STEER) {
+        /*
+        A mid-run steer: user speech persisted inline in the assistant message.
+        Flush any accumulated assistant text first so ordering is preserved, then
+        replay the steer as a standalone user message. `lastAIMessage` is NOT
+        reset — the aggregator emits a fresh text-with-tool_call_ids part for any
+        post-steer tool step, and preceding tool_call parts already pushed their
+        ToolMessages, so the HumanMessage lands after them (valid provider order).
+         */
+        if (currentContent.length > 0) {
+          if (currentContent.some((curr) => curr.type !== ContentTypes.TEXT)) {
+            /** Non-text parts (images, files) must survive the flush intact —
+             *  folding to text here would drop them from replayed history. */
+            messages.push(new AIMessage({ content: currentContent }));
+          } else {
+            const content = currentContent
+              .reduce((acc, curr) => `${acc}${curr[ContentTypes.TEXT] ?? ''}\n`, '')
+              .trim();
+            if (content.length > 0) {
+              messages.push(new AIMessage({ content }));
+            }
+          }
+          currentContent = [];
+        }
+        messages.push(
+          new HumanMessage({
+            content:
+              Array.isArray(part.media) && part.media.length > 0
+                ? part.media
+                : (part[ContentTypes.STEER] ?? ''),
+            additional_kwargs: { source: 'steer' },
+          }),
+        );
+        /** A post-steer tool_call must mint a FRESH assistant anchor —
+         *  attaching to the pre-steer one would emit its ToolMessage after
+         *  the HumanMessage while the call sat before it (invalid order). */
+        lastAIMessage = null;
+      } else if (
+        part.type === ContentTypes.ERROR ||
+        part.type === ContentTypes.AGENT_UPDATE ||
+        part.type === ContentTypes.ACTIVITY_LABEL
+      ) {
+        // ACTIVITY_LABEL parts are UI-only progress notes — never model input.
         continue;
       } else {
         currentContent.push(part);
@@ -231,6 +312,26 @@ const formatAgentMessages = (payload) => {
 
     if (currentContent.length > 0) {
       messages.push(new AIMessage({ content: currentContent }));
+    }
+
+    /**
+     * Restore signatures per-step. The persisted shape is
+     * `{ [tool_call_id]: signature }`; for each tool-bearing AIMessage we
+     * build a position-aligned `additional_kwargs.signatures` array (empty
+     * placeholders for tool_calls without a stored signature). Agents'
+     * `fixThoughtSignatures` then dispatches the non-empty entries to
+     * functionCall parts in order — order matches because non-empty
+     * signatures and tool_calls share their original parts ordering.
+     */
+    const sigsByCallId = message.metadata?.thoughtSignatures;
+    if (sigsByCallId && typeof sigsByCallId === 'object' && toolBearingAIMessages.length > 0) {
+      for (const aiMsg of toolBearingAIMessages) {
+        const sigs = aiMsg.tool_calls.map((tc) => sigsByCallId[tc.id] ?? '');
+        if (sigs.some((s) => typeof s === 'string' && s.length > 0)) {
+          aiMsg.additional_kwargs ??= {};
+          aiMsg.additional_kwargs.signatures = sigs;
+        }
+      }
     }
   }
 

@@ -1,7 +1,15 @@
 const multer = require('multer');
 const express = require('express');
 const { sleep } = require('@librechat/agents');
-const { isEnabled, resolveImportMaxFileSize } = require('@librechat/api');
+const {
+  isEnabled,
+  deleteAgentCheckpoints,
+  createArchiveAllHandler,
+  resolveImportMaxFileSize,
+  restoreTenantContextFromReq,
+  deleteAllSharedLinksWithCleanup,
+  deleteConvoSharedLinksWithCleanup,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
@@ -14,6 +22,7 @@ const { forkConversation, duplicateConversation } = require('~/server/utils/impo
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
 
@@ -23,15 +32,28 @@ const assistantClients = {
 };
 
 const router = express.Router();
+const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
 router.use(requireJwtAuth);
+
+const isValidProjectFilter = (projectId) =>
+  !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
 router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
-  const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
+  const pinned = isEnabled(req.query.pinned);
+  const search =
+    typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
+  const projectId = Array.isArray(req.query.projectId)
+    ? req.query.projectId[0]
+    : req.query.projectId;
+
+  if (!isValidProjectFilter(projectId)) {
+    return res.status(400).json({ error: 'projectId must be a valid project id or unassigned' });
+  }
 
   let tags;
   if (req.query.tags) {
@@ -43,10 +65,12 @@ router.get('/', async (req, res) => {
       cursor,
       limit,
       isArchived,
+      pinned,
       tags,
       search,
       sortBy,
       sortDirection,
+      projectId,
     });
     res.status(200).json(result);
   } catch (error) {
@@ -94,7 +118,7 @@ router.get('/gen_title/:conversationId', async (req, res) => {
   }
 });
 
-router.delete('/', async (req, res) => {
+router.delete('/', configMiddleware, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
 
@@ -126,10 +150,32 @@ router.delete('/', async (req, res) => {
   }
 
   try {
-    const dbResponse = await db.deleteConvos(req.user.id, filter);
+    const tenantId =
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined;
     if (filter.conversationId) {
-      await db.deleteToolCalls(req.user.id, filter.conversationId);
-      await db.deleteConvoSharedLink(req.user.id, filter.conversationId);
+      subagentThreadTaskStore.cancelForConversations(
+        req.user.id,
+        [filter.conversationId],
+        tenantId,
+      );
+    }
+    const dbResponse = await db.deleteConvos(req.user.id, filter);
+    const deletedConversationIds =
+      dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
+    subagentThreadTaskStore.cancelForConversations(req.user.id, deletedConversationIds, tenantId);
+    // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+    // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+    await deleteAgentCheckpoints(
+      deletedConversationIds,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+    );
+    if (filter.conversationId) {
+      await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));
+      await Promise.all(
+        deletedConversationIds.map((id) => deleteConvoSharedLinksWithCleanup(req.user.id, id)),
+      );
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -138,11 +184,22 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.delete('/all', async (req, res) => {
+router.delete('/all', configMiddleware, async (req, res) => {
   try {
+    subagentThreadTaskStore.cancelForOwner(
+      req.user.id,
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined,
+    );
     const dbResponse = await db.deleteConvos(req.user.id, {});
+    // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
+    await deleteAgentCheckpoints(
+      dbResponse.conversationIds,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+    );
     await db.deleteToolCalls(req.user.id);
-    await db.deleteAllSharedLinks(req.user.id);
+    await deleteAllSharedLinksWithCleanup(req.user.id);
     res.status(201).json(dbResponse);
   } catch (error) {
     logger.error('Error clearing conversations', error);
@@ -176,12 +233,61 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { conversationId, isArchived },
-      { context: `POST /api/convos/archive ${conversationId}` },
+      {
+        context: `POST /api/convos/archive ${conversationId}`,
+        /** Filing a chat away is not activity: `updatedAt` stays the chat's own last
+         * activity so unarchiving restores it to its real place in the date groups.
+         * When it was archived is recorded separately, on `archivedAt`. */
+        preserveUpdatedAt: true,
+        /** Without timestamps, an upsert would insert a conversation that has none. */
+        noUpsert: true,
+      },
     );
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     res.status(200).json(dbResponse);
   } catch (error) {
     logger.error('Error archiving conversation', error);
     res.status(500).send('Error archiving conversation');
+  }
+});
+
+/**
+ * Archives every conversation currently visible to the user.
+ * @route POST /archive/all
+ * @returns {object} 200 - The number of conversations archived.
+ */
+router.post('/archive/all', archiveAllHandler);
+
+router.post('/pin', validateConvoAccess, async (req, res) => {
+  const { conversationId, pinned } = req.body?.arg ?? {};
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  if (pinned === undefined) {
+    return res.status(400).json({ error: 'pinned is required' });
+  }
+
+  if (typeof pinned !== 'boolean') {
+    return res.status(400).json({ error: 'pinned must be a boolean' });
+  }
+
+  try {
+    const dbResponse = await db.setConvoPinned(req.user.id, conversationId, pinned);
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error pinning conversation', error);
+    res.status(500).send('Error pinning conversation');
   }
 });
 
@@ -264,10 +370,16 @@ router.post(
   importUserLimiter,
   configMiddleware,
   handleUpload,
+  restoreTenantContextFromReq,
   async (req, res) => {
     try {
       /* TODO: optimize to return imported conversations and add manually */
-      await importConversations({ filepath: req.file.path, requestUserId: req.user.id });
+      await importConversations({
+        filepath: req.file.path,
+        requestUserId: req.user.id,
+        userRole: req.user.role,
+        interfaceConfig: req.config?.interfaceConfig,
+      });
       res.status(201).json({ message: 'Conversation(s) imported successfully' });
     } catch (error) {
       logger.error('Error processing file', error);

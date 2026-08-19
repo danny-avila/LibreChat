@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import type { ParsedServerConfig } from '~/mcp/types';
+import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   let ServerConfigsCacheRedisAggregateKey: typeof import('../ServerConfigsCacheRedisAggregateKey').ServerConfigsCacheRedisAggregateKey;
@@ -56,7 +57,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
   });
 
   afterAll(async () => {
-    if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
+    await closeRedisClients();
   });
 
   describe('add and get operations', () => {
@@ -253,8 +254,7 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await cache.getAll();
 
       // Spy on the underlying Keyv cache to count Redis calls
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cacheGetSpy = jest.spyOn((cache as any).cache, 'get');
+      const cacheGetSpy = jest.spyOn(cache['cache'], 'get');
 
       await cache.getAll();
       await cache.getAll();
@@ -324,11 +324,9 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       await cache.getAll(); // prime snapshot
 
       // Force-expire the snapshot without sleeping
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (cache as any).localSnapshotExpiry = Date.now() - 1;
+      cache['localSnapshotExpiry'] = Date.now() - 1;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cacheGetSpy = jest.spyOn((cache as any).cache, 'get');
+      const cacheGetSpy = jest.spyOn(cache['cache'], 'get');
       const result = await cache.getAll();
       expect(cacheGetSpy.mock.calls).toHaveLength(1);
       expect(Object.keys(result).length).toBe(1);

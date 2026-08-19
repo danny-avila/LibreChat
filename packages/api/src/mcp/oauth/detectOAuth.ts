@@ -6,6 +6,11 @@
 // Manual testing ensures the OAuth detection still works against real MCP servers.
 
 import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
+import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport';
+import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
+import { probeResourceMetadataHint } from './resourceHint';
+import { createHardenedOAuthFetch } from './hardenedFetch';
+import { getOAuthUrlPort } from './url';
 import { mcpConfig } from '../mcpConfig';
 
 export interface OAuthDetectionResult {
@@ -17,25 +22,70 @@ export interface OAuthDetectionResult {
 /**
  * Detects if an MCP server requires OAuth authentication using proactive discovery methods.
  *
- * This function implements a comprehensive OAuth detection strategy:
- * 1. Standard Protected Resource Metadata (RFC 9728) - checks /.well-known/oauth-protected-resource
- * 2. 401 Challenge Method - checks WWW-Authenticate header for resource_metadata URL
- * 3. Optional fallback: treat any 401/403 response as OAuth requirement (if MCP_OAUTH_ON_AUTH_ERROR=true)
+ * Strategy (RFC 9728 §5.1 aligned):
+ * 1. Probe the server for a 401 challenge and extract the `resource_metadata` URL from
+ *    the `WWW-Authenticate` header, if any.
+ * 2. Call the SDK's Protected Resource Metadata discovery. When the hint is present it
+ *    overrides the path-aware well-known endpoint, matching the behavior of Claude
+ *    Desktop / MCP Inspector / Copilot and avoiding stale path-aware metadata.
+ * 3. If no metadata was found but the server advertised `Bearer`, report OAuth-required
+ *    without metadata (legacy servers without `.well-known` still need auth).
+ * 4. Optional fallback: treat any 401/403 as an OAuth requirement when
+ *    `MCP_OAUTH_ON_AUTH_ERROR=true`.
  *
  * @param serverUrl - The MCP server URL to check for OAuth requirements
- * @returns Promise<OAuthDetectionResult> - OAuth requirement details
  */
-export async function detectOAuthRequirement(serverUrl: string): Promise<OAuthDetectionResult> {
-  const protectedResourceResult = await checkProtectedResourceMetadata(serverUrl);
-  if (protectedResourceResult) return protectedResourceResult;
+export async function detectOAuthRequirement(
+  serverUrl: string,
+  allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
+): Promise<OAuthDetectionResult> {
+  const fetchFn = createHardenedOAuthFetch({ allowedDomains, allowedAddresses });
+  const hint = await probeResourceMetadataHint(serverUrl, fetchFn);
 
-  const challengeResult = await check401ChallengeMetadata(serverUrl);
-  if (challengeResult) return challengeResult;
+  /**
+   * The `resource_metadata` URL is attacker-controlled (it's echoed from the MCP
+   * server's own 401 challenge). Reject hints pointing at private/loopback/metadata
+   * addresses before the SDK fetches them, so a malicious server cannot weaponize
+   * detection as an SSRF vector against the LibreChat host or its internal network.
+   */
+  const safeHintUrl = hint?.resourceMetadataUrl
+    ? await validateHintUrl(hint.resourceMetadataUrl, allowedDomains, allowedAddresses)
+    : undefined;
 
-  const fallbackResult = await checkAuthErrorFallback(serverUrl);
-  if (fallbackResult) return fallbackResult;
+  const metadataResult = await checkProtectedResourceMetadata(serverUrl, safeHintUrl, fetchFn);
+  if (metadataResult) return metadataResult;
 
-  // No OAuth detected
+  if (hint?.bearerChallenge) {
+    return {
+      requiresOAuth: true,
+      method: '401-challenge-metadata',
+      metadata: null,
+    };
+  }
+
+  /**
+   * `MCP_OAUTH_ON_AUTH_ERROR` fallback: honor a 401/403 already observed by the HEAD
+   * probe instead of issuing a duplicate HEAD. POST-only 401/403 is intentionally
+   * excluded — WAF/CSRF rules commonly 403 a body-less JSON POST on endpoints that
+   * have nothing to do with OAuth, and those must not flip detection. A `null` probe
+   * means every attempt threw (transient network error); retry once via HEAD so a
+   * blip doesn't flip detection to "no OAuth required" for a server that needs it.
+   */
+  if (mcpConfig.OAUTH_ON_AUTH_ERROR) {
+    if (hint?.headAuthChallenge) {
+      return {
+        requiresOAuth: true,
+        method: 'no-metadata-found',
+        metadata: null,
+      };
+    }
+    if (hint === null) {
+      const fallbackResult = await checkAuthErrorFallback(serverUrl, fetchFn);
+      if (fallbackResult) return fallbackResult;
+    }
+  }
+
   return {
     requiresOAuth: false,
     method: 'no-metadata-found',
@@ -47,18 +97,31 @@ export async function detectOAuthRequirement(serverUrl: string): Promise<OAuthDe
 // ------------------------ Private helper functions for OAuth detection -------------------------//
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Checks for OAuth using standard protected resource metadata (RFC 9728)
+/**
+ * Fetches RFC 9728 Protected Resource Metadata. When `resourceMetadataUrl` is provided
+ * (extracted from the server's `WWW-Authenticate` 401 challenge), the SDK fetches that
+ * URL directly; otherwise it falls back to path-aware `/.well-known/oauth-protected-resource`
+ * discovery. The `method` reflects which source actually produced the metadata.
+ */
 async function checkProtectedResourceMetadata(
   serverUrl: string,
+  resourceMetadataUrl?: URL,
+  fetchFn?: FetchLike,
 ): Promise<OAuthDetectionResult | null> {
   try {
-    const resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
+    const resourceMetadata = await discoverOAuthProtectedResourceMetadata(
+      serverUrl,
+      {
+        resourceMetadataUrl,
+      },
+      fetchFn,
+    );
 
     if (!resourceMetadata?.authorization_servers?.length) return null;
 
     return {
       requiresOAuth: true,
-      method: 'protected-resource-metadata',
+      method: resourceMetadataUrl ? '401-challenge-metadata' : 'protected-resource-metadata',
       metadata: resourceMetadata,
     };
   } catch {
@@ -67,91 +130,40 @@ async function checkProtectedResourceMetadata(
 }
 
 /**
- * Checks for OAuth using 401 challenge with resource metadata URL or Bearer token.
- * Tries HEAD first, then falls back to POST if HEAD doesn't return 401.
- * Some servers (like StackOverflow) only return 401 for POST requests.
+ * SSRF-guards an attacker-controlled `resource_metadata` hint before the SDK follows it.
+ * Honors the same allowedDomains/allowedAddresses policy used by the OAuth handler:
+ * trusted admin allowlist matches bypass the private-address block; otherwise hints
+ * are rejected when they target restricted hostnames or resolve to private addresses.
+ * On rejection the caller continues with path-aware discovery.
  */
-async function check401ChallengeMetadata(serverUrl: string): Promise<OAuthDetectionResult | null> {
-  // Try HEAD first (lighter weight)
-  const headResult = await check401WithMethod(serverUrl, 'HEAD');
-  if (headResult) return headResult;
-
-  // Fall back to POST if HEAD didn't return 401 (some servers don't support HEAD)
-  const postResult = await check401WithMethod(serverUrl, 'POST');
-  if (postResult) return postResult;
-
-  return null;
-}
-
-async function check401WithMethod(
-  serverUrl: string,
-  method: 'HEAD' | 'POST',
-): Promise<OAuthDetectionResult | null> {
+async function validateHintUrl(
+  hintUrl: URL,
+  allowedDomains?: string[] | null,
+  allowedAddresses?: string[] | null,
+): Promise<URL | undefined> {
   try {
-    const fetchOptions: RequestInit = {
-      method,
-      signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
-    };
+    if (isOAuthUrlAllowed(hintUrl.href, allowedDomains, allowedAddresses)) return hintUrl;
 
-    // POST requests need headers and body for MCP servers
-    if (method === 'POST') {
-      fetchOptions.headers = { 'Content-Type': 'application/json' };
-      fetchOptions.body = JSON.stringify({});
-    }
+    const port = getOAuthUrlPort(hintUrl);
+    const allowedDomainsActive = Array.isArray(allowedDomains) && allowedDomains.length > 0;
+    const effectiveAddresses = allowedDomainsActive ? null : allowedAddresses;
 
-    const response = await fetch(serverUrl, fetchOptions);
-
-    if (response.status !== 401) return null;
-
-    const wwwAuth = response.headers.get('www-authenticate');
-    const metadataUrl = wwwAuth?.match(/resource_metadata="([^"]+)"/)?.[1];
-
-    if (metadataUrl) {
-      try {
-        // Try to fetch resource metadata from the provided URL
-        const metadataResponse = await fetch(metadataUrl, {
-          signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
-        });
-        const metadata = await metadataResponse.json();
-
-        if (metadata?.authorization_servers?.length) {
-          return {
-            requiresOAuth: true,
-            method: '401-challenge-metadata',
-            metadata,
-          };
-        }
-      } catch {
-        // Metadata fetch failed, continue to Bearer check below
-      }
-    }
-
-    /**
-     * If we got a 401 with WWW-Authenticate containing "Bearer" (case-insensitive),
-     * the server requires OAuth authentication even without discovery metadata.
-     * This handles "legacy" OAuth servers (like StackOverflow's MCP) that use standard
-     * OAuth endpoints (/authorize, /token, /register) without .well-known metadata.
-     */
-    if (wwwAuth && /bearer/i.test(wwwAuth)) {
-      return {
-        requiresOAuth: true,
-        method: '401-challenge-metadata',
-        metadata: null,
-      };
-    }
-
-    return null;
+    if (isSSRFTarget(hintUrl.hostname, effectiveAddresses, port)) return undefined;
+    if (await resolveHostnameSSRF(hintUrl.hostname, effectiveAddresses, port)) return undefined;
+    return hintUrl;
   } catch {
-    return null;
+    // If validation itself fails (e.g. DNS lookup threw), be conservative and drop the hint.
+    return undefined;
   }
 }
 
-// Fallback method: treats any auth error as OAuth requirement if configured
-async function checkAuthErrorFallback(serverUrl: string): Promise<OAuthDetectionResult | null> {
+// Fallback: only called when probing threw. Caller already gates on `OAUTH_ON_AUTH_ERROR`.
+async function checkAuthErrorFallback(
+  serverUrl: string,
+  fetchFn: FetchLike,
+): Promise<OAuthDetectionResult | null> {
   try {
-    if (!mcpConfig.OAUTH_ON_AUTH_ERROR) return null;
-
-    const response = await fetch(serverUrl, {
+    const response = await fetchFn(serverUrl, {
       method: 'HEAD',
       signal: AbortSignal.timeout(mcpConfig.OAUTH_DETECTION_TIMEOUT),
     });

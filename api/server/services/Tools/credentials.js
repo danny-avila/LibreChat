@@ -1,3 +1,4 @@
+const { AuthType } = require('librechat-data-provider');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 
 /**
@@ -19,17 +20,18 @@ const loadAuthValues = async ({ userId, authFields, optional, throwError = true 
    */
   const findAuthValue = async (fields) => {
     for (const field of fields) {
-      let value = process.env[field];
-      if (value) {
-        return { authField: field, authValue: value };
+      const envValue = process.env[field];
+      if (envValue && envValue.trim() !== '' && envValue !== AuthType.USER_PROVIDED) {
+        return { authField: field, authValue: envValue };
       }
+      let value;
       try {
         value = await getUserPluginAuthValue(userId, field, throwError);
       } catch (err) {
         if (optional && optional.has(field)) {
           return { authField: field, authValue: undefined };
         }
-        if (field === fields[fields.length - 1] && !value) {
+        if (field === fields[fields.length - 1]) {
           throw err;
         }
       }

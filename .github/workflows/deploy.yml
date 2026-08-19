@@ -3,6 +3,9 @@ name: Deploy_GHRunner_Linux_ACI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   RUNNER_VERSION: 2.293.0
   ACI_RESOURCE_GROUP: 'Demo-ACI-GitHub-Runners-RG'
@@ -17,10 +20,10 @@ jobs:
     steps:
       # checkout the repo
       - name: 'Checkout GitHub Action'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 'Login via Azure CLI'
-        uses: azure/login@v1
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 

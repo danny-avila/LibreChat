@@ -1,7 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
@@ -19,21 +19,31 @@ import type {
   EventSubmission,
   TStartupConfig,
 } from 'librechat-data-provider';
-import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { InfiniteData } from '@tanstack/react-query';
-import type { SetterOrUpdater, Resetter } from 'recoil';
+import type { SetterOrUpdater } from 'recoil';
+import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
 import type { ConversationCursorData } from '~/utils';
 import {
   logger,
   setDraft,
+  getConversationDraftId,
   scrollToEnd,
+  hasRealTitle,
+  setDocumentTitle,
+  requestChatFocus,
   getAllContentText,
-  addConvoToAllQueries,
+  upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
   findConversationInInfinite,
 } from '~/utils';
-import { queueTitleGeneration } from '~/data-provider/SSE/queries';
+import {
+  startupConfigKey,
+  queueTitleGeneration,
+  markTitleGenerationProcessed,
+} from '~/data-provider';
+import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
+import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
@@ -52,8 +62,132 @@ type TSyncData = {
   conversationId: string;
 };
 
+type TTitleEvent = {
+  event: 'title';
+  data?: {
+    conversationId?: string;
+    title?: string;
+  };
+};
+
+/** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
+const SKILL_QUERY_KEYS = [
+  QueryKeys.skills,
+  QueryKeys.skill,
+  QueryKeys.skillFiles,
+  QueryKeys.skillFileContent,
+  QueryKeys.skillTree,
+  QueryKeys.skillNodeContent,
+] as const;
+
+export const buildCreatedInitialResponse = ({
+  initialResponse,
+  userMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>): TMessage => ({
+  ...initialResponse,
+  parentMessageId:
+    isRegenerate && initialResponse.parentMessageId
+      ? initialResponse.parentMessageId
+      : userMessage.messageId,
+  messageId:
+    isRegenerate && initialResponse.messageId
+      ? initialResponse.messageId
+      : `${userMessage.messageId}_`,
+  conversationId: userMessage.conversationId ?? initialResponse.conversationId,
+});
+
+export const isInitialNewConversationSubmission = ({
+  userMessage,
+}: Pick<EventSubmission, 'userMessage'>): boolean =>
+  userMessage?.parentMessageId === Constants.NO_PARENT;
+
+/**
+ * Whether the run was sent from the unsaved-chat composer, which is the only case where
+ * finishing it may drop the pane's new-chat draft. Regenerating or resubmitting the first turn
+ * of a saved conversation keeps the root parent id, so the root parent alone cannot decide it.
+ */
+export const startedAsNewConversation = ({
+  conversation,
+  userMessage,
+  isEdited,
+  isRegenerate,
+}: Pick<
+  EventSubmission,
+  'conversation' | 'userMessage' | 'isEdited' | 'isRegenerate'
+>): boolean => {
+  const conversationId = conversation?.conversationId;
+  if (
+    !conversationId ||
+    conversationId === Constants.NEW_CONVO ||
+    conversationId === Constants.PENDING_CONVO
+  ) {
+    return true;
+  }
+
+  return (
+    isEdited !== true &&
+    isRegenerate !== true &&
+    isInitialNewConversationSubmission({ userMessage })
+  );
+};
+
+export const mergeRegenerateFinalMessages = ({
+  messages,
+  responseMessage,
+  initialResponseId,
+}: {
+  messages: TMessage[];
+  responseMessage: TMessage;
+  initialResponseId?: string | null;
+}): TMessage[] => {
+  const finalMessages: TMessage[] = [];
+  let inserted = false;
+
+  for (const message of messages) {
+    if (!message?.messageId || message.messageId === initialResponseId) {
+      continue;
+    }
+
+    if (message.messageId === responseMessage.messageId) {
+      finalMessages.push(responseMessage);
+      inserted = true;
+      continue;
+    }
+
+    finalMessages.push(message);
+  }
+
+  if (!inserted) {
+    finalMessages.push(responseMessage);
+  }
+
+  return finalMessages;
+};
+
+export const getExistingConversationAbortMessages = ({
+  messages,
+  currentMessages,
+  regenerateMessages,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'isRegenerate'> & {
+  currentMessages?: TMessage[];
+}): TMessage[] => {
+  if (!isRegenerate) {
+    return [...messages];
+  }
+
+  if (regenerateMessages?.length) {
+    return [...regenerateMessages];
+  }
+
+  const sourceMessages = currentMessages?.length ? currentMessages : messages;
+  return [...sourceMessages];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
+  runIndex?: number;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -61,7 +195,6 @@ export type EventHandlerParams = {
   setConversation?: SetterOrUpdater<TConversation | null>;
   newConversation?: ConvoGenerator;
   setShowStopButton: SetterOrUpdater<boolean>;
-  resetLatestMessage?: Resetter;
 };
 
 const createErrorMessage = ({
@@ -170,11 +303,11 @@ export default function useEventHandlers({
   getMessages,
   setCompleted,
   isAddedRequest = false,
+  runIndex = 0,
   setConversation,
   setIsSubmitting,
   newConversation,
   setShowStopButton,
-  resetLatestMessage,
 }: EventHandlerParams) {
   const queryClient = useQueryClient();
   const { announcePolite } = useLiveAnnouncer();
@@ -183,19 +316,96 @@ export default function useEventHandlers({
   const navigate = useNavigate();
   const location = useLocation();
 
+  /** Re-queue the turn's quoted excerpts when an early abort restores the draft,
+   *  so retrying the restored message still sends the references — the pending
+   *  queue was already drained on submit. */
+  const restorePendingQuotes = useRecoilCallback(
+    ({ set }) =>
+      (convoId: string, quotes?: string[]) => {
+        if (Array.isArray(quotes) && quotes.length > 0) {
+          set(store.pendingQuotesByConvoId(convoId), quotes);
+        }
+      },
+    [],
+  );
+
   const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
-  const { stepHandler, clearStepMaps, syncStepMessage } = useStepHandler({
+  /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh too —
+   *  they opt out of `refetchOnMount`, so a plain invalidation would leave
+   *  the Skills panel stale until a manual refresh. */
+  const onSkillAuthoringComplete = useCallback(() => {
+    for (const key of SKILL_QUERY_KEYS) {
+      queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
+    }
+  }, [queryClient]);
+  const {
+    stepHandler,
+    clearStepMaps,
+    resetSubagentAtoms,
+    syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
+  } = useStepHandler({
     setMessages,
     getMessages,
     announcePolite,
     setIsSubmitting,
     lastAnnouncementTimeRef,
+    onSkillAuthoringComplete,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
+
+  /** Wipe the per-subagent Recoil atoms on conversation navigation.
+   *  Historical subagent dialogs rehydrate from the persisted
+   *  `subagent_content` on each `tool_call` (written by the backend
+   *  at message-save time), so clearing live atoms on switch
+   *  doesn't lose any viewable history — it just keeps `atomFamily`
+   *  bounded across multi-conversation sessions.
+   *
+   *  Rule: reset on real conversation switches, but preserve atoms for
+   *  the single `new` → saved-id transition created by this active run.
+   *  Transitions FROM null or undefined pass through:
+   *    - initial mount on a new-chat route: nothing to clear.
+   *    - new-chat URL stamp mid-stream (`new` → savedId): the final
+   *      handler marks that saved id before navigation so the in-flight
+   *      subagent ticker/content state survives. Cancelled subagent
+   *      runs depend on this live atom because the server may not have
+   *      persisted `subagent_content` before interruption.
+   *  Cases that DO reset (previous non-null, value changed):
+   *    - id1 → id2 (switching between established chats)
+   *    - new → id (user selected an existing chat from the sidebar)
+   *    - id → null (user clicked "new chat")
+   *    - id → undefined (route teardown / navigate away) */
+  const lastConversationIdRef = useRef<string | null | undefined>(paramId);
+  const preserveSubagentAtomsForNewConvoIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = lastConversationIdRef.current;
+    const preserveNewConversationId = preserveSubagentAtomsForNewConvoIdRef.current;
+    lastConversationIdRef.current = paramId;
+    preserveSubagentAtomsForNewConvoIdRef.current = null;
+    if (
+      shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
+    ) {
+      resetSubagentAtoms();
+    }
+  }, [paramId, resetSubagentAtoms]);
+
+  /** Final cleanup on component unmount. `useStepHandler` keeps the
+   *  set of known atom keys in a ref; when the hook unmounts (user
+   *  navigates away from the chat route entirely) that ref is lost,
+   *  so a subsequent remount can't clear atoms it never saw created.
+   *  Flush at the teardown boundary to keep `atomFamily` bounded
+   *  across route changes. */
+  useEffect(
+    () => () => {
+      resetSubagentAtoms();
+    },
+    [resetSubagentAtoms],
+  );
 
   const messageHandler = useCallback(
     (data: string | undefined, submission: EventSubmission) => {
@@ -272,16 +482,23 @@ export default function useEventHandlers({
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
       const { initialResponse, messages: _messages, userMessage } = submission;
-      const messages = _messages.filter((msg) => msg.messageId !== userMessage.messageId);
+      /** Swap the optimistic user row for the server-stamped one IN PLACE.
+       *  Filtering it out and re-appending at the tail would order any of its
+       *  already-present children (abandoned responses from preempted
+       *  attempts) before their parent, and the message tree hoists such rows
+       *  into phantom root branches — a folded thread. */
+      const userIndex = _messages.findIndex((msg) => msg.messageId === userMessage.messageId);
+      const messages =
+        userIndex >= 0
+          ? _messages.map((msg, i) => (i === userIndex ? requestMessage : msg))
+          : [..._messages, requestMessage];
 
-      setMessages([
-        ...messages,
-        requestMessage,
-        {
-          ...initialResponse,
-          ...responseMessage,
-        },
-      ]);
+      const nextResponseMessage = {
+        ...initialResponse,
+        ...responseMessage,
+      };
+
+      setMessages([...messages, nextResponseMessage]);
 
       announcePolite({
         message: 'start',
@@ -309,9 +526,13 @@ export default function useEventHandlers({
         });
 
         if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          addConvoToAllQueries(queryClient, update);
+          upsertConvoInAllQueries(queryClient, update);
         } else {
           updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+        }
+        if (update.chatProjectId) {
+          queryClient.invalidateQueries([QueryKeys.projects]);
+          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
         }
       } else if (setConversation) {
         setConversation((prevState) => {
@@ -326,34 +547,35 @@ export default function useEventHandlers({
       }
 
       setShowStopButton(true);
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'syncHandler: resetting latest message');
-        resetLatestMessage();
-      }
     },
-    [
-      queryClient,
-      setMessages,
-      isAddedRequest,
-      announcePolite,
-      setConversation,
-      setShowStopButton,
-      resetLatestMessage,
-    ],
+    [queryClient, setMessages, isAddedRequest, announcePolite, setConversation, setShowStopButton],
   );
+
+  const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   const createdHandler = useCallback(
     (data: TResData, submission: EventSubmission) => {
       queryClient.invalidateQueries([QueryKeys.mcpConnectionStatus]);
       queryClient.invalidateQueries([QueryKeys.mcpTools]);
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
-      const initialResponse = {
-        ...submission.initialResponse,
-        parentMessageId: userMessage.messageId,
-        messageId: userMessage.messageId + '_',
-      };
+      /**
+       * The spread carries `manualSkills` through from
+       * `submission.initialResponse` — `useChatFunctions` seeds the field
+       * there at construction so the assistant placeholder already has it
+       * by the time this handler fires. Subsequent `useStepHandler`
+       * spreads and `updateContent` spreads preserve it, and
+       * `finalHandler`'s server-backed `responseMessage` replacement
+       * drops it, which is the right behavior: by finalize the real
+       * `skill` tool_call is in `content` and takes over rendering.
+       */
+      const initialResponse = buildCreatedInitialResponse({
+        initialResponse: submission.initialResponse,
+        userMessage,
+        isRegenerate,
+      });
       if (isRegenerate) {
         setMessages([...messages, initialResponse]);
+        focusRegeneratedResponse(initialResponse.parentMessageId);
       } else {
         setMessages([...messages, userMessage, initialResponse]);
       }
@@ -385,9 +607,13 @@ export default function useEventHandlers({
 
         if (!isTemporary) {
           if (parentMessageId === Constants.NO_PARENT) {
-            addConvoToAllQueries(queryClient, update);
+            upsertConvoInAllQueries(queryClient, update);
           } else {
             updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
           }
         }
       } else if (setConversation) {
@@ -406,14 +632,10 @@ export default function useEventHandlers({
           sourceId: submission.conversation?.conversationId,
           ephemeralAgent: submission.ephemeralAgent,
           specName: submission.conversation?.spec,
-          startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+          startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
         });
       }
 
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'createdHandler: resetting latest message');
-        resetLatestMessage();
-      }
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -423,9 +645,45 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
-      resetLatestMessage,
       applyAgentTemplate,
+      focusRegeneratedResponse,
     ],
+  );
+
+  const titleHandler = useCallback(
+    (event: TTitleEvent) => {
+      const { conversationId, title } = event.data ?? {};
+      if (!conversationId || !hasRealTitle(title)) {
+        return;
+      }
+
+      queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (convo) =>
+        convo ? { ...convo, title } : convo,
+      );
+      updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
+      markTitleGenerationProcessed(conversationId);
+
+      if (location.pathname.includes(conversationId)) {
+        setDocumentTitle(title);
+      }
+
+      if (setConversation && !isAddedRequest) {
+        setConversation((prevState) => {
+          if (!prevState) {
+            return prevState;
+          }
+          if (prevState.conversationId && prevState.conversationId !== conversationId) {
+            return prevState;
+          }
+          return {
+            ...prevState,
+            conversationId,
+            title,
+          };
+        });
+      }
+    },
+    [queryClient, location.pathname, setConversation, isAddedRequest],
   );
 
   const finalHandler = useCallback(
@@ -437,17 +695,48 @@ export default function useEventHandlers({
         isRegenerate = false,
         isTemporary: _isTemporary = false,
       } = submission;
+      const serverConversation = conversation as TConversation;
 
       try {
-        // Handle early abort - aborted during tool loading before any messages saved
-        // Don't update conversation state, just reset UI and stay on new chat
+        // Handle early abort - aborted before any response message was saved.
         if ((data as Record<string, unknown>).earlyAbort) {
-          console.log(
-            '[finalHandler] Early abort detected - no messages saved, staying on new chat',
-          );
+          console.log('[finalHandler] Early abort detected - no response message saved');
           setShowStopButton(false);
           setIsSubmitting(false);
-          // Navigate to new chat if not already there
+
+          const currentConvoId = submissionConvo.conversationId;
+          const isInitialNewConvo = isInitialNewConversationSubmission(submission);
+          const isExistingConvo =
+            currentConvoId && currentConvoId !== Constants.NEW_CONVO && !isInitialNewConvo;
+          if (isExistingConvo) {
+            const abortMessages = getExistingConversationAbortMessages({
+              messages,
+              isRegenerate,
+              currentMessages: getMessages(),
+              regenerateMessages: submission.regenerateMessages,
+            });
+            setMessages(abortMessages);
+            queryClient.setQueryData<TMessage[]>(
+              [QueryKeys.messages, currentConvoId],
+              abortMessages,
+            );
+            setDraft({ id: currentConvoId, value: requestMessage?.text });
+            restorePendingQuotes(currentConvoId, requestMessage?.quotes);
+            return;
+          }
+
+          if (currentConvoId && currentConvoId !== Constants.NEW_CONVO) {
+            removeConvoFromAllQueries(queryClient, currentConvoId);
+            queryClient.removeQueries({ queryKey: [QueryKeys.conversation, currentConvoId] });
+            queryClient.removeQueries({ queryKey: [QueryKeys.messages, currentConvoId] });
+          }
+          setMessages([]);
+          queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+          setDraft({
+            id: getConversationDraftId(runIndex, Constants.NEW_CONVO),
+            value: requestMessage?.text,
+          });
+          restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
@@ -483,7 +772,8 @@ export default function useEventHandlers({
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
-        if (isNewConvo && conversation.conversationId) {
+        // Skip temporary conversations — the server never generates titles for them.
+        if (isNewConvo && conversation.conversationId && !_isTemporary) {
           queueTitleGeneration(conversation.conversationId);
         }
 
@@ -510,9 +800,14 @@ export default function useEventHandlers({
             currentConvoId === Constants.NEW_CONVO;
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
-          setDraft({ id: currentConvoId, value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, currentConvoId),
+            value: requestMessage?.text,
+          });
+          restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
-            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true, state: { focusChat: true } });
+            requestChatFocus();
+            navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
           }
           return;
         }
@@ -522,7 +817,11 @@ export default function useEventHandlers({
         if (runMessages) {
           finalMessages = [...runMessages];
         } else if (isRegenerate && responseMessage) {
-          finalMessages = [...messages, responseMessage];
+          finalMessages = mergeRegenerateFinalMessages({
+            messages: submission.regenerateMessages ?? currentMessages ?? messages,
+            responseMessage,
+            initialResponseId: submission.initialResponse.messageId,
+          });
         } else if (requestMessage != null && responseMessage != null) {
           finalMessages = [...messages, requestMessage, responseMessage];
         }
@@ -560,6 +859,12 @@ export default function useEventHandlers({
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
+        /** A title applied locally (e.g. an immediate-mode title fetched while the
+         *  response was still streaming) must survive the final event, whose
+         *  `conversation` was built before the title was saved and so carries no
+         *  title yet — otherwise the chat reverts to "New Chat" until reload. This
+         *  holds for a stopped turn too: the server persists a title that finished
+         *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
           setConversation((prevState) => {
             const update = {
@@ -569,14 +874,24 @@ export default function useEventHandlers({
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
             }
-            const cachedConvo = queryClient.getQueryData<TConversation>([
-              QueryKeys.conversation,
-              conversation.conversationId,
-            ]);
-            if (!cachedConvo) {
-              queryClient.setQueryData(
+            const prevTitle = prevState?.title;
+            if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
+              update.title = prevTitle;
+            }
+            if (conversation.conversationId) {
+              queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
-                update,
+                (cachedConvo) => {
+                  const merged = {
+                    ...cachedConvo,
+                    ...serverConversation,
+                  } as TConversation;
+                  const cachedTitle = cachedConvo?.title;
+                  if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
+                    merged.title = cachedTitle;
+                  }
+                  return merged;
+                },
               );
             }
             return update;
@@ -588,11 +903,17 @@ export default function useEventHandlers({
               sourceId: submissionConvo.conversationId,
               ephemeralAgent: submission.ephemeralAgent,
               specName: submission.conversation?.spec,
-              startupConfig: queryClient.getQueryData<TStartupConfig>([QueryKeys.startupConfig]),
+              startupConfig: queryClient.getQueryData<TStartupConfig>(startupConfigKey(true)),
             });
           }
 
+          if (conversation.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, conversation.chatProjectId]);
+          }
+
           if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
+            preserveSubagentAtomsForNewConvoIdRef.current = conversation.conversationId;
             navigate(`/c/${conversation.conversationId}`, { replace: true });
           }
         }
@@ -607,6 +928,7 @@ export default function useEventHandlers({
       setMessages,
       queryClient,
       setCompleted,
+      runIndex,
       isAddedRequest,
       announcePolite,
       setConversation,
@@ -615,6 +937,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      restorePendingQuotes,
     ],
   );
 
@@ -849,7 +1172,10 @@ export default function useEventHandlers({
     messageHandler,
     contentHandler,
     createdHandler,
+    titleHandler,
     syncStepMessage,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
     attachmentHandler,
     abortConversation,
     resetContentHandler,

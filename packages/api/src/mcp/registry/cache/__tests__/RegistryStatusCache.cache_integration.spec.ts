@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { closeRedisClients } from '~/cache/__tests__/redisClients.helper';
 
 describe('RegistryStatusCache Integration Tests', () => {
   let registryStatusCache: typeof import('../RegistryStatusCache').registryStatusCache;
@@ -56,8 +57,8 @@ describe('RegistryStatusCache Integration Tests', () => {
     // Resign as leader
     if (leaderInstance) await leaderInstance.resign();
 
-    // Close Redis connection
-    if (keyvRedisClient?.isOpen) await keyvRedisClient.disconnect();
+    // Close both Redis clients created by the module import
+    await closeRedisClients();
   });
 
   describe('Initialization status tracking', () => {

@@ -77,9 +77,5 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
 };
 
 export const usePromptGroupsContext = () => {
-  const context = useContext(PromptGroupsContext);
-  if (!context) {
-    throw new Error('usePromptGroupsContext must be used within a PromptGroupsProvider');
-  }
-  return context;
+  return useContext(PromptGroupsContext);
 };

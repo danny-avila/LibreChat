@@ -6,6 +6,7 @@ import {
   EModelEndpoint,
   PermissionTypes,
   getEndpointField,
+  getConfigDefaults,
 } from 'librechat-data-provider';
 import type {
   TEndpointsConfig,
@@ -15,10 +16,12 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { useHasAccess, useShowMarketplace } from '~/hooks';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { mapEndpoints, getIconKey } from '~/utils';
-import { useHasAccess } from '~/hooks';
 import { icons } from './Icons';
+
+const defaultInterface = getConfigDefaults().interface;
 
 export const useEndpoints = ({
   agents,
@@ -33,7 +36,7 @@ export const useEndpoints = ({
 }) => {
   const modelsQuery = useGetModelsQuery();
   const { data: endpoints = [] } = useGetEndpointsQuery({ select: mapEndpoints });
-  const interfaceConfig = startupConfig?.interface ?? {};
+  const interfaceConfig = startupConfig?.interface ?? defaultInterface;
   const includedEndpoints = useMemo(
     () => new Set(startupConfig?.modelSpecs?.addedEndpoints ?? []),
     [startupConfig?.modelSpecs?.addedEndpoints],
@@ -43,6 +46,7 @@ export const useEndpoints = ({
     permissionType: PermissionTypes.AGENTS,
     permission: Permissions.USE,
   });
+  const showAgentMarketplace = useShowMarketplace();
 
   const assistants: Assistant[] = useMemo(
     () => Object.values(assistantsMap?.[EModelEndpoint.assistants] ?? {}),
@@ -80,17 +84,21 @@ export const useEndpoints = ({
   );
 
   const mappedEndpoints: Endpoint[] = useMemo(() => {
-    return filteredEndpoints.map((ep) => {
+    return filteredEndpoints.reduce<Endpoint[]>((acc, ep) => {
       const endpointType = getEndpointField(endpointsConfig, ep, 'type');
       const iconKey = getIconKey({ endpoint: ep, endpointsConfig, endpointType });
       const Icon = icons[iconKey];
       const endpointIconURL = getEndpointField(endpointsConfig, ep, 'iconURL');
       const hasModels =
-        (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) ||
+        (ep === EModelEndpoint.agents && ((agents?.length ?? 0) > 0 || showAgentMarketplace)) ||
         (ep === EModelEndpoint.assistants && assistants?.length > 0) ||
         (ep !== EModelEndpoint.assistants &&
           ep !== EModelEndpoint.agents &&
           (modelsQuery.data?.[ep]?.length ?? 0) > 0);
+
+      if (ep === EModelEndpoint.agents && !hasModels) {
+        return acc;
+      }
 
       // Base result object with formatted default icon
       const result: Endpoint = {
@@ -106,6 +114,11 @@ export const useEndpoints = ({
             })
           : null,
       };
+
+      if (ep === EModelEndpoint.agents && showAgentMarketplace) {
+        result.showMarketplace = true;
+        result.searchAliases = ['agent marketplace', 'marketplace'];
+      }
 
       // Handle agents case
       if (ep === EModelEndpoint.agents && (agents?.length ?? 0) > 0) {
@@ -176,9 +189,18 @@ export const useEndpoints = ({
         }));
       }
 
-      return result;
-    });
-  }, [filteredEndpoints, endpointsConfig, modelsQuery.data, agents, assistants, azureAssistants]);
+      acc.push(result);
+      return acc;
+    }, []);
+  }, [
+    agents,
+    assistants,
+    azureAssistants,
+    endpointsConfig,
+    filteredEndpoints,
+    modelsQuery.data,
+    showAgentMarketplace,
+  ]);
 
   return {
     mappedEndpoints,

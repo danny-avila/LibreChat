@@ -1,12 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
+const { getAppConfigOptionsFromUser } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 
 const configMiddleware = async (req, res, next) => {
   try {
-    const userRole = req.user?.role;
-    const userId = req.user?.id;
-    const tenantId = req.user?.tenantId;
-    req.config = await getAppConfig({ role: userRole, userId, tenantId });
+    req.config = await getAppConfig(getAppConfigOptionsFromUser(req.user));
 
     next();
   } catch (error) {
@@ -17,7 +15,7 @@ const configMiddleware = async (req, res, next) => {
     });
 
     try {
-      req.config = await getAppConfig();
+      req.config = await getAppConfig({ tenantId: req.user?.tenantId });
       next();
     } catch (fallbackError) {
       logger.error('Fallback config middleware error:', fallbackError);

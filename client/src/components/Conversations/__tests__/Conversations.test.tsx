@@ -3,6 +3,9 @@ import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import type { CellMeasurerCache, List } from 'react-virtualized';
+import type { TConversation } from 'librechat-data-provider';
+import Conversations from '../Conversations';
+import store from '~/store';
 
 let mockCapturedCache: CellMeasurerCache | null = null;
 
@@ -10,11 +13,6 @@ jest.mock('react-virtualized', () => {
   const actual = jest.requireActual('react-virtualized');
   return {
     ...actual,
-    AutoSizer: ({
-      children,
-    }: {
-      children: (size: { width: number; height: number }) => React.ReactNode;
-    }) => children({ width: 300, height: 600 }),
     CellMeasurer: ({
       children,
     }: {
@@ -70,6 +68,7 @@ jest.mock('~/hooks', () => ({
   useFavorites: () => mockFavoritesState,
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useElementSize: () => ({ ref: jest.fn(), width: 300, height: 600 }),
   TranslationKeys: {},
 }));
 
@@ -96,8 +95,6 @@ jest.mock('../Convo', () => ({
   __esModule: true,
   default: () => <div data-testid="convo" />,
 }));
-
-import Conversations from '../Conversations';
 
 describe('Conversations – favorites CellMeasurerCache key invalidation', () => {
   const containerRef = createRef<List>();
@@ -181,5 +178,169 @@ describe('Conversations – favorites CellMeasurerCache key invalidation', () =>
 
     expect(cache.has(0, 0)).toBe(true);
     expect(cache.getHeight(0, 0)).toBe(88);
+  });
+});
+
+const pinnedConvo = {
+  conversationId: 'pinned-1',
+  title: 'Pinned Chat',
+  pinned: true,
+  endpoint: 'openAI',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+} as TConversation;
+
+describe('Conversations: pinned chats live in PinnedSection', () => {
+  const containerRef = createRef<List>();
+
+  beforeEach(() => {
+    mockCapturedCache = null;
+    mockFavoritesState.favorites = [];
+    mockFavoritesState.isLoading = false;
+    mockShowMarketplace = false;
+  });
+
+  const renderConversations = (conversations: TConversation[], searchQuery = '') =>
+    render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.search, {
+            query: searchQuery,
+            enabled: true,
+            debouncedQuery: searchQuery,
+            isSearching: true,
+            isTyping: false,
+          });
+        }}
+      >
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={jest.fn()}
+          isLoading={false}
+          isSearchLoading={false}
+          isChatsExpanded={true}
+          setIsChatsExpanded={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+  it('does not render a pinned header inside the chats list', () => {
+    const { queryByText } = renderConversations([pinnedConvo]);
+    expect(queryByText('com_ui_pinned')).not.toBeInTheDocument();
+  });
+
+  it('does not render a duplicate new chat button in the chats header', () => {
+    const { queryByRole } = renderConversations([]);
+    expect(queryByRole('button', { name: 'com_ui_new_chat' })).not.toBeInTheDocument();
+  });
+});
+
+describe('Conversations: all-pin pages still paginate', () => {
+  const containerRef = createRef<List>();
+
+  beforeEach(() => {
+    mockCapturedCache = null;
+    mockFavoritesState.favorites = [];
+    mockFavoritesState.isLoading = false;
+    mockShowMarketplace = false;
+  });
+
+  const renderList = ({
+    conversations,
+    loadMoreConversations,
+    isChatsExpanded = true,
+    isLoading = false,
+  }: {
+    conversations: TConversation[];
+    loadMoreConversations: () => void;
+    isChatsExpanded?: boolean;
+    isLoading?: boolean;
+  }) =>
+    render(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={isLoading}
+          isSearchLoading={false}
+          isChatsExpanded={isChatsExpanded}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+
+  it('requests another page when grouping leaves the chats list empty', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({ conversations: [pinnedConvo], loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalled();
+  });
+
+  it('does not request another page while chats are collapsed', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isChatsExpanded: false,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
+  });
+
+  it('does not request another page while a fetch is already in flight', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isLoading: true,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
+  });
+
+  it('does not retry when an empty-page fetch fails without new data', () => {
+    const loadMoreConversations = jest.fn();
+    const conversations = [pinnedConvo];
+    const { rerender } = renderList({ conversations, loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={true}
+          isSearchLoading={false}
+          isChatsExpanded={true}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+    rerender(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={false}
+          isSearchLoading={false}
+          isChatsExpanded={true}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
   });
 });

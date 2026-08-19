@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
-import { createUserMethods } from './user';
-import userSchema from '~/schema/user';
+import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
 import balanceSchema from '~/schema/balance';
+import userSchema from '~/schema/user';
 
 /** Mocking crypto for generateToken */
 jest.mock('~/crypto', () => ({
@@ -14,6 +15,24 @@ let mongoServer: MongoMemoryServer;
 let User: mongoose.Model<t.IUser>;
 let Balance: mongoose.Model<t.IBalance>;
 let methods: ReturnType<typeof createUserMethods>;
+
+const ORIGINAL_AUTH_USER_CACHE_ENV = {
+  AUTH_USER_CACHE_MODE: process.env.AUTH_USER_CACHE_MODE,
+};
+
+function restoreAuthUserCacheEnv() {
+  for (const [key, value] of Object.entries(ORIGINAL_AUTH_USER_CACHE_ENV)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function enableAuthUserDocCache() {
+  process.env.AUTH_USER_CACHE_MODE = 'on';
+}
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -34,7 +53,78 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  restoreAuthUserCacheEnv();
   await mongoose.connection.dropDatabase();
+});
+
+afterEach(() => {
+  restoreAuthUserCacheEnv();
+});
+
+describe('User schema indexes', () => {
+  test('should define an issuer-bound idOnTheSource lookup index', async () => {
+    await User.syncIndexes();
+
+    const indexes = await User.collection.indexes();
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: { idOnTheSource: 1, openidIssuer: 1, tenantId: 1 },
+        }),
+      ]),
+    );
+  });
+
+  test('should allow the same OpenID subject from different issuers', async () => {
+    await User.syncIndexes();
+
+    await User.create({
+      email: 'issuer-a@example.com',
+      provider: 'openid',
+      openidId: 'shared-sub',
+      openidIssuer: 'https://issuer-a.example.com',
+    });
+
+    await expect(
+      User.create({
+        email: 'issuer-b@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-b.example.com',
+      }),
+    ).resolves.toBeTruthy();
+
+    await expect(
+      User.create({
+        email: 'issuer-a-duplicate@example.com',
+        provider: 'openid',
+        openidId: 'shared-sub',
+        openidIssuer: 'https://issuer-a.example.com',
+      }),
+    ).rejects.toThrow(/duplicate key/);
+  });
+});
+
+describe('User personalization', () => {
+  test('defaults new users to the shared user workspace', async () => {
+    const user = await User.create({
+      email: 'stateful-default@example.com',
+      provider: 'local',
+    });
+
+    expect(user.personalization?.statefulCodeEnvironment).toBe('user');
+  });
+
+  test('rejects unsupported stateful workspace defaults', async () => {
+    await expect(
+      User.create({
+        email: 'invalid-stateful-default@example.com',
+        provider: 'local',
+        personalization: { statefulCodeEnvironment: 'agent' },
+      }),
+    ).rejects.toThrow();
+  });
 });
 
 describe('User Methods - Database Tests', () => {
@@ -278,6 +368,55 @@ describe('User Methods - Database Tests', () => {
       expect(updated?.expiresAt).toBeUndefined();
     });
 
+    test('should invalidate cached auth user documents on update', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Cached Auth User',
+        email: 'cached-auth@example.com',
+        provider: 'openid',
+      });
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id?.toString()}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a', 'auth-cache-key-b']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      await methodsWithCache.updateUser(user._id?.toString() ?? '', {
+        name: 'Updated Cached Auth User',
+      });
+
+      expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-b');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('should invalidate cached auth user documents on delete', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Deleted Cached Auth User',
+        email: 'deleted-cached-auth@example.com',
+        provider: 'openid',
+      });
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id?.toString()}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      await methodsWithCache.deleteUserById(user._id?.toString() ?? '');
+
+      expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
     test('should return null for non-existent user', async () => {
       const fakeId = new mongoose.Types.ObjectId();
       const result = await methods.updateUser(fakeId.toString(), { name: 'Test' });
@@ -324,6 +463,145 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('acceptTerms', () => {
+    test('sets termsAccepted and stamps termsAcceptedAt on first acceptance', async () => {
+      const user = await User.create({
+        name: 'Terms User',
+        email: 'terms@example.com',
+        provider: 'local',
+      });
+
+      const before = Date.now();
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+      const after = Date.now();
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+      const stamped = (updated?.termsAcceptedAt as Date).getTime();
+      expect(stamped).toBeGreaterThanOrEqual(before - 1000);
+      expect(stamped).toBeLessThanOrEqual(after + 1000);
+    });
+
+    test('preserves the original termsAcceptedAt on repeat acceptance', async () => {
+      const originalAcceptedAt = new Date('2026-01-01T00:00:00.000Z');
+      const user = await User.create({
+        name: 'Repeat User',
+        email: 'repeat@example.com',
+        provider: 'local',
+        termsAccepted: true,
+        termsAcceptedAt: originalAcceptedAt,
+      });
+
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect((updated?.termsAcceptedAt as Date).getTime()).toBe(originalAcceptedAt.getTime());
+    });
+
+    test('backfills termsAcceptedAt for a legacy accepted user without a timestamp', async () => {
+      const user = await User.create({
+        name: 'Legacy User',
+        email: 'legacy@example.com',
+        provider: 'local',
+        termsAccepted: true,
+      });
+
+      const updated = await methods.acceptTerms(user._id?.toString() ?? '');
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+    });
+
+    test('returns null for non-existent user', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const result = await methods.acceptTerms(fakeId.toString());
+
+      expect(result).toBeNull();
+    });
+
+    test('stamps a fresh termsAcceptedAt when accepting after a terms reset', async () => {
+      const user = await User.create({
+        name: 'Reset User',
+        email: 'reset-terms@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+      const first = await methods.acceptTerms(userId);
+
+      await User.updateOne(
+        { _id: userId },
+        { $set: { termsAccepted: false, termsAcceptedAt: null } },
+      );
+      const reaccepted = await methods.acceptTerms(userId);
+
+      expect(reaccepted?.termsAccepted).toBe(true);
+      expect(reaccepted?.termsAcceptedAt).toBeInstanceOf(Date);
+      expect((reaccepted?.termsAcceptedAt as Date).getTime()).toBeGreaterThanOrEqual(
+        (first?.termsAcceptedAt as Date).getTime(),
+      );
+    });
+
+    test('stamps termsAcceptedAt for a legacy document missing the field entirely', async () => {
+      const legacyId = new mongoose.Types.ObjectId();
+      await User.collection.insertOne({
+        _id: legacyId,
+        name: 'Pre-Terms User',
+        email: 'pre-terms@example.com',
+        provider: 'local',
+      });
+
+      const updated = await methods.acceptTerms(legacyId.toString());
+
+      expect(updated?.termsAccepted).toBe(true);
+      expect(updated?.termsAcceptedAt).toBeInstanceOf(Date);
+    });
+
+    test('converges on a single termsAcceptedAt under concurrent acceptance', async () => {
+      const user = await User.create({
+        name: 'Concurrent User',
+        email: 'concurrent-terms@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => methods.acceptTerms(userId)),
+      );
+
+      expect(results.every((result) => result?.termsAccepted === true)).toBe(true);
+      const stampedTimes = new Set(
+        results.map((result) => (result?.termsAcceptedAt as Date).getTime()),
+      );
+      expect(stampedTimes.size).toBe(1);
+
+      const repeat = await methods.acceptTerms(userId);
+      expect((repeat?.termsAcceptedAt as Date).getTime()).toBe([...stampedTimes][0]);
+    });
+
+    test('should invalidate cached auth user documents on acceptance', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Cached Terms User',
+        email: 'cached-terms@example.com',
+        provider: 'openid',
+      });
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id?.toString()}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      await methodsWithCache.acceptTerms(user._id?.toString() ?? '');
+
+      expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+  });
+
   describe('deleteUserById', () => {
     test('should delete user by ID', async () => {
       const user = await User.create({
@@ -347,6 +625,85 @@ describe('User Methods - Database Tests', () => {
 
       expect(result.deletedCount).toBe(0);
       expect(result.message).toBe('No user found with that ID.');
+    });
+  });
+
+  describe('agent trigger account-deletion fence', () => {
+    test('blocks trigger admission until the owning deletion attempt releases it', async () => {
+      const user = await User.create({
+        name: 'Trigger Fence',
+        email: 'trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const startedAt = new Date('2026-08-17T12:00:00.000Z');
+
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+      await expect(methods.beginAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe('in_progress');
+      await expect(
+        methods.cancelAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('reports a missing principal without creating a deletion fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, new Date())).resolves.toBe(
+        'missing',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+    });
+
+    test('requires explicit stale-fence recovery and preserves successor ownership', async () => {
+      const user = await User.create({
+        name: 'Stale Trigger Fence',
+        email: 'stale-trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const abandonedAt = new Date('2026-08-17T12:00:00.000Z');
+      const takeoverAt = new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS + 1);
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.beginAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'in_progress',
+      );
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(
+          userId,
+          new Date(abandonedAt.getTime() + USER_DELETION_FENCE_STALE_MS - 1),
+        ),
+      ).resolves.toBe('in_progress');
+      await expect(methods.recoverStaleAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, abandonedAt)).resolves.toBe(
+        false,
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, takeoverAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('rejects invalid deletion-fence timestamps', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('startedAt must be a valid Date');
+      await expect(
+        methods.recoverStaleAgentTriggerUserDeletion(userId, new Date(Number.NaN)),
+      ).rejects.toThrow('recoveredAt must be a valid Date');
     });
   });
 
@@ -445,6 +802,34 @@ describe('User Methods - Database Tests', () => {
       expect(results).toEqual([]);
     });
 
+    test('should treat regex metacharacters as literal search text', async () => {
+      await User.create({
+        name: 'Literal .* User',
+        email: 'literal-star@test.com',
+        username: 'literal-star',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '.*' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Literal .* User');
+    });
+
+    test('should handle invalid regex syntax as literal search text', async () => {
+      await User.create({
+        name: 'Regex [invalid User',
+        email: 'regex-invalid@test.com',
+        username: 'regex-invalid',
+        provider: 'local',
+      });
+
+      const results = await methods.searchUsers({ searchPattern: '[invalid' });
+
+      expect(results).toHaveLength(1);
+      expect((results[0] as unknown as t.IUser).name).toBe('Regex [invalid User');
+    });
+
     test('should apply field selection', async () => {
       const results = await methods.searchUsers({
         searchPattern: 'john',
@@ -516,6 +901,82 @@ describe('User Methods - Database Tests', () => {
       const result = await methods.toggleUserMemories(fakeId.toString(), true);
 
       expect(result).toBeNull();
+    });
+
+    test('should invalidate cached auth user documents when memories preference changes', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Cached Memory User',
+        email: 'cached-memory@example.com',
+        provider: 'openid',
+        personalization: { memories: true },
+      });
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id?.toString()}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        set: jest.fn().mockResolvedValue(true),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const getCache = jest.fn().mockReturnValue(cache);
+      const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+      await methodsWithCache.toggleUserMemories(user._id?.toString() ?? '', false);
+
+      expect(getCache).toHaveBeenCalledWith(CacheKeys.AUTH_USER_DOC);
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+  });
+
+  describe('updateUserStatefulCodeEnvironment', () => {
+    test('updates the workspace default without changing memory preferences', async () => {
+      const user = await User.create({
+        email: 'stateful-preference@example.com',
+        provider: 'local',
+        personalization: { memories: false, statefulCodeEnvironment: 'user' },
+      });
+
+      const updated = await methods.updateUserStatefulCodeEnvironment(
+        user._id?.toString() ?? '',
+        'agent-user',
+      );
+
+      expect(updated?.personalization).toMatchObject({
+        memories: false,
+        statefulCodeEnvironment: 'agent-user',
+      });
+    });
+
+    test('returns null for a missing user', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(
+        methods.updateUserStatefulCodeEnvironment(userId, 'conversation'),
+      ).resolves.toBeNull();
+    });
+
+    test('invalidates cached auth user documents', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        email: 'cached-stateful-preference@example.com',
+        provider: 'openid',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.updateUserStatefulCodeEnvironment(userId, 'conversation');
+
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
     });
   });
 
@@ -618,6 +1079,64 @@ describe('User Methods - Database Tests', () => {
 
       expect(found).toBeDefined();
       expect(found?.provider).toBe('saml');
+    });
+  });
+
+  describe('findUsers with options', () => {
+    beforeEach(async () => {
+      await User.create([
+        { name: 'Alice', email: 'alice@example.com', provider: 'local' },
+        { name: 'Bob', email: 'bob@example.com', provider: 'local' },
+        { name: 'Charlie', email: 'charlie@example.com', provider: 'local' },
+        { name: 'Diana', email: 'diana@example.com', provider: 'local' },
+        { name: 'Eve', email: 'eve@example.com', provider: 'local' },
+      ]);
+    });
+
+    test('limit restricts the number of returned documents', async () => {
+      const users = await methods.findUsers({}, null, { limit: 2 });
+      expect(users).toHaveLength(2);
+    });
+
+    test('offset skips the first N documents', async () => {
+      const all = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const skipped = await methods.findUsers({}, 'name', { offset: 2, sort: { name: 1 } });
+
+      expect(skipped).toHaveLength(3);
+      expect(skipped[0].name).toBe(all[2].name);
+    });
+
+    test('sort orders results by the specified field', async () => {
+      const asc = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const desc = await methods.findUsers({}, 'name', { sort: { name: -1 } });
+
+      expect(asc[0].name).toBe('Alice');
+      expect(asc[4].name).toBe('Eve');
+      expect(desc[0].name).toBe('Eve');
+      expect(desc[4].name).toBe('Alice');
+    });
+
+    test('limit + offset returns the correct page', async () => {
+      const sorted = await methods.findUsers({}, 'name', { sort: { name: 1 } });
+      const page2 = await methods.findUsers({}, 'name', {
+        limit: 2,
+        offset: 2,
+        sort: { name: 1 },
+      });
+
+      expect(page2).toHaveLength(2);
+      expect(page2[0].name).toBe(sorted[2].name);
+      expect(page2[1].name).toBe(sorted[3].name);
+    });
+
+    test('limit of 0 does not restrict results', async () => {
+      const users = await methods.findUsers({}, null, { limit: 0 });
+      expect(users).toHaveLength(5);
+    });
+
+    test('returns all documents when no options provided', async () => {
+      const users = await methods.findUsers({});
+      expect(users).toHaveLength(5);
     });
   });
 });

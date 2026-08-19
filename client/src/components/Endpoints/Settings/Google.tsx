@@ -49,6 +49,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
   const setTopP = setOption('topP');
   const setTopK = setOption('topK');
   const setMaxOutputTokens = setOption('maxOutputTokens');
+  const maxOutputTokensDefault = google.maxOutputTokens.reset(model ?? '');
 
   return (
     <div className="grid grid-cols-5 gap-6">
@@ -122,7 +123,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                     'w-1/3',
                   ),
                 )}
@@ -157,7 +158,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -198,7 +199,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -240,7 +241,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
@@ -267,7 +268,7 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                 <small className="opacity-40">
                   (
                   {localize('com_endpoint_default_with_num', {
-                    0: google.maxOutputTokens.default + '',
+                    0: maxOutputTokensDefault + '',
                   })}
                   )
                 </small>
@@ -285,16 +286,16 @@ export default function Settings({ conversation, setOption, models, readonly }: 
                   defaultTextProps,
                   cn(
                     optionText,
-                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-gray-200',
+                    'reset-rc-number-input reset-rc-number-input-text-right h-auto w-12 border-0 group-hover/temp:border-border-light',
                   ),
                 )}
               />
             </div>
             <Slider
               disabled={readonly}
-              value={[maxOutputTokens ?? google.maxOutputTokens.default]}
+              value={[maxOutputTokens ?? maxOutputTokensDefault]}
               onValueChange={(value) => setMaxOutputTokens(value[0])}
-              onDoubleClick={() => setMaxOutputTokens(google.maxOutputTokens.default)}
+              onDoubleClick={() => setMaxOutputTokens(maxOutputTokensDefault)}
               max={google.maxOutputTokens.max}
               min={google.maxOutputTokens.min}
               step={google.maxOutputTokens.step}

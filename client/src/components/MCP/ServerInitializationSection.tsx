@@ -38,15 +38,33 @@ export default function ServerInitializationSection({
 
   const serverStatus = connectionStatus?.[serverName];
   const isConnected = serverStatus?.connectionState === 'connected';
-  const canCancel = isCancellable(serverName);
+  const hasPendingOAuth =
+    requiresOAuth &&
+    serverStatus?.requiresOAuth === true &&
+    serverStatus.connectionState === 'connecting';
+  const canCancel = isCancellable(serverName) || hasPendingOAuth;
   const isServerInitializing = isInitializing(serverName);
   const serverOAuthUrl = getOAuthUrl(serverName);
 
   const shouldShowReinit = isConnected && (requiresOAuth || hasCustomUserVars);
-  const shouldShowInit = !isConnected && !serverOAuthUrl;
+  const shouldShowInit = !isConnected && !serverOAuthUrl && !hasPendingOAuth;
 
   if (!shouldShowReinit && !shouldShowInit && !serverOAuthUrl) {
-    return null;
+    if (!hasPendingOAuth) {
+      return null;
+    }
+
+    return (
+      <Button
+        onClick={() => cancelOAuthFlow(serverName)}
+        disabled={!canCancel}
+        variant="outline"
+        size={sidePanel ? 'sm' : 'default'}
+        className="w-full"
+      >
+        {localize('com_ui_cancel')}
+      </Button>
+    );
   }
 
   if (serverOAuthUrl) {

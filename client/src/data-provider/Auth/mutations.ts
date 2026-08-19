@@ -1,7 +1,7 @@
 import { useResetRecoilState, useSetRecoilState } from 'recoil';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService, request } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import useClearStates from '~/hooks/Config/useClearStates';
 import { clearAllConversationStorage } from '~/utils';
@@ -40,14 +40,19 @@ export const useLoginUserMutation = (
     mutationFn: (payload: t.TLoginUser) => dataService.login(payload),
     ...(options || {}),
     onMutate: (vars) => {
+      setQueriesEnabled(false);
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
       options?.onMutate?.(vars);
     },
+    // Queries re-enabled in setUserContext (AuthContext) after setTokenHeader runs
     onSuccess: (...args) => {
-      setQueriesEnabled(true);
       options?.onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      setQueriesEnabled(true);
+      options?.onError?.(...args);
     },
   });
 };
@@ -85,6 +90,43 @@ export const useDeleteUserMutation = (
       options?.onSuccess?.(...args);
     },
   });
+};
+
+export const useUpdateUserPreferencesMutation = (
+  options?: UseMutationOptions<
+    t.TUpdateUserPreferencesResponse,
+    Error,
+    t.TUpdateUserPreferencesRequest
+  >,
+): UseMutationResult<
+  t.TUpdateUserPreferencesResponse,
+  Error,
+  t.TUpdateUserPreferencesRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation<t.TUpdateUserPreferencesResponse, Error, t.TUpdateUserPreferencesRequest>(
+    [MutationKeys.updateUserPreferences],
+    (preferences: t.TUpdateUserPreferencesRequest) =>
+      dataService.updateUserPreferences(preferences),
+    {
+      ...options,
+      onSuccess: (data, ...args) => {
+        queryClient.setQueryData<t.TUser>([QueryKeys.user], (user) =>
+          user
+            ? {
+                ...user,
+                personalization: {
+                  ...user.personalization,
+                  ...data.preferences,
+                },
+              }
+            : user,
+        );
+        options?.onSuccess?.(data, ...args);
+      },
+    },
+  );
 };
 
 export const useEnableTwoFactorMutation = (): UseMutationResult<

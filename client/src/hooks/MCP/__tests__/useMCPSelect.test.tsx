@@ -1,12 +1,12 @@
 import React from 'react';
 import { Provider, createStore } from 'jotai';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { RecoilRoot, useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
+import { RecoilRoot, useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { MCPServerDefinition } from '../useMCPServerManager';
 import { ephemeralAgentByConvoId } from '~/store';
 import { setTimestamp } from '~/utils/timestamps';
 import { useMCPSelect } from '../useMCPSelect';
-import { MCPServerDefinition } from '../useMCPServerManager';
 
 // Mock dependencies
 jest.mock('~/utils/timestamps', () => ({
@@ -15,11 +15,20 @@ jest.mock('~/utils/timestamps', () => ({
 
 jest.mock('lodash/isEqual', () => jest.fn((a, b) => JSON.stringify(a) === JSON.stringify(b)));
 
+// Mutable startup config so tests can vary `interface.defaultPinnedTools`
+let mockStartupConfig: { interface?: { defaultPinnedTools?: string[] } } | undefined;
+
+jest.mock('~/data-provider', () => ({
+  ...jest.requireActual('~/data-provider'),
+  useGetStartupConfig: jest.fn(() => ({ data: mockStartupConfig })),
+}));
+
 // Helper to create MCPServerDefinition objects
 const createMCPServers = (serverNames: string[]): MCPServerDefinition[] => {
   return serverNames.map((serverName) => ({
     serverName,
     config: {
+      type: 'sse',
       url: 'http://mcp',
     },
     effectivePermissions: 15, // All permissions (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
@@ -43,6 +52,7 @@ describe('useMCPSelect', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockStartupConfig = undefined;
   });
 
   describe('Basic Functionality', () => {
@@ -857,6 +867,59 @@ describe('useMCPSelect', () => {
 
       // Should handle remounting gracefully
       expect(newResult.current.mcpValues).toBeDefined();
+    });
+  });
+
+  describe('defaultPinnedTools (admin-configured default pin)', () => {
+    it('keeps the MCP dropdown pinned by default when "mcp" is listed', async () => {
+      mockStartupConfig = { interface: { defaultPinnedTools: ['artifacts', 'mcp'] } };
+      const { Wrapper, servers } = createWrapper();
+      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isPinned).toBe(true);
+      });
+    });
+
+    it('unpins the MCP dropdown by default when configured without "mcp"', async () => {
+      mockStartupConfig = { interface: { defaultPinnedTools: ['artifacts'] } };
+      const { Wrapper, servers } = createWrapper(['serverA']);
+      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isPinned).toBe(false);
+      });
+    });
+
+    it('pins the MCP dropdown when a configured server name is listed', async () => {
+      mockStartupConfig = { interface: { defaultPinnedTools: ['serverA'] } };
+      const { Wrapper, servers } = createWrapper(['serverA', 'serverB']);
+      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isPinned).toBe(true);
+      });
+    });
+
+    it('keeps the legacy pinned default when defaultPinnedTools is not configured', async () => {
+      mockStartupConfig = { interface: {} };
+      const { Wrapper, servers } = createWrapper(['serverA']);
+      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isPinned).toBe(true);
+      });
+    });
+
+    it('respects a stored user preference over the configured default', async () => {
+      localStorage.setItem(LocalStorageKeys.PIN_MCP_, JSON.stringify(false));
+      mockStartupConfig = { interface: { defaultPinnedTools: ['mcp'] } };
+      const { Wrapper, servers } = createWrapper();
+      const { result } = renderHook(() => useMCPSelect({ servers }), { wrapper: Wrapper });
+
+      await waitFor(() => {
+        expect(result.current.isPinned).toBe(false);
+      });
     });
   });
 });

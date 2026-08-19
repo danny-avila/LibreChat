@@ -1,17 +1,24 @@
 import winston from 'winston';
 import 'winston-daily-rotate-file';
-import { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat } from './parsers';
+import {
+  redactFormat,
+  redactMessage,
+  debugTraverse,
+  jsonTruncateFormat,
+  stripHeavyErrorFields,
+} from './parsers';
+import { appendLogContext, attachRequestContext } from './requestLogContext';
 import { getLogDirectory } from './utils';
 
-const logDir = getLogDirectory();
-
-const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE } = process.env;
+const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
 
 const useConsoleJson = typeof CONSOLE_JSON === 'string' && CONSOLE_JSON.toLowerCase() === 'true';
 
 const useDebugConsole = typeof DEBUG_CONSOLE === 'string' && DEBUG_CONSOLE.toLowerCase() === 'true';
 
 const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLowerCase() === 'true';
+
+const useFileLogging = typeof LOG_TO_FILE !== 'string' || LOG_TO_FILE.toLowerCase() !== 'false';
 
 const levels: winston.config.AbstractConfigSetLevels = {
   error: 0,
@@ -23,6 +30,8 @@ const levels: winston.config.AbstractConfigSetLevels = {
   activity: 6,
   silly: 7,
 };
+
+const requestContextFormat = winston.format(attachRequestContext);
 
 winston.addColors({
   info: 'green',
@@ -40,42 +49,52 @@ const fileFormat = winston.format.combine(
   redactFormat(),
   winston.format.timestamp({ format: () => new Date().toISOString() }),
   winston.format.errors({ stack: true }),
+  stripHeavyErrorFields(),
   winston.format.splat(),
+  requestContextFormat(),
 );
 
-const transports: winston.transport[] = [
-  new winston.transports.DailyRotateFile({
-    level: 'error',
-    filename: `${logDir}/error-%DATE%.log`,
-    datePattern: 'YYYY-MM-DD',
-    zippedArchive: true,
-    maxSize: '20m',
-    maxFiles: '14d',
-    format: winston.format.combine(fileFormat, winston.format.json()),
-  }),
-];
+const transports: winston.transport[] = [];
 
-if (useDebugLogging) {
+if (useFileLogging) {
+  const logDir = getLogDirectory();
+
   transports.push(
     new winston.transports.DailyRotateFile({
-      level: 'debug',
-      filename: `${logDir}/debug-%DATE%.log`,
+      level: 'error',
+      filename: `${logDir}/error-%DATE%.log`,
       datePattern: 'YYYY-MM-DD',
       zippedArchive: true,
       maxSize: '20m',
       maxFiles: '14d',
-      format: winston.format.combine(fileFormat, debugTraverse),
+      format: winston.format.combine(fileFormat, winston.format.json()),
     }),
   );
+
+  if (useDebugLogging) {
+    transports.push(
+      new winston.transports.DailyRotateFile({
+        level: 'debug',
+        filename: `${logDir}/debug-%DATE%.log`,
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        format: winston.format.combine(fileFormat, debugTraverse),
+      }),
+    );
+  }
 }
 
 const consoleFormat = winston.format.combine(
   redactFormat(),
+  requestContextFormat(),
   winston.format.colorize({ all: true }),
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf((info) => {
     const message = `${info.timestamp} ${info.level}: ${info.message}`;
-    return info.level.includes('error') ? redactMessage(message) : message;
+    const line = appendLogContext(message, info);
+    return info.level.includes('error') ? redactMessage(line) : line;
   }),
 );
 
@@ -111,7 +130,7 @@ if (useDebugConsole) {
 }
 
 // Create logger
-const logger = winston.createLogger({
+const logger: winston.Logger = winston.createLogger({
   level: level(),
   levels,
   transports,

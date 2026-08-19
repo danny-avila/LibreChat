@@ -1,7 +1,8 @@
 import { Schema } from 'mongoose';
+import { REFILL_INTERVAL_UNITS } from 'librechat-data-provider';
 import type * as t from '~/types';
 
-const balanceSchema = new Schema<t.IBalance>({
+const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
   user: {
     type: Schema.Types.ObjectId,
     ref: 'User',
@@ -24,7 +25,7 @@ const balanceSchema = new Schema<t.IBalance>({
   },
   refillIntervalUnit: {
     type: String,
-    enum: ['seconds', 'minutes', 'hours', 'days', 'weeks', 'months'],
+    enum: REFILL_INTERVAL_UNITS,
     default: 'days',
   },
   lastRefill: {

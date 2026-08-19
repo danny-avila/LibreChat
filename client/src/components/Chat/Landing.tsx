@@ -2,21 +2,34 @@ import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { easings } from '@react-spring/web';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { BirthdayIcon, TooltipAnchor, SplitText } from '@librechat/client';
+import {
+  getIconEndpoint,
+  getEntity,
+  getModelSpec,
+  createConfigHtmlSanitizer,
+  CONFIG_HTML_MEDIA_TAGS,
+  CONFIG_HTML_MEDIA_ATTR,
+} from '~/utils';
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { useLocalize, useAuthContext, useGreeting } from '~/hooks';
+import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { useLocalize, useAuthContext } from '~/hooks';
-import { getIconEndpoint, getEntity } from '~/utils';
 
 const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-presentation text-text-primary dark:after:shadow-none ';
+
+/** Stable references: fresh literals re-initialized SplitText's springs and
+ * re-rendered every grapheme span on each Landing render. */
+const greetingAnimationFrom = { opacity: 0, transform: 'translate3d(0,50px,0)' };
+const greetingAnimationTo = { opacity: 1, transform: 'translate3d(0,0,0)' };
 
 function getTextSizeClass(text: string | undefined | null) {
   if (!text) {
     return 'text-xl sm:text-2xl';
   }
 
-  if (text.length < 40) {
+  if (text.length < 56) {
     return 'text-2xl sm:text-4xl';
   }
 
@@ -24,7 +37,7 @@ function getTextSizeClass(text: string | undefined | null) {
     return 'text-xl sm:text-2xl';
   }
 
-  return 'text-lg sm:text-md';
+  return 'text-lg sm:text-base';
 }
 
 export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: boolean }) {
@@ -61,45 +74,35 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     assistant_id: conversation?.assistant_id,
   });
 
-  const name = entity?.name ?? '';
-  const description = (entity?.description || conversation?.greeting) ?? '';
+  const modelSpec = useMemo(
+    () => getModelSpec({ specName: conversation?.spec, startupConfig }),
+    [conversation?.spec, startupConfig],
+  );
 
-  const getGreeting = useCallback(() => {
-    if (typeof startupConfig?.interface?.customWelcome === 'string') {
-      const customWelcome = startupConfig.interface.customWelcome;
-      // Replace {{user.name}} with actual user name if available
-      if (user?.name && customWelcome.includes('{{user.name}}')) {
-        return customWelcome.replace(/{{user.name}}/g, user.name);
-      }
-      return customWelcome;
-    }
+  const brandedSpecLabel = modelSpec?.showOnLanding ? modelSpec.label : '';
+  const brandedSpecDescription = (modelSpec?.showOnLanding && modelSpec.description) || '';
+  const name = entity?.name ?? brandedSpecLabel;
+  const description =
+    (entity?.description || brandedSpecDescription || conversation?.greeting) ?? '';
+  const descriptionIsHTML = description.trim().startsWith('<');
 
-    const now = new Date();
-    const hours = now.getHours();
+  const sanitizeDescription = useMemo(
+    () =>
+      createConfigHtmlSanitizer({
+        allowedTags: CONFIG_HTML_MEDIA_TAGS,
+        allowedAttr: CONFIG_HTML_MEDIA_ATTR,
+      }),
+    [],
+  );
+  const selectedAgent =
+    isAgent && conversation?.agent_id != null ? agentsMap?.[conversation.agent_id] : undefined;
 
-    const dayOfWeek = now.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  const customWelcome =
+    typeof startupConfig?.interface?.customWelcome === 'string'
+      ? startupConfig.interface.customWelcome
+      : undefined;
 
-    // Early morning (midnight to 4:59 AM)
-    if (hours >= 0 && hours < 5) {
-      return localize('com_ui_late_night');
-    }
-    // Morning (6 AM to 11:59 AM)
-    else if (hours < 12) {
-      if (isWeekend) {
-        return localize('com_ui_weekend_morning');
-      }
-      return localize('com_ui_good_morning');
-    }
-    // Afternoon (12 PM to 4:59 PM)
-    else if (hours < 17) {
-      return localize('com_ui_good_afternoon');
-    }
-    // Evening (5 PM to 8:59 PM)
-    else {
-      return localize('com_ui_good_evening');
-    }
-  }, [localize, startupConfig?.interface?.customWelcome, user?.name]);
+  const scheduledGreeting = useGreeting(user?.name);
 
   const handleLineCountChange = useCallback((count: number) => {
     setTextHasMultipleLines(count > 1);
@@ -110,7 +113,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     if (contentRef.current) {
       setContentHeight(contentRef.current.offsetHeight);
     }
-  }, [lineCount, description]);
+  }, [lineCount, description, selectedAgent]);
 
   const getDynamicMargin = useMemo(() => {
     let margin = 'mb-0';
@@ -132,10 +135,12 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
-  const greetingText =
-    typeof startupConfig?.interface?.customWelcome === 'string'
-      ? getGreeting()
-      : getGreeting() + (user?.name ? ', ' + user.name : '');
+  const resolvedWelcome =
+    customWelcome != null && user?.name
+      ? customWelcome.replace(/{{user.name}}/g, user.name)
+      : customWelcome;
+
+  const greetingText = resolvedWelcome ?? scheduledGreeting;
 
   return (
     <div
@@ -153,7 +158,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               endpointsConfig={endpointsConfig}
               containerClassName={containerClassName}
               context="landing"
-              className="h-2/3 w-2/3 text-black dark:text-white"
+              className="h-2/3 w-2/3 text-text-primary"
               size={41}
             />
             {startupConfig?.showBirthdayIcon && (
@@ -174,8 +179,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
                 className={`${getTextSizeClass(name)} font-medium text-text-primary`}
                 delay={50}
                 textAlign="center"
-                animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-                animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+                animationFrom={greetingAnimationFrom}
+                animationTo={greetingAnimationTo}
                 easing={easings.easeOutCubic}
                 threshold={0}
                 rootMargin="0px"
@@ -189,8 +194,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
-              animationFrom={{ opacity: 0, transform: 'translate3d(0,50px,0)' }}
-              animationTo={{ opacity: 1, transform: 'translate3d(0,0,0)' }}
+              animationFrom={greetingAnimationFrom}
+              animationTo={greetingAnimationTo}
               easing={easings.easeOutCubic}
               threshold={0}
               rootMargin="0px"
@@ -198,10 +203,22 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
-        {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
-            {description}
-          </div>
+        {description &&
+          (descriptionIsHTML ? (
+            <div
+              className="animate-fadeIn mt-4 flex max-w-md items-center justify-center gap-2 text-center text-sm font-normal text-text-primary [&_img]:inline-block [&_img]:h-4 [&_img]:w-4"
+              dangerouslySetInnerHTML={{ __html: sanitizeDescription(description) }}
+            />
+          ) : (
+            <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
+              {description}
+            </div>
+          ))}
+        {selectedAgent && (
+          <AgentContact
+            agent={selectedAgent}
+            className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
+          />
         )}
       </div>
     </div>

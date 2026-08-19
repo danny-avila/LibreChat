@@ -1,7 +1,14 @@
 import { useEffect } from 'react';
 import { useRecoilState } from 'recoil';
 import TagManager from 'react-gtm-module';
-import { LocalStorageKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { installCloudFrontImageRetry } from '@librechat/client';
+import {
+  getTokenHeader,
+  LocalStorageKeys,
+  PermissionTypes,
+  Permissions,
+  resolveModelSpecEndpoint,
+} from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import { useMCPToolsQuery, useMCPServersQuery } from '~/data-provider';
 import { cleanupTimestampedStorage } from '~/utils/timestamps';
@@ -71,10 +78,15 @@ export default function useAppStartup({
 
     setDefaultPreset({
       ...defaultSpec.preset,
+      endpoint: resolveModelSpecEndpoint(defaultSpec) ?? null,
       iconURL: defaultSpec.iconURL,
       spec: defaultSpec.name,
     });
   }, [defaultPreset, setDefaultPreset, startupConfig?.modelSpecs?.list]);
+
+  useEffect(() => {
+    return installCloudFrontImageRetry(startupConfig, { getAuthorizationHeader: getTokenHeader });
+  }, [startupConfig]);
 
   useEffect(() => {
     if (startupConfig?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {

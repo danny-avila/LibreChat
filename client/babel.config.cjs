@@ -14,6 +14,7 @@ module.exports = {
   */
   plugins: [
     '@babel/plugin-transform-runtime',
+    './test/babel-plugin-transform-import-meta-hot.cjs',
     'babel-plugin-transform-import-meta',
     'babel-plugin-transform-vite-meta-env',
     'babel-plugin-replace-ts-export-assignment',

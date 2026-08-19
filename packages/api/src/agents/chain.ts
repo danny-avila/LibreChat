@@ -1,5 +1,5 @@
-import { PromptTemplate } from '@langchain/core/prompts';
-import { BaseMessage, getBufferString } from '@langchain/core/messages';
+import { PromptTemplate } from '@librechat/agents/langchain/prompts';
+import { BaseMessage, getBufferString } from '@librechat/agents/langchain/messages';
 import type { GraphEdge } from '@librechat/agents';
 
 const DEFAULT_PROMPT_TEMPLATE = `Based on the following conversation and analysis from previous agents, please provide your insights:\n\n{convo}\n\nPlease add your specific expertise and perspective to this discussion.`;
@@ -14,7 +14,7 @@ const DEFAULT_PROMPT_TEMPLATE = `Based on the following conversation and analysi
  */
 export async function createSequentialChainEdges(
   agentIds: string[],
-  promptTemplate = DEFAULT_PROMPT_TEMPLATE,
+  promptTemplate: string = DEFAULT_PROMPT_TEMPLATE,
 ): Promise<GraphEdge[]> {
   const edges: GraphEdge[] = [];
 

@@ -1,11 +1,17 @@
 const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
-const { getTransactionSupport, logger } = require('@librechat/data-schemas');
+const {
+  getTransactionSupport,
+  tenantStorage,
+  getTenantId,
+  logger,
+} = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
   entraIdPrincipalFeatureEnabled,
   getUserOwnedEntraGroups,
   getUserEntraGroups,
+  getEntraGroupDetailsBatch,
   getGroupMembers,
   getGroupOwners,
 } = require('~/server/services/GraphApiService');
@@ -24,6 +30,22 @@ const validateResourceType = (resourceType) => {
   if (!validTypes.includes(resourceType)) {
     throw new Error(`Invalid resourceType: ${resourceType}. Valid types: ${validTypes.join(', ')}`);
   }
+};
+
+const ensureLocalUserPrincipalExists = async (principalId) => {
+  const user = await db.findUser({ _id: principalId }, '_id');
+  if (!user) {
+    throw new Error('User principal not found');
+  }
+  return user._id.toString();
+};
+
+const ensureLocalGroupPrincipalExists = async (principalId) => {
+  const group = await db.findGroupById(principalId, { _id: 1 });
+  if (!group) {
+    throw new Error('Group principal not found');
+  }
+  return group._id.toString();
 };
 
 /**
@@ -216,11 +238,19 @@ const getResourcePermissionsMap = async ({ userId, role, resourceType, resourceI
  * @param {Object} params - Parameters for finding accessible resources
  * @param {string|mongoose.Types.ObjectId} params.userId - The ID of the user
  * @param {string} [params.role] - Optional user role (if not provided, will query from DB)
+ * @param {string|null} [params.idOnTheSource] - Optional external member id. `null` means "known to
+ * be absent" (local user); only `undefined` makes `getUserPrincipals` read the user document.
  * @param {string} params.resourceType - Type of resource (e.g., 'agent')
  * @param {number} params.requiredPermissions - The minimum permission bits required (e.g., 1 for VIEW, 3 for VIEW+EDIT)
  * @returns {Promise<Array>} Array of resource IDs
  */
-const findAccessibleResources = async ({ userId, role, resourceType, requiredPermissions }) => {
+const findAccessibleResources = async ({
+  userId,
+  role,
+  idOnTheSource,
+  resourceType,
+  requiredPermissions,
+}) => {
   try {
     if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
       throw new Error('requiredPermissions must be a positive number');
@@ -229,7 +259,7 @@ const findAccessibleResources = async ({ userId, role, resourceType, requiredPer
     validateResourceType(resourceType);
 
     // Get all principals for the user (user + groups + public)
-    const principalsList = await db.getUserPrincipals({ userId, role });
+    const principalsList = await db.getUserPrincipals({ userId, role, idOnTheSource });
 
     if (principalsList.length === 0) {
       return [];
@@ -299,8 +329,8 @@ const ensurePrincipalExists = async function (principal) {
     return null;
   }
 
-  if (principal.id) {
-    return principal.id;
+  if (principal.type === PrincipalType.USER && principal.id) {
+    return await ensureLocalUserPrincipalExists(principal.id);
   }
 
   if (principal.type === PrincipalType.USER && principal.source === 'entra') {
@@ -363,6 +393,10 @@ const ensurePrincipalExists = async function (principal) {
 const ensureGroupPrincipalExists = async function (principal, authContext = null) {
   if (principal.type !== PrincipalType.GROUP) {
     throw new Error(`Invalid principal type: ${principal.type}. Expected '${PrincipalType.GROUP}'`);
+  }
+
+  if (principal.id && principal.source !== 'entra') {
+    return await ensureLocalGroupPrincipalExists(principal.id);
   }
 
   if (principal.source === 'entra') {
@@ -461,9 +495,16 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
 };
 
 /**
- * Synchronize user's Entra ID group memberships on sign-in
- * Gets user's group IDs from GraphAPI and updates memberships only for existing groups in database
- * Optionally includes groups the user owns if ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS is enabled
+ * Sync user's Entra ID group memberships with auto-creation of missing groups
+ * Optimized approach:
+ * 1. Get all group IDs user should be member of from Entra
+ * 2. Try to add user to existing groups (fast, no Graph API calls)
+ * 3. Query DB to identify which groups don't exist (indexed query, fast)
+ * 4. For missing groups only, fetch details from Graph API in batches
+ * 5. Upsert missing groups using upsertGroupByExternalId (race-safe)
+ * 6. Add user to newly created/upserted groups via bulkUpdate
+ * 7. Remove user from groups they're no longer member of
+ *
  * @param {Object} user - User object with authentication context
  * @param {string} user.openidId - User's OpenID subject identifier
  * @param {string} user.idOnTheSource - User's Entra ID (oid from token claims)
@@ -473,11 +514,27 @@ const ensureGroupPrincipalExists = async function (principal, authContext = null
  * @returns {Promise<void>}
  */
 const syncUserEntraGroupMemberships = async (user, accessToken, session = null) => {
+  const tenantId = user?.tenantId ? String(user.tenantId) : undefined;
+  if (!tenantId || getTenantId() != null) {
+    return performEntraGroupMembershipSync(user, accessToken, session);
+  }
+  /**
+   * The OAuth callback runs before `tenantContextMiddleware`, so establish the
+   * user's tenant context here: group queries, created groups, and principal
+   * cache invalidation are then scoped exactly like authenticated reads.
+   */
+  return tenantStorage.run({ tenantId, userId: user._id?.toString() }, async () =>
+    performEntraGroupMembershipSync(user, accessToken, session),
+  );
+};
+
+const performEntraGroupMembershipSync = async (user, accessToken, session = null) => {
   try {
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;
     }
 
+    // Step 1: Get all group IDs user should be member of
     const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);
     let allGroupIds = [...(memberGroupIds || [])];
 
@@ -491,13 +548,22 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       }
     }
 
-    if (!allGroupIds || allGroupIds.length === 0) {
+    const sessionOptions = session ? { session } : {};
+
+    // Early return if no groups found (protects against temporary API failures)
+    if (allGroupIds.length === 0) {
+      logger.debug(
+        `[PermissionService.syncUserEntraGroupMemberships] No groups found for user ${user._id}`,
+      );
       return;
     }
 
-    const sessionOptions = session ? { session } : {};
+    logger.info(
+      `[PermissionService.syncUserEntraGroupMemberships] Syncing ${allGroupIds.length} groups for user ${user._id}`,
+    );
 
-    await db.bulkUpdateGroups(
+    // Step 2: Try to add user to existing groups (fast operation)
+    const addResult = await db.bulkUpdateGroups(
       {
         idOnTheSource: { $in: allGroupIds },
         source: 'entra',
@@ -507,7 +573,77 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       sessionOptions,
     );
 
-    await db.bulkUpdateGroups(
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${addResult.modifiedCount || 0} existing groups`,
+    );
+
+    // Step 3: Find which groups don't exist in DB using db layer
+    const existingGroups = await db.findGroupsByExternalIds(allGroupIds, 'entra', session);
+    const existingGroupIds = new Set(existingGroups.map((g) => g.idOnTheSource));
+
+    const missingGroupIds = allGroupIds.filter((id) => !existingGroupIds.has(id));
+
+    if (missingGroupIds.length > 0) {
+      logger.info(
+        `[PermissionService.syncUserEntraGroupMemberships] Found ${missingGroupIds.length} groups that don't exist, fetching details...`,
+      );
+
+      // Step 4: Fetch details only for missing groups (optimized batch request)
+      const groupDetails = await getEntraGroupDetailsBatch(
+        accessToken,
+        user.openidId,
+        missingGroupIds,
+      );
+
+      if (groupDetails.length > 0) {
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
+        );
+
+        // Step 5: Upsert missing groups (race-safe by design)
+        // Use upsertGroupByExternalId for each group to handle concurrent creates gracefully
+        const upsertPromises = groupDetails.map((group) =>
+          db.upsertGroupByExternalId(
+            group.id,
+            'entra',
+            {
+              name: group.name,
+              email: group.email,
+              description: group.description,
+            },
+            session,
+          ),
+        );
+
+        await Promise.all(upsertPromises);
+
+        // Step 6: Add user to all newly created/upserted groups
+        await db.bulkUpdateGroups(
+          {
+            idOnTheSource: { $in: missingGroupIds },
+            source: 'entra',
+            memberIds: { $ne: user.idOnTheSource },
+          },
+          { $addToSet: { memberIds: user.idOnTheSource } },
+          sessionOptions,
+        );
+
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
+        );
+      } else {
+        logger.warn(
+          `[PermissionService.syncUserEntraGroupMemberships] Could not fetch details for ${missingGroupIds.length} missing groups`,
+        );
+      }
+    } else {
+      logger.debug(
+        `[PermissionService.syncUserEntraGroupMemberships] All ${allGroupIds.length} groups already exist in database`,
+      );
+    }
+
+    // Step 7: Remove user from Entra groups they're no longer member of
+    const removeResult = await db.bulkUpdateGroups(
       {
         source: 'entra',
         memberIds: user.idOnTheSource,
@@ -516,7 +652,17 @@ const syncUserEntraGroupMemberships = async (user, accessToken, session = null) 
       { $pullAll: { memberIds: [user.idOnTheSource] } },
       sessionOptions,
     );
+
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${removeResult.modifiedCount || 0} groups`,
+    );
+
+    logger.info(
+      `[PermissionService.syncUserEntraGroupMemberships] Successfully synced groups for user ${user._id}`,
+    );
   } catch (error) {
+    // Log error but don't re-throw: group sync is best-effort operation
+    // and should not block authentication even if temporary API/DB issues occur
     logger.error(`[PermissionService.syncUserEntraGroupMemberships] Error syncing groups:`, error);
   }
 };
@@ -620,6 +766,20 @@ const bulkUpdateResourcePermissions = async ({
 
     const bulkWrites = [];
 
+    /**
+     * Tracks non-public principals granted in this same request so their revoke is skipped below.
+     * Grants are flushed before deletes, so a principal present in both `updatedPrincipals` and
+     * `revokedPrincipals` would be upserted and then deleted, stripping access the caller just set
+     * (e.g. a resource owner landing in both lists from a client `id`/`idOnTheSource` mismatch).
+     * Granting wins to make owner lockout impossible regardless of the client-side diff (#14316).
+     *
+     * PUBLIC is deliberately excluded: an explicit `public: false` disable adds the public principal
+     * to the revoke list, and disabling public access must always win over a stale/contradictory
+     * grant so a resource is never left public when the caller asked to make it private.
+     */
+    const grantedPrincipalKeys = new Set();
+    const principalKey = (principal) => `${principal.type}:${principal.id}`;
+
     for (const principal of updatedPrincipals) {
       try {
         if (!principal.accessRoleId) {
@@ -700,6 +860,9 @@ const bulkUpdateResourcePermissions = async ({
           memberCount: principal.memberCount,
           memberIds: principal.memberIds,
         });
+        if (principal.type !== PrincipalType.PUBLIC) {
+          grantedPrincipalKeys.add(principalKey(principal));
+        }
       } catch (error) {
         results.errors.push({
           principal,
@@ -715,6 +878,14 @@ const bulkUpdateResourcePermissions = async ({
     const deleteQueries = [];
     for (const principal of revokedPrincipals) {
       try {
+        // Inside the try so a malformed revoke entry (e.g. a nullish principal) is recorded in
+        // results.errors and skipped, rather than throwing out after grants were already flushed.
+        if (
+          principal.type !== PrincipalType.PUBLIC &&
+          grantedPrincipalKeys.has(principalKey(principal))
+        ) {
+          continue;
+        }
         const query = {
           principalType: principal.type,
           resourceType,

@@ -1,0 +1,260 @@
+import { RE2JS } from 're2js';
+import { logger } from '@librechat/data-schemas';
+import { setMessageFilterRegexValidator } from 'librechat-data-provider';
+import type {
+  NextFunction,
+  RequestHandler,
+  Request as ServerRequest,
+  Response as ServerResponse,
+} from 'express';
+import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import { serializeAskUserAnswerVariants } from '../agents/hitl/resume';
+import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
+
+/**
+ * Wire the messageFilter PII config validator to the linear-time engine (RE2) so a custom
+ * pattern the runtime cannot compile is rejected at config load rather than silently dropped at
+ * request time. Call once at server startup, before config is parsed; browser builds keep the
+ * native default and pull in no engine.
+ */
+export function configureMessageFilterRegexValidator(): void {
+  setMessageFilterRegexValidator((pattern) => {
+    try {
+      RE2JS.compile(pattern);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+type CompiledPattern = { id: string; label: string; pattern: RE2JS };
+
+const WHITESPACE = '\\s\\p{Zs}\\x0B\\x{2028}\\x{2029}\\x{FEFF}';
+
+const STARTER_PATTERNS: CompiledPattern[] = [
+  { id: 'sk_prefix', label: 'sk- prefix token', pattern: RE2JS.compile('\\b(sk-)[a-zA-Z0-9_-]+') },
+  {
+    id: 'bearer_header',
+    label: 'Bearer token',
+    pattern: RE2JS.compile(`\\b(Bearer )[^${WHITESPACE}"']+`, RE2JS.CASE_INSENSITIVE),
+  },
+  {
+    id: 'api_key_header',
+    label: 'api-key header',
+    pattern: RE2JS.compile(
+      `\\b(api-key:?[${WHITESPACE}]+)[^${WHITESPACE}"']+`,
+      RE2JS.CASE_INSENSITIVE,
+    ),
+  },
+];
+
+const STARTER_BY_ID = new Map(STARTER_PATTERNS.map((p) => [p.id, p]));
+
+function selectStarter(ids?: string[]): CompiledPattern[] {
+  if (ids == null) {
+    return STARTER_PATTERNS;
+  }
+  const out: CompiledPattern[] = [];
+  for (const id of ids) {
+    const entry = STARTER_BY_ID.get(id);
+    if (entry != null) {
+      out.push(entry);
+    }
+  }
+  return out;
+}
+
+type CompiledConfig = { patterns: CompiledPattern[]; failClosed: boolean };
+
+const COMPILE_CACHE = new WeakMap<object, CompiledConfig>();
+
+function compile(config: MessageFilterPiiConfig): CompiledConfig {
+  const cached = COMPILE_CACHE.get(config);
+  if (cached != null) {
+    return cached;
+  }
+  const starter = selectStarter(config.starterPatterns);
+  const custom: CompiledPattern[] = [];
+  let dropped = 0;
+  for (const p of config.customPatterns ?? []) {
+    try {
+      custom.push({ id: p.id, label: p.label, pattern: RE2JS.compile(p.regex) });
+    } catch (err) {
+      dropped += 1;
+      logger.warn(
+        `[messageFilter.pii] dropping invalid or unsupported customPattern ${JSON.stringify(p.id)}: ${(err as Error).message}`,
+      );
+    }
+  }
+  const patterns = [...starter, ...custom];
+  // Fail closed when any declared custom pattern fails to compile (e.g. a DB or admin override
+  // carrying RE2-incompatible syntax that never hit load-time validation): a silently dropped
+  // pattern would let the text it was meant to catch pass even when other patterns survive, so
+  // block rather than enforce an unintended subset.
+  const result: CompiledConfig = { patterns, failClosed: dropped > 0 };
+  COMPILE_CACHE.set(config, result);
+  return result;
+}
+
+function findMatch(text: string, patterns: CompiledPattern[]): CompiledPattern | null {
+  for (const p of patterns) {
+    if (p.pattern.test(text)) {
+      return p;
+    }
+  }
+  return null;
+}
+
+export interface PiiMatch {
+  id: string;
+  label: string;
+  /** Set when a configured custom pattern failed to compile; block without a real matched label. */
+  misconfigured?: boolean;
+}
+
+type ContentPart = { type?: string; text?: string; [key: string]: unknown };
+type ChatLikeMessage = {
+  role?: string;
+  content?: string | ContentPart[];
+};
+
+export function findPiiMatchInMessages(
+  messages: ChatLikeMessage[] | undefined,
+  config: MessageFilterPiiConfig | undefined,
+): PiiMatch | null {
+  if (config == null || !Array.isArray(messages) || messages.length === 0) {
+    return null;
+  }
+  const { patterns, failClosed } = compile(config);
+  if (failClosed) {
+    return { id: '__misconfigured__', label: 'restricted value', misconfigured: true };
+  }
+  if (patterns.length === 0) {
+    return null;
+  }
+  for (const msg of messages) {
+    if (msg == null) {
+      continue;
+    }
+    if (typeof msg.content === 'string') {
+      const hit = findMatch(msg.content, patterns);
+      if (hit != null) {
+        return { id: hit.id, label: hit.label };
+      }
+      continue;
+    }
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part != null && typeof part.text === 'string') {
+          const hit = findMatch(part.text, patterns);
+          if (hit != null) {
+            return { id: hit.id, label: hit.label };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export interface CreateMessageFilterPiiOptions {
+  getConfig: (req: ServerRequest) => MessageFilterPiiConfig | undefined;
+}
+
+export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): RequestHandler {
+  return function messageFilterPii(req: ServerRequest, res: ServerResponse, next: NextFunction) {
+    const config = options.getConfig(req);
+    if (config == null) {
+      next();
+      return;
+    }
+    /**
+     * Scan the typed text, each quoted excerpt, and — crucially — the merged
+     * blockquote+text exactly as `AgentClient` sends it to the model. Quotes are
+     * normalized via `getReferencedQuotes` first (matching `BaseClient`). Scanning
+     * the merged string catches a secret split across a quote and the typed text
+     * (each clean alone) that only matches once concatenated; scanning the raw
+     * pieces keeps anchored patterns working against un-prefixed excerpts.
+     */
+    const candidates: string[] = [];
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (text.length > 0) {
+      candidates.push(text);
+    }
+    const quotes = getReferencedQuotes(req.body?.quotes);
+    if (quotes != null) {
+      candidates.push(...quotes);
+      candidates.push(mergeQuotedText(text, quotes));
+    }
+    /**
+     * The shared `/agents/chat/resume` route carries user-authored text in different
+     * fields than a typed message: an ask-user `answer`, and a tool-approval decision's
+     * `respond` text, `reject` reason, and edited tool arguments. Scan them too — else a
+     * blocked token could ride a resume payload straight back into the model/tool,
+     * bypassing the filter the typed path enforces.
+     */
+    if (typeof req.body?.answer === 'string' && req.body.answer.length > 0) {
+      candidates.push(req.body.answer);
+    }
+    if (
+      req.body?.answers != null &&
+      typeof req.body.answers === 'object' &&
+      !Array.isArray(req.body.answers)
+    ) {
+      for (const answer of Object.values(req.body.answers)) {
+        if (typeof answer === 'string' && answer.length > 0) {
+          candidates.push(answer);
+        }
+      }
+      candidates.push(...serializeAskUserAnswerVariants(req.body.answers));
+    }
+    if (Array.isArray(req.body?.decisions)) {
+      for (const decision of req.body.decisions) {
+        if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
+          candidates.push(decision.responseText);
+        }
+        if (typeof decision?.reason === 'string' && decision.reason.length > 0) {
+          candidates.push(decision.reason);
+        }
+        if (decision?.editedArguments != null) {
+          try {
+            const edited = JSON.stringify(decision.editedArguments);
+            if (edited.length > 0) {
+              candidates.push(edited);
+            }
+          } catch {
+            /* ignore unstringifiable edited args */
+          }
+        }
+      }
+    }
+    if (candidates.length === 0) {
+      next();
+      return;
+    }
+    const { patterns, failClosed } = compile(config);
+    if (failClosed) {
+      res.status(400).json({
+        error: 'message_filter_pii_block',
+        message: 'Message filtering is misconfigured; contact your administrator.',
+      });
+      return;
+    }
+    if (patterns.length === 0) {
+      next();
+      return;
+    }
+    for (const candidate of candidates) {
+      const match = findMatch(candidate, patterns);
+      if (match != null) {
+        res.status(400).json({
+          error: 'message_filter_pii_block',
+          message: `Message contains a ${match.label}. Remove it and try again.`,
+        });
+        return;
+      }
+    }
+    next();
+  };
+}
