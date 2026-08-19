@@ -222,7 +222,14 @@ function DynamicSlider({
             /** Fires once the drag or keypress settles, which is the point the
              *  chosen value should be in the preset rather than pending. */
             onValueCommit={() => flushInputValue()}
-            onDoubleClick={() => setInputValue(defaultValue as string | number)}
+            /** The browser dispatches this after the second release, so the
+             *  commit above has already fired and the reset would otherwise sit
+             *  in the debouncer while an action clicked next reads the old
+             *  value. */
+            onDoubleClick={() => {
+              setInputValue(defaultValue as string | number);
+              flushInputValue();
+            }}
             max={max}
             aria-label={localize(label as TranslationKeys)}
             min={range ? range.min : 0}
