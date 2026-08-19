@@ -1628,7 +1628,17 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 `[ResumableAgentController] Pause persistence barrier changed before release: ${streamId}`,
               );
             }
-            await settleScheduledRun({ status: 'requires_action' });
+            // The pause projection is what moves the run row off `started` and frees its
+            // GLOBAL capacity slot. recordScheduleOutcome already retried it; a `false`
+            // here means every attempt failed, leaving the row `started` while the job
+            // sits `requires_action`. Surface it — the armed engine's reconciler replays
+            // this state, and the clustered sweep now converges it too, but a silent drop
+            // gave neither a reason to look.
+            if (!(await settleScheduledRun({ status: 'requires_action' }))) {
+              logger.error(
+                `[ResumableAgentController] Failed to project the scheduled pause for ${streamId}; run stays active until reconciliation replays it`,
+              );
+            }
           } else {
             logger.debug(
               `[ResumableAgentController] Skipping stale pause persistence — ${streamId} no longer owns its barrier`,

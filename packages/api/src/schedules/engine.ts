@@ -300,6 +300,25 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               autoDisableAfterFailures: runLimits.autoDisableAfterFailures,
               balanceSkipDisableThreshold: BALANCE_SKIP_DISABLE_THRESHOLD,
             });
+            // The run is terminal but its OWNER crashed before bookkeeping, which is also
+            // before it could release the job it retained for exactly this recovery. The
+            // active-run pass clears its own; this one never did, and a preserved job is
+            // kept WITHOUT `completedAt` precisely so the store's finished-job sweep
+            // cannot reap it early — so nothing else would ever have. Identity-guarded,
+            // and a no-op when no retained job is there.
+            if (run.conversationId) {
+              await deps
+                .clearReconciledJob(run.conversationId, {
+                  scheduleId: run.scheduleId,
+                  scheduledFor: run.scheduledFor,
+                })
+                .catch((clearError) =>
+                  logger.warn(
+                    `[schedules] failed to clear retained job after bookkeeping replay for ${run.scheduleId}:`,
+                    clearError,
+                  ),
+                );
+            }
           } catch (rowError) {
             logger.error(
               `[schedules] bookkeeping replay failed for run ${run.scheduleId}:`,

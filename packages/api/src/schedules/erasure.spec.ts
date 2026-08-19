@@ -262,6 +262,45 @@ describe('topology-safe dead-delivery convergence', () => {
     expect(clearReconciledJob).not.toHaveBeenCalled();
   });
 
+  /**
+   * A pause whose `requires_action` projection failed every retry leaves the row `started`
+   * while the job is durably paused. The armed reconciler replays that; with no engine the
+   * row held its GLOBAL capacity slot forever, since a paused job is not terminal and the
+   * dead-delivery path never inspects an identity-matched job.
+   */
+  it('projects a pause the owner never managed to record, freeing the slot', async () => {
+    const { methods, clearReconciledJob } = await convergeOnce({
+      job: {
+        status: 'requires_action',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduleId: 'schedule-1',
+        status: 'requires_action',
+        conversationId: 'conversation-1',
+      }),
+    );
+    // The job is still LIVE awaiting approval — its evidence must not be released.
+    expect(clearReconciledJob).not.toHaveBeenCalled();
+  });
+
+  /** A resume claims capacity before flipping the job back to `running`; re-projecting the
+   *  pause during that hand-off would release the slot the continuation just took. */
+  it('defers a paused job while a resume hand-off is in flight', async () => {
+    const { methods } = await convergeOnce({
+      run: { resumeClaimedAt: new Date() } as Partial<IScheduleRun>,
+      job: {
+        status: 'requires_action',
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      } as unknown as JobState,
+    });
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
   it('never settles a terminal job while its abort is still in flight', async () => {
     const { methods, clearReconciledJob } = await convergeOnce({
       run: { abortRequestedAt: new Date() } as Partial<IScheduleRun>,

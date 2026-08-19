@@ -401,6 +401,60 @@ describe('bookkeeping replay rotation', () => {
     // row's counters never land.
     expect(methods.markRunsReconciled).toHaveBeenCalledWith([poison]);
   });
+
+  /**
+   * A terminal run reaches this pass only because its OWNER crashed before bookkeeping —
+   * which is also before it could release the job it retained for exactly this recovery.
+   * A preserved job is kept WITHOUT `completedAt` so the store's finished-job sweep cannot
+   * reap it early, so if this pass does not clear it, nothing ever does.
+   */
+  it('releases the retained job once replayed bookkeeping is durable', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    methods.claimDueSchedule.mockResolvedValue(null);
+    const unbookkept = {
+      _id: 'row-2',
+      scheduleId: 'sched-crashed',
+      scheduledFor: new Date(0),
+      user: 'u1',
+      status: 'success',
+      conversationId: 'convo-crashed',
+    };
+    (methods.getUnbookkeptRuns as jest.Mock).mockResolvedValue([unbookkept]);
+    const clearReconciledJob = jest.fn(async () => undefined);
+
+    await reconcileOnce(makeDeps(methods, { clearReconciledJob }));
+
+    expect(methods.finalizeBookkeeping).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 'sched-crashed' }),
+    );
+    expect(clearReconciledJob).toHaveBeenCalledWith('convo-crashed', {
+      scheduleId: 'sched-crashed',
+      scheduledFor: new Date(0),
+    });
+  });
+
+  /** The retained job is the only surviving evidence when bookkeeping fails, so it must
+   *  outlive a failed replay rather than be cleared alongside it. */
+  it('keeps the retained job when the bookkeeping replay itself fails', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    methods.claimDueSchedule.mockResolvedValue(null);
+    (methods.getUnbookkeptRuns as jest.Mock).mockResolvedValue([
+      {
+        _id: 'row-3',
+        scheduleId: 'sched-broken-bk',
+        scheduledFor: new Date(0),
+        user: 'u1',
+        status: 'success',
+        conversationId: 'convo-broken',
+      },
+    ]);
+    (methods.finalizeBookkeeping as jest.Mock).mockRejectedValue(new Error('mongo down'));
+    const clearReconciledJob = jest.fn(async () => undefined);
+
+    await reconcileOnce(makeDeps(methods, { clearReconciledJob }));
+
+    expect(clearReconciledJob).not.toHaveBeenCalled();
+  });
 });
 
 describe('reconciliation abort fence', () => {

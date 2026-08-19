@@ -130,17 +130,35 @@ async function settleAbandonedRuns(deps: ScheduleErasureDeps, scheduleId: string
 }
 
 /**
- * Settles a run from its OWN identity-matched terminal job, then releases the retained
- * evidence — the clustered mirror of the engine reconciler's retained-job branch.
+ * Converges a run from its OWN identity-matched job — the clustered mirror of the engine
+ * reconciler's retained-job and pause branches.
  */
-async function settleFromRetainedJob(
+async function settleFromObservedJob(
   deps: ScheduleErasureDeps,
   run: IScheduleRun,
   job: JobState,
 ): Promise<void> {
+  // A PAUSE the owner never managed to project. `recordRunOutcome('requires_action')`
+  // moves the row off `started`, which is what frees its global capacity slot; the job
+  // itself stays live awaiting approval, so its evidence is NOT released here. Without
+  // this the row held a slot forever wherever no engine is armed, since a paused job is
+  // not terminal and the dead-delivery path never looks at an identity-matched job.
+  if (job.status === 'requires_action') {
+    if (run.status !== 'started') {
+      return;
+    }
+    await deps.methods.recordRunOutcome({
+      scheduleId: run.scheduleId,
+      scheduledFor: run.scheduledFor,
+      status: 'requires_action',
+      conversationId: run.conversationId,
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+    });
+    return;
+  }
   const terminal = TERMINAL_JOB_OUTCOMES[job.status];
   if (terminal == null) {
-    // `running`/`requires_action`: the owner is alive and owns the settlement.
+    // `running`: the owner is alive and owns the settlement.
     return;
   }
   // An `aborted` job flips the moment abortJob wins its status CAS — BEFORE its owner
@@ -177,7 +195,7 @@ async function settleFromRetainedJob(
  * EVIDENCE ONLY.
  *
  * `fireSchedule` reserves the run and its global capacity slot before the delivery reaches
- * the chat route, and the clustered entrypoint arms no engine — so two states would
+ * the chat route, and the clustered entrypoint arms no engine — so three states would
  * otherwise hold that slot indefinitely:
  *
  * - A RETAINED TERMINAL JOB. The generation finished, but its owner's Mongo outcome write
@@ -185,6 +203,9 @@ async function settleFromRetainedJob(
  *   job as the only surviving evidence. The armed engine's reconciler replays exactly
  *   this; with no engine nothing did, so the run stayed `started` and its retained
  *   generation evidence lived until store expiry.
+ * - AN UNPROJECTED PAUSE. The generation paused for approval, but the owner's
+ *   `requires_action` projection failed every retry, so the row never left `started` even
+ *   though the pause itself is durable in the job.
  * - A DEAD DELIVERY. A pre-generation rejection (interactive limiter, PII, moderation)
  *   dead-letters the delivery while the run stays `started` with no job at all.
  *
@@ -223,7 +244,7 @@ async function settleStrandedRuns(deps: ScheduleErasureDeps): Promise<void> {
         continue;
       }
       if (jobMatchesRun(job.state, run)) {
-        await settleFromRetainedJob(deps, run, job.state as JobState);
+        await settleFromObservedJob(deps, run, job.state as JobState);
         continue;
       }
       // No job of THIS occurrence's identity, so the durable delivery is the authority.
