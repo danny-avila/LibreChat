@@ -153,6 +153,12 @@ async function settleFromObservedJob(
       status: 'requires_action',
       conversationId: run.conversationId,
       autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      // Every clustered replica runs this sweep, so N sweepers can observe the same
+      // unprojected pause. The `run` above is a SNAPSHOT: once one sweeper projects the
+      // pause, the owner's approval can claim a fresh slot, and a peer still holding the
+      // pre-projection snapshot would pass hasResumeHandoffInFlight and unset that slot
+      // and claim stamp under the running continuation. Fence it in the write itself.
+      requireNoResumeClaim: true,
     });
     return;
   }

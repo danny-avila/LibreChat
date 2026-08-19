@@ -2266,6 +2266,75 @@ describe('updateScheduleById revision fence', () => {
   });
 });
 
+describe('pause replay is fenced against a concurrent resume claim', () => {
+  /**
+   * Every clustered replica runs the erasure sweep, so several can observe the same
+   * unprojected pause. The first projects it; the owner's approval then claims a fresh
+   * slot; a peer still holding the PRE-projection snapshot passes its in-memory
+   * hand-off check and replays the pause — unsetting `capacitySlot` and
+   * `resumeClaimedAt` under a continuation that is already running. The fence has to
+   * live in the write, not in the caller's snapshot.
+   */
+  it('refuses to replay a pause onto a row a resume has claimed', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2030-03-01T00:00:00Z');
+    await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor, conversationId: 'convo-race', capacitySlot: 0 }),
+    );
+    // Sweeper A wins: the row leaves `started` and frees its slot.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-race',
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      requireNoResumeClaim: true,
+    });
+    // The approval now claims a FRESH slot; this is the state a stale peer must not touch.
+    const claimed = await methods.markRunResumeClaimed(schedule.id, scheduledFor, 3);
+    expect(claimed).toEqual({ capacitySlot: 3 });
+
+    // Sweeper B replays from its pre-projection snapshot.
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-race',
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      requireNoResumeClaim: true,
+    });
+
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id, scheduledFor }).lean();
+    expect(run?.status).toBe('started');
+    expect(run?.capacitySlot).toBe(3);
+    expect(run?.resumeClaimedAt).toBeDefined();
+  });
+
+  /** The fence must not block the recovery it exists to enable: a genuinely stuck
+   *  `started` row carries no resume claim, because markRunResumeClaimed only matches
+   *  `requires_action` — the stuck row blocks its own approval until this replay runs. */
+  it('still recovers a stuck row that carries no resume claim', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2030-03-02T00:00:00Z');
+    await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor, conversationId: 'convo-stuck', capacitySlot: 1 }),
+    );
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-stuck',
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      requireNoResumeClaim: true,
+    });
+
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id, scheduledFor }).lean();
+    expect(run?.status).toBe('requires_action');
+    expect(run?.capacitySlot).toBeUndefined();
+  });
+});
+
 describe('reconciliation rotates the paused window', () => {
   /**
    * Paused runs accumulate without bound (no capacity slot, no occurrence block) and

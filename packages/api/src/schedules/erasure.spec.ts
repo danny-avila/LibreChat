@@ -281,6 +281,9 @@ describe('topology-safe dead-delivery convergence', () => {
         scheduleId: 'schedule-1',
         status: 'requires_action',
         conversationId: 'conversation-1',
+        // Every replica runs this sweep, so the write itself must be fenced against a
+        // resume that claimed the row after this snapshot was taken.
+        requireNoResumeClaim: true,
       }),
     );
     // The job is still LIVE awaiting approval — its evidence must not be released.

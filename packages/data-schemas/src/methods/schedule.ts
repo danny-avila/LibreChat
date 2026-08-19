@@ -114,6 +114,20 @@ export interface RecordRunOutcomeParams {
   /** Consecutive-balance-skip auto-disable threshold; required to settle a run as
    *  `skipped_balance` (a mid-generation balance refusal), ignored otherwise. */
   balanceSkipDisableThreshold?: number;
+  /**
+   * RECOVERY REPLAY of a pause, from an actor holding a possibly-stale row snapshot:
+   * apply the transition ONLY while no resume claim exists. Without it, two clustered
+   * sweepers observing the same unprojected pause race — the first projects it, the
+   * owner's approval then claims a fresh slot (`started` + `resumeClaimedAt`), and the
+   * second still passes its snapshot-based hand-off check and unsets the capacity slot
+   * and claim stamp out from under the running continuation. `markRunResumeClaimed`
+   * sets the stamp in the SAME write that takes the row to `started`, so its absence is
+   * an atomic proof that no resume owns this row.
+   *
+   * Never set by the generation owner: its own re-pause legitimately clears the stamp as
+   * the hand-off's completion signal.
+   */
+  requireNoResumeClaim?: boolean;
 }
 
 /** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
@@ -1291,6 +1305,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           scheduleId: params.scheduleId,
           scheduledFor: params.scheduledFor,
           status: { $in: ['started', 'requires_action'] },
+          // See requireNoResumeClaim: fences a stale-snapshot recovery replay against a
+          // resume that claimed the row after the snapshot was taken.
+          ...(params.requireNoResumeClaim ? { resumeClaimedAt: { $exists: false } } : {}),
         },
         {
           $set: {
