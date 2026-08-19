@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { SIDEBAR_TRANSITION, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import useDrawerDismiss from '../useDrawerDismiss';
 
@@ -9,29 +9,24 @@ type Props = {
   prefersReducedMotion: boolean;
 };
 
-const VIEWPORT_WIDTH = 400;
-
 /**
- * Defaults to a drawer that leaves a strip uncovered, which is the shape the
- * pointer guard exists for. Pass the full viewport width to model the default
- * setting, where the close is a reveal and the pane never moves.
+ * Defaults to a pane the close is animating, which is the shape the pointer
+ * guard exists for. Pass `none` to model the reveal close, where the pane is
+ * repositioned instantly and never moves under the user.
  */
 function setup({
   expanded,
   isSmallScreen,
   prefersReducedMotion = false,
-  drawerWidth = 320,
+  paneTransition = SIDEBAR_TRANSITION,
 }: Omit<Props, 'prefersReducedMotion'> & {
   prefersReducedMotion?: boolean;
-  drawerWidth?: number;
+  paneTransition?: string;
 }) {
   const pane = document.createElement('div');
   pane.tabIndex = -1;
-  const drawer = document.createElement('div');
-  drawer.id = MOBILE_DRAWER_ID;
-  Object.defineProperty(drawer, 'clientWidth', { value: drawerWidth, configurable: true });
-  Object.defineProperty(window, 'innerWidth', { value: VIEWPORT_WIDTH, configurable: true });
-  document.body.append(pane, drawer);
+  pane.style.transition = paneTransition;
+  document.body.appendChild(pane);
   const paneRef: React.RefObject<HTMLElement> = { current: pane };
   const setOpen = jest.fn();
 
@@ -97,20 +92,37 @@ describe('useDrawerDismiss', () => {
     });
 
     /**
-     * A drawer that covers the pane closes as a reveal, with the pane already
-     * repositioned beneath it. Holding the pointer there would only make the
-     * app feel unresponsive for the length of the transition.
+     * The reveal close repositions the pane instantly beneath a drawer that
+     * covers it, leaving `transition: none` behind. Holding the pointer there
+     * would only make the app feel unresponsive for the transition's length.
      */
     it('does not arm when the close is a reveal', () => {
       const { result, rerender } = setup({
         expanded: true,
         isSmallScreen: true,
-        drawerWidth: VIEWPORT_WIDTH,
+        paneTransition: 'none',
       });
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
       expect(result.current.isClosing).toBe(false);
+    });
+
+    /**
+     * A swipe animates the pane at any drawer width, so reading the width
+     * instead of the pane left the default configuration unguarded through the
+     * one close path that does move it.
+     */
+    it('arms for a close that animates the pane behind a full-width drawer', () => {
+      const { result, rerender } = setup({
+        expanded: true,
+        isSmallScreen: true,
+        paneTransition: SIDEBAR_TRANSITION,
+      });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(result.current.isClosing).toBe(true);
     });
 
     it('does not arm under reduced motion, where both surfaces snap', () => {
@@ -230,6 +242,22 @@ describe('useDrawerDismiss', () => {
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: true });
 
       expect(document.activeElement).toBe(opener);
+    });
+
+    /**
+     * Leaving mobile unmounts the drawer and the scrim, so focus sitting on
+     * either goes with them. The opener stays mounted across breakpoints but is
+     * hidden on desktop, where focusing it does nothing, so the pane takes it.
+     */
+    it('hands focus to the pane when the viewport leaves mobile', () => {
+      const opener = addOpener();
+      /** Hidden the way the header hides it at this breakpoint. */
+      opener.focus = () => undefined;
+      const { rerender, pane } = setup({ expanded: true, isSmallScreen: true });
+
+      rerender({ expanded: true, isSmallScreen: false, prefersReducedMotion: false });
+
+      expect(document.activeElement).toBe(pane);
     });
 
     it('reclaims focus stranded inside the drawer once it goes inert', () => {

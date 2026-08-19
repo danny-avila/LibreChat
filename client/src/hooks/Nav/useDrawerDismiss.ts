@@ -1,8 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, RefObject } from 'react';
-import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { drawerCoversPane } from '~/hooks/Nav/useDrawerSwipe';
 
 /**
  * Every path that closes the mobile drawer leaves the same two problems, so
@@ -44,6 +43,13 @@ export default function useDrawerDismiss({
     wasExpandedRef.current = expanded;
     wasSmallScreenRef.current = isSmallScreen;
 
+    /** Leaving mobile unmounts the drawer and the scrim, so focus sitting on
+     *  either goes with them, exactly as it does on a close. */
+    if (wasSmallScreen && !isSmallScreen) {
+      restoreDrawerFocus(paneRef.current);
+      return;
+    }
+
     if (!isSmallScreen || !wasExpanded || expanded) {
       return;
     }
@@ -61,12 +67,15 @@ export default function useDrawerDismiss({
       return;
     }
 
-    /** The guard exists to cover a pane that is still sliding. A close under a
-     *  drawer that covers it is a reveal, where the pane is already in place,
-     *  so holding the pointer there would only make the app feel unresponsive
-     *  for the length of the transition. */
-    const drawer = document.getElementById(MOBILE_DRAWER_ID);
-    if (drawer == null || drawerCoversPane(drawer)) {
+    /** The guard exists to cover a pane that is still sliding, so ask the pane
+     *  itself. The reveal close repositions it instantly and leaves
+     *  `transition: none` behind, while every animated path, gesture or
+     *  programmatic, leaves the shared transition on it before the state
+     *  commits. Reading the drawer's width instead missed the swipe close,
+     *  which animates the pane at any width. */
+    const pane = paneRef.current;
+    const paneTransition = pane?.style.transition ?? '';
+    if (paneTransition === '' || paneTransition === 'none') {
       return;
     }
 
@@ -120,7 +129,11 @@ function restoreDrawerFocus(pane: HTMLElement | null): void {
   const opener = document.getElementById(OPEN_SIDEBAR_ID);
   if (opener != null) {
     opener.focus();
-    return;
+    /** It stays mounted across breakpoints but is hidden on desktop, where the
+     *  focus simply does not take, so confirm it rather than assume it. */
+    if (document.activeElement === opener) {
+      return;
+    }
   }
 
   /** Routes that return a loading or error state before rendering their header
