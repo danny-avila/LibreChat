@@ -288,11 +288,13 @@ if (require.main === module) {
         result.unrecoverable.forEach((fileId) => console.log(`  ${fileId}`));
       }
       if (result.notWritten.length > 0) {
-        console.log('\nResolved but NOT written — the row changed under the migration; re-run:');
+        console.log(
+          '\nResolved but NOT written — the row changed under the migration, or the write failed; re-run:',
+        );
         result.notWritten.forEach((fileId) => console.log(`  ${fileId}`));
       }
       if (result.errors > 0) {
-        console.log(`\nErrors: ${result.errors} (those users' files were skipped, not guessed)`);
+        console.log(`\nErrors: ${result.errors} (skipped rather than guessed; listed above)`);
       }
       if (result.errors > 0 || result.notWritten.length > 0) {
         process.exit(1);
