@@ -33,6 +33,9 @@ import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
+/** Shared by the trigger and the clear dialog's focus fallback. */
+const PRESET_MENU_ID = 'preset-options-button';
+
 const PresetItems: FC<{
   presets?: Array<TPreset | undefined>;
   onSetDefaultPreset: (preset: TPreset, remove?: boolean) => void;
@@ -60,6 +63,9 @@ const PresetItems: FC<{
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  /** Radix restores focus to whatever held it when the dialog mounted, which by
+   *  then is the menu's own focus trap rather than the item that opened it. */
+  const clearInvokerRef = useRef<HTMLElement | null>(null);
 
   const handleImportChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -88,7 +94,11 @@ const PresetItems: FC<{
     },
     {
       label: localize('com_ui_clear_all'),
-      onClick: () => setIsClearDialogOpen(true),
+      onClick: () => {
+        clearInvokerRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setIsClearDialogOpen(true);
+      },
       icon: <FileX2 className="icon-sm" aria-hidden="true" />,
       className: 'text-text-destructive',
       show: hasPresets,
@@ -122,7 +132,7 @@ const PresetItems: FC<{
           setIsOpen={setIsMenuOpen}
           trigger={
             <Ariakit.MenuButton
-              id="preset-options-button"
+              id={PRESET_MENU_ID}
               aria-label={localize('com_ui_more_options')}
               aria-expanded={isMenuOpen}
               className={cn(
@@ -147,7 +157,20 @@ const PresetItems: FC<{
       />
 
       <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
-        <AlertDialogContent className="w-11/12 max-w-md rounded-theme-surface sm:rounded-theme-surface">
+        <AlertDialogContent
+          /** The menu stays open behind the dialog (`hideOnClick: false`), so
+           *  the item is still there to take focus back. */
+          onCloseAutoFocus={(event) => {
+            const invoker = clearInvokerRef.current ?? document.getElementById(PRESET_MENU_ID);
+            clearInvokerRef.current = null;
+            if (invoker == null || !invoker.isConnected) {
+              return;
+            }
+            event.preventDefault();
+            invoker.focus();
+          }}
+          className="w-11/12 max-w-md rounded-theme-surface sm:rounded-theme-surface"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{localize('com_ui_clear_presets')}</AlertDialogTitle>
             <AlertDialogDescription>
