@@ -27,8 +27,8 @@ import {
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
-import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
+import useDrawerDismiss from '~/hooks/Nav/useDrawerDismiss';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
@@ -64,16 +64,17 @@ export default function Root() {
   /** The drawer and pane snap under reduced motion (see kickDrawerAnimation),
    *  so the scrim must not keep fading on its own. */
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const restoreFocusRef = useRef(false);
-  /** The commit lands on the third frame but the drawer and pane keep moving
-   *  for the rest of the transition, so the scrim has to stay the pointer
-   *  target until then; otherwise a tap during the close reaches a control on
-   *  the pane sliding underneath. Derived from the state rather than the
-   *  scrim's own click, because the header button, Escape, conversation
-   *  selection and the bottom bar all close the drawer too. */
-  const [isClosing, setIsClosing] = useState(false);
-  const wasExpandedRef = useRef(sidebarExpanded);
   const paneRef = useRef<HTMLDivElement>(null);
+  /** Keyed off the committed state rather than the scrim's own click, because
+   *  the header button, Escape, conversation selection and the bottom bar all
+   *  close the drawer too. */
+  const { isClosing, onScrimClick } = useDrawerDismiss({
+    expanded: sidebarExpanded,
+    isSmallScreen,
+    prefersReducedMotion,
+    paneRef,
+    setOpen: setSidebarOpen,
+  });
   /** Focus handoff lives in the drawer header's own expanded-effect — the
    * commit drives it, so every opener (button, swipe) is covered without a
    * timer racing the deferred state flip. */
@@ -116,33 +117,6 @@ export default function Root() {
     }
   }, [termsData]);
 
-  /** Focus can only move once the pane has actually shed `inert`, which is a
-   *  commit later than the close is requested. */
-  useEffect(() => {
-    if (sidebarExpanded || !restoreFocusRef.current) {
-      return;
-    }
-    restoreFocusRef.current = false;
-    document.getElementById(OPEN_SIDEBAR_ID)?.focus();
-  }, [sidebarExpanded]);
-
-  /** Timer rather than transitionend: the scrim unmounts when the viewport
-   *  crosses to desktop, and a handler that never fires would strand the guard
-   *  on, leaving an invisible full-screen button swallowing every click. */
-  useEffect(() => {
-    const wasExpanded = wasExpandedRef.current;
-    wasExpandedRef.current = sidebarExpanded;
-    if (!isSmallScreen || prefersReducedMotion || !wasExpanded || sidebarExpanded) {
-      return;
-    }
-    setIsClosing(true);
-    const id = setTimeout(() => setIsClosing(false), TRANSITION_MS);
-    return () => {
-      clearTimeout(id);
-      setIsClosing(false);
-    };
-  }, [sidebarExpanded, isSmallScreen, prefersReducedMotion]);
-
   const handleAcceptTerms = () => {
     setShowTerms(false);
   };
@@ -168,7 +142,10 @@ export default function Root() {
                   <UnifiedSidebar />
                   <div
                     ref={paneRef}
-                    className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
+                    /** Focus target of last resort when the drawer closes on a
+                     *  route that renders no opener. Not in the tab order. */
+                    tabIndex={-1}
+                    className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-none"
                     style={{
                       /** Self-referential, so it needs no width literal and survives rotation. */
                       transform: isSmallScreen && sidebarExpanded ? MOBILE_PANE_SHIFT : 'none',
@@ -186,15 +163,7 @@ export default function Root() {
                     <button
                       type="button"
                       aria-label={localize('com_nav_close_sidebar')}
-                      onClick={() => {
-                        /** The scrim goes aria-hidden and untabbable on close,
-                         *  so focus cannot stay here. The handoff waits for the
-                         *  committed state below rather than riding afterSlide,
-                         *  which fires on the same frame as the deferred flip,
-                         *  while the opener's ancestor is still inert. */
-                        restoreFocusRef.current = true;
-                        setSidebarOpen(false);
-                      }}
+                      onClick={onScrimClick}
                       tabIndex={sidebarExpanded ? 0 : -1}
                       aria-hidden={!sidebarExpanded || undefined}
                       className={cn(
