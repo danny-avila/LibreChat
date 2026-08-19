@@ -2,6 +2,7 @@ import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
 import { ErrorController, createCustomError } from './error';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -220,6 +221,34 @@ describe('ErrorController', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
+    });
+  });
+
+  describe('OpenIDReauthRequiredError handling', () => {
+    it('should map a re-auth error to a 401 carrying the actionable message', () => {
+      const error = new OpenIDReauthRequiredError(
+        'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      );
+
+      ErrorController(error, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(401);
+      expect(mockRes.send).toHaveBeenCalledWith({
+        error: 'invalid_token',
+        message:
+          'OpenID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+      });
+    });
+
+    it('should carry a 401 statusCode for callers that read the status directly', () => {
+      expect(new OpenIDReauthRequiredError('re-auth').statusCode).toBe(401);
+    });
+
+    it('should not fall through to the bare 500 path', () => {
+      ErrorController(new OpenIDReauthRequiredError('re-auth'), mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).not.toHaveBeenCalledWith(500);
+      expect(mockRes.send).not.toHaveBeenCalledWith('An unknown error occurred.');
     });
   });
 

@@ -28,6 +28,7 @@ let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
+let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -47,6 +48,7 @@ beforeAll(async () => {
   updateMessageText = methods.updateMessageText;
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
+  claimSubagentTaskResult = methods.claimSubagentTaskResult;
 
   await mongoose.connect(mongoUri);
 });
@@ -1547,6 +1549,83 @@ describe('Message Operations', () => {
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBeUndefined();
+    });
+  });
+  describe('claimSubagentTaskResult', () => {
+    const terminalResult = async (taskId: string, conversationId: string, status: string) =>
+      saveMessage({ userId: 'user123' }, {
+        messageId: `${taskId}:assistant`,
+        conversationId,
+        text: 'child result',
+        subagentTask: { attemptKey: `${taskId}:attempt`, status },
+      } as Partial<IMessage>);
+
+    it('hands one terminal result to a single polling invocation', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      const first = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        claimId: 'poll-1',
+      });
+      expect(first.status).toBe('acquired');
+      expect(first.status === 'acquired' && first.message.text).toBe('child result');
+
+      /** The same invocation retrying recovers the result it never received. */
+      const retried = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        claimId: 'poll-1',
+      });
+      expect(retried.status).toBe('acquired');
+
+      /** Another invocation is told it was collected instead of handed a copy. */
+      await expect(
+        claimSubagentTaskResult({ userId: 'user123', conversationId, taskId, claimId: 'poll-2' }),
+      ).resolves.toEqual({ status: 'claimed' });
+    });
+
+    it('reports a result that is missing or still running as not found', async () => {
+      const runningTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(runningTaskId, conversationId, 'running');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: runningTaskId,
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: uuidv4(),
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('never hands one owner’s result to another user', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'other-user',
+          conversationId,
+          taskId,
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
     });
   });
 });

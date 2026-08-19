@@ -14,6 +14,8 @@ import { signPayload } from '~/crypto';
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 /** Minimum age before an explicitly offline operator may recover an abandoned deletion fence. */
 export const USER_DELETION_FENCE_STALE_MS: number = 15 * 60_000;
+/** Bounds concurrent bulk deletions held for one owner at any moment. */
+const MAX_SUBAGENT_ADMISSION_FENCES = 32;
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
@@ -129,6 +131,10 @@ export function createUserMethods(
   ) => Promise<'acquired' | 'in_progress' | 'missing'>;
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
+  fenceSubagentAdmission: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
+  renewSubagentAdmission: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
+  releaseSubagentAdmission: (userId: string, token: string) => Promise<void>;
+  isSubagentOwnerAdmissible: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   updateUserPlugins: (
     userId: string,
@@ -453,6 +459,101 @@ export function createUserMethods(
   }
 
   /**
+   * Closes subagent admission for one owner while a bulk conversation deletion drains
+   * its live children. Every concurrent deletion holds its own fence, so admission
+   * reopens only once the last one finishes, in whatever order they complete. Each
+   * fence expires on its own, so a process that dies mid-delete cannot lock the
+   * account out of running subagents, and expired fences are pruned as new ones
+   * arrive rather than accumulating.
+   */
+  async function fenceSubagentAdmission(
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ): Promise<void> {
+    if (!(fencedUntil instanceof Date) || !Number.isFinite(fencedUntil.getTime())) {
+      throw new TypeError('fencedUntil must be a valid Date');
+    }
+    if (token.length === 0 || token.length > 128) {
+      throw new TypeError('A subagent admission fence needs a bounded owner token');
+    }
+    const User = mongoose.models.User;
+    /** Plain update operators only: DocumentDB rejects pipeline-form updates, and
+     * this runs before any deletion, so using one would fail the whole endpoint. */
+    await User.updateOne(
+      { _id: userId },
+      { $pull: { subagentAdmissionFences: { expiresAt: { $lte: new Date() } } } },
+      { timestamps: false },
+    );
+    try {
+      /** Admitted only while the owner is under the concurrent-deletion cap. Dropping
+       * an active fence to make room would reopen admission for a deletion that is
+       * still running, so an excess deletion is refused instead. */
+      const fenced = await User.updateOne(
+        {
+          _id: userId,
+          [`subagentAdmissionFences.${MAX_SUBAGENT_ADMISSION_FENCES - 1}`]: { $exists: false },
+        },
+        { $push: { subagentAdmissionFences: { token, expiresAt: fencedUntil } } },
+        { timestamps: false },
+      );
+      if (fenced.matchedCount !== 1) {
+        throw new Error('Too many concurrent bulk deletions are already fencing this owner.');
+      }
+    } finally {
+      /** The prune above commits on its own, so a refused or failed fence still leaves
+       * the cached document describing entries the collection no longer holds. */
+      await invalidateAuthUserDocCache(userId);
+    }
+  }
+
+  /** Extends only this deletion's own fence while its work is still running. */
+  async function renewSubagentAdmission(
+    userId: string,
+    token: string,
+    fencedUntil: Date,
+  ): Promise<boolean> {
+    if (!(fencedUntil instanceof Date) || !Number.isFinite(fencedUntil.getTime())) {
+      throw new TypeError('fencedUntil must be a valid Date');
+    }
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, 'subagentAdmissionFences.token': token },
+      { $set: { 'subagentAdmissionFences.$.expiresAt': fencedUntil } },
+      { timestamps: false },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return result.matchedCount === 1;
+  }
+
+  /** Lifts only this deletion's fence, so an overlapping one keeps admission closed. */
+  async function releaseSubagentAdmission(userId: string, token: string): Promise<void> {
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId },
+      { $pull: { subagentAdmissionFences: { token } } },
+      { timestamps: false },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+    }
+  }
+
+  /** True while this owner may admit a new child: no account deletion, no live fence. */
+  async function isSubagentOwnerAdmissible(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    return (
+      (await User.exists({
+        _id: userId,
+        agentTriggerDeletionStartedAt: { $exists: false },
+        subagentAdmissionFences: { $not: { $elemMatch: { expiresAt: { $gt: new Date() } } } },
+      })) != null
+    );
+  }
+
+  /**
    * Generates a JWT token for a given user.
    * @param user - The user object
    * @param expiresIn - Optional expiry time in milliseconds. Default: 15 minutes
@@ -707,6 +808,10 @@ export function createUserMethods(
     recoverStaleAgentTriggerUserDeletion,
     cancelAgentTriggerUserDeletion,
     isAgentTriggerPrincipalActive,
+    fenceSubagentAdmission,
+    renewSubagentAdmission,
+    releaseSubagentAdmission,
+    isSubagentOwnerAdmissible,
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,

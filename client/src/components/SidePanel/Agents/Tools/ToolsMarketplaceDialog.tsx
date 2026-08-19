@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
+import { AgentCapabilities, removeCodeExecutionCaller } from 'librechat-data-provider';
 import {
   Input,
   OGDialog,
@@ -109,6 +110,11 @@ export default function ToolsMarketplaceDialog({
       switch (patch.type) {
         case 'builtin':
           setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          if (patch.field === AgentCapabilities.execute_code && patch.value === false) {
+            setValue('tool_options', removeCodeExecutionCaller(getValues('tool_options')), {
+              shouldDirty: true,
+            });
+          }
           break;
         case 'tool-add': {
           const current = (getValues('tools') ?? []) as string[];

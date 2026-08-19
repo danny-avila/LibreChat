@@ -17,7 +17,10 @@
  * are lost on restart and are not shared across replicas (durable follow-up),
  * and ephemeral request-scoped MCP tools (runtime `{{LIBRECHAT_BODY_*}}`
  * placeholders) are never backgrounded — their connection is torn down at
- * request end, so the executor runs them in the foreground instead.
+ * request end, so the executor runs them in the foreground instead. Detached
+ * subagents use the separate host task store; Redis-backed hosts may route
+ * their poll/control operations to the owning process without moving the live
+ * executor or making ordinary background tool results durable.
  *
  * Opt-in mirrors `deferred_tools`: an admin capability
  * (`AgentCapabilities.run_in_background`) gates the feature, and a per-tool
@@ -30,8 +33,8 @@
  * @module packages/api/src/agents/background
  */
 
-import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { createHash, randomUUID } from 'node:crypto';
 import { Constants as AgentConstants } from '@librechat/agents';
 import { Tools, Constants, imageGenTools } from 'librechat-data-provider';
 import type {
@@ -43,6 +46,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
+  SubagentTaskStore,
 } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { CapabilityToolNames } from './selection';
@@ -52,6 +56,7 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
@@ -62,6 +67,9 @@ export const RUN_IN_BACKGROUND_ARG = 'run_in_background';
 
 /** Log prefix for selection diagnostics, phrased in the spec's own field name. */
 const BACKGROUND_SELECTION_LABEL = '[background] runInBackground';
+const MAX_BACKGROUND_TASK_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_ID_CHARS = 256;
+const MAX_BACKGROUND_CONTROL_MESSAGE_CHARS = 64 * 1024;
 
 /**
  * `type` of the synthetic attachment emitted on a poll turn when a harvested
@@ -297,13 +305,36 @@ export function stripBackgroundFromToolRegistry(
 
 const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Execution leases remain available only while requests reach the owning server process; they do not survive a restart or cross-worker routing. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
-const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchemaType>({
+/**
+ * `maxLength` is valid JSON Schema and is honored by providers, but the SDK's
+ * `JsonSchemaType` does not declare it, so the model-facing bounds are typed here.
+ * Runtime argument validation enforces the same limits as defense in depth.
+ */
+interface BoundedStringSchema {
+  type: 'string';
+  maxLength: number;
+  description: string;
+}
+
+interface CheckBackgroundTaskParameters {
+  type: 'object';
+  properties: {
+    background_task_id: BoundedStringSchema;
+    action: { type: 'string'; enum: string[]; description: string };
+    message: BoundedStringSchema;
+    control_id: BoundedStringSchema;
+  };
+  required: string[];
+}
+
+const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParameters>({
   type: 'object',
   properties: {
     background_task_id: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_TASK_ID_CHARS,
       description:
         'The id returned when the tool or subagent was dispatched. Omit to list all background tasks in this thread.',
     },
@@ -314,10 +345,12 @@ const CHECK_BACKGROUND_TASK_PARAMETERS: JsonSchemaType = Object.freeze<JsonSchem
     },
     message: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_MESSAGE_CHARS,
       description: 'Required for steer, queue, or interrupt.',
     },
     control_id: {
       type: 'string',
+      maxLength: MAX_BACKGROUND_CONTROL_ID_CHARS,
       description: 'Required for cancel_message; use the id returned by a prior control action.',
     },
   },
@@ -1080,28 +1113,86 @@ function buildSubagentControlCommand(
     return { action: 'cancel' };
   }
   if (action === 'cancel_message') {
-    return typeof args.control_id === 'string'
+    return typeof args.control_id === 'string' &&
+      args.control_id.length <= MAX_BACKGROUND_CONTROL_ID_CHARS
       ? { action: 'cancel_message', controlId: args.control_id }
       : undefined;
   }
   if (action === 'steer' || action === 'queue' || action === 'interrupt') {
-    return typeof args.message === 'string' ? { action, message: args.message } : undefined;
+    return typeof args.message === 'string' &&
+      args.message.length <= MAX_BACKGROUND_CONTROL_MESSAGE_CHARS
+      ? { action, message: args.message }
+      : undefined;
   }
   return undefined;
 }
 
+/**
+ * One tool call is one invocation, of a control or of the poll that collects a result.
+ * A provider tool-call id such as `call_0` repeats across runs and agents, so the
+ * identity also carries the run and executing agent; replaying that same call stays
+ * idempotent while a later run's identical id is a new invocation. Hashing keeps every
+ * derived identity inside the routed bound.
+ */
+function controlInvocationId(params: {
+  toolCallId?: string;
+  agentId?: string;
+  runId?: string;
+}): string {
+  const toolCallId = params.toolCallId?.trim();
+  if (toolCallId == null || toolCallId === '') {
+    return randomUUID();
+  }
+  return createHash('sha256')
+    .update(`${params.runId ?? ''}\u0000${params.agentId ?? ''}\u0000${toolCallId}`)
+    .digest('base64url')
+    .slice(0, 32);
+}
+
 /** Executes a `check_background_task` call and returns the ToolMessage content. */
-export function runCheckBackgroundTask(params: {
+interface RoutedSubagentTaskStore {
+  claimTask(scopeId: string, taskId: string, invocationId: string): Promise<SubagentTaskClaim>;
+  controlTask(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): Promise<SubagentTaskControlResult>;
+  listTasks(scopeId: string): Promise<SubagentTaskSnapshot[]>;
+}
+
+function routedSubagentStore(store: SubagentTaskStore): RoutedSubagentTaskStore | undefined {
+  const candidate = store as SubagentTaskStore & Partial<RoutedSubagentTaskStore>;
+  return typeof candidate.claimTask === 'function' &&
+    typeof candidate.controlTask === 'function' &&
+    typeof candidate.listTasks === 'function'
+    ? (candidate as RoutedSubagentTaskStore)
+    : undefined;
+}
+
+export async function runCheckBackgroundTask(params: {
   userId: string;
   conversationId: string;
   args: unknown;
+  /** The provider's tool-call id: one control invocation, stable across replays. */
+  toolCallId?: string;
+  /** Scopes that tool-call id, whose provider ids repeat across runs and agents. */
+  agentId?: string;
+  runId?: string;
   subagentTasks?: SubagentTaskConfig;
-}): string {
+}): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
   const rawId = args.background_task_id;
+  if (typeof rawId === 'string' && rawId.trim().length > MAX_BACKGROUND_TASK_ID_CHARS) {
+    return JSON.stringify({
+      status: 'invalid',
+      message: `A background_task_id cannot exceed ${MAX_BACKGROUND_TASK_ID_CHARS} characters.`,
+    });
+  }
   const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
   const action = typeof args.action === 'string' && args.action !== '' ? args.action : 'poll';
+  const invocationId = controlInvocationId(params);
 
   if (taskId) {
     const task = backgroundTaskRegistry.get(userId, conversationId, taskId);
@@ -1118,28 +1209,44 @@ export function runCheckBackgroundTask(params: {
 
     const subagentTasks = params.subagentTasks;
     if (subagentTasks != null) {
-      if (action === 'poll') {
-        const claimed = serializeSubagentClaim(
-          subagentTasks.store.claim(subagentTasks.scopeId, taskId),
-        );
-        if (claimed != null) {
-          return JSON.stringify(claimed);
+      try {
+        const routedStore = routedSubagentStore(subagentTasks.store);
+        if (action === 'poll') {
+          const claim =
+            routedStore == null
+              ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
+              : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
+          const claimed = serializeSubagentClaim(claim);
+          if (claimed != null) {
+            return JSON.stringify(claimed);
+          }
+        } else {
+          const command = buildSubagentControlCommand(args, action);
+          if (command == null) {
+            return JSON.stringify({
+              status: 'invalid',
+              background_task_id: taskId,
+              message: 'This subagent control action is unknown or missing its required argument.',
+            });
+          }
+          const result =
+            routedStore == null
+              ? subagentTasks.store.control(subagentTasks.scopeId, taskId, command)
+              : await routedStore.controlTask(subagentTasks.scopeId, taskId, command, invocationId);
+          const controlled = serializeSubagentControl(result);
+          if (controlled != null) {
+            return JSON.stringify(controlled);
+          }
         }
-      } else {
-        const command = buildSubagentControlCommand(args, action);
-        if (command == null) {
+      } catch (error) {
+        if (error instanceof SubagentTaskOwnerUnavailableError) {
           return JSON.stringify({
-            status: 'invalid',
+            status: 'unavailable',
             background_task_id: taskId,
-            message: 'This subagent control action is unknown or missing its required argument.',
+            message: error.message,
           });
         }
-        const controlled = serializeSubagentControl(
-          subagentTasks.store.control(subagentTasks.scopeId, taskId, command),
-        );
-        if (controlled != null) {
-          return JSON.stringify(controlled);
-        }
+        throw error;
       }
     }
 
@@ -1158,10 +1265,30 @@ export function runCheckBackgroundTask(params: {
   }
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
-  const subagentTasks =
-    params.subagentTasks?.store
-      .list(params.subagentTasks.scopeId)
-      .map((task) => serializeSubagentSnapshot(task)) ?? [];
+  let subagentTasks: SerializedSubagentTask[] = [];
+  let listWarning: string | undefined;
+  if (params.subagentTasks != null) {
+    try {
+      const routedStore = routedSubagentStore(params.subagentTasks.store);
+      const snapshots =
+        routedStore == null
+          ? params.subagentTasks.store.list(params.subagentTasks.scopeId)
+          : await routedStore.listTasks(params.subagentTasks.scopeId);
+      subagentTasks = snapshots.map((task) => serializeSubagentSnapshot(task));
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) {
+        /** Cross-replica discovery is an additive source. A Redis outage must not
+         * hide ordinary tasks or subagents owned by this process; surface the
+         * incomplete view explicitly so the caller can retry for remote tasks. */
+        subagentTasks = params.subagentTasks.store
+          .list(params.subagentTasks.scopeId)
+          .map((task) => serializeSubagentSnapshot(task));
+        listWarning = `Cross-replica subagent tasks could not be listed: ${error.message}`;
+      } else {
+        throw error;
+      }
+    }
+  }
   logger.debug(
     `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
   );
@@ -1170,6 +1297,7 @@ export function runCheckBackgroundTask(params: {
       ...tasks.map((task) => serializeTask(task, { includeResult: false })),
       ...subagentTasks,
     ],
+    ...(listWarning != null && { partial: true, warning: listWarning }),
   });
 }
 
