@@ -596,7 +596,15 @@ const createMeiliMongooseModel = ({
     }
 
     /**
-     * Adds the current document to the MeiliSearch index with retry logic
+     * Adds the current document to the MeiliSearch index.
+     *
+     * Fails fast on the first error: retrying with sleeps inside the Mongoose
+     * middleware chain held the save path open for ~6s per document whenever
+     * Meilisearch was unreachable. On failure `_meiliIndex` is left unset, and
+     * `syncWithMeili` / `indexSync` pick the document up on the next sync pass
+     * (`_meiliIndex: { $ne: true }`), so the retry bought nothing the existing
+     * reconciliation already guarantees. A Meilisearch outage now degrades
+     * search without adding latency to saving messages/conversations.
      */
     async addObjectToMeili(
       this: DocumentWithMeiliIndex,
@@ -607,37 +615,12 @@ const createMeiliMongooseModel = ({
       }
 
       const object = this.preprocessObjectForIndex!();
-      const maxRetries = 3;
-      let retryCount = 0;
 
       try {
-        // Mark the possible Meili presence before enqueueing the add. If the
-        // later Mongo acknowledgement fails, excluded-record cleanup can still
-        // distinguish this row from a child that was never submitted to Meili.
-        const model = this.constructor as Model<DocumentWithMeiliIndex>;
-        await model.updateOne(
-          { _id: this._id as Types.ObjectId },
-          { $set: { _meiliIndexAttempted: true } },
-          { timestamps: false },
-        );
+        await index.addDocuments([object], { primaryKey });
       } catch (error) {
-        logger.error('[addObjectToMeili] Error marking Meili indexing attempt:', error);
+        logger.error('[addObjectToMeili] Error adding document to Meili:', error);
         return next();
-      }
-
-      while (retryCount < maxRetries) {
-        try {
-          await index.addDocuments([object], { primaryKey });
-          break;
-        } catch (error) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            logger.error('[addObjectToMeili] Error adding document to Meili after retries:', error);
-            return next();
-          }
-          // Exponential backoff
-          await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        }
       }
 
       try {

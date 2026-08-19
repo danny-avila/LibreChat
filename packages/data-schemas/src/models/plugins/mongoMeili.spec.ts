@@ -1142,30 +1142,28 @@ describe('Meilisearch Mongoose plugin', () => {
       });
     });
 
-    test('addObjectToMeili retries on failure', async () => {
+    test('addObjectToMeili fails fast on error and defers to sync reconciliation', async () => {
       const conversationModel = createConversationModel(
         mongoose,
       ) as unknown as SchemaWithMeiliMethods;
 
-      // Mock addDocuments to fail twice then succeed
-      mockAddDocuments
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockResolvedValueOnce({});
+      // Mock addDocuments to always fail (e.g. Meilisearch unreachable)
+      mockAddDocuments.mockRejectedValue(new Error('Network error'));
 
       // Create a document which triggers addObjectToMeili
       await conversationModel.create({
         conversationId: new mongoose.Types.ObjectId(),
         user: new mongoose.Types.ObjectId(),
-        title: 'Test Retry',
+        title: 'Test Fail Fast',
         endpoint: EModelEndpoint.openAI,
       });
 
-      // Wait for async operations to complete
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Fail fast: exactly one attempt, no retry sleeps on the write path
+      expect(mockAddDocuments).toHaveBeenCalledTimes(1);
 
-      // Verify addDocuments was called multiple times due to retries
-      expect(mockAddDocuments).toHaveBeenCalledTimes(3);
+      // _meiliIndex must remain unset so syncWithMeili picks the doc up later
+      const doc = await conversationModel.collection.findOne({ title: 'Test Fail Fast' });
+      expect(doc?._meiliIndex).not.toBe(true);
     });
 
     test('getSyncProgress returns accurate progress information', async () => {
