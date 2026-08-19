@@ -761,6 +761,13 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       const ownerId = ownerIds[index];
       const reportedTaskIds = new Set(value.snapshots.map((snapshot) => snapshot.taskId));
       for (const snapshot of value.snapshots) {
+        /** Each owner bounds its own reply, so without an aggregate cap the list the
+         * model reads grows with the number of replicas holding the scope. Collection
+         * stops at the cap while the loop continues, because the sweep below still
+         * needs every owner's reply to tell a stale registration from a live task. */
+        if (snapshots.length >= MAX_TASK_SNAPSHOTS) {
+          break;
+        }
         if (ownersByTask[snapshot.taskId] === ownerId) {
           snapshots.push(snapshot);
         }

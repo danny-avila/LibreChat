@@ -2,6 +2,7 @@ const {
   cacheConfig,
   ioredisClient,
   registerShutdownTask,
+  duplicateIoRedisClient,
   createSubagentThreadTaskStore,
   RedisSubagentTaskControlTransport,
 } = require('@librechat/api');
@@ -48,7 +49,7 @@ async function configureSubagentTaskRouting() {
    * command issued during a disconnect and deliver it after the caller gave up, so a
    * steer the caller was told had failed could still reach the child. Failing fast
    * turns that into the honest `unavailable` the caller already handles. */
-  const publisher = ioredisClient.duplicate({ enableOfflineQueue: false });
+  const publisher = duplicateIoRedisClient(ioredisClient, { enableOfflineQueue: false });
   const transport = new RedisSubagentTaskControlTransport(publisher, subscriber, {
     namespace: cacheConfig.REDIS_KEY_PREFIX,
   });

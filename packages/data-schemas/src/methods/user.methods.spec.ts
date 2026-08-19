@@ -802,6 +802,52 @@ describe('User Methods - Database Tests', () => {
       await expect(methods.isSubagentOwnerAdmissible(userId)).resolves.toBe(false);
     });
 
+    test('invalidates the cached auth document when a refused fence still pruned', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Refused Fence',
+        email: 'refused-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id?.toString() ?? '';
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+      const fencedUntil = new Date(Date.now() + 60_000);
+      /** A saturated owner that has since abandoned one fence: the next attempt prunes
+       * the expired entry and is then refused by the cap, so the two writes disagree. */
+      await User.updateOne(
+        { _id: userId },
+        {
+          $set: {
+            subagentAdmissionFences: [
+              ...Array.from({ length: 32 }, (_unused, index) => ({
+                token: `deletion-${index}`,
+                expiresAt: fencedUntil,
+              })),
+              { token: 'abandoned', expiresAt: new Date(Date.now() - 1) },
+            ],
+          },
+        },
+      );
+
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-key-a']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await expect(
+        methodsWithCache.fenceSubagentAdmission(userId, 'deletion-overflow', fencedUntil),
+      ).rejects.toThrow('Too many concurrent bulk deletions');
+      const stored = await User.findById(userId).select('+subagentAdmissionFences').lean();
+      expect(stored?.subagentAdmissionFences).toHaveLength(32);
+      /** The prune committed, so leaving the cached document in place would serve the
+       * pruned fence until its own TTL expired. */
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
     test('refuses an unbounded or invalid fence', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
 

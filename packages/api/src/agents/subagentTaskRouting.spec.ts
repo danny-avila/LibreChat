@@ -644,6 +644,42 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([owner.destroy(), requester.destroy()]);
   });
 
+  it('caps the aggregated list across owners rather than per owner', async () => {
+    const bus = new FakeRedisBus();
+    const owners = ['owner-a', 'owner-b'].map(
+      (instanceId) =>
+        new RedisSubagentTaskControlTransport(
+          asRedis(bus.createClient()),
+          asRedis(bus.createClient()),
+          { namespace: 'test', instanceId, requestTimeoutMs: 200, retryDelayMs: 10 },
+        ),
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    await Promise.all(
+      owners.map(async (owner, ownerIndex) => {
+        const tasks = Array.from({ length: 150 }, (_unused, index) =>
+          snapshot({
+            taskId: `owner-${ownerIndex}-task-${index + 1}`,
+            threadId: `owner-${ownerIndex}-thread-${index + 1}`,
+          }),
+        );
+        await owner.bind(taskHandler({ list: () => tasks }));
+        await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
+      }),
+    );
+    await requester.bind(taskHandler());
+
+    /** Each owner bounds its own reply, so an unbounded merge would hand the model
+     * every replica's batch and grow the poll response with the deployment. */
+    await expect(requester.list('scope-1')).resolves.toHaveLength(200);
+
+    await Promise.all([...owners.map((owner) => owner.destroy()), requester.destroy()]);
+  });
+
   it('releases a claim replay once the requester acknowledges it, and keeps it otherwise', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(

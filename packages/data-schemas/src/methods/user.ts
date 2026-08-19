@@ -485,21 +485,26 @@ export function createUserMethods(
       { $pull: { subagentAdmissionFences: { expiresAt: { $lte: new Date() } } } },
       { timestamps: false },
     );
-    /** Admitted only while the owner is under the concurrent-deletion cap. Dropping
-     * an active fence to make room would reopen admission for a deletion that is
-     * still running, so an excess deletion is refused instead. */
-    const fenced = await User.updateOne(
-      {
-        _id: userId,
-        [`subagentAdmissionFences.${MAX_SUBAGENT_ADMISSION_FENCES - 1}`]: { $exists: false },
-      },
-      { $push: { subagentAdmissionFences: { token, expiresAt: fencedUntil } } },
-      { timestamps: false },
-    );
-    if (fenced.matchedCount !== 1) {
-      throw new Error('Too many concurrent bulk deletions are already fencing this owner.');
+    try {
+      /** Admitted only while the owner is under the concurrent-deletion cap. Dropping
+       * an active fence to make room would reopen admission for a deletion that is
+       * still running, so an excess deletion is refused instead. */
+      const fenced = await User.updateOne(
+        {
+          _id: userId,
+          [`subagentAdmissionFences.${MAX_SUBAGENT_ADMISSION_FENCES - 1}`]: { $exists: false },
+        },
+        { $push: { subagentAdmissionFences: { token, expiresAt: fencedUntil } } },
+        { timestamps: false },
+      );
+      if (fenced.matchedCount !== 1) {
+        throw new Error('Too many concurrent bulk deletions are already fencing this owner.');
+      }
+    } finally {
+      /** The prune above commits on its own, so a refused or failed fence still leaves
+       * the cached document describing entries the collection no longer holds. */
+      await invalidateAuthUserDocCache(userId);
     }
-    await invalidateAuthUserDocCache(userId);
   }
 
   /** Extends only this deletion's own fence while its work is still running. */

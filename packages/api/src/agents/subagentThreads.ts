@@ -727,6 +727,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             message: 'This control invocation id was already used for a different command.',
           };
     }
+    if (this.get(scopeId, taskId) == null) {
+      /** Not this replica's task. Refusing here would keep the command from ever
+       * reaching its owner, so local load cannot veto a remote cancellation: the
+       * owner applies its own window to the routed request. */
+      return this.control(scopeId, taskId, command);
+    }
     if (!this.makeRoomForInvocation()) {
       /** Every tracked invocation belongs to a task this store still holds. Applying
        * this command without room to record it would let a caller retry apply it a
@@ -1006,22 +1012,31 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     /** A very large account, or a stalled database, can outlast one fence window, and
      * a fence that expires mid-deletion lets another replica admit a child against
      * conversations being deleted. It is renewed for as long as the work runs. */
+    let releasing = false;
+    let inFlight: Promise<void> | undefined;
     const renewal = setInterval(
       () => {
-        void (async () => {
+        if (inFlight != null) {
+          return;
+        }
+        inFlight = (async () => {
           const held = await this.renewOwnerAdmission?.(
             userId,
             token,
             new Date(Date.now() + fenceWindowMs),
           );
-          if (held === false) {
+          if (held === false && !releasing) {
             /** The entry is gone — expired, or pruned by another deletion — so this
              * deletion takes its fence again rather than running on unfenced. */
             await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
           }
-        })().catch((error) => {
-          logger.warn('[subagentThreads] Failed to hold the owner admission fence', error);
-        });
+        })()
+          .catch((error) => {
+            logger.warn('[subagentThreads] Failed to hold the owner admission fence', error);
+          })
+          .finally(() => {
+            inFlight = undefined;
+          });
       },
       Math.max(1, Math.floor(fenceWindowMs / 3)),
     );
@@ -1030,7 +1045,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       await this.cancelAndDrainForOwner(userId, tenantId);
       return await deletion();
     } finally {
+      releasing = true;
       clearInterval(renewal);
+      /** `clearInterval` stops only future passes. A renewal still waiting on the
+       * database would otherwise find its fence released, read that as expiry, and
+       * write a fresh one that nothing is left to lift. */
+      await inFlight;
       /** Only this deletion's own fence is lifted: an overlapping deletion that took a
        * later one keeps admission closed until it finishes. */
       await this.releaseOwnerAdmission?.(userId, token).catch((error) => {

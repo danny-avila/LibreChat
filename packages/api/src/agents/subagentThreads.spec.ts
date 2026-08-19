@@ -1858,6 +1858,106 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(store, config.scopeId, live);
   });
 
+  it('routes a control for a remote task while the local invocation window is full', async () => {
+    const userId = 'remote-control-under-load-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, { maxControlInvocations: 1 });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const remoteResult: SubagentTaskControlResult = {
+      status: 'cancelled',
+      task: threadSnapshot('remote-task'),
+    };
+    const routed = jest.fn(async () => remoteResult);
+    await store.configureTaskControlTransport({
+      ...replayTransport({ status: 'claimed', task: threadSnapshot('remote-task') }),
+      control: routed,
+    });
+
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const live = store.start(taskRequest(config.scopeId, { run: async () => running }));
+    const liveTaskId = requireAccepted(live).task.taskId;
+    const steer = { action: 'queue' as const, message: 'Check the changelog as well.' };
+    expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'local-1')).toMatchObject({
+      status: 'accepted',
+    });
+
+    /** The window holds a live task's record and cannot be swept, but a task this
+     * replica never owned is the remote owner's to refuse or apply. */
+    await expect(
+      store.controlTask(config.scopeId, 'remote-task', { action: 'cancel' }, 'remote-1'),
+    ).resolves.toEqual(remoteResult);
+    expect(routed).toHaveBeenCalledWith(
+      config.scopeId,
+      'remote-task',
+      { action: 'cancel' },
+      'remote-1',
+    );
+
+    finish({ content: 'done' });
+    await waitForSettled(store, config.scopeId, live);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('releases the owner fence after an in-flight renewal instead of racing it', async () => {
+    const userId = 'fence-renewal-race-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let releaseRenewal = (): void => undefined;
+    const renewalBlocked = new Promise<void>((resolve) => {
+      releaseRenewal = resolve;
+    });
+    let markRenewing = (): void => undefined;
+    const renewing = new Promise<void>((resolve) => {
+      markRenewing = resolve;
+    });
+    const order: string[] = [];
+    const fenceOwnerAdmission = jest.fn(async () => {
+      order.push('fence');
+    });
+    /** The renewal is still waiting on the database when the deletion finishes, and it
+     * reports the fence lost — the shape that used to leave a fresh, unreleasable one. */
+    const renewOwnerAdmission = jest.fn(async () => {
+      markRenewing();
+      await renewalBlocked;
+      order.push('renew');
+      return false;
+    });
+    const releaseOwnerAdmission = jest.fn(async () => {
+      order.push('release');
+    });
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission,
+      renewOwnerAdmission,
+      releaseOwnerAdmission,
+    });
+
+    let releaseDeletion = (): void => undefined;
+    const deletionBlocked = new Promise<void>((resolve) => {
+      releaseDeletion = resolve;
+    });
+    const fenced = store.withOwnerDeletionFence(userId, undefined, async () => {
+      await deletionBlocked;
+      return 'deleted';
+    });
+    await renewing;
+    releaseDeletion();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(['fence']);
+
+    releaseRenewal();
+    await expect(fenced).resolves.toBe('deleted');
+    /** The renewal finishes before the release, and finding itself mid-release it does
+     * not re-fence, so admission reopens with exactly one fence lifted. */
+    expect(order).toEqual(['fence', 'renew', 'release']);
+    expect(fenceOwnerAdmission).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels each drained task once and retries only unconfirmed deliveries', async () => {
     const userId = 'drain-user';
     const parentConversationId = randomUUID();

@@ -1,6 +1,23 @@
-import type { RedisClientType, RedisClusterType } from '@redis/client';
 import { logger } from '@librechat/data-schemas';
+import type { ClusterOptions, RedisOptions, Cluster, Redis } from 'ioredis';
+import type { RedisClientType, RedisClusterType } from '@redis/client';
 import { cacheConfig } from './cacheConfig';
+
+/**
+ * Duplicates an ioredis connection with option overrides. `Cluster.duplicate` reads its
+ * first argument as an optional startup-node list and its second as the overrides,
+ * unlike `Redis.duplicate`, so options passed positionally to a cluster are silently
+ * dropped and the duplicate quietly inherits the original's behaviour.
+ */
+export function duplicateIoRedisClient(
+  client: Redis | Cluster,
+  options: RedisOptions & ClusterOptions = {},
+): Redis | Cluster {
+  if (client.isCluster) {
+    return (client as Cluster).duplicate([], options);
+  }
+  return (client as Redis).duplicate(options);
+}
 
 /**
  * Efficiently deletes multiple Redis keys with support for both cluster and single-node modes.
