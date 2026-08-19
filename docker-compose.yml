@@ -35,7 +35,6 @@ services:
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/logs
-      - ./librechat.yaml:/app/librechat.yaml
       - ./skill:/app/skill
       - librechat-data:/app/data
   admin-panel:
