@@ -12,7 +12,6 @@ import {
   OGDialogContent,
 } from '@librechat/client';
 import type { TModelsConfig, TEndpointsConfig } from 'librechat-data-provider';
-import { sectionLabelClass } from '~/components/SidePanel/Agents/Advanced/ui';
 import { useSetIndexOptions, useLocalize, useDebouncedInput } from '~/hooks';
 import PopoverButtons from '~/components/Chat/Input/PopoverButtons';
 import { mapEndpoints, getConvoSwitchLogic } from '~/utils';
@@ -149,7 +148,7 @@ const EditPresetDialog = ({
             only scroll. */}
         <div className="grid w-full shrink-0 gap-3 md:grid-cols-2 md:gap-4">
           <div className="flex w-full flex-col">
-            <Label htmlFor="preset-name" className={sectionLabelClass}>
+            <Label htmlFor="preset-name" variant="section">
               {localize('com_endpoint_preset_name')}
             </Label>
             <Input
@@ -161,7 +160,7 @@ const EditPresetDialog = ({
             />
           </div>
           <div className="flex w-full flex-col">
-            <Label htmlFor="endpoint" className={sectionLabelClass}>
+            <Label htmlFor="endpoint" variant="section">
               {localize('com_endpoint')}
             </Label>
             <ControlCombobox
