@@ -895,8 +895,8 @@ describe('SubagentThreadTaskStore', () => {
     const heartbeatIndex =
       heartbeatCall == null ? -1 : intervalSpy.mock.calls.indexOf(heartbeatCall);
     const heartbeat = intervalSpy.mock.results[heartbeatIndex]?.value as NodeJS.Timeout | undefined;
-    const warningCall = timeoutSpy.mock.calls.findLast(([, delay]) => delay === 5_000);
-    const warningIndex = warningCall == null ? -1 : timeoutSpy.mock.calls.indexOf(warningCall);
+    const warningIndex = timeoutSpy.mock.calls.length - 1;
+    expect(timeoutSpy.mock.calls[warningIndex]?.[1]).toBe(5_000);
     const warning = timeoutSpy.mock.results[warningIndex]?.value as NodeJS.Timeout | undefined;
     expect(heartbeat?.hasRef()).toBe(true);
     expect(warning?.hasRef()).toBe(true);
