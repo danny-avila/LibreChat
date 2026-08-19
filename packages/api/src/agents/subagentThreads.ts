@@ -132,6 +132,7 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   taskRoutingTtlMs?: number;
   isOwnerActive?: (userId: string) => Promise<boolean>;
   maxControlInvocations?: number;
+  ownerFenceGraceMs?: number;
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
@@ -366,6 +367,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly ownerDrainPollMs: number;
   private readonly taskRoutingTtlMs: number;
   private readonly maxControlInvocations: number;
+  private readonly ownerFenceGraceMs: number;
   private readonly isOwnerActive: (userId: string) => Promise<boolean>;
   private readonly fenceOwnerAdmission?: (
     userId: string,
@@ -406,6 +408,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       options.maxControlInvocations,
       MAX_CONTROL_INVOCATIONS,
     );
+    this.ownerFenceGraceMs = positiveInteger(options.ownerFenceGraceMs, OWNER_FENCE_GRACE_MS);
     this.isOwnerActive = options.isOwnerActive ?? (async () => true);
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
     this.renewOwnerAdmission = options.renewOwnerAdmission;
@@ -997,7 +1000,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     tenantId: string | undefined,
     deletion: () => Promise<T>,
   ): Promise<T> {
-    const fenceWindowMs = this.ownerDrainTimeoutMs + OWNER_FENCE_GRACE_MS;
+    const fenceWindowMs = this.ownerDrainTimeoutMs + this.ownerFenceGraceMs;
     const token = randomUUID();
     await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
     /** A very large account, or a stalled database, can outlast one fence window, and

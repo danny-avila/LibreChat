@@ -1647,6 +1647,7 @@ describe('SubagentThreadTaskStore', () => {
     const store = new SubagentThreadTaskStore(methods, {
       ownerDrainPollMs: 1,
       ownerDrainTimeoutMs: 30,
+      ownerFenceGraceMs: 60,
       fenceOwnerAdmission: async () => undefined,
       renewOwnerAdmission: async (_userId: string, token: string) => {
         renewals.push(token);
@@ -1657,8 +1658,8 @@ describe('SubagentThreadTaskStore', () => {
     const listLeases = jest.spyOn(methods, 'listActiveSubagentThreadLeases').mockResolvedValue([]);
     try {
       await store.withOwnerDeletionFence(userId, undefined, async () => {
-        /** A deletion outlasting one fence window must not let the fence lapse. */
-        await new Promise<void>((resolve) => setTimeout(resolve, 400));
+        /** A deletion outlasting its 90ms fence window must not let the fence lapse. */
+        await new Promise<void>((resolve) => setTimeout(resolve, 300));
         return 'deleted';
       });
     } finally {
