@@ -35,18 +35,20 @@ describe('duplicateIoRedisClient', () => {
       lazyConnect: true,
     });
     const duplicate = duplicateIoRedisClient(client, { enableOfflineQueue: false });
-    const node = new IoRedis({
-      host: '127.0.0.1',
-      port: 6380,
-      lazyConnect: true,
-      enableOfflineQueue: true,
-    });
     try {
-      expect(node.options.enableOfflineQueue).toBe(true);
-      duplicate.emit('+node', node);
+      /** ioredis emits from its private pool and synchronously forwards `+node` from
+       * `Cluster`; drive that real discovery path so the test cannot pass merely
+       * because a synthetic event happened to share the public event name. */
+      const pool = (
+        duplicate as IoRedis.Cluster & {
+          connectionPool: {
+            findOrCreate(options: { host: string; port: number }): IoRedis;
+          };
+        }
+      ).connectionPool;
+      const node = pool.findOrCreate({ host: '127.0.0.1', port: 6380 });
       expect(node.options.enableOfflineQueue).toBe(false);
     } finally {
-      node.disconnect();
       duplicate.disconnect();
       client.disconnect();
     }
