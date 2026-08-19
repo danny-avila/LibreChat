@@ -1050,6 +1050,7 @@ export const paramDefinitionSchema = z.object({
       min: z.number(),
       max: z.number(),
       step: z.number().optional(),
+      positiveMin: z.number().optional(),
     })
     .optional(),
   enumMappings: z.record(z.union([z.number(), z.boolean(), z.string()])).optional(),

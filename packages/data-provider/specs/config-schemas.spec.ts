@@ -45,6 +45,27 @@ describe('paramDefinitionSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  /**
+   * The shared `SettingRange` exposes it, so a configured sentinel range would
+   * otherwise reach the UI with its positive floor silently dropped.
+   */
+  it('preserves a configured positiveMin on the range', () => {
+    const result = paramDefinitionSchema.safeParse({
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'slider',
+      range: { min: -1, max: 32768, step: 1, positiveMin: 128 },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.range).toEqual({
+      min: -1,
+      max: 32768,
+      step: 1,
+      positiveMin: 128,
+    });
+  });
+
   it('rejects columns > 4', () => {
     const result = paramDefinitionSchema.safeParse({
       key: 'test',
