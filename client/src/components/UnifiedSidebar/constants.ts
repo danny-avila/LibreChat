@@ -35,6 +35,16 @@ export const EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 export const SIDEBAR_TRANSITION = `transform ${TRANSITION_MS}ms ${EASING}`;
 
 /**
+ * The drawer also transitions its width, because that is the one property the
+ * pane tracks through its own transform. Changing the strip setting while the
+ * drawer is open would otherwise jump the width in a frame while the pane
+ * eased across 300ms, leaving the newly exposed slice with no conversation
+ * under it. Only the drawer needs this: the pane's width is flex-driven and
+ * animating it would reach the desktop sidebar's collapse as well.
+ */
+export const MOBILE_DRAWER_TRANSITION = `${SIDEBAR_TRANSITION}, width ${TRANSITION_MS}ms ${EASING}`;
+
+/**
  * The mobile drawer is opaque and full-screen, so it sits above the chat.
  *
  * This ranks the drawer only *within* `Root`'s `relative z-0` stacking

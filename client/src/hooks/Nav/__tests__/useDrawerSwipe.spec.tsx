@@ -39,11 +39,14 @@ type Harness = {
   unmount: () => void;
 };
 
-const setup = (open: boolean, reducedMotion = false): Harness => {
+/** Default: the drawer covers the viewport, which is the shipped default. Pass
+ *  a wider viewport to model the strip setting, where it does not. */
+const setup = (open: boolean, reducedMotion = false, viewportWidth = DRAWER_WIDTH): Harness => {
   const pane = document.createElement('div');
   const drawer = document.createElement('div');
   drawer.id = MOBILE_DRAWER_ID;
   Object.defineProperty(drawer, 'clientWidth', { value: DRAWER_WIDTH, configurable: true });
+  Object.defineProperty(window, 'innerWidth', { value: viewportWidth, configurable: true });
   document.body.append(pane, drawer);
 
   jest.spyOn(window, 'matchMedia').mockReturnValue({
@@ -494,7 +497,8 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     kickDrawerAnimation(false, jest.fn());
 
     expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
-    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+    /** Retargeting to a close takes the reveal, since this drawer covers. */
+    expect(harness.pane.style.transform).toBe('none');
 
     harness.rerender({ open: false, enabled: true });
     jest.runAllTimers();
@@ -615,15 +619,57 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
   });
 
   /**
-   * This used to be a reveal: the pane repositioned instantly under the cover
-   * of a full-width opaque drawer while only the drawer animated. The drawer
-   * now stops at MOBILE_DRAWER_WIDTH and leaves a strip of chat on screen, so
-   * an instant reposition would be visible there. Both surfaces animate
-   * together instead, matching what a finger drag already produces.
+   * A reveal while the drawer covers the pane: repositioning instantly under an
+   * opaque full-width layer is invisible, and animating the pane in from the
+   * right instead makes every tap-to-navigate close visibly shift the chat
+   * while the new conversation commits into the moving layer.
    */
-  it('animates both surfaces on a programmatic close', () => {
+  it('reveals rather than animating when the drawer covers the pane', () => {
     jest.useFakeTimers();
     const harness = setup(true);
+
+    kickDrawerAnimation(false, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
+    expect(harness.drawer.style.transition).not.toBe('none');
+    expect(harness.pane.style.transform).toBe('none');
+    expect(harness.pane.style.transition).toBe('none');
+
+    harness.rerender({ open: false, enabled: true });
+    jest.runAllTimers();
+    expect(harness.drawer.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /**
+   * With the strip enabled the drawer stops short of the edge, so that instant
+   * reposition would land in the visible slice. Both surfaces animate together
+   * instead, matching what a finger drag already produces.
+   */
+  /**
+   * The pane tracks the drawer's width through its own transform, so a runtime
+   * width change has to move on the same curve or the newly exposed slice has
+   * no conversation under it for the length of the transition.
+   */
+  it('transitions the drawer width alongside its transform', () => {
+    jest.useFakeTimers();
+    const harness = setup(true, false, Math.round(DRAWER_WIDTH / 0.8));
+
+    kickDrawerAnimation(false, jest.fn());
+
+    expect(harness.drawer.style.transition).toContain('width');
+    expect(harness.drawer.style.transition).toContain('transform');
+    /** Flex-driven, and animating it would reach the desktop collapse too. */
+    expect(harness.pane.style.transition).toContain('transform');
+    expect(harness.pane.style.transition).not.toContain('width');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('animates both surfaces when a strip of chat is left visible', () => {
+    jest.useFakeTimers();
+    const harness = setup(true, false, Math.round(DRAWER_WIDTH / 0.8));
 
     kickDrawerAnimation(false, jest.fn());
 

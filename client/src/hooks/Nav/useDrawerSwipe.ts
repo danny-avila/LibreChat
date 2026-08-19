@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   TRANSITION_MS,
   MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_TRANSITION,
   MOBILE_PANE_SHIFT,
   SIDEBAR_TRANSITION,
 } from '~/components/UnifiedSidebar/constants';
@@ -20,6 +21,15 @@ const FLICK_MIN_DISTANCE = 24;
 const VELOCITY_HOLD_MS = 100;
 /** Inline styles are cleared this long after TRANSITION_MS, then classes own the state. */
 const SETTLE_BUFFER_MS = 80;
+
+/**
+ * Whether the drawer hides the pane entirely, which is what makes repositioning
+ * the pane instantly invisible. A geometric fact rather than a reading of the
+ * setting: the reveal is safe exactly when there is nothing uncovered to see it
+ * in, however the width was arrived at.
+ */
+const drawerCoversPane = (drawer: HTMLElement): boolean =>
+  (drawer.clientWidth || window.innerWidth) >= window.innerWidth;
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
@@ -173,7 +183,7 @@ type Gesture = {
 const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: boolean) => {
   drawer.style.transform = '';
   drawer.style.willChange = '';
-  drawer.style.transition = SIDEBAR_TRANSITION;
+  drawer.style.transition = MOBILE_DRAWER_TRANSITION;
   pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
   pane.style.transition = SIDEBAR_TRANSITION;
@@ -291,7 +301,7 @@ export default function useDrawerSwipe({
           onOpenChangeRef.current(next);
           const id = setTimeout(() => {
             settleRef.current = null;
-            gesture.drawer.style.transition = SIDEBAR_TRANSITION;
+            gesture.drawer.style.transition = MOBILE_DRAWER_TRANSITION;
             gesture.pane.style.transition = SIDEBAR_TRANSITION;
           }, SETTLE_BUFFER_MS);
           settleRef.current = { id, target: next, drawer: gesture.drawer, pane: gesture.pane };
@@ -299,7 +309,7 @@ export default function useDrawerSwipe({
         return;
       }
       const { drawer: drawerEl, pane: paneEl } = gesture;
-      drawerEl.style.transition = SIDEBAR_TRANSITION;
+      drawerEl.style.transition = MOBILE_DRAWER_TRANSITION;
       paneEl.style.transition = SIDEBAR_TRANSITION;
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
@@ -337,7 +347,7 @@ export default function useDrawerSwipe({
         pane.style.transition = 'none';
         const id = setTimeout(() => {
           settleRef.current = null;
-          drawer.style.transition = SIDEBAR_TRANSITION;
+          drawer.style.transition = MOBILE_DRAWER_TRANSITION;
           pane.style.transition = SIDEBAR_TRANSITION;
         }, SETTLE_BUFFER_MS);
         settleRef.current = { id, target: next, drawer, pane };
@@ -368,15 +378,27 @@ export default function useDrawerSwipe({
         if (armed == null || armed.target !== next || armed.id != null) {
           return;
         }
-        drawer.style.transition = SIDEBAR_TRANSITION;
+        drawer.style.transition = MOBILE_DRAWER_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
-        /** Closing used to reposition the pane instantly, which read as a
-         * reveal because a full-width opaque drawer covered the jump. The
-         * drawer now stops at MOBILE_DRAWER_WIDTH, so that jump would land in
-         * the visible strip; both surfaces animate together instead, which is
-         * the motion the drag path already produces in `settle`. */
-        pane.style.transition = SIDEBAR_TRANSITION;
-        pane.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
+        if (next) {
+          pane.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transform = MOBILE_PANE_SHIFT;
+        } else if (drawerCoversPane(drawer)) {
+          /** A programmatic close is a REVEAL while the drawer is full width:
+           * the pane repositions instantly beneath the opaque cover and only
+           * the drawer slides away, uncovering content already in place.
+           * Animating the pane in from the right makes every tap-to-navigate
+           * close visibly shift the chat leftward while the new conversation
+           * commits into the moving layer mid-slide. */
+          pane.style.transition = 'none';
+          pane.style.transform = 'none';
+        } else {
+          /** With the strip enabled that jump would land in the visible slice,
+           * so both surfaces animate together, which is the motion the drag
+           * path already produces in `settle`. */
+          pane.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transform = 'translate3d(0, 0, 0)';
+        }
         void drawer.getBoundingClientRect();
         armed.id = setTimeout(() => {
           settleRef.current = null;

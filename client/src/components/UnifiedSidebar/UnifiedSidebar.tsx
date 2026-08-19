@@ -8,7 +8,7 @@ import {
   EXPANDED_MIN,
   TRANSITION_MS,
   EASING,
-  SIDEBAR_TRANSITION,
+  MOBILE_DRAWER_TRANSITION,
   DRAWER_Z_INDEX,
   MOBILE_DRAWER_ID,
   MOBILE_DRAWER_WIDTH,
@@ -177,7 +177,7 @@ function UnifiedSidebar() {
         )}
         style={{
           width: MOBILE_DRAWER_WIDTH,
-          transition: SIDEBAR_TRANSITION,
+          transition: MOBILE_DRAWER_TRANSITION,
           zIndex: DRAWER_Z_INDEX,
         }}
         inert={!expanded ? '' : undefined}
