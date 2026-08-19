@@ -18,12 +18,24 @@ export function duplicateIoRedisClient(
     if (options.enableOfflineQueue !== false) {
       return duplicate;
     }
+    let clusterHasBeenReady = duplicate.status === 'ready';
+    duplicate.once('ready', () => {
+      clusterHasBeenReady = true;
+    });
     /** ioredis deliberately forces `enableOfflineQueue: true` on every Cluster node
-     * after applying `redisOptions`, so the top-level override alone cannot make a
-     * routed command fail fast during a slot-owner disconnect. Apply the publisher's
-     * policy at the node lifecycle seam, including nodes already discovered. */
+     * after applying `redisOptions`. It needs that queue while a new node discovers
+     * topology, so changing it at `+node` prevents the cluster from ever becoming
+     * ready. Initial nodes switch once connected; nodes discovered after the cluster
+     * was usable fail fast immediately, including during a slot-owner replacement. */
     const disableNodeOfflineQueue = (node: Redis): void => {
-      node.options.enableOfflineQueue = false;
+      const disable = (): void => {
+        node.options.enableOfflineQueue = false;
+      };
+      if (node.status === 'ready' || clusterHasBeenReady) {
+        disable();
+      } else {
+        node.once('ready', disable);
+      }
     };
     duplicate.on('+node', disableNodeOfflineQueue);
     duplicate.nodes('all').forEach(disableNodeOfflineQueue);

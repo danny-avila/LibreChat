@@ -320,7 +320,7 @@ function boundedControlResult(result: SubagentTaskControlResult): SubagentTaskCo
   };
 }
 
-async function waitForRedisReady(client: RedisClient): Promise<void> {
+async function waitForRedisConnectionReady(client: RedisClient): Promise<void> {
   if (client.status == null || client.status === 'ready') {
     return;
   }
@@ -354,8 +354,26 @@ async function waitForRedisReady(client: RedisClient): Promise<void> {
       onReady();
     } else if (client.status === 'end') {
       onEnd();
+    } else if (client.status === 'wait') {
+      client.connect().catch(onEnd);
     }
   });
+}
+
+async function waitForRedisReady(
+  client: RedisClient,
+  options: { eagerClusterMasters?: boolean } = {},
+): Promise<void> {
+  await waitForRedisConnectionReady(client);
+  if (options.eagerClusterMasters !== true || !client.isCluster) {
+    return;
+  }
+  /** A ready Cluster has a slot map but its per-master connections are lazy. The
+   * fail-fast publisher cannot admit requests until every possible write target is
+   * connected; otherwise the first command to a cold shard would be rejected. */
+  await Promise.all(
+    (client as Cluster).nodes('master').map((node) => waitForRedisConnectionReady(node)),
+  );
 }
 
 function isSnapshot(value: unknown): value is SubagentTaskSnapshot {
@@ -699,7 +717,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     /** The publisher fails fast instead of queueing commands, so opening HTTP
      * admission before it is ready would turn healthy startup lag into false
      * `unavailable` results. Both dedicated connections are part of readiness. */
-    await Promise.all([waitForRedisReady(this.publisher), waitForRedisReady(this.subscriber)]);
+    await Promise.all([
+      waitForRedisReady(this.publisher, { eagerClusterMasters: true }),
+      waitForRedisReady(this.subscriber),
+    ]);
     this.subscriber.on('message', this.onMessage);
     this.ready = this.subscriber.subscribe(this.channel(this.instanceId)).then(() => undefined);
     await this.ready;
