@@ -26,6 +26,7 @@ const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
 const USER_PROVIDED_OPT_IN_URL_KEYS = new Set<TWebSearchKeys>([
   'tavilySearchUrl',
   'tavilyExtractUrl',
+  'youApiUrl',
 ]);
 
 function isUserProvidedEnabled(field: string): boolean {
@@ -295,6 +296,7 @@ export async function loadWebSearchAuth({
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
+  authResult.youSearchOptions = webSearchConfig?.youSearchOptions;
 
   return {
     authTypes,

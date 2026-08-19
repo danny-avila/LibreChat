@@ -92,6 +92,20 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: SearchProviders.YOU,
+      label: localize('com_ui_web_search_provider_you'),
+      inputs: {
+        youApiKey: {
+          placeholder: localize('com_ui_enter_api_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://you.com/platform?utm_source=danny-avila-librechat&utm_medium=oss_integration&utm_campaign=2026-08-oss-integrations&utm_content=app',
+            text: localize('com_ui_web_search_provider_you_key'),
+          },
+        },
+      },
+    },
   ];
 
   const rerankerOptions: DropdownOption[] = [

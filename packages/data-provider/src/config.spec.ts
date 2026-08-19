@@ -665,6 +665,38 @@ describe('webSearchSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts you as a search provider and defaults the You.com placeholders', () => {
+    const result = webSearchSchema.parse({ searchProvider: 'you' });
+
+    expect(result.searchProvider).toBe('you');
+    expect(result.youApiKey).toBe('${YDC_API_KEY}');
+    expect(result.youApiUrl).toBe('${YDC_API_URL}');
+  });
+
+  it('accepts You.com search options', () => {
+    const result = webSearchSchema.parse({
+      youSearchOptions: {
+        maxResults: 8,
+        attributionTitle: 'LibreChat',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.youSearchOptions?.maxResults).toBe(8);
+    expect(result.youSearchOptions?.attributionTitle).toBe('LibreChat');
+    expect(result.youSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('rejects invalid You.com search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        youSearchOptions: {
+          maxResults: 0,
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('bedrockModels defaults', () => {

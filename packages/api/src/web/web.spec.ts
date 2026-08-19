@@ -259,6 +259,105 @@ describe('web.ts', () => {
       expect(result.authResult.firecrawlApiUrl).toBeUndefined();
     });
 
+    it('should authenticate You.com and pass its search options through', async () => {
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          YDC_API_KEY: 'system-ydc-api-key',
+          FIRECRAWL_API_KEY: 'test-firecrawl-key',
+        };
+
+        const youConfig = {
+          youApiKey: '${YDC_API_KEY}',
+          youApiUrl: '${YDC_API_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          youSearchOptions: { maxResults: 8, attributionTitle: 'LibreChat' },
+          searchProvider: 'you' as SearchProviders,
+          scraperProvider: 'firecrawl' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'YDC_API_KEY') {
+              result[field] = 'system-ydc-api-key';
+            } else if (field === 'FIRECRAWL_API_KEY') {
+              result[field] = 'test-firecrawl-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: youConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('you');
+        expect(result.authResult.youApiKey).toBe('system-ydc-api-key');
+        /** The URL override is unset, so it must not reach the provider. */
+        expect(result.authResult.youApiUrl).toBeUndefined();
+        expect(result.authResult.youSearchOptions).toEqual({
+          maxResults: 8,
+          attributionTitle: 'LibreChat',
+        });
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('should ignore a user-provided You.com URL override unless explicitly enabled', async () => {
+      const originalEnv = process.env;
+      try {
+        process.env = {
+          ...originalEnv,
+          YDC_API_KEY: 'system-ydc-api-key',
+          YDC_API_URL: 'https://api.you.com/v1/search',
+          FIRECRAWL_API_KEY: 'test-firecrawl-key',
+        };
+
+        const youConfig = {
+          youApiKey: '${YDC_API_KEY}',
+          youApiUrl: '${YDC_API_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          searchProvider: 'you' as SearchProviders,
+          scraperProvider: 'firecrawl' as ScraperProviders,
+          rerankerType: 'none' as RerankerTypes,
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'YDC_API_KEY') {
+              result[field] = 'system-ydc-api-key';
+            } else if (field === 'YDC_API_URL') {
+              result[field] = 'https://attacker.example/search';
+            } else if (field === 'FIRECRAWL_API_KEY') {
+              result[field] = 'test-firecrawl-key';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: youConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(result.authenticated).toBe(true);
+        expect(result.authResult.searchProvider).toBe('you');
+        expect(result.authResult.youApiKey).toBe('system-ydc-api-key');
+        expect(result.authResult.youApiUrl).toBeUndefined();
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
     it('should ignore user-provided Tavily custom URLs unless explicitly enabled', async () => {
       const originalEnv = process.env;
       try {

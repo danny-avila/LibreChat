@@ -1780,6 +1780,7 @@ export enum SearchProviders {
   SERPER = 'serper',
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
+  YOU = 'you',
 }
 
 export enum ScraperProviders {
@@ -1820,6 +1821,16 @@ export const webSearchSchema = z.object({
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   cohereApiKeyPreview: apiKeyPreviewSchema,
+  youApiKey: z.string().optional().default('${YDC_API_KEY}'),
+  youApiKeyPreview: apiKeyPreviewSchema,
+  youApiUrl: z.string().optional().default('${YDC_API_URL}'),
+  youSearchOptions: z
+    .object({
+      maxResults: z.number().int().positive().optional(),
+      attributionTitle: z.string().optional(),
+      timeout: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),

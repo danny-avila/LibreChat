@@ -1,6 +1,6 @@
 import { SafeSearchTypes, SearchProviders, ScraperProviders } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
-import { loadWebSearchConfig } from './web';
+import { loadWebSearchConfig, webSearchAuth, webSearchKeys } from './web';
 
 describe('loadWebSearchConfig', () => {
   describe('firecrawlVersion', () => {
@@ -60,6 +60,8 @@ describe('loadWebSearchConfig', () => {
         tavilyApiKey: '${TAVILY_API_KEY}',
         tavilySearchUrl: '${TAVILY_SEARCH_URL}',
         tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
+        youApiKey: '${YDC_API_KEY}',
+        youApiUrl: '${YDC_API_URL}',
       });
     });
 
@@ -148,6 +150,38 @@ describe('loadWebSearchConfig', () => {
       expect(result?.serperApiKey).toBe('actual-serper-key');
       expect(result?.jinaApiKey).toBe('actual-jina-key');
       expect(result?.cohereApiKey).toBe('actual-cohere-key');
+    });
+  });
+
+  describe('You.com', () => {
+    it('should apply default placeholders for the key and URL', () => {
+      const result = loadWebSearchConfig({});
+
+      expect(result?.youApiKey).toBe('${YDC_API_KEY}');
+      expect(result?.youApiUrl).toBe('${YDC_API_URL}');
+    });
+
+    it('should preserve provided You.com values', () => {
+      const result = loadWebSearchConfig({
+        youApiKey: 'custom-you-key',
+        youApiUrl: 'https://custom-you.example/search',
+        searchProvider: SearchProviders.YOU,
+      });
+
+      expect(result?.youApiKey).toBe('custom-you-key');
+      expect(result?.youApiUrl).toBe('https://custom-you.example/search');
+      expect(result?.searchProvider).toBe('you');
+    });
+
+    it('should register you as a provider with an optional URL override', () => {
+      expect(webSearchAuth.providers.you).toEqual({
+        youApiKey: 1,
+        youApiUrl: 0,
+      });
+    });
+
+    it('should include the You.com keys in the extracted key set', () => {
+      expect(webSearchKeys).toEqual(expect.arrayContaining(['youApiKey', 'youApiUrl']));
     });
   });
 

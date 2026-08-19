@@ -16,6 +16,11 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    you: {
+      youApiKey: 1 as const,
+      /** Optional (0) */
+      youApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -83,6 +88,8 @@ export function loadWebSearchConfig(
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
+  const youApiKey = config?.youApiKey ?? '${YDC_API_KEY}';
+  const youApiUrl = config?.youApiUrl ?? '${YDC_API_URL}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
   const rerankerType = config?.rerankerType;
 
@@ -101,6 +108,8 @@ export function loadWebSearchConfig(
     firecrawlApiUrl,
     firecrawlVersion,
     searxngInstanceUrl,
+    youApiKey,
+    youApiUrl,
     rerankerType,
   };
 }

@@ -975,6 +975,13 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # You.com (search provider)
+#   youApiKey: '${YDC_API_KEY}'
+#   # youApiUrl: '${YDC_API_URL}'   # Optional endpoint override
+#   # youSearchOptions:
+#   #   maxResults: 8
+#   #   attributionTitle: 'LibreChat'   # Sent as the User-Agent to You.com
+#   #   timeout: 15000
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
