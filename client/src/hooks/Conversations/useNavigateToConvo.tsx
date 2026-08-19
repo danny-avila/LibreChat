@@ -52,8 +52,16 @@ const useNavigateToConvo = (index = 0) => {
     [setConvo, queryClient, applyModelSpecEffects],
   );
 
-  const fetchFreshData = async (conversation?: Partial<TConversation>) => {
-    const conversationId = conversation?.conversationId;
+  /**
+   * Reconciles the conversation record AFTER the route has already changed.
+   * The row that was clicked already carries the conversation; this refetch
+   * only picks up fields the list projection omits, so awaiting it before
+   * navigating would spend a full server round trip with the DEPARTING
+   * conversation still on screen — the exact stall this hook is on the hot
+   * path for.
+   */
+  const reconcileConversation = async (conversation: TConversation) => {
+    const conversationId = conversation.conversationId;
     if (!conversationId) {
       return;
     }
@@ -66,19 +74,13 @@ const useNavigateToConvo = (index = 0) => {
       const convoData = { ...data };
       clearModelForNonEphemeralAgent(convoData);
       setConversation(convoData);
-      requestChatFocus();
-      navigate(`/c/${conversationId ?? Constants.NEW_CONVO}`);
     } catch (error) {
-      console.error('Error fetching conversation data on navigation', error);
-      if (conversation) {
-        /** The conversation fetch failed (deleted convo, lost access): drop the
-         * warm message cache so stale contents can't render as current when the
-         * background revalidation fails too. */
-        queryClient.removeQueries([QueryKeys.messages, conversationId]);
-        setConversation(conversation as TConversation);
-        requestChatFocus();
-        navigate(`/c/${conversationId}`);
-      }
+      logger.error('conversation', 'Error fetching conversation data on navigation', error);
+      /** The conversation fetch failed (deleted convo, lost access): drop the
+       * warm message cache so stale contents can't render as current when the
+       * background revalidation fails too. The optimistic record already
+       * applied stays — it is what the sidebar itself is showing. */
+      queryClient.removeQueries([QueryKeys.messages, conversationId]);
     }
   };
 
@@ -150,7 +152,23 @@ const useNavigateToConvo = (index = 0) => {
        */
       queryClient.invalidateQueries([QueryKeys.messages, convo.conversationId]);
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
-      fetchFreshData(convo);
+      /** Route and conversation state change together, in the click's own
+       * task, so the switch commits once instead of straddling a round trip.
+       * The clicked row is a list PROJECTION (see `getConvosByCursor`), so any
+       * previously fetched full record underlays it — the row's fields are the
+       * fresher ones, everything the projection drops (prompt prefix, sampling
+       * params, files) survives, and a send during the reconcile window still
+       * carries this conversation's real settings. */
+      const cachedConvo = queryClient.getQueryData<TConversation>([
+        QueryKeys.conversation,
+        convo.conversationId,
+      ]);
+      const optimisticConvo = cachedConvo ? { ...cachedConvo, ...convo } : convo;
+      clearModelForNonEphemeralAgent(optimisticConvo);
+      setConversation(optimisticConvo);
+      requestChatFocus();
+      navigate(`/c/${convo.conversationId}`);
+      reconcileConversation(convo);
     } else {
       setConversation(convo);
       requestChatFocus();

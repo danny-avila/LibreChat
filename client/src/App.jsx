@@ -64,7 +64,18 @@ const App = () => {
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>
-                  <RouterProvider router={router} />
+                  {/* Location updates commit in the click's own task instead of
+                      React's transition lane. A transition keeps the OUTGOING
+                      route painted until the incoming one finishes rendering,
+                      so switching conversations left the previous transcript on
+                      screen under the new URL for as long as the next thread
+                      took to render. Nothing here reads route data through
+                      router loaders, so the transition bought no pending UI —
+                      and conversation state still lives in Recoil, whose
+                      transition-safe reads are gated behind its
+                      `_TRANSITION_SUPPORT_UNSTABLE` hooks that this app does not
+                      use. Worth revisiting once that state has moved to Jotai. */}
+                  <RouterProvider router={router} useTransitions={false} />
                   <WakeLockManager />
                   <QueryDevtoolsGate />
                   <Toast />
