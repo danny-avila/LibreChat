@@ -33,7 +33,9 @@ function DynamicSlider({
     [options, range],
   );
 
-  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
+  const [setInputValue, inputValue, setLocalValue, flushInputValue] = useDebouncedInput<
+    string | number
+  >({
     optionKey: settingKey,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
@@ -175,6 +177,9 @@ function DynamicSlider({
                 disabled={readonly}
                 value={inputValue ?? defaultValue}
                 onChange={(value) => setInputValue(Number(value))}
+                /** Clicking Save blurs this first, so the pending edit is
+                 *  committed before submitPreset reads the preset. */
+                onBlur={flushInputValue}
                 max={range ? range.max : (options?.length ?? 0) - 1}
                 min={range ? range.min : 0}
                 step={range ? (range.step ?? 1) : 1}
@@ -214,6 +219,9 @@ function DynamicSlider({
                 : ((inputValue as number) ?? (defaultValue as number)),
             ]}
             onValueChange={(value) => handleValueChange(value[0])}
+            /** Fires once the drag or keypress settles, which is the point the
+             *  chosen value should be in the preset rather than pending. */
+            onValueCommit={() => flushInputValue()}
             onDoubleClick={() => setInputValue(defaultValue as string | number)}
             max={max}
             aria-label={localize(label as TranslationKeys)}

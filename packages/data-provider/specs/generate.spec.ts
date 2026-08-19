@@ -1,5 +1,10 @@
 import { ZodError, z } from 'zod';
-import { generateDynamicSchema, validateSettingDefinitions, OptionTypes } from '../src/generate';
+import {
+  generateDynamicSchema,
+  validateSettingDefinitions,
+  OptionTypes,
+  clampSettingRange,
+} from '../src/generate';
 import type { SettingsConfiguration } from '../src/generate';
 
 describe('generateDynamicSchema', () => {
@@ -191,6 +196,62 @@ describe('generateDynamicSchema', () => {
       );
       expect(issues.length).toBeGreaterThan(0); // Ensure there is at least one issue related to 'testArray' being too big
     }
+  });
+});
+
+describe('generateDynamicSchema with positiveMin', () => {
+  const settings = [
+    {
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'input',
+      range: { min: -1, max: 32768, positiveMin: 128 },
+    },
+  ] as SettingsConfiguration;
+
+  it('accepts the sentinel and values at or above the floor', () => {
+    const schema = generateDynamicSchema(settings);
+    expect(schema.safeParse({ thinkingBudget: -1 }).success).toBe(true);
+    expect(schema.safeParse({ thinkingBudget: 128 }).success).toBe(true);
+    expect(schema.safeParse({ thinkingBudget: 32768 }).success).toBe(true);
+  });
+
+  it('rejects non-negative values below the floor', () => {
+    const schema = generateDynamicSchema(settings);
+    expect(schema.safeParse({ thinkingBudget: 0 }).success).toBe(false);
+    expect(schema.safeParse({ thinkingBudget: 127 }).success).toBe(false);
+  });
+});
+
+describe('clampSettingRange', () => {
+  const proThinkingBudget = { min: -1, max: 32768, step: 1, positiveMin: 128 };
+
+  it('preserves the negative sentinel', () => {
+    expect(clampSettingRange(-1, proThinkingBudget)).toBe(-1);
+  });
+
+  it('clamps positive values below the model floor up to that floor', () => {
+    expect(clampSettingRange(0, proThinkingBudget)).toBe(128);
+    expect(clampSettingRange(127, proThinkingBudget)).toBe(128);
+  });
+
+  it('leaves values inside the supported positive range alone', () => {
+    expect(clampSettingRange(128, proThinkingBudget)).toBe(128);
+    expect(clampSettingRange(2000, proThinkingBudget)).toBe(2000);
+  });
+
+  it('still enforces the ceiling', () => {
+    expect(clampSettingRange(40000, proThinkingBudget)).toBe(32768);
+  });
+
+  it('clamps values below the sentinel up to the sentinel', () => {
+    expect(clampSettingRange(-2, proThinkingBudget)).toBe(-1);
+  });
+
+  it('treats a zero positiveMin as a valid floor rather than a missing one', () => {
+    const flash = { min: -1, max: 24576, step: 1, positiveMin: 0 };
+    expect(clampSettingRange(0, flash)).toBe(0);
+    expect(clampSettingRange(-1, flash)).toBe(-1);
   });
 });
 

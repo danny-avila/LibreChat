@@ -1,9 +1,11 @@
-import { EModelEndpoint } from './types';
-import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
 import type { SettingDefinition } from './generate';
+import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
+import { EModelEndpoint } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const maxOut = (params: SettingDefinition[]) => params.find((p) => p.key === 'maxOutputTokens');
+const thinkingBudget = (params: SettingDefinition[]) =>
+  params.find((p) => p.key === 'thinkingBudget');
 
 describe('applyModelAwareDefaults', () => {
   it('resolves the Google maxOutputTokens default for current Gemini models', () => {
@@ -53,5 +55,36 @@ describe('applyModelAwareDefaults', () => {
     const override = { ...maxOut(modelAware), default: 2048 } as SettingDefinition;
     const final = modelAware.map((p) => (p.key === 'maxOutputTokens' ? override : p));
     expect(maxOut(final)?.default).toBe(2048);
+  });
+
+  it('keeps thinkingBudget -1 as the range minimum and applies the Pro floor separately', () => {
+    const result = applyModelAwareDefaults(googleParams, EModelEndpoint.google, 'gemini-2.5-pro');
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 32768,
+      positiveMin: 128,
+    });
+  });
+
+  it('applies the Flash Lite thinking-budget floor without raising the sentinel minimum', () => {
+    const result = applyModelAwareDefaults(
+      googleParams,
+      EModelEndpoint.google,
+      'gemini-2.5-flash-lite',
+    );
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 24576,
+      positiveMin: 512,
+    });
+  });
+
+  it('applies the Flash thinking-budget ceiling and a zero positive floor', () => {
+    const result = applyModelAwareDefaults(googleParams, EModelEndpoint.google, 'gemini-2.5-flash');
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 24576,
+      positiveMin: 0,
+    });
   });
 });

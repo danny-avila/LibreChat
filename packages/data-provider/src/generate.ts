@@ -1,7 +1,7 @@
 import { z, ZodArray, ZodError, ZodIssueCode } from 'zod';
-import { tConversationSchema, googleSettings as google, openAISettings as openAI } from './schemas';
 import type { ZodIssue } from 'zod';
 import type { TConversation, TSetOption, TPreset } from './schemas';
+import { tConversationSchema, googleSettings as google, openAISettings as openAI } from './schemas';
 
 export type GoogleSettings = Partial<typeof google>;
 export type OpenAISettings = Partial<typeof google>;
@@ -97,6 +97,26 @@ export interface SettingRange {
   min: number;
   max: number;
   step?: number;
+  /**
+   * Inclusive floor for non-negative values. Use when `min` is a sentinel
+   * (Google thinkingBudget `-1` for auto) and positive values have a higher
+   * documented minimum.
+   */
+  positiveMin?: number;
+  /**
+   * Set when this range came from the selected model rather than the shared
+   * fallback. Only then is it safe to normalize a stored value against it: a
+   * model that does not use the parameter leaves the generic range in place,
+   * and clamping to that would discard a value set for another model.
+   */
+  modelSpecific?: boolean;
+}
+
+export function clampSettingRange(value: number, range: SettingRange): number {
+  if (range.positiveMin != null && value >= 0) {
+    return Math.min(Math.max(value, range.positiveMin), range.max);
+  }
+  return Math.min(Math.max(value, range.min), range.max);
 }
 
 export type SettingsConfiguration = SettingDefinition[];
@@ -118,10 +138,23 @@ export function generateDynamicSchema(settings: SettingsConfiguration) {
     } = setting;
 
     if (type === SettingTypes.Number) {
-      let schema = z.number();
+      let numberSchema = z.number();
       if (range) {
-        schema = schema.min(range.min);
-        schema = schema.max(range.max);
+        numberSchema = numberSchema.min(range.min);
+        numberSchema = numberSchema.max(range.max);
+      }
+      /** Widened deliberately: refine returns ZodEffects, not ZodNumber, and
+       *  the number-specific chaining is already done above. */
+      let schema: z.ZodTypeAny = numberSchema;
+      if (range?.positiveMin != null) {
+        /** Mirrors clampSettingRange so the generated schema and the clamp
+         *  agree: `min` only admits the sentinel, and any non-negative value
+         *  must clear the documented floor. */
+        const { positiveMin, min } = range;
+        schema = numberSchema.refine(
+          (value) => value === min || value >= positiveMin,
+          `Expected ${min} or a value of at least ${positiveMin}`,
+        );
       }
       if (typeof defaultValue === 'number') {
         schemaFields[key] = schema.default(defaultValue);

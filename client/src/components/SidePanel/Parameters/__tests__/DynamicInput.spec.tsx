@@ -110,6 +110,37 @@ describe('DynamicInput', () => {
     expect(commit).toHaveBeenLastCalledWith(-1);
   });
 
+  it('keeps thinkingBudget -1 on blur when a model-specific positive floor is set', () => {
+    const { input, commit } = setup({
+      type: 'number',
+      range: { min: -1, max: 32768, step: 1, positiveMin: 128 },
+      settingKey: 'thinkingBudget',
+    });
+
+    fireEvent.change(input, { target: { value: '-1' } });
+    fireEvent.blur(input);
+
+    expect(input).toHaveValue('-1');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(commit).toHaveBeenLastCalledWith(-1);
+  });
+
+  it('clamps a positive thinkingBudget below the model floor on blur', () => {
+    const { input, commit } = setup({
+      type: 'number',
+      range: { min: -1, max: 32768, step: 1, positiveMin: 128 },
+      settingKey: 'thinkingBudget',
+    });
+
+    fireEvent.change(input, { target: { value: '50' } });
+    fireEvent.blur(input);
+
+    expect(input).toHaveValue('128');
+    expect(commit).toHaveBeenLastCalledWith(128);
+  });
+
   it('drops the minus sign when the range does not permit negatives', async () => {
     const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     const { input, commit } = setup({ type: 'number', settingKey: 'max_tokens' });

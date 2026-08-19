@@ -1,5 +1,6 @@
-import { OptionTypes, SettingTypes } from 'librechat-data-provider';
+import { useEffect, useRef } from 'react';
 import { Label, Input, HoverCard, HoverCardTrigger } from '@librechat/client';
+import { OptionTypes, SettingTypes, clampSettingRange } from 'librechat-data-provider';
 import type { DynamicSettingProps } from 'librechat-data-provider';
 import { useLocalize, useDebouncedInput, useParameterEffects, TranslationKeys } from '~/hooks';
 import { cn, sanitizeIntegerInput } from '~/utils';
@@ -28,7 +29,9 @@ function DynamicInput({
   const localize = useLocalize();
   const { preset } = useChatContext();
 
-  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | number>({
+  const [setInputValue, inputValue, setLocalValue, flushInputValue] = useDebouncedInput<
+    string | number
+  >({
     optionKey: settingKey,
     initialValue: optionType !== OptionTypes.Custom ? conversation?.[settingKey] : defaultValue,
     setter: () => ({}),
@@ -60,6 +63,75 @@ function DynamicInput({
     }
     setInputValue(e, type === SettingTypes.String ? false : !isNaN(Number(e.target.value)));
   };
+
+  /** The schema declares a range for number fields, but nothing enforced it, so
+   *  a value past the endpoint's ceiling (a Google output limit above 65535,
+   *  say) was persisted and only rejected later by the provider. Clamping on
+   *  blur rather than on change leaves partially typed numbers alone. */
+  const handleInputBlur = () => {
+    /** Clicking Save blurs the field first, so committing the pending edit here
+     *  is what stops submitPreset reading the value from before it. */
+    flushInputValue();
+    if (type !== SettingTypes.Number || range == null) {
+      return;
+    }
+    if (inputValue === '' || inputValue == null || inputValue === '-') {
+      return;
+    }
+    const numeric = Number(inputValue);
+    if (Number.isNaN(numeric)) {
+      return;
+    }
+    const clamped = clampSettingRange(numeric, range);
+    if (clamped === numeric) {
+      return;
+    }
+    /** Two writes, because one alone is not enough. Going through the debounced
+     *  setter supersedes the out-of-range value typing already queued (lodash
+     *  debounce keeps only the latest args) but would not land for another
+     *  delay, so a Save clicked inside that window would still read the bad
+     *  value. Calling setOption directly closes that window; the later trailing
+     *  invocation then rewrites the same clamped value. */
+    setInputValue(clamped, true);
+    setOption?.(settingKey)(clamped);
+  };
+
+  /** A model switch can change this field's bounds while a write typed just
+   *  before it is still queued. Clamping only what is already committed would
+   *  let that queued value land afterwards, past the new ceiling. Re-clamping
+   *  through the same debouncer replaces its arguments, so the queued write
+   *  becomes the corrected one. */
+  const rangeKey = range != null ? `${range.min}:${range.max}:${range.positiveMin ?? ''}` : '';
+  const appliedRangeRef = useRef(rangeKey);
+  useEffect(() => {
+    if (appliedRangeRef.current === rangeKey) {
+      return;
+    }
+    appliedRangeRef.current = rangeKey;
+    if (type !== SettingTypes.Number || range == null) {
+      return;
+    }
+    /** Only a range the model actually narrowed should rewrite a stored value.
+     *  A model that ignores this parameter leaves the shared fallback in place,
+     *  and clamping to that would discard a value set for another model. */
+    if (range.modelSpecific !== true) {
+      return;
+    }
+    if (inputValue === '' || inputValue == null || inputValue === '-') {
+      return;
+    }
+    const numeric = Number(inputValue);
+    if (Number.isNaN(numeric)) {
+      return;
+    }
+    const clamped = clampSettingRange(numeric, range);
+    if (clamped === numeric) {
+      return;
+    }
+    setInputValue(clamped, true);
+    setOption?.(settingKey)(clamped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
 
   const placeholderText = placeholderCode
     ? localize(placeholder as TranslationKeys) || placeholder
@@ -96,6 +168,7 @@ function DynamicInput({
             inputMode={type === 'number' ? 'numeric' : undefined}
             value={inputValue ?? defaultValue ?? ''}
             onChange={handleInputChange}
+            onBlur={handleInputBlur}
             placeholder={placeholderText}
             className={cn(
               'flex h-9 max-h-9 w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2',

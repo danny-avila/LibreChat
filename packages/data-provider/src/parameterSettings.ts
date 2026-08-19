@@ -6,6 +6,7 @@ import {
   EModelEndpoint,
   openAISettings,
   googleSettings,
+  getGoogleThinkingBudgetBounds,
   Providers,
   ReasoningEffort,
   AnthropicEffort,
@@ -114,6 +115,11 @@ export const librechat = {
     labelCode: true,
     type: 'number',
     component: 'input',
+    /** Bounds the hand-rolled Google editor enforced through InputNumber. They
+     *  belong on the definition so every endpoint rendering this field through
+     *  componentMapping is held to them: below the floor the conversation is
+     *  pruned to nothing, above the ceiling no model accepts the context. */
+    range: { min: 10, max: 2000000, step: 1000 },
     placeholder: 'com_endpoint_default',
     placeholderCode: true,
     description: 'com_endpoint_context_info',
@@ -1262,9 +1268,28 @@ export function applyModelAwareDefaults(
   if (endpoint !== EModelEndpoint.google || !model) {
     return settings;
   }
-  return settings.map((setting) =>
-    setting.key === 'maxOutputTokens'
-      ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
-      : setting,
-  );
+  return settings.map((setting) => {
+    if (setting.key === 'maxOutputTokens') {
+      return { ...setting, default: googleSettings.maxOutputTokens.reset(model) };
+    }
+    /** The shared thinking budget range is model-agnostic, so it caps Pro below
+     *  its real ceiling and accepts Flash values the provider rejects. The
+     *  maximum and the positive floor move together. `range.min` stays -1 so
+     *  the "decide automatically" sentinel remains typeable. */
+    if (setting.key === 'thinkingBudget' && setting.range != null) {
+      const bounds = getGoogleThinkingBudgetBounds(model);
+      if (bounds != null) {
+        return {
+          ...setting,
+          range: {
+            ...setting.range,
+            max: bounds.max,
+            positiveMin: bounds.min,
+            modelSpecific: true,
+          },
+        };
+      }
+    }
+    return setting;
+  });
 }
