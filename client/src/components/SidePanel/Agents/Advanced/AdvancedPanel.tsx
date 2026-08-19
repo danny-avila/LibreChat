@@ -4,11 +4,11 @@ import { ChevronLeft, Check, Copy } from 'lucide-react';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { Button, TooltipAnchor, labelVariants, useToastContext } from '@librechat/client';
 import type { AgentForm } from '~/common';
-import { groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';
 import StatefulSessions from './StatefulSessions';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
+import { groupHeadingClass } from './ui';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
