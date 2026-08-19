@@ -2,16 +2,23 @@ export const COLLAPSED_WIDTH = 52;
 export const EXPANDED_MIN = 360;
 
 /**
- * The mobile drawer stops short of the edge so a strip of the chat stays on
- * screen: it keeps the drawer reading as a layer over the conversation rather
- * than a separate screen, and gives the close gesture a target to tap.
+ * How much of the viewport the mobile drawer covers.
  *
- * The drawer and the pane derive their travel from this one number so they
- * cannot drift apart (see SIDEBAR_TRANSITION).
+ * Full width by default, where the drawer reads as its own screen and the
+ * swipe closes it. Opting into the strip stops it short of the edge so a slice
+ * of the conversation stays visible, which keeps the drawer reading as a layer
+ * over the conversation and gives the close gesture a target to tap.
+ *
+ * Both the drawer and the pane read the one custom property, so their travel
+ * cannot drift apart (see SIDEBAR_TRANSITION) and the setting can change at
+ * runtime without threading a number through either. The fallback is the
+ * default, so anything rendered outside the property's scope still agrees.
  */
-export const MOBILE_DRAWER_WIDTH_PCT = 80;
-export const MOBILE_DRAWER_WIDTH = `${MOBILE_DRAWER_WIDTH_PCT}%`;
-export const MOBILE_PANE_SHIFT = `translateX(${MOBILE_DRAWER_WIDTH_PCT}%)`;
+export const MOBILE_DRAWER_WIDTH_VAR = '--mobile-drawer-width';
+export const MOBILE_DRAWER_FULL_WIDTH = '100%';
+export const MOBILE_DRAWER_STRIP_WIDTH = '80%';
+export const MOBILE_DRAWER_WIDTH = `var(${MOBILE_DRAWER_WIDTH_VAR}, ${MOBILE_DRAWER_FULL_WIDTH})`;
+export const MOBILE_PANE_SHIFT = `translateX(${MOBILE_DRAWER_WIDTH})`;
 export const TRANSITION_MS = 300;
 /**
  * Decelerating, but it settles rather than crawls. The previous

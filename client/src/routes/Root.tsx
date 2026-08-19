@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback, startTransition } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
   UnifiedSidebar,
   SIDEBAR_TRANSITION,
+  MOBILE_DRAWER_WIDTH_VAR,
+  MOBILE_DRAWER_STRIP_WIDTH,
+  MOBILE_DRAWER_FULL_WIDTH,
   MOBILE_PANE_SHIFT,
-  DRAWER_Z_INDEX,
-  TRANSITION_MS,
-  EASING,
 } from '~/components/UnifiedSidebar';
 import {
   PromptGroupsProvider,
@@ -21,10 +22,10 @@ import {
   useAssistantsMap,
   useAuthContext,
   useAgentsMap,
-  useLocalize,
   useFileMap,
 } from '~/hooks';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
+import MobileDrawerScrim from '~/components/UnifiedSidebar/mobile/Scrim';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
@@ -35,7 +36,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
-import { cn } from '~/utils';
+import store from '~/store';
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -57,13 +58,15 @@ export default function Root() {
     expanded: sidebarExpanded,
     setExpanded: setSidebarExpanded,
   } = useSidebarState();
-  const localize = useLocalize();
   /** The one path drawer mutations take: it kicks the slide imperatively and
    *  defers the Recoil flip, so a large conversation cannot stall first motion. */
   const { setSidebarOpen } = useSidebarToggle();
   /** The drawer and pane snap under reduced motion (see kickDrawerAnimation),
    *  so the scrim must not keep fading on its own. */
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  /** Off by default, matching the drawer that covers the screen and closes by
+   *  swipe. Opting in narrows it and gives the strip a dismiss target. */
+  const drawerStrip = useRecoilValue(store.mobileDrawerStrip);
   const paneRef = useRef<HTMLDivElement>(null);
   /** Keyed off the committed state rather than the scrim's own click, because
    *  the header button, Escape, conversation selection and the bottom bar all
@@ -138,7 +141,18 @@ export default function Root() {
             <PromptGroupsProvider>
               <Banner onHeightChange={setBannerHeight} />
               <div className="flex" style={{ height: `calc(100dvh - ${bannerHeight}px)` }}>
-                <div className="relative z-0 flex h-full w-full overflow-hidden">
+                <div
+                  className="relative z-0 flex h-full w-full overflow-hidden"
+                  /** The drawer and the pane both read this, so their travel
+                   *  cannot disagree about how far the drawer opens. */
+                  style={
+                    {
+                      [MOBILE_DRAWER_WIDTH_VAR]: drawerStrip
+                        ? MOBILE_DRAWER_STRIP_WIDTH
+                        : MOBILE_DRAWER_FULL_WIDTH,
+                    } as React.CSSProperties
+                  }
+                >
                   <UnifiedSidebar />
                   <div
                     ref={paneRef}
@@ -147,7 +161,8 @@ export default function Root() {
                     tabIndex={-1}
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-none"
                     style={{
-                      /** Self-referential, so it needs no width literal and survives rotation. */
+                      /** A percentage of the pane's own width, so it tracks the
+                       *  drawer without a literal and survives rotation. */
                       transform: isSmallScreen && sidebarExpanded ? MOBILE_PANE_SHIFT : 'none',
                       transition: SIDEBAR_TRANSITION,
                     }}
@@ -155,28 +170,12 @@ export default function Root() {
                   >
                     <Outlet />
                   </div>
-                  {/* Dismiss target over the strip of chat the drawer leaves
-                      visible. It sits outside the pane because the pane is
-                      inert while the drawer is open, which would swallow the
-                      click. */}
-                  {isSmallScreen && (
-                    <button
-                      type="button"
-                      aria-label={localize('com_nav_close_sidebar')}
+                  {isSmallScreen && drawerStrip && (
+                    <MobileDrawerScrim
+                      expanded={sidebarExpanded}
+                      isClosing={isClosing}
+                      prefersReducedMotion={prefersReducedMotion}
                       onClick={onScrimClick}
-                      tabIndex={sidebarExpanded ? 0 : -1}
-                      aria-hidden={!sidebarExpanded || undefined}
-                      className={cn(
-                        'absolute inset-0 bg-surface-overlay/50',
-                        sidebarExpanded ? 'opacity-100' : 'opacity-0',
-                        !sidebarExpanded && !isClosing && 'pointer-events-none',
-                      )}
-                      style={{
-                        zIndex: DRAWER_Z_INDEX - 1,
-                        transition: prefersReducedMotion
-                          ? undefined
-                          : `opacity ${TRANSITION_MS}ms ${EASING}`,
-                      }}
                     />
                   )}
                 </div>
