@@ -1968,6 +1968,46 @@ describe('SubagentThreadTaskStore', () => {
     }
   });
 
+  it('treats a renewal that lands after its own deadline as a lapse', async () => {
+    const userId = 'fence-late-renewal-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let renewals = 0;
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      /** Succeeds, but the first write only lands well past the 120ms deadline it was
+       * meant to extend — admission stood open for the difference. */
+      renewOwnerAdmission: async () => {
+        renewals += 1;
+        if (renewals === 1) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        }
+        return true;
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    const leases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+        return [];
+      });
+    const deletion = jest.fn(async () => 'deleted');
+    try {
+      await expect(store.withOwnerDeletionFence(userId, undefined, deletion)).rejects.toThrow(
+        'admission fence expired',
+      );
+      /** Every renewal reported success, so a deadline restored from the write's own
+       * start time would have read as continuously fenced. */
+      expect(renewals).toBeGreaterThan(0);
+      expect(deletion).not.toHaveBeenCalled();
+    } finally {
+      leases.mockRestore();
+    }
+  });
+
   it('releases the owner fence after an in-flight renewal instead of racing it', async () => {
     const userId = 'fence-renewal-race-user';
     const parentConversationId = randomUUID();

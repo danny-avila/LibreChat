@@ -262,6 +262,33 @@ function boundedSnapshot(snapshot: SubagentTaskSnapshot): SubagentTaskSnapshot {
   };
 }
 
+/**
+ * Bounds a model-facing task list, keeping what a caller can still act on: running
+ * children first, then the most recent settled results. A plain oldest-first slice
+ * would drop the newest tasks, hiding a child that just started from the only tool
+ * able to poll it.
+ */
+export function boundedTaskList(tasks: SubagentTaskSnapshot[]): SubagentTaskSnapshot[] {
+  const byCreatedAt = (left: SubagentTaskSnapshot, right: SubagentTaskSnapshot): number =>
+    left.createdAt - right.createdAt;
+  if (tasks.length <= MAX_TASK_SNAPSHOTS) {
+    return tasks.sort(byCreatedAt);
+  }
+  const running: SubagentTaskSnapshot[] = [];
+  const settled: SubagentTaskSnapshot[] = [];
+  for (const task of tasks) {
+    (task.status === 'running' ? running : settled).push(task);
+  }
+  running.sort(byCreatedAt);
+  const keptRunning = running.slice(-MAX_TASK_SNAPSHOTS);
+  const remaining = MAX_TASK_SNAPSHOTS - keptRunning.length;
+  if (remaining <= 0) {
+    return keptRunning;
+  }
+  settled.sort(byCreatedAt);
+  return [...keptRunning, ...settled.slice(-remaining)].sort(byCreatedAt);
+}
+
 /** Applies the routed result and snapshot bounds to a claim from any source. */
 export function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
   if (claim.status === 'not_found') {
@@ -762,13 +789,6 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       const ownerId = ownerIds[index];
       const reportedTaskIds = new Set(value.snapshots.map((snapshot) => snapshot.taskId));
       for (const snapshot of value.snapshots) {
-        /** Each owner bounds its own reply, so without an aggregate cap the list the
-         * model reads grows with the number of replicas holding the scope. Collection
-         * stops at the cap while the loop continues, because the sweep below still
-         * needs every owner's reply to tell a stale registration from a live task. */
-        if (snapshots.length >= MAX_TASK_SNAPSHOTS) {
-          break;
-        }
         if (ownersByTask[snapshot.taskId] === ownerId) {
           snapshots.push(snapshot);
         }
@@ -784,7 +804,11 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     if (staleTaskIds.length > 0) {
       await this.removeRegistrations(scopeId, staleTaskIds);
     }
-    return snapshots;
+    /** Each owner bounds its own reply, so without an aggregate cap this grows with the
+     * number of replicas holding the scope. Bounding after the loop rather than during
+     * it keeps the sweep above reading every owner's reply, and lets the cap choose by
+     * status instead of by whichever owner answered first. */
+    return boundedTaskList(snapshots);
   }
 
   /**

@@ -31,8 +31,8 @@ import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   boundedClaim,
+  boundedTaskList,
   controlFingerprint,
-  MAX_TASK_SNAPSHOTS,
   SubagentTaskOwnerUnavailableError,
 } from './subagentTaskRouting';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
@@ -782,9 +782,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     /** The remote aggregation and each owner's reply carry their own bound, but this
      * merge is what the poll tool reads: without a cap here the list the model sees is
      * that bound plus however many children this replica happens to own. */
-    return [...byId.values()]
-      .sort((left, right) => left.createdAt - right.createdAt)
-      .slice(0, MAX_TASK_SNAPSHOTS);
+    return boundedTaskList([...byId.values()]);
   }
 
   /** Fast capability probe used while deciding whether a later turn needs the poll tool. */
@@ -1017,6 +1015,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     /** Only a confirmed write moves this, so a run of failed renewals leaves it in the
      * past and the deletion can tell that its fence is no longer guaranteed. */
     let fencedUntil = Date.now() + fenceWindowMs;
+    let fenceLapsed = false;
     await this.fenceOwnerAdmission?.(userId, token, new Date(fencedUntil));
     /** A very large account, or a stalled database, can outlast one fence window, and
      * a fence that expires mid-deletion lets another replica admit a child against
@@ -1029,18 +1028,25 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           return;
         }
         inFlight = (async () => {
+          const deadline = fencedUntil;
           const renewedUntil = Date.now() + fenceWindowMs;
           const held = await this.renewOwnerAdmission?.(userId, token, new Date(renewedUntil));
-          if (held !== false) {
-            fencedUntil = renewedUntil;
+          if (held === false) {
+            if (releasing) {
+              return;
+            }
+            /** The entry is gone — expired, or pruned by another deletion — so this
+             * deletion takes its fence again rather than running on unfenced. */
+            await this.fenceOwnerAdmission?.(userId, token, new Date(renewedUntil));
+          }
+          if (Date.now() >= deadline) {
+            /** The write only landed after the deadline it was meant to extend, so
+             * admission stood open in between and a child could have taken a lease the
+             * drain had already read past. A fence cannot be restored backwards over
+             * that gap, so the lapse is recorded rather than papered over. */
+            fenceLapsed = true;
             return;
           }
-          if (releasing) {
-            return;
-          }
-          /** The entry is gone — expired, or pruned by another deletion — so this
-           * deletion takes its fence again rather than running on unfenced. */
-          await this.fenceOwnerAdmission?.(userId, token, new Date(renewedUntil));
           fencedUntil = renewedUntil;
         })()
           .catch((error) => {
@@ -1053,7 +1059,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       Math.max(1, Math.floor(fenceWindowMs / 3)),
     );
     renewal.unref?.();
-    const fenceHeld = (): boolean => this.fenceOwnerAdmission == null || Date.now() < fencedUntil;
+    const fenceHeld = (): boolean =>
+      this.fenceOwnerAdmission == null || (!fenceLapsed && Date.now() < fencedUntil);
     try {
       await this.cancelAndDrainForOwner(userId, tenantId);
       /** The drain can outlast the fence window when the database is unreachable, and

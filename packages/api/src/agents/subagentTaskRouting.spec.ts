@@ -680,6 +680,56 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([...owners.map((owner) => owner.destroy()), requester.destroy()]);
   });
 
+  it('keeps running tasks when the aggregate cap drops the rest', async () => {
+    const bus = new FakeRedisBus();
+    const owners = ['owner-old', 'owner-new'].map(
+      (instanceId) =>
+        new RedisSubagentTaskControlTransport(
+          asRedis(bus.createClient()),
+          asRedis(bus.createClient()),
+          { namespace: 'test', instanceId, requestTimeoutMs: 200, retryDelayMs: 10 },
+        ),
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    /** The settled tasks are the oldest, and the running ones the newest, so an
+     * oldest-first slice would drop exactly the children still worth polling. */
+    const settled = Array.from({ length: 150 }, (_unused, index) =>
+      snapshot({
+        taskId: `settled-${index + 1}`,
+        threadId: `settled-thread-${index + 1}`,
+        status: 'completed',
+        createdAt: index + 1,
+        resultAvailable: true,
+      }),
+    );
+    const running = Array.from({ length: 150 }, (_unused, index) =>
+      snapshot({
+        taskId: `running-${index + 1}`,
+        threadId: `running-thread-${index + 1}`,
+        status: 'running',
+        createdAt: 1_000 + index,
+      }),
+    );
+    await Promise.all(
+      [settled, running].map(async (tasks, ownerIndex) => {
+        const owner = owners[ownerIndex];
+        await owner.bind(taskHandler({ list: () => tasks }));
+        await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
+      }),
+    );
+    await requester.bind(taskHandler());
+
+    const listed = await requester.list('scope-1');
+    expect(listed).toHaveLength(200);
+    expect(listed.filter((task) => task.status === 'running')).toHaveLength(150);
+
+    await Promise.all([...owners.map((owner) => owner.destroy()), requester.destroy()]);
+  });
+
   it('releases a claim replay once the requester acknowledges it, and keeps it otherwise', async () => {
     const bus = new FakeRedisBus();
     const owner = new RedisSubagentTaskControlTransport(
