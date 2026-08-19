@@ -200,11 +200,26 @@ async function migrateEmbedOwners({ dryRun = true, batchSize = 100 } = {}) {
         /* Re-assert the scan's own predicate: another writer may have set an
          * owner since the cursor read, and this migration must never overwrite
          * one. A zero-effect update is therefore "someone or something else
-         * changed this row", never "done". */
-        const updateResult = await File.updateOne(
-          { _id: file._id, entity_id: { $exists: false } },
-          { $set: { entity_id: entityId } },
-        );
+         * changed this row", never "done".
+         *
+         * The write is guarded separately from the scope reads above: one
+         * failed row must cost that row, not the accounting for every row
+         * already repaired. An unguarded throw here would reach the CLI's
+         * catch and discard every bucket. */
+        let updateResult;
+        try {
+          updateResult = await File.updateOne(
+            { _id: file._id, entity_id: { $exists: false } },
+            { $set: { entity_id: entityId } },
+          );
+        } catch (error) {
+          results.errors++;
+          results.notWritten.push(file.file_id);
+          logger.error(`Failed to record embed owner ${entityId} on file ${file.file_id}`, {
+            error: error.message,
+          });
+          continue;
+        }
         if (updateResult.modifiedCount > 0) {
           results.filesUpdated++;
           logger.info(`Recorded embed owner ${entityId} on file ${file.file_id}`);
@@ -269,7 +284,7 @@ if (require.main === module) {
         });
       }
       if (result.unrecoverable.length > 0) {
-        console.log('\nOwner unrecoverable — entity-owned chunks Mongo cannot attribute:');
+        console.log('\nOwner not recoverable — left untouched, chunks may still be orphaned:');
         result.unrecoverable.forEach((fileId) => console.log(`  ${fileId}`));
       }
       if (result.notWritten.length > 0) {

@@ -324,6 +324,27 @@ describe('Embed Owner Migration Script', () => {
     updateOne.mockRestore();
   });
 
+  it('keeps the accounting for every other file when one write fails', async () => {
+    const [failing, healthy] = await Promise.all([createFile(), createFile()]);
+    await createAgent('agent-abc', [failing.file_id, healthy.file_id]);
+    serveIds({ [failing.file_id]: 'agent-abc', [healthy.file_id]: 'agent-abc' });
+    const realUpdate = File.updateOne.bind(File);
+    const updateOne = jest.spyOn(File, 'updateOne').mockImplementation(async (filter, update) => {
+      if (String(filter._id) === String(failing._id)) {
+        throw new Error('connection reset');
+      }
+      return realUpdate(filter, update);
+    });
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(result.notWritten).toEqual([failing.file_id]);
+    expect(result.errors).toBe(1);
+    expect(result.filesUpdated).toBe(1);
+    expect(await ownerOf(healthy.file_id)).toBe('agent-abc');
+    updateOne.mockRestore();
+  });
+
   it('caps the reported sample while still repairing every file', async () => {
     const files = await Promise.all(Array.from({ length: 55 }, () => createFile()));
     await createAgent(
