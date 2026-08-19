@@ -347,7 +347,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
       if (
         rejectActivePredecessor === true &&
-        (current?.status === 'running' || current?.status === 'requires_action')
+        (current?.status === 'running' ||
+          current?.status === 'requires_action' ||
+          current?.terminalPersistencePending === true)
       ) {
         throw new JobPredecessorMismatchError({
           createdAt: current.createdAt,

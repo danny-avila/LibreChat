@@ -28,7 +28,10 @@ export type EnqueueAgentTrigger = (
 ) => Promise<unknown>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
-  Pick<MessageMethods, 'claimSubagentTaskResult' | 'getMessages'>;
+  Pick<
+    MessageMethods,
+    'claimSubagentTaskResult' | 'getMessages' | 'releaseSubagentTaskResultClaim'
+  >;
 
 interface GenerationState {
   status?: unknown;
@@ -311,6 +314,15 @@ export function createSubagentCompletionWakeupResolver({
       status: 'ready',
       parentMessageId,
       input: renderWakeupInput(registration, claim.message),
+      releaseOnDefiniteFailure: async () => {
+        await methods.releaseSubagentTaskResultClaim({
+          userId,
+          conversationId: registration.threadId,
+          taskId: registration.taskId,
+          kind: 'wakeup',
+          claimId: context.idempotencyKey,
+        });
+      },
     };
   };
 }

@@ -537,6 +537,52 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
+  it('releases a prepared durable result after a definite admission rejection', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => response({ code: 'AGENT_NOT_FOUND' }, { status: 404 })),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      code: 'AGENT_NOT_FOUND',
+    });
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a prepared durable result after an ambiguous admission outcome', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => Promise.reject(new Error('connection reset'))),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'ambiguous',
+      code: 'NETWORK_ERROR',
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
   it('rejects a mismatched continued conversation as an ambiguous outcome', async () => {
     expect.hasAssertions();
     const host = createAgentTriggerExecutionHost(

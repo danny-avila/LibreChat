@@ -94,6 +94,13 @@ export interface MessageMethods {
     kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<SubagentTaskResultClaim>;
+  releaseSubagentTaskResultClaim(params: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -571,6 +578,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           'subagentTask.resultClaim.kind': kind,
           'subagentTask.resultClaim.claimId': claimId,
         },
+        ...(kind === 'manual'
+          ? [
+              {
+                'subagentTask.resultClaim.kind': { $exists: false },
+                'subagentTask.resultClaim.claimId': claimId,
+              },
+            ]
+          : []),
       ],
     };
     const projection = {
@@ -607,6 +622,47 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       .select(projection)
       .lean<IMessage | null>();
     return existing == null ? { status: 'not_found' } : { status: 'claimed', message: existing };
+  }
+
+  /** Releases only the exact consumer assignment. This is used when a
+   * pre-admission automatic continuation is definitively rejected, allowing a
+   * later manual poll (or the same delivery retry) to claim the durable result. */
+  async function releaseSubagentTaskResultClaim({
+    userId,
+    conversationId,
+    taskId,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean> {
+    if (
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
+      claimId.length === 0 ||
+      claimId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task result claim release');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const result = await Message.updateOne(
+      {
+        user: userId,
+        conversationId,
+        messageId: `${taskId}:assistant`,
+        'subagentTask.resultClaim.kind': kind,
+        'subagentTask.resultClaim.claimId': claimId,
+      },
+      { $unset: { 'subagentTask.resultClaim': 1 } },
+    );
+    return result.modifiedCount === 1;
   }
 
   /**
@@ -747,6 +803,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateToolCallResult,
     updateMessage,
     claimSubagentTaskResult,
+    releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
     getMessage,

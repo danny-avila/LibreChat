@@ -493,7 +493,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         liveJobBelongsToRequester(parentJob, req.user) &&
         (parentJob.status === 'running' ||
           parentJob.status === 'requires_action' ||
-          parentJob.metadata?.terminalPersistencePending === true)
+          parentJob.metadata?.terminalPersistencePending === true) &&
+        !(
+          typeof clientRequestId === 'string' &&
+          parentJob.metadata?.idempotencyClientRequestId === clientRequestId
+        )
       ) {
         startupTelemetry?.end('rejected');
         return rejectPreliminaryParentMessageId(res, generationProtocolVersion);
@@ -541,7 +545,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       liveJobBelongsToRequester(parentJob, req.user) &&
       (parentJob.status === 'running' ||
         parentJob.status === 'requires_action' ||
-        parentJob.metadata?.terminalPersistencePending === true)
+        parentJob.metadata?.terminalPersistencePending === true) &&
+      !(
+        typeof clientRequestId === 'string' &&
+        parentJob.metadata?.idempotencyClientRequestId === clientRequestId
+      )
     ) {
       res.set('Retry-After', '1');
       startupTelemetry?.end('rejected');

@@ -207,6 +207,7 @@ function resolverMethods() {
           ],
     ),
     claimSubagentTaskResult: jest.fn(async () => ({ status: 'acquired', message: terminal })),
+    releaseSubagentTaskResultClaim: jest.fn(async () => true),
   };
   return { methods, terminal };
 }
@@ -304,6 +305,21 @@ describe('createSubagentCompletionWakeupResolver', () => {
       input: expect.stringContaining('Child result'),
     });
     expect(methods.claimSubagentTaskResult).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'thread-1',
+      taskId: 'task-1',
+      kind: 'wakeup',
+      claimId: 'trigger_claim_1',
+    });
+
+    const prepared = await resolve(wakeupEnvelope(), {
+      idempotencyKey: 'trigger_claim_1',
+    } as never);
+    expect(prepared?.status).toBe('ready');
+    if (prepared?.status === 'ready') {
+      await prepared.releaseOnDefiniteFailure?.();
+    }
+    expect(methods.releaseSubagentTaskResultClaim).toHaveBeenCalledWith({
       userId: 'user-1',
       conversationId: 'thread-1',
       taskId: 'task-1',

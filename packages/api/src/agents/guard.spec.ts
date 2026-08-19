@@ -32,6 +32,7 @@ function makeStore(): SubagentThreadTaskStore {
   return new SubagentThreadTaskStore({
     acquireSubagentThreadLease: unused as AllMethods['acquireSubagentThreadLease'],
     claimSubagentTaskResult: unused as AllMethods['claimSubagentTaskResult'],
+    releaseSubagentTaskResultClaim: unused as AllMethods['releaseSubagentTaskResultClaim'],
     countActiveSubagentThreadLeases: unused as AllMethods['countActiveSubagentThreadLeases'],
     deleteConvos: unused as AllMethods['deleteConvos'],
     deleteMessages: unused as AllMethods['deleteMessages'],

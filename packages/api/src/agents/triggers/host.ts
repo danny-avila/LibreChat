@@ -33,7 +33,14 @@ type FireStatus = 'started' | 'resumed' | 'replaced' | 'settled';
 export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export type AgentTriggerContinuePreparation =
-  | { status: 'ready'; input: string; parentMessageId: string }
+  | {
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      /** Compensates a durable pre-admission claim only when the host knows
+       * that no generation was admitted. Ambiguous outcomes retain the claim. */
+      releaseOnDefiniteFailure?: () => MaybePromise<void>;
+    }
   | { status: 'settled' };
 
 export type AgentTriggerFailureCertainty = 'definite' | 'ambiguous';
@@ -496,8 +503,9 @@ async function startRun(
 ): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
   const mode = envelope.mode;
   const scope = abortScope(context.signal, timeoutMs);
+  let preparation: AgentTriggerContinuePreparation | undefined;
   try {
-    const preparation =
+    preparation =
       mode === 'continue' && deps.prepareContinue != null
         ? await setupValue(
             () => deps.prepareContinue?.(envelope, context),
@@ -665,6 +673,30 @@ async function startRun(
       });
     }
     return result;
+  } catch (error) {
+    if (
+      preparation?.status === 'ready' &&
+      preparation.releaseOnDefiniteFailure != null &&
+      error instanceof AgentTriggerExecutionError &&
+      error.certainty === 'definite'
+    ) {
+      try {
+        await preparation.releaseOnDefiniteFailure();
+      } catch (releaseError) {
+        throw executionError(
+          `Agent trigger ${mode} could not release its rejected preparation: ${
+            releaseError instanceof Error ? releaseError.message : String(releaseError)
+          }`,
+          {
+            mode,
+            certainty: 'definite',
+            retryable: true,
+            code: 'PREPARATION_RELEASE_FAILED',
+          },
+        );
+      }
+    }
+    throw error;
   } finally {
     scope.cleanup();
   }

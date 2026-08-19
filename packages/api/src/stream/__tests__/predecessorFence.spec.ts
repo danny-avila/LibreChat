@@ -78,6 +78,11 @@ describe('generation predecessor create fence', () => {
           expectCreatedAt: parent.createdAt,
         }),
       ).resolves.toBe(true);
+      await store.updateJob(streamId, { terminalPersistencePending: true }, parent.createdAt);
+      await expect(createWakeupJob(store, streamId)).rejects.toMatchObject({
+        currentJob: { active: true, status: 'aborted' },
+      });
+      await store.updateJob(streamId, { terminalPersistencePending: false }, parent.createdAt);
       const wakeup = await createWakeupJob(store, streamId);
       expect(wakeup.createdAt).toBeGreaterThanOrEqual(parent.createdAt);
     } finally {
