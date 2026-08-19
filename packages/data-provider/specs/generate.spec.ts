@@ -250,6 +250,26 @@ describe('positiveMin default validation', () => {
 });
 
 describe('positiveMin range validation', () => {
+  /**
+   * `default` is optional and this validator populates it, so a midpoint taken
+   * across the sentinel gap would make an otherwise coherent definition fail
+   * the validation in the same pass.
+   */
+  it('synthesizes a slider default inside the admissible interval', () => {
+    const settings: SettingsConfiguration = [
+      {
+        key: 'budget',
+        type: 'number',
+        component: 'slider',
+        optionType: 'custom',
+        range: { min: -1, max: 100, step: 1, positiveMin: 80 },
+      },
+    ];
+
+    expect(() => validateSettingDefinitions(settings)).not.toThrow();
+    expect(settings[0].default).toBe(90);
+  });
+
   it('rejects a positive floor above the maximum', () => {
     const settings: SettingsConfiguration = [
       {
@@ -288,6 +308,28 @@ describe('clampSettingRange', () => {
 
   it('clamps values below the sentinel up to the sentinel', () => {
     expect(clampSettingRange(-2, proThinkingBudget)).toBe(-1);
+  });
+
+  /** The minimum is the sentinel whatever its sign, and the generated schema
+   *  admits it outright, so the clamp must not lift it to the floor. */
+  it('preserves a non-negative sentinel minimum', () => {
+    const range = { min: 0, max: 100, step: 1, positiveMin: 10 };
+    const settings: SettingsConfiguration = [
+      {
+        key: 'budget',
+        type: 'number',
+        component: 'slider',
+        optionType: 'custom',
+        range,
+      },
+    ];
+    const schema = generateDynamicSchema(settings);
+
+    expect(clampSettingRange(0, range)).toBe(0);
+    expect(schema.safeParse({ budget: 0 }).success).toBe(true);
+    /** Still inside the gap, so it lifts to the floor. */
+    expect(clampSettingRange(5, range)).toBe(10);
+    expect(clampSettingRange(-3, range)).toBe(0);
   });
 
   it('treats a zero positiveMin as a valid floor rather than a missing one', () => {

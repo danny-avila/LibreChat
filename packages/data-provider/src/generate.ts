@@ -114,10 +114,16 @@ export interface SettingRange {
 
 export function clampSettingRange(value: number, range: SettingRange): number {
   if (range.positiveMin != null) {
-    /** Nothing between the sentinel and the floor is admissible, so a negative
-     *  value resolves to the sentinel rather than staying where the generated
-     *  schema would later reject it. */
-    if (value < 0) {
+    /** The minimum carries its own meaning here (Google's -1 for automatic),
+     *  and the schema admits it outright, so it survives rather than being
+     *  lifted to the floor. It need not be negative to be the sentinel. */
+    if (value === range.min) {
+      return range.min;
+    }
+    /** Below the sentinel there is nothing admissible to lift to, so the value
+     *  resolves to it. Between the sentinel and the floor, the floor is the
+     *  nearest value the generated schema accepts. */
+    if (value < Math.max(range.min, 0)) {
       return range.min;
     }
     return Math.min(Math.max(value, range.positiveMin), range.max);
@@ -402,8 +408,12 @@ export function validateSettingDefinitions(settings: SettingsConfiguration): voi
 
     if (setting.component === ComponentTypes.Slider && setting.type === SettingTypes.Number) {
       if (setting.default === undefined && setting.range) {
-        // Set default to the middle of the range if unspecified
-        setting.default = Math.round((setting.range.min + setting.range.max) / 2);
+        /** The midpoint of the admissible interval, which a positive floor
+         *  narrows: the span between the sentinel and that floor holds no value
+         *  the generated schema accepts, so a midpoint taken across it would
+         *  fail the validation below. */
+        const floor = Math.max(setting.range.min, setting.range.positiveMin ?? setting.range.min);
+        setting.default = Math.round((floor + setting.range.max) / 2);
       }
     }
 
