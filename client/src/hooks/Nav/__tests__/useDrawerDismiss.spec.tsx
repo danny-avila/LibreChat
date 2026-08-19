@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
-import useDrawerDismiss from '../useDrawerDismiss';
 import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import useDrawerDismiss from '../useDrawerDismiss';
 
 type Props = {
   expanded: boolean;

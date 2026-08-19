@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { MouseEvent, RefObject } from 'react';
 import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-
-import type { MouseEvent, RefObject } from 'react';
 
 /**
  * Every path that closes the mobile drawer leaves the same two problems, so
