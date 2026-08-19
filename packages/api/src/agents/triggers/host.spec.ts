@@ -315,6 +315,48 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it('releases a prepared result that arrives after setup has timed out', async () => {
+    let finishPreparation!: (value: {
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      releaseOnDefiniteFailure: () => Promise<void>;
+    }) => void;
+    const preparation = new Promise<{
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      releaseOnDefiniteFailure: () => Promise<void>;
+    }>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const fetcher = fetchMock(async () => response({}));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        prepareContinue: () => preparation,
+        timeoutMs: 10,
+      }),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      mode: 'continue',
+      certainty: 'definite',
+      retryable: true,
+      code: 'TIMEOUT',
+    });
+    finishPreparation({
+      status: 'ready',
+      input: 'late durable child result',
+      parentMessageId: 'response-1',
+      releaseOnDefiniteFailure,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('starts independent token, timezone, and origin setup concurrently', async () => {
     let resolveToken!: (value: string) => void;
     let resolveTimezone!: (value: string) => void;

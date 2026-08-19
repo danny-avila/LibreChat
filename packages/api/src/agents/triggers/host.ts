@@ -1,4 +1,4 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type {
   AgentContinueTriggerEnvelope,
@@ -220,12 +220,15 @@ function observeAbort<T>(
   mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
+  onLateValue?: (value: T) => MaybePromise<void>,
 ): Promise<T> {
   if (scope.signal.aborted) {
     return Promise.reject(abortError(mode, scope, parent, 'before dispatch', 'definite'));
   }
   return new Promise<T>((resolve, reject) => {
+    let abandoned = false;
     const onAbort = () => {
+      abandoned = true;
       scope.signal.removeEventListener('abort', onAbort);
       reject(abortError(mode, scope, parent, 'during setup', 'definite'));
     };
@@ -235,6 +238,12 @@ function observeAbort<T>(
       .then(
         (value) => {
           scope.signal.removeEventListener('abort', onAbort);
+          if (abandoned) {
+            Promise.resolve(onLateValue?.(value)).catch((error: unknown) => {
+              logger.error('[agentTriggers] Failed to compensate late setup result', error);
+            });
+            return;
+          }
           resolve(value);
         },
         (error: unknown) => {
@@ -250,9 +259,10 @@ async function setupValue<T>(
   mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
+  onLateValue?: (value: T) => MaybePromise<void>,
 ): Promise<T> {
   try {
-    return await observeAbort(operation, mode, scope, parent);
+    return await observeAbort(operation, mode, scope, parent, onLateValue);
   } catch (error) {
     if (error instanceof AgentTriggerExecutionError) {
       throw error;
@@ -530,6 +540,11 @@ async function startRun(
             mode,
             scope,
             context.signal,
+            async (latePreparation) => {
+              if (latePreparation?.status === 'ready') {
+                await latePreparation.releaseOnDefiniteFailure?.();
+              }
+            },
           )
         : undefined;
     if (preparation?.status === 'settled' && envelope.mode === 'continue') {

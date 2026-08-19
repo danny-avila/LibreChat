@@ -560,11 +560,15 @@ describe('SubagentThreadTaskStore', () => {
     expect(firstRun).toHaveBeenCalledTimes(1);
     expect(replayRun).not.toHaveBeenCalled();
     expect(firstWakeup).toHaveBeenCalledTimes(1);
+    const firstRegistration = firstWakeup.mock.calls[0]?.[0];
+    const replayRegistration = replayWakeup.mock.calls[0]?.[0];
+    expect(firstRegistration?.createdAt).toBe(durableAttempt[0]?.createdAt?.getTime());
+    expect(replayRegistration?.createdAt).toBe(firstRegistration?.createdAt);
     expect(replayWakeup).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: requireAccepted(first).task.taskId,
         parentMessageId: firstParentRunId,
-        createdAt: expect.any(Number),
+        createdAt: firstRegistration?.createdAt,
       }),
     );
     expect(secondWorker.claim(config.scopeId, requireAccepted(replay).task.taskId)).toMatchObject({

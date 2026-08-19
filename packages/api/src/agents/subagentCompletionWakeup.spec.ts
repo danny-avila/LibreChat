@@ -311,6 +311,66 @@ describe('createSubagentCompletionWakeupResolver', () => {
     ).toHaveLength(0);
   });
 
+  it('resolves a crash-retry terminal by logical attempt without blocking its ordered lane', async () => {
+    const { methods, terminal } = resolverMethods();
+    const supersedingTerminal = {
+      ...terminal,
+      messageId: 'task-2:assistant',
+      parentMessageId: 'task-1:user',
+    };
+    methods.getMessages.mockImplementation(async (filter: Record<string, unknown>) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter['subagentTask.attemptKey'] === 'attempt-1') {
+        return [supersedingTerminal];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+          subagentTask: {
+            attemptKey: 'attempt-1',
+            parentRunId: 'response-1',
+            status: 'running',
+          },
+        },
+      ];
+    });
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'acquired',
+      message: supersedingTerminal,
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const prepared = await resolve(wakeupEnvelope(), {
+      idempotencyKey: 'trigger_claim_1',
+    } as never);
+
+    expect(prepared).toMatchObject({
+      status: 'ready',
+      input: expect.stringContaining('"background_task_id":"task-2"'),
+    });
+    expect(methods.claimSubagentTaskResult).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'thread-1',
+      taskId: 'task-2',
+      kind: 'wakeup',
+      claimId: 'trigger_claim_1',
+    });
+  });
+
   it('validates a continued child against its per-task parent instead of original lineage', async () => {
     const { methods } = resolverMethods();
     methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) =>

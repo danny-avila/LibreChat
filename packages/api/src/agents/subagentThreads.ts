@@ -101,13 +101,14 @@ interface PreparedThread {
   initialMessages: BaseMessage[];
   initialStoredMessages: StoredMessage[];
   attemptKey: string;
+  /** Stable source-occurrence time shared by first delivery and every replay. */
+  taskCreatedAt: number;
   userMessageId?: string;
   replay?: {
     status: 'completed' | 'error' | 'cancelled';
     content: string;
     taskId: string;
     parentRunId: string;
-    createdAt: number;
   };
 }
 
@@ -205,6 +206,14 @@ function serializeScope(scope: Omit<SubagentThreadScope, 'version'>): string {
 
 function matchesTenant(actual: string | undefined, expected: string | undefined): boolean {
   return actual === expected;
+}
+
+function durableMessageTime(message: Pick<IMessage, 'createdAt'>, missingMessage: string): number {
+  const value = message.createdAt?.getTime();
+  if (!Number.isSafeInteger(value) || value == null || value < 0) {
+    throw new Error(missingMessage);
+  }
+  return value;
 }
 
 function assertParentPersistence(
@@ -541,7 +550,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             await this.registerTaskWakeup(scope, prepared.conversation.conversationId, request, {
               taskId: prepared.replay?.taskId ?? runtime.taskId,
               parentRunId: prepared.replay?.parentRunId ?? request.parentRunId,
-              createdAt: prepared.replay?.createdAt ?? Date.now(),
+              createdAt: prepared.taskCreatedAt,
             });
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -1593,20 +1602,20 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           const canonicalStart = priorAttempt.find(
             (message) => message.messageId === `${canonicalTaskId}:user`,
           );
-          const createdAt = (canonicalStart?.createdAt ?? terminal.createdAt)?.getTime();
-          if (createdAt == null) {
-            throw new Error('The prior subagent result has no durable occurrence time.');
-          }
+          const taskCreatedAt = durableMessageTime(
+            canonicalStart ?? terminal,
+            'The prior subagent result has no durable occurrence time.',
+          );
           return {
             conversation,
             initialMessages: [],
             initialStoredMessages: [],
             attemptKey,
+            taskCreatedAt,
             replay: {
               status: terminal.subagentTask.status as 'completed' | 'error' | 'cancelled',
               taskId: canonicalTaskId,
               parentRunId: terminal.subagentTask.parentRunId ?? request.parentRunId,
-              createdAt,
               content:
                 terminal.text ??
                 (terminal.subagentTask.status === 'completed'
@@ -1652,12 +1661,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           initialMessages: [],
           initialStoredMessages: [],
           attemptKey,
+          taskCreatedAt: durableMessageTime(
+            savedAbandoned,
+            'The abandoned subagent result has no durable occurrence time.',
+          ),
           replay: {
             status: 'error',
             content: abandonedMessage,
             taskId,
             parentRunId: request.parentRunId,
-            createdAt: savedAbandoned.createdAt?.getTime() ?? Date.now(),
           },
         };
       }
@@ -1705,6 +1717,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         initialMessages,
         initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
         attemptKey,
+        taskCreatedAt: durableMessageTime(
+          savedUserMessage,
+          'The child-thread input has no durable occurrence time.',
+        ),
         userMessageId,
       };
     } catch (error) {

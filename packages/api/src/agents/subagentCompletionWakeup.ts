@@ -152,14 +152,15 @@ function latestAssistantDescendant(messages: IMessage[], anchorId: string): stri
 }
 
 function renderWakeupInput(
-  registration: Pick<SubagentTaskWakeupRegistration, 'taskId' | 'threadId' | 'subagentType'>,
+  registration: Pick<SubagentTaskWakeupRegistration, 'threadId' | 'subagentType'>,
+  resultTaskId: string,
   terminal: IMessage,
 ): string {
   const status = terminal.subagentTask?.status ?? 'error';
   return [
     `A detached subagent task has ${status}. Continue the parent task using its durable result below.`,
     JSON.stringify({
-      background_task_id: registration.taskId,
+      background_task_id: resultTaskId,
       subagent_thread_id: registration.threadId,
       subagent_type: registration.subagentType,
       status,
@@ -253,16 +254,38 @@ export function createSubagentCompletionWakeupResolver({
         status: 404,
       });
     }
-    const terminal = taskMessages.find(
+    let resultTaskId = registration.taskId;
+    let terminal = taskMessages.find(
       (message) =>
         message.messageId === `${registration.taskId}:assistant` &&
         message.subagentTask?.status !== 'running',
     );
-    if (terminal == null) {
-      const started = taskMessages.some(
-        (message) => message.messageId === `${registration.taskId}:user`,
+    const started = taskMessages.find(
+      (message) => message.messageId === `${registration.taskId}:user`,
+    );
+    /** A worker can persist the input, lose its lease, and then have a retry
+     * close the same logical attempt under the retry's runtime task id. Resolve
+     * that terminal by the durable attempt identity so the earlier ordered
+     * delivery cannot block the repaired delivery behind it for the full
+     * abandonment grace period. */
+    if (terminal == null && started?.subagentTask?.attemptKey != null) {
+      const [supersedingTerminal] = await methods.getMessages(
+        {
+          user: userId,
+          conversationId: registration.threadId,
+          'subagentTask.attemptKey': started.subagentTask.attemptKey,
+          'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+        },
+        TASK_SELECT,
+        { sort: { createdAt: -1, _id: -1 }, limit: 1 },
       );
-      if (started) {
+      if (supersedingTerminal?.messageId.endsWith(':assistant') === true) {
+        terminal = supersedingTerminal;
+        resultTaskId = supersedingTerminal.messageId.slice(0, -':assistant'.length);
+      }
+    }
+    if (terminal == null) {
+      if (started != null) {
         if (now() - envelope.event.occurredAt > CHILD_READY_WAIT_MS) {
           throw executionError('The child task owner disappeared before settlement.', {
             code: 'CHILD_TASK_ABANDONED',
@@ -313,7 +336,7 @@ export function createSubagentCompletionWakeupResolver({
     const claim = await methods.claimSubagentTaskResult({
       userId,
       conversationId: registration.threadId,
-      taskId: registration.taskId,
+      taskId: resultTaskId,
       kind: 'wakeup',
       claimId: context.idempotencyKey,
     });
@@ -324,7 +347,7 @@ export function createSubagentCompletionWakeupResolver({
       const released = await methods.releaseSubagentTaskResultClaim({
         userId,
         conversationId: registration.threadId,
-        taskId: registration.taskId,
+        taskId: resultTaskId,
         kind: 'wakeup',
         claimId: context.idempotencyKey,
       });
@@ -339,12 +362,12 @@ export function createSubagentCompletionWakeupResolver({
     return {
       status: 'ready',
       parentMessageId,
-      input: renderWakeupInput(registration, claim.message),
+      input: renderWakeupInput(registration, resultTaskId, claim.message),
       releaseOnDefiniteFailure: async () => {
         await methods.releaseSubagentTaskResultClaim({
           userId,
           conversationId: registration.threadId,
-          taskId: registration.taskId,
+          taskId: resultTaskId,
           kind: 'wakeup',
           claimId: context.idempotencyKey,
         });
