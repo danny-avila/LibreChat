@@ -4,6 +4,7 @@ import type { DeleteResult } from 'mongoose';
 import type {
   AppConfig,
   IChatProjectDocument,
+  IActiveSubagentThreadLease,
   IConversation,
   ISharedLink,
   ISubagentThreadReservation,
@@ -183,6 +184,11 @@ export interface ConversationMethods {
     now: Date;
     tenantId?: string;
   }): Promise<number>;
+  listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]>;
   getConvoOwnership(
     user: string,
     conversationId: string,
@@ -386,6 +392,37 @@ export function createConversationMethods(
       user: input.user,
       ...subagentLeaseTenantFilter(input.tenantId),
       'subagentThreadLease.expiresAt': { $gt: input.now },
+    });
+  }
+
+  /** Resolves only live task addresses so account-wide cancellation stays O(active tasks). */
+  async function listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversations = await Conversation.find({
+      user: input.user,
+      ...subagentLeaseTenantFilter(input.tenantId),
+      'subagentThreadLease.expiresAt': { $gt: input.now },
+    })
+      .select('conversationId subagentThread.parentConversationId +subagentThreadLease')
+      .lean<
+        Array<Pick<IConversation, 'conversationId' | 'subagentThread' | 'subagentThreadLease'>>
+      >();
+    return conversations.flatMap((conversation) => {
+      const { conversationId } = conversation;
+      const parentConversationId = conversation.subagentThread?.parentConversationId;
+      const taskId = conversation.subagentThreadLease?.taskId;
+      return typeof conversationId === 'string' &&
+        conversationId !== '' &&
+        typeof parentConversationId === 'string' &&
+        parentConversationId !== '' &&
+        typeof taskId === 'string' &&
+        taskId !== ''
+        ? [{ conversationId, parentConversationId, taskId }]
+        : [];
     });
   }
 
@@ -1525,6 +1562,7 @@ export function createConversationMethods(
     renewSubagentThreadLease,
     releaseSubagentThreadLease,
     countActiveSubagentThreadLeases,
+    listActiveSubagentThreadLeases,
     getConvoOwnership,
     getConvoRetention,
     getConvoTitle,

@@ -756,19 +756,7 @@ describe('initializeClient — subagent loading', () => {
       endpointOption: makeEndpointOption(),
     });
     const existingConfig = agentClientArgs.subagentTasks;
-    const listSpy = jest.spyOn(existingConfig.store, 'list').mockReturnValueOnce([
-      {
-        taskId: 'existing-task',
-        threadId: 'existing-thread',
-        subagentType: 'researcher',
-        status: 'running',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        resultAvailable: false,
-        resultClaimed: false,
-        pendingControls: 0,
-      },
-    ]);
+    const hasTasksSpy = jest.spyOn(existingConfig.store, 'hasTasks').mockResolvedValueOnce(true);
     mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
     const changedReq = makeSubagentReq();
     changedReq.config.endpoints.agents.capabilities.push('run_in_background');
@@ -783,7 +771,7 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
     expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
     expect(agentClientArgs.agent.subagents).toBeUndefined();
-    listSpy.mockRestore();
+    hasTasksSpy.mockRestore();
   });
 
   it('disables every nested subagent path at the durable child-thread depth limit', async () => {
