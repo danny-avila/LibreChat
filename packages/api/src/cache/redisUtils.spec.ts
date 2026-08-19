@@ -40,9 +40,9 @@ describe('duplicateIoRedisClient', () => {
        * `Cluster`; drive that real discovery path so the test cannot pass merely
        * because a synthetic event happened to share the public event name. */
       const pool = (
-        duplicate as IoRedis.Cluster & {
+        duplicate as unknown as {
           connectionPool: {
-            findOrCreate(options: { host: string; port: number }): IoRedis;
+            findOrCreate(options: { host: string; port: number }): InstanceType<typeof IoRedis>;
           };
         }
       ).connectionPool;
