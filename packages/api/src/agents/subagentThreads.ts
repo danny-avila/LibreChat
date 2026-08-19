@@ -119,6 +119,8 @@ interface TaskThreadLease {
   shared?: {
     token: string;
     lost: boolean;
+    /** Epoch ms this lease is durable until, advanced only by a confirmed renewal. */
+    expiresAt: number;
     heartbeat?: ReturnType<typeof setInterval>;
     heartbeatInFlight?: Promise<void>;
   };
@@ -1071,12 +1073,28 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         throw new Error('The subagent admission fence expired before this deletion began.');
       }
       const deleted = await deletion();
-      /** Past this point the rows are gone. Reporting failure would invite a retry
-       * against conversations that no longer exist, so the lapse is recorded instead. */
       if (!fenceHeld()) {
+        /** The rows are gone, so reporting failure would only invite a retry against
+         * conversations that no longer exist. What the gap can still leave behind is a
+         * child another replica admitted while the fence was down, so the fence is
+         * taken again and the drain repeated to cancel it. */
         logger.error(
-          '[subagentThreads] Completed an owner deletion after its admission fence expired',
+          '[subagentThreads] Owner deletion outlived its admission fence; draining children admitted in the gap',
         );
+        try {
+          fencedUntil = Date.now() + fenceWindowMs;
+          fenceLapsed = false;
+          const reheld = await this.renewOwnerAdmission?.(userId, token, new Date(fencedUntil));
+          if (reheld === false) {
+            await this.fenceOwnerAdmission?.(userId, token, new Date(fencedUntil));
+          }
+          await this.cancelAndDrainForOwner(userId, tenantId);
+        } catch (error) {
+          logger.error(
+            '[subagentThreads] Failed to drain children admitted during the fence gap',
+            error,
+          );
+        }
       }
       return deleted;
     } finally {
@@ -1240,19 +1258,32 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       return false;
     }
     try {
+      const deadline = shared.expiresAt;
       const now = new Date();
+      const renewedUntil = now.getTime() + this.leaseTtlMs;
       const renewed = await this.methods.renewSubagentThreadLease({
         user: scope.userId,
         conversationId: threadId,
         token: shared.token,
         now,
-        expiresAt: new Date(now.getTime() + this.leaseTtlMs),
+        expiresAt: new Date(renewedUntil),
         ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
       });
       if (!renewed) {
         shared.lost = true;
+        return false;
       }
-      return renewed;
+      if (Date.now() >= deadline) {
+        /** The renewal filter compares against the `now` captured before the call, so a
+         * write that only lands after this lease had expired still succeeds and moves
+         * the row forward. An owner drain reading active leases in that gap saw this
+         * thread as free, so the executor stops rather than run past a deletion that
+         * may already have stepped over it. */
+        shared.lost = true;
+        return false;
+      }
+      shared.expiresAt = renewedUntil;
+      return true;
     } catch (error) {
       shared.lost = true;
       logger.warn('[subagentThreads] Lost the shared child-thread lease', error);
@@ -1374,7 +1405,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           'This child thread is already being continued by another run.',
         );
       }
-      lease.shared = { token: sharedToken, lost: false };
+      lease.shared = {
+        token: sharedToken,
+        lost: false,
+        expiresAt: now.getTime() + this.leaseTtlMs,
+      };
       this.startSharedLeaseHeartbeat(scopeId, scope, threadId, lease);
       /** Account deletion can fence the owner after the optimistic probe but before
        * this lease exists. Once the lease is visible, revalidate so deletion either

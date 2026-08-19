@@ -970,9 +970,12 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
       let replayable = replay != null;
       if (request.operation === 'list') {
         const tasks = handler.list(request.scopeId);
+        /** Bounded the same way the requester bounds the merge: a positional slice here
+         * would drop this owner's running children before they ever reached it. */
+        const bounded = boundedTaskList(tasks);
         result = {
-          snapshots: tasks.slice(0, MAX_TASK_SNAPSHOTS).map(boundedSnapshot),
-          truncated: tasks.length > MAX_TASK_SNAPSHOTS,
+          snapshots: bounded.map(boundedSnapshot),
+          truncated: tasks.length > bounded.length,
         };
       } else if (request.operation === 'cancel') {
         result = { cancelled: handler.cancelScope(request.scopeId, request.threadIds) };

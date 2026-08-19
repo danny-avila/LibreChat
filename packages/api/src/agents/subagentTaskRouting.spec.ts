@@ -680,6 +680,50 @@ describe('RedisSubagentTaskControlTransport', () => {
     await Promise.all([...owners.map((owner) => owner.destroy()), requester.destroy()]);
   });
 
+  it('keeps running tasks when one owner caps its own reply', async () => {
+    const bus = new FakeRedisBus();
+    const owner = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'owner', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    const requester = new RedisSubagentTaskControlTransport(
+      asRedis(bus.createClient()),
+      asRedis(bus.createClient()),
+      { namespace: 'test', instanceId: 'requester', requestTimeoutMs: 200, retryDelayMs: 10 },
+    );
+    /** One owner holding more than the cap, oldest settled first: a positional slice in
+     * the reply drops the running children before the requester can bound anything. */
+    const tasks = [
+      ...Array.from({ length: 190 }, (_unused, index) =>
+        snapshot({
+          taskId: `settled-${index + 1}`,
+          threadId: `settled-thread-${index + 1}`,
+          status: 'completed',
+          createdAt: index + 1,
+          resultAvailable: true,
+        }),
+      ),
+      ...Array.from({ length: 30 }, (_unused, index) =>
+        snapshot({
+          taskId: `running-${index + 1}`,
+          threadId: `running-thread-${index + 1}`,
+          status: 'running',
+          createdAt: 1_000 + index,
+        }),
+      ),
+    ];
+    await owner.bind(taskHandler({ list: () => tasks }));
+    await Promise.all(tasks.map((task) => owner.registerTask('scope-1', task.taskId, 60_000)));
+    await requester.bind(taskHandler());
+
+    const listed = await requester.list('scope-1');
+    expect(listed).toHaveLength(200);
+    expect(listed.filter((task) => task.status === 'running')).toHaveLength(30);
+
+    await Promise.all([owner.destroy(), requester.destroy()]);
+  });
+
   it('keeps running tasks when the aggregate cap drops the rest', async () => {
     const bus = new FakeRedisBus();
     const owners = ['owner-old', 'owner-new'].map(
