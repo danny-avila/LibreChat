@@ -19,15 +19,25 @@ readonly ATTEMPT_TIMEOUT_SECONDS=70
 readonly MAX_ATTEMPTS=3
 readonly LOCK_WAIT_ATTEMPTS=60
 
-# `timeout` kills npx, but the apt-get it started keeps running as root and holds the
-# dpkg frontend lock. Steps that install packages after this one are fatal, so wait for
-# the orphan to finish rather than handing it a lock they cannot take.
-wait_for_dpkg_lock() {
+# `timeout` kills npx, but the apt-get it started keeps running as root. Depending on
+# whether it is updating indexes or installing packages, it can hold any of apt's list,
+# archive, or dpkg locks. There can also be a brief lock-free handoff between phases,
+# so require both the locks and package-manager processes to be gone before returning.
+wait_for_apt() {
   for _ in $(seq 1 "${LOCK_WAIT_ATTEMPTS}"); do
-    sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || return 0
+    if ! sudo fuser \
+      /var/lib/apt/lists/lock \
+      /var/cache/apt/archives/lock \
+      /var/lib/dpkg/lock \
+      /var/lib/dpkg/lock-frontend >/dev/null 2>&1 &&
+      ! pgrep -x apt >/dev/null 2>&1 &&
+      ! pgrep -x apt-get >/dev/null 2>&1 &&
+      ! pgrep -x dpkg >/dev/null 2>&1; then
+      return 0
+    fi
     sleep 2
   done
-  echo "::warning::dpkg frontend lock is still held; a later apt step may fail"
+  echo "::warning::apt or dpkg is still active; a later package-install step may fail"
 }
 
 for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
@@ -35,10 +45,10 @@ for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
     exit 0
   fi
   echo "::warning::playwright install-deps attempt ${attempt}/${MAX_ATTEMPTS} failed or timed out"
-  wait_for_dpkg_lock
+  wait_for_apt
   sleep 5
 done
 
 echo "::warning::Optional Playwright font packages were not installed; continuing without them."
-wait_for_dpkg_lock
+wait_for_apt
 exit 0
