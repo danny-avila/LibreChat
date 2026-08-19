@@ -1968,6 +1968,88 @@ describe('SubagentThreadTaskStore', () => {
     }
   });
 
+  it('stops a child whose lease renewal only lands after the lease expired', async () => {
+    const userId = 'late-lease-renewal-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let renewals = 0;
+    const lateMethods = {
+      ...methods,
+      /** Succeeds, but only after the 60ms lease it was extending had already lapsed.
+       * Mongo compares against the `now` captured before the call, so the row moves
+       * forward while an owner drain reading active leases in the gap saw nothing. */
+      renewSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['renewSubagentThreadLease']>) => {
+          renewals += 1;
+          if (renewals === 1) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 120));
+          }
+          return methods.renewSubagentThreadLease(...args);
+        },
+      ),
+    };
+    const store = new SubagentThreadTaskStore(lateMethods, {
+      leaseTtlMs: 60,
+      leaseHeartbeatMs: 10,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) => {
+          markEntered();
+          return new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          });
+        },
+      }),
+    );
+    await entered;
+    await waitForSettled(store, config.scopeId, started);
+
+    /** The executor stops rather than run past a deletion that may already have
+     * stepped over this thread, even though the renewal itself reported success. */
+    expect(store.claim(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'cancelled',
+    });
+  });
+
+  it('drains again when the fence lapses while the deletion is running', async () => {
+    const userId = 'fence-gap-drain-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      /** Holds through the pre-deletion check, then stops confirming, so the fence
+       * lapses while `deletion()` is still removing rows. */
+      renewOwnerAdmission: async () => {
+        throw new Error('database unavailable');
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    const leases = jest.spyOn(methods, 'listActiveSubagentThreadLeases');
+    try {
+      await expect(
+        store.withOwnerDeletionFence(userId, undefined, async () => {
+          await new Promise<void>((resolve) => setTimeout(resolve, 300));
+          return 'deleted';
+        }),
+      ).resolves.toBe('deleted');
+      /** The rows are gone, so the request still succeeds — but a child admitted while
+       * the fence was down is cancelled by a second drain rather than left running. */
+      expect(leases.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      leases.mockRestore();
+    }
+  });
+
   it('treats a renewal that lands after its own deadline as a lapse', async () => {
     const userId = 'fence-late-renewal-user';
     const parentConversationId = randomUUID();
