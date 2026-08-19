@@ -6,6 +6,7 @@ import {
   EModelEndpoint,
   openAISettings,
   googleSettings,
+  getGoogleThinkingBudgetBounds,
   Providers,
   ReasoningEffort,
   AnthropicEffort,
@@ -689,6 +690,16 @@ const meta: Record<string, SettingDefinition> = {
 };
 
 const google: Record<string, SettingDefinition> = {
+  /** Bounds the hand-rolled editor enforced through InputNumber, and they stay
+   *  scoped to this endpoint: the shared definition is rendered by every other
+   *  endpoint, whose own context windows may fall outside them. */
+  maxContextTokens: createDefinition(librechat.maxContextTokens, {
+    range: {
+      min: googleSettings.maxContextTokens.min,
+      max: googleSettings.maxContextTokens.max,
+      step: googleSettings.maxContextTokens.step,
+    },
+  }),
   temperature: createDefinition(baseDefinitions.temperature, {
     default: googleSettings.temperature.default,
     range: {
@@ -829,7 +840,7 @@ const google: Record<string, SettingDefinition> = {
 const googleConfig: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
-  librechat.maxContextTokens,
+  google.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
@@ -850,7 +861,7 @@ const googleCol1: SettingsConfiguration = [
 ];
 
 const googleCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  google.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
@@ -1262,9 +1273,28 @@ export function applyModelAwareDefaults(
   if (endpoint !== EModelEndpoint.google || !model) {
     return settings;
   }
-  return settings.map((setting) =>
-    setting.key === 'maxOutputTokens'
-      ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
-      : setting,
-  );
+  return settings.map((setting) => {
+    if (setting.key === 'maxOutputTokens') {
+      return { ...setting, default: googleSettings.maxOutputTokens.reset(model) };
+    }
+    /** The shared thinking budget range is model-agnostic, so it caps Pro below
+     *  its real ceiling and accepts Flash values the provider rejects. The
+     *  maximum and the positive floor move together. `range.min` stays -1 so
+     *  the "decide automatically" sentinel remains typeable. */
+    if (setting.key === 'thinkingBudget' && setting.range != null) {
+      const bounds = getGoogleThinkingBudgetBounds(model);
+      if (bounds != null) {
+        return {
+          ...setting,
+          range: {
+            ...setting.range,
+            max: bounds.max,
+            positiveMin: bounds.min,
+            modelSpecific: true,
+          },
+        };
+      }
+    }
+    return setting;
+  });
 }
