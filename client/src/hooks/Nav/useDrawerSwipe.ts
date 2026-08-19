@@ -28,7 +28,7 @@ const SETTLE_BUFFER_MS = 80;
  * setting: the reveal is safe exactly when there is nothing uncovered to see it
  * in, however the width was arrived at.
  */
-const drawerCoversPane = (drawer: HTMLElement): boolean =>
+export const drawerCoversPane = (drawer: HTMLElement): boolean =>
   (drawer.clientWidth || window.innerWidth) >= window.innerWidth;
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */

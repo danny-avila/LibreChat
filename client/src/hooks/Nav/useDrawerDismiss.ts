@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, RefObject } from 'react';
-import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { drawerCoversPane } from '~/hooks/Nav/useDrawerSwipe';
 
 /**
  * Every path that closes the mobile drawer leaves the same two problems, so
@@ -57,6 +58,15 @@ export default function useDrawerDismiss({
      *  is anything still moving, and arming anyway would leave a transparent
      *  full-screen scrim swallowing taps for the length of the guard. */
     if (!wasSmallScreen || prefersReducedMotion) {
+      return;
+    }
+
+    /** The guard exists to cover a pane that is still sliding. A close under a
+     *  drawer that covers it is a reveal, where the pane is already in place,
+     *  so holding the pointer there would only make the app feel unresponsive
+     *  for the length of the transition. */
+    const drawer = document.getElementById(MOBILE_DRAWER_ID);
+    if (drawer == null || drawerCoversPane(drawer)) {
       return;
     }
 

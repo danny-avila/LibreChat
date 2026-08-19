@@ -170,7 +170,11 @@ export default function Root() {
                   >
                     <Outlet />
                   </div>
-                  {isSmallScreen && drawerStrip && (
+                  {/* `isClosing` keeps it through a close that began while the
+                      strip was still on: disabling it unmounts the scrim at
+                      once, but the drawer needs the whole transition to widen,
+                      so that close still slides the pane. */}
+                  {isSmallScreen && (drawerStrip || isClosing) && (
                     <MobileDrawerScrim
                       expanded={sidebarExpanded}
                       isClosing={isClosing}

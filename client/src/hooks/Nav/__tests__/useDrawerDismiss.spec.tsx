@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import useDrawerDismiss from '../useDrawerDismiss';
 
@@ -9,14 +9,29 @@ type Props = {
   prefersReducedMotion: boolean;
 };
 
+const VIEWPORT_WIDTH = 400;
+
+/**
+ * Defaults to a drawer that leaves a strip uncovered, which is the shape the
+ * pointer guard exists for. Pass the full viewport width to model the default
+ * setting, where the close is a reveal and the pane never moves.
+ */
 function setup({
   expanded,
   isSmallScreen,
   prefersReducedMotion = false,
-}: Omit<Props, 'prefersReducedMotion'> & { prefersReducedMotion?: boolean }) {
+  drawerWidth = 320,
+}: Omit<Props, 'prefersReducedMotion'> & {
+  prefersReducedMotion?: boolean;
+  drawerWidth?: number;
+}) {
   const pane = document.createElement('div');
   pane.tabIndex = -1;
-  document.body.appendChild(pane);
+  const drawer = document.createElement('div');
+  drawer.id = MOBILE_DRAWER_ID;
+  Object.defineProperty(drawer, 'clientWidth', { value: drawerWidth, configurable: true });
+  Object.defineProperty(window, 'innerWidth', { value: VIEWPORT_WIDTH, configurable: true });
+  document.body.append(pane, drawer);
   const paneRef: React.RefObject<HTMLElement> = { current: pane };
   const setOpen = jest.fn();
 
@@ -75,6 +90,23 @@ describe('useDrawerDismiss', () => {
      */
     it('does not arm when an expanded desktop sidebar crosses into mobile', () => {
       const { result, rerender } = setup({ expanded: true, isSmallScreen: false });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    /**
+     * A drawer that covers the pane closes as a reveal, with the pane already
+     * repositioned beneath it. Holding the pointer there would only make the
+     * app feel unresponsive for the length of the transition.
+     */
+    it('does not arm when the close is a reveal', () => {
+      const { result, rerender } = setup({
+        expanded: true,
+        isSmallScreen: true,
+        drawerWidth: VIEWPORT_WIDTH,
+      });
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
