@@ -87,3 +87,24 @@ describe('context map and pricing map parity', () => {
     }
   });
 });
+
+describe('matchModelName stub fallback warning', () => {
+  it('resolves known models to their exact table key (no warning path)', () => {
+    expect(matchModelName('claude-sonnet-5', EModelEndpoint.anthropic)).toBe('claude-sonnet-5');
+    expect(matchModelName('claude-opus-5', EModelEndpoint.anthropic)).toBe('claude-opus-5');
+  });
+
+  it('resolves unknown Anthropic models to the claude- catch-all stub', () => {
+    const resolved = matchModelName('claude-sonnet-6', EModelEndpoint.anthropic);
+    expect(resolved).toBe('claude-');
+    const resolvedHaiku = matchModelName('claude-haiku-4', EModelEndpoint.anthropic);
+    expect(resolvedHaiku).toBe('claude-');
+  });
+
+  it('still resolves table substrings that are not degenerate stubs', () => {
+    // 'claude-4-5' is not in the table; it must fall to the 'claude-4' prefix,
+    // which is a real model prefix (not a catch-all stub), so no stub semantics.
+    const resolved = matchModelName('claude-4-5', EModelEndpoint.anthropic);
+    expect(['claude-4', 'claude-sonnet-4']).toContain(resolved);
+  });
+});

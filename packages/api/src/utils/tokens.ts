@@ -1,4 +1,5 @@
 import z from 'zod';
+import { logger } from '@librechat/data-schemas';
 import { EModelEndpoint, supportsContext1m } from 'librechat-data-provider';
 import type { EndpointTokenConfig, TokenConfig } from '~/types';
 
@@ -734,6 +735,20 @@ export function getModelMaxOutputTokens(
  * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
  * matchModelName('unknown-model'); // Returns undefined
  */
+/**
+ * Model names already warned about resolving to a degenerate catch-all stub
+ * (e.g. `claude-`), so the warning is emitted once per name instead of on
+ * every request. Unknown models silently falling back to a stub disables
+ * prompt caching and mis-sizes the context window (issue #14980); the warning
+ * makes the degradation visible instead of silent.
+ */
+const warnedStubModelNames = new Set<string>();
+
+/** Catch-all prefixes that match any model of their family (e.g. `claude-`). */
+function isStubTokenKey(key: string): boolean {
+  return key.endsWith('-') && key.length > 1;
+}
+
 export function matchModelName(
   modelName: string,
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
@@ -757,6 +772,16 @@ export function matchModelName(
     getAnthropicContext1m(modelName, endpoint) != null
   ) {
     return modelName;
+  }
+
+  if (matchedPattern != null && isStubTokenKey(matchedPattern) && !warnedStubModelNames.has(modelName)) {
+    warnedStubModelNames.add(modelName);
+    logger.warn(
+      `[matchModelName] Model "${modelName}" is not in the token table; ` +
+        `resolved to catch-all "${matchedPattern}" fallback defaults. Prompt caching is ` +
+        `disabled and the context window is assumed at the fallback size. Add the model to ` +
+        `the token table or configure tokenConfig overrides.`,
+    );
   }
   return matchedPattern || modelName;
 }
