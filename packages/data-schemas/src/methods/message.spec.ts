@@ -29,6 +29,9 @@ let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageTex
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
+let releaseSubagentTaskResultClaim: ReturnType<
+  typeof createMessageMethods
+>['releaseSubagentTaskResultClaim'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -49,6 +52,7 @@ beforeAll(async () => {
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
   claimSubagentTaskResult = methods.claimSubagentTaskResult;
+  releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
 });
@@ -1569,6 +1573,7 @@ describe('Message Operations', () => {
         userId: 'user123',
         conversationId,
         taskId,
+        kind: 'manual',
         claimId: 'poll-1',
       });
       expect(first.status).toBe('acquired');
@@ -1579,14 +1584,136 @@ describe('Message Operations', () => {
         userId: 'user123',
         conversationId,
         taskId,
+        kind: 'manual',
         claimId: 'poll-1',
       });
       expect(retried.status).toBe('acquired');
 
       /** Another invocation is told it was collected instead of handed a copy. */
       await expect(
-        claimSubagentTaskResult({ userId: 'user123', conversationId, taskId, claimId: 'poll-2' }),
-      ).resolves.toEqual({ status: 'claimed' });
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-2',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('elects either a manual poll or one idempotent automatic wakeup', async () => {
+      const manualTaskId = uuidv4();
+      const wakeupTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(manualTaskId, conversationId, 'completed');
+      await terminalResult(wakeupTaskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'wakeup',
+          claimId: 'delivery-1',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+
+      const wakeupClaim = {
+        userId: 'user123',
+        conversationId,
+        taskId: wakeupTaskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-2',
+      };
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, claimId: 'delivery-3' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, kind: 'manual', claimId: 'poll-2' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('preserves and upgrades retries of legacy manual claims without a kind', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'legacy-poll',
+      });
+      await Message.collection.updateOne(
+        { user: 'user123', conversationId, messageId: `${taskId}:assistant` },
+        { $unset: { 'subagentTask.resultClaim.kind': '' } },
+      );
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        message: { subagentTask: { resultClaim: { kind: 'manual', claimId: 'legacy-poll' } } },
+      });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'wakeup',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('releases only the exact rejected wakeup so manual collection can take over', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      const wakeup = {
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-1',
+      };
+      await expect(claimSubagentTaskResult(wakeup)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        releaseSubagentTaskResultClaim({ ...wakeup, claimId: 'another-delivery' }),
+      ).resolves.toBe(false);
+      await expect(releaseSubagentTaskResultClaim(wakeup)).resolves.toBe(true);
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-after-rejection',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
     });
 
     it('reports a result that is missing or still running as not found', async () => {
@@ -1599,6 +1726,7 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId,
           taskId: runningTaskId,
+          kind: 'manual',
           claimId: 'poll-1',
         }),
       ).resolves.toEqual({ status: 'not_found' });
@@ -1608,6 +1736,7 @@ describe('Message Operations', () => {
           userId: 'user123',
           conversationId,
           taskId: uuidv4(),
+          kind: 'manual',
           claimId: 'poll-1',
         }),
       ).resolves.toEqual({ status: 'not_found' });
@@ -1623,6 +1752,7 @@ describe('Message Operations', () => {
           userId: 'other-user',
           conversationId,
           taskId,
+          kind: 'manual',
           claimId: 'poll-1',
         }),
       ).resolves.toEqual({ status: 'not_found' });

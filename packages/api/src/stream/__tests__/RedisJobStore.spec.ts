@@ -32,8 +32,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function jobHashFromCreationCall(call: unknown[]): Record<string, string> {
   const keyCount = Number(call[1]);
-  // JOB_CREATE_LUA receives twelve scalar arguments before its HSET pairs.
-  const fields = call.slice(14 + keyCount);
+  // JOB_CREATE_LUA receives thirteen scalar arguments before its HSET pairs.
+  const fields = call.slice(15 + keyCount);
   const hash = Object.fromEntries(
     Array.from({ length: fields.length / 2 }, (_, index) => [
       String(fields[index * 2]),

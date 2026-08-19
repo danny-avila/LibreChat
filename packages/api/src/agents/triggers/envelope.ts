@@ -6,7 +6,7 @@ import { cloneJsonValue } from '../json';
 export const AGENT_TRIGGER_ENVELOPE_VERSION = 1 as const;
 export const AGENT_TRIGGER_IDEMPOTENCY_PREFIX = 'trigger_';
 
-export type AgentTriggerMode = 'fire' | 'steer';
+export type AgentTriggerMode = 'continue' | 'fire' | 'steer';
 
 export interface AgentTriggerSource {
   /** Stable identity of the configured source, such as a webhook or schedule id. */
@@ -50,6 +50,13 @@ export interface AgentFireRunContext {
  */
 export type AgentFireTarget = AgentTriggerTarget;
 
+export interface AgentContinueTarget extends AgentTriggerTarget {
+  /** Existing conversation that receives a new host-authored turn. */
+  conversationId: string;
+  /** Persisted branch leaf below which the new turn is appended. */
+  parentMessageId: string;
+}
+
 export interface AgentSteerTarget extends AgentTriggerTarget {
   /** Existing conversation whose active generation receives the input. */
   conversationId: string;
@@ -78,12 +85,20 @@ export interface AgentFireTriggerEnvelope extends AgentTriggerEnvelopeBase {
   run?: AgentFireRunContext;
 }
 
+export interface AgentContinueTriggerEnvelope extends AgentTriggerEnvelopeBase {
+  mode: 'continue';
+  target: AgentContinueTarget;
+}
+
 export interface AgentSteerTriggerEnvelope extends AgentTriggerEnvelopeBase {
   mode: 'steer';
   target: AgentSteerTarget;
 }
 
-export type AgentTriggerEnvelope = AgentFireTriggerEnvelope | AgentSteerTriggerEnvelope;
+export type AgentTriggerEnvelope =
+  | AgentContinueTriggerEnvelope
+  | AgentFireTriggerEnvelope
+  | AgentSteerTriggerEnvelope;
 
 interface CreateAgentTriggerEnvelopeBase {
   requestId: string;
@@ -99,6 +114,10 @@ export type CreateAgentTriggerEnvelopeInput =
       mode: 'fire';
       target: AgentFireTarget;
       run?: AgentFireRunContext;
+    })
+  | (CreateAgentTriggerEnvelopeBase & {
+      mode: 'continue';
+      target: AgentContinueTarget;
     })
   | (CreateAgentTriggerEnvelopeBase & {
       mode: 'steer';
@@ -235,6 +254,18 @@ export function createAgentTriggerEnvelope(
     };
   }
 
+  if (input.mode === 'continue') {
+    return {
+      ...base,
+      mode: input.mode,
+      target: {
+        agentId: requireString(input.target?.agentId, 'target.agentId'),
+        conversationId: requireString(input.target?.conversationId, 'target.conversationId'),
+        parentMessageId: requireString(input.target?.parentMessageId, 'target.parentMessageId'),
+      },
+    };
+  }
+
   throw error(`Unsupported agent trigger mode: ${receivedMode}`);
 }
 
@@ -249,7 +280,7 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
   }
 
   const mode = envelope.mode;
-  if (mode !== 'fire' && mode !== 'steer') {
+  if (mode !== 'continue' && mode !== 'fire' && mode !== 'steer') {
     throw error(`Unsupported agent trigger mode: ${String(mode)}`);
   }
 
@@ -300,6 +331,18 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
     };
   }
 
+  if (mode === 'continue') {
+    return {
+      ...base,
+      mode,
+      target: {
+        agentId: requireString(target.agentId, 'target.agentId'),
+        conversationId: requireString(target.conversationId, 'target.conversationId'),
+        parentMessageId: requireString(target.parentMessageId, 'target.parentMessageId'),
+      },
+    };
+  }
+
   if (target.preempt != null && typeof target.preempt !== 'boolean') {
     throw error('target.preempt must be a boolean');
   }
@@ -336,7 +379,8 @@ export function getAgentTriggerIdempotencyKey(envelope: AgentTriggerEnvelope): s
         envelope.deliveryId,
         envelope.mode,
         envelope.target.agentId,
-        envelope.mode === 'steer' ? envelope.target.conversationId : '',
+        envelope.mode === 'fire' ? '' : envelope.target.conversationId,
+        envelope.mode === 'continue' ? envelope.target.parentMessageId : '',
       ]),
     )
     .digest('hex');

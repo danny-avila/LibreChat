@@ -101,10 +101,14 @@ interface PreparedThread {
   initialMessages: BaseMessage[];
   initialStoredMessages: StoredMessage[];
   attemptKey: string;
+  /** Stable source-occurrence time shared by first delivery and every replay. */
+  taskCreatedAt: number;
   userMessageId?: string;
   replay?: {
     status: 'completed' | 'error' | 'cancelled';
     content: string;
+    taskId: string;
+    parentRunId: string;
   };
 }
 
@@ -141,6 +145,19 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  onTaskPrepared?: (registration: SubagentTaskWakeupRegistration) => Promise<void> | void;
+}
+
+export interface SubagentTaskWakeupRegistration {
+  userId: string;
+  parentConversationId: string;
+  parentMessageId: string;
+  parentAgentId?: string;
+  tenantId?: string;
+  taskId: string;
+  threadId: string;
+  subagentType: string;
+  createdAt: number;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -189,6 +206,14 @@ function serializeScope(scope: Omit<SubagentThreadScope, 'version'>): string {
 
 function matchesTenant(actual: string | undefined, expected: string | undefined): boolean {
   return actual === expected;
+}
+
+function durableMessageTime(message: Pick<IMessage, 'createdAt'>, missingMessage: string): number {
+  const value = message.createdAt?.getTime();
+  if (!Number.isSafeInteger(value) || value == null || value < 0) {
+    throw new Error(missingMessage);
+  }
+  return value;
 }
 
 function assertParentPersistence(
@@ -387,6 +412,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ) => Promise<boolean>;
 
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  private readonly onTaskPrepared?: SubagentThreadTaskStoreOptions['onTaskPrepared'];
   private taskControlTransport?: SubagentTaskControlTransport;
 
   constructor(
@@ -418,6 +444,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
     this.renewOwnerAdmission = options.renewOwnerAdmission;
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
+    this.onTaskPrepared = options.onTaskPrepared;
   }
 
   /** Enables optional cross-replica lookup after the host's Redis service is ready. */
@@ -496,6 +523,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           lease.taskId = runtime.taskId;
           lease.running = true;
           const detachedUsage: UsageMetadata[] = [];
+          let prepared: PreparedThread | undefined;
           try {
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -510,7 +538,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               this.taskRoutingTtlMs,
             );
             await parentReady;
-            const prepared = await this.prepareThread(
+            prepared = await this.prepareThread(
               request.scopeId,
               scope,
               threadId,
@@ -519,6 +547,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               runtime.taskId,
               lease,
             );
+            await this.registerTaskWakeup(scope, prepared.conversation.conversationId, request, {
+              taskId: prepared.replay?.taskId ?? runtime.taskId,
+              parentRunId: prepared.replay?.parentRunId ?? request.parentRunId,
+              createdAt: prepared.taskCreatedAt,
+            });
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
@@ -533,8 +566,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 'This child thread is already being continued by another run.',
               );
             }
+            const preparedThread = prepared;
             const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
-              request.run(runtime, prepared.initialMessages),
+              request.run(runtime, preparedThread.initialMessages),
             );
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -555,6 +589,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             );
             return result;
           } catch (error) {
+            /** A replay is already terminal in Mongo. A temporary wakeup-queue
+             * outage must not overwrite that canonical result with a new error. */
+            if (prepared?.replay != null) {
+              throw error;
+            }
             const mayPersist =
               lease.shared == null || (await this.renewSharedLease(scope, threadId, lease));
             const terminalTask = this.get(request.scopeId, runtime.taskId);
@@ -778,6 +817,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         userId,
         conversationId: threadId,
         taskId,
+        kind: 'manual',
         claimId: invocationId,
       });
     } catch (error) {
@@ -1553,13 +1593,29 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           .reverse()
           .find((message) => message.subagentTask?.status !== 'running');
         if (terminal?.subagentTask != null) {
+          const canonicalTaskId = terminal.messageId.endsWith(':assistant')
+            ? terminal.messageId.slice(0, -':assistant'.length)
+            : '';
+          if (canonicalTaskId === '') {
+            throw new Error('The prior subagent result has an invalid task identity.');
+          }
+          const canonicalStart = priorAttempt.find(
+            (message) => message.messageId === `${canonicalTaskId}:user`,
+          );
+          const taskCreatedAt = durableMessageTime(
+            canonicalStart ?? terminal,
+            'The prior subagent result has no durable occurrence time.',
+          );
           return {
             conversation,
             initialMessages: [],
             initialStoredMessages: [],
             attemptKey,
+            taskCreatedAt,
             replay: {
               status: terminal.subagentTask.status as 'completed' | 'error' | 'cancelled',
+              taskId: canonicalTaskId,
+              parentRunId: terminal.subagentTask.parentRunId ?? request.parentRunId,
               content:
                 terminal.text ??
                 (terminal.subagentTask.status === 'completed'
@@ -1588,6 +1644,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             error: true,
             subagentTask: {
               attemptKey,
+              parentRunId: request.parentRunId,
               ...(requestFingerprint == null ? {} : { requestFingerprint }),
               status: 'error',
             },
@@ -1604,7 +1661,16 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           initialMessages: [],
           initialStoredMessages: [],
           attemptKey,
-          replay: { status: 'error', content: abandonedMessage },
+          taskCreatedAt: durableMessageTime(
+            savedAbandoned,
+            'The abandoned subagent result has no durable occurrence time.',
+          ),
+          replay: {
+            status: 'error',
+            content: abandonedMessage,
+            taskId,
+            parentRunId: request.parentRunId,
+          },
         };
       }
       const branch = selectLatestBranch(allMessages);
@@ -1631,6 +1697,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           isCreatedByUser: true,
           subagentTask: {
             attemptKey,
+            parentRunId: request.parentRunId,
             ...(requestFingerprint == null ? {} : { requestFingerprint }),
             status: 'running',
           },
@@ -1650,6 +1717,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         initialMessages,
         initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
         attemptKey,
+        taskCreatedAt: durableMessageTime(
+          savedUserMessage,
+          'The child-thread input has no durable occurrence time.',
+        ),
         userMessageId,
       };
     } catch (error) {
@@ -1732,6 +1803,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
         subagentTask: {
           attemptKey: prepared.attemptKey,
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),
@@ -1775,6 +1847,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         error: true,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),
@@ -1789,6 +1862,28 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       throw new Error('Unable to persist the child-thread failure.');
     }
     await this.touchAfterMessage(scope, threadId, taskId, 'failed');
+  }
+
+  private async registerTaskWakeup(
+    scope: SubagentThreadScope,
+    threadId: string,
+    request: SubagentTaskStartRequest,
+    task: { taskId: string; parentRunId: string; createdAt: number },
+  ): Promise<void> {
+    if (this.onTaskPrepared == null) {
+      return;
+    }
+    await this.onTaskPrepared({
+      userId: scope.userId,
+      parentConversationId: scope.parentConversationId,
+      parentMessageId: task.parentRunId,
+      ...(request.parentAgentId == null ? {} : { parentAgentId: request.parentAgentId }),
+      ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+      taskId: task.taskId,
+      threadId,
+      subagentType: request.subagentType,
+      createdAt: task.createdAt,
+    });
   }
 
   private async persistCancellation(
@@ -1816,6 +1911,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         unfinished: false,
         subagentTask: {
           attemptKey: createSubagentAttemptKey(request.scopeId, request.idempotencyKey),
+          parentRunId: request.parentRunId,
           ...(normalizedRequestFingerprint(request) == null
             ? {}
             : { requestFingerprint: normalizedRequestFingerprint(request) }),

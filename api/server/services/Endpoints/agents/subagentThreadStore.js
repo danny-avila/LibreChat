@@ -1,12 +1,20 @@
 const {
   cacheConfig,
   ioredisClient,
+  isEnabled,
   registerShutdownTask,
   duplicateIoRedisClient,
   createSubagentThreadTaskStore,
+  createSubagentCompletionWakeupHandler,
   RedisSubagentTaskControlTransport,
 } = require('@librechat/api');
 const db = require('~/models');
+const { enqueueAgentTrigger } = require('../../Agents/triggers');
+
+/** Keep producers off for the first rollout so older trigger workers cannot
+ * permanently reject the new `continue` envelope. Enable only after every API
+ * replica runs a release that understands completion wakeups. */
+const completionWakeupsEnabled = isEnabled(process.env.ENABLE_SUBAGENT_COMPLETION_WAKEUPS);
 
 /** Durable logical threads use normal LibreChat conversations/messages. Mongo
  * fences continuation; optional Redis routing reaches the live owning process. */
@@ -14,6 +22,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
   {
     acquireSubagentThreadLease: db.acquireSubagentThreadLease,
     claimSubagentTaskResult: db.claimSubagentTaskResult,
+    releaseSubagentTaskResultClaim: db.releaseSubagentTaskResultClaim,
     countActiveSubagentThreadLeases: db.countActiveSubagentThreadLeases,
     deleteConvos: db.deleteConvos,
     deleteMessages: db.deleteMessages,
@@ -31,6 +40,9 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     fenceOwnerAdmission: db.fenceSubagentAdmission,
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
+    ...(completionWakeupsEnabled && {
+      onTaskPrepared: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
+    }),
   },
 );
 

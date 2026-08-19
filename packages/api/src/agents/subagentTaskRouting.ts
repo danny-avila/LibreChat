@@ -289,6 +289,11 @@ export function boundedTaskList(tasks: SubagentTaskSnapshot[]): SubagentTaskSnap
   return [...keptRunning, ...settled.slice(-remaining)].sort(byCreatedAt);
 }
 
+/** Applies the shared model-facing bound to a durable child result. */
+export function boundedSubagentTaskResult(result: string): string {
+  return truncateMiddle(result, MAX_RESULT_CHARS);
+}
+
 /** Applies the routed result and snapshot bounds to a claim from any source. */
 export function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
   if (claim.status === 'not_found') {
@@ -296,7 +301,7 @@ export function boundedClaim(claim: SubagentTaskClaim): SubagentTaskClaim {
   }
   const task = boundedSnapshot(claim.task);
   if (claim.status === 'completed') {
-    return { status: 'completed', task, result: truncateMiddle(claim.result, MAX_RESULT_CHARS) };
+    return { status: 'completed', task, result: boundedSubagentTaskResult(claim.result) };
   }
   if (claim.status === 'error' || claim.status === 'cancelled') {
     return { status: claim.status, task, error: truncateMiddle(claim.error, MAX_ERROR_CHARS) };

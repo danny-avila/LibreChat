@@ -50,7 +50,7 @@ interface MessageQueryOptions {
 
 export type SubagentTaskResultClaim =
   | { status: 'not_found' }
-  | { status: 'claimed' }
+  | { status: 'claimed'; message: IMessage }
   | { status: 'acquired'; message: IMessage };
 
 export interface MessageMethods {
@@ -91,8 +91,16 @@ export interface MessageMethods {
     userId: string;
     conversationId: string;
     taskId: string;
+    kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<SubagentTaskResultClaim>;
+  releaseSubagentTaskResultClaim(params: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -529,21 +537,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
-  /**
-   * Assigns one durable terminal child result to the polling invocation that collects
-   * it. The same invocation may re-acquire, so a poll whose response was lost recovers
-   * the result it never received; a different invocation is told it was already
-   * collected rather than handed a second copy.
-   */
+  /** Atomically assigns one durable terminal child result to either its
+   * explicit poller or one idempotent automatic wakeup delivery. */
   async function claimSubagentTaskResult({
     userId,
     conversationId,
     taskId,
+    kind,
     claimId,
   }: {
     userId: string;
     conversationId: string;
     taskId: string;
+    kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<SubagentTaskResultClaim> {
     if (
@@ -551,38 +557,112 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       taskId.length > 256 ||
       conversationId.length === 0 ||
       conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
       claimId.length === 0 ||
       claimId.length > 128
     ) {
       throw new TypeError('Invalid subagent task result claim');
     }
     const Message = mongoose.models.Message as Model<IMessage>;
-    const filter = {
-      user: userId,
-      conversationId,
-      messageId: `${taskId}:assistant`,
-      'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+    const messageId = `${taskId}:assistant`;
+    const terminal = ['completed', 'error', 'cancelled'];
+    const claim = {
+      kind,
+      claimId,
+      claimedAt: new Date(),
+    };
+    const claimable = {
+      $or: [
+        { 'subagentTask.resultClaim': { $exists: false } },
+        {
+          'subagentTask.resultClaim.kind': kind,
+          'subagentTask.resultClaim.claimId': claimId,
+        },
+        ...(kind === 'manual'
+          ? [
+              {
+                'subagentTask.resultClaim.kind': { $exists: false },
+                'subagentTask.resultClaim.claimId': claimId,
+              },
+            ]
+          : []),
+      ],
+    };
+    const projection = {
+      messageId: 1,
+      conversationId: 1,
+      parentMessageId: 1,
+      sender: 1,
+      text: 1,
+      error: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      subagentTask: 1,
     };
     const acquired = await Message.findOneAndUpdate(
       {
-        ...filter,
-        $or: [
-          { 'subagentTask.resultClaim': { $exists: false } },
-          { 'subagentTask.resultClaim.claimId': claimId },
-        ],
+        user: userId,
+        conversationId,
+        messageId,
+        'subagentTask.status': { $in: terminal },
+        ...claimable,
       },
-      { $set: { 'subagentTask.resultClaim': { claimId, claimedAt: new Date() } } },
-      {
-        new: true,
-        timestamps: false,
-        projection: { messageId: 1, conversationId: 1, text: 1, subagentTask: 1 },
-      },
+      { $set: { 'subagentTask.resultClaim': claim } },
+      { new: true, projection },
     ).lean<IMessage | null>();
     if (acquired != null) {
       return { status: 'acquired', message: acquired };
     }
-    const existing = await Message.exists(filter);
-    return existing == null ? { status: 'not_found' } : { status: 'claimed' };
+    const existing = await Message.findOne({
+      user: userId,
+      conversationId,
+      messageId,
+      'subagentTask.status': { $in: terminal },
+    })
+      .select(projection)
+      .lean<IMessage | null>();
+    return existing == null ? { status: 'not_found' } : { status: 'claimed', message: existing };
+  }
+
+  /** Releases only the exact consumer assignment. This is used when a
+   * pre-admission automatic continuation is definitively rejected, allowing a
+   * later manual poll (or the same delivery retry) to claim the durable result. */
+  async function releaseSubagentTaskResultClaim({
+    userId,
+    conversationId,
+    taskId,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean> {
+    if (
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
+      claimId.length === 0 ||
+      claimId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task result claim release');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const result = await Message.updateOne(
+      {
+        user: userId,
+        conversationId,
+        messageId: `${taskId}:assistant`,
+        'subagentTask.resultClaim.kind': kind,
+        'subagentTask.resultClaim.claimId': claimId,
+      },
+      { $unset: { 'subagentTask.resultClaim': 1 } },
+    );
+    return result.modifiedCount === 1;
   }
 
   /**
@@ -723,6 +803,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateToolCallResult,
     updateMessage,
     claimSubagentTaskResult,
+    releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
     getMessage,

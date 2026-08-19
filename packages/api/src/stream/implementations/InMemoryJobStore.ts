@@ -268,6 +268,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData> {
     if (typeof userId !== 'string' || userId.length === 0) {
       throw new Error('Generation job requires a non-empty user id');
@@ -288,6 +289,9 @@ export class InMemoryJobStore implements IJobStoreV2 {
       (!Number.isSafeInteger(expectedPredecessorCreatedAt) || expectedPredecessorCreatedAt < 0)
     ) {
       throw new Error('Invalid expected generation predecessor');
+    }
+    if (rejectActivePredecessor != null && typeof rejectActivePredecessor !== 'boolean') {
+      throw new Error('Invalid active generation predecessor policy');
     }
     const providerExecutionId = initialMetadata.providerExecutionId;
     if (
@@ -345,6 +349,20 @@ export class InMemoryJobStore implements IJobStoreV2 {
     const assertExpectedPredecessorCompatible = (): void => {
       const current = this.jobs.get(streamId);
       const currentCreatedAt = current?.createdAt ?? this.getRetainedGenerationEpoch(streamId);
+      if (
+        rejectActivePredecessor === true &&
+        (current?.status === 'running' ||
+          current?.status === 'requires_action' ||
+          current?.terminalPersistencePending === true)
+      ) {
+        throw new JobPredecessorMismatchError({
+          createdAt: current.createdAt,
+          active: true,
+          verified: true,
+          status: current.status,
+          ...(current.conversationId !== undefined && { conversationId: current.conversationId }),
+        });
+      }
       if (
         expectedPredecessorCreatedAt == null ||
         currentCreatedAt === expectedPredecessorCreatedAt

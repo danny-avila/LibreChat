@@ -19,6 +19,7 @@ import type {
   SubagentTaskControlHandler,
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
+import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
@@ -285,6 +286,68 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('registers a host-safe wakeup before child provider work begins', async () => {
+    const userId = 'wakeup-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const run = jest.fn(taskRequest('').run);
+    const onTaskPrepared = jest.fn(async (registration: SubagentTaskWakeupRegistration) => {
+      const messages = await methods.getMessages({
+        user: userId,
+        conversationId: registration.threadId,
+        messageId: `${registration.taskId}:assistant`,
+      });
+      expect(messages).toHaveLength(0);
+      expect(run).not.toHaveBeenCalled();
+    });
+    const store = new SubagentThreadTaskStore(methods, { onTaskPrepared });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        parentRunId: 'parent-response-1',
+        parentAgentId: 'agent_parent_1',
+        run,
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+
+    const settledTask = store.get(config.scopeId, requireAccepted(started).task.taskId);
+    expect(settledTask?.error).toBeUndefined();
+    expect(settledTask).toMatchObject({
+      status: 'completed',
+    });
+    expect(onTaskPrepared).toHaveBeenCalledWith({
+      userId,
+      parentConversationId,
+      parentMessageId: 'parent-response-1',
+      parentAgentId: 'agent_parent_1',
+      taskId: requireAccepted(started).task.taskId,
+      threadId: requireThreadId(started),
+      subagentType: 'researcher-agent',
+      createdAt: expect.any(Number),
+    });
+  });
+
+  it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {
+    const userId = 'wakeup-failure-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const run = jest.fn(taskRequest('').run);
+    const store = new SubagentThreadTaskStore(methods, {
+      onTaskPrepared: async () => Promise.reject(new Error('trigger queue unavailable')),
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(run).not.toHaveBeenCalled();
+    await expect(
+      store.claimTask(config.scopeId, requireAccepted(started).task.taskId),
+    ).resolves.toMatchObject({
+      status: 'error',
+    });
+  });
+
   it('waits for initial parent persistence before creating the first child', async () => {
     const userId = 'parent-gate-user';
     const parentConversationId = randomUUID();
@@ -452,22 +515,35 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'durable-idempotency-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const firstWorker = new SubagentThreadTaskStore(methods);
-    const secondWorker = new SubagentThreadTaskStore(methods);
+    const firstWakeup = jest.fn(async (_registration: SubagentTaskWakeupRegistration) => undefined);
+    const replayWakeup = jest.fn(
+      async (_registration: SubagentTaskWakeupRegistration) => undefined,
+    );
+    const firstWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: firstWakeup });
+    const secondWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: replayWakeup });
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
     const firstRun = jest.fn(async () => ({
       content: 'Original durable result.',
       messages: [new HumanMessage('Run once.'), new AIMessage('Original durable result.')],
     }));
+    const firstParentRunId = 'original-parent-response';
     const first = firstWorker.start(
       taskRequest(config.scopeId, {
         idempotencyKey: 'cross-worker-attempt',
+        parentRunId: firstParentRunId,
         requestFingerprint: 'same-inputs',
         input: 'Run once.',
         run: firstRun,
       }),
     );
     await waitForSettled(firstWorker, config.scopeId, first);
+    const durableAttempt = await methods.getMessages(
+      { user: userId, conversationId: requireThreadId(first) },
+      '+subagentTask',
+    );
+    expect(durableAttempt[durableAttempt.length - 1]?.subagentTask?.parentRunId).toBe(
+      firstParentRunId,
+    );
 
     const replayRun = jest.fn(taskRequest(config.scopeId).run);
     const replay = secondWorker.start(
@@ -483,6 +559,18 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(firstRun).toHaveBeenCalledTimes(1);
     expect(replayRun).not.toHaveBeenCalled();
+    expect(firstWakeup).toHaveBeenCalledTimes(1);
+    const firstRegistration = firstWakeup.mock.calls[0]?.[0];
+    const replayRegistration = replayWakeup.mock.calls[0]?.[0];
+    expect(firstRegistration?.createdAt).toBe(durableAttempt[0]?.createdAt?.getTime());
+    expect(replayRegistration?.createdAt).toBe(firstRegistration?.createdAt);
+    expect(replayWakeup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: requireAccepted(first).task.taskId,
+        parentMessageId: firstParentRunId,
+        createdAt: firstRegistration?.createdAt,
+      }),
+    );
     expect(secondWorker.claim(config.scopeId, requireAccepted(replay).task.taskId)).toMatchObject({
       status: 'completed',
       result: 'Original durable result.',
