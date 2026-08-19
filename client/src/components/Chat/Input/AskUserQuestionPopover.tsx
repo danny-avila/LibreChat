@@ -193,21 +193,23 @@ function AskUserQuestionPopoverPanel({
           {options.map((option, index) => {
             const isChecked = multiSelect && checked.includes(index);
             return (
-              <button
+              <Button
                 key={option.value}
                 ref={(el) => {
                   optionRefs.current[index] = el;
                 }}
                 type="button"
+                size="sm"
+                variant="choice"
                 role={multiSelect ? 'checkbox' : undefined}
                 aria-checked={multiSelect ? isChecked : undefined}
                 disabled={locked}
+                /** Layout and the keyboard highlight are the only things the
+                 *  popover owns here — these rows are the same answer controls
+                 *  as the cards', so their appearance stays in the variant. */
                 className={cn(
-                  'mt-1 flex w-full items-center gap-3 rounded-lg border border-border-xheavy p-2 text-left text-sm text-text-primary',
-                  selected === index
-                    ? 'bg-surface-active'
-                    : 'bg-surface-tertiary hover:bg-surface-hover',
-                  locked ? 'cursor-not-allowed opacity-60' : '',
+                  'mt-1 h-auto min-h-9 w-full justify-start gap-3 whitespace-normal p-2 text-left',
+                  selected === index && 'bg-surface-active hover:bg-surface-active',
                 )}
                 onClick={() => (multiSelect ? toggleChecked(index) : submitOption(index))}
               >
@@ -222,7 +224,7 @@ function AskUserQuestionPopoverPanel({
                   {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
                 </span>
                 <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>
