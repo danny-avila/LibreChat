@@ -38,6 +38,7 @@ const {
   // Structured Tools
   DALLE3,
   FluxAPI,
+  WaveSpeedAPI,
   OpenWeather,
   StructuredSD,
   StructuredACS,
@@ -190,6 +191,7 @@ const loadTools = async ({
 }) => {
   const toolConstructors = {
     flux: FluxAPI,
+    wavespeed: WaveSpeedAPI,
     calculator: Calculator,
     google: GoogleSearchAPI,
     open_weather: OpenWeather,
@@ -270,6 +272,7 @@ const loadTools = async ({
 
   const toolOptions = {
     flux: imageGenOptions,
+    wavespeed: imageGenOptions,
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     gemini_image_gen: imageGenOptions,

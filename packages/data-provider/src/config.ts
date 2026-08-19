@@ -2478,6 +2478,7 @@ export const imageGenTools = new Set([
   'dall-e',
   'stable-diffusion',
   'flux',
+  'wavespeed',
   'gemini_image_gen',
 ]);
 
