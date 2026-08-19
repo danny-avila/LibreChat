@@ -1,7 +1,12 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
 import type { ScheduleMethods, IScheduleRun } from '@librechat/data-schemas';
 import type { JobState, ScheduleEngineDeps } from './types';
-import { hasResumeHandoffInFlight, hasAbortInFlight, retainedOutcome } from './types';
+import {
+  hasResumeHandoffInFlight,
+  hasAbortInFlight,
+  retainedOutcome,
+  RESUME_HANDOFF_STALE_MS,
+} from './types';
 import { registerShutdownTask } from '~/app/shutdown';
 
 const SWEEP_MS = 5 * 60_000;
@@ -137,6 +142,7 @@ async function settleFromObservedJob(
   deps: ScheduleErasureDeps,
   run: IScheduleRun,
   job: JobState,
+  now: number,
 ): Promise<void> {
   // A PAUSE the owner never managed to project. `recordRunOutcome('requires_action')`
   // moves the row off `started`, which is what frees its global capacity slot; the job
@@ -157,8 +163,11 @@ async function settleFromObservedJob(
       // unprojected pause. The `run` above is a SNAPSHOT: once one sweeper projects the
       // pause, the owner's approval can claim a fresh slot, and a peer still holding the
       // pre-projection snapshot would pass hasResumeHandoffInFlight and unset that slot
-      // and claim stamp under the running continuation. Fence it in the write itself.
-      requireNoResumeClaim: true,
+      // and claim stamp under the running continuation. Fence it in the write itself —
+      // on the SAME staleness bound as the caller's check above, so an abandoned claim
+      // (worker died between claiming and resuming) still recovers rather than pinning
+      // the row `started` forever with its approval unresumable.
+      resumeClaimStaleBefore: new Date(now - RESUME_HANDOFF_STALE_MS),
     });
     return;
   }
@@ -250,7 +259,7 @@ async function settleStrandedRuns(deps: ScheduleErasureDeps): Promise<void> {
         continue;
       }
       if (jobMatchesRun(job.state, run)) {
-        await settleFromObservedJob(deps, run, job.state as JobState);
+        await settleFromObservedJob(deps, run, job.state as JobState, now);
         continue;
       }
       // No job of THIS occurrence's identity, so the durable delivery is the authority.

@@ -2288,7 +2288,7 @@ describe('pause replay is fenced against a concurrent resume claim', () => {
       status: 'requires_action',
       conversationId: 'convo-race',
       autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
-      requireNoResumeClaim: true,
+      resumeClaimStaleBefore: new Date(Date.now() - 10 * 60_000),
     });
     // The approval now claims a FRESH slot; this is the state a stale peer must not touch.
     const claimed = await methods.markRunResumeClaimed(schedule.id, scheduledFor, 3);
@@ -2301,7 +2301,7 @@ describe('pause replay is fenced against a concurrent resume claim', () => {
       status: 'requires_action',
       conversationId: 'convo-race',
       autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
-      requireNoResumeClaim: true,
+      resumeClaimStaleBefore: new Date(Date.now() - 10 * 60_000),
     });
 
     const run = await ScheduleRun.findOne({ scheduleId: schedule.id, scheduledFor }).lean();
@@ -2326,12 +2326,57 @@ describe('pause replay is fenced against a concurrent resume claim', () => {
       status: 'requires_action',
       conversationId: 'convo-stuck',
       autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
-      requireNoResumeClaim: true,
+      resumeClaimStaleBefore: new Date(Date.now() - 10 * 60_000),
     });
 
     const run = await ScheduleRun.findOne({ scheduleId: schedule.id, scheduledFor }).lean();
     expect(run?.status).toBe('requires_action');
     expect(run?.capacitySlot).toBeUndefined();
+  });
+
+  /**
+   * The fence is a staleness CUTOFF, not an existence check, and this is why: a worker
+   * that dies between markRunResumeClaimed and either resuming or rolling back leaves
+   * `resumeClaimedAt` set forever. Rejecting on existence alone would pin the row
+   * `started` for good — holding its global capacity slot, and with its approval
+   * permanently unresumable, since markRunResumeClaimed only matches `requires_action`.
+   * That is precisely the stuck state this replay exists to clear.
+   */
+  it('recovers a row whose resume claim was abandoned by a dead worker', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scheduledFor = new Date('2030-03-03T00:00:00Z');
+    await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor, conversationId: 'convo-abandoned', capacitySlot: 2 }),
+    );
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-abandoned',
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      resumeClaimStaleBefore: new Date(Date.now() - 10 * 60_000),
+    });
+    await methods.markRunResumeClaimed(schedule.id, scheduledFor, 4);
+    // The claiming worker died here: the stamp is now well past the hand-off bound.
+    await ScheduleRun.updateOne(
+      { scheduleId: schedule.id, scheduledFor },
+      { $set: { resumeClaimedAt: new Date(Date.now() - 60 * 60_000) } },
+      { timestamps: false },
+    );
+
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor,
+      status: 'requires_action',
+      conversationId: 'convo-abandoned',
+      autoDisableAfterFailures: Number.MAX_SAFE_INTEGER,
+      resumeClaimStaleBefore: new Date(Date.now() - 10 * 60_000),
+    });
+
+    const run = await ScheduleRun.findOne({ scheduleId: schedule.id, scheduledFor }).lean();
+    expect(run?.status).toBe('requires_action');
+    expect(run?.capacitySlot).toBeUndefined();
+    expect(run?.resumeClaimedAt).toBeUndefined();
   });
 });
 

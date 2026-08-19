@@ -116,18 +116,25 @@ export interface RecordRunOutcomeParams {
   balanceSkipDisableThreshold?: number;
   /**
    * RECOVERY REPLAY of a pause, from an actor holding a possibly-stale row snapshot:
-   * apply the transition ONLY while no resume claim exists. Without it, two clustered
-   * sweepers observing the same unprojected pause race — the first projects it, the
-   * owner's approval then claims a fresh slot (`started` + `resumeClaimedAt`), and the
-   * second still passes its snapshot-based hand-off check and unsets the capacity slot
-   * and claim stamp out from under the running continuation. `markRunResumeClaimed`
-   * sets the stamp in the SAME write that takes the row to `started`, so its absence is
-   * an atomic proof that no resume owns this row.
+   * apply the transition only while no FRESH resume claim owns the row — that is, the
+   * row carries no `resumeClaimedAt`, or one older than this cutoff. Without the fence,
+   * two clustered sweepers observing the same unprojected pause race: the first projects
+   * it, the owner's approval then claims a fresh slot (`markRunResumeClaimed` sets
+   * `started` + `resumeClaimedAt` in ONE write), and the second still passes its
+   * snapshot-based hand-off check and unsets the capacity slot and claim stamp out from
+   * under the running continuation.
+   *
+   * A CUTOFF rather than a mere existence check, because the stamp outlives its meaning:
+   * a worker that dies between claiming and resuming leaves it set forever, and rejecting
+   * on existence alone would strand that row `started` — holding its capacity slot, with
+   * its approval unresumable (`markRunResumeClaimed` only matches `requires_action`) —
+   * which is the very state this replay exists to recover. Pass the same staleness bound
+   * the caller's own in-flight check uses so the two agree.
    *
    * Never set by the generation owner: its own re-pause legitimately clears the stamp as
    * the hand-off's completion signal.
    */
-  requireNoResumeClaim?: boolean;
+  resumeClaimStaleBefore?: Date;
 }
 
 /** Result of claiming/leasing a schedule: the snapshot plus the fencing token to carry. */
@@ -1305,9 +1312,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
           scheduleId: params.scheduleId,
           scheduledFor: params.scheduledFor,
           status: { $in: ['started', 'requires_action'] },
-          // See requireNoResumeClaim: fences a stale-snapshot recovery replay against a
-          // resume that claimed the row after the snapshot was taken.
-          ...(params.requireNoResumeClaim ? { resumeClaimedAt: { $exists: false } } : {}),
+          // See resumeClaimStaleBefore: fences a stale-snapshot recovery replay against a
+          // resume that claimed the row after the snapshot was taken, while still letting
+          // an ABANDONED claim (its worker died mid-hand-off) be recovered.
+          ...(params.resumeClaimStaleBefore != null
+            ? {
+                $or: [
+                  { resumeClaimedAt: { $exists: false } },
+                  { resumeClaimedAt: { $lt: params.resumeClaimStaleBefore } },
+                ],
+              }
+            : {}),
         },
         {
           $set: {

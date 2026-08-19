@@ -282,8 +282,9 @@ describe('topology-safe dead-delivery convergence', () => {
         status: 'requires_action',
         conversationId: 'conversation-1',
         // Every replica runs this sweep, so the write itself must be fenced against a
-        // resume that claimed the row after this snapshot was taken.
-        requireNoResumeClaim: true,
+        // resume that claimed the row after this snapshot was taken — as a staleness
+        // CUTOFF, so an abandoned claim still recovers.
+        resumeClaimStaleBefore: expect.any(Date),
       }),
     );
     // The job is still LIVE awaiting approval — its evidence must not be released.
