@@ -28,6 +28,7 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -36,6 +37,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -303,6 +305,9 @@ if (cluster.isMaster) {
 
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
+
+    await waitForKeyvRedisClient();
+    await configureSubagentTaskRouting();
 
     if (typeof Bun !== 'undefined') {
       axios.defaults.headers.common['Accept-Encoding'] = 'gzip';

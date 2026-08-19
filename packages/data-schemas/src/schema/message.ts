@@ -138,11 +138,21 @@ const messageSchema: Schema<IMessage> = new Schema(
     subagentTask: {
       type: {
         attemptKey: { type: String, required: true },
+        parentRunId: { type: String },
         requestFingerprint: { type: String },
         status: {
           type: String,
           enum: ['running', 'completed', 'error', 'cancelled'],
           required: true,
+        },
+        resultClaim: {
+          type: {
+            kind: { type: String, enum: ['manual', 'wakeup'], required: true },
+            claimId: { type: String, required: true },
+            claimedAt: { type: Date, required: true },
+          },
+          _id: false,
+          default: undefined,
         },
       },
       _id: false,

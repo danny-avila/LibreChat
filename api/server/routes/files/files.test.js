@@ -1097,7 +1097,10 @@ describe('File Routes - Delete with Agent Access', () => {
   describe('GET /files/code/download/:session_id/:fileId', () => {
     it('routes a persisted stateful fallback through the stateful Code API', async () => {
       const getDownloadStream = jest.fn().mockResolvedValue({
-        headers: { 'content-type': 'text/plain' },
+        headers: {
+          'content-type': 'text/html',
+          'set-cookie': 'internal-service-cookie=secret',
+        },
         data: Readable.from(['stateful output']),
       });
       getStrategyFunctions.mockReturnValue({ getDownloadStream });
@@ -1111,7 +1114,12 @@ describe('File Routes - Delete with Agent Access', () => {
         );
 
         expect(response.status).toBe(200);
-        expect(response.text).toBe('stateful output');
+        expect(response.body.toString()).toBe('stateful output');
+        expect(response.headers['content-disposition']).toBe('attachment');
+        expect(response.headers['content-type']).toBe('application/octet-stream');
+        expect(response.headers['x-content-type-options']).toBe('nosniff');
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(response.headers['set-cookie']).toBeUndefined();
         expect(getDownloadStream).toHaveBeenCalledWith(
           `${sessionId}/${codeFileId}`,
           { kind: 'user', id: otherUserId.toString() },

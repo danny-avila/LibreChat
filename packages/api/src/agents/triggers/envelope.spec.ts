@@ -93,6 +93,26 @@ describe('createAgentTriggerEnvelope', () => {
     });
   });
 
+  it('requires an exact existing branch for continue deliveries', () => {
+    const envelope = createAgentTriggerEnvelope({
+      ...createFireInput(),
+      mode: 'continue',
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+      },
+    });
+
+    expect(envelope.mode).toBe('continue');
+    expect(envelope.target).toEqual({
+      agentId: 'agent-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+    });
+    expect(parseAgentTriggerEnvelope(JSON.parse(JSON.stringify(envelope)))).toEqual(envelope);
+  });
+
   it('builds a stable generation-compatible idempotency key per delivery target', () => {
     const first = createAgentTriggerEnvelope(createFireInput());
     const retry = createAgentTriggerEnvelope({
@@ -210,8 +230,8 @@ describe('createAgentTriggerEnvelope', () => {
     expect(() =>
       createAgentTriggerEnvelope({
         ...createFireInput(),
-        mode: 'resume',
+        mode: 'launch',
       } as unknown as CreateAgentTriggerEnvelopeInput),
-    ).toThrow('Unsupported agent trigger mode: resume');
+    ).toThrow('Unsupported agent trigger mode: launch');
   });
 });
