@@ -895,10 +895,17 @@ export type UIResource = {
   [key: string]: unknown;
 };
 
+export type WorkspaceChange = {
+  profile: 'stateful';
+  operation: 'created' | 'updated';
+  path: string;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
+  workspaceChange?: WorkspaceChange;
   [Tools.memory]?: MemoryArtifact;
   [Tools.ui_resources]?: UIResource[];
   [Tools.web_search]?: SearchResultData;
