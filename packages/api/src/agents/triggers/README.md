@@ -11,6 +11,9 @@ envelope and calls `enqueueAgentTrigger`; the adapter does not invoke an agent r
 - Give each source event a stable `event.id`, and keep `deliveryId` stable for retries to one
   target. A retry may use a fresh `requestId` and `receivedAt`.
 - Render bounded model input on the host. Infrastructure and routing remain server-controlled.
+- Use `continue` only with a persisted `conversationId` and exact `parentMessageId`. The host defers
+  that delivery while the parent generation is still running or paused, so it cannot replace the
+  generation it is meant to follow.
 - Use `orderingKey` only when deliveries must remain ordered across different event sources.
   Without an override, ordering is scoped to the user, source, mode, agent, and conversation.
 
@@ -43,7 +46,7 @@ await enqueueAgentTrigger(
 
 - Mongo owns queue state, leases, retry history, and dead letters across restarts and replicas.
 - A fresh token fences every claim, including reclaims by the same process.
-- A delivery is at-least-once. Fire and steer admission reuse the envelope's stable idempotency
+- A delivery is at-least-once. Fire, continue, and steer admission reuse the envelope's stable idempotency
   identity, so ambiguous retries do not duplicate accepted work.
 - Retryable failures use bounded exponential backoff and honor `Retry-After`. Invalid envelopes,
   permanent authorization failures, and exhausted retries become durable dead letters.

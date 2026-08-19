@@ -741,6 +741,7 @@ export interface IJobStoreV2 extends IJobStore {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData>;
 
   /** Remove transaction-time predecessor receipts after their handoff was
