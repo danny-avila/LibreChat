@@ -483,6 +483,24 @@ function resolveParentMessageId(
   return Constants.NO_PARENT;
 }
 
+/** A response can be definite at the HTTP layer while the idempotent logical
+ * generation is still outcome-ambiguous. In particular, a retry can receive a
+ * 5xx while the first request owns the generation claim or is finalizing its
+ * accepted run. Compensate the prepared durable result only for failures that
+ * prove admission did not happen. */
+function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
+  if (error.certainty !== 'definite') {
+    return false;
+  }
+  if (error.code === 'START_ABORTED' || error.status == null) {
+    return true;
+  }
+  if (error.code === 'PARENT_NOT_READY') {
+    return true;
+  }
+  return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;
+}
+
 function startRun(
   envelope: AgentFireTriggerEnvelope,
   context: AgentTriggerDispatchContext,
@@ -678,7 +696,7 @@ async function startRun(
       preparation?.status === 'ready' &&
       preparation.releaseOnDefiniteFailure != null &&
       error instanceof AgentTriggerExecutionError &&
-      error.certainty === 'definite'
+      canReleasePreparedResult(error)
     ) {
       try {
         await preparation.releaseOnDefiniteFailure();

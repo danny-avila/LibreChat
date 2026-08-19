@@ -583,6 +583,61 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
   });
 
+  it('retains a prepared durable result when a retry gets a definite 5xx response', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'SERVER_NOT_READY', error: 'Generation is finalizing.' },
+            { status: 503, headers: { 'retry-after': '1' } },
+          ),
+        ),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: true,
+      code: 'SERVER_NOT_READY',
+      status: 503,
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
+  it('retains a prepared durable result when an earlier admitted run was replaced', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => response({ code: 'RUN_REPLACED' }, { status: 409 })),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: false,
+      code: 'RUN_REPLACED',
+      status: 409,
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
   it('rejects a mismatched continued conversation as an ambiguous outcome', async () => {
     expect.hasAssertions();
     const host = createAgentTriggerExecutionHost(
