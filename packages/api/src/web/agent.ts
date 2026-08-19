@@ -16,6 +16,7 @@ const WEB_SEARCH_URL_KEYS = [
   'jinaApiUrl',
   'tavilySearchUrl',
   'tavilyExtractUrl',
+  'crwApiUrl',
 ] as const;
 
 /**

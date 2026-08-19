@@ -18,6 +18,7 @@ const USER_PROVIDED_URL_KEYS = new Set<TWebSearchKeys>([
   'searxngInstanceUrl',
   'firecrawlApiUrl',
   'jinaApiUrl',
+  'crwApiUrl',
 ]);
 
 /**
@@ -285,6 +286,8 @@ export async function loadWebSearchAuth({
     scraperOptionsTimeout = webSearchConfig?.tavilyScraperOptions?.timeout;
   } else if (scraperProvider === ScraperProviders.FIRECRAWL) {
     scraperOptionsTimeout = webSearchConfig?.firecrawlOptions?.timeout;
+  } else if (scraperProvider === ScraperProviders.CRW) {
+    scraperOptionsTimeout = webSearchConfig?.crwScraperOptions?.timeout;
   }
 
   const searchProvider = authResult.searchProvider ?? webSearchConfig?.searchProvider;
@@ -294,6 +297,8 @@ export async function loadWebSearchAuth({
   authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
   authResult.searxngSearchOptions = webSearchConfig?.searxngSearchOptions;
+  authResult.crwSearchOptions = webSearchConfig?.crwSearchOptions;
+  authResult.crwScraperOptions = webSearchConfig?.crwScraperOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
 

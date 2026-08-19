@@ -42,6 +42,7 @@ const CONFIG_SECRET_FIELDS: readonly ConfigSecretField[] = (
     { path: 'webSearch.tavilyApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.jinaApiKey', allowEnvPlaceholder: true },
     { path: 'webSearch.cohereApiKey', allowEnvPlaceholder: true },
+    { path: 'webSearch.crwApiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.assistants.apiKey', allowEnvPlaceholder: true },
     { path: 'endpoints.azureAssistants.apiKey', allowEnvPlaceholder: true },
   ] satisfies ConfigSecretFieldInput[]
