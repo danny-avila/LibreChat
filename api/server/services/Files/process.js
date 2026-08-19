@@ -1032,8 +1032,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
        * something was embedded: `entity_id` also feeds entity-partitioned
        * storage for tool resources that never touch the vector store. Without
        * this value a later delete cannot scope itself and silently orphans
-       * every chunk (#14988). */
-      entity_id: tool_resource === EToolResources.file_search ? entity_id : undefined,
+       * every chunk (#14988). The truthiness test is deliberate and must match
+       * `deleteVectors`: an empty owner is no owner, and a row carrying `''`
+       * would be sent unscoped and orphan exactly as before. */
+      entity_id: tool_resource === EToolResources.file_search && entity_id ? entity_id : undefined,
       source,
       height,
       width,

@@ -70,6 +70,8 @@ async function migrateEmbedOwners({ dryRun = true, batchSize = 100 } = {}) {
       userOwned: 0,
       ambiguous: [],
       unrecoverable: [],
+      /* Owners the difference identified but the write did not land. */
+      notWritten: [],
       errors: 0,
       details: [],
     };
@@ -195,14 +197,25 @@ async function migrateEmbedOwners({ dryRun = true, batchSize = 100 } = {}) {
           continue;
         }
 
+        /* Re-assert the scan's own predicate: another writer may have set an
+         * owner since the cursor read, and this migration must never overwrite
+         * one. A zero-effect update is therefore "someone or something else
+         * changed this row", never "done". */
         const updateResult = await File.updateOne(
-          { _id: file._id },
+          { _id: file._id, entity_id: { $exists: false } },
           { $set: { entity_id: entityId } },
         );
         if (updateResult.modifiedCount > 0) {
           results.filesUpdated++;
           logger.info(`Recorded embed owner ${entityId} on file ${file.file_id}`);
+          continue;
         }
+        /* Resolved but not written. Reported rather than counted as success:
+         * the file's deletes stay unscoped until someone looks. */
+        results.notWritten.push(file.file_id);
+        logger.warn(
+          `Resolved owner ${entityId} for file ${file.file_id} but the row changed under the migration; nothing written`,
+        );
       }
     }
 
@@ -214,6 +227,7 @@ async function migrateEmbedOwners({ dryRun = true, batchSize = 100 } = {}) {
       userOwned: results.userOwned,
       ambiguous: results.ambiguous.length,
       unrecoverable: results.unrecoverable.length,
+      notWritten: results.notWritten.length,
       errors: results.errors,
     });
 
@@ -230,9 +244,12 @@ if (require.main === module) {
     .then((result) => {
       console.log(`\n=== ${dryRun ? 'DRY RUN ' : ''}RESULTS ===`);
       console.log(`Files scanned: ${result.scannedFiles}`);
-      console.log(
-        `Owners ${dryRun ? 'to record' : 'recorded'}: ${dryRun ? result.resolved : result.filesUpdated}`,
-      );
+      console.log(`Owners resolved: ${result.resolved}`);
+      if (!dryRun) {
+        /* Two numbers, always both: what the scan identified and what the
+         * database actually took. A gap is a failure, not a rounding note. */
+        console.log(`Owners recorded: ${result.filesUpdated}`);
+      }
       console.log(`Already user-owned (nothing to record): ${result.userOwned}`);
       if (result.details.length > 0) {
         console.log('\nResolved owners:');
@@ -255,8 +272,14 @@ if (require.main === module) {
         console.log('\nOwner unrecoverable — entity-owned chunks Mongo cannot attribute:');
         result.unrecoverable.forEach((fileId) => console.log(`  ${fileId}`));
       }
+      if (result.notWritten.length > 0) {
+        console.log('\nResolved but NOT written — the row changed under the migration; re-run:');
+        result.notWritten.forEach((fileId) => console.log(`  ${fileId}`));
+      }
       if (result.errors > 0) {
         console.log(`\nErrors: ${result.errors} (those users' files were skipped, not guessed)`);
+      }
+      if (result.errors > 0 || result.notWritten.length > 0) {
         process.exit(1);
       }
       process.exit(0);

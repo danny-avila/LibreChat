@@ -289,6 +289,41 @@ describe('Embed Owner Migration Script', () => {
     expect(await ownerOf(file.file_id)).toBe('agent-abc');
   });
 
+  it('reports an owner it resolved but could not write, and does not count it recorded', async () => {
+    /* A concurrent writer set an owner (or removed the row) between the scan
+     * and the update, so the guarded write matches nothing. Reporting it as
+     * recorded would leave the file's deletes unscoped and say otherwise. */
+    const file = await createFile();
+    await createAgent('agent-abc', [file.file_id]);
+    serveIds({ [file.file_id]: 'agent-abc' });
+    const updateOne = jest.spyOn(File, 'updateOne').mockResolvedValue({ modifiedCount: 0 });
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(result.resolved).toBe(1);
+    expect(result.filesUpdated).toBe(0);
+    expect(result.notWritten).toEqual([file.file_id]);
+    updateOne.mockRestore();
+  });
+
+  it('never overwrites an owner another writer recorded first', async () => {
+    const file = await createFile();
+    await createAgent('agent-abc', [file.file_id]);
+    serveIds({ [file.file_id]: 'agent-abc' });
+    /* The scan saw no owner; by write time the row has one. */
+    const realUpdate = File.updateOne.bind(File);
+    const updateOne = jest.spyOn(File, 'updateOne').mockImplementation(async (filter, update) => {
+      await realUpdate({ _id: file._id }, { $set: { entity_id: 'agent-someone-else' } });
+      return realUpdate(filter, update);
+    });
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(await ownerOf(file.file_id)).toBe('agent-someone-else');
+    expect(result.notWritten).toEqual([file.file_id]);
+    updateOne.mockRestore();
+  });
+
   it('caps the reported sample while still repairing every file', async () => {
     const files = await Promise.all(Array.from({ length: 55 }, () => createFile()));
     await createAgent(
