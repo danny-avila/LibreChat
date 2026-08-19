@@ -84,8 +84,9 @@ export default function useDrawerDismiss({
 
 /**
  * The drawer goes `inert` and the scrim `aria-hidden`, so whichever control
- * closed the drawer stops being focusable and the browser drops focus to the
- * body. Anything that took focus deliberately, a composer autofocused after
+ * closed the drawer stops being focusable. Inert drops focus to the body on its
+ * own; `aria-hidden` does not, which is what Escape on a focused scrim leaves
+ * behind. Anything that took focus deliberately, a composer autofocused after
  * picking a conversation, keeps it.
  */
 function restoreDrawerFocus(pane: HTMLElement | null): void {
@@ -93,7 +94,8 @@ function restoreDrawerFocus(pane: HTMLElement | null): void {
   const lost =
     !(active instanceof HTMLElement) ||
     active === document.body ||
-    active.closest('[inert]') != null;
+    active.closest('[inert]') != null ||
+    active.closest('[aria-hidden="true"]') != null;
   if (!lost) {
     return;
   }

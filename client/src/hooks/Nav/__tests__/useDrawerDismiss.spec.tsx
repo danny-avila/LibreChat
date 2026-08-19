@@ -153,6 +153,25 @@ describe('useDrawerDismiss', () => {
       expect(document.activeElement).toBe(composer);
     });
 
+    /**
+     * The drawer's own Escape handler closes it without going through the
+     * scrim, so a keyboard user who tabbed to the scrim keeps focus on it as it
+     * becomes aria-hidden and untabbable.
+     */
+    it('reclaims focus from the scrim when Escape closed the drawer', () => {
+      const opener = addOpener();
+      const scrim = document.createElement('button');
+      document.body.appendChild(scrim);
+      const { rerender } = setup({ expanded: true, isSmallScreen: true });
+      scrim.focus();
+      scrim.setAttribute('aria-hidden', 'true');
+      scrim.tabIndex = -1;
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(document.activeElement).toBe(opener);
+    });
+
     it('reclaims focus stranded inside the drawer once it goes inert', () => {
       const opener = addOpener();
       const drawer = document.createElement('div');
