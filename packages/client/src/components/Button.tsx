@@ -70,7 +70,7 @@ const buttonVariantRecipe = cva(
          * lag rather than polish.
          */
         'header-action':
-          'rounded-xl border border-border-light bg-presentation text-text-primary duration-0 hover:bg-surface-active-alt hover:text-text-primary',
+          'rounded-xl border border-border-light bg-transparent text-text-primary duration-0 hover:bg-surface-active-alt hover:text-text-primary',
       },
       size: {
         default: 'h-10 px-4 py-2',
