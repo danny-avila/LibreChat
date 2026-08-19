@@ -176,17 +176,29 @@ type Gesture = {
   rafScheduled: boolean;
 };
 
+/**
+ * What the two surfaces settle back to. Nothing under reduced motion, where
+ * every drawer move snaps: handing an animating value back would leave the
+ * element ready to ease the next change, and the strip setting changes the
+ * drawer's width without passing through the snap path at all.
+ */
+const settledTransitions = (): { drawer: string; pane: string } =>
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? { drawer: 'none', pane: 'none' }
+    : { drawer: MOBILE_DRAWER_TRANSITION, pane: SIDEBAR_TRANSITION };
+
 /** Returns every transient inline property to what React/classes render for
  * `paneOpen`. The drawer's transform is class-driven so clearing suffices, but
  * the pane's is a React style prop React will NOT re-assert while its value is
  * unchanged — an open pane must get its committed transform back explicitly. */
 const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: boolean) => {
+  const settled = settledTransitions();
   drawer.style.transform = '';
   drawer.style.willChange = '';
-  drawer.style.transition = MOBILE_DRAWER_TRANSITION;
+  drawer.style.transition = settled.drawer;
   pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
-  pane.style.transition = SIDEBAR_TRANSITION;
+  pane.style.transition = settled.pane;
 };
 
 const dragTransforms = (gesture: Gesture): { drawer: string; pane: string } => {
@@ -347,8 +359,9 @@ export default function useDrawerSwipe({
         pane.style.transition = 'none';
         const id = setTimeout(() => {
           settleRef.current = null;
-          drawer.style.transition = MOBILE_DRAWER_TRANSITION;
-          pane.style.transition = SIDEBAR_TRANSITION;
+          const settled = settledTransitions();
+          drawer.style.transition = settled.drawer;
+          pane.style.transition = settled.pane;
         }, SETTLE_BUFFER_MS);
         settleRef.current = { id, target: next, drawer, pane };
         return;

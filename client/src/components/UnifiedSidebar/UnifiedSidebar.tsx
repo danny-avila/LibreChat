@@ -1,5 +1,6 @@
 import { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useMediaQuery } from '@librechat/client';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
@@ -50,6 +51,7 @@ function UnifiedSidebar() {
   const navigate = useNavigate();
   const { isSmallScreen, expanded } = useSidebarState();
   const { setSidebarOpen } = useSidebarToggle();
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
@@ -177,7 +179,10 @@ function UnifiedSidebar() {
         )}
         style={{
           width: MOBILE_DRAWER_WIDTH,
-          transition: MOBILE_DRAWER_TRANSITION,
+          /** The strip setting changes the width without passing through the
+           *  snap path, so the preference has to reach the declarative style
+           *  too or that one change still animates. */
+          transition: prefersReducedMotion ? undefined : MOBILE_DRAWER_TRANSITION,
           zIndex: DRAWER_Z_INDEX,
         }}
         inert={!expanded ? '' : undefined}

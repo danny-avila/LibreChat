@@ -541,7 +541,13 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     harness.unmount();
   });
 
-  it('snaps without a transition under reduced motion', () => {
+  /**
+   * The transition is not handed back after the snap either. The strip setting
+   * changes the drawer's width without passing through this path, so a restored
+   * transition would leave that one change animating for a user who asked for
+   * no motion.
+   */
+  it('snaps under reduced motion and leaves no transition behind', () => {
     jest.useFakeTimers();
     const harness = setup(false, true);
 
@@ -552,7 +558,23 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
 
     harness.rerender({ open: true, enabled: true });
     jest.runAllTimers();
-    expect(harness.drawer.style.transition).not.toBe('none');
+    expect(harness.drawer.style.transition).toBe('none');
+    expect(harness.pane.style.transition).toBe('none');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** The counterpart: with motion allowed, the surfaces do get them back. */
+  it('hands the transitions back once a slide settles', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+
+    kickDrawerAnimation(true, jest.fn());
+    harness.rerender({ open: true, enabled: true });
+    jest.runAllTimers();
+
+    expect(harness.drawer.style.transition).toContain('transform');
+    expect(harness.pane.style.transition).toContain('transform');
     jest.useRealTimers();
     harness.unmount();
   });

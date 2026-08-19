@@ -164,7 +164,7 @@ export default function Root() {
                       /** A percentage of the pane's own width, so it tracks the
                        *  drawer without a literal and survives rotation. */
                       transform: isSmallScreen && sidebarExpanded ? MOBILE_PANE_SHIFT : 'none',
-                      transition: SIDEBAR_TRANSITION,
+                      transition: prefersReducedMotion ? undefined : SIDEBAR_TRANSITION,
                     }}
                     inert={isSmallScreen && sidebarExpanded ? '' : undefined}
                   >
