@@ -100,6 +100,9 @@ async function migrateEmbedOwners({ dryRun = true, batchSize = 100 } = {}) {
       results.scannedFiles++;
       const userId = file.user?.toString();
       if (!userId) {
+        /* `user` is required by the schema, so this is a legacy or hand-edited
+         * row. There is no token to mint and therefore no scope to read: report
+         * it rather than crash the run or attribute it to somebody. */
         results.unrecoverable.push(file.file_id);
         continue;
       }
@@ -227,7 +230,9 @@ if (require.main === module) {
     .then((result) => {
       console.log(`\n=== ${dryRun ? 'DRY RUN ' : ''}RESULTS ===`);
       console.log(`Files scanned: ${result.scannedFiles}`);
-      console.log(`Owners ${dryRun ? 'to record' : 'recorded'}: ${dryRun ? result.resolved : result.filesUpdated}`);
+      console.log(
+        `Owners ${dryRun ? 'to record' : 'recorded'}: ${dryRun ? result.resolved : result.filesUpdated}`,
+      );
       console.log(`Already user-owned (nothing to record): ${result.userOwned}`);
       if (result.details.length > 0) {
         console.log('\nResolved owners:');

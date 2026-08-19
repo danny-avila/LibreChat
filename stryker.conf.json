@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "packageManager": "npm",
+  "testRunner": "jest",
+  "reporters": ["clear-text", "progress"],
+  "coverageAnalysis": "perTest",
+  "concurrency": 4,
+  "timeoutMS": 60000,
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.config.js",
+    "enableFindRelatedTests": true
+  },
+  "mutate": [],
+  "thresholds": { "high": 100, "low": 90, "break": 90 }
+}

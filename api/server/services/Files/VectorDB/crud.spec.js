@@ -117,6 +117,43 @@ describe('deleteVectors', () => {
       expect(logged).toContain(AGENT);
       warn.mockRestore();
     });
+
+    test('names the file in the log before it throws for a file with no entity', async () => {
+      const warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      axios.delete.mockRejectedValue(httpError(500));
+
+      await expect(deleteVectors(req, userOwnedFile)).rejects.toThrow();
+
+      const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+      /* Names the file and claims no entity scope, because none was sent. */
+      expect(logged).toContain(`file ${userOwnedFile.file_id}; its embedded chunks may remain`);
+      expect(logged).not.toContain(AGENT);
+      warn.mockRestore();
+    });
+
+    test('reports a reason even when the failure carries no message', async () => {
+      axios.delete.mockRejectedValue(
+        Object.assign(new Error(''), { response: { status: 404 } }),
+      );
+
+      await expect(deleteVectors(req, entityOwnedFile)).rejects.toThrow(
+        'An error occurred during file deletion.',
+      );
+    });
+
+    test('treats a rejection that carries a success status as a success, as before', async () => {
+      /* Not the delete's failure: only an interceptor can reject a 2xx. */
+      axios.delete.mockRejectedValue(httpError(200));
+
+      await expect(deleteVectors(req, entityOwnedFile)).resolves.toBeUndefined();
+      await expect(deleteVectors(req, userOwnedFile)).resolves.toBeUndefined();
+    });
+
+    test('treats 300 as a failure for an entity-owned file, not a success', async () => {
+      axios.delete.mockRejectedValue(httpError(300));
+
+      await expect(deleteVectors(req, entityOwnedFile)).rejects.toThrow();
+    });
   });
 
   describe('when there is nothing embedded to delete', () => {

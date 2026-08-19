@@ -50,17 +50,22 @@ const deleteVectors = async (req, file) => {
       message: 'Error deleting vectors',
     });
     const status = error.response?.status;
-    const succeeded = status >= 200 && status < 300;
-    if (entityId && !succeeded) {
-      logger.warn(
-        `Error deleting vectors for file ${file.file_id} scoped to entity ${entityId}; its embedded chunks may remain`,
-      );
-      throw new Error(error.message || 'An error occurred during file deletion.');
+    if (status >= 200 && status < 300) {
+      /* A rejection carrying a success status did not come from the delete
+       * itself. Pre-existing behaviour: not our failure to report. */
+      return;
     }
-    if (error.response && status !== 404 && !succeeded) {
-      logger.warn('Error deleting vectors, file will not be deleted');
-      throw new Error(error.message || 'An error occurred during file deletion.');
+    if (!entityId && (!error.response || status === 404)) {
+      /* User-owned chunks, and either no answer or "already gone". Tolerated
+       * before this change and tolerated now — invariant 4's sibling. */
+      return;
     }
+    logger.warn(
+      `Error deleting vectors for file ${file.file_id}${
+        entityId ? ` scoped to entity ${entityId}` : ''
+      }; its embedded chunks may remain`,
+    );
+    throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
 

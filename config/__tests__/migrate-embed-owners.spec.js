@@ -175,6 +175,32 @@ describe('Embed Owner Migration Script', () => {
 
     expect(await ownerOf(file.file_id)).toBeUndefined();
     expect(result.unrecoverable).toEqual([file.file_id]);
+    /* A file no agent lists costs one scope read for its owner, and no
+     * per-entity probe for an entity nobody named. */
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a row with no owner instead of failing the whole run', async () => {
+    /* Written through the driver: the schema requires `user`, so only a legacy
+     * or hand-edited document can look like this. */
+    const fileId = uuidv4();
+    await File.collection.insertOne({
+      file_id: fileId,
+      filename: 'legacy.txt',
+      filepath: '/uploads/legacy.txt',
+      object: 'file',
+      type: 'text/plain',
+      bytes: 128,
+      embedded: true,
+    });
+    serveIds({});
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(result.unrecoverable).toEqual([fileId]);
+    expect(result.errors).toBe(0);
+    /* No owner means no token to mint: the row is reported, not queried. */
+    expect(axios.get).not.toHaveBeenCalled();
   });
 
   it('never rescans a file that already records an owner', async () => {
@@ -234,10 +260,47 @@ describe('Embed Owner Migration Script', () => {
     );
     serveIds(Object.fromEntries(files.map((file) => [file.file_id, 'agent-abc'])));
 
-    await migrateEmbedOwners({ dryRun: false });
+    const result = await migrateEmbedOwners({ dryRun: false });
 
     /* One unscoped call for the user, one widened call for the agent. */
     expect(axios.get).toHaveBeenCalledTimes(2);
+    /* And every one of that user's files is repaired, not just the last. */
+    expect(result.filesUpdated).toBe(3);
+    for (const file of files) {
+      expect(await ownerOf(file.file_id)).toBe('agent-abc');
+    }
+  });
+
+  it('counts the files it scanned, and tolerates an agent with no tool resources', async () => {
+    const file = await createFile();
+    await createAgent('agent-abc', [file.file_id]);
+    await Agent.create({
+      id: 'agent-bare',
+      name: 'agent-bare',
+      author: USER,
+      provider: 'openai',
+      model: 'gpt-4o',
+    });
+    serveIds({ [file.file_id]: 'agent-abc' });
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(result.scannedFiles).toBe(1);
+    expect(await ownerOf(file.file_id)).toBe('agent-abc');
+  });
+
+  it('caps the reported sample while still repairing every file', async () => {
+    const files = await Promise.all(Array.from({ length: 55 }, () => createFile()));
+    await createAgent(
+      'agent-abc',
+      files.map((file) => file.file_id),
+    );
+    serveIds(Object.fromEntries(files.map((file) => [file.file_id, 'agent-abc'])));
+
+    const result = await migrateEmbedOwners({ dryRun: false });
+
+    expect(result.filesUpdated).toBe(55);
+    expect(result.details).toHaveLength(50);
   });
 
   it('reports ids and counts only, never a token', async () => {

@@ -773,22 +773,48 @@ describe('processAgentFileUpload', () => {
       });
 
       expect(uploadVectors.mock.calls[0][0].entity_id).toBeUndefined();
-      expect(db.createFile).toHaveBeenCalledWith(
-        expect.not.objectContaining({ entity_id: expect.anything() }),
-        true,
-      );
+      expect(db.createFile.mock.calls[0][0]).not.toHaveProperty('entity_id');
     });
 
     test('records no entity for an agent upload that embeds nothing', async () => {
-      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null });
+      /* execute_code takes the same persist path as file search but never
+       * touches the vector store, so there is no embed owner to record even
+       * though the upload knows the agent. */
+      const fs = require('fs');
+      const { Readable } = require('stream');
+      const createReadStreamSpy = jest
+        .spyOn(fs, 'createReadStream')
+        .mockImplementation(() => Readable.from(Buffer.from('')));
+      getStrategyFunctions.mockImplementation((src) =>
+        src === FileSources.execute_code
+          ? {
+              handleFileUpload: jest
+                .fn()
+                .mockResolvedValue({ storage_session_id: 'sess-1', file_id: 'fid-1' }),
+            }
+          : {
+              handleFileUpload: jest.fn().mockResolvedValue({
+                bytes: 0,
+                filename: 'upload.bin',
+                filepath: '/uploads/upload.bin',
+              }),
+              saveBuffer: jest.fn(),
+            },
+      );
 
-      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+      await processAgentFileUpload({
+        req: makeReq(),
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.execute_code,
+          file_id: 'file-uuid',
+        },
+      });
 
       expect(uploadVectors).not.toHaveBeenCalled();
-      expect(db.createFile).toHaveBeenCalledWith(
-        expect.not.objectContaining({ entity_id: expect.anything() }),
-        true,
-      );
+      expect(db.createFile.mock.calls[0][0]).not.toHaveProperty('entity_id');
+      createReadStreamSpy.mockRestore();
     });
   });
 
