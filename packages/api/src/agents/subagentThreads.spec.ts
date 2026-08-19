@@ -1931,6 +1931,39 @@ describe('SubagentThreadTaskStore', () => {
     await store.destroyTaskControlTransport();
   });
 
+  it('fails a deletion closed when the admission fence cannot be held', async () => {
+    const userId = 'fence-lapse-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      renewOwnerAdmission: async () => {
+        throw new Error('database unavailable');
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    /** A drain that outlasts the 120ms fence window while every renewal rejects: the
+     * last confirmed `fencedUntil` passes and nothing is left holding admission shut. */
+    const leases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 200));
+        return [];
+      });
+    const deletion = jest.fn(async () => 'deleted');
+    try {
+      await expect(store.withOwnerDeletionFence(userId, undefined, deletion)).rejects.toThrow(
+        'admission fence expired',
+      );
+      /** Nothing was removed, so the caller can retry once the fence holds again. */
+      expect(deletion).not.toHaveBeenCalled();
+    } finally {
+      leases.mockRestore();
+    }
+  });
+
   it('releases the owner fence after an in-flight renewal instead of racing it', async () => {
     const userId = 'fence-renewal-race-user';
     const parentConversationId = randomUUID();

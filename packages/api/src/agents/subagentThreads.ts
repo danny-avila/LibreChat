@@ -1014,7 +1014,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ): Promise<T> {
     const fenceWindowMs = this.ownerDrainTimeoutMs + this.ownerFenceGraceMs;
     const token = randomUUID();
-    await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
+    /** Only a confirmed write moves this, so a run of failed renewals leaves it in the
+     * past and the deletion can tell that its fence is no longer guaranteed. */
+    let fencedUntil = Date.now() + fenceWindowMs;
+    await this.fenceOwnerAdmission?.(userId, token, new Date(fencedUntil));
     /** A very large account, or a stalled database, can outlast one fence window, and
      * a fence that expires mid-deletion lets another replica admit a child against
      * conversations being deleted. It is renewed for as long as the work runs. */
@@ -1026,16 +1029,19 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           return;
         }
         inFlight = (async () => {
-          const held = await this.renewOwnerAdmission?.(
-            userId,
-            token,
-            new Date(Date.now() + fenceWindowMs),
-          );
-          if (held === false && !releasing) {
-            /** The entry is gone — expired, or pruned by another deletion — so this
-             * deletion takes its fence again rather than running on unfenced. */
-            await this.fenceOwnerAdmission?.(userId, token, new Date(Date.now() + fenceWindowMs));
+          const renewedUntil = Date.now() + fenceWindowMs;
+          const held = await this.renewOwnerAdmission?.(userId, token, new Date(renewedUntil));
+          if (held !== false) {
+            fencedUntil = renewedUntil;
+            return;
           }
+          if (releasing) {
+            return;
+          }
+          /** The entry is gone — expired, or pruned by another deletion — so this
+           * deletion takes its fence again rather than running on unfenced. */
+          await this.fenceOwnerAdmission?.(userId, token, new Date(renewedUntil));
+          fencedUntil = renewedUntil;
         })()
           .catch((error) => {
             logger.warn('[subagentThreads] Failed to hold the owner admission fence', error);
@@ -1047,9 +1053,25 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       Math.max(1, Math.floor(fenceWindowMs / 3)),
     );
     renewal.unref?.();
+    const fenceHeld = (): boolean => this.fenceOwnerAdmission == null || Date.now() < fencedUntil;
     try {
       await this.cancelAndDrainForOwner(userId, tenantId);
-      return await deletion();
+      /** The drain can outlast the fence window when the database is unreachable, and
+       * renewals that keep failing leave the account open to admitting a child against
+       * conversations about to disappear. Nothing has been removed yet, so this fails
+       * closed and the caller retries once the fence can be held again. */
+      if (!fenceHeld()) {
+        throw new Error('The subagent admission fence expired before this deletion began.');
+      }
+      const deleted = await deletion();
+      /** Past this point the rows are gone. Reporting failure would invite a retry
+       * against conversations that no longer exist, so the lapse is recorded instead. */
+      if (!fenceHeld()) {
+        logger.error(
+          '[subagentThreads] Completed an owner deletion after its admission fence expired',
+        );
+      }
+      return deleted;
     } finally {
       releasing = true;
       clearInterval(renewal);
