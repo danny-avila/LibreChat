@@ -161,9 +161,13 @@ const PresetItems: FC<{
           /** The menu stays open behind the dialog (`hideOnClick: false`), so
            *  the item is still there to take focus back. */
           onCloseAutoFocus={(event) => {
-            const invoker = clearInvokerRef.current ?? document.getElementById(PRESET_MENU_ID);
+            const saved = clearInvokerRef.current;
             clearInvokerRef.current = null;
-            if (invoker == null || !invoker.isConnected) {
+            /** Confirming removes the item itself, since it only shows while
+             *  presets exist, so fall back to the trigger that opened the menu. */
+            const invoker =
+              saved?.isConnected === true ? saved : document.getElementById(PRESET_MENU_ID);
+            if (invoker == null) {
               return;
             }
             event.preventDefault();
