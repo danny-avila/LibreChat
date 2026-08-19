@@ -14,7 +14,20 @@ export function duplicateIoRedisClient(
   options: RedisOptions & ClusterOptions = {},
 ): Redis | Cluster {
   if (client.isCluster) {
-    return (client as Cluster).duplicate([], options);
+    const duplicate = (client as Cluster).duplicate([], options);
+    if (options.enableOfflineQueue !== false) {
+      return duplicate;
+    }
+    /** ioredis deliberately forces `enableOfflineQueue: true` on every Cluster node
+     * after applying `redisOptions`, so the top-level override alone cannot make a
+     * routed command fail fast during a slot-owner disconnect. Apply the publisher's
+     * policy at the node lifecycle seam, including nodes already discovered. */
+    const disableNodeOfflineQueue = (node: Redis): void => {
+      node.options.enableOfflineQueue = false;
+    };
+    duplicate.on('+node', disableNodeOfflineQueue);
+    duplicate.nodes('all').forEach(disableNodeOfflineQueue);
+    return duplicate;
   }
   return (client as Redis).duplicate(options);
 }

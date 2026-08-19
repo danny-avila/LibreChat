@@ -1034,6 +1034,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           const renewedUntil = Date.now() + fenceWindowMs;
           const held = await this.renewOwnerAdmission?.(userId, token, new Date(renewedUntil));
           if (held === false) {
+            /** The durable entry was absent, so admission may already have opened even
+             * when the local deadline has not passed. Reacquire for containment, but
+             * retain the lapse so the enclosing deletion re-drains before success. */
+            fenceLapsed = true;
             if (releasing) {
               return;
             }
@@ -1061,6 +1065,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       Math.max(1, Math.floor(fenceWindowMs / 3)),
     );
     renewal.unref?.();
+    const stopRenewal = async (): Promise<void> => {
+      clearInterval(renewal);
+      await inFlight;
+    };
     const fenceHeld = (): boolean =>
       this.fenceOwnerAdmission == null || (!fenceLapsed && Date.now() < fencedUntil);
     try {
@@ -1073,37 +1081,39 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         throw new Error('The subagent admission fence expired before this deletion began.');
       }
       const deleted = await deletion();
+      /** Settle a renewal already in flight before deciding whether deletion crossed a
+       * gap. Otherwise a late write can report the lapse only after this check and the
+       * finally block would release the fence without re-draining. */
+      await stopRenewal();
       if (!fenceHeld()) {
-        /** The rows are gone, so reporting failure would only invite a retry against
-         * conversations that no longer exist. What the gap can still leave behind is a
-         * child another replica admitted while the fence was down, so the fence is
-         * taken again and the drain repeated to cancel it. */
+        /** The rows are gone, but the gap can leave a child another replica admitted
+         * while the fence was down. Re-take the fence and drain that work before this
+         * operation may report success. */
         logger.error(
           '[subagentThreads] Owner deletion outlived its admission fence; draining children admitted in the gap',
         );
-        try {
-          fencedUntil = Date.now() + fenceWindowMs;
-          fenceLapsed = false;
-          const reheld = await this.renewOwnerAdmission?.(userId, token, new Date(fencedUntil));
-          if (reheld === false) {
-            await this.fenceOwnerAdmission?.(userId, token, new Date(fencedUntil));
-          }
-          await this.cancelAndDrainForOwner(userId, tenantId);
-        } catch (error) {
-          logger.error(
-            '[subagentThreads] Failed to drain children admitted during the fence gap',
-            error,
-          );
+        const recoveryUntil = Date.now() + fenceWindowMs;
+        const reheld = await this.renewOwnerAdmission?.(userId, token, new Date(recoveryUntil));
+        if (reheld !== true) {
+          await this.fenceOwnerAdmission?.(userId, token, new Date(recoveryUntil));
+        }
+        if (Date.now() >= recoveryUntil) {
+          throw new Error('The subagent admission fence expired while it was being restored.');
+        }
+        fencedUntil = recoveryUntil;
+        fenceLapsed = false;
+        await this.cancelAndDrainForOwner(userId, tenantId);
+        if (!fenceHeld()) {
+          throw new Error('The subagent admission fence expired while recovering this deletion.');
         }
       }
       return deleted;
     } finally {
       releasing = true;
-      clearInterval(renewal);
+      await stopRenewal();
       /** `clearInterval` stops only future passes. A renewal still waiting on the
        * database would otherwise find its fence released, read that as expiry, and
        * write a fresh one that nothing is left to lift. */
-      await inFlight;
       /** Only this deletion's own fence is lifted: an overlapping deletion that took a
        * later one keeps admission closed until it finishes. */
       await this.releaseOwnerAdmission?.(userId, token).catch((error) => {

@@ -29,4 +29,26 @@ describe('duplicateIoRedisClient', () => {
       client.disconnect();
     }
   });
+
+  it('disables the offline queue on cluster node connections', () => {
+    const client = new IoRedis.Cluster([{ host: '127.0.0.1', port: 6379 }], {
+      lazyConnect: true,
+    });
+    const duplicate = duplicateIoRedisClient(client, { enableOfflineQueue: false });
+    const node = new IoRedis({
+      host: '127.0.0.1',
+      port: 6380,
+      lazyConnect: true,
+      enableOfflineQueue: true,
+    });
+    try {
+      expect(node.options.enableOfflineQueue).toBe(true);
+      duplicate.emit('+node', node);
+      expect(node.options.enableOfflineQueue).toBe(false);
+    } finally {
+      node.disconnect();
+      duplicate.disconnect();
+      client.disconnect();
+    }
+  });
 });
