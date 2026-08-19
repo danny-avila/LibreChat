@@ -723,19 +723,6 @@ export function getModelMaxOutputTokens(
 }
 
 /**
- * Retrieves the model name key for a given model name input. If the exact model name isn't found,
- * it searches for partial matches within the model name, checking keys in reverse order.
- *
- * @param modelName - The name of the model to look up.
- * @param endpoint - The endpoint (default is 'openAI').
- * @returns The model name key for the given model; returns input if no match is found and is string.
- *
- * @example
- * matchModelName('gpt-4-32k-0613'); // Returns 'gpt-4-32k-0613'
- * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
- * matchModelName('unknown-model'); // Returns undefined
- */
-/**
  * Model names already warned about resolving to a degenerate catch-all stub
  * (e.g. `claude-`), so the warning is emitted once per name instead of on
  * every request. Unknown models silently falling back to a stub disables
@@ -749,6 +736,19 @@ function isStubTokenKey(key: string): boolean {
   return key.endsWith('-') && key.length > 1;
 }
 
+/**
+ * Retrieves the model name key for a given model name input. If the exact model name isn't found,
+ * it searches for partial matches within the model name, checking keys in reverse order.
+ *
+ * @param modelName - The name of the model to look up.
+ * @param endpoint - The endpoint (default is 'openAI').
+ * @returns The model name key for the given model; returns input if no match is found and is string.
+ *
+ * @example
+ * matchModelName('gpt-4-32k-0613'); // Returns 'gpt-4-32k-0613'
+ * matchModelName('gpt-4-32k-unknown'); // Returns 'gpt-4-32k'
+ * matchModelName('unknown-model'); // Returns undefined
+ */
 export function matchModelName(
   modelName: string,
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
