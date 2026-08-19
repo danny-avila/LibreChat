@@ -132,9 +132,7 @@ describe('deleteVectors', () => {
     });
 
     test('reports a reason even when the failure carries no message', async () => {
-      axios.delete.mockRejectedValue(
-        Object.assign(new Error(''), { response: { status: 404 } }),
-      );
+      axios.delete.mockRejectedValue(Object.assign(new Error(''), { response: { status: 404 } }));
 
       await expect(deleteVectors(req, entityOwnedFile)).rejects.toThrow(
         'An error occurred during file deletion.',
