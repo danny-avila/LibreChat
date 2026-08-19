@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { logger } from '@librechat/data-schemas';
 import { InMemorySubagentTaskStore } from '@librechat/agents';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import { EModelEndpoint, Constants } from 'librechat-data-provider';
 import {
   mapChatMessagesToStoredMessages,
@@ -63,6 +63,7 @@ export interface SubagentCancellationPlan {
 }
 /** Three missed 10-second transport heartbeats retire a crashed owner. */
 const DEFAULT_TASK_ROUTING_TTL_MS = 30_000;
+const SLOW_PREPARATION_WARN_MS = 5_000;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
   'messageId parentMessageId text createdAt +subagentTranscript +subagentTask';
@@ -380,6 +381,21 @@ function safeErrorMessage(error: unknown): string {
   return `Subagent task failed: ${publicFailureDetail(error).slice(0, 2_000)}`;
 }
 
+async function observeSlowPreparation<T>(
+  operation: Promise<T>,
+  context: { stage: string; taskId: string; threadId: string },
+): Promise<T> {
+  const warning = setTimeout(() => {
+    logger.warn('[subagentThreads] Child-thread preparation is still waiting', context);
+  }, SLOW_PREPARATION_WARN_MS);
+  warning.unref?.();
+  try {
+    return await operation;
+  } finally {
+    clearTimeout(warning);
+  }
+}
+
 /** Persists view-only logical child threads with owner-routed controls and a shared execution fence. */
 export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   readonly supportsThreadContinuation = true;
@@ -519,128 +535,129 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       started = super.start({
         ...request,
         threadId,
-        run: async (runtime: SubagentTaskRuntime) => {
-          lease.taskId = runtime.taskId;
-          lease.running = true;
-          const detachedUsage: UsageMetadata[] = [];
-          let prepared: PreparedThread | undefined;
-          try {
-            if (runtime.signal.aborted) {
-              throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
-            }
-            /** Publish the owner address before any provider work: a child running
-             * while unaddressable cannot be polled, controlled, or cancelled, and its
-             * side effects would already have happened by the time a heartbeat
-             * republished it. A failed registration fails the task closed instead. */
-            await this.taskControlTransport?.registerTask(
-              request.scopeId,
-              runtime.taskId,
-              this.taskRoutingTtlMs,
-            );
-            await parentReady;
-            prepared = await this.prepareThread(
-              request.scopeId,
-              scope,
-              threadId,
-              isContinuation,
-              request,
-              runtime.taskId,
-              lease,
-            );
-            await this.registerTaskWakeup(scope, prepared.conversation.conversationId, request, {
-              taskId: prepared.replay?.taskId ?? runtime.taskId,
-              parentRunId: prepared.replay?.parentRunId ?? request.parentRunId,
-              createdAt: prepared.taskCreatedAt,
-            });
-            if (runtime.signal.aborted) {
-              throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
-            }
-            if (prepared.replay != null) {
-              if (prepared.replay.status === 'completed') {
-                return { content: prepared.replay.content };
+        run: (runtime: SubagentTaskRuntime) =>
+          this.runWithOwnerContext(scope, async () => {
+            lease.taskId = runtime.taskId;
+            lease.running = true;
+            const detachedUsage: UsageMetadata[] = [];
+            let prepared: PreparedThread | undefined;
+            try {
+              if (runtime.signal.aborted) {
+                throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
               }
-              throw new SubagentThreadPublicError(prepared.replay.content);
-            }
-            if (!(await this.renewSharedLease(scope, threadId, lease))) {
-              throw new SubagentThreadPublicError(
-                'This child thread is already being continued by another run.',
+              /** Publish the owner address before any provider work: a child running
+               * while unaddressable cannot be polled, controlled, or cancelled, and its
+               * side effects would already have happened by the time a heartbeat
+               * republished it. A failed registration fails the task closed instead. */
+              await this.taskControlTransport?.registerTask(
+                request.scopeId,
+                runtime.taskId,
+                this.taskRoutingTtlMs,
               );
-            }
-            const preparedThread = prepared;
-            const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
-              request.run(runtime, preparedThread.initialMessages),
-            );
-            if (runtime.signal.aborted) {
-              throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
-            }
-            if (!(await this.renewSharedLease(scope, threadId, lease))) {
-              throw new SubagentThreadPublicError(
-                'This child thread is already being continued by another run.',
+              await parentReady;
+              prepared = await this.prepareThread(
+                request.scopeId,
+                scope,
+                threadId,
+                isContinuation,
+                request,
+                runtime.taskId,
+                lease,
               );
-            }
-            lease.settling = true;
-            await this.persistResult(
-              scope,
-              request,
-              runtime.taskId,
-              prepared,
-              result,
-              detachedUsage,
-            );
-            return result;
-          } catch (error) {
-            /** A replay is already terminal in Mongo. A temporary wakeup-queue
-             * outage must not overwrite that canonical result with a new error. */
-            if (prepared?.replay != null) {
-              throw error;
-            }
-            const mayPersist =
-              lease.shared == null || (await this.renewSharedLease(scope, threadId, lease));
-            const terminalTask = this.get(request.scopeId, runtime.taskId);
-            if (runtime.signal.aborted && terminalTask?.status === 'cancelled') {
+              await this.registerTaskWakeup(scope, prepared.conversation.conversationId, request, {
+                taskId: prepared.replay?.taskId ?? runtime.taskId,
+                parentRunId: prepared.replay?.parentRunId ?? request.parentRunId,
+                createdAt: prepared.taskCreatedAt,
+              });
+              if (runtime.signal.aborted) {
+                throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
+              }
+              if (prepared.replay != null) {
+                if (prepared.replay.status === 'completed') {
+                  return { content: prepared.replay.content };
+                }
+                throw new SubagentThreadPublicError(prepared.replay.content);
+              }
+              if (!(await this.renewSharedLease(scope, threadId, lease))) {
+                throw new SubagentThreadPublicError(
+                  'This child thread is already being continued by another run.',
+                );
+              }
+              const preparedThread = prepared;
+              const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
+                request.run(runtime, preparedThread.initialMessages),
+              );
+              if (runtime.signal.aborted) {
+                throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
+              }
+              if (!(await this.renewSharedLease(scope, threadId, lease))) {
+                throw new SubagentThreadPublicError(
+                  'This child thread is already being continued by another run.',
+                );
+              }
+              lease.settling = true;
+              await this.persistResult(
+                scope,
+                request,
+                runtime.taskId,
+                prepared,
+                result,
+                detachedUsage,
+              );
+              return result;
+            } catch (error) {
+              /** A replay is already terminal in Mongo. A temporary wakeup-queue
+               * outage must not overwrite that canonical result with a new error. */
+              if (prepared?.replay != null) {
+                throw error;
+              }
+              const mayPersist =
+                lease.shared == null || (await this.renewSharedLease(scope, threadId, lease));
+              const terminalTask = this.get(request.scopeId, runtime.taskId);
+              if (runtime.signal.aborted && terminalTask?.status === 'cancelled') {
+                if (mayPersist) {
+                  await this.persistCancellation(
+                    scope,
+                    threadId,
+                    request,
+                    runtime.taskId,
+                    detachedUsage,
+                  ).catch((persistError) => {
+                    logger.error(
+                      '[subagentThreads] Failed to persist child-thread cancellation',
+                      persistError,
+                    );
+                  });
+                }
+                throw error;
+              }
+              logger.error(
+                '[subagentThreads] Child-thread execution failed',
+                publicFailureDetail(error),
+              );
               if (mayPersist) {
-                await this.persistCancellation(
+                await this.persistFailure(
                   scope,
                   threadId,
                   request,
                   runtime.taskId,
+                  error,
                   detachedUsage,
                 ).catch((persistError) => {
                   logger.error(
-                    '[subagentThreads] Failed to persist child-thread cancellation',
+                    '[subagentThreads] Failed to persist child-thread failure',
                     persistError,
                   );
                 });
               }
-              throw error;
+              throw new Error(publicFailureDetail(error));
+            } finally {
+              await this.stopAndReleaseSharedLease(scope, threadId, lease);
+              if (this.activeThreads.get(lockKey) === lease) {
+                this.activeThreads.delete(lockKey);
+              }
             }
-            logger.error(
-              '[subagentThreads] Child-thread execution failed',
-              publicFailureDetail(error),
-            );
-            if (mayPersist) {
-              await this.persistFailure(
-                scope,
-                threadId,
-                request,
-                runtime.taskId,
-                error,
-                detachedUsage,
-              ).catch((persistError) => {
-                logger.error(
-                  '[subagentThreads] Failed to persist child-thread failure',
-                  persistError,
-                );
-              });
-            }
-            throw new Error(publicFailureDetail(error));
-          } finally {
-            await this.stopAndReleaseSharedLease(scope, threadId, lease);
-            if (this.activeThreads.get(lockKey) === lease) {
-              this.activeThreads.delete(lockKey);
-            }
-          }
-        },
+          }),
       });
     } catch (error) {
       if (ownsLease && this.activeThreads.get(lockKey) === lease) {
@@ -655,6 +672,20 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       this.activeThreads.delete(lockKey);
     }
     return started;
+  }
+
+  /** Detached tasks intentionally outlive the HTTP request that admitted them.
+   * Reconstruct only the trusted owner identity carried by the opaque task scope
+   * so tenant-isolated database reads and lazy child initialization do not depend
+   * on request AsyncLocalStorage remaining alive after the parent turn returns. */
+  private runWithOwnerContext<T>(scope: SubagentThreadScope, run: () => Promise<T>): Promise<T> {
+    return tenantStorage.run(
+      {
+        userId: scope.userId,
+        ...(scope.tenantId == null ? {} : { tenantId: scope.tenantId }),
+      },
+      run,
+    );
   }
 
   /**
@@ -1566,13 +1597,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       /** Account deletion can fence the owner after the optimistic probe but before
        * this lease exists. Once the lease is visible, revalidate so deletion either
        * observes and drains us or wins before any provider work can begin. */
-      if (!(await this.isOwnerActive(scope.userId))) {
+      if (
+        !(await observeSlowPreparation(this.isOwnerActive(scope.userId), {
+          stage: 'owner_recheck',
+          taskId,
+          threadId,
+        }))
+      ) {
         throw new SubagentThreadDeletedError('The thread owner is unavailable.');
       }
-      const allMessages = (await this.methods.getMessages(
-        { conversationId: threadId, user: scope.userId },
-        TRANSCRIPT_SELECT,
-        { sort: { createdAt: 1, _id: 1 } },
+      const allMessages = (await observeSlowPreparation(
+        this.methods.getMessages(
+          { conversationId: threadId, user: scope.userId },
+          TRANSCRIPT_SELECT,
+          { sort: { createdAt: 1, _id: 1 } },
+        ),
+        { stage: 'transcript_read', taskId, threadId },
       )) as ThreadMessage[];
       const attemptKey = createSubagentAttemptKey(scopeId, request.idempotencyKey);
       const requestFingerprint = normalizedRequestFingerprint(request);
@@ -1685,25 +1725,28 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
           break;
         }
       }
-      const savedUserMessage = await this.methods.saveMessage(
-        { userId: scope.userId },
-        {
-          messageId: userMessageId,
-          conversationId: threadId,
-          parentMessageId,
-          sender: 'User',
-          text: request.input,
-          endpoint: EModelEndpoint.agents,
-          isCreatedByUser: true,
-          subagentTask: {
-            attemptKey,
-            parentRunId: request.parentRunId,
-            ...(requestFingerprint == null ? {} : { requestFingerprint }),
-            status: 'running',
+      const savedUserMessage = await observeSlowPreparation(
+        this.methods.saveMessage(
+          { userId: scope.userId },
+          {
+            messageId: userMessageId,
+            conversationId: threadId,
+            parentMessageId,
+            sender: 'User',
+            text: request.input,
+            endpoint: EModelEndpoint.agents,
+            isCreatedByUser: true,
+            subagentTask: {
+              attemptKey,
+              parentRunId: request.parentRunId,
+              ...(requestFingerprint == null ? {} : { requestFingerprint }),
+              status: 'running',
+            },
+            ...retentionFields(conversation),
           },
-          ...retentionFields(conversation),
-        },
-        { context: 'SubagentThreadTaskStore.prepareThread' },
+          { context: 'SubagentThreadTaskStore.prepareThread' },
+        ),
+        { stage: 'seed_write', taskId, threadId },
       );
       if (savedUserMessage == null) {
         throw new Error('Unable to persist the child-thread input.');

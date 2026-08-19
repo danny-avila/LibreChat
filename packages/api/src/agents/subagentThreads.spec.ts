@@ -2,8 +2,15 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import { createMethods, createModels, logger } from '@librechat/data-schemas';
 import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
+import {
+  createMethods,
+  createModels,
+  getTenantId,
+  getUserId,
+  logger,
+  tenantStorage,
+} from '@librechat/data-schemas';
 import type {
   SubagentTaskClaim,
   SubagentTaskControlCommand,
@@ -374,6 +381,50 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(await methods.getConvo(userId, requireThreadId(started))).not.toBeNull();
+  });
+
+  it('reconstructs trusted owner context after the admitting request has ended', async () => {
+    const userId = 'detached-context-user';
+    const tenantId = 'detached-context-tenant';
+    const parentConversationId = randomUUID();
+    await tenantStorage.run({ tenantId, userId }, async () =>
+      saveParent(userId, parentConversationId, { tenantId }),
+    );
+
+    const observedContexts: Array<{ tenantId?: string; userId?: string }> = [];
+    const observeContext = () => {
+      observedContexts.push({ tenantId: getTenantId(), userId: getUserId() });
+    };
+    const store = new SubagentThreadTaskStore(methods, {
+      isOwnerActive: async () => {
+        observeContext();
+        return true;
+      },
+    });
+    const config = buildSubagentThreadTaskConfig(store, {
+      userId,
+      tenantId,
+      parentConversationId,
+    });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      observeContext();
+      return defaultRun(...args);
+    });
+
+    /** `start` deliberately runs outside `tenantStorage.run`: the detached task
+     * owns only its serialized host scope once the HTTP request has returned. */
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(observedContexts.length).toBeGreaterThan(0);
+    expect(observedContexts).toEqual(observedContexts.map(() => ({ tenantId, userId })));
+    const messages = await tenantStorage.run({ tenantId, userId }, async () =>
+      methods.getMessages({ user: userId, conversationId: requireThreadId(started) }),
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages.every((message) => message.tenantId === tenantId)).toBe(true);
   });
 
   it('fails without leaving an orphan when parent persistence rejects', async () => {
