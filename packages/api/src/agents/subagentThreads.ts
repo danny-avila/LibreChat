@@ -32,6 +32,7 @@ import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   boundedClaim,
   controlFingerprint,
+  MAX_TASK_SNAPSHOTS,
   SubagentTaskOwnerUnavailableError,
 } from './subagentTaskRouting';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
@@ -778,7 +779,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     for (const task of remote) {
       byId.set(task.taskId, task);
     }
-    return [...byId.values()].sort((left, right) => left.createdAt - right.createdAt);
+    /** The remote aggregation and each owner's reply carry their own bound, but this
+     * merge is what the poll tool reads: without a cap here the list the model sees is
+     * that bound plus however many children this replica happens to own. */
+    return [...byId.values()]
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .slice(0, MAX_TASK_SNAPSHOTS);
   }
 
   /** Fast capability probe used while deciding whether a later turn needs the poll tool. */

@@ -1858,6 +1858,33 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(store, config.scopeId, live);
   });
 
+  it('caps the merged local and remote task list the poll tool reads', async () => {
+    const userId = 'merged-list-cap-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const remote = Array.from({ length: 150 }, (_unused, index) =>
+      threadSnapshot(`remote-task-${index + 1}`),
+    );
+    await store.configureTaskControlTransport({
+      ...replayTransport({ status: 'claimed', task: threadSnapshot('remote-task-1') }),
+      list: async () => remote,
+    });
+
+    const local = await Promise.all(
+      Array.from({ length: 150 }, () => store.start(taskRequest(config.scopeId))),
+    );
+    await Promise.all(local.map((started) => waitForSettled(store, config.scopeId, started)));
+    expect(store.list(config.scopeId)).toHaveLength(150);
+
+    /** Each owner's reply and the remote aggregation are bounded on their own, but the
+     * poll tool reads this merge — 300 distinct tasks must still arrive as 200. */
+    await expect(store.listTasks(config.scopeId)).resolves.toHaveLength(200);
+
+    await store.destroyTaskControlTransport();
+  });
+
   it('routes a control for a remote task while the local invocation window is full', async () => {
     const userId = 'remote-control-under-load-user';
     const parentConversationId = randomUUID();

@@ -33,7 +33,8 @@ const MAX_ERROR_CHARS = 4 * 1_024;
 const MAX_THREAD_ID_CHARS = 256;
 const MAX_SUBAGENT_TYPE_CHARS = 256;
 const MAX_PROGRESS_LABEL_CHARS = 1_024;
-const MAX_TASK_SNAPSHOTS = 200;
+/** Bounds the model-facing task list, per owner reply and across the merged result. */
+export const MAX_TASK_SNAPSHOTS = 200;
 const MAX_CANCEL_THREAD_IDS = 200;
 /** Matches the deletion drain so bounded fan-out stays well inside the lease TTL. */
 const ROUTING_FANOUT_CONCURRENCY = 32;
