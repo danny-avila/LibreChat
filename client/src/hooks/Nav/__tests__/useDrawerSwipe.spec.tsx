@@ -4,7 +4,7 @@ import useDrawerSwipe, {
   getPendingDrawerFlip,
   kickDrawerAnimation,
 } from '../useDrawerSwipe';
-import { MOBILE_DRAWER_ID } from '~/components/UnifiedSidebar/constants';
+import { MOBILE_DRAWER_ID, MOBILE_PANE_SHIFT } from '~/components/UnifiedSidebar/constants';
 
 const DRAWER_WIDTH = 375;
 
@@ -120,7 +120,7 @@ describe('useDrawerSwipe — opening from the chat pane', () => {
 
     expect(harness.onOpenChange).toHaveBeenCalledWith(true);
     expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     harness.unmount();
   });
 
@@ -288,7 +288,7 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
       { x: 220, y: 100, t: 50 },
     ]);
     expect(harness.onOpenChange).toHaveBeenCalledWith(true);
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
 
     harness.rerender({ open: true, enabled: true });
     harness.rerender({ open: false, enabled: true });
@@ -313,7 +313,7 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
     expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
 
     jest.runAllTimers();
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     expect(harness.drawer.style.transform).toBe('');
     jest.useRealTimers();
     harness.unmount();
@@ -358,7 +358,7 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
     expect(harness.drawer.style.transition).not.toBe('none');
     /** React committed the open pane transform before this cleanup and will
      * not re-assert it — the release must restore it, not clear it. */
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     harness.unmount();
   });
 
@@ -448,7 +448,7 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     });
 
     expect(transformAtApply).toEqual(['translate3d(0, 0, 0)']);
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     expect(harness.drawer.style.willChange).toBe('transform');
     expect(harness.onOpenChange).not.toHaveBeenCalled();
 
@@ -458,7 +458,7 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.runAllTimers();
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.drawer.style.willChange).toBe('');
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     jest.useRealTimers();
     harness.unmount();
   });
@@ -494,7 +494,7 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     kickDrawerAnimation(false, jest.fn());
 
     expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
-    expect(harness.pane.style.transform).toBe('none');
+    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
 
     harness.rerender({ open: false, enabled: true });
     jest.runAllTimers();
@@ -604,25 +604,24 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     queued.shift()?.(0);
 
     expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
 
     harness.rerender({ open: true, enabled: true });
     jest.advanceTimersByTime(400);
     expect(harness.drawer.style.transform).toBe('');
-    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.pane.style.transform).toBe(MOBILE_PANE_SHIFT);
     jest.useRealTimers();
     harness.unmount();
   });
 
   /**
-   * A programmatic close is a REVEAL: the pane repositions instantly under
-   * the opaque drawer's cover and only the drawer animates away. Animating
-   * the pane in from the right made every tap-to-navigate close visibly
-   * shift the chat leftward while the new conversation committed into the
-   * moving layer mid-slide. The gesture keeps the paired motion — a finger
-   * drags both — via `settle`, which this does not touch.
+   * This used to be a reveal: the pane repositioned instantly under the cover
+   * of a full-width opaque drawer while only the drawer animated. The drawer
+   * now stops at MOBILE_DRAWER_WIDTH and leaves a strip of chat on screen, so
+   * an instant reposition would be visible there. Both surfaces animate
+   * together instead, matching what a finger drag already produces.
    */
-  it('reveals on a programmatic close: pane snaps under cover, only the drawer slides', () => {
+  it('animates both surfaces on a programmatic close', () => {
     jest.useFakeTimers();
     const harness = setup(true);
 
@@ -630,8 +629,8 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
 
     expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
     expect(harness.drawer.style.transition).not.toBe('none');
-    expect(harness.pane.style.transform).toBe('none');
-    expect(harness.pane.style.transition).toBe('none');
+    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+    expect(harness.pane.style.transition).not.toBe('none');
 
     harness.rerender({ open: false, enabled: true });
     jest.runAllTimers();

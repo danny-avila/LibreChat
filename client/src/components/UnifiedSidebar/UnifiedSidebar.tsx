@@ -11,6 +11,7 @@ import {
   SIDEBAR_TRANSITION,
   DRAWER_Z_INDEX,
   MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_WIDTH,
 } from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
@@ -171,10 +172,14 @@ function UnifiedSidebar() {
           /** The close swipe reads horizontal touches here (the drawer holds no
            * horizontal scrollers), while pinch-zoom stays with the browser —
            * this full-viewport surface must not disable zooming entirely. */
-          'fixed inset-y-0 left-0 flex w-full touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
+          'fixed inset-y-0 left-0 flex touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
           expanded ? 'translate-x-0' : '-translate-x-full',
         )}
-        style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}
+        style={{
+          width: MOBILE_DRAWER_WIDTH,
+          transition: SIDEBAR_TRANSITION,
+          zIndex: DRAWER_Z_INDEX,
+        }}
         inert={!expanded ? '' : undefined}
       >
         <SidebarChatProvider>

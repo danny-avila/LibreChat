@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   TRANSITION_MS,
   MOBILE_DRAWER_ID,
+  MOBILE_PANE_SHIFT,
   SIDEBAR_TRANSITION,
 } from '~/components/UnifiedSidebar/constants';
 
@@ -173,7 +174,7 @@ const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: b
   drawer.style.transform = '';
   drawer.style.willChange = '';
   drawer.style.transition = SIDEBAR_TRANSITION;
-  pane.style.transform = paneOpen ? 'translateX(100%)' : '';
+  pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
   pane.style.transition = SIDEBAR_TRANSITION;
 };
@@ -301,7 +302,7 @@ export default function useDrawerSwipe({
       drawerEl.style.transition = SIDEBAR_TRANSITION;
       paneEl.style.transition = SIDEBAR_TRANSITION;
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
-      paneEl.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
+      paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
@@ -369,21 +370,13 @@ export default function useDrawerSwipe({
         }
         drawer.style.transition = SIDEBAR_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
-        if (next) {
-          pane.style.transition = SIDEBAR_TRANSITION;
-          pane.style.transform = 'translateX(100%)';
-        } else {
-          /** A programmatic close is a REVEAL: the pane repositions
-           * instantly beneath the opaque drawer's cover and only the
-           * drawer slides away, uncovering content already in place.
-           * Animating the pane in from the right made every
-           * tap-to-navigate close visibly shift the chat leftward while
-           * the new conversation committed into the moving layer
-           * mid-slide. The gesture keeps the paired both-move motion in
-           * `settle` — there a finger drags both surfaces. */
-          pane.style.transition = 'none';
-          pane.style.transform = 'none';
-        }
+        /** Closing used to reposition the pane instantly, which read as a
+         * reveal because a full-width opaque drawer covered the jump. The
+         * drawer now stops at MOBILE_DRAWER_WIDTH, so that jump would land in
+         * the visible strip; both surfaces animate together instead, which is
+         * the motion the drag path already produces in `settle`. */
+        pane.style.transition = SIDEBAR_TRANSITION;
+        pane.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
         void drawer.getBoundingClientRect();
         armed.id = setTimeout(() => {
           settleRef.current = null;

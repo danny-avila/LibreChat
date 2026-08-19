@@ -1,7 +1,25 @@
 export const COLLAPSED_WIDTH = 52;
 export const EXPANDED_MIN = 360;
+
+/**
+ * The mobile drawer stops short of the edge so a strip of the chat stays on
+ * screen: it keeps the drawer reading as a layer over the conversation rather
+ * than a separate screen, and gives the close gesture a target to tap.
+ *
+ * The drawer and the pane derive their travel from this one number so they
+ * cannot drift apart (see SIDEBAR_TRANSITION).
+ */
+export const MOBILE_DRAWER_WIDTH_PCT = 80;
+export const MOBILE_DRAWER_WIDTH = `${MOBILE_DRAWER_WIDTH_PCT}%`;
+export const MOBILE_PANE_SHIFT = `translateX(${MOBILE_DRAWER_WIDTH_PCT}%)`;
 export const TRANSITION_MS = 300;
-export const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
+/**
+ * Decelerating, but it settles rather than crawls. The previous
+ * cubic-bezier(0.2, 0, 0, 1) spent its last third of time on a few percent of
+ * distance, which reads as the drawer sticking just before it lands — most
+ * obvious on close, where the tail is the part you watch.
+ */
+export const EASING = 'cubic-bezier(0.32, 0.72, 0, 1)';
 
 /**
  * The drawer and the chat pane move as one object, so they must stay
