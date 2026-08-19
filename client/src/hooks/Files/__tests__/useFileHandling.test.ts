@@ -8,19 +8,25 @@ import {
 } from 'librechat-data-provider';
 
 type MockUploadMutationOptions = {
-  onSuccess?: (data: {
-    temp_file_id: string;
-    file_id: string;
-    filepath: string;
-    type: string;
-    filename: string;
-    source: string;
-    embedded: boolean;
-    height?: number;
-    width?: number;
-  }) => void;
+  onSuccess?: (
+    data: {
+      temp_file_id: string;
+      file_id: string;
+      filepath: string;
+      type: string;
+      filename: string;
+      source: string;
+      embedded: boolean;
+      height?: number;
+      width?: number;
+    },
+    body: FormData,
+  ) => void;
   onError?: (error: unknown, body: FormData) => void;
 };
+
+/** Mirrors a browser that can (or cannot) decode the bytes it was handed. */
+let mockImageDecodes = true;
 
 beforeAll(() => {
   global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
@@ -31,9 +37,10 @@ beforeAll(() => {
       width = 640;
       height = 480;
       onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
 
       set src(_src: string) {
-        queueMicrotask(() => this.onload?.());
+        queueMicrotask(() => (mockImageDecodes ? this.onload?.() : this.onerror?.()));
       }
     },
   });
@@ -131,13 +138,18 @@ jest.mock('../useClientResize', () => ({
   })),
 }));
 
+const mockAddFile = jest.fn();
+const mockReplaceFile = jest.fn();
+const mockUpdateFileById = jest.fn();
+const mockDeleteFileById = jest.fn();
+
 jest.mock('../useUpdateFiles', () => ({
   __esModule: true,
   default: jest.fn(() => ({
-    addFile: jest.fn(),
-    replaceFile: jest.fn(),
-    updateFileById: jest.fn(),
-    deleteFileById: jest.fn(),
+    addFile: mockAddFile,
+    replaceFile: mockReplaceFile,
+    updateFileById: mockUpdateFileById,
+    deleteFileById: mockDeleteFileById,
   })),
 }));
 
@@ -173,6 +185,7 @@ describe('useFileHandling', () => {
     mockFileConfig = null;
     mockIsConfigPending = false;
     mockIsTemporary = false;
+    mockImageDecodes = true;
     mockUploadOptions = {};
   });
 
@@ -1057,15 +1070,18 @@ describe('useFileHandling', () => {
       expect(onStart).toHaveBeenCalledWith(fileId);
 
       act(() => {
-        mockUploadOptions.onSuccess?.({
-          temp_file_id: fileId,
-          file_id: 'saved-file-id',
-          filepath: '/files/notes.txt',
-          type: 'text/plain',
-          filename: 'notes.txt',
-          source: 'local',
-          embedded: false,
-        });
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: fileId,
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.txt',
+            type: 'text/plain',
+            filename: 'notes.txt',
+            source: 'local',
+            embedded: false,
+          },
+          uploadBody,
+        );
       });
 
       expect(onSuccess).toHaveBeenCalledWith(fileId);
@@ -1157,6 +1173,92 @@ describe('useFileHandling', () => {
       act(() => uploadOptions.onError?.(new Error('upload failed after removal'), uploadBody));
 
       expect(recovery).not.toHaveBeenCalled();
+      consoleLog.mockRestore();
+    });
+  });
+  describe('stalled attachments', () => {
+    /**
+     * The upload only starts once the browser has decoded the image, so a decode
+     * it refuses must not leave the attachment parked below `progress: 1` — the
+     * composer reads that as "still uploading" and disables send for the rest of
+     * the session.
+     */
+    it('drops an image the browser cannot decode instead of parking it mid-upload', async () => {
+      mockImageDecodes = false;
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['broken'], 'photo.png', { type: 'image/png' }),
+        ]);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const addedFile = mockAddFile.mock.calls[0][0] as { file_id: string };
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockDeleteFileById).toHaveBeenCalledWith(addedFile.file_id);
+    });
+
+    it('reports the failure through the upload lifecycle when a decode fails', async () => {
+      mockImageDecodes = false;
+      const onError = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['broken'], 'photo.png', { type: 'image/png' })],
+          undefined,
+          { fileId: 'pending-paste-id', onError },
+        );
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(onError).toHaveBeenCalledWith('pending-paste-id');
+    });
+
+    /**
+     * Every client-side handle for an upload is keyed by the id the request was
+     * sent with; `temp_file_id` is only the server's echo of it. Reconciling
+     * against the echo strands the attachment when the two disagree.
+     */
+    it('completes the attachment against the id the request was sent with', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const fileId = uploadBody.get('file_id') as string;
+
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: 'an-id-the-client-never-sent',
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.txt',
+            type: 'text/plain',
+            filename: 'notes.txt',
+            source: 'local',
+            embedded: false,
+          },
+          uploadBody,
+        );
+      });
+
+      const updatedIds = mockUpdateFileById.mock.calls.map(([id]) => id);
+      expect(updatedIds).toContain(fileId);
+      expect(updatedIds).not.toContain('an-id-the-client-never-sent');
       consoleLog.mockRestore();
     });
   });
