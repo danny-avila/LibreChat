@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
 import { useRecoilValue } from 'recoil';
 import {
   getConfigDefaults,
@@ -13,7 +14,6 @@ import ExportAndShareMenu from './ExportAndShareMenu';
 import SubagentThreadLink from './SubagentThreadLink';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
-import { useChatContext } from '~/Providers';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
@@ -36,12 +36,13 @@ function Header({
 }) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
-  const { conversation } = useChatContext();
 
-  /** The mobile row only offers a new chat when there is one to leave. An
-   *  unsaved conversation has no id yet, so absence counts as new too. */
-  const conversationId = conversation?.conversationId;
-  const isNewChat = conversationId == null || conversationId === Constants.NEW_CONVO;
+  /** The mobile row only offers a new chat when there is one to leave. Read
+   *  from the route rather than the context conversation, which still holds the
+   *  previous chat for a render after a history or link navigation. An unsaved
+   *  conversation has no id in the route yet, so absence counts as new too. */
+  const { conversationId: routeConversationId } = useParams();
+  const isNewChat = routeConversationId == null || routeConversationId === Constants.NEW_CONVO;
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
