@@ -115,11 +115,6 @@ export const librechat = {
     labelCode: true,
     type: 'number',
     component: 'input',
-    /** Bounds the hand-rolled Google editor enforced through InputNumber. They
-     *  belong on the definition so every endpoint rendering this field through
-     *  componentMapping is held to them: below the floor the conversation is
-     *  pruned to nothing, above the ceiling no model accepts the context. */
-    range: { min: 10, max: 2000000, step: 1000 },
     placeholder: 'com_endpoint_default',
     placeholderCode: true,
     description: 'com_endpoint_context_info',
@@ -695,6 +690,16 @@ const meta: Record<string, SettingDefinition> = {
 };
 
 const google: Record<string, SettingDefinition> = {
+  /** Bounds the hand-rolled editor enforced through InputNumber, and they stay
+   *  scoped to this endpoint: the shared definition is rendered by every other
+   *  endpoint, whose own context windows may fall outside them. */
+  maxContextTokens: createDefinition(librechat.maxContextTokens, {
+    range: {
+      min: googleSettings.maxContextTokens.min,
+      max: googleSettings.maxContextTokens.max,
+      step: googleSettings.maxContextTokens.step,
+    },
+  }),
   temperature: createDefinition(baseDefinitions.temperature, {
     default: googleSettings.temperature.default,
     range: {
@@ -835,7 +840,7 @@ const google: Record<string, SettingDefinition> = {
 const googleConfig: SettingsConfiguration = [
   librechat.modelLabel,
   librechat.promptPrefix,
-  librechat.maxContextTokens,
+  google.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,
@@ -856,7 +861,7 @@ const googleCol1: SettingsConfiguration = [
 ];
 
 const googleCol2: SettingsConfiguration = [
-  librechat.maxContextTokens,
+  google.maxContextTokens,
   google.maxOutputTokens,
   google.temperature,
   google.topP,

@@ -507,6 +507,11 @@ export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
   },
+  maxContextTokens: {
+    min: 10 as const,
+    max: 2000000 as const,
+    step: 1000 as const,
+  },
   maxOutputTokens: {
     min: 1 as const,
     max: GOOGLE_MAX_OUTPUT,

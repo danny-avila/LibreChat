@@ -4,6 +4,8 @@ import { EModelEndpoint } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const maxOut = (params: SettingDefinition[]) => params.find((p) => p.key === 'maxOutputTokens');
+const maxContext = (params: SettingDefinition[]) =>
+  params.find((p) => p.key === 'maxContextTokens');
 const thinkingBudget = (params: SettingDefinition[]) =>
   params.find((p) => p.key === 'thinkingBudget');
 
@@ -86,5 +88,24 @@ describe('applyModelAwareDefaults', () => {
       max: 24576,
       positiveMin: 0,
     });
+  });
+});
+
+/**
+ * The field is rendered by every endpoint, so bounds written for Gemini would
+ * silently clamp a context window another provider accepts.
+ */
+describe('maxContextTokens bounds', () => {
+  it('bounds the Google field to the documented context window', () => {
+    expect(maxContext(googleParams)?.range).toEqual({ min: 10, max: 2000000, step: 1000 });
+  });
+
+  it('leaves every other endpoint unbounded', () => {
+    const bounded = Object.entries(paramSettings)
+      .filter(([endpoint]) => endpoint !== EModelEndpoint.google)
+      .filter(([, params]) => maxContext(params as SettingDefinition[])?.range != null)
+      .map(([endpoint]) => endpoint);
+
+    expect(bounded).toEqual([]);
   });
 });
