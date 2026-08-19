@@ -40,6 +40,25 @@ function isCodeArtifactToolOutput(output) {
   return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
 }
 
+function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
+  if (!attachment || executionProfile !== 'stateful' || !isHostFileAuthoringArtifact(artifact)) {
+    return attachment;
+  }
+  const path =
+    typeof artifact.path === 'string' && artifact.path.length > 0
+      ? artifact.path
+      : attachment.filename;
+  if (typeof path !== 'string' || path.length === 0) {
+    return attachment;
+  }
+  attachment.workspaceChange = {
+    profile: 'stateful',
+    operation: artifact.created === true ? 'created' : 'updated',
+    path,
+  };
+  return attachment;
+}
+
 class ModelEndHandler {
   /**
    * @param {Array<UsageMetadata>} collectedUsage
@@ -979,7 +998,11 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
             codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
             executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
-          const fileMetadata = result?.file ?? null;
+          const fileMetadata = addStatefulWorkspaceChange(
+            result?.file ?? null,
+            output.artifact,
+            metadata.codeExecutionContext?.executionProfile,
+          );
           const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
@@ -1027,6 +1050,9 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
                   ...updated,
                   messageId: metadata.run_id,
                   toolCallId,
+                  ...(fileMetadata.workspaceChange
+                    ? { workspaceChange: fileMetadata.workspaceChange }
+                    : {}),
                 },
                 jobCreatedAt,
               );
@@ -1303,7 +1329,11 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
             codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
             executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
-          const fileMetadata = result?.file ?? null;
+          const fileMetadata = addStatefulWorkspaceChange(
+            result?.file ?? null,
+            output.artifact,
+            metadata.codeExecutionContext?.executionProfile,
+          );
           const finalize = result?.finalize;
           if (!fileMetadata) {
             return null;
@@ -1336,7 +1366,12 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
               writeResponsesAttachment(
                 res,
                 tracker,
-                buildResponsesAttachment(updated, toolCallId),
+                buildResponsesAttachment(
+                  fileMetadata.workspaceChange
+                    ? { ...updated, workspaceChange: fileMetadata.workspaceChange }
+                    : updated,
+                  toolCallId,
+                ),
                 metadata,
               );
             },
@@ -1371,6 +1406,7 @@ function buildResponsesAttachment(fileMetadata, toolCallId) {
     textFormat: fileMetadata.textFormat ?? null,
     status: fileMetadata.status,
     previewError: fileMetadata.previewError,
+    workspaceChange: fileMetadata.workspaceChange,
   };
 }
 

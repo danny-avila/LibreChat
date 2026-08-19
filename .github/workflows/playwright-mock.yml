@@ -251,39 +251,17 @@ jobs:
         continue-on-error: true
         run: timeout -k 10 90 npx playwright install ffmpeg
 
-      # Optional fonts only — see the note in the e2e_shards job.
-      - name: Install optional Playwright font dependencies (best effort)
-        timeout-minutes: 4
-        continue-on-error: true
-        run: .github/scripts/install-playwright-fonts.sh
+      # This job deliberately skips the optional font install: its bounded
+      # Playwright apt process can outlive the wrapper on a slow mirror and
+      # retain the package-manager lock needed by the required Redis install.
+      # The MCP suite does not enable visual snapshot assertions.
 
       # Redis is a hard requirement for this job, so this step stays fatal.
       - name: Install Redis runtime dependencies
-        timeout-minutes: 10
+        timeout-minutes: 5
         run: |
-          # The runner boots its own apt-daily/unattended-upgrades work, which
-          # holds /var/lib/apt/lists/lock and failed this step outright before
-          # any test ran. DPkg::Lock::Timeout does not help: it covers the dpkg
-          # frontend lock, not the lists lock, so apt-get update still returned
-          # immediately. Stop that background work, then wait for whoever still
-          # holds the lock to let go.
-          sudo systemctl stop apt-daily.service apt-daily-upgrade.service \
-            unattended-upgrades.service 2>/dev/null || true
-          sudo systemctl kill --kill-who=all apt-daily.service \
-            apt-daily-upgrade.service 2>/dev/null || true
-
-          apt_with_lock_wait() {
-            for attempt in $(seq 1 30); do
-              if sudo apt-get -o DPkg::Lock::Timeout=60 "$@"; then
-                return 0
-              fi
-              echo "apt-get $1 could not take the lock (attempt ${attempt}/30), retrying"
-              sleep 10
-            done
-            return 1
-          }
-          apt_with_lock_wait update
-          apt_with_lock_wait install -y redis-server redis-tools
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y redis-server redis-tools
 
       - name: Start standalone Redis and Redis Cluster
         run: |

@@ -30,6 +30,16 @@ describe('Experimental server configuration', () => {
     );
   });
 
+  it('configures routed subagent controls before a worker accepts requests', () => {
+    const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(redisReadyIndex).toBeGreaterThan(-1);
+    expect(routingIndex).toBeGreaterThan(redisReadyIndex);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
+  });
+
   it('matches the standard server pre-authentication tenant routes', () => {
     expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
     expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");

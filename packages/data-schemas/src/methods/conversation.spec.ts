@@ -3338,6 +3338,15 @@ describe('Conversation Operations', () => {
       const winner = claims[0] ? 'token-a' : 'token-b';
       const loser = winner === 'token-a' ? 'token-b' : 'token-a';
       expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(1);
+      await expect(
+        methods.listActiveSubagentThreadLeases({ user: 'lease-user', now }),
+      ).resolves.toEqual([
+        {
+          conversationId,
+          parentConversationId: 'parent',
+          taskId: `task-${winner}`,
+        },
+      ]);
       expect(await methods.getConvo('lease-user', conversationId)).not.toHaveProperty(
         'subagentThreadLease',
       );

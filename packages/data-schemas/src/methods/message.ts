@@ -48,6 +48,11 @@ interface MessageQueryOptions {
   sort?: Record<string, 1 | -1> | false;
 }
 
+export type SubagentTaskResultClaim =
+  | { status: 'not_found' }
+  | { status: 'claimed' }
+  | { status: 'acquired'; message: IMessage };
+
 export interface MessageMethods {
   saveMessage(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
@@ -82,6 +87,12 @@ export interface MessageMethods {
     message: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<Partial<IMessage>>;
+  claimSubagentTaskResult(params: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    claimId: string;
+  }): Promise<SubagentTaskResultClaim>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -519,6 +530,62 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Assigns one durable terminal child result to the polling invocation that collects
+   * it. The same invocation may re-acquire, so a poll whose response was lost recovers
+   * the result it never received; a different invocation is told it was already
+   * collected rather than handed a second copy.
+   */
+  async function claimSubagentTaskResult({
+    userId,
+    conversationId,
+    taskId,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    claimId: string;
+  }): Promise<SubagentTaskResultClaim> {
+    if (
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      claimId.length === 0 ||
+      claimId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task result claim');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const filter = {
+      user: userId,
+      conversationId,
+      messageId: `${taskId}:assistant`,
+      'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
+    };
+    const acquired = await Message.findOneAndUpdate(
+      {
+        ...filter,
+        $or: [
+          { 'subagentTask.resultClaim': { $exists: false } },
+          { 'subagentTask.resultClaim.claimId': claimId },
+        ],
+      },
+      { $set: { 'subagentTask.resultClaim': { claimId, claimedAt: new Date() } } },
+      {
+        new: true,
+        timestamps: false,
+        projection: { messageId: 1, conversationId: 1, text: 1, subagentTask: 1 },
+      },
+    ).lean<IMessage | null>();
+    if (acquired != null) {
+      return { status: 'acquired', message: acquired };
+    }
+    const existing = await Message.exists(filter);
+    return existing == null ? { status: 'not_found' } : { status: 'claimed' };
+  }
+
+  /**
    * Deletes messages in a conversation since a specific message.
    */
   async function deleteMessagesSince(
@@ -655,6 +722,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateToolCallResult,
     updateMessage,
+    claimSubagentTaskResult,
     deleteMessagesSince,
     getMessages,
     getMessage,
