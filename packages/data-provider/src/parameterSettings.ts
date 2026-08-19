@@ -15,6 +15,7 @@ import {
   BedrockProviders,
   anthropicSettings,
 } from './types';
+import { supportsPromptCache } from './bedrock';
 import { SettingDefinition, SettingsConfiguration } from './generate';
 
 // Base definitions
@@ -1253,18 +1254,31 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
  * Resolves model-aware defaults for a settings configuration before rendering.
  * Google's `maxOutputTokens` default depends on the selected Gemini model so that
  * current models (2.5 and 3+) surface their 64K output limit instead of the legacy 8K value.
+ * Anthropic prompt-cache controls are only surfaced for models that support them.
  */
 export function applyModelAwareDefaults(
   settings: SettingsConfiguration,
   endpoint: string,
   model?: string,
 ): SettingsConfiguration {
-  if (endpoint !== EModelEndpoint.google || !model) {
+  if (!model) {
     return settings;
   }
-  return settings.map((setting) =>
-    setting.key === 'maxOutputTokens'
-      ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
-      : setting,
+
+  const modelAwareSettings =
+    endpoint === EModelEndpoint.google
+      ? settings.map((setting) =>
+          setting.key === 'maxOutputTokens'
+            ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
+            : setting,
+        )
+      : settings;
+
+  if (endpoint !== EModelEndpoint.anthropic || supportsPromptCache(model)) {
+    return modelAwareSettings;
+  }
+
+  return modelAwareSettings.filter(
+    (setting) => setting.key !== 'promptCache' && setting.key !== 'promptCacheTtl',
   );
 }

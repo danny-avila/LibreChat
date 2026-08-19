@@ -19,6 +19,18 @@ describe('getModelMaxTokens partial-override fallback', () => {
   });
 });
 
+describe('future Claude context windows', () => {
+  it('uses the 1M profile for future Sonnet and Opus model IDs', () => {
+    for (const model of ['claude-sonnet-6', 'claude-opus-6']) {
+      expect(getModelMaxTokens(model, EModelEndpoint.anthropic)).toBe(1000000);
+    }
+  });
+
+  it('keeps the safe Claude fallback for unsupported model families', () => {
+    expect(getModelMaxTokens('claude-haiku-4', EModelEndpoint.anthropic)).toBe(100000);
+  });
+});
+
 describe('getModelMaxOutputTokens partial-override fallback', () => {
   const partialOverride: EndpointTokenConfig = {
     'custom-model': { prompt: 1, completion: 2, context: 32000, output: 4096 },

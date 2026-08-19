@@ -1,5 +1,5 @@
 import z from 'zod';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, supportsContext1m } from 'librechat-data-provider';
 import type { EndpointTokenConfig, TokenConfig } from '~/types';
 
 /**
@@ -185,7 +185,7 @@ const anthropicModels = {
   'claude-mythos-5': 1000000,
 };
 
-const ANTHROPIC_SONNET_4_6_PLUS_CONTEXT = 1000000;
+const ANTHROPIC_CONTEXT_1M = 1000000;
 const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
 const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
   /(?:claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})|claude[-.]?4[-.]?(?:[6-9]|\d{2})[-.]?sonnet)(?=$|[^0-9])/;
@@ -200,14 +200,11 @@ function usesAnthropicContextMap(endpoint: EModelEndpoint): boolean {
   );
 }
 
-function getAnthropicSonnet46PlusContext(
-  modelName: string,
-  endpoint: EModelEndpoint,
-): number | undefined {
-  if (!usesAnthropicContextMap(endpoint) || !ANTHROPIC_SONNET_4_6_PLUS_PATTERN.test(modelName)) {
+function getAnthropicContext1m(modelName: string, endpoint: EModelEndpoint): number | undefined {
+  if (!usesAnthropicContextMap(endpoint) || !supportsContext1m(modelName)) {
     return undefined;
   }
-  return ANTHROPIC_SONNET_4_6_PLUS_CONTEXT;
+  return ANTHROPIC_CONTEXT_1M;
 }
 
 function getAnthropicSonnet46PlusOutput(
@@ -682,9 +679,9 @@ export function getModelMaxTokens(
       return overrideValue;
     }
   }
-  const sonnet46PlusValue = getAnthropicSonnet46PlusContext(modelName, endpoint);
-  if (sonnet46PlusValue != null) {
-    return sonnet46PlusValue;
+  const context1mValue = getAnthropicContext1m(modelName, endpoint);
+  if (context1mValue != null) {
+    return context1mValue;
   }
   return getModelTokenValue(modelName, maxTokensMap[endpoint as keyof typeof maxTokensMap]);
 }
@@ -753,7 +750,7 @@ export function matchModelName(
   const matchedPattern = findMatchingPattern(modelName, tokensMap);
   if (
     (matchedPattern === 'claude-sonnet-4' || matchedPattern === 'claude-4') &&
-    getAnthropicSonnet46PlusContext(modelName, endpoint) != null
+    getAnthropicContext1m(modelName, endpoint) != null
   ) {
     return modelName;
   }
