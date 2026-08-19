@@ -870,8 +870,6 @@ describe('SubagentThreadTaskStore', () => {
       }),
     };
     const options = { leaseTtlMs: 500, leaseHeartbeatMs: 50 };
-    const intervalSpy = jest.spyOn(global, 'setInterval');
-    const timeoutSpy = jest.spyOn(global, 'setTimeout');
     const firstWorker = new SubagentThreadTaskStore(slowMethods, options);
     const secondWorker = new SubagentThreadTaskStore(methods, options);
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
@@ -879,6 +877,10 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(firstWorker, config.scopeId, initial);
     slowThreadId = requireThreadId(initial);
     blockNextRead = true;
+    const intervalSpy = jest.spyOn(global, 'setInterval');
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+    const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
 
     const firstRun = jest.fn(taskRequest(config.scopeId).run);
     const first = firstWorker.start(
@@ -896,13 +898,8 @@ describe('SubagentThreadTaskStore', () => {
     const warningCall = timeoutSpy.mock.calls.find(([, delay]) => delay === 5_000);
     const warningIndex = warningCall == null ? -1 : timeoutSpy.mock.calls.indexOf(warningCall);
     const warning = timeoutSpy.mock.results[warningIndex]?.value as NodeJS.Timeout | undefined;
-    try {
-      expect(heartbeat?.hasRef()).toBe(true);
-      expect(warning?.hasRef()).toBe(true);
-    } finally {
-      intervalSpy.mockRestore();
-      timeoutSpy.mockRestore();
-    }
+    expect(heartbeat?.hasRef()).toBe(true);
+    expect(warning?.hasRef()).toBe(true);
     /** Wait for evidence rather than a fixed delay: a renewal that succeeds after the
      * acquired lease's own deadline proves the heartbeat carried it past expiry. */
     await waitUntil(() => renewedPastDeadline, 'the shared lease to outlive its original deadline');
@@ -921,6 +918,12 @@ describe('SubagentThreadTaskStore', () => {
     releasePreparation();
     await waitForSettled(firstWorker, config.scopeId, first);
     expect(firstRun).toHaveBeenCalledTimes(1);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(heartbeat);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(warning);
+    intervalSpy.mockRestore();
+    timeoutSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
   });
 
   it('cancels a child when its lease renewal only commits after expiry', async () => {
