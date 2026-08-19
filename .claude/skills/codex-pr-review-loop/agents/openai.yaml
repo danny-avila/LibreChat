@@ -1,0 +1,3 @@
+interface:
+  display_name: "Codex PR Review Loop"
+  short_description: "Audit and resolve Codex PR review findings"
