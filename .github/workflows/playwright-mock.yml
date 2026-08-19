@@ -259,10 +259,31 @@ jobs:
 
       # Redis is a hard requirement for this job, so this step stays fatal.
       - name: Install Redis runtime dependencies
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
-          sudo apt-get install -y redis-server redis-tools
+          # The runner boots its own apt-daily/unattended-upgrades work, which
+          # holds /var/lib/apt/lists/lock and failed this step outright before
+          # any test ran. DPkg::Lock::Timeout does not help: it covers the dpkg
+          # frontend lock, not the lists lock, so apt-get update still returned
+          # immediately. Stop that background work, then wait for whoever still
+          # holds the lock to let go.
+          sudo systemctl stop apt-daily.service apt-daily-upgrade.service \
+            unattended-upgrades.service 2>/dev/null || true
+          sudo systemctl kill --kill-who=all apt-daily.service \
+            apt-daily-upgrade.service 2>/dev/null || true
+
+          apt_with_lock_wait() {
+            for attempt in $(seq 1 30); do
+              if sudo apt-get -o DPkg::Lock::Timeout=60 "$@"; then
+                return 0
+              fi
+              echo "apt-get $1 could not take the lock (attempt ${attempt}/30), retrying"
+              sleep 10
+            done
+            return 1
+          }
+          apt_with_lock_wait update
+          apt_with_lock_wait install -y redis-server redis-tools
 
       - name: Start standalone Redis and Redis Cluster
         run: |

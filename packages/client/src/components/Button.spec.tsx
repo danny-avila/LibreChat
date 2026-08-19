@@ -21,8 +21,10 @@ describe('Button', () => {
   it('renders the header-action toggle from semantic tokens', () => {
     render(<Button variant="header-action">Toggle</Button>);
 
+    /** Transparent so the toggle reads as an icon on the header rather than a
+     *  raised control; the border and hover still mark it as hit-able. */
     expect(screen.getByRole('button', { name: 'Toggle' })).toHaveClass(
-      'bg-presentation',
+      'bg-transparent',
       'border-border-light',
       'rounded-xl',
       'duration-0',
