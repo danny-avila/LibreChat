@@ -175,6 +175,16 @@ async function waitForSettled(
   throw new Error('Timed out waiting for the subagent task.');
 }
 
+async function waitUntil(condition: () => boolean, description: string): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (condition()) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${description}.`);
+}
+
 function requireAccepted(
   started: SubagentTaskStartResult,
 ): Extract<SubagentTaskStartResult, { accepted: true }> {
@@ -691,8 +701,26 @@ describe('SubagentThreadTaskStore', () => {
     const preparationRelease = new Promise<void>((resolve) => {
       releasePreparation = resolve;
     });
+    let leaseDeadline = new Date(0);
+    let renewedPastDeadline = false;
     const slowMethods = {
       ...methods,
+      acquireSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['acquireSubagentThreadLease']>) => {
+          const acquired = await methods.acquireSubagentThreadLease(...args);
+          if (acquired) {
+            leaseDeadline = args[0].expiresAt;
+          }
+          return acquired;
+        },
+      ),
+      renewSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['renewSubagentThreadLease']>) => {
+          const renewed = await methods.renewSubagentThreadLease(...args);
+          renewedPastDeadline ||= renewed && args[0].now > leaseDeadline;
+          return renewed;
+        },
+      ),
       getMessages: jest.fn(async (...args: Parameters<AllMethods['getMessages']>) => {
         if (blockNextRead && args[0].conversationId === slowThreadId) {
           blockNextRead = false;
@@ -702,7 +730,7 @@ describe('SubagentThreadTaskStore', () => {
         return methods.getMessages(...args);
       }),
     };
-    const options = { leaseTtlMs: 60, leaseHeartbeatMs: 10 };
+    const options = { leaseTtlMs: 500, leaseHeartbeatMs: 50 };
     const firstWorker = new SubagentThreadTaskStore(slowMethods, options);
     const secondWorker = new SubagentThreadTaskStore(methods, options);
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
@@ -720,7 +748,9 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     await preparing;
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    /** Wait for evidence rather than a fixed delay: a renewal that succeeds after the
+     * acquired lease's own deadline proves the heartbeat carried it past expiry. */
+    await waitUntil(() => renewedPastDeadline, 'the shared lease to outlive its original deadline');
 
     const overlappingRun = jest.fn(taskRequest(config.scopeId).run);
     const overlapping = secondWorker.start(
