@@ -1,4 +1,5 @@
 import type { AnthropicClientOptions } from '@librechat/agents';
+import type { Agent } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
 import { resolveHeaders } from './env';
@@ -115,6 +116,7 @@ export function resolveConfigHeaders({
   llmConfig,
   user,
   body,
+  agent,
   customUserVars,
 }: {
   /** Partial: this only reads the three provider header carriers, so
@@ -124,6 +126,7 @@ export function resolveConfigHeaders({
   llmConfig?: Partial<RunLLMConfig> | null;
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
+  agent?: Partial<Agent>;
   customUserVars?: Record<string, string>;
 }): void {
   if (llmConfig == null) {
@@ -134,7 +137,14 @@ export function resolveConfigHeaders({
     if (resolvedHeaderMaps.has(headers)) {
       return headers;
     }
-    const resolved = resolveHeaders({ headers, user, body, customUserVars, stripUnresolved: true });
+    const resolved = resolveHeaders({
+      headers,
+      user,
+      body,
+      agent,
+      customUserVars,
+      stripUnresolved: true,
+    });
     resolvedHeaderMaps.add(resolved);
     return resolved;
   };
