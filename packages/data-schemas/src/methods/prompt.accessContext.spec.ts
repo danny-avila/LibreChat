@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
-import { createModels, logger } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createModels, logger, runAfterTransaction } from '..';
 import {
   PermissionBits,
   PrincipalModel,
@@ -286,6 +286,28 @@ describe('getPromptGroupAccessContext', () => {
     expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
   });
 
+  it('does not cache a failed ownership lookup as empty', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    const findSpy = jest.spyOn(PromptGroup, 'find');
+    findSpy.mockImplementationOnce(() => {
+      throw new Error('transient failure');
+    });
+
+    await expect(
+      methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' }),
+    ).rejects.toThrow('transient failure');
+    findSpy.mockRestore();
+
+    const recovered = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(recovered.ownedPromptGroupIds)).toEqual([ownGroup._id.toString()]);
+  });
+
   it('writes the generation marker with a ttl that outlives cached entries', async () => {
     generationTtls = [];
     await methods.invalidatePromptGroupAccessContext();
@@ -325,5 +347,33 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(idStrings(after.accessibleIds)).not.toContain(groupPrompt._id.toString());
+  });
+});
+
+describe('runAfterTransaction', () => {
+  it('defers invalidation until a caller-owned session ends', async () => {
+    const endedHandlers: Array<() => void> = [];
+    const session = {
+      inTransaction: () => true,
+      once: (event: string, handler: () => void) => {
+        if (event === 'ended') {
+          endedHandlers.push(handler);
+        }
+      },
+    } as unknown as Parameters<typeof runAfterTransaction>[0];
+    const invalidate = jest.fn().mockResolvedValue(undefined);
+
+    await runAfterTransaction(session, invalidate);
+    expect(invalidate).not.toHaveBeenCalled();
+
+    endedHandlers.forEach((fire) => fire());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs invalidation immediately without an active transaction', async () => {
+    const invalidate = jest.fn();
+    await runAfterTransaction(undefined, invalidate);
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 });

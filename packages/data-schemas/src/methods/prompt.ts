@@ -729,7 +729,8 @@ export function createPromptMethods(
       return groups.map((g) => g._id);
     } catch (error) {
       logger.error('Error getting owned prompt group IDs', error);
-      return [];
+      /** A failed lookup must not be cached as an empty ownership set */
+      throw error;
     }
   }
 

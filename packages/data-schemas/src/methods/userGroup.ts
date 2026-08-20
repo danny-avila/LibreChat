@@ -47,7 +47,7 @@ const sessionInvalidations = new WeakMap<ClientSession, DeferredInvalidation[]>(
  * state with no later correction; deferring keeps the existing entry serving the
  * still-committed old memberships until the transaction commits or aborts.
  */
-function runAfterTransaction(
+export function runAfterTransaction(
   session: ClientSession | undefined,
   invalidate: () => Promise<void>,
 ): Promise<void> {

@@ -23,7 +23,12 @@ import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
-import { createUserGroupMethods, type UserGroupMethods, type UserGroupDeps } from './userGroup';
+import {
+  createUserGroupMethods,
+  runAfterTransaction,
+  type UserGroupMethods,
+  type UserGroupDeps,
+} from './userGroup';
 import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
@@ -131,6 +136,7 @@ import {
 import { createInsightsMethods, type InsightsMethods } from './insights';
 
 export {
+  runAfterTransaction,
   RoleConflictError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,

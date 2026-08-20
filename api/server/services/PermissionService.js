@@ -5,6 +5,7 @@ const {
   tenantStorage,
   getTenantId,
   logger,
+  runAfterTransaction,
 } = require('@librechat/data-schemas');
 const { ResourceType, PrincipalType, PrincipalModel } = require('librechat-data-provider');
 const {
@@ -125,7 +126,9 @@ const grantPermission = async ({
       role._id,
     );
     if (resourceType === ResourceType.PROMPTGROUP) {
-      await db.invalidatePromptGroupAccessContext();
+      /** A caller-owned session may not have committed yet; invalidating early
+       * would let a concurrent read re-cache pre-commit IDs under the new generation. */
+      await runAfterTransaction(session, () => db.invalidatePromptGroupAccessContext());
     }
     return result;
   } catch (error) {
@@ -933,7 +936,8 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (resourceType === ResourceType.PROMPTGROUP) {
-      await db.invalidatePromptGroupAccessContext();
+      /** The caller's session may still be uncommitted; defer until it ends */
+      await runAfterTransaction(localSession, () => db.invalidatePromptGroupAccessContext());
     }
 
     return results;
