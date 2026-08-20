@@ -137,16 +137,11 @@ export class ReadThroughAllCache<T> {
       raw = await this.cache.get(this.entryKey(generation, key));
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Store read failed; treating as a miss:', error);
+      this.recordPendingFill(key, generation);
       return undefined;
     }
     if (raw === undefined) {
-      /** Record the miss generation so the eventual fill can be fenced when an
-       *  invalidation completes while the caller is still computing. */
-      this.pendingFills.set(key, {
-        generation,
-        expiresAt: Date.now() + this.ttl,
-      });
-      this.sweepMemo();
+      this.recordPendingFill(key, generation);
       return undefined;
     }
     let value: T;
@@ -162,6 +157,7 @@ export class ReadThroughAllCache<T> {
           '[ReadThroughAllCache] Failed to decode cached entry; treating as a miss:',
           error,
         );
+        this.recordPendingFill(key, generation);
         return undefined;
       }
     }
@@ -178,6 +174,14 @@ export class ReadThroughAllCache<T> {
     this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
     this.sweepMemo();
     return value;
+  }
+
+  /** Records the generation a miss observed, whatever caused the miss, so the
+   *  eventual fill can be fenced when an invalidation completes while the
+   *  caller is still computing. */
+  private recordPendingFill(key: string, generation: string): void {
+    this.pendingFills.set(key, { generation, expiresAt: Date.now() + this.ttl });
+    this.sweepMemo();
   }
 
   async set(key: string, value: T): Promise<void> {

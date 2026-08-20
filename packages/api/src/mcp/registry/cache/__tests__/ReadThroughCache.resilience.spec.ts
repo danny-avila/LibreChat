@@ -151,6 +151,23 @@ describe('read-through cache resilience', () => {
     await expect(cache.get('user-1')).resolves.toBeUndefined();
   });
 
+  test('a store-failure miss still fences its fill across an invalidation', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    /** The Redis read fails under g1 but recovers by the time the fill lands,
+     *  after an invalidation moved the generation: the fill is still stale. */
+    generation.get.mockResolvedValueOnce('g1');
+    entry.get.mockRejectedValueOnce(new Error('redis unavailable'));
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+
+    generation.get.mockResolvedValue('g2');
+    await cache.set('user-1', 'stale-computed');
+
+    expect(entry.set).not.toHaveBeenCalled();
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+  });
+
   test("invalidation in one tenant does not orphan another tenant's entries", async () => {
     const { tenantStorage } = await import('@librechat/data-schemas');
     const namespace = `rtac-r-${randomUUID()}`;

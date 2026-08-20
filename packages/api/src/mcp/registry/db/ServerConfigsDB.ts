@@ -541,44 +541,47 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const principalsPromise: Promise<ResolvedPrincipal[]> | undefined = userId
       ? this._aclService.getUserPrincipals({ userId, role })
       : undefined;
+    const principalsResolved = principalsPromise ?? Promise.resolve([] as ResolvedPrincipal[]);
+
     /** Direct-server ids depend on principals only for the user path; chaining
-     *  off the principals promise attaches a rejection handler at creation for
-     *  both branches, and the public branch starts immediately. */
-    const directIdsPromise: Promise<Types.ObjectId[]> = principalsPromise
-      ? principalsPromise.then((principalsList) =>
-          this._aclService.findAccessibleResourcesForPrincipals({
-            principalsList,
-            requiredPermissions: PermissionBits.VIEW,
+     *  attaches a rejection handler at creation for both branches, and the
+     *  direct-server fetch follows the ids immediately. */
+    const directResultsPromise = (
+      principalsPromise
+        ? principalsPromise.then((principalsList) =>
+            this._aclService.findAccessibleResourcesForPrincipals({
+              principalsList,
+              requiredPermissions: PermissionBits.VIEW,
+              resourceType: ResourceType.MCPSERVER,
+            }),
+          )
+        : this._aclService.findPubliclyAccessibleResources({
             resourceType: ResourceType.MCPSERVER,
-          }),
-        )
-      : this._aclService.findPubliclyAccessibleResources({
-          resourceType: ResourceType.MCPSERVER,
-          requiredPermissions: PermissionBits.VIEW,
-        });
+            requiredPermissions: PermissionBits.VIEW,
+          })
+    ).then((ids) => this._dbMethods.getListMCPServersByIds({ ids }));
 
-    /** One settlement for the three started reads, so none of their rejections
-     *  can surface as unhandled. */
-    const [agentCandidates, principalsList, directlyAccessibleMCPIds] = await Promise.all([
-      candidatesPromise,
-      principalsPromise ?? Promise.resolve([]),
-      directIdsPromise,
-    ]);
-    const candidateIds = agentCandidates.map((agent) => agent._id);
-
-    logger.debug(
-      `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${candidateIds.length} agent candidate(s) reference MCP servers`,
+    /** The agent-side ACL needs only candidates and principals; chaining it
+     *  from those keeps the independent direct-server path off its critical
+     *  path, and the outer settlement attaches handlers to everything else. */
+    const agentAccessPromise = Promise.all([candidatesPromise, principalsResolved]).then(
+      ([agentCandidates, principalsList]) =>
+        this.findAccessibleAgentIds(
+          agentCandidates.map((agent) => agent._id),
+          userId,
+          principalsList,
+        ),
     );
 
-    /** The direct-server fetch depends only on the ids already resolved above,
-     *  so it runs concurrently with the agent ACL query and both settle
-     *  together. */
-    const [accessibleAgentIds, directResults] = await Promise.all([
-      this.findAccessibleAgentIds(candidateIds, userId, principalsList),
-      this._dbMethods.getListMCPServersByIds({
-        ids: directlyAccessibleMCPIds,
-      }),
+    const [agentCandidates, accessibleAgentIds, directResults] = await Promise.all([
+      candidatesPromise,
+      agentAccessPromise,
+      directResultsPromise,
     ]);
+
+    logger.debug(
+      `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${agentCandidates.length} agent candidate(s) reference MCP servers`,
+    );
 
     const agentMCPServerNames = unionMCPServerNames(agentCandidates, accessibleAgentIds);
 
