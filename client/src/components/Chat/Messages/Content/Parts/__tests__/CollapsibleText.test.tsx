@@ -1,0 +1,94 @@
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import CollapsibleText from '../CollapsibleText';
+
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string) => key,
+}));
+
+const longMessage = 'line\n'.repeat(80);
+const shortMessage = 'a short message';
+const plainMessage = 'a long message';
+
+/** jsdom does no layout, so scrollHeight is 0 unless stubbed. Returning a set
+ *  height above the collapse cap (256px) makes the content read as overflowing;
+ *  the default 0 keeps it within the cap. */
+const stubScrollHeight = (height: number) =>
+  jest.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(height);
+
+describe('CollapsibleText', () => {
+  it('renders children untouched while the preference is off', () => {
+    const scrollHeight = stubScrollHeight(5000);
+    try {
+      const { container } = render(
+        <CollapsibleText enabled={false}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      // No clamp wrapper, no toggle: the DOM stays identical to before.
+      const paragraph = screen.getByText(plainMessage);
+      expect(paragraph.parentElement).toBe(container);
+      expect(screen.queryByRole('button')).toBeNull();
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('offers no toggle for content that fits the preview', () => {
+    const scrollHeight = stubScrollHeight(100);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>{shortMessage}</p>
+        </CollapsibleText>,
+      );
+      expect(screen.getByText(shortMessage)).toBeInTheDocument();
+      expect(screen.queryByRole('button')).toBeNull();
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('clamps an overflowing message and keeps the full text in the page', () => {
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>{longMessage}</p>
+        </CollapsibleText>,
+      );
+      const toggle = screen.getByRole('button', { name: 'com_ui_show_more' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+      // aria-controls must point at the clamped region holding the text.
+      const region = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+      expect(region).not.toBeNull();
+      expect(region?.textContent).toBe(longMessage);
+
+      // The clamp is visual only: the full text stays in the DOM.
+      expect(region?.className).toContain('overflow-hidden');
+      expect(region).toHaveStyle({ maxHeight: '256px' });
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('expands in place and offers show less', () => {
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>{longMessage}</p>
+        </CollapsibleText>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_more' }));
+      const collapse = screen.getByRole('button', { name: 'com_ui_show_less' });
+      expect(collapse).toHaveAttribute('aria-expanded', 'true');
+      expect(document.getElementById(collapse.getAttribute('aria-controls') ?? '')).toHaveStyle({
+        maxHeight: '',
+      });
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+});
