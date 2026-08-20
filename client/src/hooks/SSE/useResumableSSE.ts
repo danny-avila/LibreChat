@@ -1187,10 +1187,12 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;
-      /** Set by the only close this hook performs that neither fences itself
-       *  (lifecycle abort, reconnect counter, handoff flag) nor follows a
-       *  terminal event: the dev-only navigation simulator below. */
-      let intentionalClose = false;
+      /** This subscription must never be revived. Set by the terminal
+       *  recoveries that do not ride a FINAL or served-error frame — the 404
+       *  and retry-ceiling reconciles both leave the attachment pointing at a
+       *  stream the server no longer has — and by the dev-only navigation
+       *  simulator below. `finalReceived` covers the frame-carried terminals. */
+      let subscriptionRetired = false;
       const preCreatedStepEvents: Array<Parameters<typeof stepHandler>[0]> = [];
       const replayPreCreatedStepEvents = () => {
         if (!isCurrentSubscription() || preCreatedStepEvents.length === 0) {
@@ -1532,7 +1534,7 @@ export default function useResumableSSE(
           document.visibilityState !== 'visible' ||
           sse.readyState !== SSE.CLOSED ||
           finalReceived ||
-          intentionalClose ||
+          subscriptionRetired ||
           replacementHandoffRef.current ||
           !isCurrentSubscription() ||
           !submissionRef.current
@@ -2806,6 +2808,7 @@ export default function useResumableSSE(
               removeConvoFromAllQueries(queryClient, currentStreamId);
             }
           }
+          subscriptionRetired = true;
           setIsSubmitting(false);
           setShowStopButton(false);
 
@@ -3222,6 +3225,7 @@ export default function useResumableSSE(
           ) {
             removeConvoFromAllQueries(queryClient, currentStreamId);
           }
+          subscriptionRetired = true;
           setIsSubmitting(false);
           setShowStopButton(false);
           let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'error';
@@ -3281,7 +3285,7 @@ export default function useResumableSSE(
          * instead and let the existing recovery adjudicate — a live job replays
          * its missed content, a finished one 404s into the durable refetch.
          */
-        if (!finalReceived && !intentionalClose) {
+        if (!finalReceived && !subscriptionRetired) {
           logger.log('ResumableSSE', 'Stream aborted by the user agent - reconnecting');
           reconnectAttemptRef.current = 1;
           if (reconnectTimeoutRef.current) {
@@ -3344,7 +3348,7 @@ export default function useResumableSSE(
         /** Simulate clean close (navigation away) - triggers abort event → no reconnection */
         debugWindow.__closeClean = () => {
           logger.log('Debug', 'Simulating clean close (navigation away)...');
-          intentionalClose = true;
+          subscriptionRetired = true;
           sse.close();
         };
       }

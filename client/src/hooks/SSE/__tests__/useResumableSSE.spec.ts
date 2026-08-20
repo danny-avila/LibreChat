@@ -3935,6 +3935,23 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('does not re-attach on foreground after a 404 already reconciled the run', async () => {
+    const { sse, unmount } = await render404Scenario();
+    const sseCount = mockSSEInstances.length;
+
+    /** The 404 reconcile leaves the submission installed and the attachment
+     *  pointing at a stream the server no longer has, so only the retirement
+     *  flag keeps the foreground path from resurrecting it. */
+    expect(sse.readyState).toBe(MOCK_SSE_CLOSED);
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    unmount();
+  });
+
   it('parses and surfaces server-sent error events (no responseCode, JSON data)', async () => {
     const submission = buildSubmission();
     const chatHelpers = buildChatHelpers();
