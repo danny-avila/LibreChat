@@ -408,7 +408,16 @@ const createMeiliMongooseModel = ({
           // Delete documents that don't exist in MongoDB
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
-            await index.deleteDocuments(toDelete.map(String));
+            const deletion = await index.deleteDocuments(toDelete.map(String));
+            const deletionTask = await index.waitForTask(deletion.taskUid, {
+              timeOutMs: 10000,
+              intervalMs: 100,
+            });
+            if (deletionTask.status !== 'succeeded') {
+              throw new Error(
+                `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
+              );
+            }
             await this.updateMany(
               { [primaryKey]: { $in: toDelete } },
               { $set: { _meiliIndex: false } },
@@ -781,6 +790,13 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
     doc.postSaveHook?.(next);
+  });
+
+  schema.pre('findOneAndUpdate', function (next) {
+    if (options.excludeFromIndexPath != null) {
+      (this as Query<unknown, unknown>).select(`+${options.excludeFromIndexPath}`);
+    }
+    next();
   });
 
   schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {

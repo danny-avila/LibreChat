@@ -60,6 +60,7 @@ const mockDeleteDocument = jest.fn();
 const mockDeleteDocuments = jest.fn();
 const mockGetDocument = jest.fn();
 const mockGetDocuments = jest.fn().mockResolvedValue({ results: [] });
+const mockWaitForTask = jest.fn().mockResolvedValue({ status: 'succeeded' });
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
   updateSettings: jest.fn(),
@@ -70,6 +71,7 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
+  waitForTask: mockWaitForTask,
 });
 jest.mock('meilisearch', () => {
   return {
@@ -104,9 +106,10 @@ describe('Meilisearch Mongoose plugin', () => {
     mockAddDocumentsInBatches.mockClear();
     mockUpdateDocuments.mockClear();
     mockDeleteDocument.mockClear();
-    mockDeleteDocuments.mockClear();
+    mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockGetDocument.mockClear();
     mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
+    mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
   });
 
   afterAll(async () => {
@@ -198,6 +201,29 @@ describe('Meilisearch Mongoose plugin', () => {
         status: 'running',
       },
     });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('findOneAndUpdate loads the private child marker before deciding to index', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    await messageModel.findOneAndUpdate(
+      { messageId, user: 'user-123' },
+      {
+        messageId,
+        conversationId: new mongoose.Types.ObjectId().toString(),
+        user: 'user-123',
+        isCreatedByUser: true,
+        text: 'Private child transcript',
+        subagentTask: {
+          attemptKey: 'attempt-key',
+          status: 'running',
+        },
+      },
+      { upsert: true, new: true },
+    );
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
   });
@@ -448,7 +474,46 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
     expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
+    expect(mockWaitForTask).toHaveBeenCalledWith(1, {
+      timeOutMs: 10000,
+      intervalMs: 100,
+    });
     expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('keeps cleanup pending when Meili fails the asynchronous deletion task', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed child conversation',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockGetDocuments.mockResolvedValueOnce({ results: [{ conversationId }] });
+    mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
+
+    await conversationModel.syncWithMeili();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
+    expect(storedDoc?._meiliIndex).toBe(true);
   });
 
   test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
