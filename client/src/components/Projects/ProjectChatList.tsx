@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import throttle from 'lodash/throttle';
-import { Spinner } from '@librechat/client';
+import { Spinner, useRemScale } from '@librechat/client';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
@@ -146,6 +146,7 @@ const ProjectChatList = ({
   loadMore,
 }: ProjectChatListProps) => {
   const { data: activeJobsData } = useActiveJobs();
+  const remScale = useRemScale();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
@@ -176,7 +177,7 @@ const ProjectChatList = ({
     () =>
       new CellMeasurerCache({
         fixedWidth: true,
-        defaultHeight: 52,
+        defaultHeight: Math.round(52 * remScale),
         keyMapper: (index) => {
           const item = flattenedItemsRef.current[index];
           if (!item) {
@@ -191,7 +192,7 @@ const ProjectChatList = ({
           return `project-workspace-${item.type}`;
         },
       }),
-    [],
+    [remScale],
   );
 
   const listRef = useRef<List | null>(null);
