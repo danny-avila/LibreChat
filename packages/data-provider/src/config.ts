@@ -1833,6 +1833,22 @@ export enum SafeSearchTypes {
   STRICT = 2,
 }
 
+/**
+ * Normalizes a SearXNG engine list into the comma-separated form the API expects.
+ * Accepts the YAML list or comma-separated string an operator may write, and is
+ * applied both at the schema boundary and when loading the runtime config, since
+ * `loadCustomConfig` returns the raw YAML object rather than the parsed result.
+ */
+export function normalizeSearxngEngines(engines?: string | string[]): string | undefined {
+  if (engines == null) {
+    return undefined;
+  }
+  const normalized = (Array.isArray(engines) ? engines : engines.split(','))
+    .map((engine) => engine.trim())
+    .filter(Boolean);
+  return normalized.length ? normalized.join(',') : undefined;
+}
+
 export const webSearchSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
@@ -1895,12 +1911,7 @@ export const webSearchSchema = z.object({
     .object({
       engines: z
         .union([z.string(), z.array(z.string())])
-        .transform((value) => {
-          const engines = (Array.isArray(value) ? value : value.split(','))
-            .map((engine) => engine.trim())
-            .filter(Boolean);
-          return engines.length ? engines.join(',') : undefined;
-        })
+        .transform(normalizeSearxngEngines)
         .optional(),
       language: z.string().optional(),
       timeRange: z.enum(['day', 'month', 'year']).optional(),
@@ -2215,6 +2226,19 @@ export type DeepPartial<T> = T extends (infer U)[]
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
+
+/**
+ * Shape of the `webSearch` block as written in `librechat.yaml`, where
+ * `searxngSearchOptions.engines` may still be the YAML list or untrimmed string an
+ * operator wrote. `loadCustomConfig` returns the raw YAML object rather than the
+ * parsed result, so the runtime loader receives this shape, not the parsed one.
+ */
+export type TWebSearchConfigInput = Omit<
+  NonNullable<TCustomConfig['webSearch']>,
+  'searxngSearchOptions'
+> & {
+  searxngSearchOptions?: z.input<typeof webSearchSchema>['searxngSearchOptions'];
+};
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =
