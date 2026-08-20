@@ -133,6 +133,70 @@ describe('read-through cache resilience', () => {
      *  serve the just-written value for a full TTL window. */
     await expect(cache.get('user-1')).resolves.toBeUndefined();
   });
+
+  test('a fill computed across an invalidation is fenced', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    /** The miss happens under g1; the caller is still computing when the
+     *  generation moves to g2, so the fill must not be written or memoized. */
+    generation.get.mockResolvedValueOnce('g1');
+    entry.get.mockResolvedValueOnce(undefined);
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+
+    generation.get.mockResolvedValue('g2');
+    await cache.set('user-1', 'stale-computed');
+
+    expect(entry.set).not.toHaveBeenCalled();
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+  });
+
+  test("invalidation in one tenant does not orphan another tenant's entries", async () => {
+    const { tenantStorage } = await import('@librechat/data-schemas');
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    generation.get.mockImplementation(async (key: string) => {
+      if (key === '__generation__:tenant-a') {
+        return 'ga1';
+      }
+      if (key === '__generation__:tenant-b') {
+        return 'gb1';
+      }
+      return 'g0';
+    });
+
+    await tenantStorage.run({ tenantId: 'tenant-a' }, () => cache.set('user:tenant-a', 'value-a'));
+    entry.get.mockImplementation(async (key: string) =>
+      key === 'ga1::user:tenant-a' ? 'value-a' : undefined,
+    );
+
+    await tenantStorage.run({ tenantId: 'tenant-b' }, () => cache.invalidateAll());
+    expect(generation.set).toHaveBeenCalledWith('__generation__:tenant-b', expect.any(String));
+
+    /** Tenant A's memo was cleared by the shared clear, but its store entry
+     *  survives: the read hits the shared store instead of recomputing. */
+    const survived = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+      cache.get('user:tenant-a'),
+    );
+    expect(survived).toBe('value-a');
+  });
+
+  test('invalidateAllGlobal clears the shared namespace across tenants', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry } = storesFor(namespace);
+    entry.get.mockResolvedValue('stored-value');
+    await cache.set('user-1', 'memoized');
+
+    await cache.invalidateAllGlobal();
+
+    /** The namespace-wide clear ran and the memo was evicted with it, so the
+     *  next read goes back to the shared store instead of replaying it. */
+    expect(entry.clear).toHaveBeenCalled();
+    await cache.get('user-1');
+    expect(entry.get).toHaveBeenCalledWith('0::user-1');
+  });
 });
 
 describe('per-server ReadThroughCache resilience', () => {

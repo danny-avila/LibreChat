@@ -864,7 +864,8 @@ export class MCPServersRegistry {
       this.configCacheRepo.reset(),
       // Only invalidate readThroughCacheAll (merged results that may include stale config servers).
       // readThroughCache (individual YAML/user lookups) is unaffected by config mutations.
-      this.readThroughCacheAll.invalidateAll(),
+      // Operator config changes are global, so the eviction crosses tenants.
+      this.readThroughCacheAll.invalidateAllGlobal(),
     ]);
 
     if (evictedNames.length > 0) {
@@ -889,7 +890,7 @@ export class MCPServersRegistry {
     await this.cacheConfigsRepo.reset();
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
-    await this.readThroughCacheAll.invalidateAll();
+    await this.readThroughCacheAll.invalidateAllGlobal();
     this.resetYamlServerNamesMemo();
   }
 

@@ -1,13 +1,21 @@
 import { Keyv } from 'keyv';
 import { randomUUID } from 'crypto';
-import { logger } from '@librechat/data-schemas';
+import { logger, scopedCacheKey } from '@librechat/data-schemas';
 import { standardCache } from '~/cache';
 
-/** Namespace-internal key holding the active generation tag. */
+/** Base key holding the active generation tag; the effective key is
+ *  tenant-scoped, so one tenant's mutations cannot orphan another's entries. */
 const GENERATION_KEY = '__generation__';
 
 interface MemoEntry<T> {
   value: T;
+  expiresAt: number;
+}
+
+/** Generation observed when a miss started, used to fence fills that finish
+ *  after an invalidation has already completed. */
+interface PendingFill {
+  generation: string;
   expiresAt: number;
 }
 
@@ -22,13 +30,15 @@ export interface ReadThroughTransforms<T> {
  *
  * The backing store comes from {@link standardCache}, so entries live in Redis
  * when it is configured (shared across instances, see #14016) and in process
- * memory otherwise. Invalidation never scans the keyspace:
+ * memory otherwise. Hot-path invalidation never scans the keyspace:
  * {@link invalidateAll} swaps the active generation tag for a fresh UUID,
  * orphaning every entry written under a previous generation, and the store TTL
  * reclaims them. This mirrors the aggregate-key lesson from #11624/#12408,
  * where SCAN-based invalidation stalled large deployments. The generation tag
- * lives in its own store created without a TTL so it can never expire before
- * the entries written under it.
+ * is tenant-scoped (entries are too) and lives in its own store created
+ * without a TTL so it can never expire before the entries written under it;
+ * {@link invalidateAllGlobal} provides the scanning variant for genuinely
+ * cross-tenant resets.
  *
  * Values may carry secrets (decrypted MCP credentials), so the caller can
  * inject {@link ReadThroughTransforms} to keep the shared store ciphertext
@@ -39,6 +49,8 @@ export interface ReadThroughTransforms<T> {
  * pattern as the local snapshot in `ServerConfigsCacheRedisAggregateKey`, added
  * because the registry resolves all-server configs many times per chat request.
  * An opportunistic sweep bounds the memo so one-time users cannot accumulate.
+ * Fills are fenced by the generation observed at their miss, so a value
+ * computed before an invalidation cannot be written or memoized after it.
  * Cross-instance worst-case staleness is therefore bounded by the memo TTL,
  * matching the documented 2x MCP_REGISTRY_CACHE_TTL trade-off.
  *
@@ -52,6 +64,7 @@ export class ReadThroughAllCache<T> {
   private readonly ttl: number;
   private readonly transforms?: ReadThroughTransforms<T>;
   private readonly memo = new Map<string, MemoEntry<T>>();
+  private readonly pendingFills = new Map<string, PendingFill>();
   private lastSweepAt = 0;
 
   constructor(namespace: string, ttl: number, transforms?: ReadThroughTransforms<T>) {
@@ -76,7 +89,7 @@ export class ReadThroughAllCache<T> {
   private async readGeneration(): Promise<string | undefined> {
     let generation: unknown;
     try {
-      generation = await this.generationCache.get(GENERATION_KEY);
+      generation = await this.generationCache.get(scopedCacheKey(GENERATION_KEY));
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Generation read failed:', error);
       return undefined;
@@ -95,6 +108,11 @@ export class ReadThroughAllCache<T> {
     for (const [key, entry] of this.memo) {
       if (now >= entry.expiresAt) {
         this.memo.delete(key);
+      }
+    }
+    for (const [key, fill] of this.pendingFills) {
+      if (now >= fill.expiresAt) {
+        this.pendingFills.delete(key);
       }
     }
   }
@@ -122,6 +140,13 @@ export class ReadThroughAllCache<T> {
       return undefined;
     }
     if (raw === undefined) {
+      /** Record the miss generation so the eventual fill can be fenced when an
+       *  invalidation completes while the caller is still computing. */
+      this.pendingFills.set(key, {
+        generation,
+        expiresAt: Date.now() + this.ttl,
+      });
+      this.sweepMemo();
       return undefined;
     }
     let value: T;
@@ -159,27 +184,44 @@ export class ReadThroughAllCache<T> {
     if (!this.enabled) {
       return;
     }
-    const generation = await this.readGeneration();
-    if (generation != null) {
-      try {
-        const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
-        await this.cache.set(this.entryKey(generation, key), stored);
-      } catch (error) {
-        /** A failed store write degrades to the memo only; the caller's result
-         *  is already computed and must still be served. */
-        logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
-      }
-      /** Same recheck as get(): skip the memo when an invalidation landed while
-       *  this write was in flight, so the next read recomputes. */
-      if ((await this.readGeneration()) !== generation) {
+    const fill = this.pendingFills.get(key);
+    try {
+      const current = await this.readGeneration();
+      if (fill != null && current != null && current !== fill.generation) {
+        /** Fenced: this value was computed before an invalidation completed, so
+         *  writing it (store or memo) would resurrect the pre-mutation map. */
         return;
       }
+      const generation = current ?? fill?.generation;
+      if (generation != null) {
+        try {
+          const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
+          await this.cache.set(this.entryKey(generation, key), stored);
+        } catch (error) {
+          /** A failed store write degrades to the memo only; the caller's result
+           *  is already computed and must still be served. */
+          logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
+        }
+        /** Same recheck as get(): skip the memo when an invalidation landed while
+         *  this write was in flight, so the next read recomputes. */
+        if ((await this.readGeneration()) !== generation) {
+          return;
+        }
+      }
+      this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
+      this.sweepMemo();
+    } finally {
+      if (fill != null) {
+        this.pendingFills.delete(key);
+      }
     }
-    this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
-    this.sweepMemo();
   }
 
-  /** Orphans every entry written so far without scanning the keyspace. */
+  /**
+   * Orphans the calling tenant's entries without scanning the keyspace.
+   * DB-backed MCP servers and ACL grants are tenant-scoped data, so one
+   * tenant's mutation has no business evicting another tenant's entries.
+   */
   async invalidateAll(): Promise<void> {
     this.memo.clear();
     if (!this.enabled) {
@@ -188,9 +230,27 @@ export class ReadThroughAllCache<T> {
     try {
       /** A fresh UUID cannot regress: two racing invalidations may overwrite each
        *  other's tag, but neither can resurrect a prior generation's entries. */
-      await this.generationCache.set(GENERATION_KEY, randomUUID());
+      await this.generationCache.set(scopedCacheKey(GENERATION_KEY), randomUUID());
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Generation write failed:', error);
+    }
+  }
+
+  /**
+   * Clears every entry across tenants by scanning the namespace. Reserved for
+   * genuinely global events (operator config changes, lifecycle resets) where
+   * the SCAN cost is rare and cross-tenant eviction is the point.
+   */
+  async invalidateAllGlobal(): Promise<void> {
+    this.memo.clear();
+    this.pendingFills.clear();
+    if (!this.enabled) {
+      return;
+    }
+    try {
+      await this.cache.clear();
+    } catch (error) {
+      logger.warn('[ReadThroughAllCache] Global clear failed:', error);
     }
   }
 }
