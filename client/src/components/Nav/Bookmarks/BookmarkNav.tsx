@@ -12,9 +12,12 @@ import { cn } from '~/utils';
 type BookmarkNavProps = {
   tags: string[];
   setTags: (tags: string[]) => void;
+  /** Sizes the trigger to the search bar it shares a row with; otherwise it keeps
+   *  the compact section-heading size used beside the Chats heading on mobile. */
+  matchSearchBar?: boolean;
 };
 
-const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) => {
+const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags, matchSearchBar }: BookmarkNavProps) => {
   const localize = useLocalize();
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -106,10 +109,14 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
               id="bookmark-nav-menu-button"
               aria-label={buttonAriaLabel}
               aria-pressed={tags.length > 0}
-              /** Matches the Projects heading's actions — it sits beside a section heading too. */
+              /** Matches the Projects heading's actions: it sits beside a section heading too. */
               className={cn(
-                buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
+                buttonVariants({
+                  variant: 'section-action',
+                  size: matchSearchBar ? null : 'icon-xs',
+                }),
                 'shrink-0',
+                matchSearchBar && 'h-9 w-9 rounded-lg',
                 isMenuOpen && 'bg-surface-active-alt text-text-primary',
               )}
               data-testid="bookmark-menu"

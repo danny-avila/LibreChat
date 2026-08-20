@@ -44,6 +44,34 @@ export const useUpdateFavoritesMutation = () => {
   );
 };
 
+export const useGetPinnedOrderQuery = (
+  config?: Omit<UseQueryOptions<string[], Error>, 'queryKey' | 'queryFn'>,
+) => {
+  return useQuery<string[], Error>([QueryKeys.pinnedOrder], () => dataService.getPinnedOrder(), {
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    ...config,
+  });
+};
+
+export const useUpdatePinnedOrderMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation((pinnedOrder: string[]) => dataService.updatePinnedOrder(pinnedOrder), {
+    onMutate: async (newOrder) => {
+      await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
+      const previousOrder = queryClient.getQueryData<string[]>([QueryKeys.pinnedOrder]);
+      queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
+      return { previousOrder };
+    },
+    onError: (_err, _newOrder, context) => {
+      if (context?.previousOrder) {
+        queryClient.setQueryData([QueryKeys.pinnedOrder], context.previousOrder);
+      }
+    },
+  });
+};
+
 export const useGetToolFavoritesQuery = (
   config?: Omit<UseQueryOptions<TToolFavorite[], Error>, 'queryKey' | 'queryFn'>,
 ) => {

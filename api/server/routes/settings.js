@@ -3,6 +3,8 @@ const { createToolFavoritesHandlers } = require('@librechat/api');
 const {
   updateFavoritesController,
   getFavoritesController,
+  getPinnedOrderController,
+  updatePinnedOrderController,
 } = require('~/server/controllers/FavoritesController');
 const {
   getSkillStatesController,
@@ -28,6 +30,8 @@ router.delete(
 );
 router.get('/favorites', requireJwtAuth, getFavoritesController);
 router.post('/favorites', requireJwtAuth, updateFavoritesController);
+router.get('/pinned-order', requireJwtAuth, getPinnedOrderController);
+router.post('/pinned-order', requireJwtAuth, updatePinnedOrderController);
 router.get('/skills/active', requireJwtAuth, getSkillStatesController);
 router.post('/skills/active', requireJwtAuth, updateSkillStatesController);
 
