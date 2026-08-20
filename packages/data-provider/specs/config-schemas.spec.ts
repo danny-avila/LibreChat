@@ -13,6 +13,8 @@ import {
   summarizationConfigSchema,
   retainRecentConfigSchema,
   MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  setMaxSubagents,
 } from '../src/config';
 import {
   tModelSpecPresetSchema,
@@ -411,6 +413,26 @@ describe('agentsEndpointSchema', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('defaults maxSubagents to MAX_SUBAGENTS and validates its bounds', () => {
+    const omitted = agentsEndpointSchema.safeParse({});
+    expect(omitted.success).toBe(true);
+    if (omitted.success) {
+      expect(omitted.data.maxSubagents).toBe(MAX_SUBAGENTS);
+    }
+
+    const raised = agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS + 10 });
+    expect(raised.success).toBe(true);
+    if (raised.success) {
+      expect(raised.data.maxSubagents).toBe(MAX_SUBAGENTS + 10);
+    }
+
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 2.5 }).success).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS_CEILING + 1 }).success,
+    ).toBe(false);
   });
 
   it('rejects empty or unknown stateful code environment allowlists', () => {
@@ -1321,6 +1343,23 @@ describe('specsConfigSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+
+  it('validates model spec subagent ids against the configured cap', () => {
+    const raised = Array.from({ length: MAX_SUBAGENTS + 5 }, (_, i) => `agent_${i}`);
+    setMaxSubagents(MAX_SUBAGENTS + 10);
+    const withinRaised = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          preset: { endpoint: EModelEndpoint.openAI },
+          subagents: { enabled: true, agent_ids: raised },
+        },
+      ],
+    });
+    setMaxSubagents(undefined);
+    expect(withinRaised.success).toBe(true);
   });
 });
 

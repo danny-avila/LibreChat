@@ -523,6 +523,9 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Maximum explicit subagents per agent, for both the flat list and
+  #   # graph definitions. Defaults to 10; hard cap 50.
+  #   maxSubagents: 20
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:

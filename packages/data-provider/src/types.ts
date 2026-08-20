@@ -547,6 +547,8 @@ export type TConfig = {
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
   };
+  /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
+  maxSubagents?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
