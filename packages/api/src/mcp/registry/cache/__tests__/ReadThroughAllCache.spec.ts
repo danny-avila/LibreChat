@@ -23,8 +23,8 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     const cache = new Cache<Record<string, number>>(`rtac-${randomUUID()}`, 60_000);
     await cache.set('user-1', { a: 1 });
 
-    await expect(cache.get('user-1')).resolves.toEqual({ a: 1 });
-    await expect(cache.get('user-2')).resolves.toBeUndefined();
+    await expect(cache.get('user-1')).resolves.toEqual({ hit: true, value: { a: 1 } });
+    await expect(cache.get('user-2')).resolves.toEqual(expect.objectContaining({ hit: false }));
   });
 
   test('shares entries across instances of the same namespace', async () => {
@@ -35,7 +35,7 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
 
     await writer.set('user-1', 'value-a');
 
-    await expect(reader.get('user-1')).resolves.toBe('value-a');
+    await expect(reader.get('user-1')).resolves.toEqual({ hit: true, value: 'value-a' });
   });
 
   test('invalidateAll orphans every entry without a keyspace scan', async () => {
@@ -51,19 +51,19 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     await writer.set('user-2', 'value-b');
     await writer.invalidateAll();
 
-    await expect(reader.get('user-1')).resolves.toBeUndefined();
-    await expect(reader.get('user-2')).resolves.toBeUndefined();
+    await expect(reader.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
+    await expect(reader.get('user-2')).resolves.toEqual(expect.objectContaining({ hit: false }));
   });
 
   test('entries expire after the ttl', async () => {
     const Cache = await load();
     const cache = new Cache<string>(`rtac-${randomUUID()}`, 40);
     await cache.set('user-1', 'ephemeral');
-    await expect(cache.get('user-1')).resolves.toBe('ephemeral');
+    await expect(cache.get('user-1')).resolves.toEqual({ hit: true, value: 'ephemeral' });
 
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    await expect(cache.get('user-1')).resolves.toBeUndefined();
+    await expect(cache.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
   });
 
   test('a value written after invalidateAll is served under the new generation', async () => {
@@ -73,7 +73,7 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     await cache.invalidateAll();
     await cache.set('user-1', 'after');
 
-    await expect(cache.get('user-1')).resolves.toBe('after');
+    await expect(cache.get('user-1')).resolves.toEqual({ hit: true, value: 'after' });
   });
 
   test('ttl of 0 disables the cache entirely', async () => {
@@ -83,9 +83,9 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     const cache = new Cache<string>(`rtac-${randomUUID()}`, 0);
     await cache.set('user-1', 'never-cached');
 
-    await expect(cache.get('user-1')).resolves.toBeUndefined();
+    await expect(cache.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
     await cache.invalidateAll();
-    await expect(cache.get('user-1')).resolves.toBeUndefined();
+    await expect(cache.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
   });
 
   test('transforms keep the shared store ciphertext while serving plaintext', async () => {
@@ -102,7 +102,10 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
 
     await writer.set('user-1', { secret: 'plaintext-value' });
 
-    await expect(reader.get('user-1')).resolves.toEqual({ secret: 'plaintext-value' });
+    await expect(reader.get('user-1')).resolves.toEqual({
+      hit: true,
+      value: { secret: 'plaintext-value' },
+    });
   });
 
   test('an undecodable stored entry fails open to a miss', async () => {
@@ -119,7 +122,9 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
 
     await plainWriter.set('user-1', { secret: 'stale-across-rotation' });
 
-    await expect(decodingReader.get('user-1')).resolves.toBeUndefined();
+    await expect(decodingReader.get('user-1')).resolves.toEqual(
+      expect.objectContaining({ hit: false }),
+    );
   });
 
   test('a failing encode degrades to the memo without failing the set', async () => {
@@ -132,6 +137,6 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     });
 
     await expect(cache.set('user-1', 'memo-only')).resolves.toBeUndefined();
-    await expect(cache.get('user-1')).resolves.toBe('memo-only');
+    await expect(cache.get('user-1')).resolves.toEqual({ hit: true, value: 'memo-only' });
   });
 });

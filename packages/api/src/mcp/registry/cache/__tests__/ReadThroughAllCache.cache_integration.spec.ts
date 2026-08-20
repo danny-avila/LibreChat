@@ -49,7 +49,10 @@ describe('ReadThroughAllCache (Redis backing)', () => {
 
     await writer.set('user-1', 'written-by-other-instance');
 
-    await expect(reader.get('user-1')).resolves.toBe('written-by-other-instance');
+    await expect(reader.get('user-1')).resolves.toEqual({
+      hit: true,
+      value: 'written-by-other-instance',
+    });
   });
 
   test('invalidateAll on one instance orphans entries for the other', async () => {
@@ -63,10 +66,10 @@ describe('ReadThroughAllCache (Redis backing)', () => {
 
     /** The reader never memoized the pre-invalidation value, so its read must
      *  miss through Redis under the new generation. */
-    await expect(reader.get('user-1')).resolves.toBeUndefined();
+    await expect(reader.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
 
     await writer.set('user-1', 'fresh');
-    await expect(reader.get('user-1')).resolves.toBe('fresh');
+    await expect(reader.get('user-1')).resolves.toEqual({ hit: true, value: 'fresh' });
   });
 
   test('stores per-user entries under distinct keys in Redis', async () => {
@@ -100,11 +103,13 @@ describe('ReadThroughAllCache (Redis backing)', () => {
 
     await writer.set('user-1', 'super-secret-credential');
 
-    await expect(reader.get('user-1')).resolves.toBe('super-secret-credential');
+    await expect(reader.get('user-1')).resolves.toEqual({
+      hit: true,
+      value: 'super-secret-credential',
+    });
 
     const stored = await plainReader.get('user-1');
-    expect(stored).toBeDefined();
-    expect(stored).not.toBe('super-secret-credential');
-    expect(stored).toContain('enc:');
+    expect(stored).toEqual({ hit: true, value: expect.stringContaining('enc:') });
+    expect(stored.value).not.toBe('super-secret-credential');
   });
 });

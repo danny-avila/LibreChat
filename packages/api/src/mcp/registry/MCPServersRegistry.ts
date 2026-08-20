@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import { logger, encryptV2, decryptV2, scopedCacheKey } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
-import type { ReadThroughTransforms } from './cache/ReadThroughAllCache';
+import type { ReadThroughTransforms, FillToken } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
 import {
   ServerConfigsCacheFactory,
@@ -364,7 +364,7 @@ export class MCPServersRegistry {
       } else {
         base = await this.dbConfigsRepo.get(serverName, userId);
       }
-      await this.readThroughCache.set(cacheKey, base);
+      await this.readThroughCache.set(cacheKey, base, cached.fill);
     }
 
     if (!candidate) return base;
@@ -442,8 +442,8 @@ export class MCPServersRegistry {
     const cacheKey = scopedCacheKey(userId ?? '__no_user__');
 
     const cached = await this.readThroughCacheAll.get(cacheKey);
-    if (cached !== undefined) {
-      return cached;
+    if (cached.hit) {
+      return cached.value ?? {};
     }
 
     const pending = this.pendingGetAllPromises.get(cacheKey);
@@ -451,7 +451,7 @@ export class MCPServersRegistry {
       return pending;
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role, cached.fill);
     this.pendingGetAllPromises.set(cacheKey, fetchPromise);
 
     try {
@@ -465,6 +465,7 @@ export class MCPServersRegistry {
     cacheKey: string,
     userId?: string,
     role?: string,
+    fill?: FillToken,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const [dbConfigs, yamlConfigs] = await Promise.all([
       this.dbConfigsRepo.getAll(userId, role),
@@ -475,7 +476,7 @@ export class MCPServersRegistry {
 
     const result = { ...dbConfigs, ...yamlConfigs };
 
-    await this.readThroughCacheAll.set(cacheKey, result);
+    await this.readThroughCacheAll.set(cacheKey, result, fill);
     return result;
   }
 
@@ -589,7 +590,7 @@ export class MCPServersRegistry {
 
     const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
     await configRepo.update(serverName, updatedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId, 'CACHE');
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     return { serverName, config: updatedConfig };
   }
 

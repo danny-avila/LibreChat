@@ -15,12 +15,19 @@ interface MemoEntry<T> {
   tenantId: string | undefined;
 }
 
-/** Generation observed when a miss started, used to fence fills that finish
- *  after an invalidation has already completed. No expiry: a fence is removed
- *  when its fill settles or overwritten by the next miss for the key, which
- *  bounds cardinality to the memo's own. */
-interface PendingFill {
+/** State a miss observed, handed back with the miss so the matching fill (and
+ *  only that fill) can be fenced when an invalidation completed first. */
+export interface FillToken {
+  key: string;
   generation: string;
+}
+
+/** Result of one read: `hit` distinguishes a stored value from a miss, and
+ *  `fill` is present exactly when the caller should thread it into set(). */
+export interface CacheRead<T> {
+  hit: boolean;
+  value: T | undefined;
+  fill?: FillToken;
 }
 
 /** Store-side value transforms; the shared store only ever sees `encode` output. */
@@ -53,8 +60,10 @@ export interface ReadThroughTransforms<T> {
  * pattern as the local snapshot in `ServerConfigsCacheRedisAggregateKey`, added
  * because the registry resolves all-server configs many times per chat request.
  * An opportunistic sweep bounds the memo so one-time users cannot accumulate.
- * Fills are fenced by the generation observed at their miss, so a value
- * computed before an invalidation cannot be written or memoized after it.
+ * Each miss returns a fill token capturing the generation it observed, and the
+ * matching set() is fenced by it, so a value computed before an invalidation
+ * cannot be written or memoized after it, even when concurrent fills for the
+ * same key straddle the invalidation.
  * Cross-instance worst-case staleness is therefore bounded by the memo TTL,
  * matching the documented 2x MCP_REGISTRY_CACHE_TTL trade-off.
  *
@@ -68,7 +77,6 @@ export class ReadThroughAllCache<T> {
   private readonly ttl: number;
   private readonly transforms?: ReadThroughTransforms<T>;
   private readonly memo = new Map<string, MemoEntry<T>>();
-  private readonly pendingFills = new Map<string, PendingFill>();
   private lastSweepAt = 0;
 
   constructor(namespace: string, ttl: number, transforms?: ReadThroughTransforms<T>) {
@@ -123,32 +131,30 @@ export class ReadThroughAllCache<T> {
     }
   }
 
-  async get(key: string): Promise<T | undefined> {
+  async get(key: string): Promise<CacheRead<T>> {
     if (!this.enabled) {
-      return undefined;
+      return { hit: false, value: undefined };
     }
     const memoized = this.memo.get(key);
     if (memoized != null) {
       if (Date.now() < memoized.expiresAt) {
-        return memoized.value;
+        return { hit: true, value: memoized.value };
       }
       this.memo.delete(key);
     }
     const generation = await this.readGeneration();
     if (generation == null) {
-      return undefined;
+      return { hit: false, value: undefined };
     }
     let raw: unknown;
     try {
       raw = await this.cache.get(this.entryKey(generation, key));
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Store read failed; treating as a miss:', error);
-      this.recordPendingFill(key, generation);
-      return undefined;
+      return { hit: false, value: undefined, fill: { key, generation } };
     }
     if (raw === undefined) {
-      this.recordPendingFill(key, generation);
-      return undefined;
+      return { hit: false, value: undefined, fill: { key, generation } };
     }
     let value: T;
     if (!this.transforms?.decode) {
@@ -163,17 +169,16 @@ export class ReadThroughAllCache<T> {
           '[ReadThroughAllCache] Failed to decode cached entry; treating as a miss:',
           error,
         );
-        this.recordPendingFill(key, generation);
-        return undefined;
+        return { hit: false, value: undefined, fill: { key, generation } };
       }
     }
     /** Re-check after the full read (decode included): an invalidation landing
      *  mid-read must not have its pre-mutation value memoized for a full TTL
      *  window. */
     if ((await this.readGeneration()) !== generation) {
-      return undefined;
+      return { hit: false, value: undefined, fill: { key, generation } };
     }
-    return this.memoize(key, value);
+    return { hit: true, value: this.memoize(key, value) };
   }
 
   private memoize(key: string, value: T): T {
@@ -186,52 +191,38 @@ export class ReadThroughAllCache<T> {
     return value;
   }
 
-  /** Records the generation a miss observed, whatever caused the miss, so the
-   *  eventual fill can be fenced when an invalidation completes while the
-   *  caller is still computing. */
-  private recordPendingFill(key: string, generation: string): void {
-    this.pendingFills.set(key, { generation });
-  }
-
-  async set(key: string, value: T): Promise<void> {
+  async set(key: string, value: T, fill?: FillToken): Promise<void> {
     if (!this.enabled) {
       return;
     }
-    const fill = this.pendingFills.get(key);
-    try {
-      const current = await this.readGeneration();
-      if (fill != null && current != null && current !== fill.generation) {
-        /** Fenced: this value was computed before an invalidation completed, so
-         *  writing it (store or memo) would resurrect the pre-mutation map. */
+    const current = await this.readGeneration();
+    if (fill != null && fill.key === key && current != null && current !== fill.generation) {
+      /** Fenced: this value was computed before an invalidation completed, so
+       *  writing it (store or memo) would resurrect the pre-mutation map. */
+      return;
+    }
+    const generation = current ?? (fill != null && fill.key === key ? fill.generation : undefined);
+    if (generation != null) {
+      try {
+        const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
+        await this.cache.set(this.entryKey(generation, key), stored);
+      } catch (error) {
+        /** A failed store write degrades to the memo only; the caller's result
+         *  is already computed and must still be served. */
+        logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
+      }
+      /** Same recheck as get(): skip the memo when an invalidation landed while
+       *  this write was in flight, so the next read recomputes. */
+      if ((await this.readGeneration()) !== generation) {
         return;
       }
-      const generation = current ?? fill?.generation;
-      if (generation != null) {
-        try {
-          const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
-          await this.cache.set(this.entryKey(generation, key), stored);
-        } catch (error) {
-          /** A failed store write degrades to the memo only; the caller's result
-           *  is already computed and must still be served. */
-          logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
-        }
-        /** Same recheck as get(): skip the memo when an invalidation landed while
-         *  this write was in flight, so the next read recomputes. */
-        if ((await this.readGeneration()) !== generation) {
-          return;
-        }
-      }
-      this.memo.set(key, {
-        value,
-        expiresAt: Date.now() + this.ttl,
-        tenantId: this.currentTenantId(),
-      });
-      this.sweepMemo();
-    } finally {
-      if (fill != null) {
-        this.pendingFills.delete(key);
-      }
     }
+    this.memo.set(key, {
+      value,
+      expiresAt: Date.now() + this.ttl,
+      tenantId: this.currentTenantId(),
+    });
+    this.sweepMemo();
   }
 
   /**
@@ -266,7 +257,6 @@ export class ReadThroughAllCache<T> {
    */
   async invalidateAllGlobal(): Promise<void> {
     this.memo.clear();
-    this.pendingFills.clear();
     if (!this.enabled) {
       return;
     }
