@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { AgentCapabilities, MAX_SUBAGENTS } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers';
@@ -31,6 +31,7 @@ export default function OrchestrationHub({ currentAgentId }: OrchestrationHubPro
     () => agentsConfig?.capabilities.includes(AgentCapabilities.chain) ?? false,
     [agentsConfig],
   );
+  const maxSubagents = agentsConfig?.maxSubagents ?? MAX_SUBAGENTS;
 
   return (
     <section className="flex flex-col gap-1">
@@ -43,7 +44,13 @@ export default function OrchestrationHub({ currentAgentId }: OrchestrationHubPro
           <Controller
             name="subagents"
             control={control}
-            render={({ field }) => <AgentSubagents field={field} currentAgentId={currentAgentId} />}
+            render={({ field }) => (
+              <AgentSubagents
+                field={field}
+                currentAgentId={currentAgentId}
+                maxSubagents={maxSubagents}
+              />
+            )}
           />
         )}
         <Controller
