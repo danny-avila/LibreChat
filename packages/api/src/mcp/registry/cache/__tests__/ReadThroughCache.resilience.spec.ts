@@ -191,12 +191,31 @@ describe('read-through cache resilience', () => {
     await tenantStorage.run({ tenantId: 'tenant-b' }, () => cache.invalidateAll());
     expect(generation.set).toHaveBeenCalledWith('__generation__:tenant-b', expect.any(String));
 
-    /** Tenant A's memo was cleared by the shared clear, but its store entry
-     *  survives: the read hits the shared store instead of recomputing. */
+    /** Tenant B's invalidation left tenant A's memo entry in place, so this
+     *  read never even reaches the shared store. */
+    entry.get.mockClear();
     const survived = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
       cache.get('user:tenant-a'),
     );
     expect(survived).toBe('value-a');
+    expect(entry.get).not.toHaveBeenCalled();
+  });
+
+  test('a fence survives fills slower than one TTL window', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 40);
+    const { entry, generation } = storesFor(namespace);
+    generation.get.mockResolvedValueOnce('g1');
+    entry.get.mockResolvedValueOnce(undefined);
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    generation.get.mockResolvedValue('g2');
+
+    /** The miss generation is still remembered after the entry TTL elapsed,
+     *  so the late fill stays fenced. */
+    await cache.set('user-1', 'slow-stale-computed');
+    expect(entry.set).not.toHaveBeenCalled();
   });
 
   test('invalidateAllGlobal clears the shared namespace across tenants', async () => {
@@ -281,5 +300,51 @@ describe('per-server ReadThroughCache resilience', () => {
       value: undefined,
     });
     expect(store.delete).toHaveBeenCalledWith('server::user');
+  });
+
+  test('a fill finishing after a targeted delete is fenced', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const cache = new ReadThroughCache<string>(namespace, 60_000);
+    const store = storeFor(namespace);
+    store.get.mockResolvedValueOnce(undefined);
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: false,
+      value: undefined,
+    });
+
+    /** The server is updated and the cache key deleted while the original
+     *  request was still fetching; its write must not undo the mutation. */
+    await cache.delete('server::user');
+    await cache.set('server::user', 'pre-mutation-value');
+
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  test('a fill finishing after a namespace clear is fenced', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const cache = new ReadThroughCache<string>(namespace, 60_000);
+    const store = storeFor(namespace);
+    store.get.mockResolvedValueOnce(undefined);
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: false,
+      value: undefined,
+    });
+
+    await cache.clear();
+    await cache.set('server::user', 'pre-reset-value');
+
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  test('a fill is allowed when no invalidation intervened', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const cache = new ReadThroughCache<string>(namespace, 60_000);
+    const store = storeFor(namespace);
+    store.get.mockResolvedValueOnce(undefined);
+    await cache.getEntry('server::user');
+
+    await cache.set('server::user', 'fresh');
+
+    expect(store.set).toHaveBeenCalledWith('server::user', 'fresh');
   });
 });

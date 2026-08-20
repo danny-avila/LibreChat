@@ -1,6 +1,6 @@
 import { Keyv } from 'keyv';
 import { randomUUID } from 'crypto';
-import { logger, scopedCacheKey } from '@librechat/data-schemas';
+import { logger, scopedCacheKey, getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import { standardCache } from '~/cache';
 
 /** Base key holding the active generation tag; the effective key is
@@ -10,13 +10,17 @@ const GENERATION_KEY = '__generation__';
 interface MemoEntry<T> {
   value: T;
   expiresAt: number;
+  /** Tenant the entry was memoized under, so a tenant-scoped invalidation
+   *  evicts only that tenant's memo entries. */
+  tenantId: string | undefined;
 }
 
 /** Generation observed when a miss started, used to fence fills that finish
- *  after an invalidation has already completed. */
+ *  after an invalidation has already completed. No expiry: a fence is removed
+ *  when its fill settles or overwritten by the next miss for the key, which
+ *  bounds cardinality to the memo's own. */
 interface PendingFill {
   generation: string;
-  expiresAt: number;
 }
 
 /** Store-side value transforms; the shared store only ever sees `encode` output. */
@@ -97,6 +101,13 @@ export class ReadThroughAllCache<T> {
     return typeof generation === 'string' ? generation : '0';
   }
 
+  /** Effective tenant for cache scoping, mirroring scopedCacheKey: the system
+   *  context and absent context both address the unscoped partition. */
+  private currentTenantId(): string | undefined {
+    const tenantId = getTenantId();
+    return !tenantId || tenantId === SYSTEM_TENANT_ID ? undefined : tenantId;
+  }
+
   /** At most one pass per TTL window, so expired entries from one-time users
    *  cannot accumulate unboundedly between global invalidations. */
   private sweepMemo(): void {
@@ -108,11 +119,6 @@ export class ReadThroughAllCache<T> {
     for (const [key, entry] of this.memo) {
       if (now >= entry.expiresAt) {
         this.memo.delete(key);
-      }
-    }
-    for (const [key, fill] of this.pendingFills) {
-      if (now >= fill.expiresAt) {
-        this.pendingFills.delete(key);
       }
     }
   }
@@ -171,7 +177,11 @@ export class ReadThroughAllCache<T> {
   }
 
   private memoize(key: string, value: T): T {
-    this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
+    this.memo.set(key, {
+      value,
+      expiresAt: Date.now() + this.ttl,
+      tenantId: this.currentTenantId(),
+    });
     this.sweepMemo();
     return value;
   }
@@ -180,8 +190,7 @@ export class ReadThroughAllCache<T> {
    *  eventual fill can be fenced when an invalidation completes while the
    *  caller is still computing. */
   private recordPendingFill(key: string, generation: string): void {
-    this.pendingFills.set(key, { generation, expiresAt: Date.now() + this.ttl });
-    this.sweepMemo();
+    this.pendingFills.set(key, { generation });
   }
 
   async set(key: string, value: T): Promise<void> {
@@ -212,7 +221,11 @@ export class ReadThroughAllCache<T> {
           return;
         }
       }
-      this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
+      this.memo.set(key, {
+        value,
+        expiresAt: Date.now() + this.ttl,
+        tenantId: this.currentTenantId(),
+      });
       this.sweepMemo();
     } finally {
       if (fill != null) {
@@ -224,10 +237,16 @@ export class ReadThroughAllCache<T> {
   /**
    * Orphans the calling tenant's entries without scanning the keyspace.
    * DB-backed MCP servers and ACL grants are tenant-scoped data, so one
-   * tenant's mutation has no business evicting another tenant's entries.
+   * tenant's mutation has no business evicting another tenant's entries, in
+   * the store or in the process-local memo.
    */
   async invalidateAll(): Promise<void> {
-    this.memo.clear();
+    const tenantId = this.currentTenantId();
+    for (const [key, entry] of this.memo) {
+      if (entry.tenantId === tenantId) {
+        this.memo.delete(key);
+      }
+    }
     if (!this.enabled) {
       return;
     }

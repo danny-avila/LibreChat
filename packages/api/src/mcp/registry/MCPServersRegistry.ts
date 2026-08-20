@@ -496,7 +496,7 @@ export class MCPServersRegistry {
       source: resolveServerSource(config, 'yaml'),
     };
     const result = await configRepo.add(serverName, stubConfig, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId);
+    await this.invalidateServerReadCaches(result.serverName, userId, 'CACHE');
     this.resetYamlServerNamesMemo();
     return result;
   }
@@ -541,7 +541,7 @@ export class MCPServersRegistry {
             await this.getOperatorManagedServerNames(reservedServerNames),
           )
         : await configRepo.add(serverName, tagged, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId);
+    await this.invalidateServerReadCaches(result.serverName, userId, storageLocation);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
@@ -589,7 +589,7 @@ export class MCPServersRegistry {
 
     const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
     await configRepo.update(serverName, updatedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, 'CACHE');
     return { serverName, config: updatedConfig };
   }
 
@@ -651,7 +651,7 @@ export class MCPServersRegistry {
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.update(serverName, parsedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     return parsedConfig;
   }
 
@@ -901,7 +901,7 @@ export class MCPServersRegistry {
   ): Promise<void> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.remove(serverName, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
@@ -926,7 +926,26 @@ export class MCPServersRegistry {
     return scopedCacheKey(userId ? `${serverName}::${userId}` : serverName);
   }
 
-  private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
+  /**
+   * DB-backed servers and their ACL grants are tenant-scoped data, so their
+   * invalidation stays within the acting tenant. CACHE-tier (YAML/App
+   * repository) entries are global, so those mutations evict across tenants:
+   * the per-server cache cannot enumerate tenant-scoped keys, so it clears the
+   * namespace, and the aggregate map uses its global path.
+   */
+  private async invalidateServerReadCaches(
+    serverName: string,
+    userId?: string,
+    storageLocation?: 'CACHE' | 'DB',
+  ): Promise<void> {
+    if (storageLocation === 'CACHE') {
+      await Promise.all([
+        this.readThroughCache.clear(),
+        this.readThroughCacheAll.invalidateAllGlobal(),
+      ]);
+      return;
+    }
+
     const deletes = [
       this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
       this.readThroughCacheAll.invalidateAll(),
