@@ -60,6 +60,7 @@ const mockGenerationJobManager = {
   publishTerminalClaim: jest.fn(),
   finishTerminalJob: jest.fn(),
   completeJob: jest.fn(),
+  abortJob: jest.fn(),
   beginProviderExecution: jest.fn(),
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
@@ -82,6 +83,12 @@ const mockGetMessages = jest.fn();
 const mockDisposeClient = jest.fn();
 const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
+const mockRecordScheduleOutcome = jest.fn();
+const mockIsScheduleLive = jest.fn();
+const mockClaimScheduleResume = jest.fn();
+const mockReleaseScheduleResumeClaim = jest.fn();
+const mockFinalizeScheduleResumeClaim = jest.fn();
+const mockReleaseScheduleResumeFence = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -102,6 +109,15 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getConvo: (...args) => mockGetConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  claimScheduleResume: (...args) => mockClaimScheduleResume(...args),
+  releaseScheduleResumeClaim: (...args) => mockReleaseScheduleResumeClaim(...args),
+  finalizeScheduleResumeClaim: (...args) => mockFinalizeScheduleResumeClaim(...args),
+  releaseScheduleResumeFence: (...args) => mockReleaseScheduleResumeFence(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -248,12 +264,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     );
     mockGenerationJobManager.finishTerminalJob.mockResolvedValue(undefined);
     mockGenerationJobManager.completeJob.mockResolvedValue(true);
+    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.approvals.resolve.mockResolvedValue(true);
     mockGenerationJobManager.approvals.ownsPausePersistence.mockResolvedValue(true);
     mockGenerationJobManager.approvals.finishPausePersistence.mockResolvedValue(true);
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
+    mockClaimScheduleResume.mockResolvedValue({
+      capacitySlot: 0,
+      claimToken: 'resume-token',
+      leaseBy: 'resume:resume-token',
+    });
+    mockReleaseScheduleResumeClaim.mockResolvedValue(true);
+    mockFinalizeScheduleResumeClaim.mockResolvedValue(true);
+    mockReleaseScheduleResumeFence.mockResolvedValue(undefined);
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -302,6 +329,222 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     endpoint: 'agents',
     decisions: [{ tool_call_id: 'tc1', decision: 'approve' }],
     ...extra,
+  });
+
+  describe('scheduled occurrence lifecycle', () => {
+    const scheduledFor = '2026-08-17T12:00:00.000Z';
+    const makeScheduledJob = () =>
+      makeToolApprovalJob({
+        metadata: {
+          scheduleId: 'schedule-1',
+          scheduledFor,
+          scheduleConfigRevision: 4,
+          checkpointNamespace: '1000',
+        },
+      });
+
+    it('stops and settles an occurrence that became inactive while awaiting approval', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 4, {
+        automatic: true,
+        policy: true,
+      });
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
+        expectedCreatedAt: 1000,
+        awaitProviderDrain: true,
+      });
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'interrupted',
+        conversationId: CONVO_ID,
+        error: 'Schedule was disabled, changed, or deleted before approval',
+      });
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
+        CONVO_ID,
+        { type: 'mongo' },
+        undefined,
+        { checkpointNamespace: '1000' },
+      );
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('fails closed without settling or pruning when provider drain cannot be confirmed', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockRejectedValue(new Error('drain timed out'));
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('records success after resumed persistence and before terminal publication', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+
+      expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
+        expectedConfigRevision: 4,
+        automatic: true,
+      });
+      expect(mockFinalizeScheduleResumeClaim).toHaveBeenCalledWith(
+        'schedule-1',
+        'resume-token',
+        'resume:resume-token',
+        { expectedConfigRevision: 4, automatic: true },
+      );
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'success',
+        conversationId: CONVO_ID,
+      });
+      expect(mockRecordScheduleOutcome.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.publishTerminalClaim.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('keeps the approval paused when global scheduled-run capacity is full', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockClaimScheduleResume.mockResolvedValue({ conflict: 'capacity' });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(429);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_CAPACITY' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
+    });
+
+    it('rolls back scheduled capacity when the approval CAS does not consume the action', async () => {
+      const job = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.approvals.resolve.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(mockReleaseScheduleResumeClaim).toHaveBeenCalledWith('schedule-1', scheduledFor, 0);
+      expect(mockReleaseScheduleResumeFence).toHaveBeenCalledWith(
+        'schedule-1',
+        'resume:resume-token',
+      );
+    });
+
+    it('stops before provider execution when an edit wins the final resume handoff', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockFinalizeScheduleResumeClaim.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
+        expectedCreatedAt: 1000,
+        awaitProviderDrain: true,
+      });
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'interrupted',
+        conversationId: CONVO_ID,
+        error: 'Schedule was disabled, changed, or deleted before approval',
+      });
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
+    it('settles a scheduled continuation stopped during its resumed segment', async () => {
+      const job = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockInitializeClient.mockImplementation(async () => {
+        job.abortController.abort();
+        return { client: makeClient(), userMCPAuthMap: {} };
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'interrupted',
+        conversationId: CONVO_ID,
+        error: 'Scheduled run was stopped',
+      });
+    });
+
+    it('records an empty-preempt resumed segment as interrupted, not successful', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          run: {
+            getPreemptStats: () => ({ emptyBoundaries: 1 }),
+            getHaltReason: () => 'preempt_incomplete',
+          },
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ unfinished: true }),
+        expect.anything(),
+      );
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'interrupted',
+        conversationId: CONVO_ID,
+        error: 'Scheduled run was interrupted before completion',
+      });
+    });
+
+    it('does not overwrite the terminal winner when failed-resume finalization loses its CAS', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockGenerationJobManager.completeJob.mockResolvedValue(false);
+      mockInitializeClient.mockRejectedValue(new Error('resume reconstruction failed'));
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalled();
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+    });
   });
 
   describe('temporal context restore', () => {

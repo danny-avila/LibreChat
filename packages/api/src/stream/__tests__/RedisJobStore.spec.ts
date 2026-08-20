@@ -333,6 +333,13 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       preemptCapable: true,
@@ -388,6 +395,13 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       resolvedAskUserQuestions: [
@@ -411,6 +425,13 @@ describe('RedisJobStore', () => {
       responseMessageId: 'response-1',
       agent_id: 'agent-1',
       isTemporary: '0',
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: '4',
+      scheduleManual: '0',
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: '1',
       promptTokens: '0',
       discoveredTools: '[]',
       resolvedAskUserQuestions: JSON.stringify([
@@ -644,6 +665,7 @@ describe('RedisJobStore', () => {
     const evalResult = createDeferred<number>();
     const runningMembership = createDeferred<number>();
     const requiresActionRemoval = createDeferred<number>();
+    const terminalHostActionRemoval = createDeferred<number>();
     const userMembership = createDeferred<number>();
     const userExpiry = createDeferred<number>();
     const started: string[] = [];
@@ -667,9 +689,13 @@ describe('RedisJobStore', () => {
         started.push('user');
         return userMembership.promise;
       }),
-      srem: jest.fn(() => {
-        started.push('requires_action');
-        return requiresActionRemoval.promise;
+      srem: jest.fn((key: string) => {
+        if (key === 'stream:requires_action') {
+          started.push('requires_action');
+          return requiresActionRemoval.promise;
+        }
+        started.push('terminal_host_action');
+        return terminalHostActionRemoval.promise;
       }),
       hgetall: jest.fn(() => jobHashFromCreationCall(evalJobCreation.mock.calls[0])),
       expire,
@@ -684,16 +710,23 @@ describe('RedisJobStore', () => {
 
     expect(started).toEqual(['job']);
     evalResult.resolve(1);
-    await waitFor(() => started.length === 4);
+    await waitFor(() => started.length === 5);
 
-    expect(started).toEqual(['job', 'running', 'requires_action', 'user']);
+    expect(started).toEqual(['job', 'running', 'requires_action', 'terminal_host_action', 'user']);
     expect(settled).toBe(false);
     expect(expire).not.toHaveBeenCalled();
 
     userMembership.resolve(1);
     await waitFor(() => expire.mock.calls.length === 1);
 
-    expect(started).toEqual(['job', 'running', 'requires_action', 'user', 'user_expiry']);
+    expect(started).toEqual([
+      'job',
+      'running',
+      'requires_action',
+      'terminal_host_action',
+      'user',
+      'user_expiry',
+    ]);
     expect(expire).toHaveBeenCalledWith('stream:user:{user-1}:jobs', 60);
     expect(settled).toBe(false);
 
@@ -702,6 +735,10 @@ describe('RedisJobStore', () => {
     expect(settled).toBe(false);
 
     runningMembership.resolve(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    terminalHostActionRemoval.resolve(1);
     await Promise.resolve();
     expect(settled).toBe(false);
 

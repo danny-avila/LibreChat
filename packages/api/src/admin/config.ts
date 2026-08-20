@@ -5,6 +5,7 @@ import {
   PrincipalType,
   PrincipalModel,
   INTERFACE_PERMISSION_FIELDS,
+  RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   hasProcessMCPServerConfig,
   isProcessMCPServerConfig,
@@ -124,12 +125,45 @@ function isInterfacePermissionPath(fieldPath: string): boolean {
   if (!INTERFACE_PERMISSION_FIELDS.has(parts[1])) {
     return false;
   }
-  // "interface.<permField>" with no sub-key → permission (blocks the whole field)
+  // "interface.<permField>" with no sub-key → permission (blocks the whole field),
+  // EXCEPT dual-purpose runtime fields (e.g. schedules) whose bare top-level value
+  // is a runtime enable toggle, not a permission — those must pass through so admin
+  // field patches/tombstones can set or clear them (their .use/.create permission
+  // sub-keys are still blocked below).
   if (parts.length === 2) {
-    return true;
+    return !RUNTIME_CONFIG_INTERFACE_FIELDS.has(parts[1]);
   }
   // "interface.<permField>.<subKey>" → only block if sub-key is a permission bit
   return PERMISSION_SUB_KEYS.has(parts[2]);
+}
+
+/**
+ * Collapses an explicit disable on a dual-purpose runtime interface field (e.g. `schedules`)
+ * to its boolean form.
+ *
+ * For these fields `use` is BOTH a permission bit — stripped from DB overrides — and the
+ * runtime disable signal. Stripping it alone would leave `{ maxPerUser: 2 }`, which
+ * `getLimits` reads as ENABLED because an object opts in unless it sets `use: false`. An
+ * override written to stop scheduled billing for a principal would therefore start it.
+ * Other object forms are left alone so a principal can still narrow limits.
+ */
+function normalizeRuntimeInterfaceValue(field: string, value: unknown): unknown {
+  if (!RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+    return value;
+  }
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return (value as Record<string, unknown>).use === false ? false : value;
+}
+
+/** Applies {@link normalizeRuntimeInterfaceValue} to a bare `interface.<field>` patch. */
+function normalizeInterfaceFieldPatch(fieldPath: string, value: unknown): unknown {
+  const parts = fieldPath.split('.');
+  if (parts[0] !== 'interface' || parts.length !== 2) {
+    return value;
+  }
+  return normalizeRuntimeInterfaceValue(parts[1], value);
 }
 
 export interface AdminConfigDeps {
@@ -612,7 +646,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const iface = (overrides as Record<string, unknown>).interface;
       if (iface != null && typeof iface === 'object' && !Array.isArray(iface)) {
         const filteredIface: Record<string, unknown> = {};
-        for (const [field, val] of Object.entries(iface as Record<string, unknown>)) {
+        for (const [field, rawVal] of Object.entries(iface as Record<string, unknown>)) {
+          const val = normalizeRuntimeInterfaceValue(field, rawVal);
           if (!INTERFACE_PERMISSION_FIELDS.has(field)) {
             filteredIface[field] = val;
           } else if (val != null && typeof val === 'object' && !Array.isArray(val)) {
@@ -631,6 +666,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             if (Object.keys(uiOnly).length > 0) {
               filteredIface[field] = uiOnly;
             }
+          } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+            // Dual-purpose field: the boolean form is a runtime disable, not a
+            // permission toggle, so preserve it (e.g. schedules: false).
+            filteredIface[field] = val;
           } else {
             logger.warn(
               `[adminConfig] Stripping interface permission field "${field}" — use role permissions instead`,
@@ -794,27 +833,32 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const validEntries = entries.filter((entry) => {
-        if (isBaseOnlyFieldPath(entry.fieldPath)) {
-          logger.warn(
-            `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
-          );
-          return false;
-        }
-        if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
-          logger.warn(
-            `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
-          );
-          return false;
-        }
-        if (isInterfacePermissionPath(entry.fieldPath)) {
-          logger.warn(
-            `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
-          );
-          return false;
-        }
-        return true;
-      });
+      const validEntries = entries
+        .map((entry) => ({
+          ...entry,
+          value: normalizeInterfaceFieldPatch(entry.fieldPath, entry.value),
+        }))
+        .filter((entry) => {
+          if (isBaseOnlyFieldPath(entry.fieldPath)) {
+            logger.warn(
+              `[adminConfig] Stripping base-only config field "${entry.fieldPath}" - configure it in librechat.yaml instead`,
+            );
+            return false;
+          }
+          if (BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(getTopLevelSection(entry.fieldPath))) {
+            logger.warn(
+              `[adminConfig] Stripping dedicated tenant-wide config field "${entry.fieldPath}" from the generic config API`,
+            );
+            return false;
+          }
+          if (isInterfacePermissionPath(entry.fieldPath)) {
+            logger.warn(
+              `[adminConfig] Stripping interface permission field "${entry.fieldPath}" — use role permissions instead`,
+            );
+            return false;
+          }
+          return true;
+        });
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 

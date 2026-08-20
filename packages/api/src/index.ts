@@ -58,6 +58,8 @@ export * from './projects';
 /* Conversations */
 export * from './conversations';
 /* Skills */
+export * from './schedules';
+export * from './schedules/service';
 export * from './skills';
 export * from './favorites';
 /* User */

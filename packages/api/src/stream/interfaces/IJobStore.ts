@@ -123,6 +123,31 @@ export interface SerializableJobData {
   /** Whether sync has been sent to a client */
   syncSent: boolean;
 
+  /** Trusted schedule identity copied atomically into the generation job. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Terminal outcome evidence retained when the schedule row could not be updated. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  preserveForScheduleReconcile?: boolean;
+  /**
+   * A terminal transition (currently approval expiry) still owes a durable host
+   * lifecycle hook. Set atomically with that transition and cleared only once the host
+   * adapter acknowledges success, so the job is retained (not reaped) and enumerable by
+   * cleanup across restarts and replicas until the hook completes. Generic: a host with
+   * no action clears it immediately on its no-op success, so nothing accumulates.
+   */
+  terminalHostActionPending?: boolean;
+  /**
+   * Last time a cleanup pass enumerated this pending host action for retry. Retention is
+   * measured from this rather than `completedAt`, so evidence survives as long as some
+   * replica is still actively retrying the hook (e.g. Mongo unreachable for days), while a
+   * deployment that stops retrying entirely still lets it age out instead of leaking.
+   */
+  terminalHostActionRefreshedAt?: number;
+
   /** Serialized final event for replay */
   finalEvent?: string;
 
@@ -277,6 +302,13 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'scheduleId'
+    | 'scheduledFor'
+    | 'scheduleConfigRevision'
+    | 'scheduleManual'
+    | 'scheduleOutcome'
+    | 'scheduleOutcomeError'
+    | 'preserveForScheduleReconcile'
     | 'promptTokens'
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
@@ -661,6 +693,18 @@ export interface IJobStore {
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;
+  /** Optional durable paused-job enumeration. Built-in stores implement it so
+   * the manager can own approval expiry even after the original runtime died. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
+  /** Optional durable enumeration of terminal jobs that still owe a host lifecycle
+   * hook (see `terminalHostActionPending`). Built-in stores implement it so cleanup can
+   * retry the host adapter after a restart / on another replica, even though the job is
+   * no longer in the requires_action index. */
+  getTerminalHostActionJobs?(): Promise<SerializableJobData[]>;
+  /** Clears the pending-host-action marker once the adapter acknowledges success.
+   * Identity-fenced on `expectedCreatedAt` so a replacement generation at the same
+   * streamId is never cleared through its predecessor. */
+  clearTerminalHostAction?(streamId: string, expectedCreatedAt?: number): Promise<void>;
   cleanup(): Promise<number>;
   recordActivity?(streamId: string, expectedCreatedAt?: number): void;
   getJobCount(): Promise<number>;
@@ -901,6 +945,9 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get all running jobs (for cleanup) */
   getRunningJobs(): Promise<SerializableJobData[]>;
+
+  /** Get durable paused jobs so approval expiry is not process-runtime-dependent. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;

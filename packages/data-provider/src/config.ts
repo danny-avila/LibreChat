@@ -1563,6 +1563,19 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    schedules: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          maxPerUser: z.number().int().min(0).optional(),
+          minIntervalMinutes: z.number().int().min(1).optional(),
+          autoDisableAfterFailures: z.number().int().min(1).optional(),
+          fireConcurrency: z.number().int().min(1).optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1625,6 +1638,11 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    // `schedules` is deliberately ABSENT from this default. It is experimental and
+    // default-off in v1, and zod applies this whole object when `interface` is omitted
+    // from librechat.yaml — including it would silently enable the feature (and permit
+    // billable scheduled runs) on every deployment that never opted in. The PERMISSION
+    // defaults live in updateInterfacePermissions, which is a separate concern.
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;

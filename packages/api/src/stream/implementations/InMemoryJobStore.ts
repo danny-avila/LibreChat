@@ -46,6 +46,10 @@ const STEER_RECEIPT_MAX_PER_STREAM: number = 100;
 const CREATE_REPLACEMENT_RECEIPT_MAX = 32;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 const TERMINAL_PERSISTENCE_RETENTION_MS = 5 * 60 * 1000;
+/** Bounded window a terminal job owing a host lifecycle hook is retained for retry before
+ *  it is reaped even if unacknowledged (a permanently-failing hook cannot leak forever).
+ *  Mirrors the Redis store's 24h host-action TTL. */
+const HOST_ACTION_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function assertCreateIdempotencyArguments(
   claimKey?: string,
@@ -1026,6 +1030,40 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return running;
   }
 
+  async getRequiresActionJobs(): Promise<SerializableJobData[]> {
+    const paused: SerializableJobData[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status === 'requires_action') {
+        paused.push(job);
+      }
+    }
+    return paused;
+  }
+
+  async getTerminalHostActionJobs(): Promise<SerializableJobData[]> {
+    const pending: SerializableJobData[] = [];
+    const now = Date.now();
+    for (const job of this.jobs.values()) {
+      if (job.terminalHostActionPending === true) {
+        // Enumerating IS the retry attempt: refresh retention so evidence outlives a host
+        // dependency that is unreachable for longer than the retention window.
+        job.terminalHostActionRefreshedAt = now;
+        pending.push(job);
+      }
+    }
+    return pending;
+  }
+
+  async clearTerminalHostAction(streamId: string, expectedCreatedAt?: number): Promise<void> {
+    const job = this.jobs.get(streamId);
+    // Identity-fenced: a replacement generation at this streamId (a newer createdAt) must
+    // not have a predecessor's marker cleared on its behalf.
+    if (job == null || (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)) {
+      return;
+    }
+    delete job.terminalHostActionPending;
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const toDelete: Array<{ streamId: string; createdAt: number }> = [];
@@ -1089,7 +1127,19 @@ export class InMemoryJobStore implements IJobStoreV2 {
       }
 
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
-      if (isFinished && job.completedAt) {
+      // A terminal job that still owes a host lifecycle hook is retained (like a
+      // reconcile-preserved job) so a later cleanup pass can enumerate and retry it —
+      // but only within a bounded window, so a permanently-failing hook cannot leak.
+      const hostActionHeld =
+        job.terminalHostActionPending === true &&
+        now - (job.terminalHostActionRefreshedAt ?? job.completedAt ?? 0) <=
+          HOST_ACTION_RETENTION_MS;
+      if (
+        isFinished &&
+        job.completedAt &&
+        job.preserveForScheduleReconcile !== true &&
+        !hostActionHeld
+      ) {
         // A pending final event is a persistence barrier, not an ordinary
         // completed row. Give its owner/recovery path a bounded window even
         // when normal terminal retention is configured to zero.
@@ -1117,11 +1167,13 @@ export class InMemoryJobStore implements IJobStoreV2 {
         job.status = 'aborted';
         job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
+        // Store-won expiry (the manager's own sweep did not win the CAS): mark the host
+        // action pending so the manager relay still runs its lifecycle hook, and RETAIN the
+        // job (even under zero terminal retention) so a sweep can enumerate it — cleared and
+        // reaped once the hook acknowledges.
+        job.terminalHostActionPending = true;
         delete job.pendingAction;
         delete job.pendingActionId;
-        if (this.ttlAfterComplete === 0) {
-          toDelete.push({ streamId, createdAt: job.createdAt });
-        }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
         // longer than the stale timeout. These are crashed/hung generations that

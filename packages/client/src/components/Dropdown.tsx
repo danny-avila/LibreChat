@@ -4,6 +4,7 @@ import { matchSorter } from 'match-sorter';
 import * as Select from '@ariakit/react/select';
 import * as Combobox from '@ariakit/react/combobox';
 import type { Option } from '~/common';
+import { fieldControl } from './Field';
 import { cn } from '~/utils/';
 import './Dropdown.css';
 
@@ -25,6 +26,8 @@ interface DropdownProps {
   ariaLabel?: string;
   'aria-labelledby'?: string;
   portal?: boolean;
+  /** `field` matches the `Input` primitive so this can sit in a form row. */
+  variant?: 'default' | 'field';
   /** Renders the popover into this element instead of document.body */
   portalElement?: ((element: HTMLElement) => HTMLElement | null) | HTMLElement | null;
   disabled?: boolean;
@@ -57,6 +60,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   ariaLabel,
   'aria-labelledby': ariaLabelledBy,
   portal = true,
+  variant = 'default',
   portalElement,
   disabled = false,
   searchable = false,
@@ -140,7 +144,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   );
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative', variant === 'field' && 'w-full', className)}>
       <Select.Select
         store={selectProps}
         disabled={disabled}
@@ -149,6 +153,7 @@ const Dropdown: React.FC<DropdownProps> = ({
           'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-primary',
           /** Horizontal padding would squeeze the icon, which flex-shrinks to fit */
           iconOnly ? 'size-10 justify-center px-0' : 'w-fit gap-2 px-3',
+          variant === 'field' && fieldControl,
           triggerClassName,
         )}
         data-testid={testId}

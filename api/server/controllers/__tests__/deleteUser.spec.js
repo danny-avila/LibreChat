@@ -28,6 +28,8 @@ const mockPurgeAgentTriggerDeliveriesForUser = jest.fn();
 const mockBeginAgentTriggerUserDeletion = jest.fn();
 const mockCancelAgentTriggerUserDeletion = jest.fn();
 const mockCancelAndDrainSubagentThreads = jest.fn();
+const mockQuiesceUserSchedules = jest.fn();
+const mockDeleteSchedulesByUser = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), info: jest.fn() },
@@ -85,6 +87,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   removeUserFromAllGroups: jest.fn(),
   deleteAclEntries: jest.fn(),
+  deleteSchedulesByUser: (...args) => mockDeleteSchedulesByUser(...args),
   getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
 }));
 
@@ -125,6 +128,10 @@ jest.mock('~/server/services/Agents/triggers', () => ({
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({
   cancelAndDrainForOwner: (...args) => mockCancelAndDrainSubagentThreads(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: (...args) => mockQuiesceUserSchedules(...args),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -171,6 +178,8 @@ function stubDeletionMocks() {
   mockBeginAgentTriggerUserDeletion.mockResolvedValue('acquired');
   mockCancelAgentTriggerUserDeletion.mockResolvedValue(true);
   mockCancelAndDrainSubagentThreads.mockResolvedValue();
+  mockQuiesceUserSchedules.mockResolvedValue(true);
+  mockDeleteSchedulesByUser.mockResolvedValue();
 }
 
 beforeEach(() => {

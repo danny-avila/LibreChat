@@ -23,6 +23,34 @@ describe('Experimental server configuration', () => {
     expect(source).toMatch(/if \(shuttingDown\) \{[\s\S]*?return;[\s\S]*?Starting a new worker/);
   });
 
+  it('starts approval expiry after installing the scheduled-run callback', () => {
+    const handlerIndex = source.indexOf(
+      'GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);',
+    );
+    const initializeIndex = source.indexOf('GenerationJobManager.initialize();');
+
+    expect(handlerIndex).toBeGreaterThan(-1);
+    expect(initializeIndex).toBeGreaterThan(handlerIndex);
+  });
+
+  it('starts erasure-only schedule maintenance after connecting to Mongo, once per worker', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const sweepIndex = source.indexOf('initializeScheduleErasureSweep();');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(sweepIndex).toBeGreaterThan(-1);
+    // Mongo must be up before the sweep reads soft-deleted rows.
+    expect(sweepIndex).toBeGreaterThan(connectIndex);
+    // Idempotent guard lives in the service; started exactly once from this entrypoint.
+    expect(source.match(/initializeScheduleErasureSweep\(\);/g)).toHaveLength(1);
+  });
+
+  it('never arms the full schedule engine in a clustered worker', () => {
+    // The clustered entrypoint runs erasure-only maintenance: arming the engine here
+    // would claim/fire/absence-reconcile runs whose peer generations it cannot see.
+    expect(source).not.toContain('initializeScheduleEngine(');
+  });
+
   it('runs cross-tenant startup work in the system context', () => {
     expect(source).toContain('await runAsSystem(seedDatabase);');
     expect(source).toMatch(

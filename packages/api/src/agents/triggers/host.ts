@@ -556,7 +556,7 @@ async function startRun(
     }
     const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
     const parentMessageId = resolveParentMessageId(preparation, envelope);
-    const [token, timezone, baseUrl] = await Promise.all([
+    const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
         mode,
@@ -574,6 +574,8 @@ async function startRun(
       scope.abort();
       throw error;
     });
+    const run = envelope.mode === 'fire' ? envelope.run : undefined;
+    const timezone = run?.timezone ?? resolvedTimezone;
     const url = mode === 'fire' ? fireUrl(baseUrl) : continueUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
@@ -602,6 +604,25 @@ async function startRun(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(envelope.mode === 'fire' && {
+            agentTrigger: {
+              version: envelope.version,
+              deliveryId: envelope.deliveryId,
+              event: {
+                id: envelope.event.id,
+                type: envelope.event.type,
+                occurredAt: envelope.event.occurredAt,
+                source: envelope.event.source,
+              },
+              ...(run?.metadata !== undefined && {
+                metadata: run.metadata,
+              }),
+            },
+          }),
+          ...(run?.conversationId != null && {
+            newConversationId: run.conversationId,
+          }),
+          ...(run?.files != null && { files: run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }
             : {}),
