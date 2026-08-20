@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Plus } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
 import {
@@ -15,13 +16,18 @@ import MCPServerCardSkeleton from './MCPServerCardSkeleton';
 import MCPAdminSettings from './MCPAdminSettings';
 import MCPServerDialog from './MCPServerDialog';
 import MCPServerList from './MCPServerList';
+import store from '~/store';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
-  /** Opening the MCP panel before background warmup starts the fetch now */
+  /** The panel stays mounted while the sidebar is hidden, so only a visible
+   * panel releases its catalog ahead of the background warmup schedule */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   useEffect(() => {
-    activateCatalog('mcpServers');
-  }, []);
+    if (sidebarExpanded) {
+      activateCatalog('mcpServers');
+    }
+  }, [sidebarExpanded]);
   const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();

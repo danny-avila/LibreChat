@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
@@ -16,6 +17,7 @@ import {
   useMCPToolsQuery,
 } from '~/data-provider';
 import { Panel, isEphemeralAgent } from '~/common';
+import store from '~/store';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 
@@ -30,11 +32,15 @@ export function useAgentPanelContext() {
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
 export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
   const localize = useLocalize();
-  /** The agent form needs the MCP catalogs on open, before background warmup */
+  /** The panel stays mounted while the sidebar is hidden, so only a visible
+   * form releases the MCP catalogs ahead of the background warmup schedule */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   useEffect(() => {
-    activateCatalog('mcpServers');
-    activateCatalog('mcpTools');
-  }, []);
+    if (sidebarExpanded) {
+      activateCatalog('mcpServers');
+      activateCatalog('mcpTools');
+    }
+  }, [sidebarExpanded]);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);

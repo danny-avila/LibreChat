@@ -145,4 +145,24 @@ describe('useCatalogWarmup', () => {
     });
     expect(readyState).toEqual({ prompts: false, mcpServers: false, mcpTools: false });
   });
+
+  it('re-arms the schedule after logout so the next session warms again', () => {
+    const view = render(<Harness authenticated={true} />);
+    flushIdle();
+    act(() => {
+      jest.runAllTimers();
+    });
+    CATALOG_IDS.forEach((id) => expect(readyState[id]).toBe(true));
+
+    view.rerender(<Harness authenticated={false} />);
+    expect(readyState).toEqual({ prompts: false, mcpServers: false, mcpTools: false });
+
+    view.rerender(<Harness authenticated={true} />);
+    flushIdle();
+    act(() => {
+      jest.advanceTimersByTime(0);
+    });
+    expect(readyState.prompts).toBe(true);
+    expect(readyState.mcpTools).toBe(false);
+  });
 });

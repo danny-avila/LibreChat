@@ -64,10 +64,16 @@ function scheduleIdle(callback: () => void) {
 /**
  * Starts the one-time warmup schedule. Mounted from Root once the user is
  * authenticated; every catalog consumer below Root reads the same store.
+ * Logout is SPA navigation (no reload), so it also resets the schedule for
+ * the next authenticated session.
  */
 export function useCatalogWarmup(isAuthenticated: boolean) {
   useEffect(() => {
-    if (!isAuthenticated || scheduled) {
+    if (!isAuthenticated) {
+      resetCatalogWarmup();
+      return;
+    }
+    if (scheduled) {
       return;
     }
     scheduled = true;
@@ -90,14 +96,11 @@ export function useCatalogReady(id: CatalogId): boolean {
     };
   }, []);
   const getSnapshot = useCallback(() => ready[id], [id]);
-  return useSyncExternalStore(subscribe, getSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-/** Resets module state so specs can exercise the schedule in isolation. */
+/** Clears timers and readiness so the next session warms on its own schedule. */
 export function resetCatalogWarmup() {
-  if (process.env.NODE_ENV === 'production') {
-    return;
-  }
   scheduled = false;
   pendingTimers.forEach((timer) => clearTimeout(timer));
   pendingTimers.clear();

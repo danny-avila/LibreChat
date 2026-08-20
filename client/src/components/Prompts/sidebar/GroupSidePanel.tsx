@@ -31,15 +31,18 @@ export default function GroupSidePanel({
   const localize = useLocalize();
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
 
-  /** Opening the prompts panel before background warmup starts the fetch now */
-  useEffect(() => {
-    activateCatalog('prompts');
-  }, []);
-
   const context = usePromptGroupsContext();
 
   /** A collapsed sidebar keeps this panel mounted, so stop draining pages into it */
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+
+  /** The panel stays mounted while hidden, so only a visible panel releases
+   * its catalog ahead of the background warmup schedule */
+  useEffect(() => {
+    if (sidebarExpanded) {
+      activateCatalog('prompts');
+    }
+  }, [sidebarExpanded]);
 
   const { containerRef } = useNavScrolling<PromptGroupListResponse>({
     nextCursor: context?.nextCursor,
