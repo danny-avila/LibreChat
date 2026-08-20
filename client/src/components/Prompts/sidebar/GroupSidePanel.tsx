@@ -1,9 +1,10 @@
+import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { Button, Sidebar, Spinner, TooltipAnchor } from '@librechat/client';
 import type { PromptGroupListResponse } from 'librechat-data-provider';
+import { useLocalize, useNavScrolling, activateCatalog } from '~/hooks';
 import PromptGroupSkeleton from '../lists/PromptGroupSkeleton';
-import { useLocalize, useNavScrolling } from '~/hooks';
 import { usePromptGroupsContext } from '~/Providers';
 import { PanelContent } from '~/components/ui';
 import List from '../lists/List';
@@ -29,6 +30,11 @@ export default function GroupSidePanel({
   const location = useLocation();
   const localize = useLocalize();
   const isChatRoute = isChatRouteProp ?? location.pathname?.startsWith('/c/') ?? false;
+
+  /** Opening the prompts panel before background warmup starts the fetch now */
+  useEffect(() => {
+    activateCatalog('prompts');
+  }, []);
 
   const context = usePromptGroupsContext();
 

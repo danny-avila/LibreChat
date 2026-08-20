@@ -1,19 +1,20 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
+import {
+  useLocalize,
+  activateCatalog,
+  useGetAgentsConfig,
+  useMCPConnectionStatus,
+  useMCPServerManager,
+} from '~/hooks';
 import {
   useAvailableToolsQuery,
   useGetActionsQuery,
   useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
-import {
-  useLocalize,
-  useGetAgentsConfig,
-  useMCPConnectionStatus,
-  useMCPServerManager,
-} from '~/hooks';
 import { Panel, isEphemeralAgent } from '~/common';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -29,6 +30,11 @@ export function useAgentPanelContext() {
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
 export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
   const localize = useLocalize();
+  /** The agent form needs the MCP catalogs on open, before background warmup */
+  useEffect(() => {
+    activateCatalog('mcpServers');
+    activateCatalog('mcpTools');
+  }, []);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);

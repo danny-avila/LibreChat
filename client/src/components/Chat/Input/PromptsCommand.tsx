@@ -9,6 +9,7 @@ import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
+import { activateCatalog } from '~/hooks';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -140,6 +141,8 @@ function PromptsCommand({
       setActiveIndex(0);
       setSearchValue('');
     } else {
+      /** Opening the picker before background warmup starts the fetch now */
+      activateCatalog('prompts');
       setVariableGroup(null);
     }
   }, [open, setSearchValue]);

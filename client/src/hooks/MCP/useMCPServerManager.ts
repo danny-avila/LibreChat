@@ -34,7 +34,13 @@ import {
   isTerminalMCPOAuthPollingError,
   shouldUseMCPConnectionStatus,
 } from './polling';
-import { useLocalize, useHasAccess, useMCPSelect, useMCPConnectionStatus } from '~/hooks';
+import {
+  useLocalize,
+  useHasAccess,
+  useMCPSelect,
+  useCatalogReady,
+  useMCPConnectionStatus,
+} from '~/hooks';
 import { useGetStartupConfig, useMCPServersQuery } from '~/data-provider';
 import { mcpServerInitStatesAtom, getServerInitState } from '~/store/mcp';
 import { getMCPReinitializeErrorMessage } from './errors';
@@ -66,12 +72,16 @@ export function useMCPServerManager({
     permissionType: PermissionTypes.MCP_SERVERS,
     permission: Permissions.USE,
   });
+  /** MCP catalogs are background-warmed: the server list powers nav-link
+   * visibility and the chat-menu select, none of which gate first paint. */
+  const mcpServersReady = useCatalogReady('mcpServers');
+  const mcpEnabled = canUseMcp && mcpServersReady;
 
-  const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: canUseMcp });
+  const { data: loadedServers, isLoading } = useMCPServersQuery({ enabled: mcpEnabled });
 
   // Fetch effective permissions for all MCP servers
   const { data: permissionsMap } = useGetAllEffectivePermissionsQuery(ResourceType.MCPSERVER, {
-    enabled: canUseMcp,
+    enabled: mcpEnabled,
   });
 
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);

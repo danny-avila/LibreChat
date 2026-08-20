@@ -110,14 +110,13 @@ router.get('/all', async (req, res) => {
       category,
     });
 
-    let accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
-
-    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+    const [accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
       findPubliclyAccessibleResources({
         resourceType: ResourceType.PROMPTGROUP,
         requiredPermissions: PermissionBits.VIEW,
@@ -183,14 +182,13 @@ router.get('/groups', async (req, res) => {
       actualCursor = null;
     }
 
-    let accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
-
-    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+    const [accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      findAccessibleResources({
+        userId,
+        role: req.user.role,
+        resourceType: ResourceType.PROMPTGROUP,
+        requiredPermissions: PermissionBits.VIEW,
+      }),
       findPubliclyAccessibleResources({
         resourceType: ResourceType.PROMPTGROUP,
         requiredPermissions: PermissionBits.VIEW,

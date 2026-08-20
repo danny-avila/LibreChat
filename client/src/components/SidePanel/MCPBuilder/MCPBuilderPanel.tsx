@@ -1,8 +1,14 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
-import { useLocalize, useMCPServerManager, useHasAccess, useAuthContext } from '~/hooks';
+import {
+  useLocalize,
+  useMCPServerManager,
+  useHasAccess,
+  useAuthContext,
+  activateCatalog,
+} from '~/hooks';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import { PanelFooter, PanelContent } from '~/components/ui';
 import MCPServerCardSkeleton from './MCPServerCardSkeleton';
@@ -12,6 +18,10 @@ import MCPServerList from './MCPServerList';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
+  /** Opening the MCP panel before background warmup starts the fetch now */
+  useEffect(() => {
+    activateCatalog('mcpServers');
+  }, []);
   const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();
