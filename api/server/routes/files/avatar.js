@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/', async (req, res) => {
   try {
     const appConfig = req.config;
-    filterFile({ req, file: req.file, image: true, isAvatar: true });
+    await filterFile({ req, file: req.file, image: true, isAvatar: true });
     const userId = req.user.id;
     const { manual } = req.body;
     const input = await fs.readFile(req.file.path);
