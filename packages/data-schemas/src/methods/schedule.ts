@@ -339,7 +339,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       const taken = new Set(
         used.map((s) => s.slot).filter((s): s is number => typeof s === 'number'),
       );
-      if (taken.size >= maxPerUser) {
+      // Every live row consumes capacity, including legacy/internal rows created
+      // before the slot allocator existed. Slots remain the atomic collision key.
+      if (used.length >= maxPerUser) {
         return 'limit';
       }
       let slot = 0;
@@ -1505,16 +1507,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   /**
    * Non-terminal runs old enough to need a job-store status check. Fetches
    * `started` (capacity-consuming) and `requires_action` (paused) in separate
-   * budgeted, firedAt-ordered buckets so a backlog of long-lived paused rows
-   * can't starve orphaned `started` runs out of every sweep.
+   * budgeted round-robin buckets so a backlog of live rows in either state
+   * cannot starve an orphaned run out of every sweep.
    */
   async function getRunsForReconciliation(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     const [started, paused] = await Promise.all([
-      // `started` runs are bounded by the global fireConcurrency cap, so this window
-      // can never fill with rows that have nothing to do — oldest-first is right here.
+      // A deployment may intentionally set fireConcurrency above the reconciliation
+      // batch. Rotate started rows as well, otherwise a full oldest-first window of
+      // legitimate long-running generations can hide a newer abandoned run forever.
       ScheduleRun()
         .find({ status: 'started', firedAt: { $lt: olderThan } })
-        .sort({ firedAt: 1 })
+        .sort({ reconciledAt: 1, firedAt: 1 })
         .limit(limit)
         .lean<IScheduleRun[]>(),
       // ROUND-ROBIN, not oldest-first. A paused run holds no capacity slot and does not
@@ -1534,8 +1537,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return [...started, ...paused];
   }
 
-  /** Stamps rows as examined, so the paused window rotates instead of re-serving the
-   *  same rows forever. Bookkeeping only: never touches `updatedAt`. */
+  /** Stamps rows as examined, so each bounded reconciliation window rotates instead
+   *  of re-serving the same rows forever. Bookkeeping only: never touches `updatedAt`. */
   async function markRunsReconciled(runs: Array<Pick<IScheduleRun, '_id'>>): Promise<void> {
     const ids = runs.map((run) => run._id).filter((id) => id != null);
     if (ids.length === 0) {

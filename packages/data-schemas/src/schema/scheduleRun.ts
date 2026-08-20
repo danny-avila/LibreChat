@@ -96,8 +96,8 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     abortPersistedAt: {
       type: Date,
     },
-    /** When reconciliation last examined this row. Orders the paused window so a full
-     *  batch of still-live pauses cannot starve an abandoned row behind them. */
+    /** When reconciliation last examined this row. Rotates each bounded non-terminal
+     *  window so a full batch of live runs cannot starve an abandoned row behind it. */
     reconciledAt: {
       type: Date,
     },
@@ -147,8 +147,8 @@ scheduleRunSchema.index({ scheduleId: 1, firedAt: -1 });
 // Reconciliation sweeps by status; keeps `started` (capacity) fetch cheap and
 // prevents long-lived `requires_action` rows from starving the scan.
 scheduleRunSchema.index({ status: 1, firedAt: 1 });
-// The paused reconciliation window sorts on {reconciledAt, firedAt} within a status;
-// without this the round-robin rotation re-sorts the whole paused set every tick.
+// Non-terminal reconciliation windows sort on {reconciledAt, firedAt} within a status;
+// without this the round-robin rotation re-sorts the whole live set every tick.
 scheduleRunSchema.index({ status: 1, reconciledAt: 1, firedAt: 1 });
 
 export default scheduleRunSchema;
