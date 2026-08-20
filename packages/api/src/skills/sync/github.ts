@@ -64,6 +64,7 @@ const VALIDATION_ISSUE_CODE_MAX = 64;
 const VALIDATION_ISSUE_MESSAGE_MAX = 250;
 
 export { GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION };
+export type { GitHubRepoAdapterConfig };
 
 type FetchFn = typeof fetch;
 
