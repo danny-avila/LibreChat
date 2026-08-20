@@ -1,7 +1,7 @@
-import { ResourceType, SystemCategories } from 'librechat-data-provider';
+import { CacheKeys, PermissionBits, ResourceType, SystemCategories } from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
-import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
-import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import type { IAclEntry, CacheStore, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
+import { getTenantId, scopedCacheKey, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -14,6 +14,33 @@ export interface PromptDeps {
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
+  /** Returns a cache store for the given key. Injected from getLogStores. */
+  getCache?: (key: string) => CacheStore | undefined;
+  /** Resolves ACL principals for a user. From createUserGroupMethods. */
+  getUserPrincipals: (params: {
+    userId: string | Types.ObjectId;
+    role?: string | null;
+  }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Finds resource IDs accessible to a set of principals. From createAclEntryMethods. */
+  findAccessibleResources: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    requiredPermBit: number,
+  ) => Promise<Types.ObjectId[]>;
+  /** Finds publicly accessible resource IDs. From createAclEntryMethods. */
+  findPublicResourceIds: (
+    resourceType: string,
+    requiredPermissions: number,
+  ) => Promise<Types.ObjectId[]>;
+}
+
+/** In-flight access ID builds, so concurrent same-process misses share one resolution. */
+const pendingAccessLookups = new Map<string, Promise<string[]>>();
+
+function isCachedIdArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((id) => typeof id === 'string' && isValidObjectIdString(id))
+  );
 }
 
 export interface PromptMethods {
@@ -69,6 +96,12 @@ export interface PromptMethods {
   ): Promise<Record<string, unknown> | null | { message: string }>;
   getPromptGroup(filter: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   getOwnedPromptGroupIds(author: string): Promise<Types.ObjectId[]>;
+  getPromptGroupAccessContext(params: { userId: string; role?: string }): Promise<{
+    accessibleIds: Types.ObjectId[];
+    publiclyAccessibleIds: Types.ObjectId[];
+    ownedPromptGroupIds: Types.ObjectId[];
+  }>;
+  invalidatePromptGroupAccessContext(): Promise<void>;
   deletePrompt(params: {
     promptId: string | Types.ObjectId;
     groupId: string | Types.ObjectId;
@@ -274,6 +307,8 @@ export function createPromptMethods(
       logger.error('Error removing promptGroup permissions:', error);
     }
 
+    await invalidatePromptGroupAccessContext();
+
     return { message: 'Prompt group deleted successfully' };
   }
 
@@ -464,6 +499,8 @@ export function createPromptMethods(
         .lean()
         .select('-__v')
         .exec())!;
+
+      await invalidatePromptGroupAccessContext();
 
       return {
         prompt: newPrompt,
@@ -663,6 +700,122 @@ export function createPromptMethods(
   }
 
   /**
+   * Resolves one prompt group ID set from the PROMPT_GROUPS_ACCESS cache, building
+   * it on miss. Entries are stored as hex strings and revived to ObjectIds on read;
+   * concurrent same-process misses share a single build.
+   */
+  async function resolveCachedIds(
+    cacheKey: string,
+    build: () => Promise<Types.ObjectId[]>,
+  ): Promise<Types.ObjectId[]> {
+    const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
+    if (!cache) {
+      return build();
+    }
+
+    try {
+      const cached = await cache.get(cacheKey);
+      if (isCachedIdArray(cached)) {
+        return cached.map((id) => new ObjectId(id));
+      }
+    } catch {
+      /** Cache failures must not block access resolution. */
+    }
+
+    const pending = pendingAccessLookups.get(cacheKey);
+    if (pending) {
+      const ids = await pending;
+      return ids.map((id) => new ObjectId(id));
+    }
+
+    const lookup = (async () => {
+      const ids = await build();
+      try {
+        await cache.set(
+          cacheKey,
+          ids.map((id) => id.toString()),
+        );
+      } catch {
+        /** Cache write failures only cost a rebuild on the next request. */
+      }
+      return ids.map((id) => id.toString());
+    })();
+
+    pendingAccessLookups.set(cacheKey, lookup);
+    try {
+      const ids = await lookup;
+      return ids.map((id) => new ObjectId(id));
+    } finally {
+      if (pendingAccessLookups.get(cacheKey) === lookup) {
+        pendingAccessLookups.delete(cacheKey);
+      }
+    }
+  }
+
+  /**
+   * Resolves the prompt group access ID sets shared by the list endpoints:
+   * user-accessible, publicly accessible, and user-owned group IDs.
+   *
+   * The public set is identical for every user of a tenant and the per-user sets
+   * only change on prompt or permission mutations, so all three are cached briefly
+   * (PROMPT_GROUPS_ACCESS namespace, TTL-bounded) to spare overlapping requests
+   * (startup, filter changes, reloads, multiple tabs) the repeated ACL queries.
+   */
+  async function getPromptGroupAccessContext({
+    userId,
+    role,
+  }: {
+    userId: string;
+    role?: string;
+  }): Promise<{
+    accessibleIds: Types.ObjectId[];
+    publiclyAccessibleIds: Types.ObjectId[];
+    ownedPromptGroupIds: Types.ObjectId[];
+  }> {
+    const accessibleIds = await resolveCachedIds(
+      scopedCacheKey(`user:${userId}:${role ?? ''}`),
+      async () => {
+        const principalsList = await deps.getUserPrincipals({ userId, role });
+        if (principalsList.length === 0) {
+          return [];
+        }
+        return deps.findAccessibleResources(
+          principalsList,
+          ResourceType.PROMPTGROUP,
+          PermissionBits.VIEW,
+        );
+      },
+    );
+
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      resolveCachedIds(scopedCacheKey('public'), () =>
+        deps.findPublicResourceIds(ResourceType.PROMPTGROUP, PermissionBits.VIEW),
+      ),
+      resolveCachedIds(scopedCacheKey(`owned:${userId}`), () => getOwnedPromptGroupIds(userId)),
+    ]);
+
+    return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };
+  }
+
+  /**
+   * Clears all cached prompt group access ID sets after a mutation that can change
+   * them (group create/delete, permission grants/revokes). Failures are non-fatal;
+   * the cache TTL bounds any residual staleness.
+   */
+  async function invalidatePromptGroupAccessContext(): Promise<void> {
+    pendingAccessLookups.clear();
+    const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
+    if (!cache?.clear) {
+      return;
+    }
+    try {
+      await cache.clear();
+    } catch (error) {
+      logger.warn('Failed to invalidate prompt group access cache', error);
+    }
+  }
+
+  /**
    * Delete a prompt, potentially removing the group if it's the last prompt.
    *
    * **Authorization is enforced upstream.** This method performs no ownership
@@ -701,6 +854,8 @@ export function createPromptMethods(
       }
 
       await PromptGroup.deleteOne({ _id: groupId });
+
+      await invalidatePromptGroupAccessContext();
 
       return {
         prompt: 'Prompt deleted successfully',
@@ -772,6 +927,7 @@ export function createPromptMethods(
 
       await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
       await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
+      await invalidatePromptGroupAccessContext();
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }
@@ -866,6 +1022,8 @@ export function createPromptMethods(
     getPromptGroupsWithPrompts,
     getPromptGroup,
     getOwnedPromptGroupIds,
+    getPromptGroupAccessContext,
+    invalidatePromptGroupAccessContext,
     deletePrompt,
     deleteUserPrompts,
     updatePromptGroup,

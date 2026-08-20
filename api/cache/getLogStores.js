@@ -46,6 +46,10 @@ const namespaces = {
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
   [CacheKeys.USER_PRINCIPALS]: userPrincipalsCache() ?? disabledCache,
+  [CacheKeys.PROMPT_GROUPS_ACCESS]: standardCache(
+    CacheKeys.PROMPT_GROUPS_ACCESS,
+    Time.THIRTY_SECONDS,
+  ),
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),

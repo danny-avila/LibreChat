@@ -114,7 +114,7 @@ const grantPermission = async ({
         `Role ${accessRoleId} is for ${role.resourceType} resources, not ${resourceType}`,
       );
     }
-    return await db.grantPermission(
+    const result = await db.grantPermission(
       principalType,
       principalId,
       resourceType,
@@ -124,6 +124,10 @@ const grantPermission = async ({
       session,
       role._id,
     );
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      await db.invalidatePromptGroupAccessContext();
+    }
+    return result;
   } catch (error) {
     logger.error(`[PermissionService.grantPermission] Error: ${error.message}`);
     throw error;
@@ -928,6 +932,10 @@ const bulkUpdateResourcePermissions = async ({
       await localSession.commitTransaction();
     }
 
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      await db.invalidatePromptGroupAccessContext();
+    }
+
     return results;
   } catch (error) {
     if (shouldEndSession && supportsTransactions) {
@@ -969,6 +977,10 @@ const removeAllPermissions = async ({ resourceType, resourceId }) => {
       resourceType,
       resourceId,
     });
+
+    if (resourceType === ResourceType.PROMPTGROUP) {
+      await db.invalidatePromptGroupAccessContext();
+    }
 
     return result;
   } catch (error) {

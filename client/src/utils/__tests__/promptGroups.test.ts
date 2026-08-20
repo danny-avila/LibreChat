@@ -1,7 +1,9 @@
-import { InfiniteCollections } from 'librechat-data-provider';
-import type { InfiniteData } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
+import { InfiniteCollections, QueryKeys } from 'librechat-data-provider';
 import type { PromptGroupListResponse, TPromptGroup } from 'librechat-data-provider';
+import type { InfiniteData } from '@tanstack/react-query';
 import {
+  addGroupToAll,
   addPromptGroup,
   deletePromptGroup,
   updateGroupFields,
@@ -324,5 +326,25 @@ describe('getSnippet', () => {
 
   it('handles an empty string without throwing', () => {
     expect(getSnippet('')).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addGroupToAll
+// ---------------------------------------------------------------------------
+
+describe('addGroupToAll', () => {
+  it('does not seed the all-prompt-groups list before its first fetch', () => {
+    const queryClient = new QueryClient();
+    addGroupToAll(queryClient, makeGroup({ _id: 'group-new' }));
+    expect(queryClient.getQueryData([QueryKeys.allPromptGroups])).toBeUndefined();
+  });
+
+  it('appends to an already fetched list', () => {
+    const queryClient = new QueryClient();
+    const existing = [makeGroup({ _id: 'group-a' })];
+    queryClient.setQueryData([QueryKeys.allPromptGroups], existing);
+    addGroupToAll(queryClient, makeGroup({ _id: 'group-b' }));
+    expect(queryClient.getQueryData<TPromptGroup[]>([QueryKeys.allPromptGroups])).toHaveLength(2);
   });
 });

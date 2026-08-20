@@ -2532,6 +2532,10 @@ export enum CacheKeys {
    */
   USER_PRINCIPALS = 'USER_PRINCIPALS',
   /**
+   * Key for cached prompt group access ID sets (accessible, public, owned).
+   */
+  PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
+  /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */
   SANDBOX_PREWARM = 'SANDBOX_PREWARM',

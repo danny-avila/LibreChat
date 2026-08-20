@@ -266,9 +266,20 @@ export function createMethods(
       await aclEntryMethods.deleteAclEntries({ resourceType, resourceId });
     });
 
+  // Role and user-group methods with optional cache injection; user-group methods
+  // are created before prompt methods so prompt methods can resolve ACL principals
+  const roleDeps: RoleDeps = { getCache: deps.getCache };
+  const userGroupDeps: UserGroupDeps = { getCache: deps.getCache };
+  const roleMethods = createRoleMethods(mongoose, roleDeps);
+  const userGroupMethods = createUserGroupMethods(mongoose, userGroupDeps);
+
   const promptDeps: PromptDeps = {
     removeAllPermissions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    getCache: deps.getCache,
+    getUserPrincipals: userGroupMethods.getUserPrincipals,
+    findAccessibleResources: aclEntryMethods.findAccessibleResources,
+    findPublicResourceIds: aclEntryMethods.findPublicResourceIds,
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
 
@@ -277,11 +288,6 @@ export function createMethods(
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
   };
   const skillMethods = createSkillMethods(mongoose, skillDeps);
-
-  // Role methods with optional cache injection
-  const roleDeps: RoleDeps = { getCache: deps.getCache };
-  const userGroupDeps: UserGroupDeps = { getCache: deps.getCache };
-  const roleMethods = createRoleMethods(mongoose, roleDeps);
 
   // Tier 1: action methods (created as variable for agent dependency)
   const actionMethods = createActionMethods(mongoose);
@@ -308,7 +314,7 @@ export function createMethods(
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
-    ...createUserGroupMethods(mongoose, userGroupDeps),
+    ...userGroupMethods,
     ...aclEntryMethods,
     ...systemGrantMethods,
     ...createAuditLogMethods(mongoose),

@@ -21,7 +21,7 @@ const {
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   getListPromptGroupsByAccess,
-  getOwnedPromptGroupIds,
+  getPromptGroupAccessContext,
   incrementPromptGroupUsage,
   makePromptProduction,
   updatePromptGroup,
@@ -40,12 +40,7 @@ const {
   promptUsageLimiter,
   requireJwtAuth,
 } = require('~/server/middleware');
-const {
-  findPubliclyAccessibleResources,
-  getEffectivePermissions,
-  findAccessibleResources,
-  grantPermission,
-} = require('~/server/services/PermissionService');
+const { getEffectivePermissions, grantPermission } = require('~/server/services/PermissionService');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
@@ -110,20 +105,8 @@ router.get('/all', async (req, res) => {
       category,
     });
 
-    let accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
-
-    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
-      findPubliclyAccessibleResources({
-        resourceType: ResourceType.PROMPTGROUP,
-        requiredPermissions: PermissionBits.VIEW,
-      }),
-      getOwnedPromptGroupIds(userId),
-    ]);
+    const { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds } =
+      await getPromptGroupAccessContext({ userId, role: req.user.role });
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
@@ -183,20 +166,8 @@ router.get('/groups', async (req, res) => {
       actualCursor = null;
     }
 
-    let accessibleIds = await findAccessibleResources({
-      userId,
-      role: req.user.role,
-      resourceType: ResourceType.PROMPTGROUP,
-      requiredPermissions: PermissionBits.VIEW,
-    });
-
-    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
-      findPubliclyAccessibleResources({
-        resourceType: ResourceType.PROMPTGROUP,
-        requiredPermissions: PermissionBits.VIEW,
-      }),
-      getOwnedPromptGroupIds(userId),
-    ]);
+    const { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds } =
+      await getPromptGroupAccessContext({ userId, role: req.user.role });
 
     const filteredAccessibleIds = await filterAccessibleIdsBySharedLogic({
       accessibleIds,
