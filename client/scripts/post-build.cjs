@@ -1,14 +1,24 @@
-const fs = require('fs-extra');
+const fs = require('fs');
+const path = require('path');
 
-async function postBuild() {
-  try {
-    await fs.copy('public/assets', 'dist/assets');
-    await fs.copy('public/robots.txt', 'dist/robots.txt');
-    console.log('✅ PWA icons and robots.txt copied successfully. Glob pattern warnings resolved.');
-  } catch (err) {
-    console.error('❌ Error copying files:', err);
-    process.exit(1);
-  }
+const distDir = path.resolve(__dirname, '../dist');
+const manifest = JSON.parse(fs.readFileSync(path.join(distDir, 'manifest.webmanifest'), 'utf8'));
+const serviceWorker = fs.readFileSync(path.join(distDir, 'sw.js'), 'utf8');
+const iconPaths = manifest.icons.map((icon) => icon.src);
+const missingFiles = iconPaths.filter((iconPath) => !fs.existsSync(path.join(distDir, iconPath)));
+const missingPrecacheEntries = iconPaths.filter((iconPath) => !serviceWorker.includes(iconPath));
+
+if (missingFiles.length || missingPrecacheEntries.length) {
+  console.error('❌ PWA build verification failed.', {
+    missingFiles,
+    missingPrecacheEntries,
+  });
+  process.exit(1);
 }
 
-postBuild();
+if (!fs.existsSync(path.join(distDir, 'robots.txt'))) {
+  console.error('❌ PWA build verification failed: robots.txt was not copied.');
+  process.exit(1);
+}
+
+console.log('✅ PWA icons are copied and precached, and robots.txt is present.');

@@ -88,6 +88,24 @@ export default defineConfig(({ command }) => ({
         });
       },
     },
+    {
+      name: 'copy-public-assets',
+      apply: 'build',
+      async writeBundle() {
+        const publicDir = path.resolve(__dirname, 'public');
+        const distDir = path.resolve(__dirname, 'dist');
+
+        await Promise.all([
+          fs.promises.cp(path.join(publicDir, 'assets'), path.join(distDir, 'assets'), {
+            recursive: true,
+          }),
+          fs.promises.copyFile(
+            path.join(publicDir, 'robots.txt'),
+            path.join(distDir, 'robots.txt'),
+          ),
+        ]);
+      },
+    },
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
