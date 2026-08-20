@@ -6,21 +6,29 @@ const { FileSources } = require('librechat-data-provider');
 const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
 
 /**
- * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
- * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
+ * Deletes a file's embedded chunks from the vector database.
+ *
+ * rag_api deletes with `delete_scoped(ids, owners)` where the owner set is the
+ * token's user plus any `entity_id` the caller names. Chunks embedded under an
+ * entity — every agent knowledge-base file — are therefore outside an
+ * unscoped delete's reach: it matches nothing, answers 404, and the chunks
+ * survive. So when the file records an owning entity we send it, and we stop
+ * reading a failure as success: for those files anything other than a 2xx
+ * means the chunks may still be there. Files with no owning entity keep the
+ * previous behaviour exactly, including its tolerance of a 404. See #14988.
  *
  * @param {ServerRequest} req - The request object from Express.
- * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
- *                           a string representing the path of the file relative to the publicPath.
+ * @param {MongoFile} file - The file object to be deleted, as stored in Mongo.
  *
  * @returns {Promise<void>}
- *          A promise that resolves when the file has been successfully deleted, or throws an error if the
- *          file path is invalid or if there is an error in deletion.
+ *          A promise that resolves when the chunks are gone, or rejects when
+ *          an entity-owned delete could not be shown to have removed them.
  */
 const deleteVectors = async (req, file) => {
   if (!file.embedded || !process.env.RAG_API_URL) {
     return;
   }
+  const entityId = file.entity_id;
   try {
     const jwtToken = generateShortLivedToken(req.user.id);
 
@@ -30,6 +38,10 @@ const deleteVectors = async (req, file) => {
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
+      /* The entity travels as a query parameter, never in the body: an older
+       * rag_api ignores a parameter it does not declare, so a new client stays
+       * inert against it rather than breaking. */
+      ...(entityId ? { params: { entity_id: entityId } } : {}),
       data: [file.file_id],
     });
   } catch (error) {
@@ -37,14 +49,23 @@ const deleteVectors = async (req, file) => {
       error,
       message: 'Error deleting vectors',
     });
-    if (
-      error.response &&
-      error.response.status !== 404 &&
-      (error.response.status < 200 || error.response.status >= 300)
-    ) {
-      logger.warn('Error deleting vectors, file will not be deleted');
-      throw new Error(error.message || 'An error occurred during file deletion.');
+    const status = error.response?.status;
+    if (status >= 200 && status < 300) {
+      /* A rejection carrying a success status did not come from the delete
+       * itself. Pre-existing behaviour: not our failure to report. */
+      return;
     }
+    if (!entityId && (!error.response || status === 404)) {
+      /* User-owned chunks, and either no answer or "already gone". Tolerated
+       * before this change and tolerated now — invariant 4's sibling. */
+      return;
+    }
+    logger.warn(
+      `Error deleting vectors for file ${file.file_id}${
+        entityId ? ` scoped to entity ${entityId}` : ''
+      }; its embedded chunks may remain`,
+    );
+    throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
 
