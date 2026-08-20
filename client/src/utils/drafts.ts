@@ -19,6 +19,10 @@ export type FilesDraft = {
   /** Paste-generated attachment ids, kept after `pendingPastes` is consumed so provenance
    * survives reloads without holding the (much larger) paste text indefinitely. */
   pastedTextIds?: string[];
+  /** The browser tab that last wrote an unsaved-chat draft. The key itself is shared by every
+   * tab's default composer, so destructive actions read this to leave other tabs' composers
+   * alone. Undefined on per-conversation drafts and on records older than the stamp. */
+  tabId?: string;
 };
 
 type StoredPendingTextAttachmentDraft = {
@@ -36,6 +40,7 @@ type StoredFilesDraft = {
   fileIds: string[];
   pendingPastes: Record<string, StoredPendingTextAttachmentDraft>;
   pastedTextIds?: string[];
+  tabId?: string;
 };
 
 const newConversationDraftTokens = new Map<number, symbol>();
@@ -381,9 +386,31 @@ export const getFilesDraft = (id: string): FilesDraft => {
       fileIds: Array.isArray(storedDraft.fileIds) ? storedDraft.fileIds : [],
       pendingPastes,
       pastedTextIds: Array.isArray(storedDraft.pastedTextIds) ? storedDraft.pastedTextIds : [],
+      tabId: typeof storedDraft.tabId === 'string' ? storedDraft.tabId : undefined,
     };
   } catch {
     return { fileIds: [], pendingPastes: {} };
+  }
+};
+
+const TAB_SESSION_STORAGE_KEY = 'librechat-tab-session';
+
+/** Identifies this browser tab for the session. `sessionStorage` is per-tab and survives that
+ * tab's reloads, which is exactly the ownership an unsaved-chat draft needs: the draft key is
+ * shared through `localStorage` by every tab's default composer, while the composer that owns
+ * the record stays identifiable. */
+export const getBrowserTabId = (): string => {
+  try {
+    const existing = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+    if (existing != null && existing !== '') {
+      return existing;
+    }
+    const created = crypto.randomUUID();
+    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, created);
+    return created;
+  } catch {
+    // Privacy-blocked storage cannot attribute drafts to a tab; share one identity instead.
+    return '';
   }
 };
 
@@ -416,6 +443,9 @@ export const addPastedTextDraftFile = ({ id, fileId }: { id: string; fileId: str
 export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
+  /** Only unsaved-chat drafts are shared across tabs; stamping those lets a destructive
+   * reader tell its own record from another live composer's. */
+  const tabId = isNewConversationDraftId(id) ? getBrowserTabId() : undefined;
   filesDraftCache = null;
   if (
     draft.fileIds.length === 0 &&
@@ -427,12 +457,18 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   }
 
   if (pendingPasteEntries.length === 0) {
+    /** Keep the bare array shape when there is nothing to add, so older readers are unaffected. */
+    const bareFileIds = !draft.pastedTextIds?.length && !tabId;
     setLocalStorageItem(
       key,
       JSON.stringify(
-        draft.pastedTextIds?.length
-          ? { fileIds: draft.fileIds, pastedTextIds: draft.pastedTextIds }
-          : draft.fileIds,
+        bareFileIds
+          ? draft.fileIds
+          : {
+              fileIds: draft.fileIds,
+              ...(draft.pastedTextIds?.length ? { pastedTextIds: draft.pastedTextIds } : {}),
+              ...(tabId ? { tabId } : {}),
+            },
       ),
     );
     return;
@@ -471,6 +507,7 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
       fileIds: draft.fileIds,
       pendingPastes,
       ...(draft.pastedTextIds?.length ? { pastedTextIds: draft.pastedTextIds } : {}),
+      ...(tabId ? { tabId } : {}),
     } satisfies StoredFilesDraft),
   );
 };

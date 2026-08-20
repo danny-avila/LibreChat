@@ -7,6 +7,7 @@ import type { MouseEvent } from 'react';
 import {
   clearAllDrafts,
   clearMessagesCache,
+  getBrowserTabId,
   getFilesDraft,
   getNewConversationDraftId,
 } from '~/utils';
@@ -57,36 +58,41 @@ export default function useNewChat({
      *
      * With draft saving on, `newConversation` deliberately leaves the draft's files alive
      * because a draft normally keeps them restorable; discarding the draft removes the only
-     * reference to them, so the uploads are deleted here rather than orphaned. */
+     * reference to them, so the uploads are deleted here rather than orphaned. The unsaved-chat
+     * key is shared by every tab's default composer, though, and a record another tab owns may
+     * still be that tab's live composer: deleting its uploads would discard unsent work there,
+     * so only this tab's own drafts are deleted. */
     const draftId = getNewConversationDraftId(index);
     if (saveDrafts) {
       const filesDraft = getFilesDraft(draftId);
-      const draftFileIds = new Set([
-        ...filesDraft.fileIds,
-        ...Object.keys(filesDraft.pendingPastes),
-      ]);
-      const filesToDelete = Array.from(draftFileIds).flatMap((fileId) => {
-        const record = fileList?.find((entry) => entry.file_id === fileId);
-        if (
-          record == null ||
-          record.embedded === true ||
-          record.filepath == null ||
-          record.filepath === '' ||
-          !record.source
-        ) {
-          return [];
+      if (filesDraft.tabId == null || filesDraft.tabId === getBrowserTabId()) {
+        const draftFileIds = new Set([
+          ...filesDraft.fileIds,
+          ...Object.keys(filesDraft.pendingPastes),
+        ]);
+        const filesToDelete = Array.from(draftFileIds).flatMap((fileId) => {
+          const record = fileList?.find((entry) => entry.file_id === fileId);
+          if (
+            record == null ||
+            record.embedded === true ||
+            record.filepath == null ||
+            record.filepath === '' ||
+            !record.source
+          ) {
+            return [];
+          }
+          return [
+            {
+              file_id: record.file_id,
+              embedded: false,
+              filepath: record.filepath,
+              source: record.source,
+            },
+          ];
+        });
+        if (filesToDelete.length > 0) {
+          mutateAsync({ files: filesToDelete });
         }
-        return [
-          {
-            file_id: record.file_id,
-            embedded: false,
-            filepath: record.filepath,
-            source: record.source,
-          },
-        ];
-      });
-      if (filesToDelete.length > 0) {
-        mutateAsync({ files: filesToDelete });
       }
     }
     clearAllDrafts(draftId);

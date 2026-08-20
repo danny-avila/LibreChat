@@ -12,6 +12,7 @@ const mockDeleteFiles = jest.fn();
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
   saveDrafts: false,
+  tabId: 'this-tab',
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   fileList: undefined as
     | { file_id: string; filepath: string; source: string; embedded?: boolean }[]
@@ -39,6 +40,7 @@ jest.mock('~/utils', () => ({
   clearAllDrafts: (...args: unknown[]) => mockClearAllDrafts(...args),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
   getFilesDraft: () => mockState.filesDraft,
+  getBrowserTabId: () => mockState.tabId,
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -74,6 +76,7 @@ describe('useNewChat', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockState.saveDrafts = false;
+    mockState.tabId = 'this-tab';
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
     mockState.fileList = undefined;
   });
@@ -176,6 +179,43 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).toHaveBeenCalledWith({
       files: [
         { file_id: 'known', embedded: false, filepath: '/uploads/known.txt', source: 'local' },
+      ],
+    });
+  });
+
+  it('spares a draft another browser tab still owns', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    };
+    mockState.fileList = [
+      { file_id: 'other-tab-file', filepath: '/uploads/other.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
+  });
+
+  it('deletes a draft carrying this tab stamp', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['own-file'],
+      pendingPastes: {},
+      tabId: 'this-tab',
+    };
+    mockState.fileList = [{ file_id: 'own-file', filepath: '/uploads/own.txt', source: 'local' }];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        { file_id: 'own-file', embedded: false, filepath: '/uploads/own.txt', source: 'local' },
       ],
     });
   });

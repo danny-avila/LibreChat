@@ -12,6 +12,7 @@ if (typeof Blob.prototype.text !== 'function') {
   };
 }
 
+import { FileSources } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from '../useFileHandling';
 import type { ExtendedFile } from '~/common';
@@ -19,6 +20,7 @@ import type { ExtendedFile } from '~/common';
 const mockShowToast = jest.fn();
 const mockSetValue = jest.fn();
 const mockDeleteFile = jest.fn();
+const mockDeleteFiles = jest.fn();
 const mockRouteFiles = jest.fn();
 const mockFileDownload = jest.fn();
 
@@ -63,7 +65,7 @@ jest.mock('../useFileDeletion', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetFiles: () => ({ data: mockState.fileList }),
-  useDeleteFilesMutation: () => ({ mutateAsync: jest.fn() }),
+  useDeleteFilesMutation: () => ({ mutateAsync: mockDeleteFiles }),
 }));
 
 jest.mock('~/utils', () => ({
@@ -172,6 +174,37 @@ describe('usePastedTextEdit', () => {
     });
 
     expect(mockDeleteFile).not.toHaveBeenCalled();
+  });
+
+  it('deletes a restored paste record the normal removal path would keep', async () => {
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    /** `attached: true` is what restoration stamps on, and what makes the shared removal
+     * path keep the server record; the paste's own upload must not survive the edit. */
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        expect.objectContaining({
+          file_id: 'pasted-file',
+          filepath: '/uploads/user123/pasted-text.txt',
+        }),
+      ],
+    });
   });
 
   it('abandons the queued replacement when its composer is gone by commit time', async () => {

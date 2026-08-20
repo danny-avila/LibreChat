@@ -7,6 +7,7 @@ import {
   encodeBase64,
   resolvePendingPasteInsertStart,
   getComposerDraftId,
+  getBrowserTabId,
   getDraft,
   getFilesDraft,
   getNewConversationDraftId,
@@ -268,6 +269,40 @@ describe('pending paste encoding', () => {
     });
 
     expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(hugePaste);
+  });
+});
+
+describe('browser tab ownership of unsaved-chat drafts', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('returns a stable id per tab session', () => {
+    const first = getBrowserTabId();
+    expect(first).toBe(getBrowserTabId());
+  });
+
+  it('stamps the writing tab on unsaved-chat drafts', () => {
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(getBrowserTabId());
+  });
+
+  it('leaves conversation drafts unattributed: their key is not shared across tabs', () => {
+    setFilesDraft('convo-1', { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft('convo-1').tabId).toBeUndefined();
+  });
+
+  it('restamps on every write, so a draft always names its current owner', () => {
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+    const stamped = getFilesDraft(Constants.NEW_CONVO).tabId;
+
+    sessionStorage.clear();
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).not.toBe(stamped);
   });
 });
 

@@ -1,7 +1,12 @@
 import { useState, useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useToastContext } from '@librechat/client';
-import { dataService, EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  dataService,
+  EToolResources,
+  FileSources,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useDeleteFilesMutation, useGetFiles } from '~/data-provider';
@@ -120,12 +125,28 @@ export default function usePastedTextEdit({
 
   const closeEditor = useCallback(() => setEditing(null), []);
 
-  /** Removes the chip locally; scheduled server deletion follows the debounced batch. */
+  /** Removes the chip locally and schedules the upload's deletion. A paste restored from a
+   * draft carries `attached: true`, which makes `deleteFile` keep the server record because a
+   * restored file is normally shared; a generated paste was created by this composer alone, so
+   * its upload is deleted explicitly instead of being orphaned. */
   const detach = useCallback(
     (file: ExtendedFile) => {
+      const restored = file.attached === true;
       deleteFile({ file, setFiles });
+      if (restored && file.progress >= 1) {
+        mutateAsync({
+          files: [
+            {
+              file_id: file.file_id,
+              embedded: file.embedded ?? false,
+              filepath: file.filepath ?? '',
+              source: file.source ?? FileSources.local,
+            },
+          ],
+        });
+      }
     },
-    [deleteFile, setFiles],
+    [deleteFile, setFiles, mutateAsync],
   );
 
   /** The composer an edit belongs to: same conversation, same unsaved-chat identity. */
