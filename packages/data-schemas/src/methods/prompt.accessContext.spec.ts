@@ -21,10 +21,16 @@ let AclEntry: mongoose.Model<unknown>;
 let Prompt: mongoose.Model<unknown>;
 let PromptGroup: mongoose.Model<unknown>;
 let cacheMap: Map<string, unknown>;
+let delaySets = false;
+let resolvePendingSets: Array<() => void> = [];
 
 const cacheStore: CacheStore = {
   get: async (key) => cacheMap.get(key),
   set: async (key, value) => {
+    /** The generation entry itself must never be held back by the test gate */
+    if (delaySets && !key.includes(':generation')) {
+      await new Promise<void>((resolve) => resolvePendingSets.push(resolve));
+    }
     cacheMap.set(key, value);
   },
   delete: async (key) => {
@@ -58,10 +64,15 @@ async function grantView(
   principalId: mongoose.Types.ObjectId | null,
   resourceId: unknown,
 ) {
+  const principalModels: Record<string, string> = {
+    [PrincipalType.USER]: PrincipalModel.USER,
+    [PrincipalType.GROUP]: PrincipalModel.GROUP,
+    [PrincipalType.ROLE]: PrincipalModel.ROLE,
+  };
   await AclEntry.create({
     principalType,
     ...(principalId ? { principalId } : {}),
-    ...(principalType === PrincipalType.USER ? { principalModel: PrincipalModel.USER } : {}),
+    ...(principalModels[principalType] ? { principalModel: principalModels[principalType] } : {}),
     resourceType: ResourceType.PROMPTGROUP,
     resourceId,
     permBits: PermissionBits.VIEW,
@@ -87,6 +98,9 @@ afterAll(async () => {
 afterEach(async () => {
   await Promise.all([AclEntry.deleteMany({}), Prompt.deleteMany({}), PromptGroup.deleteMany({})]);
   await methods.invalidatePromptGroupAccessContext();
+  delaySets = false;
+  resolvePendingSets.forEach((resolve) => resolve());
+  resolvePendingSets = [];
 });
 
 describe('getPromptGroupAccessContext', () => {
@@ -183,5 +197,55 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(after.ownedPromptGroupIds).toHaveLength(1);
+  });
+
+  it('drops access granted through a user group when the member is removed', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userGroup = await methods.createGroup({
+      name: 'Editors',
+      memberIds: [userId.toString()],
+    });
+    const groupPrompt = await seedGroupAndPrompt(new mongoose.Types.ObjectId());
+    await grantView(PrincipalType.GROUP, userGroup._id, groupPrompt._id);
+
+    const before = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(before.accessibleIds)).toContain(groupPrompt._id.toString());
+
+    await methods.removeMemberById(userGroup._id, userId.toString());
+
+    const after = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(after.accessibleIds)).not.toContain(groupPrompt._id.toString());
+  });
+
+  it('cannot read IDs written back by a build that was in flight across an invalidation', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    delaySets = true;
+    const firstResolve = methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+    await methods.invalidatePromptGroupAccessContext();
+
+    delaySets = false;
+    resolvePendingSets.forEach((resolve) => resolve());
+    resolvePendingSets = [];
+    await firstResolve;
+
+    const fresh = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
   });
 });

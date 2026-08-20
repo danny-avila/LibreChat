@@ -94,11 +94,20 @@ export const findPromptGroup = (
 };
 
 export const addGroupToAll = (queryClient: QueryClient, newGroup: TPromptGroup) => {
-  /** An unfetched list must not be seeded partial; its first fetch includes the group */
-  if (!queryClient.getQueryData<TPromptGroup[]>([QueryKeys.allPromptGroups])) {
+  const queryKey = [QueryKeys.allPromptGroups];
+  /**
+   * An idle, never-fetched list must not be seeded partial; its first fetch
+   * includes the group. A first fetch already in flight, though, may have read
+   * the database before this creation and settle without it, so restart it.
+   */
+  if (!queryClient.getQueryData<TPromptGroup[]>(queryKey)) {
+    const state = queryClient.getQueryState(queryKey);
+    if (state?.fetchStatus === 'fetching') {
+      queryClient.invalidateQueries(queryKey);
+    }
     return;
   }
-  addToCacheList<TPromptGroup>(queryClient, [QueryKeys.allPromptGroups], newGroup);
+  addToCacheList<TPromptGroup>(queryClient, queryKey, newGroup);
 };
 
 export const updateGroupInAll = (

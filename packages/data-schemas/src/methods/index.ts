@@ -267,9 +267,14 @@ export function createMethods(
     });
 
   // Role and user-group methods with optional cache injection; user-group methods
-  // are created before prompt methods so prompt methods can resolve ACL principals
+  // are created before prompt methods so prompt methods can resolve ACL principals.
+  // The membership hook is late-bound: prompt methods do not exist yet here.
+  const promptAccessInvalidator: { current?: () => Promise<void> } = {};
   const roleDeps: RoleDeps = { getCache: deps.getCache };
-  const userGroupDeps: UserGroupDeps = { getCache: deps.getCache };
+  const userGroupDeps: UserGroupDeps = {
+    getCache: deps.getCache,
+    onMemberGroupsInvalidated: () => promptAccessInvalidator.current?.(),
+  };
   const roleMethods = createRoleMethods(mongoose, roleDeps);
   const userGroupMethods = createUserGroupMethods(mongoose, userGroupDeps);
 
@@ -282,6 +287,7 @@ export function createMethods(
     findPublicResourceIds: aclEntryMethods.findPublicResourceIds,
   };
   const promptMethods = createPromptMethods(mongoose, promptDeps);
+  promptAccessInvalidator.current = promptMethods.invalidatePromptGroupAccessContext;
 
   const skillDeps: SkillDeps = {
     removeAllPermissions,

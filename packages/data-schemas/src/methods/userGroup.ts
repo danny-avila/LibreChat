@@ -11,6 +11,11 @@ import { escapeRegExp } from '~/utils/string';
 export interface UserGroupDeps {
   /** Returns the USER_PRINCIPALS cache store when principal caching is enabled. From getLogStores. */
   getCache?: (key: string) => CacheStore | undefined;
+  /**
+   * Notified after membership caches are invalidated so access caches derived from
+   * memberships (e.g. prompt group access IDs) drop their stale entries too.
+   */
+  onMemberGroupsInvalidated?: () => void | Promise<void>;
 }
 
 type PendingGroupLookup = { promise: Promise<Types.ObjectId[]>; markStale: () => void };
@@ -440,6 +445,11 @@ export function createUserGroupMethods(
   async function invalidateMemberGroupsCache(
     memberIds: Array<string | Types.ObjectId | undefined | null>,
   ): Promise<void> {
+    try {
+      await deps.onMemberGroupsInvalidated?.();
+    } catch {
+      /** Dependent cache invalidation must not block membership updates. */
+    }
     const cache = getPrincipalsCache();
     if (!cache?.delete) {
       return;
@@ -465,6 +475,11 @@ export function createUserGroupMethods(
 
   /** Clears the whole membership cache when affected members cannot be enumerated. */
   async function clearMemberGroupsCache(): Promise<void> {
+    try {
+      await deps.onMemberGroupsInvalidated?.();
+    } catch {
+      /** Dependent cache invalidation must not block membership updates. */
+    }
     const cache = getPrincipalsCache();
     if (!cache?.clear) {
       return;

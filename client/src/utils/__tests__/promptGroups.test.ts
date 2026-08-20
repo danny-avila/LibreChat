@@ -347,4 +347,18 @@ describe('addGroupToAll', () => {
     addGroupToAll(queryClient, makeGroup({ _id: 'group-b' }));
     expect(queryClient.getQueryData<TPromptGroup[]>([QueryKeys.allPromptGroups])).toHaveLength(2);
   });
+
+  it('restarts a first fetch already in flight so it settles with the created group', () => {
+    const queryClient = new QueryClient();
+    const queryKey = [QueryKeys.allPromptGroups];
+    const pending = queryClient.fetchQuery(queryKey, () => new Promise<TPromptGroup[]>(() => {}), {
+      retry: false,
+    });
+    pending.catch(() => undefined);
+
+    addGroupToAll(queryClient, makeGroup({ _id: 'group-new' }));
+
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+    queryClient.clear();
+  });
 });
