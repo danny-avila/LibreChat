@@ -1453,6 +1453,7 @@ export function createConversationMethods(
         $and: [
           { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
           getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
         ],
       } as FilterQuery<IConversation>;
 

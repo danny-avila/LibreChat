@@ -1878,21 +1878,43 @@ describe('Conversation Operations', () => {
       const first = uuidv4();
       const second = uuidv4();
       const otherUsers = uuidv4();
+      const childThread = uuidv4();
       await Conversation.create([
         { conversationId: first, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: second, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: otherUsers, user: 'user456', endpoint: EModelEndpoint.openAI },
+        {
+          conversationId: childThread,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: first,
+            parentConversationId: first,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool-call',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
       ]);
 
       const result = await archiveAllConvos('user123');
 
       expect(result.archivedCount).toBe(2);
-      const archived = await Conversation.find({ user: 'user123' }).lean<IConversation[]>();
+      const archived = await Conversation.find({
+        user: 'user123',
+        conversationId: { $in: [first, second] },
+      }).lean<IConversation[]>();
       expect(archived.every((convo) => convo.isArchived === true)).toBe(true);
       const untouched = await Conversation.findOne({
         conversationId: otherUsers,
       }).lean<IConversation>();
       expect(untouched?.isArchived).not.toBe(true);
+      const child = await Conversation.findOne({
+        conversationId: childThread,
+      }).lean<IConversation>();
+      expect(child?.isArchived).not.toBe(true);
     });
 
     it('archives large snapshots in bounded batches', async () => {

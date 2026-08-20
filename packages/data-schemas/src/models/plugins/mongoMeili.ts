@@ -133,7 +133,7 @@ const buildExcludedIndexedQuery = (excludeFromIndexPath?: string): FilterQuery<u
 
   return {
     [excludeFromIndexPath]: { $exists: true },
-    _meiliIndex: true,
+    _meiliIndex: { $exists: true },
   };
 };
 
@@ -413,7 +413,7 @@ const createMeiliMongooseModel = ({
             }
             await this.updateMany(
               { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
-              { $set: { _meiliIndex: false } },
+              { $unset: { _meiliIndex: '' } },
               { timestamps: false },
             );
 
@@ -463,7 +463,7 @@ const createMeiliMongooseModel = ({
             }
             await this.updateMany(
               { [primaryKey]: { $in: toDelete } },
-              { $set: { _meiliIndex: false } },
+              { $unset: { _meiliIndex: '' } },
               { timestamps: false },
             );
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
@@ -737,6 +737,19 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       default: false,
     },
   });
+
+  if (options.excludeFromIndexPath != null) {
+    schema.index(
+      { _meiliIndex: 1, [options.primaryKey]: 1 },
+      {
+        name: 'meili_excluded_cleanup',
+        partialFilterExpression: {
+          [options.excludeFromIndexPath]: { $exists: true },
+          _meiliIndex: { $exists: true },
+        },
+      },
+    );
+  }
 
   const { host, apiKey, indexName, primaryKey } = options;
   const privateExcludedPath =

@@ -536,7 +536,7 @@ describe('Meilisearch Mongoose plugin', () => {
       timeOutMs: 10000,
       intervalMs: 100,
     });
-    expect(storedDoc?._meiliIndex).toBe(false);
+    expect(storedDoc?._meiliIndex).toBeUndefined();
   });
 
   test('keeps cleanup pending when Meili fails the asynchronous deletion task', async () => {
@@ -611,9 +611,9 @@ describe('Meilisearch Mongoose plugin', () => {
     mockGetDocuments.mockResolvedValue({ results: [] });
     await conversationModel.syncWithMeili();
     expect(mockDeleteDocuments).toHaveBeenCalledTimes(2);
-    expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
-      false,
-    );
+    expect(
+      (await conversationModel.collection.findOne({ conversationId }))?._meiliIndex,
+    ).toBeUndefined();
   });
 
   test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
@@ -705,7 +705,7 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(false);
   });
 
-  test('sync removes an existing child message from Meili and clears its index flag', async () => {
+  test('sync removes an existing child message even when its index flag is false', async () => {
     const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});
     const messageId = new mongoose.Types.ObjectId().toString();
@@ -720,7 +720,7 @@ describe('Meilisearch Mongoose plugin', () => {
         attemptKey: 'attempt-key',
         status: 'completed',
       },
-      _meiliIndex: true,
+      _meiliIndex: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -732,7 +732,33 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
     expect(mockDeleteDocuments).toHaveBeenCalledWith([messageId]);
-    expect(storedDoc?._meiliIndex).toBe(false);
+    expect(storedDoc?._meiliIndex).toBeUndefined();
+  });
+
+  test('defines partial indexes for pending excluded-document cleanup', () => {
+    const conversationIndexes = createConversationModel(mongoose).schema.indexes();
+    const messageIndexes = createMessageModel(mongoose).schema.indexes();
+
+    expect(conversationIndexes).toContainEqual([
+      { _meiliIndex: 1, conversationId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_cleanup',
+        partialFilterExpression: {
+          subagentThread: { $exists: true },
+          _meiliIndex: { $exists: true },
+        },
+      }),
+    ]);
+    expect(messageIndexes).toContainEqual([
+      { _meiliIndex: 1, messageId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_cleanup',
+        partialFilterExpression: {
+          subagentTask: { $exists: true },
+          _meiliIndex: { $exists: true },
+        },
+      }),
+    ]);
   });
 
   test('sync w/ meili treats null isTemporary with no expiration like missing legacy fields', async () => {
