@@ -103,6 +103,10 @@ const clearMatchingDrainAfterAbort = (
     : armed;
 
 const MAX_RETRIES = 5;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 30000;
+const getReconnectDelay = (attempt: number) =>
+  Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1), RECONNECT_MAX_DELAY_MS);
 const START_GENERATION_NETWORK_RETRIES = 3;
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
@@ -700,6 +704,9 @@ export default function useResumableSSE(
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
 
   const sseRef = useRef<SSE | null>(null);
+  /** Removes the foreground re-attach listener owned by the newest
+   *  subscription; exactly one is registered at a time. */
+  const stopForegroundReattachRef = useRef<(() => void) | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
@@ -1180,6 +1187,10 @@ export default function useResumableSSE(
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
       let finalReceived = false;
+      /** Set by the only close this hook performs that neither fences itself
+       *  (lifecycle abort, reconnect counter, handoff flag) nor follows a
+       *  terminal event: the dev-only navigation simulator below. */
+      let intentionalClose = false;
       const preCreatedStepEvents: Array<Parameters<typeof stepHandler>[0]> = [];
       const replayPreCreatedStepEvents = () => {
         if (!isCurrentSubscription() || preCreatedStepEvents.length === 0) {
@@ -1501,6 +1512,55 @@ export default function useResumableSSE(
         lifecycleSignal?.aborted !== true &&
         sseRef.current === sse &&
         submissionRef.current === currentSubmission;
+
+      /**
+       * A suspended page can lose its stream without the transport ever
+       * reporting it. When a mobile browser freezes the tab, an intermediary
+       * closes the response body underneath it, and XHR surfaces that as an
+       * ordinary load — sse.js dispatches nothing for a body that simply ends,
+       * so neither the error nor the abort recovery above ever runs. Nothing
+       * else re-reads the conversation while the pane stays mounted, which is
+       * why the response the run finished writing only appears after a reload.
+       *
+       * Re-attaching on the way back costs one request and only when this
+       * subscription's transport is already gone with no terminal event and no
+       * recovery of its own in flight. A live job replays what was missed; a
+       * finished one 404s into the durable refetch.
+       */
+      const handleForegroundReattach = () => {
+        if (
+          document.visibilityState !== 'visible' ||
+          sse.readyState !== SSE.CLOSED ||
+          finalReceived ||
+          intentionalClose ||
+          replacementHandoffRef.current ||
+          !isCurrentSubscription() ||
+          !submissionRef.current
+        ) {
+          return;
+        }
+        logger.log('ResumableSSE', 'Stream was closed while hidden - re-attaching on foreground');
+        /** Any backoff still pending targets this same attachment, so returning
+         *  to the app supersedes it rather than waiting the delay out; its
+         *  callback finds a superseded subscription and does nothing. */
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = null;
+        }
+        reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+        subscribeToStream(
+          currentStreamId,
+          submissionRef.current,
+          true,
+          generationCreatedAt,
+          generationProtocolVersion,
+          lifecycleSignal,
+        );
+      };
+      stopForegroundReattachRef.current?.();
+      document.addEventListener('visibilitychange', handleForegroundReattach);
+      stopForegroundReattachRef.current = () =>
+        document.removeEventListener('visibilitychange', handleForegroundReattach);
 
       sse.addEventListener('open', () => {
         if (!isCurrentSubscription()) {
@@ -2942,7 +3002,7 @@ export default function useResumableSSE(
         if (reconnectAttemptRef.current < MAX_RETRIES) {
           // Increment counter BEFORE close() so abort handler knows we're reconnecting
           reconnectAttemptRef.current++;
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptRef.current - 1), 30000);
+          const delay = getReconnectDelay(reconnectAttemptRef.current);
 
           logger.log(
             'ResumableSSE',
@@ -3185,8 +3245,8 @@ export default function useResumableSSE(
       });
 
       /**
-       * Abort event - fired when sse.close() is called (intentional close).
-       * This happens on cleanup/navigation OR when error handler closes to reconnect.
+       * Abort event - fired when the underlying XHR is cancelled, either by one
+       * of this hook's own `sse.close()` calls or by the user agent.
        * Only reset state if we're NOT in a reconnection cycle.
        */
       sse.addEventListener('abort', () => {
@@ -3201,6 +3261,46 @@ export default function useResumableSSE(
         // (error handler will set up the reconnect timeout)
         if (reconnectAttemptRef.current > 0) {
           logger.log('ResumableSSE', 'Stream closed for reconnect - preserving state');
+          return;
+        }
+
+        /**
+         * Every close this hook owns is already fenced before it reaches here:
+         * effect cleanup aborts the lifecycle signal, reconnect and terminal
+         * recovery raise `reconnectAttemptRef`, a generation handoff raises its
+         * own flag, and FINAL/served-error paths set `finalReceived` first. An
+         * abort satisfying none of those came from the user agent, which
+         * cancels in-flight requests when a mobile browser is backgrounded or
+         * the page is frozen — and the generation it was carrying is still
+         * running server-side.
+         *
+         * Treating that as an intentional close is what strands the response:
+         * the pane goes idle holding whatever partial content arrived before
+         * the switch, looking finished, and nothing re-reads the conversation
+         * until a reload or a navigation remounts the messages query. Reconnect
+         * instead and let the existing recovery adjudicate — a live job replays
+         * its missed content, a finished one 404s into the durable refetch.
+         */
+        if (!finalReceived && !intentionalClose) {
+          logger.log('ResumableSSE', 'Stream aborted by the user agent - reconnecting');
+          reconnectAttemptRef.current = 1;
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (isCurrentSubscription() && submissionRef.current) {
+              subscribeToStream(
+                currentStreamId,
+                submissionRef.current,
+                true,
+                generationCreatedAt,
+                generationProtocolVersion,
+                lifecycleSignal,
+              );
+            }
+          }, getReconnectDelay(reconnectAttemptRef.current));
+          setIsSubmitting(true);
+          setShowStopButton(generationCreatedAt != null);
           return;
         }
 
@@ -3244,6 +3344,7 @@ export default function useResumableSSE(
         /** Simulate clean close (navigation away) - triggers abort event → no reconnection */
         debugWindow.__closeClean = () => {
           logger.log('Debug', 'Simulating clean close (navigation away)...');
+          intentionalClose = true;
           sse.close();
         };
       }
@@ -3520,6 +3621,8 @@ export default function useResumableSSE(
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      stopForegroundReattachRef.current?.();
+      stopForegroundReattachRef.current = null;
       // Close SSE but do NOT dispatch cancel - navigation should not abort
       if (sseRef.current) {
         sseRef.current.close();
@@ -4033,6 +4136,8 @@ export default function useResumableSSE(
         cancelAnimationFrame(frameId);
       }
       steerRetryFrames.clear();
+      stopForegroundReattachRef.current?.();
+      stopForegroundReattachRef.current = null;
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;
       if (sseRef.current) {

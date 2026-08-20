@@ -17,14 +17,17 @@ interface MockSSEInstance {
   stream: jest.Mock;
   close: jest.Mock;
   headers: Record<string, string>;
+  readyState: number;
   _listeners: Record<string, SSEEventListener>;
   _emit: (event: string, data?: Partial<MessageEvent> & { responseCode?: number }) => void;
 }
 
 const mockSSEInstances: MockSSEInstance[] = [];
+const MOCK_SSE_OPEN = 1;
+const MOCK_SSE_CLOSED = 2;
 
-jest.mock('sse.js', () => ({
-  SSE: jest
+jest.mock('sse.js', () => {
+  const SSE = jest
     .fn()
     .mockImplementation((url: string, options?: { headers?: Record<string, string> }) => {
       const listeners: Record<string, SSEEventListener> = {};
@@ -34,15 +37,20 @@ jest.mock('sse.js', () => ({
           listeners[event] = cb;
         }),
         stream: jest.fn(),
-        close: jest.fn(),
+        close: jest.fn(() => {
+          instance.readyState = 2;
+        }),
         headers: { ...options?.headers },
+        readyState: 1,
         _listeners: listeners,
         _emit: (event, data = {}) => listeners[event]?.(data as MessageEvent),
       };
       mockSSEInstances.push(instance);
       return instance;
-    }),
-}));
+    }) as jest.Mock & { CLOSED: number };
+  SSE.CLOSED = 2;
+  return { SSE };
+});
 
 const mockSetQueryData = jest.fn();
 const mockGetQueryData = jest.fn();
@@ -3752,6 +3760,178 @@ describe('useResumableSSE', () => {
     expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
     expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('reconnects when the user agent aborts a live stream instead of going idle', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    mockSetIsSubmitting.mockClear();
+
+    /** Backgrounding a mobile browser cancels the in-flight XHR, which surfaces
+     *  as an abort with no terminal event behind it. */
+    await act(async () => {
+      initialSSE._emit('abort');
+    });
+
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
+    expect(mockSetIsSubmitting).toHaveBeenCalledWith(true);
+
+    await advanceRetryTimer(1000);
+
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    unmount();
+  });
+
+  it('does not reconnect on the abort that follows a FINAL event', async () => {
+    jest.useFakeTimers();
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: {
+            messageId: 'msg-1',
+            conversationId: CONV_ID,
+            text: 'Hello',
+            isCreatedByUser: true,
+          },
+          responseMessage: {
+            messageId: 'resp-1',
+            parentMessageId: 'msg-1',
+            conversationId: CONV_ID,
+            text: 'Done',
+            isCreatedByUser: false,
+          },
+        }),
+      });
+    });
+
+    mockSetIsSubmitting.mockClear();
+    mockSetShowStopButton.mockClear();
+
+    await act(async () => {
+      sse._emit('abort');
+    });
+    await advanceRetryTimer(1000);
+
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(true);
+    expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
+    unmount();
+  });
+
+  it('re-attaches on foreground when the stream closed while the page was hidden', async () => {
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    /** The response body ended under a frozen tab, so sse.js dispatched
+     *  neither an error nor an abort — only the closed transport is left. */
+    initialSSE.readyState = MOCK_SSE_CLOSED;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    unmount();
+  });
+
+  it('leaves a still-open stream alone when the page returns to the foreground', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const initialSSE = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+    initialSSE.readyState = MOCK_SSE_OPEN;
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockSSEInstances).toHaveLength(sseCount);
+    unmount();
+  });
+
+  it('does not re-attach on foreground once FINAL has closed the stream', async () => {
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          final: true,
+          conversation: { conversationId: CONV_ID },
+          requestMessage: {
+            messageId: 'msg-1',
+            conversationId: CONV_ID,
+            text: 'Hello',
+            isCreatedByUser: true,
+          },
+          responseMessage: {
+            messageId: 'resp-1',
+            parentMessageId: 'msg-1',
+            conversationId: CONV_ID,
+            text: 'Done',
+            isCreatedByUser: false,
+          },
+        }),
+      });
+    });
+
+    expect(sse.readyState).toBe(MOCK_SSE_CLOSED);
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(mockSSEInstances).toHaveLength(sseCount);
     unmount();
   });
 
