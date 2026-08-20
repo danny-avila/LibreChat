@@ -907,6 +907,17 @@ export default function useEventHandlers({
             });
           }
 
+          /* The sidebar list is a separate cache from the single-conversation entry above, and
+             nothing else writes to it once a run completes. Without this the unseen indicator
+             (and the alerts derived from it) would wait for the next list refetch. */
+          if (conversation.conversationId && !_isTemporary) {
+            const lastResponseAt = serverConversation.lastResponseAt ?? new Date().toISOString();
+            updateConvoInAllQueries(queryClient, conversation.conversationId, (convo) => ({
+              ...convo,
+              lastResponseAt,
+            }));
+          }
+
           if (conversation.chatProjectId) {
             queryClient.invalidateQueries([QueryKeys.projects]);
             queryClient.invalidateQueries([QueryKeys.project, conversation.chatProjectId]);

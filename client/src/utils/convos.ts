@@ -13,6 +13,27 @@ import {
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
 
+/**
+ * A conversation is unseen when a reply landed after the user last caught up with it.
+ *
+ * Both timestamps ride in the conversation list payload, so this stays a pure comparison and
+ * costs no extra request. Conversations predating the feature have no `lastResponseAt` and are
+ * therefore treated as seen, which is what keeps the sidebar quiet after deploy.
+ */
+export const isConversationUnseen = (
+  conversation: Pick<TConversation, 'lastResponseAt' | 'lastSeenAt'> | undefined | null,
+): boolean => {
+  const lastResponseAt = conversation?.lastResponseAt;
+  if (!lastResponseAt) {
+    return false;
+  }
+  const lastSeenAt = conversation?.lastSeenAt;
+  if (!lastSeenAt) {
+    return true;
+  }
+  return new Date(lastSeenAt).getTime() < new Date(lastResponseAt).getTime();
+};
+
 // Date group helpers
 export const dateKeys = {
   today: 'com_ui_date_today',
@@ -667,6 +688,34 @@ function updatePinnedConvosQuery(
 }
 
 // Update
+/**
+ * Reads a conversation out of whichever cached query happens to hold it.
+ *
+ * Callers that only need a point-in-time answer use this instead of subscribing to the list,
+ * which keeps event-driven checks off the render path.
+ *
+ * The pinned section is fed by its own request, so a pin older than the loaded chat pages lives
+ * only there. Missing it would leave such a row's unseen dot stuck: the caller would read the
+ * conversation as absent, and absent reads as caught up.
+ */
+export function findConvoInAllQueries(
+  queryClient: QueryClient,
+  conversationId: string,
+): TConversation | undefined {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false });
+
+  for (const query of queries) {
+    const data = queryClient.getQueryData<InfiniteData<ConversationCursorData>>(query.queryKey);
+    const found = findConversationInInfinite(data, conversationId);
+    if (found) {
+      return found;
+    }
+  }
+  return findPinnedConversation(queryClient, conversationId);
+}
+
 export function updateConvoInAllQueries(
   queryClient: QueryClient,
   conversationId: string,
@@ -704,15 +753,23 @@ export function updateConvoInAllQueries(
       }
 
       const found = oldData.pages[pageIdx].conversations[convoIdx];
-      /** `isShared` is derived per list request from the shared-links collection and is
-       * absent from single-conversation payloads, so callers that swap in a server
-       * response wholesale (rename, pin, SSE updates) would otherwise drop the sidebar
-       * badge until an unrelated list refetch. Carry it forward when the updater omits it. */
+      /** `isShared` is derived per list request from the shared-links collection, and the
+       * unseen-reply timestamps are absent from single-conversation payloads, so callers that
+       * swap in a server response wholesale (rename, pin, SSE updates) would otherwise drop the
+       * sidebar badge or indicator until an unrelated list refetch. Carry them forward when the
+       * updater omits the key entirely; a present-but-undefined value is an explicit clear
+       * (mark-unread, optimistic rollback). */
       const next = updater(found);
-      const merged =
-        next.isShared === undefined && found.isShared !== undefined
-          ? { ...next, isShared: found.isShared }
-          : next;
+      const merged: TConversation = {
+        ...next,
+        isShared: next.isShared ?? found.isShared,
+      };
+      if (!('lastResponseAt' in next)) {
+        merged.lastResponseAt = found.lastResponseAt;
+      }
+      if (!('lastSeenAt' in next)) {
+        merged.lastSeenAt = found.lastSeenAt;
+      }
       const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {

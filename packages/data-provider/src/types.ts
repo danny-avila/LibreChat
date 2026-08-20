@@ -440,6 +440,23 @@ export type TPinConversationRequest = {
 
 export type TPinConversationResponse = TConversation;
 
+export type TMarkConversationSeenRequest = {
+  conversationId: string;
+  /** The reply the client had on screen; the server acknowledges no newer one. */
+  lastResponseAt?: string;
+};
+
+export type TMarkConversationSeenResponse = {
+  modified: boolean;
+};
+
+export type TMarkConversationUnreadRequest = {
+  conversationId: string;
+};
+
+/* Same wire shape as the seen marker; aliased so call sites read as what they do. */
+export type TMarkConversationUnreadResponse = TMarkConversationSeenResponse;
+
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };

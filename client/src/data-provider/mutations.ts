@@ -12,6 +12,7 @@ import {
   /* Conversations */
   addConvoToAllQueries,
   findPinnedConversation,
+  findConvoInAllQueries,
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
@@ -236,6 +237,88 @@ export const usePinConversationMutation = (
       },
       onError,
       ..._options,
+    },
+  );
+};
+
+/**
+ * Records that the user has caught up with a conversation's newest message.
+ *
+ * The cache is updated optimistically so the unseen dot clears on the spot rather than after
+ * the round trip. The server stamps its own timestamp; only the ordering against
+ * `lastResponseAt` matters, so the brief client/server drift is immaterial.
+ */
+export const useMarkConversationSeenMutation = (): UseMutationResult<
+  t.TMarkConversationSeenResponse,
+  unknown,
+  t.TMarkConversationSeenRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    [MutationKeys.convoSeen],
+    (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
+    {
+      onMutate: (vars) => {
+        const previous = findConvoInAllQueries(queryClient, vars.conversationId)?.lastSeenAt;
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastSeenAt: new Date().toISOString(),
+        }));
+        return { previous };
+      },
+      onError: (_error, vars, context) => {
+        /* The seen triggers gate on the cache, so a failed request has to put the old
+           state back, "never caught up" included, or the dot stays cleared until an
+           unrelated refetch. */
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastSeenAt: context?.previous,
+        }));
+      },
+    },
+  );
+};
+
+/**
+ * Flags a conversation as unread again.
+ *
+ * Optimistically mirrors what the server does: the catch-up is cleared, and a conversation
+ * with no reply yet gets `lastResponseAt` stamped so the flag itself lights the dot.
+ */
+export const useMarkConversationUnreadMutation = (): UseMutationResult<
+  t.TMarkConversationUnreadResponse,
+  unknown,
+  t.TMarkConversationUnreadRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+
+  return useMutation(
+    [MutationKeys.convoUnread],
+    (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
+    {
+      onMutate: (vars) => {
+        const previous = findConvoInAllQueries(queryClient, vars.conversationId);
+        const context = {
+          lastResponseAt: previous?.lastResponseAt,
+          lastSeenAt: previous?.lastSeenAt,
+        };
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastResponseAt: convo.lastResponseAt ?? new Date().toISOString(),
+          lastSeenAt: undefined,
+        }));
+        return context;
+      },
+      onError: (_error, vars, context) => {
+        updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
+          ...convo,
+          lastResponseAt: context?.lastResponseAt,
+          lastSeenAt: context?.lastSeenAt,
+        }));
+      },
     },
   );
 };

@@ -5,6 +5,7 @@ interface ConvoLinkProps {
   isActiveConvo: boolean;
   isPopoverActive: boolean;
   isSharedBadgeVisible: boolean;
+  isUnseen: boolean;
   title: string | null;
   onRename: () => void;
   isSmallScreen: boolean;
@@ -16,6 +17,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   isActiveConvo,
   isPopoverActive,
   isSharedBadgeVisible,
+  isUnseen,
   title,
   onRename,
   isSmallScreen,
@@ -32,13 +34,13 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
       aria-label={
-        isSharedBadgeVisible
+        (isSharedBadgeVisible
           ? localize('com_ui_conversation_label_shared', {
               title: title || localize('com_ui_untitled'),
             })
           : localize('com_ui_conversation_label', {
               title: title || localize('com_ui_untitled'),
-            })
+            })) + (isUnseen ? `, ${localize('com_ui_unseen_reply')}` : '')
       }
       style={{ width: '100%' }}
     >
