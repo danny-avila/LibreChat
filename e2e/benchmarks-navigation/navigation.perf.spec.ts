@@ -181,13 +181,18 @@ function threadHeading(page: Page, label: string, turn: number) {
  * round trip into every measured interval. Resolving the row by attribute here
  * rather than through a locator also keeps the click out of Playwright's
  * element-stability wait, which never settles while the thread is mid-switch.
+ *
+ * The accessible name sits on the inner button `ConvoLink` renders, while the
+ * click handler sits on the `convo-item` container around it — so match on
+ * whichever node inside a row carries the label and let the click bubble.
  */
 async function clickConversation(page: Page, title: string): Promise<void> {
   await sidebarRow(page, title).waitFor({ state: 'visible', timeout: 30_000 });
   await page.evaluate((label) => {
-    const row = Array.from(document.querySelectorAll('[data-testid="convo-item"]')).find(
-      (element) => element.getAttribute('aria-label') === label,
-    );
+    const rows = document.querySelectorAll('[data-testid="convo-item"]');
+    const row = Array.from(rows)
+      .flatMap((element) => [element, ...Array.from(element.querySelectorAll('[aria-label]'))])
+      .find((element) => element.getAttribute('aria-label') === label);
     if (!row) {
       throw new Error(`conversation row not found: ${label}`);
     }
