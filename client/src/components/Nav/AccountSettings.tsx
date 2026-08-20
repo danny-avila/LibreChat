@@ -132,7 +132,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
       </Menu.MenuButton>
       <Menu.Menu
         portal
-        className="account-settings-popover popover-ui z-[125] w-[19.0625rem] rounded-lg md:w-[15.25rem]"
+        className="account-settings-popover popover-ui z-[125] w-[min(19.0625rem,90vw)] rounded-lg md:w-[min(15.25rem,90vw)]"
         style={{
           transformOrigin: collapsed ? 'left bottom' : 'bottom',
           translate: collapsed ? '4px 0' : '0 -4px',
