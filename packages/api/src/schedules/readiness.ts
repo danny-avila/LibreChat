@@ -25,18 +25,27 @@ export interface ScheduleWriteGateOptions {
   retryAfterSeconds: string;
 }
 
+export type ScheduleWriteGate = (
+  req: { method: string },
+  res: Response,
+  next: NextFunction,
+) => Response | void;
+
 /**
  * Guards schedule writes on engine readiness, answering with the retry contract that
  * matches the real state: retry while arming is still pending, and a terminal refusal once
  * it has definitively failed — nothing re-attempts arming, so a client obeying
  * `Retry-After` there would poll a condition that cannot change without operator action.
  */
-export function createScheduleWriteGate({ getState, retryAfterSeconds }: ScheduleWriteGateOptions) {
+export function createScheduleWriteGate({
+  getState,
+  retryAfterSeconds,
+}: ScheduleWriteGateOptions): ScheduleWriteGate {
   return function rejectScheduleWritesUntilReady(
     req: { method: string },
     res: Response,
     next: NextFunction,
-  ) {
+  ): Response | void {
     const state = getState();
     if (state === 'armed' || ENGINE_OPTIONAL_METHODS.has(req.method)) {
       return next();
