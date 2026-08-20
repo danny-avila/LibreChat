@@ -97,6 +97,8 @@ export enum QueryKeys {
   subagentThread = 'subagentThread',
   codeEnvironments = 'codeEnvironments',
   agentQueuedTurns = 'agentQueuedTurns',
+  /* Combined Pinned-section display order (favorites + pinned chats) */
+  pinnedOrder = 'pinnedOrder',
 }
 
 // Dynamic query keys that require parameters

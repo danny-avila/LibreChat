@@ -367,7 +367,10 @@ function ConvoOptions({
   );
 
   const buttonClassName = cn(
-    'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
+    /** Matches the row-level unpin buttons (favorites and pinned chats): same
+     *  28px target, surface-active hover fill, inset text-primary focus ring
+     *  without an offset, which would cross neighbouring rows here. */
+    'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-text-secondary outline-none transition-colors duration-150 hover:bg-surface-active hover:text-text-primary focus-visible:bg-surface-active focus-visible:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:opacity-50',
     /** Touch has no hover, so a reveal-on-hover trigger is simply invisible there. */
     isActiveConvo === true || isPopoverActive || isSmallScreen
       ? 'opacity-100'
@@ -433,7 +436,13 @@ function ConvoOptions({
             aria-label={localize('com_nav_convo_menu_options')}
             aria-expanded={isPopoverActive}
             /** Shared with the shift-held variant so both obey the same reveal rules. */
-            className={cn(buttonClassName, 'gap-2')}
+            className={cn(
+              buttonClassName,
+              'gap-2',
+              /** The hover fill persists while the menu is open, even once the
+               *  pointer moves into the dropdown. */
+              isPopoverActive && 'bg-surface-active text-text-primary',
+            )}
             onClick={(e: MouseEvent<HTMLButtonElement>) => {
               e.stopPropagation();
             }}
@@ -443,7 +452,7 @@ function ConvoOptions({
               }
             }}
           >
-            <Ellipsis className="icon-md text-text-secondary" aria-hidden={true} />
+            <Ellipsis className="icon-md" aria-hidden={true} />
           </Ariakit.MenuButton>
         }
         items={dropdownItems}
