@@ -9,6 +9,7 @@ jest.mock('~/hooks', () => ({
 const longMessage = 'line\n'.repeat(80);
 const shortMessage = 'a short message';
 const plainMessage = 'a long message';
+const linkLabel = 'focusable link';
 
 /** jsdom does no layout, so scrollHeight is 0 unless stubbed. Returning a set
  *  height above the collapse cap (256px) makes the content read as overflowing;
@@ -49,6 +50,25 @@ describe('CollapsibleText', () => {
     }
   });
 
+  it('does not clamp sub-tolerance content that barely exceeds the cap', () => {
+    // 260px is within the 8px tolerance, so no toggle appears; the clamp must
+    // not apply either, or the trailing sliver would be hidden irrecoverably.
+    const scrollHeight = stubScrollHeight(260);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>{shortMessage}</p>
+        </CollapsibleText>,
+      );
+      expect(screen.queryByRole('button')).toBeNull();
+      const region = screen.getByText(shortMessage).closest('[id]');
+      expect(region).not.toHaveStyle({ maxHeight: '256px' });
+      expect(region?.className).not.toContain('overflow-hidden');
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
   it('clamps an overflowing message and keeps the full text in the page', () => {
     const scrollHeight = stubScrollHeight(500);
     try {
@@ -73,12 +93,35 @@ describe('CollapsibleText', () => {
     }
   });
 
+  it('reveals the message when focus reaches clipped content', () => {
+    // Links and code-block controls below the cutoff stay in the tab order;
+    // focusing one must not leave focus inside visually hidden content.
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>
+            <a href="#target">{linkLabel}</a>
+          </p>
+        </CollapsibleText>,
+      );
+      fireEvent(screen.getByRole('link'), new FocusEvent('focusin', { bubbles: true }));
+      expect(screen.getByRole('button', { name: 'com_ui_show_less' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      expect(screen.getByRole('link')).toBeVisible();
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
   it('expands in place and offers show less', () => {
     const scrollHeight = stubScrollHeight(500);
     try {
       render(
         <CollapsibleText enabled={true}>
-          <p>{longMessage}</p>
+          <p>{plainMessage}</p>
         </CollapsibleText>,
       );
       fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_more' }));
@@ -87,6 +130,34 @@ describe('CollapsibleText', () => {
       expect(document.getElementById(collapse.getAttribute('aria-controls') ?? '')).toHaveStyle({
         maxHeight: '',
       });
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('starts collapsed again after the preference is turned off and back on', () => {
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      const { rerender } = render(
+        <CollapsibleText enabled={true}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_more' }));
+      rerender(
+        <CollapsibleText enabled={false}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      rerender(
+        <CollapsibleText enabled={true}>
+          <p>{plainMessage}</p>
+        </CollapsibleText>,
+      );
+      expect(screen.getByRole('button', { name: 'com_ui_show_more' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
     } finally {
       scrollHeight.mockRestore();
     }

@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-/** Collapsed preview height (px) for a long message before "Show more". Matched
- *  to the JS overflow check below so the toggle appears exactly when clipped;
- *  the tolerance absorbs the trailing markdown margin so content that fits but
- *  for its own bottom margin does not trip a pointless toggle. */
+/** Collapsed preview height (px) for a long message before "Show more". The
+ *  tolerance below only decides whether the toggle appears: it absorbs the
+ *  trailing markdown margin so content that fits but for its own bottom margin
+ *  does not trip a pointless toggle. The clamp itself is applied only once the
+ *  content actually overflows, so nothing is ever hidden without a toggle. */
 const COLLAPSED_MAX_HEIGHT = 256;
 const OVERFLOW_TOLERANCE = 8;
 
@@ -31,10 +32,21 @@ const CollapsibleText = memo(function CollapsibleText({
   const contentId = useId();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  const [wasEnabled, setWasEnabled] = useState(enabled);
 
-  /** `scrollHeight` reports the full height even while clamped, so the same
-   *  check holds whether expanded or not, and the observer re-measures on the
-   *  width reflows that change wrapped-line count. */
+  // Turning the preference off resets the reveal, so re-enabling always
+  // starts from the collapsed preview instead of a stale expanded state.
+  if (wasEnabled !== enabled) {
+    setWasEnabled(enabled);
+    if (!enabled) {
+      setExpanded(false);
+    }
+  }
+
+  /** Measures the inner wrapper, which is never clamped: `scrollHeight` there
+   *  is the natural content height, and its ResizeObserver fires when content
+   *  grows or shrinks (font size change, a late image or diagram finishing
+   *  layout) even while the outer region is clipped. */
   useEffect(() => {
     const el = contentRef.current;
     if (el == null) {
@@ -55,16 +67,24 @@ const CollapsibleText = memo(function CollapsibleText({
     return <>{children}</>;
   }
 
+  const clamped = !expanded && overflowing;
+
   return (
     <div className="w-full min-w-0">
       <div
-        ref={contentRef}
         id={contentId}
-        className={cn('relative w-full', !expanded && 'overflow-hidden')}
-        style={!expanded ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+        className={cn('relative w-full', clamped && 'overflow-hidden')}
+        style={clamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
+        onFocus={() => {
+          if (clamped) {
+            setExpanded(true);
+          }
+        }}
       >
-        {children}
-        {!expanded && overflowing && (
+        <div ref={contentRef} className="w-full">
+          {children}
+        </div>
+        {clamped && (
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface-tertiary to-transparent"
             aria-hidden="true"
