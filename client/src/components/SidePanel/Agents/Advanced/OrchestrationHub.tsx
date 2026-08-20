@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { AgentCapabilities, MAX_SUBAGENTS } from 'librechat-data-provider';
 import { useFormContext, Controller } from 'react-hook-form';
+import { AgentCapabilities, MAX_SUBAGENTS } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useAgentPanelContext } from '~/Providers';
 import AgentSubagents from './AgentSubagents';
