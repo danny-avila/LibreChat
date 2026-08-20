@@ -6,6 +6,7 @@ import {
   PrincipalModel,
   PrincipalType,
   ResourceType,
+  Time,
 } from 'librechat-data-provider';
 import type { CacheStore } from '~/types';
 import { createMethods } from './index';
@@ -25,13 +26,17 @@ let delaySets = false;
 let resolvePendingSets: Array<() => void> = [];
 let delayDeletes = false;
 let resolvePendingDeletes: Array<() => void> = [];
+let generationTtls: Array<number | undefined> = [];
 
 const cacheStore: CacheStore = {
   get: async (key) => cacheMap.get(key),
-  set: async (key, value) => {
+  set: async (key, value, ttl) => {
     /** The generation entry itself must never be held back by the test gate */
     if (delaySets && !key.includes(':generation')) {
       await new Promise<void>((resolve) => resolvePendingSets.push(resolve));
+    }
+    if (key.includes(':generation')) {
+      generationTtls.push(ttl);
     }
     cacheMap.set(key, value);
   },
@@ -279,6 +284,15 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
+  it('writes the generation marker with a ttl that outlives cached entries', async () => {
+    generationTtls = [];
+    await methods.invalidatePromptGroupAccessContext();
+    expect(generationTtls.length).toBeGreaterThan(0);
+    for (const ttl of generationTtls) {
+      expect(ttl).toBeGreaterThanOrEqual(Time.ONE_DAY);
+    }
   });
 
   it('does not cache access built from a stale membership while its eviction is pending', async () => {

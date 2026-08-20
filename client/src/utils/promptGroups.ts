@@ -95,14 +95,16 @@ export const findPromptGroup = (
 
 export const addGroupToAll = (queryClient: QueryClient, newGroup: TPromptGroup) => {
   const queryKey = [QueryKeys.allPromptGroups];
+  const state = queryClient.getQueryState(queryKey);
   /**
    * An idle, never-fetched list must not be seeded partial; its first fetch
-   * includes the group. A first fetch already in flight, though, may have read
-   * the database before this creation and settle without it, so restart it.
+   * includes the group. A first fetch already in flight may have read the
+   * database before this creation and settle without it, and an errored fetch
+   * never retries on its own (retry and refetch triggers are off), so restart
+   * both to settle with the created group.
    */
-  if (!queryClient.getQueryData<TPromptGroup[]>(queryKey)) {
-    const state = queryClient.getQueryState(queryKey);
-    if (state?.fetchStatus === 'fetching') {
+  if (!state || state.data === undefined) {
+    if (state && (state.fetchStatus === 'fetching' || state.status === 'error')) {
       queryClient.invalidateQueries(queryKey);
     }
     return;

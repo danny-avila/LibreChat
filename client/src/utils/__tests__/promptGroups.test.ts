@@ -361,4 +361,21 @@ describe('addGroupToAll', () => {
     expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
     queryClient.clear();
   });
+
+  it('refetches an errored list after creation so the command appears', async () => {
+    const queryClient = new QueryClient();
+    const queryKey = [QueryKeys.allPromptGroups];
+    const failed = queryClient.fetchQuery(
+      queryKey,
+      () => Promise.reject(new Error('boom')) as Promise<TPromptGroup[]>,
+      { retry: false },
+    );
+    await failed.catch(() => undefined);
+    expect(queryClient.getQueryState(queryKey)?.status).toBe('error');
+
+    addGroupToAll(queryClient, makeGroup({ _id: 'group-new' }));
+
+    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+    queryClient.clear();
+  });
 });

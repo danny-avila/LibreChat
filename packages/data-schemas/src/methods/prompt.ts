@@ -1,4 +1,10 @@
-import { CacheKeys, PermissionBits, ResourceType, SystemCategories } from 'librechat-data-provider';
+import {
+  CacheKeys,
+  PermissionBits,
+  ResourceType,
+  SystemCategories,
+  Time,
+} from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
 import type { IAclEntry, CacheStore, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
 import { getTenantId, scopedCacheKey, SYSTEM_TENANT_ID } from '~/config/tenantContext';
@@ -876,7 +882,13 @@ export function createPromptMethods(
         Date.now(),
         (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
       );
-      await cache.set(generationKey, next);
+      /**
+       * The marker must outlive every derived entry and in-flight build: with the
+       * namespace default it could expire first, and a reader would fall back to
+       * generation 0 while a late cross-process write from that era is still
+       * alive, briefly re-exposing revoked IDs.
+       */
+      await cache.set(generationKey, next, Time.ONE_DAY);
     } catch (error) {
       logger.warn('Failed to invalidate prompt group access cache', error);
     }
