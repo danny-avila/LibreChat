@@ -1169,6 +1169,7 @@ export async function initializeAgent(
     req,
     endpoint: provider,
     model_parameters: finalModelOptions,
+    agentId: agent.id,
     db,
   });
 
