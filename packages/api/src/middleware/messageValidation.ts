@@ -27,6 +27,7 @@ export type MessageValidationRequest = {
 
 type ConversationRecord = {
   user?: string;
+  subagentThread?: unknown;
 } | null;
 
 type PendingActionRecord = unknown;
@@ -151,6 +152,13 @@ export function createMessageRequestMiddleware(
         status: 403,
         body: { error: 'User not authorized for this conversation' },
       };
+    }
+
+    // Child threads are internal execution records, not standalone public
+    // conversations. Keep the same response as a missing conversation so the
+    // read boundary does not disclose whether a supplied child id exists.
+    if (req.method === 'GET' && conversation.subagentThread != null) {
+      return { ok: false, status: 404, body: { error: 'Conversation not found' } };
     }
 
     return { ok: true };

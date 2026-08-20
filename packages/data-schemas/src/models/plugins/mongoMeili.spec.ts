@@ -705,7 +705,7 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(false);
   });
 
-  test('sync removes an existing child message even when its index flag is false', async () => {
+  test('does not schedule cleanup for a child message that was never indexed', async () => {
     const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});
     const messageId = new mongoose.Types.ObjectId().toString();
@@ -724,15 +724,14 @@ describe('Meilisearch Mongoose plugin', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    mockGetDocuments.mockResolvedValueOnce({ results: [{ messageId }] });
-
     const progress = await messageModel.getSyncProgress();
-    await messageModel.syncWithMeili();
+    await messageModel.cleanupExcludedMeiliIndex();
     const storedDoc = await messageModel.collection.findOne({ messageId });
 
-    expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
-    expect(mockDeleteDocuments).toHaveBeenCalledWith([messageId]);
-    expect(storedDoc?._meiliIndex).toBeUndefined();
+    expect(progress).toMatchObject({ pendingCleanup: 0, isComplete: true });
+    expect(mockDeleteDocuments).not.toHaveBeenCalled();
+    expect(mockGetDocuments).not.toHaveBeenCalled();
+    expect(storedDoc?._meiliIndex).toBe(false);
   });
 
   test('defines partial indexes for pending excluded-document cleanup', () => {
@@ -745,7 +744,7 @@ describe('Meilisearch Mongoose plugin', () => {
         name: 'meili_excluded_cleanup',
         partialFilterExpression: {
           subagentThread: { $exists: true },
-          _meiliIndex: { $exists: true },
+          _meiliIndex: true,
         },
       }),
     ]);
@@ -755,7 +754,7 @@ describe('Meilisearch Mongoose plugin', () => {
         name: 'meili_excluded_cleanup',
         partialFilterExpression: {
           subagentTask: { $exists: true },
-          _meiliIndex: { $exists: true },
+          _meiliIndex: true,
         },
       }),
     ]);

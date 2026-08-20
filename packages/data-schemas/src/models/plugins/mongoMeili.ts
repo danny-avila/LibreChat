@@ -62,6 +62,7 @@ export interface SchemaWithMeiliMethods extends Model<DocumentWithMeiliIndex> {
     index: Index<MeiliIndexable>,
     documents: Array<Record<string, unknown>>,
   ): Promise<void>;
+  cleanupExcludedMeiliIndex(): Promise<void>;
   cleanupMeiliIndex(
     index: Index<MeiliIndexable>,
     primaryKey: string,
@@ -133,7 +134,7 @@ const buildExcludedIndexedQuery = (excludeFromIndexPath?: string): FilterQuery<u
 
   return {
     [excludeFromIndexPath]: { $exists: true },
-    _meiliIndex: { $exists: true },
+    _meiliIndex: true,
   };
 };
 
@@ -375,6 +376,55 @@ const createMeiliMongooseModel = ({
     }
 
     /**
+     * Remove documents that are intentionally excluded from search without
+     * scanning the complete Meili index. The Mongo marker is cleared only
+     * after Meili confirms deletion, so interrupted cleanup is retried.
+     */
+    static async cleanupExcludedMeiliIndex(this: SchemaWithMeiliMethods): Promise<void> {
+      const excludedIndexedQuery = getExcludedIndexedQuery();
+      if (excludedIndexedQuery == null) {
+        return;
+      }
+
+      const { batchSize, delayMs } = syncConfig;
+      while (true) {
+        const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
+          .select(primaryKey)
+          .limit(batchSize)
+          .lean();
+        if (pendingExcludedDocuments.length === 0) {
+          break;
+        }
+
+        const pendingIds = pendingExcludedDocuments.map(
+          (doc: Record<string, unknown>) => doc[primaryKey],
+        );
+        const deletion = await index.deleteDocuments(pendingIds.map(String));
+        const deletionTask = await client.waitForTask(deletion.taskUid, {
+          timeOutMs: 10000,
+          intervalMs: 100,
+        });
+        if (deletionTask.status !== 'succeeded') {
+          throw new Error(
+            `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
+          );
+        }
+        await this.updateMany(
+          { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
+          { $unset: { _meiliIndex: '' } },
+          { timestamps: false },
+        );
+
+        if (pendingExcludedDocuments.length < batchSize) {
+          break;
+        }
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    /**
      * Clean up documents in MeiliSearch that no longer exist in MongoDB
      */
     static async cleanupMeiliIndex(
@@ -385,46 +435,7 @@ const createMeiliMongooseModel = ({
       delayMs: number,
     ): Promise<void> {
       try {
-        const excludedIndexedQuery = getExcludedIndexedQuery();
-        if (excludedIndexedQuery != null) {
-          let hasPendingExcludedDocuments = true;
-          while (hasPendingExcludedDocuments) {
-            const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
-              .select(primaryKey)
-              .limit(batchSize)
-              .lean();
-            if (pendingExcludedDocuments.length === 0) {
-              hasPendingExcludedDocuments = false;
-              break;
-            }
-
-            const pendingIds = pendingExcludedDocuments.map(
-              (doc: Record<string, unknown>) => doc[primaryKey],
-            );
-            const deletion = await index.deleteDocuments(pendingIds.map(String));
-            const deletionTask = await client.waitForTask(deletion.taskUid, {
-              timeOutMs: 10000,
-              intervalMs: 100,
-            });
-            if (deletionTask.status !== 'succeeded') {
-              throw new Error(
-                `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
-              );
-            }
-            await this.updateMany(
-              { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
-              { $unset: { _meiliIndex: '' } },
-              { timestamps: false },
-            );
-
-            if (pendingExcludedDocuments.length < batchSize) {
-              break;
-            }
-            if (delayMs > 0) {
-              await new Promise((resolve) => setTimeout(resolve, delayMs));
-            }
-          }
-        }
+        await this.cleanupExcludedMeiliIndex();
 
         let offset = 0;
         let moreDocuments = true;
@@ -745,7 +756,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         name: 'meili_excluded_cleanup',
         partialFilterExpression: {
           [options.excludeFromIndexPath]: { $exists: true },
-          _meiliIndex: { $exists: true },
+          _meiliIndex: true,
         },
       },
     );

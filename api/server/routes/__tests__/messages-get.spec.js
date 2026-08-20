@@ -36,6 +36,7 @@ jest.mock('~/models', () => ({
   getMessage: jest.fn(),
   saveMessage: jest.fn(),
   getMessages: jest.fn(),
+  getConvoOwnership: jest.fn(),
   updateMessage: jest.fn(),
   deleteMessages: jest.fn(),
   getConvosQueried: jest.fn(),
@@ -86,7 +87,7 @@ jest.mock('~/db/models', () => ({
 
 describe('message route conversation ownership filters', () => {
   let app;
-  const { getMessages, saveConvo, saveMessage } = require('~/models');
+  const { getConvoOwnership, getMessages, saveConvo, saveMessage } = require('~/models');
   const { prepareMessageRequestValidation } = require('~/server/middleware');
 
   const authenticatedUserId = 'user-owner-123';
@@ -178,6 +179,39 @@ describe('message route conversation ownership filters', () => {
       { conversationId: 'convo-1', user: authenticatedUserId },
       CLIENT_MESSAGE_SELECT,
     );
+  });
+
+  it('returns indistinguishable not-found responses for child and missing query reads', async () => {
+    getConvoOwnership.mockResolvedValueOnce({
+      user: authenticatedUserId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+
+    const childResponse = await request(app).get(
+      '/api/messages?conversationId=child-convo&messageId=child-message',
+    );
+    getConvoOwnership.mockResolvedValueOnce(null);
+    const missingResponse = await request(app).get(
+      '/api/messages?conversationId=missing-convo&messageId=missing-message',
+    );
+
+    expect(childResponse.status).toBe(404);
+    expect(childResponse.body).toEqual({ error: 'Conversation not found' });
+    expect(childResponse.status).toBe(missingResponse.status);
+    expect(childResponse.body).toEqual(missingResponse.body);
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  it('allows an ordinary owned conversation query read', async () => {
+    getConvoOwnership.mockResolvedValue({ user: authenticatedUserId });
+    getMessages.mockResolvedValue([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+
+    const response = await request(app).get(
+      '/api/messages?conversationId=convo-1&messageId=message-1',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toEqual([{ messageId: 'message-1', conversationId: 'convo-1' }]);
   });
 
   it('should start conversation message reads before validation resolves', async () => {
