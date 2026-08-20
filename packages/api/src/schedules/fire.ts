@@ -11,6 +11,7 @@ import {
 import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service';
 import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { computeNextRunAt, cadenceIntervalMinutes } from './cadence';
+import { resolveScheduleProjectId } from './types';
 
 /** Consecutive balance skips (pre-fire or mid-generation) before auto-disable. */
 export const BALANCE_SKIP_DISABLE_THRESHOLD: number = 5;
@@ -51,6 +52,7 @@ function buildScheduleTriggerEnvelope(
   files: Awaited<ReturnType<ScheduleEngineDeps['resolveFiles']>>,
   conversationId: string,
   manual: boolean,
+  chatProjectId?: string,
 ): AgentTriggerEnvelope {
   const occurrenceId = buildFireClientRequestId(schedule.id, scheduledFor);
   const triggerFiles: JsonValue[] = files.map((file) => {
@@ -84,6 +86,7 @@ function buildScheduleTriggerEnvelope(
     run: {
       conversationId,
       timezone: schedule.timezone,
+      ...(chatProjectId != null && { chatProjectId }),
       ...(triggerFiles.length > 0 && { files: triggerFiles }),
       metadata: {
         manual,
@@ -303,6 +306,28 @@ export async function fireSchedule(
       return { fired: false, skipped: reason };
     }
 
+    // Destination project, re-resolved under the OWNER's current policy: an operator
+    // pin outranks the stored id, so tightening the config redirects (or stops) an
+    // existing schedule instead of grandfathering where its runs land.
+    const chatProjectId = resolveScheduleProjectId(ownerLimits, schedule.chatProjectId);
+    if (ownerLimits.requireProject && chatProjectId == null) {
+      // The requirement was raised after this schedule was created. Disable rather
+      // than filing runs loose: the owner chose no project under the old policy, and
+      // only they can say which one now applies.
+      await methods.disableSchedule(schedule.id, 'project_required', claimToken);
+      await advance();
+      return { fired: false, skipped: 'project_required' as const };
+    }
+    if (chatProjectId != null && (await deps.projectAccess(chatProjectId, user)) !== 'ok') {
+      // Gone, or pinned to a project this owner does not have. Either way the run
+      // would be filed nowhere (saveConvo drops an unowned chatProjectId), so stop
+      // instead of quietly widening the schedule's scope — same reasoning as
+      // agent_deleted, and the same immediate disable so failures aren't burned.
+      await methods.disableSchedule(schedule.id, 'project_deleted', claimToken);
+      await advance();
+      return { fired: false, skipped: 'project_deleted' as const };
+    }
+
     if (await deps.isOutOfBalance(user)) {
       // Revalidate BEFORE writing the skip. Everything above (user, config, permission
       // and balance lookups) can outlast the 5-minute lease, and a skip is not a no-op:
@@ -407,6 +432,7 @@ export async function fireSchedule(
         files,
         conversationId,
         options?.manual === true,
+        chatProjectId,
       );
     } catch (envelopeError) {
       logger.error(`[schedules] trigger envelope build failed for ${schedule.id}:`, envelopeError);

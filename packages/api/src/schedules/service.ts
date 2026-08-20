@@ -1,6 +1,6 @@
 import { logger, runAsSystem, tenantStorage, isRuntimeDisabled } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
+import type { ScheduleMethods, AppConfig, IBalance, IChatProject } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type {
@@ -161,6 +161,10 @@ export interface SchedulesServiceDeps {
     agentId: string,
     user: ScheduleUserContext,
   ) => Promise<'ok' | 'missing' | 'forbidden'>;
+  /** Loads a chat project scoped to its owner, or null when it does not exist for
+   *  them. Chat projects are user-owned, so this is both the existence check and the
+   *  authorization check. */
+  getChatProject: (userId: string, projectId: string) => Promise<IChatProject | null>;
   /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
   isUserDeleting: (userId: string) => Promise<boolean>;
   /** Shared durable trigger admission from the merged agent-trigger service. */
@@ -297,6 +301,7 @@ export function createSchedulesService(
     'upsertBalance',
     'initializeNullBalance',
     'resolveAgentFireAccess',
+    'getChatProject',
     'isUserDeleting',
     'enqueueAgentTrigger',
     'getTriggerDelivery',
@@ -354,6 +359,11 @@ export function createSchedulesService(
     if (config === true) {
       return DEFAULT_SCHEDULE_LIMITS;
     }
+    // A pinned project is itself a requirement: leaving `requireProject` to be set
+    // separately would let `projectId` alone resolve to "optional destination that
+    // happens to be forced", and a schedule created before the pin would keep firing
+    // with no project at all rather than being stopped for review.
+    const projectId = config.projectId?.trim() || undefined;
     return {
       enabled: config.use !== false,
       maxPerUser: config.maxPerUser ?? DEFAULT_SCHEDULE_LIMITS.maxPerUser,
@@ -361,6 +371,8 @@ export function createSchedulesService(
       autoDisableAfterFailures:
         config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
       fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+      requireProject: config.requireProject === true || projectId != null,
+      ...(projectId != null && { projectId }),
     };
   }
 
@@ -491,6 +503,11 @@ export function createSchedulesService(
     // VIEW with the manage:agents bypass); shared with the create/update precheck
     // so the two never diverge.
     agentAccess: (agentId, user) => deps.resolveAgentFireAccess(agentId, user),
+    // Ownership IS existence for a chat project, so one lookup answers both. Failing
+    // closed here would auto-disable a schedule on a transient Mongo blip, so a read
+    // error propagates instead: the fire fails and is retried like any other error.
+    projectAccess: async (projectId, user) =>
+      (await deps.getChatProject(user.id, projectId)) == null ? 'missing' : 'ok',
     resolveFiles: async (fileIds, user) => {
       // Renew the bounded upload hold at every fire preflight, BEST-EFFORT: the hold
       // only has to bridge upload -> first consumption (a real send clears the TTL

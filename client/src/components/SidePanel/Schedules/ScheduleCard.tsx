@@ -2,7 +2,7 @@ import { useId, useRef, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
-import { Play, Trash, Pencil, Ellipsis } from 'lucide-react';
+import { Play, Trash, Folder, Pencil, Ellipsis } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Label,
@@ -22,6 +22,7 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
+import useScheduleProjects from './useScheduleProjects';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
@@ -50,6 +51,8 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
   invalid_schedule: 'com_ui_schedule_disabled_invalid',
   permission_revoked: 'com_ui_schedule_disabled_permission_revoked',
   insufficient_balance: 'com_ui_schedule_disabled_insufficient_balance',
+  project_deleted: 'com_ui_schedule_disabled_project_deleted',
+  project_required: 'com_ui_schedule_disabled_project_required',
 };
 
 export default function ScheduleCard({ schedule }: ScheduleCardProps) {
@@ -77,10 +80,27 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
     enabled: agentsMap !== undefined && mappedAgent == null,
   });
   const agentName = mappedAgent?.name || fetchedAgent?.name || schedule.agent_id;
+  /** Only the schedules that HAVE a scope pay for the lookup; the query itself is
+   *  shared and cached, so a panel of scoped cards still makes one request. */
+  const { namesById: projectNames } = useScheduleProjects(schedule.chatProjectId != null);
+  const projectName =
+    schedule.chatProjectId != null
+      ? (projectNames.get(schedule.chatProjectId) ?? schedule.chatProjectId)
+      : null;
 
   const updateSchedule = useUpdateScheduleMutation({
-    onError: () => {
-      showToast({ message: localize('com_ui_error'), status: 'error' });
+    /** Re-enabling re-validates the schedule's EFFECTIVE state — its stored agent, its
+     *  cadence against the current floor, and its project against the current policy —
+     *  so this switch is a real place to meet a 400. A generic failure toast would
+     *  leave the owner flipping a switch that keeps flipping back; point them at the
+     *  dialog, which is where the fixable settings are. */
+    onError: (error, variables) => {
+      const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
+      const blockedEnable = status === 400 && variables.payload.enabled === true;
+      showToast({
+        message: localize(blockedEnable ? 'com_ui_schedule_enable_blocked' : 'com_ui_error'),
+        status: 'error',
+      });
     },
   });
   const deleteSchedule = useDeleteScheduleMutation();
@@ -211,6 +231,15 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
       <p className="mt-0.5 truncate text-xs text-text-secondary" title={agentName}>
         {agentName}
       </p>
+      {projectName != null && (
+        <p
+          className="mt-0.5 flex items-center gap-1 truncate text-xs text-text-secondary"
+          title={projectName}
+        >
+          <Folder className="size-3 shrink-0" aria-hidden="true" />
+          <span className="truncate">{projectName}</span>
+        </p>
+      )}
       <p className="mt-1 text-sm text-text-primary">{cadenceText}</p>
       {nextRunText != null && <p className="mt-0.5 text-xs text-text-secondary">{nextRunText}</p>}
       {(statusChip != null || schedule.disabledReason != null) && (

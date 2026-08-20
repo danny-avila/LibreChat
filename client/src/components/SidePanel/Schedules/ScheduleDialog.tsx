@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
 import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
@@ -26,11 +27,13 @@ import type { TranslationKeys } from '~/hooks';
 import type { Meridiem } from './cadence';
 import {
   useListAgentsQuery,
+  useSchedulesQuery,
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
 import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
 import { VariableEditor } from '~/components/Variables';
+import useScheduleProjects from './useScheduleProjects';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -45,6 +48,8 @@ type ScheduleFormValues = {
   name: string;
   prompt: string;
   agent_id: string;
+  /** `''` means unscoped; the picker has no null option of its own. */
+  chatProjectId: string;
   frequency: ScheduleFrequency;
   hour12: number;
   minute: number;
@@ -69,6 +74,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       name: '',
       prompt: '',
       agent_id: '',
+      chatProjectId: '',
       frequency: 'daily',
       hour12: 9,
       minute: 0,
@@ -81,6 +87,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     name: schedule.name,
     prompt: schedule.prompt,
     agent_id: schedule.agent_id,
+    chatProjectId: schedule.chatProjectId ?? '',
     frequency: schedule.cadence.frequency,
     hour12,
     minute: schedule.cadence.minute,
@@ -154,6 +161,20 @@ export default function ScheduleDialog({
     () => (agents ?? []).map((agent) => ({ label: agent.name || agent.id, value: agent.id })),
     [agents],
   );
+
+  /** Reads the SAME cached list query the panel already holds, so the dialog needs no
+   *  request of its own — and so the form mirrors exactly the policy the write handler
+   *  enforces rather than a second, client-side interpretation of the config. */
+  const { data: schedulesData } = useSchedulesQuery();
+  const pinnedProjectId = schedulesData?.limits.projectId;
+  const requireProject = schedulesData?.limits.requireProject === true;
+  const {
+    items: projectItems,
+    namesById: projectNames,
+    hasNextPage: hasMoreProjects,
+    fetchNextPage: fetchMoreProjects,
+    isFetchingNextPage: isFetchingMoreProjects,
+  } = useScheduleProjects(open);
 
   const frequencyOptions = useMemo(
     () =>
@@ -272,6 +293,13 @@ export default function ScheduleDialog({
         ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         ...(dirtyFields.prompt ? { prompt: values.prompt.trim() } : {}),
         ...(dirtyFields.agent_id ? { agent_id: values.agent_id } : {}),
+        // Explicit `null` is the only way to CLEAR the scope; omitting the field
+        // leaves the stored project alone. Never sent while pinned — the server owns
+        // the destination there, and echoing it back would only be a chance to
+        // disagree with a pin that changed since the dialog opened.
+        ...(dirtyFields.chatProjectId && pinnedProjectId == null
+          ? { chatProjectId: values.chatProjectId || null }
+          : {}),
         ...(cadenceTouched ? { cadence } : {}),
       };
       // Nothing touched: a field-less PATCH is refused server-side (it would rotate
@@ -299,6 +327,9 @@ export default function ScheduleDialog({
       name: values.name.trim(),
       prompt: values.prompt.trim(),
       agent_id: values.agent_id,
+      ...(pinnedProjectId == null && values.chatProjectId
+        ? { chatProjectId: values.chatProjectId }
+        : {}),
       cadence: buildCadence(values),
       timezone,
       target: 'new' as const,
@@ -395,6 +426,76 @@ export default function ScheduleDialog({
                 <p className="text-xs text-text-secondary">
                   {localize('com_ui_schedule_target_new_chat')}
                 </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule-project" className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_project')}
+                </Label>
+                {pinnedProjectId != null ? (
+                  /* Pinned by the operator: there is no choice to offer, so show the
+                     destination rather than a disabled control the user would keep
+                     trying to open. */
+                  <div
+                    id="schedule-project"
+                    data-testid="schedule-project-pinned"
+                    className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 text-sm text-text-secondary"
+                  >
+                    <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">
+                      {projectNames.get(pinnedProjectId) ?? pinnedProjectId}
+                    </span>
+                  </div>
+                ) : (
+                  <Controller
+                    name="chatProjectId"
+                    control={control}
+                    rules={
+                      requireProject ? { required: localize('com_ui_field_required') } : undefined
+                    }
+                    render={({ field }) => (
+                      <ControlCombobox
+                        selectedValue={field.value}
+                        displayValue={projectNames.get(field.value) ?? ''}
+                        selectPlaceholder={localize(
+                          requireProject ? 'com_ui_select_project' : 'com_ui_schedule_project_none',
+                        )}
+                        searchPlaceholder={localize('com_ui_search_projects')}
+                        setValue={field.onChange}
+                        onBlur={field.onBlur}
+                        items={projectItems}
+                        SelectIcon={
+                          <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                        }
+                        ariaLabel={localize('com_ui_project')}
+                        ariaInvalid={errors.chatProjectId != null}
+                        ariaDescribedBy="schedule-project-message"
+                        selectId="schedule-project"
+                        isCollapsed={false}
+                        showCarat={true}
+                        placement="bottom-start"
+                        /* Same focus-trap constraint as the agent picker above. */
+                        portal={false}
+                        matchTriggerWidth={true}
+                        variant="field"
+                      />
+                    )}
+                  />
+                )}
+                <FieldMessage
+                  id="schedule-project-message"
+                  message={errors.chatProjectId?.message}
+                />
+                {pinnedProjectId == null && hasMoreProjects && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="h-auto justify-start px-0 text-xs"
+                    onClick={() => fetchMoreProjects()}
+                    disabled={isFetchingMoreProjects}
+                  >
+                    {localize(isFetchingMoreProjects ? 'com_ui_loading' : 'com_ui_load_more')}
+                  </Button>
+                )}
               </div>
             </div>
 

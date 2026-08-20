@@ -245,6 +245,21 @@ describe('createAgentTriggerEnvelope', () => {
         run: { metadata: { callback: () => undefined } },
       } as unknown as CreateAgentTriggerEnvelopeInput),
     ).toThrow('run.metadata.callback contains a non-JSON function value');
+    // The destination project is host-controlled context, so it must survive the
+    // envelope's sanitization intact and be rejected when it is not a string — a
+    // silently dropped id would file a scheduled run outside the project the
+    // schedule promised.
+    const scoped = createAgentTriggerEnvelope({
+      ...createFireInput(),
+      run: { chatProjectId: 'project-1' },
+    } as CreateAgentTriggerEnvelopeInput);
+    expect(scoped.mode === 'fire' && scoped.run?.chatProjectId).toBe('project-1');
+    expect(() =>
+      createAgentTriggerEnvelope({
+        ...createFireInput(),
+        run: { chatProjectId: 42 },
+      } as unknown as CreateAgentTriggerEnvelopeInput),
+    ).toThrow('run.chatProjectId must be a non-empty string');
   });
 
   it('rejects non-JSON and circular event payloads', () => {

@@ -16,6 +16,9 @@ export interface ISchedule {
   cadence: TScheduleCadence;
   timezone: string;
   target: 'new';
+  /** Chat project every run's conversation is filed under. Re-validated at each
+   *  fire; a pinned operator project (interface.schedules.projectId) overrides it. */
+  chatProjectId?: string;
   file_ids?: string[];
   tools?: string[];
   cron?: string;

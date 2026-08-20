@@ -18,12 +18,36 @@ jest.mock('react-i18next', () => ({
 
 const mockMutate = jest.fn();
 
+/** Server-resolved schedule policy for the render under test. The dialog reads it from
+ *  the schedules list query, the same cache entry the panel populates. */
+let mockLimits: { maxPerUser: number; requireProject: boolean; projectId?: string } = {
+  maxPerUser: 10,
+  requireProject: false,
+};
+
 jest.mock('~/data-provider', () => ({
   useListAgentsQuery: () => ({
     data: [
       { id: 'agent-1', name: 'Research Agent' },
       { id: 'agent-2', name: 'Digest Agent' },
     ],
+  }),
+  useSchedulesQuery: () => ({ data: { schedules: [], limits: mockLimits } }),
+  useProjectsInfiniteQuery: () => ({
+    data: {
+      pages: [
+        {
+          projects: [
+            { _id: 'proj-1', name: 'Weekly Ops' },
+            { _id: 'proj-2', name: 'Research' },
+          ],
+          nextCursor: null,
+        },
+      ],
+    },
+    fetchNextPage: jest.fn(),
+    isFetchingNextPage: false,
+    isLoading: false,
   }),
   useCreateScheduleMutation: () => ({ mutate: mockMutate, isLoading: false }),
   useUpdateScheduleMutation: () => ({ mutate: mockMutate, isLoading: false }),
@@ -43,8 +67,21 @@ const renderDialog = () => {
   return render(<ScheduleDialog open={true} onOpenChange={jest.fn()} />, { wrapper: Wrapper });
 };
 
+/** Fills the two required text fields plus the agent, so a submit exercises the
+ *  project rules rather than unrelated validation. */
+const fillRequiredFields = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.type(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'), 'Digest');
+  await user.type(screen.getByPlaceholderText('com_ui_schedule_prompt_placeholder'), 'Summarize');
+  const dialog = screen.getByRole('dialog');
+  await user.click(within(dialog).getByRole('combobox', { name: 'com_ui_agent' }));
+  await user.click(await within(dialog).findByRole('option', { name: /Research Agent/ }));
+};
+
 describe('ScheduleDialog', () => {
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    mockLimits = { maxPerUser: 10, requireProject: false };
+  });
 
   /**
    * The agent list must render INSIDE the dialog. Portaled to the body it lands
@@ -146,5 +183,65 @@ describe('ScheduleDialog', () => {
     expect(document.getElementById('schedule-prompt-message')).toHaveTextContent(
       'com_ui_field_required',
     );
+  });
+
+  describe('project scope', () => {
+    it('submits the chosen project so its runs are filed there', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+
+      await user.click(screen.getByRole('combobox', { name: 'com_ui_project' }));
+      await user.click(await screen.findByRole('option', { name: /Weekly Ops/ }));
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      expect(mockMutate).toHaveBeenCalledWith(expect.objectContaining({ chatProjectId: 'proj-1' }));
+    });
+
+    /** An unscoped schedule must not send `chatProjectId: ''` — the payload schema
+     *  refuses an empty string, so the create would 400 rather than file loose. */
+    it('omits the field entirely when no project is chosen', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(mockMutate.mock.calls[0][0]).not.toHaveProperty('chatProjectId');
+    });
+
+    /** The server refuses an unscoped create under this policy; blocking it here keeps
+     *  the user from losing a filled-in form to a 400. */
+    it('blocks submission when the deployment requires a project', async () => {
+      mockLimits = { maxPerUser: 10, requireProject: true };
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(await screen.findByText('com_ui_field_required')).toBeInTheDocument();
+    });
+
+    /** A pin is the server's decision. Offering a picker would only invite a choice
+     *  the write handler rejects, so the dialog shows the destination instead — and
+     *  sends nothing, leaving the pin authoritative even if it moved since the dialog
+     *  opened. */
+    it('shows a pinned project as read-only and never sends it', async () => {
+      mockLimits = { maxPerUser: 10, requireProject: true, projectId: 'proj-2' };
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+
+      expect(screen.getByTestId('schedule-project-pinned')).toHaveTextContent('Research');
+      expect(screen.queryByRole('combobox', { name: 'com_ui_project' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      expect(mockMutate.mock.calls[0][0]).not.toHaveProperty('chatProjectId');
+    });
   });
 });
