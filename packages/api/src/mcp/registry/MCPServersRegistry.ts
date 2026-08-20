@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
+import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
 import type { Keyv } from 'keyv';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
@@ -213,6 +213,13 @@ export class MCPServersRegistry {
     this.readThroughCacheAll = new ReadThroughAllCache<Record<string, t.ParsedServerConfig>>(
       'mcp-registry-read-through-all',
       ttl,
+      {
+        /** The resolved map carries decrypted oauth/apiKey credentials, so the
+         *  shared store only ever sees ciphertext; plaintext stays in process
+         *  memory, exactly where it lived before this cache became shared. */
+        encode: async (value) => encryptV2(JSON.stringify(value)),
+        decode: async (raw) => JSON.parse(await decryptV2(raw)),
+      },
     );
   }
 

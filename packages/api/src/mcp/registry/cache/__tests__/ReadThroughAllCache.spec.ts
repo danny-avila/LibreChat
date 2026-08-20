@@ -76,13 +76,62 @@ describe('ReadThroughAllCache (in-memory backing)', () => {
     await expect(cache.get('user-1')).resolves.toBe('after');
   });
 
-  test('ttl of 0 disables the memo but keeps store semantics', async () => {
+  test('ttl of 0 disables the cache entirely', async () => {
+    /** Entries derive from ACL access, so without a TTL there is no bound on
+     *  how long a revoked user could keep receiving a stale map. */
     const Cache = await load();
     const cache = new Cache<string>(`rtac-${randomUUID()}`, 0);
-    await cache.set('user-1', 'persistent');
+    await cache.set('user-1', 'never-cached');
 
-    await expect(cache.get('user-1')).resolves.toBe('persistent');
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
     await cache.invalidateAll();
     await expect(cache.get('user-1')).resolves.toBeUndefined();
+  });
+
+  test('transforms keep the shared store ciphertext while serving plaintext', async () => {
+    const Cache = await load();
+    const namespace = `rtac-${randomUUID()}`;
+    const writer = new Cache<Record<string, string>>(namespace, 60_000, {
+      encode: (value) => `enc:${JSON.stringify(value)}`,
+      decode: (raw) => JSON.parse(raw.slice(4)),
+    });
+    const reader = new Cache<Record<string, string>>(namespace, 60_000, {
+      encode: (value) => `enc:${JSON.stringify(value)}`,
+      decode: (raw) => JSON.parse(raw.slice(4)),
+    });
+
+    await writer.set('user-1', { secret: 'plaintext-value' });
+
+    await expect(reader.get('user-1')).resolves.toEqual({ secret: 'plaintext-value' });
+  });
+
+  test('an undecodable stored entry fails open to a miss', async () => {
+    const Cache = await load();
+    const namespace = `rtac-${randomUUID()}`;
+    /** Writer without transforms stores plaintext JSON-shaped data. */
+    const plainWriter = new Cache<Record<string, string>>(namespace, 60_000);
+    const decodingReader = new Cache<Record<string, string>>(namespace, 60_000, {
+      encode: (value) => JSON.stringify(value),
+      decode: () => {
+        throw new Error('key rotation');
+      },
+    });
+
+    await plainWriter.set('user-1', { secret: 'stale-across-rotation' });
+
+    await expect(decodingReader.get('user-1')).resolves.toBeUndefined();
+  });
+
+  test('a failing encode degrades to the memo without failing the set', async () => {
+    const Cache = await load();
+    const cache = new Cache<string>(`rtac-${randomUUID()}`, 60_000, {
+      encode: () => {
+        throw new Error('no CREDS key');
+      },
+      decode: (raw) => raw,
+    });
+
+    await expect(cache.set('user-1', 'memo-only')).resolves.toBeUndefined();
+    await expect(cache.get('user-1')).resolves.toBe('memo-only');
   });
 });

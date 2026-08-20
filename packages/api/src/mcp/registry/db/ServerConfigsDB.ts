@@ -537,32 +537,37 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @returns record of parsed configs
    */
   public async getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>> {
-    /** The candidates query and principals resolution are independent, so they
-     *  start together; the ACL pair below then runs against both results. */
+    /** The candidate scan, principals resolution, and the public direct-server
+     *  ACL read are independent, so they all start together; awaiting them
+     *  through one Promise.all attaches rejection handlers to each as created. */
     const candidatesPromise = this._dbMethods.getAgentsWithMCPServerNames();
-    const principalsPromise = userId
+    const principalsPromise: Promise<ResolvedPrincipal[]> | undefined = userId
       ? this._aclService.getUserPrincipals({ userId, role })
       : undefined;
+    const publicDirectIdsPromise = userId
+      ? undefined
+      : this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.MCPSERVER,
+          requiredPermissions: PermissionBits.VIEW,
+        });
 
-    const agentCandidates = await candidatesPromise;
+    const [agentCandidates, principalsList] = await Promise.all([
+      candidatesPromise,
+      principalsPromise ?? Promise.resolve([]),
+    ]);
     const candidateIds = agentCandidates.map((agent) => agent._id);
-    const principalsList = (await principalsPromise) ?? [];
 
     logger.debug(
       `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${candidateIds.length} agent candidate(s) reference MCP servers`,
     );
 
     const [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
-      userId
-        ? this._aclService.findAccessibleResourcesForPrincipals({
-            principalsList,
-            requiredPermissions: PermissionBits.VIEW,
-            resourceType: ResourceType.MCPSERVER,
-          })
-        : this._aclService.findPubliclyAccessibleResources({
-            resourceType: ResourceType.MCPSERVER,
-            requiredPermissions: PermissionBits.VIEW,
-          }),
+      publicDirectIdsPromise ??
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.MCPSERVER,
+        }),
       this.findAccessibleAgentIds(candidateIds, userId, principalsList),
     ]);
 

@@ -85,4 +85,26 @@ describe('ReadThroughAllCache (Redis backing)', () => {
     expect(keys.some((key) => key.includes('user-1'))).toBe(true);
     expect(keys.some((key) => key.includes('user-2'))).toBe(true);
   });
+
+  test('with transforms, the shared store only ever holds ciphertext', async () => {
+    const { ReadThroughAllCache } = await import('../ReadThroughAllCache');
+    const namespace = `rtac-redis-${randomUUID()}`;
+    const transforms = {
+      encode: (value: string) => `enc:${Buffer.from(value).toString('base64')}`,
+      decode: (raw: string) => Buffer.from(raw.slice(4), 'base64').toString('utf8'),
+    };
+    const writer = new ReadThroughAllCache<string>(namespace, 60_000, transforms);
+    const reader = new ReadThroughAllCache<string>(namespace, 60_000, transforms);
+    /** A reader without transforms returns whatever the shared store holds. */
+    const plainReader = new ReadThroughAllCache<string>(namespace, 60_000);
+
+    await writer.set('user-1', 'super-secret-credential');
+
+    await expect(reader.get('user-1')).resolves.toBe('super-secret-credential');
+
+    const stored = await plainReader.get('user-1');
+    expect(stored).toBeDefined();
+    expect(stored).not.toBe('super-secret-credential');
+    expect(stored).toContain('enc:');
+  });
 });
