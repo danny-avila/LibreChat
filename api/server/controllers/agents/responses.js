@@ -434,6 +434,21 @@ async function saveResponseOutput(
 }
 
 /**
+ * Drives the unseen-reply indicator, and only once the assistant output is actually persisted:
+ * the conversation write happens first and its failure is swallowed by the caller, so stamping
+ * there would light a dot for a reply no message backs.
+ * @param {import('express').Request} req
+ * @param {string} conversationId
+ * @returns {Promise<void>}
+ */
+async function stampResponseReply(req, conversationId) {
+  if (req?.body?.isTemporary === true) {
+    return;
+  }
+  await db.stampConvoLastResponse(req.user.id, conversationId);
+}
+
+/**
  * Save or update conversation
  * @param {import('express').Request} req
  * @param {string} conversationId
@@ -1272,6 +1287,7 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               tracker.usage.outputTokens,
             );
+            await stampResponseReply(req, conversationId);
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1484,6 +1500,7 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               aggregator.usage.outputTokens,
             );
+            await stampResponseReply(req, conversationId);
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,

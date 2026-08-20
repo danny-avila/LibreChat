@@ -1524,6 +1524,53 @@ describe('BaseClient', () => {
       );
     });
 
+    test('stamps lastResponseAt for the assistant reply but never for the user turn', async () => {
+      const saveOptions = TestClient.getSaveOptions();
+      TestClient.skipSaveConvo = false;
+      saveConvo.mockClear();
+
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-unseen', messageId: 'm1', isCreatedByUser: true, text: 'hi' },
+        saveOptions,
+        TestClient.user,
+      );
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-unseen', messageId: 'm2', isCreatedByUser: false, text: 'hello' },
+        saveOptions,
+        TestClient.user,
+      );
+
+      const [userTurn, reply] = saveConvo.mock.calls;
+      /* A user turn stamping this would light the unseen dot the moment they press Enter. */
+      expect(userTurn[1].lastResponseAt).toBeUndefined();
+      expect(reply[1].lastResponseAt).toBeInstanceOf(Date);
+    });
+
+    test('keeps the unseen timestamps out of the user turn’s unsetFields', async () => {
+      /* The real wipe threat: a user turn whose endpointOptions omit these fields builds an
+         unsetFields list from the fetched conversation. excludedKeys must keep them out. */
+      getConvo.mockResolvedValue({
+        conversationId: 'convo-unseen',
+        endpoint: 'openai',
+        model: 'gpt-3.5-turbo',
+        lastResponseAt: new Date(),
+        lastSeenAt: new Date(),
+      });
+      const saveOptions = TestClient.getSaveOptions();
+      TestClient.skipSaveConvo = false;
+      saveConvo.mockClear();
+
+      await TestClient.saveMessageToDatabase(
+        { conversationId: 'convo-unseen', messageId: 'm3', isCreatedByUser: true, text: 'again' },
+        saveOptions,
+        TestClient.user,
+      );
+
+      const [, , convoOptions] = saveConvo.mock.calls[0];
+      expect(convoOptions.unsetFields).not.toHaveProperty('lastResponseAt');
+      expect(convoOptions.unsetFields).not.toHaveProperty('lastSeenAt');
+    });
+
     test('does not start the completed response write when terminal ownership is denied', async () => {
       const hookStarted = deferred();
       const terminalDecision = deferred();

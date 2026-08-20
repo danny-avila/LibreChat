@@ -17,6 +17,7 @@ export type SettingsTab =
 export type SectionId =
   | 'appearance'
   | 'layout'
+  | 'notifications'
   | 'accessibility'
   | 'admin'
   | 'sending'
@@ -99,6 +100,7 @@ export const TABS: TabMeta[] = [
     sections: [
       { id: 'appearance', labelKey: 'com_ui_settings_section_appearance' },
       { id: 'layout', labelKey: 'com_ui_settings_section_layout' },
+      { id: 'notifications', labelKey: 'com_ui_settings_section_notifications' },
       { id: 'accessibility', labelKey: 'com_ui_settings_section_accessibility' },
       { id: 'admin', labelKey: 'com_ui_settings_section_admin' },
     ],

@@ -47,7 +47,7 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
-const { getFiles, saveMessage } = require('~/models');
+const { getFiles, saveMessage, stampConvoLastResponse } = require('~/models');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -827,6 +827,17 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 throw new Error('Abort response was not persisted');
               }
               logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+              /* When Stop wins the terminal claim the request controller returns before its
+                 own stamp, so this is the only place a stopped turn's reply reaches the
+                 unseen-reply indicator. Best-effort: the row is already durable, and a missed
+                 stamp must not suppress the normal FINAL. */
+              if (messageContext.isTemporary !== true) {
+                try {
+                  await stampConvoLastResponse(userId, jobData.conversationId);
+                } catch (error) {
+                  logger.warn('[AgentStream] Failed to stamp lastResponseAt', error);
+                }
+              }
             } catch (error) {
               persistenceErrors.push(error);
             }

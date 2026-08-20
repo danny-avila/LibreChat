@@ -165,6 +165,10 @@ class ImportBatchBuilder {
     };
     convo._id && delete convo._id;
     delete convo.subagentThread;
+    /* A fork or duplicate starts its own unread history; carrying the source
+       conversation's catch-up state over would light a dot on a never-read copy. */
+    delete convo.lastResponseAt;
+    delete convo.lastSeenAt;
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };

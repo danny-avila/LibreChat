@@ -15,6 +15,7 @@ import {
   AutoSendTextSelector,
   DecibelSelector,
 } from '../SettingsTabs/Speech/STT';
+import { unlockReplyNotificationSound, requestReplyNotificationPermission } from '~/hooks';
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
@@ -159,6 +160,57 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_nav_chat_title_in_tab',
     keywords: ['tab', 'title', 'browser', 'window'],
     Component: ChatTitleInTab,
+  },
+  // General · Notifications
+  {
+    id: 'unseenTabBadge',
+    tab: GENERAL,
+    section: 'notifications',
+    labelKey: 'com_nav_unseen_tab_badge',
+    Component: toggleControl({
+      stateAtom: store.unseenTabBadge,
+      localizationKey: 'com_nav_unseen_tab_badge',
+      switchId: 'unseenTabBadge',
+      hoverCardText: 'com_nav_info_unseen_tab_badge',
+    }),
+  },
+  {
+    id: 'replyNotifications',
+    tab: GENERAL,
+    section: 'notifications',
+    labelKey: 'com_nav_reply_notifications',
+    Component: toggleControl({
+      stateAtom: store.replyNotifications,
+      localizationKey: 'com_nav_reply_notifications',
+      switchId: 'replyNotifications',
+      hoverCardText: 'com_nav_info_reply_notifications',
+      /* The toggle click is the user gesture browsers require before asking for
+         desktop-notification permission. */
+      onCheckedChange: (value) => {
+        if (value) {
+          requestReplyNotificationPermission();
+        }
+      },
+    }),
+  },
+  {
+    id: 'replyNotificationSound',
+    tab: GENERAL,
+    section: 'notifications',
+    labelKey: 'com_nav_reply_notification_sound',
+    Component: toggleControl({
+      stateAtom: store.replyNotificationSound,
+      localizationKey: 'com_nav_reply_notification_sound',
+      switchId: 'replyNotificationSound',
+      hoverCardText: 'com_nav_info_reply_notification_sound',
+      /* Browsers only let an audio output open behind a user gesture, and alerts fire while
+         the tab is unfocused; this click is the gesture that unlocks it. */
+      onCheckedChange: (value) => {
+        if (value) {
+          unlockReplyNotificationSound();
+        }
+      },
+    }),
   },
   // General · Accessibility
   {

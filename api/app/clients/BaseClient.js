@@ -1265,6 +1265,11 @@ class BaseClient {
       endpointType: options.endpointType,
       ...endpointOptions,
     };
+
+    /** Drives the unseen-reply indicator; only assistant replies count, never the user's own turn. */
+    if (message.isCreatedByUser === false && reqCtx.isTemporary !== true) {
+      fieldsToKeep.lastResponseAt = new Date();
+    }
     const conversationCreatedAt = options?.req?.conversationCreatedAt;
     const createdAtOnInsert =
       conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;

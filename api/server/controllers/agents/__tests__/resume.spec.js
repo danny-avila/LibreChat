@@ -93,6 +93,7 @@ const mockGetRoleByName = jest.fn();
 const mockCheckAccess = jest.fn();
 const mockCheckPermission = jest.fn();
 const mockDecryptMetadata = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockDisposeClient = jest.fn();
 const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
@@ -171,6 +172,7 @@ jest.mock('~/models', () => ({
     mockMarkAgentEventActorDetachedActionRunning(...args),
   settleAgentEventActorDetachedAction: (...args) =>
     mockSettleAgentEventActorDetachedAction(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({

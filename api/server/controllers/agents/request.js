@@ -71,6 +71,7 @@ const {
   settleAgentEventActorDetachedAction,
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
+  stampConvoLastResponse,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
@@ -2753,6 +2754,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
         await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
+
+        /* Only the turns BaseClient did not write a completed response for. An ordinary
+           completion was already stamped inside `saveMessageToDatabase`, and that stamp is
+           what the conversation snapshot in the final event carries; stamping again here
+           would leave the client acknowledging a value the server had already moved past,
+           so a reply read at the bottom would keep its dot. Best-effort either way: a missed
+           stamp must not fail the final publication. */
+        if (responseIsUnfinished && reqCtx.isTemporary !== true) {
+          try {
+            await stampConvoLastResponse(reqCtx.userId, response.conversationId);
+          } catch (error) {
+            logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
+          }
+        }
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel

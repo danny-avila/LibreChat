@@ -1,0 +1,233 @@
+import React from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { InfiniteData } from '@tanstack/react-query';
+import type { ConversationCursorData } from '~/utils/convos';
+import { isConversationUnseen, updateConvoInAllQueries } from '~/utils';
+import { useMarkConversationSeenMutation } from '../mutations';
+
+const mockMarkSeen = jest.fn();
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      markConversationSeen: (...args: unknown[]) => mockMarkSeen(...args),
+    },
+  };
+});
+
+const CONVO_ID = 'convo-mark';
+const listKey = [QueryKeys.allConversations, { isArchived: false }];
+const RESPONDED_AT = '2026-08-16T10:00:00.000Z';
+const SEEN_AT = '2026-08-16T09:00:00.000Z';
+
+/** Stands in for a list refetch committing whatever the server last told it. */
+function seedList(queryClient: QueryClient, lastResponseAt = RESPONDED_AT, lastSeenAt?: string) {
+  queryClient.setQueryData<InfiniteData<ConversationCursorData>>(listKey, {
+    pages: [
+      {
+        conversations: [
+          {
+            conversationId: CONVO_ID,
+            title: 'Marked',
+            endpoint: EModelEndpoint.openAI,
+            createdAt: SEEN_AT,
+            updatedAt: SEEN_AT,
+            lastResponseAt,
+            lastSeenAt,
+          },
+        ],
+        nextCursor: null,
+      },
+    ],
+    pageParams: [null],
+  });
+}
+
+function setup(lastSeenAt?: string) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seedList(queryClient, RESPONDED_AT, lastSeenAt);
+
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+
+  const view = renderHook(() => useMarkConversationSeenMutation(), { wrapper });
+  const cached = () =>
+    queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages[0]
+      .conversations[0];
+
+  return { ...view, cached, queryClient };
+}
+
+describe('useMarkConversationSeenMutation', () => {
+  beforeEach(() => {
+    mockMarkSeen.mockReset();
+  });
+
+  it('optimistically marks the conversation seen while the request is in flight', async () => {
+    mockMarkSeen.mockReturnValue(new Promise(() => undefined));
+    const { result, cached } = setup();
+
+    await act(async () => {
+      result.current.mutate({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT });
+    });
+
+    expect(cached()?.lastSeenAt).toBeDefined();
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      lastResponseAt: RESPONDED_AT,
+    });
+  });
+
+  it('acknowledges the observed reply rather than the browser clock', async () => {
+    /* A clock behind the server would leave the row unseen, and the cache write feeding the
+       seen triggers would restart the mutation on every pass. */
+    mockMarkSeen.mockReturnValue(new Promise(() => undefined));
+    const { result, cached } = setup();
+
+    await act(async () => {
+      result.current.mutate({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT });
+    });
+
+    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
+    expect(isConversationUnseen(cached())).toBe(false);
+  });
+
+  it('falls back to the cached reply stamp when the caller names none', async () => {
+    mockMarkSeen.mockReturnValue(new Promise(() => undefined));
+    const { result, cached } = setup();
+
+    await act(async () => {
+      result.current.mutate({ conversationId: CONVO_ID });
+    });
+
+    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
+  });
+
+  it('re-applies the acknowledgement when a refetch lands on top of it', async () => {
+    /* A list refetch already in flight can have read the old catch-up before the write and
+       commit afterwards, putting the dot back for a reply the server did accept. */
+    const request = deferred();
+    mockMarkSeen.mockReturnValue(request.promise);
+    const { result, cached, queryClient } = setup();
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+      await flush();
+      seedList(queryClient);
+      request.resolve({ modified: true });
+      await pending;
+    });
+
+    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
+    expect(isConversationUnseen(cached())).toBe(false);
+  });
+
+  it('cancels list fetches already reading the old catch-up', async () => {
+    /* One of them can deliver after the acknowledgement has settled and put the stale value
+       back, and the caller's attempt guard would not send it again. */
+    const request = deferred();
+    mockMarkSeen.mockReturnValue(request.promise);
+    const { result, queryClient } = setup(SEEN_AT);
+    const cancel = jest.spyOn(queryClient, 'cancelQueries');
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+      await flush();
+      request.resolve({ modified: true });
+      await pending;
+    });
+
+    expect(cancel).toHaveBeenCalledWith([QueryKeys.allConversations]);
+    expect(cancel).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+  });
+
+  it('restores the real state when the server declines the observed reply', async () => {
+    /* A newer reply landed mid-flight, so the acknowledgement did not apply and the row is
+       genuinely still unseen. */
+    mockMarkSeen.mockResolvedValue({ modified: false });
+    const { result, cached } = setup(SEEN_AT);
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+    });
+
+    await waitFor(() => expect(cached()?.lastSeenAt).toBe(SEEN_AT));
+  });
+
+  it('does not undo a newer acknowledgement when an older request fails last', async () => {
+    /* Same ordering hazard as the success path: reply A's request can fail after reply B has
+       already been acknowledged, and an unconditional rollback would take B with it. */
+    const NEWER_RESPONDED_AT = '2026-08-16T10:05:00.000Z';
+    const request = deferred();
+    mockMarkSeen.mockReturnValue(request.promise);
+    const { result, cached, queryClient } = setup(SEEN_AT);
+
+    await act(async () => {
+      const stale = result.current
+        .mutateAsync({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT })
+        .catch(() => undefined);
+      await flush();
+      seedList(queryClient, NEWER_RESPONDED_AT);
+      updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
+        ...convo,
+        lastSeenAt: NEWER_RESPONDED_AT,
+      }));
+      request.reject(new Error('network down'));
+      await stale;
+    });
+
+    expect(cached()?.lastSeenAt).toBe(NEWER_RESPONDED_AT);
+  });
+
+  it('restores the previous catch-up state when the request fails', async () => {
+    mockMarkSeen.mockRejectedValue(new Error('network down'));
+    const { result, cached } = setup(SEEN_AT);
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: CONVO_ID }).catch(() => undefined);
+    });
+
+    /* Restoring the old value re-arms the seen triggers, which gate on the cache. */
+    await waitFor(() => expect(cached()?.lastSeenAt).toBe(SEEN_AT));
+  });
+
+  it('restores never-seen when a first catch-up fails', async () => {
+    mockMarkSeen.mockRejectedValue(new Error('network down'));
+    const { result, cached } = setup();
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: CONVO_ID }).catch(() => undefined);
+    });
+
+    await waitFor(() => expect(cached()?.lastSeenAt).toBeUndefined());
+  });
+});
+
+/** Lets a test place work between the optimistic pass and the response callback. */
+function deferred() {
+  let resolve!: (value: unknown) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  /* Swallowed here so a rejection scheduled for the mutation does not surface as unhandled. */
+  promise.catch(() => undefined);
+  return { promise, resolve, reject };
+}
+
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));

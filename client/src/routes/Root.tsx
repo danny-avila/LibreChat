@@ -3,6 +3,18 @@ import { useRecoilValue } from 'recoil';
 import { Outlet } from 'react-router-dom';
 import { useMediaQuery } from '@librechat/client';
 import {
+  useFileMap,
+  useAgentsMap,
+  useAuthContext,
+  useReplyAlerts,
+  useUnseenBadge,
+  useReplyWatcher,
+  useSearchEnabled,
+  useCatalogWarmup,
+  useAssistantsMap,
+  useUnseenConversations,
+} from '~/hooks';
+import {
   UnifiedSidebar,
   SIDEBAR_TRANSITION,
   MOBILE_DRAWER_WIDTH_VAR,
@@ -17,14 +29,6 @@ import {
   SetConvoProvider,
   FileMapContext,
 } from '~/Providers';
-import {
-  useSearchEnabled,
-  useAssistantsMap,
-  useAuthContext,
-  useCatalogWarmup,
-  useAgentsMap,
-  useFileMap,
-} from '~/hooks';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
@@ -38,6 +42,15 @@ import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
+
+/** Isolates the unseen-reply subscription so its updates re-render only this node, not `Root`. */
+function ReplyNotifications() {
+  const unseen = useUnseenConversations();
+  useReplyWatcher();
+  useUnseenBadge(unseen?.length ?? 0);
+  useReplyAlerts(unseen);
+  return null;
+}
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -196,6 +209,7 @@ export default function Root() {
               </div>
             </PromptGroupsProvider>
             <KeyboardShortcutsProvider />
+            <ReplyNotifications />
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal
