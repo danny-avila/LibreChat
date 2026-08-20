@@ -63,7 +63,8 @@ function Footer({ className, startupConfig }: FooterProps) {
               <a
                 className="text-text-secondary underline"
                 href={href}
-                rel="noreferrer"
+                target="_blank"
+                rel="noopener noreferrer"
                 {...otherProps}
               >
                 {children}
