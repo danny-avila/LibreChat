@@ -1,4 +1,4 @@
-import { RerankerTypes, SafeSearchTypes, normalizeSearxngEngines } from 'librechat-data-provider';
+import { SafeSearchTypes, normalizeSearxngEngines } from 'librechat-data-provider';
 import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
