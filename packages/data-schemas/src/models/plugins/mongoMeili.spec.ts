@@ -574,6 +574,48 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(true);
   });
 
+  test('retries cleanup when Meili deletion succeeds before the Mongo flag update fails', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed child conversation',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    jest
+      .spyOn(conversationModel, 'updateMany')
+      .mockRejectedValueOnce(new Error('Mongo acknowledgment failed'));
+
+    await conversationModel.syncWithMeili();
+    expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
+      true,
+    );
+
+    mockGetDocuments.mockResolvedValue({ results: [] });
+    await conversationModel.syncWithMeili();
+    expect(mockDeleteDocuments).toHaveBeenCalledTimes(2);
+    expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
+      false,
+    );
+  });
+
   test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
     const conversationModel = createConversationModel(
       mongoose,

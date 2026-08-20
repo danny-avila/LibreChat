@@ -385,6 +385,47 @@ const createMeiliMongooseModel = ({
       delayMs: number,
     ): Promise<void> {
       try {
+        const excludedIndexedQuery = getExcludedIndexedQuery();
+        if (excludedIndexedQuery != null) {
+          let hasPendingExcludedDocuments = true;
+          while (hasPendingExcludedDocuments) {
+            const pendingExcludedDocuments = await this.find(excludedIndexedQuery)
+              .select(primaryKey)
+              .limit(batchSize)
+              .lean();
+            if (pendingExcludedDocuments.length === 0) {
+              hasPendingExcludedDocuments = false;
+              break;
+            }
+
+            const pendingIds = pendingExcludedDocuments.map(
+              (doc: Record<string, unknown>) => doc[primaryKey],
+            );
+            const deletion = await index.deleteDocuments(pendingIds.map(String));
+            const deletionTask = await client.waitForTask(deletion.taskUid, {
+              timeOutMs: 10000,
+              intervalMs: 100,
+            });
+            if (deletionTask.status !== 'succeeded') {
+              throw new Error(
+                `Meili cleanup task ${deletion.taskUid} ended with ${deletionTask.status}`,
+              );
+            }
+            await this.updateMany(
+              { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
+              { $set: { _meiliIndex: false } },
+              { timestamps: false },
+            );
+
+            if (pendingExcludedDocuments.length < batchSize) {
+              break;
+            }
+            if (delayMs > 0) {
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+          }
+        }
+
         let offset = 0;
         let moreDocuments = true;
 
