@@ -376,6 +376,20 @@ describe('createScheduleWithSlot (atomic per-user cap)', () => {
     expect(c).not.toBe('limit');
     expect(await methods.countSchedulesByUser(user)).toBe(2);
   });
+
+  it('counts legacy schedules without slots against the cap', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await methods.createSchedule(scheduleData({ user }));
+    await methods.createSchedule(scheduleData({ user }));
+
+    const results = await Promise.all(
+      Array.from({ length: 3 }, () => methods.createScheduleWithSlot(scheduleData({ user }), 3)),
+    );
+
+    expect(results.filter((result) => result !== 'limit')).toHaveLength(1);
+    expect(results.filter((result) => result === 'limit')).toHaveLength(2);
+    expect(await methods.countSchedulesByUser(user)).toBe(3);
+  });
 });
 
 describe('recordRunOutcome', () => {
@@ -2416,6 +2430,31 @@ describe('reconciliation rotates the paused window', () => {
     expect(first.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(false);
 
     // Examining the batch rotates it to the back.
+    await methods.markRunsReconciled(first);
+
+    const second = await methods.getRunsForReconciliation(olderThan, 100);
+    expect(second.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(true);
+  });
+});
+
+describe('reconciliation rotates the started window', () => {
+  it('serves a started row behind a full window once the leaders have been examined', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const base = Date.parse('2026-07-01T00:00:00Z');
+    const olderThan = new Date(base + 10_000_000);
+    const runs = Array.from({ length: 101 }, (_, index) => ({
+      scheduleId: `started_${index}`,
+      user,
+      scheduledFor: new Date(base + index * 60_000),
+      firedAt: new Date(base + index * 60_000),
+      status: 'started' as const,
+    }));
+    await ScheduleRun.insertMany(runs);
+
+    const first = await methods.getRunsForReconciliation(olderThan, 100);
+    const queuedAt = runs[100].scheduledFor;
+    expect(first.some((run) => run.scheduledFor?.getTime() === queuedAt.getTime())).toBe(false);
+
     await methods.markRunsReconciled(first);
 
     const second = await methods.getRunsForReconciliation(olderThan, 100);

@@ -10,6 +10,7 @@ import {
   Button,
   FieldMessage,
   Spinner,
+  Textarea,
   Dropdown,
   OGDialog,
   ControlCombobox,
@@ -30,7 +31,6 @@ import {
   useUpdateScheduleMutation,
 } from '~/data-provider';
 import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
-import { VariableEditor } from '~/components/Variables';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -404,21 +404,24 @@ export default function ScheduleDialog({
               rules={{ required: localize('com_ui_field_required') }}
               render={({ field }) => (
                 <div className="space-y-2">
-                  <VariableEditor
+                  <Label
+                    htmlFor="schedule-prompt"
+                    className="text-sm font-medium text-text-primary"
+                  >
+                    {localize('com_ui_prompt')}
+                  </Label>
+                  <Textarea
                     id="schedule-prompt"
-                    label={localize('com_ui_prompt')}
                     value={field.value}
-                    onChange={field.onChange}
+                    onChange={(event) => field.onChange(event.target.value)}
                     onBlur={field.onBlur}
-                    inputRef={field.ref}
+                    ref={field.ref}
                     placeholder={localize('com_ui_schedule_prompt_placeholder')}
-                    className="min-h-[120px] resize-none bg-transparent"
-                    labelClassName="text-sm font-medium text-text-primary"
+                    className="min-h-[120px] w-full resize-none bg-transparent"
                     rows={4}
                     required={true}
-                    invalid={errors.prompt != null}
-                    describedBy="schedule-prompt-message"
-                    portal={false}
+                    aria-invalid={errors.prompt != null}
+                    aria-describedby="schedule-prompt-message"
                   />
                   <FieldMessage id="schedule-prompt-message" message={errors.prompt?.message} />
                 </div>
