@@ -59,6 +59,8 @@ const mockUpdateDocuments = jest.fn();
 const mockDeleteDocument = jest.fn();
 const mockDeleteDocuments = jest.fn();
 const mockGetDocument = jest.fn();
+const mockGetDocuments = jest.fn().mockResolvedValue({ results: [] });
+const mockWaitForTask = jest.fn().mockResolvedValue({ status: 'succeeded' });
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
   updateSettings: jest.fn(),
@@ -68,13 +70,14 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocument: mockDeleteDocument,
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
-  getDocuments: jest.fn().mockReturnValue({ results: [] }),
+  getDocuments: mockGetDocuments,
 });
 jest.mock('meilisearch', () => {
   return {
     MeiliSearch: jest.fn().mockImplementation(() => {
       return {
         index: mockIndex,
+        waitForTask: mockWaitForTask,
       };
     }),
   };
@@ -103,8 +106,10 @@ describe('Meilisearch Mongoose plugin', () => {
     mockAddDocumentsInBatches.mockClear();
     mockUpdateDocuments.mockClear();
     mockDeleteDocument.mockClear();
-    mockDeleteDocuments.mockClear();
+    mockDeleteDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
     mockGetDocument.mockClear();
+    mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
+    mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
   });
 
   afterAll(async () => {
@@ -164,6 +169,121 @@ describe('Meilisearch Mongoose plugin', () => {
       expiredAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     expect(mockAddDocuments).toHaveBeenCalled();
+  });
+
+  test('saving a subagent thread does NOT index its conversation or messages', async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const user = new mongoose.Types.ObjectId().toString();
+
+    await createConversationModel(mongoose).create({
+      conversationId,
+      user,
+      title: 'Subagent thread',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    });
+    await createMessageModel(mongoose).create({
+      messageId: new mongoose.Types.ObjectId().toString(),
+      conversationId,
+      user,
+      isCreatedByUser: true,
+      text: 'Private child transcript',
+      subagentTask: {
+        attemptKey: 'attempt-key',
+        status: 'running',
+      },
+    });
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('findOneAndUpdate loads the private child marker before deciding to index', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    const savedMessage = await messageModel.findOneAndUpdate(
+      { messageId, user: 'user-123' },
+      {
+        messageId,
+        conversationId: new mongoose.Types.ObjectId().toString(),
+        user: 'user-123',
+        isCreatedByUser: true,
+        text: 'Private child transcript',
+        subagentTask: {
+          attemptKey: 'attempt-key',
+          status: 'running',
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(savedMessage?.subagentTask).toBeUndefined();
+  });
+
+  test('findOneAndUpdate hides its injected private marker from lean results', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    const savedMessage = await messageModel
+      .findOneAndUpdate(
+        { messageId, user: 'user-lean' },
+        {
+          messageId,
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: 'user-lean',
+          isCreatedByUser: true,
+          text: 'Private child transcript',
+          subagentTask: {
+            attemptKey: 'attempt-key',
+            status: 'running',
+          },
+        },
+        { upsert: true, new: true, projection: { unfinished: 1 } },
+      )
+      .lean();
+
+    expect(savedMessage).not.toBeNull();
+    expect(savedMessage?.subagentTask).toBeUndefined();
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('findOneAndUpdate preserves a private marker explicitly projected by a lean caller', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: 'user-explicit',
+      isCreatedByUser: true,
+      text: 'Completed child result',
+      subagentTask: {
+        attemptKey: 'attempt-key',
+        status: 'completed',
+      },
+    });
+
+    const savedMessage = await messageModel
+      .findOneAndUpdate(
+        { messageId, user: 'user-explicit' },
+        { $set: { 'subagentTask.resultClaim': { kind: 'manual', claimId: 'claim-1' } } },
+        { new: true, projection: { messageId: 1, subagentTask: 1 } },
+      )
+      .lean();
+
+    expect(savedMessage?.subagentTask).toMatchObject({
+      status: 'completed',
+      resultClaim: { kind: 'manual', claimId: 'claim-1' },
+    });
+    expect(mockAddDocuments).not.toHaveBeenCalled();
   });
 
   test('saving expired retained non-temporary conversation does NOT index w/ meilisearch', async () => {
@@ -379,6 +499,123 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliIndex).toBe(false);
   });
 
+  test('sync removes an existing child conversation from Meili and clears its index flag', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed child conversation',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockGetDocuments.mockResolvedValueOnce({ results: [{ conversationId }] });
+
+    const progress = await conversationModel.getSyncProgress();
+    await conversationModel.syncWithMeili();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
+    expect(mockWaitForTask).toHaveBeenCalledWith(1, {
+      timeOutMs: 10000,
+      intervalMs: 100,
+    });
+    expect(storedDoc?._meiliIndex).toBeUndefined();
+  });
+
+  test('keeps cleanup pending when Meili fails the asynchronous deletion task', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed child conversation',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockGetDocuments.mockResolvedValueOnce({ results: [{ conversationId }] });
+    mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
+
+    await conversationModel.syncWithMeili();
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([conversationId]);
+    expect(storedDoc?._meiliIndex).toBe(true);
+  });
+
+  test('retries cleanup when Meili deletion succeeds before the Mongo flag update fails', async () => {
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+    await conversationModel.deleteMany({});
+    const conversationId = new mongoose.Types.ObjectId().toString();
+
+    await conversationModel.collection.insertOne({
+      conversationId,
+      user: new mongoose.Types.ObjectId().toString(),
+      title: 'Indexed child conversation',
+      endpoint: EModelEndpoint.agents,
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentMessageId: 'parent-message',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'agent-child',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+      _meiliIndex: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    jest
+      .spyOn(conversationModel, 'updateMany')
+      .mockRejectedValueOnce(new Error('Mongo acknowledgment failed'));
+
+    await conversationModel.syncWithMeili();
+    expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
+      true,
+    );
+
+    mockGetDocuments.mockResolvedValue({ results: [] });
+    await conversationModel.syncWithMeili();
+    expect(mockDeleteDocuments).toHaveBeenCalledTimes(2);
+    expect(
+      (await conversationModel.collection.findOne({ conversationId }))?._meiliIndex,
+    ).toBeUndefined();
+  });
+
   test('saving hydrated legacy temporary conversations without isTemporary does NOT index', async () => {
     const conversationModel = createConversationModel(
       mongoose,
@@ -466,6 +703,62 @@ describe('Meilisearch Mongoose plugin', () => {
 
     expect(mockAddDocumentsInBatches).not.toHaveBeenCalled();
     expect(storedDoc?._meiliIndex).toBe(false);
+  });
+
+  test('sync removes an existing child message even when its index flag is false', async () => {
+    const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+    await messageModel.deleteMany({});
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId().toString(),
+      isCreatedByUser: true,
+      text: 'Indexed child transcript',
+      subagentTask: {
+        attemptKey: 'attempt-key',
+        status: 'completed',
+      },
+      _meiliIndex: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    mockGetDocuments.mockResolvedValueOnce({ results: [{ messageId }] });
+
+    const progress = await messageModel.getSyncProgress();
+    await messageModel.syncWithMeili();
+    const storedDoc = await messageModel.collection.findOne({ messageId });
+
+    expect(progress).toMatchObject({ pendingCleanup: 1, isComplete: false });
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([messageId]);
+    expect(storedDoc?._meiliIndex).toBeUndefined();
+  });
+
+  test('defines partial indexes for pending excluded-document cleanup', () => {
+    const conversationIndexes = createConversationModel(mongoose).schema.indexes();
+    const messageIndexes = createMessageModel(mongoose).schema.indexes();
+
+    expect(conversationIndexes).toContainEqual([
+      { _meiliIndex: 1, conversationId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_cleanup',
+        partialFilterExpression: {
+          subagentThread: { $exists: true },
+          _meiliIndex: { $exists: true },
+        },
+      }),
+    ]);
+    expect(messageIndexes).toContainEqual([
+      { _meiliIndex: 1, messageId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_cleanup',
+        partialFilterExpression: {
+          subagentTask: { $exists: true },
+          _meiliIndex: { $exists: true },
+        },
+      }),
+    ]);
   });
 
   test('sync w/ meili treats null isTemporary with no expiration like missing legacy fields', async () => {

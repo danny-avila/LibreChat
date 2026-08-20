@@ -1392,6 +1392,52 @@ describe('Conversation Operations', () => {
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
+
+    it('hides durable subagent threads from conversation lists and search results', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const messageId = 'message-1';
+      const normalConversation = await Conversation.create({
+        conversationId: parentId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Parent conversation',
+      });
+      await Conversation.create({
+        conversationId: childId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Subagent: implementation',
+        subagentThread: {
+          rootConversationId: parentId,
+          parentConversationId: parentId,
+          parentMessageId: messageId,
+          parentToolCallId: 'tool-1',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest.fn().mockResolvedValue({
+          hits: [{ conversationId: parentId }, { conversationId: childId }],
+        }),
+      });
+
+      const listed = await getConvosByCursor('user123', { search: 'implementation' });
+      const queried = await getConvosQueried('user123', [
+        { conversationId: parentId },
+        { conversationId: childId },
+      ]);
+
+      expect(listed.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.convoMap[childId]).toBeUndefined();
+    });
   });
 
   describe('searchConversation', () => {
@@ -1832,21 +1878,43 @@ describe('Conversation Operations', () => {
       const first = uuidv4();
       const second = uuidv4();
       const otherUsers = uuidv4();
+      const childThread = uuidv4();
       await Conversation.create([
         { conversationId: first, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: second, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: otherUsers, user: 'user456', endpoint: EModelEndpoint.openAI },
+        {
+          conversationId: childThread,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: first,
+            parentConversationId: first,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool-call',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
       ]);
 
       const result = await archiveAllConvos('user123');
 
       expect(result.archivedCount).toBe(2);
-      const archived = await Conversation.find({ user: 'user123' }).lean<IConversation[]>();
+      const archived = await Conversation.find({
+        user: 'user123',
+        conversationId: { $in: [first, second] },
+      }).lean<IConversation[]>();
       expect(archived.every((convo) => convo.isArchived === true)).toBe(true);
       const untouched = await Conversation.findOne({
         conversationId: otherUsers,
       }).lean<IConversation>();
       expect(untouched?.isArchived).not.toBe(true);
+      const child = await Conversation.findOne({
+        conversationId: childThread,
+      }).lean<IConversation>();
+      expect(child?.isArchived).not.toBe(true);
     });
 
     it('archives large snapshots in bounded batches', async () => {

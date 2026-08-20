@@ -220,6 +220,11 @@ export function createConversationMethods(
     return buildRetentionVisibilityFilter<IConversation>();
   }
 
+  /** Child threads are durable execution records, not user-navigable conversations. */
+  function getHumanConversationFilter(): FilterQuery<IConversation> {
+    return { subagentThread: { $exists: false } } as FilterQuery<IConversation>;
+  }
+
   /**
    * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
    */
@@ -1044,6 +1049,7 @@ export function createConversationMethods(
     }
 
     filters.push(getVisibleConversationRetentionFilter());
+    filters.push(getHumanConversationFilter());
 
     if (search) {
       try {
@@ -1233,10 +1239,12 @@ export function createConversationMethods(
       const conversationIds = convoIds.map((convo) => convo.conversationId);
 
       const results = await Conversation.find({
-        user,
-        conversationId: { $in: conversationIds },
-        ...getVisibleConversationRetentionFilter(),
-      }).lean<IConversation[]>();
+        $and: [
+          { user, conversationId: { $in: conversationIds } },
+          getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
+        ],
+      } as FilterQuery<IConversation>).lean<IConversation[]>();
 
       results.sort(
         (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
@@ -1445,6 +1453,7 @@ export function createConversationMethods(
         $and: [
           { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
           getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
         ],
       } as FilterQuery<IConversation>;
 
