@@ -19,9 +19,10 @@ export type FilesDraft = {
   /** Paste-generated attachment ids, kept after `pendingPastes` is consumed so provenance
    * survives reloads without holding the (much larger) paste text indefinitely. */
   pastedTextIds?: string[];
-  /** The browser tab that last wrote an unsaved-chat draft. The key itself is shared by every
-   * tab's default composer, so destructive actions read this to leave other tabs' composers
-   * alone. Undefined on per-conversation drafts and on records older than the stamp. */
+  /** The browser tab that last wrote the draft. Every draft key is reachable from more than
+   * one tab (the unsaved-chat key by every default composer, a conversation key by every tab
+   * viewing it), so destructive actions read this to leave other tabs' composers alone.
+   * Undefined on records older than the stamp. */
   tabId?: string;
 };
 
@@ -458,9 +459,11 @@ export const addPastedTextDraftFile = ({ id, fileId }: { id: string; fileId: str
 export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
-  /** Only unsaved-chat drafts are shared across tabs; stamping those lets a destructive
-   * reader tell its own record from another live composer's. */
-  const tabId = isNewConversationDraftId(id) ? getBrowserTabId() : undefined;
+  /** Every draft key is reachable from more than one tab: the unsaved-chat key by every
+   * default composer, a conversation key by every tab viewing that conversation. Stamping
+   * the writing tab lets a destructive reader tell its own record from another live
+   * composer's. */
+  const tabId = getBrowserTabId() || undefined;
   filesDraftCache = null;
   if (
     draft.fileIds.length === 0 &&

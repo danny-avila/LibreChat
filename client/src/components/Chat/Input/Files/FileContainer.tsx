@@ -68,6 +68,11 @@ const FileContainer = ({
   );
   const focusRing =
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-1 focus-visible:ring-offset-surface-primary';
+  /** The full-bleed target sits inside the surface's `overflow-hidden`, so an offset ring
+   * would be clipped away entirely; the inset ring draws within the target's own box and the
+   * matching radius keeps it inside the surface's rounded corners. */
+  const insetFocusRing =
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary';
 
   const details = (
     <div className="w-56 p-1.5">
@@ -129,7 +134,11 @@ const FileContainer = ({
             type="button"
             onClick={onClick}
             aria-label={ariaLabel ?? visibleName}
-            className={cn('absolute inset-0 z-0', interactive && 'cursor-pointer', focusRing)}
+            className={cn(
+              'absolute inset-0 z-0 rounded-2xl',
+              interactive && 'cursor-pointer',
+              insetFocusRing,
+            )}
           />
           <div className="pointer-events-none relative">{details}</div>
         </div>

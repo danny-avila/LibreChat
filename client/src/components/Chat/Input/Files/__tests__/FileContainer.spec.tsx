@@ -161,6 +161,18 @@ describe('FileContainer subtitle action', () => {
     );
   });
 
+  it('keeps the full-chip focus indicator inside the clipped surface', () => {
+    render(
+      <FileContainer file={baseFile()} onClick={jest.fn()} subtitleAction={subtitleAction()} />,
+    );
+
+    /** The surface applies `overflow-hidden`, so an offset ring on the full-bleed button would
+     * be clipped away entirely; the treatment draws inside the target instead. */
+    const chipControl = screen.getByRole('button', { name: 'report.pdf' });
+    expect(chipControl.className).toContain('focus-visible:ring-inset');
+    expect(chipControl.className).not.toContain('ring-offset');
+  });
+
   it('styles the action exactly like the subtitle it replaces', () => {
     render(
       <FileContainer file={baseFile()} onClick={jest.fn()} subtitleAction={subtitleAction()} />,

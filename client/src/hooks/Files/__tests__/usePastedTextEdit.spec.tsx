@@ -32,6 +32,7 @@ const mockState = {
   conversation: { conversationId: 'conversation-a', endpoint: 'openAI' } as TConversation,
   draftToken: Symbol('new-conversation-draft'),
   saveDrafts: true,
+  tabId: 'this-tab',
   fileList: [] as TFile[],
   filesDraft: { fileIds: [], pendingPastes: {}, pastedTextIds: [] } as FilesDraft,
 };
@@ -88,6 +89,7 @@ jest.mock('~/utils', () => ({
   getComposerDraftId: (index: number, conversationId: string | null) =>
     `${conversationId ?? 'new'}:${index}`,
   getFilesDraftCached: () => mockState.filesDraft,
+  getBrowserTabId: () => mockState.tabId,
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
@@ -123,6 +125,7 @@ describe('usePastedTextEdit', () => {
     } as TConversation;
     mockState.draftToken = Symbol('new-conversation-draft');
     mockState.saveDrafts = true;
+    mockState.tabId = 'this-tab';
     mockState.fileList = [];
     mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: [] };
     mockRouteFiles.mockImplementation(
@@ -238,6 +241,36 @@ describe('usePastedTextEdit', () => {
         }),
       ],
     });
+  });
+
+  it('spares a restored paste whose draft another tab wrote last', async () => {
+    /** Two tabs can restore the same conversation draft; the deleting composer only owns the
+     * claim when the draft carries its own tab stamp (or predates stamping). */
+    mockState.filesDraft = {
+      fileIds: [],
+      pendingPastes: {},
+      pastedTextIds: ['pasted-file'],
+      tabId: 'other-tab',
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
   it('spares a sent paste re-attached from the library', async () => {

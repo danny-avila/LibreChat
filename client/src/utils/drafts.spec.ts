@@ -324,10 +324,10 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(getBrowserTabId());
   });
 
-  it('leaves conversation drafts unattributed: their key is not shared across tabs', () => {
+  it('stamps conversation drafts too: their key is shared by every tab viewing the chat', () => {
     setFilesDraft('convo-1', { fileIds: ['file-1'], pendingPastes: {} });
 
-    expect(getFilesDraft('convo-1').tabId).toBeUndefined();
+    expect(getFilesDraft('convo-1').tabId).toBe(getBrowserTabId());
   });
 
   it('restamps on every write, so a draft always names its current owner', () => {

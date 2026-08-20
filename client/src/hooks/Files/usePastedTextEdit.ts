@@ -13,6 +13,7 @@ import type { ExtendedFile, FileSetter } from '~/common';
 import {
   addPastedTextDraftFile,
   forceResize,
+  getBrowserTabId,
   getComposerDraftId,
   getFilesDraftCached,
   markPastedTextFile,
@@ -179,9 +180,10 @@ export default function usePastedTextEdit({
 
   /** Removes the chip locally and schedules the upload's deletion. A paste restored from a
    * draft carries `attached: true`, which makes `deleteFile` keep the server record because a
-   * restored file is normally shared. Only a paste the composer's own draft claims is deleted
+   * restored file is normally shared. Only a paste this composer's own draft claims is deleted
    * explicitly: the session registry also remembers ids of pastes that were already sent and
-   * re-attached from the library, and those files are shared with the messages carrying them. */
+   * re-attached from the library, and a draft claim is only this tab's when the draft's stamp
+   * says so, because another tab can restore the very same record. */
   const detach = useCallback(
     (file: ExtendedFile) => {
       const restored = file.attached === true;
@@ -189,11 +191,13 @@ export default function usePastedTextEdit({
       if (!restored || file.progress < 1) {
         return;
       }
-      const draftPasteIds =
-        getFilesDraftCached(getComposerDraftId(index, conversationIdRef.current, isSubmitting))
-          .pastedTextIds ?? [];
+      const draft = getFilesDraftCached(
+        getComposerDraftId(index, conversationIdRef.current, isSubmitting),
+      );
+      const claimed =
+        draft.tabId == null || draft.tabId === getBrowserTabId() ? (draft.pastedTextIds ?? []) : [];
       const draftOwned = [file.file_id, file.temp_file_id].some(
-        (id) => id != null && id !== '' && draftPasteIds.includes(id),
+        (id) => id != null && id !== '' && claimed.includes(id),
       );
       if (draftOwned) {
         mutateAsync({
