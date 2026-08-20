@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Button, FilterInput, OGDialogTrigger, TooltipAnchor } from '@librechat/client';
 import {
@@ -20,14 +21,17 @@ import store from '~/store';
 
 export default function MCPBuilderPanel() {
   const localize = useLocalize();
-  /** The panel stays mounted while the sidebar is hidden, so only a visible
-   * panel releases its catalog ahead of the background warmup schedule */
+  const location = useLocation();
+  /** The panel stays mounted while the sidebar is hidden (collapsed, mobile
+   * drawer, or the insights route collapsing it), so only a visible panel
+   * releases its catalog ahead of the background warmup schedule */
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
   useEffect(() => {
-    if (sidebarExpanded) {
+    if (panelVisible) {
       activateCatalog('mcpServers');
     }
-  }, [sidebarExpanded]);
+  }, [panelVisible]);
   const { user } = useAuthContext();
   const { availableMCPServers, isLoading, getServerStatusIconProps, getConfigDialogProps } =
     useMCPServerManager();

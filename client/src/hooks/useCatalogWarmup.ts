@@ -74,8 +74,9 @@ function scheduleIdle(callback: () => void) {
 /**
  * Starts the one-time warmup schedule. Mounted from Root once the user is
  * authenticated; every catalog consumer below Root reads the same store.
- * Logout is SPA navigation (no reload), so it also resets the schedule for
- * the next authenticated session.
+ * Logout is SPA navigation (no reload) and can unmount Root in the same
+ * render that flips `isAuthenticated`, so both the unauthenticated branch
+ * and unmount cleanup reset the schedule for the next session.
  */
 export function useCatalogWarmup(isAuthenticated: boolean) {
   useEffect(() => {
@@ -95,6 +96,7 @@ export function useCatalogWarmup(isAuthenticated: boolean) {
         );
       });
     });
+    return () => resetCatalogWarmup();
   }, [isAuthenticated]);
 }
 

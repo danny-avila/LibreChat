@@ -185,4 +185,24 @@ describe('useCatalogWarmup', () => {
     });
     expect(readyState.prompts).toBe(true);
   });
+
+  it('resets on unmount, for logouts that tear Root down without a false render', () => {
+    const view = render(<Harness authenticated={true} />);
+    flushIdle();
+    act(() => {
+      jest.runAllTimers();
+    });
+    CATALOG_IDS.forEach((id) => expect(readyState[id]).toBe(true));
+
+    view.unmount();
+    idleCallbacks.length = 0;
+
+    render(<Harness authenticated={true} />);
+    expect(readyState).toEqual({ prompts: false, mcpServers: false, mcpTools: false });
+    flushIdle();
+    act(() => {
+      jest.advanceTimersByTime(0);
+    });
+    expect(readyState.prompts).toBe(true);
+  });
 });

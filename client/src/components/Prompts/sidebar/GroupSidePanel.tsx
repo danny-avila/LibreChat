@@ -35,14 +35,17 @@ export default function GroupSidePanel({
 
   /** A collapsed sidebar keeps this panel mounted, so stop draining pages into it */
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  /** Mirrors UnifiedSidebar's panelExpanded: the insights route collapses the
+   * panel while the atom stays true, so visibility is atom AND route */
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
 
   /** The panel stays mounted while hidden, so only a visible panel releases
    * its catalog ahead of the background warmup schedule */
   useEffect(() => {
-    if (sidebarExpanded) {
+    if (panelVisible) {
       activateCatalog('prompts');
     }
-  }, [sidebarExpanded]);
+  }, [panelVisible]);
 
   const { containerRef } = useNavScrolling<PromptGroupListResponse>({
     nextCursor: context?.nextCursor,

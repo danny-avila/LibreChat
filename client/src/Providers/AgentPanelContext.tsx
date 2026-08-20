@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
@@ -33,15 +34,18 @@ export function useAgentPanelContext() {
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
 export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
   const localize = useLocalize();
-  /** The panel stays mounted while the sidebar is hidden, so only a visible
-   * form releases the MCP catalogs ahead of the background warmup schedule */
+  const location = useLocation();
+  /** The panel stays mounted while the sidebar is hidden (collapsed, mobile
+   * drawer, or the insights route collapsing it), so only a visible form
+   * releases the MCP catalogs ahead of the background warmup schedule */
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
   useEffect(() => {
-    if (sidebarExpanded) {
+    if (panelVisible) {
       activateCatalog('mcpServers');
       activateCatalog('mcpTools');
     }
-  }, [sidebarExpanded]);
+  }, [panelVisible]);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);
