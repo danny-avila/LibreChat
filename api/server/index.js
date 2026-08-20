@@ -33,7 +33,7 @@ const { getAppConfig } = require('./services/Config');
 const { installBklTokenLimits } = require('./middleware/bklTokenLimits');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
-const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const bklOptionalJwtAuth = require('./middleware/bklOptionalJwtAuth');
 installBklTokenLimits();
 const { seedDatabase } = require('~/models');
 const routes = require('./routes');
@@ -142,11 +142,12 @@ const startServer = async () => {
   app.use('/oauth', routes.oauth);
 
   /* BKL FastAPI proxy (forwards /bkl/* -> BKL_API_BASE_URL/*)
-     optionalJwtAuth: /bkl 는 라우터 단위 requireJwtAuth 가 없어 req.user 가
-     항상 비어 있었고, bklProxy 의 bklIdentityHeaders(req)가 X-BKL-User-Sid 를
-     만들지 못했다 (프로젝트 API 403 원인). 클라이언트가 Authorization 헤더
-     (전역 axios 기본값)를 보내면 req.user 를 채우고, 없으면 기존처럼 통과. */
-  app.use('/bkl', optionalJwtAuth, bklProxy);
+     bklOptionalJwtAuth: Authorization 헤더가 있으면 req.user 를 복원해
+     bklProxy 가 X-BKL-User-Sid 를 주입하게 한다. optionalJwtAuth 와 달리
+     헤더가 있는데 검증 실패(만료 토큰)면 401 을 돌려줘 클라이언트 전역
+     인터셉터의 토큰 갱신·재시도를 발동시킨다 — 익명 통과 시 bkl-api 의
+     403 이 "sid 없는 계정" 오류로 잘못 표시되던 문제의 수정. */
+  app.use('/bkl', bklOptionalJwtAuth, bklProxy);
   if (process.env.BKL_ADMIN_API_DISABLE !== '1' && !isEnabled(process.env.BKL_ADMIN_API_DISABLE)) {
     app.use('/admin-api', bklAdmin);
     /* BKL 어드민 대시보드 정적 서빙 — 이미지에 포함 (mount-elimination).
