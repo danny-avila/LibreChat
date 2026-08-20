@@ -2076,8 +2076,9 @@ export const langfuseConfigSchema = z.object({
   privacy: z
     .object({
       mode: z.enum(['full', 'metricsOnly']).optional(),
-      /** Replacement text used for suppressed content. */
-      redactionText: z.string().min(1).max(128).optional(),
+      /** Replacement text used for suppressed content. Blank after
+       * trimming is rejected so a configured marker always exists. */
+      redactionText: z.string().trim().min(1).max(128).optional(),
     })
     .optional(),
 });

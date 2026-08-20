@@ -1405,7 +1405,29 @@ describe('configSchema langfuse', () => {
       },
     });
 
+    const whitespaceRedactionText = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        privacy: { mode: 'metricsOnly', redactionText: '   ' },
+      },
+    });
+
     expect(unknownMode.success).toBe(false);
     expect(blankRedactionText.success).toBe(false);
+    expect(whitespaceRedactionText.success).toBe(false);
+  });
+
+  it('trims Langfuse privacy redaction text before storing it', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        privacy: { mode: 'metricsOnly', redactionText: ' [private] ' },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.langfuse?.privacy?.redactionText).toBe('[private]');
+    }
   });
 });
