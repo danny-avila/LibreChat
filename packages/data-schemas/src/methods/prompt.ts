@@ -867,7 +867,15 @@ export function createPromptMethods(
     try {
       const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
       const current = await cache.get(generationKey);
-      const next = (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1;
+      /**
+       * Strictly increasing and never repeating, even when the marker itself
+       * expired out of the TTL cache: a repeated value could resurrect a
+       * pre-mutation entry that is still alive under that generation.
+       */
+      const next = Math.max(
+        Date.now(),
+        (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
+      );
       await cache.set(generationKey, next);
     } catch (error) {
       logger.warn('Failed to invalidate prompt group access cache', error);

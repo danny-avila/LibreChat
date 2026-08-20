@@ -23,6 +23,8 @@ let PromptGroup: mongoose.Model<unknown>;
 let cacheMap: Map<string, unknown>;
 let delaySets = false;
 let resolvePendingSets: Array<() => void> = [];
+let delayDeletes = false;
+let resolvePendingDeletes: Array<() => void> = [];
 
 const cacheStore: CacheStore = {
   get: async (key) => cacheMap.get(key),
@@ -34,6 +36,9 @@ const cacheStore: CacheStore = {
     cacheMap.set(key, value);
   },
   delete: async (key) => {
+    if (delayDeletes) {
+      await new Promise<void>((resolve) => resolvePendingDeletes.push(resolve));
+    }
     cacheMap.delete(key);
   },
   clear: async () => {
@@ -101,6 +106,9 @@ afterEach(async () => {
   delaySets = false;
   resolvePendingSets.forEach((resolve) => resolve());
   resolvePendingSets = [];
+  delayDeletes = false;
+  resolvePendingDeletes.forEach((resolve) => resolve());
+  resolvePendingDeletes = [];
 });
 
 describe('getPromptGroupAccessContext', () => {
@@ -247,5 +255,61 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
+  it('does not reuse an expired generation value after the marker itself expires', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+    await methods.invalidatePromptGroupAccessContext();
+    const primed = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(primed.accessibleIds)).toContain(ownGroup._id.toString());
+
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+    cacheMap.delete('access:generation');
+    await methods.invalidatePromptGroupAccessContext();
+
+    const fresh = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
+  it('does not cache access built from a stale membership while its eviction is pending', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userGroup = await methods.createGroup({
+      name: 'Editors',
+      memberIds: [userId.toString()],
+    });
+    const groupPrompt = await seedGroupAndPrompt(new mongoose.Types.ObjectId());
+    await grantView(PrincipalType.GROUP, userGroup._id, groupPrompt._id);
+
+    const before = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(before.accessibleIds)).toContain(groupPrompt._id.toString());
+
+    delayDeletes = true;
+    const removal = methods.removeMemberById(userGroup._id, userId.toString());
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+
+    delayDeletes = false;
+    resolvePendingDeletes.forEach((resolve) => resolve());
+    resolvePendingDeletes = [];
+    await removal;
+
+    const after = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(after.accessibleIds)).not.toContain(groupPrompt._id.toString());
   });
 });
