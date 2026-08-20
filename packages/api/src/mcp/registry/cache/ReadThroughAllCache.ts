@@ -69,15 +69,17 @@ export class ReadThroughAllCache<T> {
     return `${generation}::${key}`;
   }
 
-  /** Never throws: an unreadable generation degrades the next store read to a
-   *  miss, so a Redis outage stays off the request failure path. */
-  private async readGeneration(): Promise<string> {
+  /** Never throws. Returns undefined when the generation cannot be read: that
+   *  must surface as a miss, not as generation "0", which is a real first
+   *  generation whose unexpired entries could otherwise be revived by a
+   *  transient read failure. */
+  private async readGeneration(): Promise<string | undefined> {
     let generation: unknown;
     try {
       generation = await this.generationCache.get(GENERATION_KEY);
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Generation read failed:', error);
-      return '0';
+      return undefined;
     }
     return typeof generation === 'string' ? generation : '0';
   }
@@ -109,6 +111,9 @@ export class ReadThroughAllCache<T> {
       this.memo.delete(key);
     }
     const generation = await this.readGeneration();
+    if (generation == null) {
+      return undefined;
+    }
     let raw: unknown;
     try {
       raw = await this.cache.get(this.entryKey(generation, key));
@@ -155,18 +160,20 @@ export class ReadThroughAllCache<T> {
       return;
     }
     const generation = await this.readGeneration();
-    try {
-      const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
-      await this.cache.set(this.entryKey(generation, key), stored);
-    } catch (error) {
-      /** A failed store write degrades to the memo only; the caller's result
-       *  is already computed and must still be served. */
-      logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
-    }
-    /** Same recheck as get(): skip the memo when an invalidation landed while
-     *  this write was in flight, so the next read recomputes. */
-    if ((await this.readGeneration()) !== generation) {
-      return;
+    if (generation != null) {
+      try {
+        const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
+        await this.cache.set(this.entryKey(generation, key), stored);
+      } catch (error) {
+        /** A failed store write degrades to the memo only; the caller's result
+         *  is already computed and must still be served. */
+        logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
+      }
+      /** Same recheck as get(): skip the memo when an invalidation landed while
+       *  this write was in flight, so the next read recomputes. */
+      if ((await this.readGeneration()) !== generation) {
+        return;
+      }
     }
     this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
     this.sweepMemo();

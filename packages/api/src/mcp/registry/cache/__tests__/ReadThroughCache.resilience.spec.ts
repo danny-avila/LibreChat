@@ -67,6 +67,19 @@ describe('read-through cache resilience', () => {
     await expect(cache.get('user-1')).resolves.toBeUndefined();
   });
 
+  test('a generation failure cannot revive generation-zero entries', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    entry.get.mockResolvedValue('stale-from-generation-0');
+    generation.get.mockRejectedValue(new Error('transient'));
+
+    /** The unreadable generation must be a miss, not a fallback to "0", or an
+     *  unexpired pre-invalidation entry could be served for another TTL. */
+    await expect(cache.get('user-1')).resolves.toBeUndefined();
+    expect(entry.get).not.toHaveBeenCalled();
+  });
+
   test('store failure on set never rejects and keeps the process-local memo', async () => {
     const namespace = `rtac-r-${randomUUID()}`;
     const cache = new ReadThroughAllCache<string>(namespace, 60_000);

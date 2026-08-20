@@ -570,16 +570,17 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${candidateIds.length} agent candidate(s) reference MCP servers`,
     );
 
-    const accessibleAgentIds = await this.findAccessibleAgentIds(
-      candidateIds,
-      userId,
-      principalsList,
-    );
+    /** The direct-server fetch depends only on the ids already resolved above,
+     *  so it runs concurrently with the agent ACL query and both settle
+     *  together. */
+    const [accessibleAgentIds, directResults] = await Promise.all([
+      this.findAccessibleAgentIds(candidateIds, userId, principalsList),
+      this._dbMethods.getListMCPServersByIds({
+        ids: directlyAccessibleMCPIds,
+      }),
+    ]);
 
     const agentMCPServerNames = unionMCPServerNames(agentCandidates, accessibleAgentIds);
-    const directResults = await this._dbMethods.getListMCPServersByIds({
-      ids: directlyAccessibleMCPIds,
-    });
 
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
     const directData = directResults.data || [];
