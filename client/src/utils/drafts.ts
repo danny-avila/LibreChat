@@ -395,19 +395,34 @@ export const getFilesDraft = (id: string): FilesDraft => {
 
 const TAB_SESSION_STORAGE_KEY = 'librechat-tab-session';
 
+let documentTabId: string | null = null;
+
 /** Identifies this browser tab for the session. `sessionStorage` is per-tab and survives that
  * tab's reloads, which is exactly the ownership an unsaved-chat draft needs: the draft key is
  * shared through `localStorage` by every tab's default composer, while the composer that owns
- * the record stays identifiable. */
+ * the record stays identifiable.
+ *
+ * One caveat decides the shape below: duplicated and opener-created tabs start with a COPY of
+ * the original's `sessionStorage`, so a stored id on its own proves nothing. Only a reload of
+ * the same document legitimately keeps it; every other entry into a document mints a fresh id,
+ * because an inherited one would attribute another tab's live drafts to this composer. */
 export const getBrowserTabId = (): string => {
   try {
-    const existing = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
-    if (existing != null && existing !== '') {
-      return existing;
+    const stored = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+    if (documentTabId != null && stored === documentTabId) {
+      return documentTabId;
     }
-    const created = crypto.randomUUID();
-    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, created);
-    return created;
+    const navigationType =
+      typeof performance.getEntriesByType === 'function'
+        ? performance.getEntriesByType('navigation')[0]?.type
+        : undefined;
+    if (stored != null && stored !== '' && navigationType === 'reload') {
+      documentTabId = stored;
+      return stored;
+    }
+    documentTabId = crypto.randomUUID();
+    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, documentTabId);
+    return documentTabId;
   } catch {
     // Privacy-blocked storage cannot attribute drafts to a tab; share one identity instead.
     return '';

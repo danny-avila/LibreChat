@@ -283,6 +283,41 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(first).toBe(getBrowserTabId());
   });
 
+  /** jsdom's performance object has no navigation-timing entries at all, so the stub installs
+   * the method rather than spying on it. */
+  const withNavigationType = (type: string, run: () => void): void => {
+    const performanceStub = performance as unknown as {
+      getEntriesByType?: (type: string) => PerformanceEntry[];
+    };
+    const original = performanceStub.getEntriesByType;
+    performanceStub.getEntriesByType = () => [{ type } as unknown as PerformanceEntry];
+    try {
+      run();
+    } finally {
+      if (original != null) {
+        performanceStub.getEntriesByType = original;
+      } else {
+        delete performanceStub.getEntriesByType;
+      }
+    }
+  };
+
+  it('adopts the stored id when the same tab reloaded', () => {
+    sessionStorage.setItem('librechat-tab-session', 'kept-through-reload');
+    withNavigationType('reload', () => {
+      expect(getBrowserTabId()).toBe('kept-through-reload');
+    });
+  });
+
+  it('mints a fresh id when storage was inherited by a cloned tab', () => {
+    sessionStorage.setItem('librechat-tab-session', 'inherited-from-original');
+    withNavigationType('navigate', () => {
+      const minted = getBrowserTabId();
+      expect(minted).not.toBe('inherited-from-original');
+      expect(minted).toBe(sessionStorage.getItem('librechat-tab-session'));
+    });
+  });
+
   it('stamps the writing tab on unsaved-chat drafts', () => {
     setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
 
