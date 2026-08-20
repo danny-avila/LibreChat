@@ -36,7 +36,13 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { logViolation } = require('~/cache');
 const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
-const { saveMessage, getMessages, getConvo, isAgentTriggerPrincipalActive } = require('~/models');
+const {
+  getConvo,
+  saveMessage,
+  getMessages,
+  stampConvoLastResponse,
+  isAgentTriggerPrincipalActive,
+} = require('~/models');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -1855,6 +1861,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ? 'Terminal response could not be persisted as unfinished'
               : 'Response message could not be persisted before terminal publication',
           );
+        }
+
+        /* Only the turns BaseClient did not write a completed response for. An ordinary
+           completion was already stamped inside `saveMessageToDatabase`, and that stamp is
+           what the conversation snapshot in the final event carries; stamping again here
+           would leave the client acknowledging a value the server had already moved past,
+           so a reply read at the bottom would keep its dot. Best-effort either way: a missed
+           stamp must not fail the final publication. */
+        if (responseIsUnfinished && reqCtx.isTemporary !== true) {
+          try {
+            await stampConvoLastResponse(reqCtx.userId, response.conversationId);
+          } catch (error) {
+            logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
+          }
         }
 
         // If the user stopped this turn — or an empty preempt boundary truncated

@@ -1,16 +1,16 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import Markdown from '../Markdown';
-import MarkdownLite from '../MarkdownLite';
 import { RecoilRoot } from 'recoil';
-import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
+import { render, screen } from '@testing-library/react';
 import {
   useMessageContext,
   useOptionalMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
+import { UI_RESOURCE_MARKER } from '~/components/MCPUIResource/plugin';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import MarkdownLite from '../MarkdownLite';
 import { useLocalize } from '~/hooks';
+import Markdown from '../Markdown';
 
 // Mocks for hooks used by MCPUIResource when rendered inside Markdown.
 // Keep Provider components intact while mocking only the hooks we use.

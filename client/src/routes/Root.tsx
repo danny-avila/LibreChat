@@ -1,29 +1,42 @@
 import { useState, useEffect, useRef, useCallback, startTransition } from 'react';
 import { Outlet } from 'react-router-dom';
 import {
+  useFileMap,
+  useAgentsMap,
+  useAuthContext,
+  useReplyAlerts,
+  useUnseenBadge,
+  useReplyWatcher,
+  useSearchEnabled,
+  useAssistantsMap,
+  useUnseenConversations,
+} from '~/hooks';
+import {
   PromptGroupsProvider,
   AssistantsMapContext,
   AgentsMapContext,
   SetConvoProvider,
   FileMapContext,
 } from '~/Providers';
-import {
-  useSearchEnabled,
-  useAssistantsMap,
-  useAuthContext,
-  useAgentsMap,
-  useFileMap,
-} from '~/hooks';
 import { UnifiedSidebar, SIDEBAR_TRANSITION } from '~/components/UnifiedSidebar';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
-import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
 import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
+
+/** Isolates the unseen-reply subscription so its updates re-render only this node, not `Root`. */
+function ReplyNotifications() {
+  const unseen = useUnseenConversations();
+  useReplyWatcher();
+  useUnseenBadge(unseen?.length ?? 0);
+  useReplyAlerts(unseen);
+  return null;
+}
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -127,6 +140,7 @@ export default function Root() {
               </div>
             </PromptGroupsProvider>
             <KeyboardShortcutsProvider />
+            <ReplyNotifications />
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal

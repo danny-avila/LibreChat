@@ -30,7 +30,7 @@ const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { saveMessage, getConvo, getMessages } = require('~/models');
+const { saveMessage, getConvo, getMessages, stampConvoLastResponse } = require('~/models');
 const {
   recordScheduleOutcome,
   claimScheduleResume,
@@ -392,6 +392,16 @@ async function finalizeResumedTurn({
     );
     if (!savedResponseMessage) {
       throw new Error('Resumed response could not be persisted before terminal publication');
+    }
+
+    /* This path saves the message directly, so nothing else stamps the unseen-reply
+       indicator. Best-effort: a missed stamp must not fail the resumed turn. */
+    if (isTemporary !== true) {
+      try {
+        await stampConvoLastResponse(userId, conversationId);
+      } catch (error) {
+        logger.warn('[ResumeAgentController] Failed to stamp lastResponseAt', error);
+      }
     }
 
     const convo = await getConvo(userId, conversationId);

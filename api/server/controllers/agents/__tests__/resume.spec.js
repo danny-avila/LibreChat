@@ -80,6 +80,7 @@ const mockCheckAndIncrementPendingRequest = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockDisposeClient = jest.fn();
 const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
@@ -109,6 +110,7 @@ jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   getConvo: (...args) => mockGetConvo(...args),
   getMessages: (...args) => mockGetMessages(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
 }));
 
 jest.mock('~/server/services/Schedules', () => ({

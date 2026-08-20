@@ -25,7 +25,13 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
+  const {
+    deleteToolCalls,
+    deleteConvos,
+    saveConvo,
+    markConvoSeen,
+    markConvoUnread,
+  } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
@@ -597,6 +603,37 @@ describe('Convos Routes', () => {
         'test-user-123',
         expect.objectContaining({ pinned: false }),
       );
+    });
+  });
+
+  describe('POST /seen', () => {
+    /* The handler's own validation and error mapping live in `packages/api` and are covered
+       against the real implementation there; what matters here is that the route reaches it
+       with the authenticated user. */
+    it('routes to the handler for the authenticated user', async () => {
+      markConvoSeen.mockResolvedValue({ modified: true });
+
+      const response = await request(app)
+        .post('/api/convos/seen')
+        .send({ arg: { conversationId: 'conv-seen-1' } });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ modified: true });
+      expect(markConvoSeen).toHaveBeenCalledWith('test-user-123', 'conv-seen-1');
+    });
+  });
+
+  describe('POST /unread', () => {
+    it('routes to the handler for the authenticated user', async () => {
+      markConvoUnread.mockResolvedValue({ modified: true });
+
+      const response = await request(app)
+        .post('/api/convos/unread')
+        .send({ arg: { conversationId: 'conv-unread-1' } });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ modified: true });
+      expect(markConvoUnread).toHaveBeenCalledWith('test-user-123', 'conv-unread-1');
     });
   });
 

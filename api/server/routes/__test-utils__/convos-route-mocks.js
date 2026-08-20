@@ -1,7 +1,11 @@
 const archiveAllHandler = jest.fn();
+const markConvoSeenHandler = jest.fn();
+const markConvoUnreadHandler = jest.fn();
 
 module.exports = {
   archiveAllHandler,
+  markConvoSeenHandler,
+  markConvoUnreadHandler,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -31,6 +35,23 @@ module.exports = {
         return res.status(200).json(result);
       });
       return archiveAllHandler;
+    }),
+    /* Wiring only. The handlers' own validation and error mapping are covered against the
+       real implementations in `packages/api/src/conversations/read.spec.ts`; mirroring them
+       here would leave the route suite asserting against a copy. */
+    createMarkConvoSeenHandler: jest.fn(({ markConvoSeen }) => {
+      markConvoSeenHandler.mockImplementation(async (req, res) => {
+        const result = await markConvoSeen(req.user.id, req.body?.arg?.conversationId);
+        return res.status(200).json(result);
+      });
+      return markConvoSeenHandler;
+    }),
+    createMarkConvoUnreadHandler: jest.fn(({ markConvoUnread }) => {
+      markConvoUnreadHandler.mockImplementation(async (req, res) => {
+        const result = await markConvoUnread(req.user.id, req.body?.arg?.conversationId);
+        return res.status(200).json(result);
+      });
+      return markConvoUnreadHandler;
     }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
@@ -78,6 +99,8 @@ module.exports = {
     archiveAllConvos: jest.fn(),
     saveConvo: jest.fn(),
     setConvoPinned: jest.fn(),
+    markConvoSeen: jest.fn(),
+    markConvoUnread: jest.fn(),
     deleteAllSharedLinks: jest.fn(),
     deleteConvoSharedLink: jest.fn(),
     deleteToolCalls: jest.fn(),

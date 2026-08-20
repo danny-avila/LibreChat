@@ -84,6 +84,12 @@ const convoSchema: Schema<IConversation> = new Schema(
     archivedAt: {
       type: Date,
     },
+    lastResponseAt: {
+      type: Date,
+    },
+    lastSeenAt: {
+      type: Date,
+    },
   },
   { timestamps: true },
 );
