@@ -147,8 +147,14 @@ async function encodeAndFormat(req, files, params, mode) {
         continue;
       } catch (error) {
         logger.error('Error processing image from blob storage:', error);
+        if (source === FileSources.azure_blob) {
+          throw new Error(
+            `Failed to encode image from ${source} for vision payload: ${error.message}. Private storage URLs cannot be fetched by remote LLM providers.`,
+          );
+        }
       }
-    } else if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
+    }
+    if (source !== FileSources.local && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode(file.bytes ?? 0, async () => {
         const [_file, imageURL] = await preparePayload(req, file);
         return [_file, await fetchImageToBase64(imageURL)];
