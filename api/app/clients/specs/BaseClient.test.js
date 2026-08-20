@@ -602,6 +602,12 @@ describe('BaseClient', () => {
         },
       });
 
+      const modelBoundEditedMessage = TestClient.buildMessages.mock.calls[0][0].at(-1);
+      expect(modelBoundEditedMessage.userSubmittedPaths).toEqual([
+        '/content/1/think',
+        '/content/2/text',
+      ]);
+
       expect(response.content).toEqual([
         {
           type: ContentTypes.TOOL_CALL,
@@ -970,7 +976,7 @@ describe('BaseClient', () => {
       expect(TestClient.buildMessages).toHaveBeenCalled();
     });
 
-    test('blocks missing or foreign historical file references before building messages', async () => {
+    test('does not block a missing historical file omitted from the final payload', async () => {
       getFiles.mockReset();
       getFiles.mockResolvedValueOnce([]);
       TestClient = initializeFakeClient(
@@ -1009,13 +1015,38 @@ describe('BaseClient', () => {
           conversationId: 'foreign-file-conversation',
           parentMessageId: 'foreign-file-message',
         }),
-      ).rejects.toMatchObject({
-        code: 'content_filter_uninspectable',
-        body: {
-          source: 'file',
-          field: 'extracted_text',
+      ).resolves.toEqual(expect.objectContaining({ isCreatedByUser: false }));
+      expect(TestClient.buildMessages).toHaveBeenCalledTimes(1);
+      expect(TestClient.sendCompletion).toHaveBeenCalledTimes(1);
+    });
+
+    test('surfaces historical file lookup failures instead of silently dropping context', async () => {
+      getFiles.mockReset();
+      getFiles.mockRejectedValueOnce(new Error('historical file lookup unavailable'));
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: { user: { id: 'user-1', tenantId: 'tenant-a' }, config: {} },
         },
-      });
+        [
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'Use my historical file',
+            files: [{ file_id: 'historical-file' }],
+            messageId: 'historical-file-message',
+            parentMessageId: Constants.NO_PARENT,
+          },
+        ],
+      );
+
+      await expect(
+        TestClient.sendMessage('Safe new message', {
+          conversationId: 'historical-file-error-conversation',
+          parentMessageId: 'historical-file-message',
+        }),
+      ).rejects.toThrow('historical file lookup unavailable');
       expect(TestClient.buildMessages).not.toHaveBeenCalled();
       expect(TestClient.sendCompletion).not.toHaveBeenCalled();
     });
@@ -1048,6 +1079,15 @@ describe('BaseClient', () => {
             isCreatedByUser: true,
             text: 'A prior turn referenced a file.',
             files: [{ file_id: 'deleted-historical-file' }],
+            content: [
+              {
+                type: 'input_file',
+                files: [{ file_id: 'part-file' }],
+                image_file: { file_id: 'image-file' },
+                file_id: 'direct-file',
+                file: { file_id: 'nested-file' },
+              },
+            ],
             messageId: 'historical-file-message',
             parentMessageId: Constants.NO_PARENT,
           },
@@ -1063,7 +1103,55 @@ describe('BaseClient', () => {
 
       expect(getFiles).not.toHaveBeenCalled();
       expect(TestClient.buildMessages).toHaveBeenCalled();
+      const [modelMessages] = TestClient.buildMessages.mock.calls[0];
+      expect(modelMessages[0]).not.toHaveProperty('files');
+      expect(modelMessages[0].content[0]).toEqual({ type: 'input_file' });
       expect(TestClient.sendCompletion).toHaveBeenCalled();
+    });
+
+    test('keeps a materialized current attachment inspectable when historical replay is disabled', () => {
+      const currentFile = {
+        file_id: 'current-file',
+        filename: 'safe.txt',
+        text: 'Safe current attachment content',
+      };
+      TestClient = initializeFakeClient(apiKey, {
+        ...options,
+        resendFiles: false,
+        attachments: [currentFile],
+        req: {
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['extracted_text'],
+                  starterPatterns: [],
+                  uninspectable: 'block',
+                },
+              },
+            },
+          },
+        },
+      });
+      TestClient.message_file_map = { 'current-source': [currentFile] };
+      TestClient.setModelBoundStoredMessages([
+        {
+          messageId: 'current-source',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Use the current file',
+        },
+      ]);
+
+      expect(() =>
+        TestClient.assertBuiltModelBoundContent([
+          {
+            role: 'user',
+            content: 'Use the current file',
+            additional_kwargs: { sourceMessageId: 'current-source' },
+          },
+        ]),
+      ).not.toThrow();
     });
 
     test('should return chat history', async () => {
@@ -2201,6 +2289,64 @@ describe('BaseClient', () => {
       expect(JSON.stringify(message)).not.toContain('forged owner text');
     });
 
+    test('hydrates files referenced by non-steer provider content parts', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-content-file',
+          isCreatedByUser: true,
+          content: [
+            {
+              type: 'input_file',
+              files: [{ file_id: 'owner-file' }],
+            },
+          ],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.authorizedHistoricalFiles.get('owner-file')).toEqual(ownerFile);
+      expect(message.content[0].files).toEqual([{ file_id: 'owner-file' }]);
+    });
+
+    test('hydrates nested provider file references', async () => {
+      getFiles.mockResolvedValueOnce([ownerFile]);
+
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-nested-content-file',
+          isCreatedByUser: true,
+          content: [
+            {
+              type: 'input_file',
+              file: { file_id: 'owner-file' },
+            },
+          ],
+        },
+      ]);
+
+      expect(getFiles).toHaveBeenCalledWith(
+        {
+          file_id: { $in: ['owner-file'] },
+          user: 'user-1',
+          tenantId: 'tenant-a',
+        },
+        {},
+        {},
+      );
+      expect(TestClient.authorizedHistoricalFiles.get('owner-file')).toEqual(ownerFile);
+      expect(message.content[0].file).toEqual({ file_id: 'owner-file' });
+    });
+
     test('preserves owner-scoped historical attachments when file patterns are inactive', async () => {
       TestClient.options.req.config = {
         filters: {
@@ -2239,7 +2385,7 @@ describe('BaseClient', () => {
       ]);
     });
 
-    test('fails closed before processing an unresolved historical file reference', async () => {
+    test('strips an unresolved historical file reference without pre-pruning enforcement', async () => {
       TestClient.options.req.config = {
         filters: {
           files: {
@@ -2253,21 +2399,15 @@ describe('BaseClient', () => {
       };
       getFiles.mockResolvedValueOnce([]);
 
-      await expect(
-        TestClient.addPreviousAttachments([
-          {
-            messageId: 'msg-unresolved',
-            isCreatedByUser: true,
-            files: [{ file_id: 'foreign-file' }],
-          },
-        ]),
-      ).rejects.toMatchObject({
-        code: 'content_filter_uninspectable',
-        body: {
-          source: 'file',
-          field: 'extracted_text',
+      const [message] = await TestClient.addPreviousAttachments([
+        {
+          messageId: 'msg-unresolved',
+          isCreatedByUser: true,
+          files: [{ file_id: 'foreign-file' }],
         },
-      });
+      ]);
+      expect(message).toEqual(expect.objectContaining({ messageId: 'msg-unresolved' }));
+      expect(message).not.toHaveProperty('files');
       expect(TestClient.addFileContextToMessage).not.toHaveBeenCalled();
       expect(TestClient.processAttachments).not.toHaveBeenCalled();
     });

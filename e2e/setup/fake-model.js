@@ -687,6 +687,7 @@ function overrideModel({
   overrideSubagentModel,
   resolveInvocation,
   resolveOnStream,
+  modelCallbacks,
 }) {
   if (overrideSubagentModel && typeof graph.setSubagentModelOverride !== 'function') {
     overrideModel({
@@ -694,6 +695,7 @@ function overrideModel({
       responses: [''],
       sleep,
       thrownError: SUBAGENT_MODEL_OVERRIDE_ERROR,
+      modelCallbacks,
     });
     return;
   }
@@ -707,6 +709,7 @@ function overrideModel({
       resolveInvocation,
       resolveOnStream,
     });
+    model.callbacks = modelCallbacks;
     graph.overrideModel = model;
     if (overrideSubagentModel) {
       graph.setSubagentModelOverride(model);
@@ -730,6 +733,7 @@ function overrideModel({
     emitCustomEvent: true,
     toolCalls,
   });
+  model.callbacks = modelCallbacks;
   graph.overrideModel = model;
 }
 
@@ -2336,5 +2340,6 @@ module.exports = function fakeModelHook(run, context) {
       approvalOutcomeResponses(streamMessages) ??
       resolveOnStream?.(streamMessages, streamOptions, runManager) ??
       null,
+    modelCallbacks: context?.modelCallbacks,
   });
 };

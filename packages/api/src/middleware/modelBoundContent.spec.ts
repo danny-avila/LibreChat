@@ -1,5 +1,14 @@
+import { StreamLimitExceededError } from '@librechat/agents';
 import type { FiltersConfig } from 'librechat-data-provider';
-import { assertModelBoundContent, hasModelBoundContentProtection } from './modelBoundContent';
+import {
+  assertModelBoundContent,
+  assertModelBoundProviderContent,
+  collectModelBoundHistoricalFileIds,
+  createModelBoundChatModelCallback,
+  hasModelBoundContentProtection,
+  projectModelBoundSourceFiles,
+} from './modelBoundContent';
+import { isContentFilterError } from './contentFilter';
 
 const filters: FiltersConfig = {
   messages: {
@@ -1753,5 +1762,922 @@ describe('assertModelBoundContent', () => {
         actions: [action],
       }),
     ).toThrow('Submitted content contains a private value');
+  });
+});
+
+describe('assertModelBoundProviderContent', () => {
+  it('collects every provider-supported historical file locator', () => {
+    expect(
+      collectModelBoundHistoricalFileIds([
+        {
+          files: [{ file_id: 'top-file' }],
+          attachments: [{ file_id: 'display-file' }],
+          content: [
+            { type: 'input_file', files: [{ file_id: 'part-file' }] },
+            { type: 'input_image', image_file: { file_id: 'image-file' } },
+            { type: 'input_file', file_id: 'direct-file' },
+            { type: 'input_file', file: { file_id: 'nested-file' } },
+            { type: 'input_file', files: [{ file_id: 'part-file' }] },
+          ],
+        },
+      ]),
+    ).toEqual([
+      'top-file',
+      'display-file',
+      'part-file',
+      'image-file',
+      'direct-file',
+      'nested-file',
+    ]);
+  });
+
+  it('projects source-bound and canonical files in typed backend code', () => {
+    const historicalFile = {
+      file_id: 'historical-file',
+      filename: 'history.txt',
+      text: 'historical canonical text',
+    };
+    const processedCurrentFile = {
+      file_id: 'current-file',
+      filename: 'current.png',
+      type: 'image/png',
+    };
+    const canonicalCurrentFile = {
+      ...processedCurrentFile,
+      text: 'current canonical OCR text',
+    };
+
+    const withoutReplay = projectModelBoundSourceFiles({
+      messageFilesBySourceMessageId: {
+        ' source-message ': [{ file_id: 'current-file' }, { file_id: 'current-file' }],
+      },
+      steerFileIdsBySourceMessageId: new Map([
+        ['source-message', new Set(['steer-file', 'current-file'])],
+      ]),
+      replayHistoricalFiles: false,
+      historicalFiles: [historicalFile],
+      processedCurrentFiles: [processedCurrentFile],
+      canonicalCurrentFiles: [canonicalCurrentFile],
+    });
+
+    expect(withoutReplay.fileIdsBySourceMessageId).toEqual(
+      new Map([['source-message', ['current-file', 'steer-file']]]),
+    );
+    expect(withoutReplay.resolvedFiles).toEqual([canonicalCurrentFile]);
+
+    expect(
+      projectModelBoundSourceFiles({
+        replayHistoricalFiles: true,
+        historicalFiles: [historicalFile],
+      }).resolvedFiles,
+    ).toEqual([historicalFile]);
+  });
+
+  it('inspects only canonical rows selected by the final provider payload', () => {
+    const storedMessages = [
+      {
+        messageId: 'pruned-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Previously stored PRIVATE-PRUNED',
+      },
+      {
+        messageId: 'retained-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Safe retained content',
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained content',
+            additional_kwargs: { sourceMessageId: 'retained-message' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Previously stored PRIVATE-PRUNED',
+            additional_kwargs: { sourceMessageId: 'pruned-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('inspects only the provider-bound name rather than persisted UI labels', () => {
+    const nameFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['name'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-SENDER' }],
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'named-user',
+        role: 'user',
+        isCreatedByUser: true,
+        sender: 'PRIVATE-SENDER',
+        name: 'PRIVATE-SENDER',
+        text: 'Safe retained content',
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: nameFilters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained content',
+            additional_kwargs: { sourceMessageId: 'named-user' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: nameFilters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            name: 'PRIVATE-SENDER',
+            content: 'Safe retained content',
+            additional_kwargs: { sourceMessageId: 'named-user' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('mirrors provider content precedence over stale persisted text metadata', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'content-user',
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'PRIVATE-STALE',
+            summary: 'PRIVATE-STALE',
+            original: 'PRIVATE-STALE',
+            updated: 'PRIVATE-STALE',
+            content: [{ type: 'text', text: 'Safe retained content' }],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained content',
+            additional_kwargs: { sourceMessageId: 'content-user' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            text: 'PRIVATE-STALE',
+            content: [{ type: 'text', text: 'Safe exact provider content' }],
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('selects historical files only for retained source rows', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'pruned-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Pruned file turn',
+        files: [{ file_id: 'pruned-file' }],
+      },
+      {
+        messageId: 'retained-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Retained safe turn',
+      },
+    ];
+    const resolvedFiles = [
+      {
+        file_id: 'pruned-file',
+        filename: 'private.txt',
+        text: 'PRIVATE-FILE',
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        resolvedFiles,
+        fileIdsBySourceMessageId: new Map([['pruned-message', ['pruned-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Retained safe turn',
+            additional_kwargs: { sourceMessageId: 'retained-message' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        resolvedFiles,
+        fileIdsBySourceMessageId: new Map([['pruned-message', ['pruned-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Pruned file turn',
+            additional_kwargs: { sourceMessageId: 'pruned-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('selects only user-authored file references from retained assistant rows', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const resolvedFiles = [
+      {
+        file_id: 'assistant-file',
+        filename: 'private.txt',
+        text: 'PRIVATE-FILE',
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        resolvedFiles,
+        storedMessages: [
+          {
+            messageId: 'model-file-message',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [{ type: 'input_file', file_id: 'assistant-file' }],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: [{ type: 'input_file', file_id: 'assistant-file' }],
+            additional_kwargs: { sourceMessageId: 'model-file-message' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        resolvedFiles,
+        fileIdsBySourceMessageId: new Map([['steer-file-message', ['assistant-file']]]),
+        storedMessages: [
+          {
+            messageId: 'steer-file-message',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [
+              {
+                type: 'steer',
+                steer: 'Use this file',
+                files: [{ file_id: 'assistant-file' }],
+              },
+            ],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Use this file',
+            additional_kwargs: { sourceMessageId: 'steer-file-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('ignores canonical steer locators when no file was materialized', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'failed-steer',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [
+              {
+                type: 'steer',
+                steer: 'Text-only fallback',
+                files: [{ file_id: 'not-materialized' }],
+              },
+            ],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Text-only fallback',
+            additional_kwargs: { sourceMessageId: 'failed-steer', source: 'steer' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('uses only the source row that actually materialized a repeated file', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'first-source',
+        isCreatedByUser: true,
+        role: 'user',
+        files: [{ file_id: 'shared-file' }],
+      },
+      {
+        messageId: 'later-source',
+        isCreatedByUser: true,
+        role: 'user',
+        files: [{ file_id: 'shared-file' }],
+      },
+    ];
+    const resolvedFiles = [
+      { file_id: 'shared-file', filename: 'private.txt', text: 'PRIVATE-FILE' },
+    ];
+    const fileIdsBySourceMessageId = new Map([['first-source', ['shared-file']]]);
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        resolvedFiles,
+        fileIdsBySourceMessageId,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Later text-only source',
+            additional_kwargs: { sourceMessageId: 'later-source' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        resolvedFiles,
+        fileIdsBySourceMessageId,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'First source with file',
+            additional_kwargs: { sourceMessageId: 'first-source' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('fails closed for an unresolved file only when its source is retained', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'missing-file-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Use the missing file',
+        files: [{ file_id: 'missing-file' }],
+      },
+      {
+        messageId: 'safe-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'Safe retained turn',
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        fileIdsBySourceMessageId: new Map([['missing-file-message', ['missing-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained turn',
+            additional_kwargs: { sourceMessageId: 'safe-message' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages,
+        fileIdsBySourceMessageId: new Map([['missing-file-message', ['missing-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Use the missing file',
+            additional_kwargs: { sourceMessageId: 'missing-file-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
+  it('does not treat display-only historical attachments as model-bound files', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'display-only',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Download this later',
+            attachments: [{ file_id: 'display-file' }],
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'display-file',
+            filename: 'private.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Download this later',
+            additional_kwargs: { sourceMessageId: 'display-only' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails safe on an ambiguous coalesced user payload while retaining canonical provenance', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'first-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe first turn',
+          },
+          {
+            messageId: 'last-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe last turn',
+          },
+        ],
+        providerMessages: [
+          {
+            id: 'first-message',
+            role: 'human',
+            content: 'Safe first turn\nPRIVATE-MIDDLE\nSafe last turn',
+            additional_kwargs: { sourceMessageId: 'last-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('inspects synthetic user content merged behind one persisted source identity', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'stored-user',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe persisted turn',
+          },
+        ],
+        providerMessages: [
+          {
+            id: 'stored-user',
+            role: 'human',
+            content: 'Safe persisted turn\n\nPRIVATE-SYNTHETIC',
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('does not reclassify synthetic skill context as a submitted message', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Skill body with PRIVATE-SKILL',
+            additional_kwargs: { isMeta: true, source: 'skill' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Injected PRIVATE-STEER',
+            additional_kwargs: { injected: true, source: 'steer' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('retains explicit caller provenance on assistant-role provider messages', () => {
+    const contentPartFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-EDIT' }],
+        },
+      },
+    };
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentPartFilters,
+        storedMessages: [
+          {
+            messageId: 'edited-assistant',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [{ type: 'text', text: 'PRIVATE-EDIT' }],
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'PRIVATE-EDIT',
+            additional_kwargs: { sourceMessageId: 'edited-assistant' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    const answerFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['answer'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+        },
+      },
+    };
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: answerFilters,
+        storedMessages: [
+          {
+            messageId: 'hitl-assistant',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [{ type: 'tool_call', tool_call: { output: 'PRIVATE-HITL' } }],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'answer' },
+            ],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'PRIVATE-HITL',
+            additional_kwargs: { sourceMessageId: 'hitl-assistant' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('fails closed when an assistant payload assembles content across an edit boundary', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'edited-boundary',
+            isCreatedByUser: false,
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'PRIVATE-' },
+              { type: 'text', text: 'SECRET' },
+            ],
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'PRIVATE-SECRET',
+            additional_kwargs: { sourceMessageId: 'edited-boundary' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('does not restore a pruned steer when only a safe assistant derivative survives', () => {
+    const contentFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-STEER' }],
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'mixed-assistant',
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: [
+          { type: 'steer', steer: 'PRIVATE-STEER' },
+          { type: 'text', text: 'Safe model tail' },
+        ],
+        userSubmittedPaths: ['/content/0/steer'],
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'Safe model tail',
+            additional_kwargs: { sourceMessageId: 'mixed-assistant' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'PRIVATE-STEER',
+            additional_kwargs: { sourceMessageId: 'mixed-assistant' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('does not infer a pruned middle source from legacy coalescing identities', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'first-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe first turn',
+          },
+          {
+            messageId: 'middle-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Use the middle file',
+            files: [{ file_id: 'middle-file' }],
+          },
+          {
+            messageId: 'last-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe last turn',
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'middle-file',
+            filename: 'middle.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        fileIdsBySourceMessageId: new Map([['middle-message', ['middle-file']]]),
+        providerMessages: [
+          {
+            id: 'first-message',
+            role: 'human',
+            content: 'Safe first turn\n\nSafe last turn',
+            additional_kwargs: { sourceMessageId: 'last-message' },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('selects every canonical source carried by plural coalescing lineage', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-FILE' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'first-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe first turn',
+          },
+          {
+            messageId: 'middle-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Use the middle file',
+            files: [{ file_id: 'middle-file' }],
+          },
+          {
+            messageId: 'last-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe last turn',
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'middle-file',
+            filename: 'middle.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        fileIdsBySourceMessageId: new Map([['middle-message', ['middle-file']]]),
+        providerMessages: [
+          {
+            id: 'first-message',
+            role: 'human',
+            content: 'Safe first turn\n\nUse the middle file\n\nSafe last turn',
+            additional_kwargs: {
+              sourceMessageId: 'last-message',
+              sourceMessageIds: ['first-message', 'middle-message', 'last-message'],
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('keeps the model callback usable after caller-owned state is released', () => {
+    const storedMessages = [
+      {
+        messageId: 'stored-message',
+        isCreatedByUser: true,
+        role: 'user',
+        text: 'PRIVATE-SNAPSHOT',
+      },
+    ];
+    const callback = createModelBoundChatModelCallback({ filters, storedMessages });
+    storedMessages.length = 0;
+
+    expect(() =>
+      callback.handleChatModelStart(undefined, [
+        [
+          {
+            role: 'human',
+            content: 'PRIVATE-SNAPSHOT',
+            additional_kwargs: { sourceMessageId: 'stored-message' },
+          },
+        ],
+      ]),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('marks callback policy failures fatal across SDK recovery paths', () => {
+    const callback = createModelBoundChatModelCallback({ filters });
+    let thrown: unknown;
+
+    try {
+      callback.handleChatModelStart(undefined, [[{ role: 'human', content: 'PRIVATE-CALLBACK' }]]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(StreamLimitExceededError);
+    expect(isContentFilterError(thrown)).toBe(true);
+    expect(thrown).toMatchObject({
+      code: 'content_filter_block',
+      statusCode: 400,
+      message: 'Submitted content contains a private value. Remove it and try again.',
+      cause: expect.objectContaining({ code: 'content_filter_block' }),
+    });
   });
 });

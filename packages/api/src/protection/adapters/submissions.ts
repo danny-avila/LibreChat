@@ -195,6 +195,7 @@ export interface StoredMessagePartInput {
     readonly file_id?: string;
     readonly filename?: string;
   };
+  readonly file?: StoredFileReferenceInput;
   readonly files?: readonly (StoredFileReferenceInput | null | undefined)[];
   readonly content?: readonly (
     | {

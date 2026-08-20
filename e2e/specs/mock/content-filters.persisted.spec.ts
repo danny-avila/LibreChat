@@ -1351,9 +1351,13 @@ test.describe('persisted source-aware content filters', () => {
         });
       });
 
-      await test.step('action metadata stays manageable but prevents agent reuse', async () => {
-        const visible = await requestResult(request, { path: '/api/agents/actions', token });
-        expectStoredMarker(visible, markers.actionMetadata);
+      await test.step('action metadata is blocked on read and prevents agent reuse', async () => {
+        const readBlocked = await requestResult(request, { path: '/api/agents/actions', token });
+        expectContentFilterBlock(readBlocked, {
+          source: 'action_metadata',
+          field: 'privacy_policy_url',
+          marker: markers.actionMetadata,
+        });
         const blocked = await expectNoMongoSideEffects(['agents', 'actions'], () =>
           duplicateAgent(request, token, fixtures.actionAgentId!),
         );

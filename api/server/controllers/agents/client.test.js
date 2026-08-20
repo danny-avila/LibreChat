@@ -146,6 +146,43 @@ describe('AgentClient - final model-bound content protection', () => {
       ]),
     ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
   });
+
+  it('keeps materialized current attachments inspectable when historical replay is disabled', () => {
+    const client = makeClient();
+    const currentFile = {
+      file_id: 'current-file',
+      filename: 'safe.png',
+      type: 'image/png',
+      text: 'Safe current OCR content',
+    };
+    client.options.resendFiles = false;
+    client.options.attachments = [
+      { file_id: 'current-file', filename: 'safe.png', type: 'image/png' },
+    ];
+    client.modelBoundCurrentFiles = [currentFile];
+    client.options.req.config.filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    client.message_file_map = { 'retained-source': [currentFile] };
+
+    expect(() =>
+      client.createModelBoundChatModelCallback().handleChatModelStart(undefined, [
+        [
+          {
+            role: 'user',
+            content: 'Safe retained text',
+            additional_kwargs: { sourceMessageId: 'retained-source' },
+          },
+        ],
+      ]),
+    ).not.toThrow();
+  });
 });
 
 describe('AgentClient - detached subagent usage', () => {
@@ -719,6 +756,16 @@ describe('AgentClient - startup telemetry', () => {
     await checkpointStartedPromise;
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(mockCreateRun.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        modelCallbacks: [
+          expect.objectContaining({
+            name: 'librechat-model-bound-content-filter',
+            raiseError: true,
+          }),
+        ],
+      }),
+    );
     expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
       'conversation-123',
       undefined,
@@ -756,6 +803,67 @@ describe('AgentClient - startup telemetry', () => {
           __librechat_checkpoint_ns: '1000',
         }),
       }),
+    );
+    expect(processStream.mock.calls[0][1]).not.toHaveProperty('callbacks');
+  });
+
+  it('propagates final model callback policy errors instead of persisting a generic error part', async () => {
+    jest.clearAllMocks();
+    let policyError;
+    try {
+      require('@librechat/api').assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-BLOCK' }],
+            },
+          },
+        },
+        storedMessages: [{ role: 'user', isCreatedByUser: true, text: 'PRIVATE-BLOCK' }],
+      });
+    } catch (error) {
+      policyError = error;
+    }
+    expect(policyError).toEqual(expect.objectContaining({ code: 'content_filter_block' }));
+
+    const processStream = jest.fn().mockRejectedValue(policyError);
+    mockCreateRun.mockResolvedValue({
+      Graph: null,
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+        _resumableStreamId: 'conversation-policy',
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-policy';
+    client.responseMessageId = 'response-policy';
+    client.parentMessageId = 'parent-policy';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await expect(client.chatCompletion({ payload: [] })).rejects.toBe(policyError);
+    expect(client.contentParts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: ContentTypes.ERROR })]),
     );
   });
 
@@ -2977,6 +3085,58 @@ describe('AgentClient - titleConvo', () => {
       ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
     });
 
+    it('preserves persisted source identity through both agent formatting passes', async () => {
+      mockReq.config.filters = {
+        messages: {
+          pii: {
+            fields: ['content_part'],
+            starterPatterns: [],
+            customPatterns: [
+              { id: 'private', label: 'private value', regex: 'PRIVATE-USER-STEER' },
+            ],
+          },
+        },
+      };
+      const storedMessage = {
+        messageId: 'assistant-mixed',
+        parentMessageId: null,
+        sender: 'Assistant',
+        role: 'assistant',
+        isCreatedByUser: false,
+        content: [
+          { type: ContentTypes.TEXT, text: 'Safe model output' },
+          { type: ContentTypes.STEER, steer: 'PRIVATE-USER-STEER' },
+        ],
+        userSubmittedPaths: ['/content/1/steer'],
+      };
+      client.setModelBoundStoredMessages([storedMessage]);
+
+      const result = await client.buildMessages([storedMessage], 'assistant-mixed', {}, {});
+      expect(result.prompt).toEqual([expect.objectContaining({ messageId: 'assistant-mixed' })]);
+      expect(
+        require('@librechat/api').countFormattedMessageTokens.mock.calls.some(
+          ([message]) => message?.messageId === 'assistant-mixed',
+        ),
+      ).toBe(true);
+
+      const { messages: providerMessages } = jest
+        .requireActual('@librechat/agents')
+        .formatAgentMessages(result.prompt);
+      expect(providerMessages.length).toBeGreaterThanOrEqual(2);
+      expect(
+        providerMessages.every(
+          (message) =>
+            message.additional_kwargs?.sourceMessageId === 'assistant-mixed' ||
+            message.id === 'assistant-mixed',
+        ),
+      ).toBe(true);
+      expect(() =>
+        client
+          .createModelBoundChatModelCallback()
+          .handleChatModelStart(undefined, [providerMessages]),
+      ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+    });
+
     it('ignores historical file refs when this agent does not replay files', async () => {
       mockReq.config.filters = {
         files: {
@@ -3007,7 +3167,7 @@ describe('AgentClient - titleConvo', () => {
       ).resolves.toEqual(expect.objectContaining({ prompt: expect.any(Array) }));
     });
 
-    it('blocks historical attachment content before re-encoding it', async () => {
+    it('filters historical attachment content only when its source survives pruning', async () => {
       const privateText = 'PRIVATE-HISTORICAL-CONTENT';
       mockReq.config.filters = {
         files: {
@@ -3025,22 +3185,118 @@ describe('AgentClient - titleConvo', () => {
       client.addFileContextToMessage = jest.fn();
       client.processAttachments = jest.fn();
 
-      await expect(
-        client.addPreviousAttachments([
-          {
-            messageId: 'msg-1',
-            parentMessageId: null,
-            isCreatedByUser: true,
-            files: [{ file_id: 'historical-file' }],
-          },
-        ]),
-      ).rejects.toMatchObject({ code: 'content_filter_block' });
+      const hydratedMessages = await client.addPreviousAttachments([
+        {
+          messageId: 'msg-1',
+          parentMessageId: null,
+          isCreatedByUser: true,
+          files: [{ file_id: 'historical-file' }],
+        },
+      ]);
+      client.setModelBoundStoredMessages([
+        ...hydratedMessages,
+        {
+          messageId: 'safe-message',
+          role: 'user',
+          text: 'Safe retained turn',
+          isCreatedByUser: true,
+        },
+      ]);
+      const callback = client.createModelBoundChatModelCallback();
 
-      expect(client.addFileContextToMessage).not.toHaveBeenCalled();
-      expect(client.processAttachments).not.toHaveBeenCalled();
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Safe retained turn',
+              additional_kwargs: { sourceMessageId: 'safe-message' },
+            },
+          ],
+        ]),
+      ).not.toThrow();
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Use the historical file.',
+              additional_kwargs: { sourceMessageId: 'msg-1' },
+            },
+          ],
+        ]),
+      ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+
+      expect(client.addFileContextToMessage).toHaveBeenCalled();
+      expect(client.processAttachments).toHaveBeenCalled();
     });
 
-    it('blocks historical steer attachments before replay encoding', async () => {
+    it('does not run historical file contexts through the pre-pruning build preflight', async () => {
+      const privateText = 'PRIVATE-PRUNED-HISTORICAL-FILE';
+      mockReq.config.filters = {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: privateText }],
+          },
+        },
+      };
+      const historicalFile = makeTextFile('historical-file', 'history.txt', privateText);
+      const storedMessages = [
+        {
+          messageId: 'file-message',
+          parentMessageId: null,
+          sender: 'User',
+          role: 'user',
+          text: 'Use the historical file.',
+          fileContext: privateText,
+          files: [{ file_id: 'historical-file' }],
+          isCreatedByUser: true,
+        },
+        {
+          messageId: 'safe-message',
+          parentMessageId: 'file-message',
+          sender: 'User',
+          role: 'user',
+          text: 'Safe retained turn',
+          isCreatedByUser: true,
+        },
+      ];
+      client.authorizedHistoricalFiles = new Map([['historical-file', historicalFile]]);
+      client.message_file_map = { 'file-message': [historicalFile] };
+      client.setModelBoundStoredMessages(storedMessages);
+
+      await expect(client.buildMessages(storedMessages, 'safe-message', {}, {})).resolves.toEqual(
+        expect.objectContaining({ prompt: expect.any(Array) }),
+      );
+
+      const callback = client.createModelBoundChatModelCallback();
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Safe retained turn',
+              additional_kwargs: { sourceMessageId: 'safe-message' },
+            },
+          ],
+        ]),
+      ).not.toThrow();
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Use the historical file.',
+              additional_kwargs: { sourceMessageId: 'file-message' },
+            },
+          ],
+        ]),
+      ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+    });
+
+    it('filters historical steer attachments only when their source survives pruning', async () => {
       const privateText = 'PRIVATE-STEER-FILE-CONTENT';
       mockReq.config.filters = {
         files: {
@@ -3056,22 +3312,56 @@ describe('AgentClient - titleConvo', () => {
         makeTextFile('steer-file', 'steer.txt', privateText),
       ]);
 
-      await expect(
-        client.addPreviousAttachments([
-          {
-            messageId: 'assistant-msg',
-            parentMessageId: null,
-            isCreatedByUser: false,
-            content: [
-              {
-                type: ContentTypes.STEER,
-                steer: 'Read the attached file.',
-                files: [{ file_id: 'steer-file' }],
-              },
-            ],
-          },
+      const storedMessages = await client.addPreviousAttachments([
+        {
+          messageId: 'assistant-msg',
+          parentMessageId: null,
+          isCreatedByUser: false,
+          content: [
+            {
+              type: ContentTypes.STEER,
+              steer: 'Read the attached file.',
+              files: [{ file_id: 'steer-file' }],
+            },
+          ],
+        },
+      ]);
+      client.setModelBoundStoredMessages([
+        ...storedMessages,
+        {
+          messageId: 'safe-message',
+          role: 'user',
+          text: 'Safe retained turn',
+          isCreatedByUser: true,
+        },
+      ]);
+      client.modelBoundSteerFileIdsBySourceMessageId = new Map([
+        ['assistant-msg', new Set(['steer-file'])],
+      ]);
+      const callback = client.createModelBoundChatModelCallback();
+
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Safe retained turn',
+              additional_kwargs: { sourceMessageId: 'safe-message' },
+            },
+          ],
         ]),
-      ).rejects.toMatchObject({ code: 'content_filter_block' });
+      ).not.toThrow();
+      expect(() =>
+        callback.handleChatModelStart(undefined, [
+          [
+            {
+              role: 'human',
+              content: 'Read the attached file.',
+              additional_kwargs: { sourceMessageId: 'assistant-msg' },
+            },
+          ],
+        ]),
+      ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
     });
 
     it('fails closed when canonical memory loading fails under active policy', async () => {
@@ -5221,7 +5511,13 @@ describe('AgentClient - resumeCompletion content protection', () => {
     await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
 
     expect(mockCreateRun).toHaveBeenCalledTimes(1);
+    expect(mockCreateRun.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        modelCallbacks: [expect.objectContaining({ name: 'librechat-model-bound-content-filter' })],
+      }),
+    );
     expect(resume).toHaveBeenCalledTimes(1);
+    expect(resume.mock.calls[0][1]).not.toHaveProperty('callbacks');
   });
 
   it('blocks handoff dynamic tool context before rebuilding a resumed run', async () => {
@@ -5373,6 +5669,59 @@ describe('AgentClient - resumeCompletion content protection', () => {
       {},
     );
     expect(mockCreateRun).not.toHaveBeenCalled();
+  });
+
+  it('freezes owner-hydrated resume files into the final model callback', async () => {
+    mockGetAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue({
+        checkpoint: { channel_values: { messages: [] } },
+      }),
+    });
+    const storedMessage = {
+      messageId: 'parent-123',
+      parentMessageId: Constants.NO_PARENT,
+      isCreatedByUser: true,
+      role: 'user',
+      text: 'inspect the attached file',
+      files: [{ file_id: 'file-paused', filename: 'report.txt' }],
+    };
+    require('~/models').getMessages.mockResolvedValue([storedMessage]);
+    require('~/models').getFiles.mockResolvedValue([
+      {
+        file_id: 'file-paused',
+        filename: 'report.txt',
+        text: 'Safe extracted text',
+      },
+    ]);
+    const resume = jest.fn().mockResolvedValue(undefined);
+    mockCreateRun.mockResolvedValue({ resume, getCalibrationRatio: jest.fn(() => 0) });
+    const context = makeContext({
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    });
+
+    await AgentClient.prototype.resumeCompletion.call(context, {
+      resumeValue: {},
+      storedMessages: [storedMessage],
+    });
+
+    const [modelBoundCallback] = mockCreateRun.mock.calls[0][0].modelCallbacks;
+    expect(() =>
+      modelBoundCallback.handleChatModelStart(undefined, [
+        [
+          {
+            role: 'human',
+            content: [{ type: 'input_file', file_id: 'file-paused' }],
+            additional_kwargs: { sourceMessageId: 'parent-123' },
+          },
+        ],
+      ]),
+    ).not.toThrow();
   });
 
   it('fails closed when a paused file reference cannot be rehydrated', async () => {

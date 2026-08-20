@@ -106,6 +106,7 @@ const {
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
+  createModelBoundChatModelCallback: createModelBoundContentCallback,
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
@@ -1439,24 +1440,14 @@ class AgentClient extends BaseClient {
   assertBuiltModelBoundContent() {}
 
   createModelBoundChatModelCallback() {
-    return {
-      name: 'librechat-model-bound-content-filter',
-      raiseError: true,
-      awaitHandlers: true,
-      handleChatModelStart: (_llm, messageBatches) => {
-        for (const messages of messageBatches ?? []) {
-          assertModelBoundContent({
-            filters: this.options.req?.config?.filters,
-            legacyPii: this.options.req?.config?.messageFilter?.pii,
-            storedMessages: BaseClient.prototype.getModelBoundProviderMessages.call(this, messages),
-            resolvedFiles:
-              this.options.resendFiles === false
-                ? []
-                : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []),
-          });
-        }
-      },
-    };
+    const fileProjection = BaseClient.prototype.getModelBoundFileProjection.call(this);
+    return createModelBoundContentCallback({
+      filters: this.options.req?.config?.filters,
+      legacyPii: this.options.req?.config?.messageFilter?.pii,
+      storedMessages: this.modelBoundStoredMessages,
+      fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
+      resolvedFiles: fileProjection.resolvedFiles,
+    });
   }
 
   /**
@@ -1553,10 +1544,6 @@ class AgentClient extends BaseClient {
       legacyPii: this.options.req.config?.messageFilter?.pii,
       agents: allAgents.map(({ agent }) => agent),
       files: [...modelBoundFileContexts],
-      resolvedFiles:
-        this.options.resendFiles === false
-          ? []
-          : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []),
     });
     const sharedRunAttachmentIds = new Set();
     /** @type {ReturnType<typeof buildAgentScopedContext>} */
@@ -1576,6 +1563,7 @@ class AgentClient extends BaseClient {
     if (this.options.attachments) {
       const attachments = await this.options.attachments;
       const latestMessage = orderedMessages[orderedMessages.length - 1];
+      this.modelBoundCurrentFiles = [...attachments];
 
       assertModelBoundContent({
         filters: this.options.req.config?.filters,
@@ -1638,6 +1626,11 @@ class AgentClient extends BaseClient {
         userName: this.options?.name,
         assistantName: this.options?.modelLabel,
       });
+      const sourceMessageId = message.messageId ?? message.id;
+      if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
+        formattedMessage.messageId = sourceMessageId;
+        memoryFormattedMessage.messageId = sourceMessageId;
+      }
 
       /**
        * Bind file context to the message it belongs to. Historical attachments
@@ -1645,7 +1638,10 @@ class AgentClient extends BaseClient {
        * too instead of living only in the dynamic system tail.
        */
       if (message.fileContext) {
-        modelBoundFileContexts.add(message.fileContext);
+        /** Historical file context is deliberately not added to the run-wide
+         * preflight set. The provider callback selects its owner-resolved file
+         * only when this source row survives SDK pruning. Current-turn files
+         * were already added and inspected from `this.options.attachments`. */
         hasFileContext = true;
         prependFileContext(formattedMessage, message.fileContext);
       }
@@ -1703,9 +1699,7 @@ class AgentClient extends BaseClient {
       if (this.message_file_map && this.message_file_map[message.messageId]) {
         const attachments = this.message_file_map[message.messageId];
         for (const file of attachments) {
-          if (file) {
-            modelBoundFileContexts.add(file);
-          }
+          /** See the source-selected historical-file enforcement above. */
           if (file.embedded) {
             this.contextHandlers?.processFile(file);
             continue;
@@ -1793,6 +1787,7 @@ class AgentClient extends BaseClient {
     }
 
     payload = formattedMessages;
+    this.modelBoundSteerFileIdsBySourceMessageId = new Map();
     if (this.options.resendFiles) {
       /** Persisted steer parts of past turns replay with their attachments:
        *  one batched owner-scoped fetch, re-encoded per turn and stamped as a
@@ -1810,6 +1805,21 @@ class AgentClient extends BaseClient {
         docsById: this.authorizedHistoricalFiles,
         getFiles: db.getFiles,
       });
+      for (const { sourceMessageId, fileIds } of stamped) {
+        if (typeof sourceMessageId !== 'string' || sourceMessageId.length === 0) {
+          continue;
+        }
+        const boundFileIds =
+          this.modelBoundSteerFileIdsBySourceMessageId.get(sourceMessageId) ?? new Set();
+        for (const fileId of fileIds ?? []) {
+          if (typeof fileId === 'string' && fileId.length > 0) {
+            boundFileIds.add(fileId);
+          }
+        }
+        if (boundFileIds.size > 0) {
+          this.modelBoundSteerFileIdsBySourceMessageId.set(sourceMessageId, boundFileIds);
+        }
+      }
       for (const { index, media, steerText } of stamped) {
         /** Count the FULL stamped content and subtract only the steer body
          *  (already counted inside the assistant message): extracted file
@@ -3132,10 +3142,10 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
+      const modelBoundCallback = AgentClient.prototype.createModelBoundChatModelCallback.call(this);
 
       config = {
         runName: 'AgentRun',
-        callbacks: [AgentClient.prototype.createModelBoundChatModelCallback.call(this)],
         configurable: {
           thread_id: this.conversationId,
           // LangGraph owns `checkpoint_ns` and resets it to '' at every root
@@ -3435,6 +3445,7 @@ class AgentClient extends BaseClient {
         const createRunPromise = createRun({
           agents,
           messages,
+          modelCallbacks: [modelBoundCallback],
           // This controller implements the full HITL pause/resume lifecycle (handleRunInterrupt
           // persists the pending action; the /resume route rebuilds + continues the run), so it
           // opts into the tool-approval wiring. Non-resumable callers (OpenAI-compat, Responses)
@@ -3594,6 +3605,17 @@ class AgentClient extends BaseClient {
       this.applyHideSequentialOutputsFilter();
       this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
+      if (isContentFilterError(err)) {
+        logger.warn(
+          '[api/server/controllers/agents/client.js #sendCompletion] Blocked by content policy',
+          {
+            source: err?.body?.source,
+            field: err?.body?.field,
+            code: err?.code,
+          },
+        );
+        throw err;
+      }
       if (abortController.signal.aborted) {
         logger.debug(
           '[api/server/controllers/agents/client.js #sendCompletion] Operation aborted by user',
@@ -3752,7 +3774,6 @@ class AgentClient extends BaseClient {
 
       config = {
         runName: 'AgentRun',
-        callbacks: [AgentClient.prototype.createModelBoundChatModelCallback.call(this)],
         configurable: {
           thread_id: this.conversationId,
           checkpoint_ns: '',
@@ -3815,7 +3836,7 @@ class AgentClient extends BaseClient {
           modelBoundAgentFiles.push(...agent.agentContextAttachments);
         }
       }
-      await assertResumeRuntimeContentAllowed(
+      const resumeContentProjection = await assertResumeRuntimeContentAllowed(
         {
           appConfig,
           conversationId: this.conversationId,
@@ -3836,6 +3857,11 @@ class AgentClient extends BaseClient {
           getFiles: db.getFiles,
         },
       );
+      this.modelBoundCurrentFiles = [
+        ...(Array.isArray(this.modelBoundCurrentFiles) ? this.modelBoundCurrentFiles : []),
+        ...resumeContentProjection.resolvedFiles,
+      ];
+      const modelBoundCallback = AgentClient.prototype.createModelBoundChatModelCallback.call(this);
 
       // Re-prime skill files invoked in the pre-pause segment (mirrors the normal path's
       // `primeInvokedSkills(payload)`), so an approved code/file-backed tool keeps the
@@ -3888,6 +3914,7 @@ class AgentClient extends BaseClient {
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
+        modelCallbacks: [modelBoundCallback],
         // State (messages, tool calls) is rehydrated from the checkpoint by
         // run.resume; createRun only needs the agents to rebuild the graph.
         messages: [],

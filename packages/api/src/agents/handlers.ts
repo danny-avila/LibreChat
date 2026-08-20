@@ -4614,7 +4614,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           return reportResult({
                             toolCallId: tc.id,
                             status: 'success' as const,
-                            content: runCheckBackgroundTask({
+                            content: await runCheckBackgroundTask({
                               userId: backgroundUserId,
                               conversationId: backgroundConversationId,
                               args: tc.args,

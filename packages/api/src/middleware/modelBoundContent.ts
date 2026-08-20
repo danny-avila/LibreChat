@@ -1,3 +1,4 @@
+import { StreamLimitExceededError } from '@librechat/agents';
 import {
   HITL_MESSAGE_FILTER_FIELDS,
   hasActivePiiFields,
@@ -50,15 +51,31 @@ import {
   getUserSubmittedPathState,
 } from '../protection/provenance';
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
+import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
 import { extractMessageContent } from '../protection/adapters/messages';
-import { ContentFilterError } from './contentFilter';
+
+export type ModelBoundProviderMessage = ExternalChatMessage &
+  Omit<StoredMessageContentInput, 'content'> & {
+    readonly id?: string;
+    readonly messageId?: string;
+    readonly text?: string;
+    readonly additional_kwargs?: {
+      readonly injected?: boolean;
+      readonly isMeta?: boolean;
+      readonly source?: string;
+      readonly sourceMessageId?: string;
+      readonly sourceMessageIds?: readonly string[];
+    };
+    readonly _getType?: () => string;
+  };
 
 type ModelBoundMessage = ExternalChatMessage & {
   readonly _getType?: () => string;
 };
 
 type StoredModelBoundMessage = StoredMessageContentInput & {
+  readonly id?: string;
   readonly messageId?: string;
   readonly isCreatedByUser?: boolean;
   readonly isUserSubmitted?: boolean;
@@ -67,6 +84,190 @@ type StoredModelBoundMessage = StoredMessageContentInput & {
 };
 
 type ModelBoundCanonicalFile = FileContentInput & CanonicalFileInspectionFile;
+
+type ModelBoundPolicyError =
+  | ContentFilterError
+  | ContentTraversalLimitError
+  | UninspectableFileError;
+
+/**
+ * Compatibility bridge for @librechat/agents 3.6.9. Its summarization,
+ * fallback, and subagent recovery paths intentionally rethrow stream-safety
+ * errors but recover from ordinary model callback errors. A provider-bound
+ * policy rejection is likewise non-recoverable, so wrapping it in the one
+ * fatal class understood by that SDK keeps every execution path fail-closed.
+ * Remove this bridge once the SDK exposes a generic fatal callback error.
+ */
+class FatalModelBoundPolicyError extends StreamLimitExceededError {
+  public readonly code: ModelBoundPolicyError['code'];
+  public readonly statusCode: ModelBoundPolicyError['statusCode'];
+  public readonly body: ModelBoundPolicyError['body'];
+  public override readonly cause: ModelBoundPolicyError;
+
+  constructor(error: ModelBoundPolicyError) {
+    super({ kind: 'delta_events', limit: 0, observed: 0 });
+    this.name = error.name;
+    this.message = error.message;
+    this.code = error.code;
+    this.statusCode = error.statusCode;
+    this.body = error.body;
+    this.cause = error;
+    Object.setPrototypeOf(this, FatalModelBoundPolicyError.prototype);
+  }
+}
+
+export interface ModelBoundProviderContentInput {
+  readonly filters?: FiltersConfig;
+  readonly legacyPii?: MessageFilterPiiConfig;
+  readonly providerMessages: readonly ModelBoundProviderMessage[];
+  readonly storedMessages?: readonly (StoredModelBoundMessage | null | undefined)[];
+  readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
+  /** Canonical files actually materialized for each persisted source row. */
+  readonly fileIdsBySourceMessageId?: ReadonlyMap<string, readonly string[]>;
+}
+
+type ModelBoundFileReference = { readonly file_id?: string } | null | undefined;
+
+export interface ModelBoundSourceFileInput {
+  readonly messageFilesBySourceMessageId?: Readonly<
+    Record<string, readonly ModelBoundFileReference[] | null | undefined>
+  >;
+  readonly steerFileIdsBySourceMessageId?: ReadonlyMap<string, Iterable<string>>;
+  readonly replayHistoricalFiles: boolean;
+  readonly historicalFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
+  readonly processedCurrentFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
+  readonly canonicalCurrentFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
+}
+
+export interface ModelBoundSourceFileProjection {
+  readonly fileIdsBySourceMessageId: ReadonlyMap<string, readonly string[]>;
+  readonly resolvedFiles: readonly ModelBoundCanonicalFile[];
+}
+
+/** Collects every provider-supported persisted file locator for owner hydration. */
+export function collectModelBoundHistoricalFileIds(
+  messages: readonly (StoredMessageContentInput | null | undefined)[],
+): string[] {
+  const fileIds = new Set<string>();
+  const appendReferences = (
+    references: readonly ModelBoundFileReference[] | null | undefined,
+  ): void => {
+    for (const reference of references ?? []) {
+      if (typeof reference?.file_id !== 'string') {
+        continue;
+      }
+      const fileId = reference.file_id.trim();
+      if (fileId.length > 0) {
+        fileIds.add(fileId);
+      }
+    }
+  };
+  for (const message of messages) {
+    if (message == null) {
+      continue;
+    }
+    appendReferences(message.files);
+    appendReferences(message.attachments);
+    for (const part of message.content ?? []) {
+      if (part == null) {
+        continue;
+      }
+      appendReferences(part.files);
+      appendReferences(part.image_file == null ? undefined : [part.image_file]);
+      appendReferences(part.file == null ? undefined : [part.file]);
+      if (typeof part.file_id === 'string') {
+        appendReferences([{ file_id: part.file_id }]);
+      }
+    }
+  }
+  return [...fileIds];
+}
+
+/**
+ * Builds the security-sensitive provider source/file association in typed
+ * backend code. Legacy clients supply runtime state only; this helper owns
+ * source normalization, deduplication, replay selection, and canonical-row
+ * precedence for the final model-bound guard.
+ */
+export function projectModelBoundSourceFiles(
+  input: ModelBoundSourceFileInput,
+): ModelBoundSourceFileProjection {
+  const fileIdsBySourceMessageId = new Map<string, Set<string>>();
+  const appendFileIds = (
+    sourceMessageId: string,
+    files: Iterable<string | ModelBoundFileReference>,
+  ): void => {
+    const normalizedSourceId = sourceMessageId.trim();
+    if (normalizedSourceId.length === 0) {
+      return;
+    }
+    const fileIds = fileIdsBySourceMessageId.get(normalizedSourceId) ?? new Set<string>();
+    for (const file of files) {
+      const candidate = typeof file === 'string' ? file : file?.file_id;
+      if (typeof candidate !== 'string') {
+        continue;
+      }
+      const fileId = candidate.trim();
+      if (fileId.length > 0) {
+        fileIds.add(fileId);
+      }
+    }
+    if (fileIds.size > 0) {
+      fileIdsBySourceMessageId.set(normalizedSourceId, fileIds);
+    }
+  };
+
+  for (const [sourceMessageId, files] of Object.entries(
+    input.messageFilesBySourceMessageId ?? {},
+  )) {
+    appendFileIds(sourceMessageId, files ?? []);
+  }
+  for (const [sourceMessageId, fileIds] of input.steerFileIdsBySourceMessageId ?? []) {
+    appendFileIds(sourceMessageId, fileIds);
+  }
+
+  const resolvedFilesById = new Map<string, ModelBoundCanonicalFile>();
+  const appendResolvedFiles = (
+    files: Iterable<ModelBoundCanonicalFile | null | undefined> | undefined,
+  ): void => {
+    for (const file of files ?? []) {
+      if (typeof file?.file_id !== 'string') {
+        continue;
+      }
+      const fileId = file.file_id.trim();
+      if (fileId.length > 0) {
+        resolvedFilesById.set(fileId, file);
+      }
+    }
+  };
+  if (input.replayHistoricalFiles) {
+    appendResolvedFiles(input.historicalFiles);
+  }
+  appendResolvedFiles(input.processedCurrentFiles);
+  /** Canonical current rows come last so OCR/extraction coverage survives
+   * provider encoding that intentionally reduces transport metadata. */
+  appendResolvedFiles(input.canonicalCurrentFiles);
+
+  return {
+    fileIdsBySourceMessageId: new Map(
+      [...fileIdsBySourceMessageId].map(([sourceMessageId, fileIds]) => [
+        sourceMessageId,
+        [...fileIds],
+      ]),
+    ),
+    resolvedFiles: [...resolvedFilesById.values()],
+  };
+}
+
+export interface ModelBoundChatModelCallback {
+  readonly name: 'librechat-model-bound-content-filter';
+  readonly raiseError: true;
+  readonly awaitHandlers: true;
+  readonly handleChatModelStart: (
+    llm: object | undefined,
+    messageBatches: readonly (readonly ModelBoundProviderMessage[])[],
+  ) => void;
+}
 
 export interface ModelBoundContentInput {
   readonly filters?: FiltersConfig;
@@ -343,6 +544,369 @@ function extractExactUserSubmittedMessageFragments(
     fragments: getExactUserSubmittedMessageFragments(projectedFragments, entries),
     traversalError,
   };
+}
+
+function appendSourceMessageId(sourceIds: Set<string>, candidate: string | undefined): void {
+  if (typeof candidate !== 'string') {
+    return;
+  }
+  const normalized = candidate.trim();
+  if (normalized.length > 0) {
+    sourceIds.add(normalized);
+  }
+}
+
+function getProviderSourceMessageIds(message: ModelBoundProviderMessage): Set<string> {
+  const sourceIds = new Set<string>();
+  for (const sourceId of message.additional_kwargs?.sourceMessageIds ?? []) {
+    appendSourceMessageId(sourceIds, sourceId);
+  }
+  appendSourceMessageId(sourceIds, message.additional_kwargs?.sourceMessageId);
+  appendSourceMessageId(sourceIds, message.messageId);
+  appendSourceMessageId(sourceIds, message.id);
+  return sourceIds;
+}
+
+function getStoredMessageIds(message: StoredModelBoundMessage): Set<string> {
+  const messageIds = new Set<string>();
+  appendSourceMessageId(messageIds, message.messageId);
+  appendSourceMessageId(messageIds, message.id);
+  return messageIds;
+}
+
+function isSteerSubmittedPath(message: StoredModelBoundMessage, path: JsonPointer): boolean {
+  const segments = getSafeUserSubmittedPathSegments(path);
+  if (segments == null || segments[0] !== 'content' || !/^\d+$/.test(segments[1] ?? '')) {
+    return false;
+  }
+  const part = Array.isArray(message.content) ? message.content[Number(segments[1])] : undefined;
+  return part != null && typeof part === 'object' && part.type === 'steer';
+}
+
+function appendReferencedFileIds(
+  fileIds: Set<string>,
+  references: readonly ({ readonly file_id?: string } | null | undefined)[] | null | undefined,
+): void {
+  for (const reference of references ?? []) {
+    const fileId = reference?.file_id;
+    if (typeof fileId === 'string' && fileId.length > 0) {
+      fileIds.add(fileId);
+    }
+  }
+}
+
+function appendPartFileIds(
+  fileIds: Set<string>,
+  part: NonNullable<NonNullable<StoredMessageContentInput['content']>[number]>,
+) {
+  appendReferencedFileIds(fileIds, part.files);
+  appendReferencedFileIds(fileIds, part.image_file == null ? undefined : [part.image_file]);
+  appendReferencedFileIds(fileIds, part.file == null ? undefined : [part.file]);
+  if (typeof part.file_id === 'string' && part.file_id.length > 0) {
+    fileIds.add(part.file_id);
+  }
+}
+
+function appendStoredMessageFileIds(
+  fileIds: Set<string>,
+  message: StoredModelBoundMessage,
+  filters: FiltersConfig | undefined,
+): void {
+  const submittedPathState = getUserSubmittedPathState(message);
+  const role = normalizeRole(message);
+  const isEntireMessageUserSubmitted =
+    message.isCreatedByUser === true ||
+    message.isUserSubmitted === true ||
+    role === 'user' ||
+    role === 'tool' ||
+    submittedPathState.overflowed ||
+    (filters?.messages?.unattributedAssistantContent === 'inspect' &&
+      typeof message.isUserSubmitted !== 'boolean' &&
+      submittedPathState.paths.length === 0 &&
+      (message.isCreatedByUser === false || role === 'assistant'));
+  if (isEntireMessageUserSubmitted) {
+    appendReferencedFileIds(fileIds, message.files);
+  }
+  const content = Array.isArray(message.content) ? message.content : [];
+  for (let index = 0; index < content.length; index++) {
+    const part = content[index];
+    if (part == null) {
+      continue;
+    }
+    const partPath = `/content/${index}`;
+    const hasSubmittedFilePath = submittedPathState.paths.some(
+      (path) =>
+        path === partPath ||
+        path.startsWith(`${partPath}/files`) ||
+        path.startsWith(`${partPath}/file_id`) ||
+        path.startsWith(`${partPath}/file`) ||
+        path.startsWith(`${partPath}/image_file`),
+    );
+    if (isEntireMessageUserSubmitted || hasSubmittedFilePath) {
+      appendPartFileIds(fileIds, part);
+    }
+  }
+}
+
+function projectProviderMessage(message: ModelBoundProviderMessage): StoredModelBoundMessage {
+  const role = normalizeRole(message);
+  const providerSource = message.additional_kwargs?.source;
+  const isSyntheticContext =
+    message.additional_kwargs?.isMeta === true ||
+    (providerSource != null && providerSource !== 'steer') ||
+    (message.additional_kwargs?.injected === true && providerSource !== 'steer');
+  const isUser = role === 'user' && !isSyntheticContext;
+  const { content, text: providerText, ...messageWithoutContent } = message;
+  const providerContent = content ?? providerText;
+  return {
+    ...messageWithoutContent,
+    role,
+    isCreatedByUser: isUser,
+    isUserSubmitted: isUser,
+    ...(typeof providerContent === 'string'
+      ? { text: providerContent }
+      : { content: providerContent }),
+  };
+}
+
+function projectStoredMessageForProvider(
+  message: StoredModelBoundMessage,
+): StoredModelBoundMessage {
+  const {
+    attachments: _attachments,
+    feedback: _feedback,
+    files: _files,
+    name: _name,
+    original: _original,
+    sender: _sender,
+    summary: _summary,
+    text: storedText,
+    updated: _updated,
+    ...providerMessageWithoutText
+  } = message;
+  const providerMessage: StoredModelBoundMessage = {
+    ...providerMessageWithoutText,
+    ...(message.content == null && storedText != null ? { text: storedText } : {}),
+  };
+  if (!Array.isArray(message.content)) {
+    return providerMessage;
+  }
+  return {
+    ...providerMessage,
+    content: message.content.map((part) => {
+      if (part == null) {
+        return part;
+      }
+      const {
+        file: _partFile,
+        files: _partFiles,
+        image_file: _imageFile,
+        file_id: _fileId,
+        ...providerPart
+      } = part;
+      return providerPart;
+    }),
+  };
+}
+
+interface ModelBoundProviderContentIndex {
+  readonly storedMessagesById: ReadonlyMap<string, StoredModelBoundMessage>;
+  readonly resolvedFilesById: ReadonlyMap<string, ModelBoundCanonicalFile>;
+}
+
+function createModelBoundProviderContentIndex(
+  input: Pick<ModelBoundProviderContentInput, 'storedMessages' | 'resolvedFiles'>,
+): ModelBoundProviderContentIndex {
+  const storedMessagesById = new Map<string, StoredModelBoundMessage>();
+  for (const message of input.storedMessages ?? []) {
+    if (message == null) {
+      continue;
+    }
+    for (const messageId of getStoredMessageIds(message)) {
+      storedMessagesById.set(messageId, message);
+    }
+  }
+  const resolvedFilesById = new Map<string, ModelBoundCanonicalFile>();
+  for (const file of input.resolvedFiles ?? []) {
+    if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
+      resolvedFilesById.set(file.file_id, file);
+    }
+  }
+  return { storedMessagesById, resolvedFilesById };
+}
+
+function projectModelBoundProviderContent(
+  input: ModelBoundProviderContentInput,
+  index: ModelBoundProviderContentIndex,
+): {
+  storedMessages: StoredModelBoundMessage[];
+  resolvedFiles: ModelBoundCanonicalFile[];
+} {
+  const selectedMessages: StoredModelBoundMessage[] = [];
+  const selectedStoredMessages = new Set<StoredModelBoundMessage>();
+  const selectedFileIds = new Set<string>();
+  const selectStoredMessage = (message: StoredModelBoundMessage): void => {
+    if (selectedStoredMessages.has(message)) {
+      return;
+    }
+    selectedStoredMessages.add(message);
+    selectedMessages.push(projectStoredMessageForProvider(message));
+  };
+  for (const providerMessage of input.providerMessages) {
+    const sourceIds = getProviderSourceMessageIds(providerMessage);
+    const providerRole = normalizeRole(providerMessage);
+    let hasSubmittedCanonicalSource = false;
+    for (const sourceId of sourceIds) {
+      const storedMessage = index.storedMessagesById.get(sourceId);
+      if (storedMessage == null) {
+        continue;
+      }
+      const storedRole = normalizeRole(storedMessage);
+      const isStoredUserSource =
+        storedMessage.isCreatedByUser === true ||
+        storedMessage.isUserSubmitted === true ||
+        storedRole === 'user';
+      const submittedPathState = getUserSubmittedPathState(storedMessage);
+      const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(storedMessage);
+      const explicitSubmittedPaths = new Set(
+        (storedMessage.userSubmittedPaths ?? []).filter(
+          (path): path is string => typeof path === 'string',
+        ),
+      );
+      const hasStoredSubmittedProvenance =
+        submittedPathState.overflowed ||
+        submittedMessageFieldState.overflowed ||
+        submittedPathState.paths.some(
+          (path) => explicitSubmittedPaths.has(path) && !isSteerSubmittedPath(storedMessage, path),
+        ) ||
+        submittedMessageFieldState.entries.length > 0;
+      hasSubmittedCanonicalSource ||= hasStoredSubmittedProvenance;
+      const needsCanonicalProvenance =
+        isStoredUserSource ||
+        hasStoredSubmittedProvenance ||
+        providerRole === 'user' ||
+        (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
+          providerRole === 'assistant');
+      if (needsCanonicalProvenance) {
+        selectStoredMessage(storedMessage);
+      }
+      if (isStoredUserSource || hasStoredSubmittedProvenance || providerRole === 'user') {
+        for (const fileId of input.fileIdsBySourceMessageId?.get(sourceId) ?? []) {
+          if (typeof fileId === 'string' && fileId.length > 0) {
+            selectedFileIds.add(fileId);
+          }
+        }
+      }
+    }
+
+    /** Always inspect the exact final wire payload as well as canonical rows.
+     * This covers provider transformations and source-backed content merged
+     * with synthetic HumanMessages while canonical rows retain durable HITL
+     * and file provenance. Assistant/model prose remains model-attributed. */
+    let projectedMessage = projectProviderMessage(providerMessage);
+    if (providerRole === 'assistant' && hasSubmittedCanonicalSource) {
+      /** A mixed assistant row can collapse a user-edited/HITL fragment and
+       * adjacent model text into one provider AI payload. Until the SDK emits
+       * per-derived-part lineage, inspect that exact payload fail-closed so a
+       * blocked value cannot be assembled across the attribution boundary.
+       * Steer-only provenance is excluded above because steers are emitted as
+       * their own HumanMessages and may be pruned independently. */
+      projectedMessage = {
+        ...projectedMessage,
+        isCreatedByUser: true,
+        isUserSubmitted: true,
+      };
+    }
+    selectedMessages.push(projectedMessage);
+    appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+  }
+
+  const resolvedFiles: ModelBoundCanonicalFile[] = [];
+  for (const fileId of selectedFileIds) {
+    const file = index.resolvedFilesById.get(fileId);
+    if (file != null) {
+      resolvedFiles.push(file);
+    }
+  }
+  if (selectedFileIds.size > 0) {
+    selectedMessages.push({
+      role: 'user',
+      isCreatedByUser: true,
+      isUserSubmitted: true,
+      files: [...selectedFileIds].map((file_id) => ({ file_id })),
+    });
+  }
+  return { storedMessages: selectedMessages, resolvedFiles };
+}
+
+function assertIndexedModelBoundProviderContent(
+  input: ModelBoundProviderContentInput,
+  index: ModelBoundProviderContentIndex,
+): void {
+  if (!hasModelBoundContentProtection(input.filters, input.legacyPii)) {
+    return;
+  }
+  const projection = projectModelBoundProviderContent(input, index);
+  assertModelBoundContent({
+    filters: input.filters,
+    legacyPii: input.legacyPii,
+    storedMessages: projection.storedMessages,
+    resolvedFiles: projection.resolvedFiles,
+  });
+}
+
+/** Inspects the exact provider selection while retaining persisted provenance. */
+export function assertModelBoundProviderContent(input: ModelBoundProviderContentInput): void {
+  assertIndexedModelBoundProviderContent(input, createModelBoundProviderContentIndex(input));
+}
+
+/** Creates a run-stable callback shared by root, summary, and subagent model clients. */
+export function createModelBoundChatModelCallback(
+  input: Omit<ModelBoundProviderContentInput, 'providerMessages'>,
+): ModelBoundChatModelCallback {
+  const storedMessages = [...(input.storedMessages ?? [])];
+  const resolvedFiles = [...(input.resolvedFiles ?? [])];
+  const fileIdsBySourceMessageId = new Map(
+    [...(input.fileIdsBySourceMessageId ?? [])].map(([sourceMessageId, fileIds]) => [
+      sourceMessageId,
+      [...fileIds],
+    ]),
+  );
+  const stableInput = {
+    filters: input.filters,
+    legacyPii: input.legacyPii,
+    storedMessages,
+    resolvedFiles,
+    fileIdsBySourceMessageId,
+  };
+  const index = createModelBoundProviderContentIndex(stableInput);
+  const callback: ModelBoundChatModelCallback = Object.freeze({
+    name: 'librechat-model-bound-content-filter',
+    raiseError: true,
+    awaitHandlers: true,
+    handleChatModelStart: (
+      _llm: object | undefined,
+      messageBatches: readonly (readonly ModelBoundProviderMessage[])[],
+    ) => {
+      for (const providerMessages of messageBatches) {
+        try {
+          assertIndexedModelBoundProviderContent(
+            {
+              ...stableInput,
+              providerMessages,
+            },
+            index,
+          );
+        } catch (error) {
+          if (!isContentFilterError(error) || error instanceof FatalModelBoundPolicyError) {
+            throw error;
+          }
+          throw new FatalModelBoundPolicyError(error);
+        }
+      }
+    },
+  });
+  return callback;
 }
 
 /**

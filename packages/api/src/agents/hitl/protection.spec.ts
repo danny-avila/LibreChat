@@ -56,7 +56,7 @@ describe('assertResumeRuntimeContentAllowed', () => {
 
     await expect(
       assertResumeRuntimeContentAllowed(createInput(appConfig), dependencies),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ resolvedFiles: [] });
     expect(dependencies.getAgentCheckpointer).not.toHaveBeenCalled();
     expect(dependencies.getMessages).not.toHaveBeenCalled();
     expect(dependencies.getFiles).not.toHaveBeenCalled();
@@ -144,7 +144,49 @@ describe('assertResumeRuntimeContentAllowed', () => {
       seedContent: [{ type: 'text', text: 'Seed PRIVATE-ASSISTANT' }],
     };
 
-    await expect(assertResumeRuntimeContentAllowed(input, dependencies)).resolves.toBeUndefined();
+    await expect(assertResumeRuntimeContentAllowed(input, dependencies)).resolves.toEqual({
+      resolvedFiles: [],
+    });
+  });
+
+  it('returns owner-hydrated resume files for the frozen model callback', async () => {
+    const dependencies = createDependencies();
+    dependencies.getAgentCheckpointer.mockResolvedValue({
+      getTuple: jest.fn().mockResolvedValue(null),
+    });
+    const resolvedFile = {
+      file_id: 'resume-file',
+      filename: 'resume.txt',
+      type: 'text/plain',
+      text: 'Safe resume file content',
+    };
+    dependencies.getFiles.mockResolvedValue([resolvedFile]);
+    const input = {
+      ...createInput({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block' as const,
+            },
+          },
+        },
+      }),
+      storedMessages: [
+        {
+          messageId: 'resume-message',
+          role: 'user',
+          isCreatedByUser: true,
+          text: 'Use the resume file',
+          files: [{ file_id: 'resume-file' }],
+        },
+      ],
+    };
+
+    await expect(assertResumeRuntimeContentAllowed(input, dependencies)).resolves.toEqual({
+      resolvedFiles: [resolvedFile],
+    });
   });
 
   it('retains toolArguments coverage for checkpoint assistant tool calls', async () => {
@@ -200,7 +242,7 @@ describe('assertResumeRuntimeContentAllowed', () => {
 
     await expect(
       assertResumeRuntimeContentAllowed(contentPartInput, contentPartDependencies),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ resolvedFiles: [] });
 
     const answerDependencies = createDependencies();
     answerDependencies.getAgentCheckpointer.mockResolvedValue({

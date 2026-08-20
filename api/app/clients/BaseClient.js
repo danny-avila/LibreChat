@@ -14,9 +14,9 @@ const {
   getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceMessageFields,
-  assertModelBoundContent,
-  hasActiveFilePolicy,
-  resolveCanonicalFileReferences,
+  assertModelBoundProviderContent,
+  collectModelBoundHistoricalFileIds,
+  projectModelBoundSourceFiles,
 } = require('@librechat/api');
 const {
   Constants,
@@ -40,49 +40,22 @@ const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
 
-const collectHistoricalFileRefs = (message) => {
-  const refs = [];
-  if (Array.isArray(message.files)) {
-    refs.push(...message.files);
-  }
-  if (Array.isArray(message.attachments)) {
-    refs.push(...message.attachments);
-  }
-  /** Steer parts carry their own attachment refs inside assistant content;
-   *  collecting them here folds the steer replay stamp's lookup into this
-   *  single per-turn query (see `stampSteerPartMedia`). */
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (part?.type === ContentTypes.STEER && Array.isArray(part.files)) {
-        refs.push(...part.files);
-      }
-    }
-  }
-  return refs;
-};
-
-const collectHistoricalFileIds = (messages) => {
-  const fileIds = new Set();
-  for (const message of messages) {
-    for (const ref of collectHistoricalFileRefs(message)) {
-      if (ref?.file_id) {
-        fileIds.add(ref.file_id);
-      }
-    }
-  }
-  return Array.from(fileIds);
-};
-
 const omitUnreplayedHistoricalFiles = (messages) =>
   messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
     ...message,
     ...(Array.isArray(message.content)
       ? {
           content: message.content.map((part) => {
-            if (part?.type !== ContentTypes.STEER || part.files === undefined) {
+            if (part == null || typeof part !== 'object') {
               return part;
             }
-            const { files: _partFiles, ...rest } = part;
+            const {
+              file: _partFile,
+              files: _partFiles,
+              image_file: _imageFile,
+              file_id: _fileId,
+              ...rest
+            } = part;
             return rest;
           }),
         }
@@ -133,6 +106,14 @@ const buildOwnerFileFilter = (fileIds, user) => {
     filter.tenantId = user.tenantId;
   }
   return filter;
+};
+
+const getOwnerHistoricalFiles = async (fileIds, user) => {
+  const fileFilter = buildOwnerFileFilter(fileIds, user);
+  if (!fileFilter) {
+    return [];
+  }
+  return (await db.getFiles(fileFilter, {}, {})) ?? [];
 };
 
 const TOOL_ATTACHMENT_KEYS = [
@@ -263,72 +244,24 @@ class BaseClient {
     return this.options.resendFiles === false ? omitUnreplayedHistoricalFiles(messages) : messages;
   }
 
-  /**
-   * Retains canonical persisted rows by the source identity stamped onto
-   * formatted model messages. Agent pruning preserves this identity, which
-   * lets the final provider-bound guard inspect only rows that survived the
-   * context-window selection while keeping their user-submitted provenance.
-   *
-   * @param {TMessage[]} messages
-   */
+  /** @param {TMessage[]} messages */
   setModelBoundStoredMessages(messages) {
-    this.modelBoundStoredMessagesById = new Map();
-    for (const message of messages ?? []) {
-      const messageId = message?.messageId ?? message?.id;
-      if (typeof messageId === 'string' && messageId.length > 0) {
-        this.modelBoundStoredMessagesById.set(messageId, message);
-      }
-    }
+    this.modelBoundStoredMessages = [...(messages ?? [])];
   }
 
-  /**
-   * Builds the source-aware inspection set for an exact provider payload.
-   * Source-backed messages reuse their canonical persisted rows so HITL/edit
-   * provenance remains authoritative. Messages created during the run have no
-   * source row and are projected from the exact payload instead.
-   *
-   * @param {Array<Record<string, unknown>>} messages
-   * @returns {Array<Record<string, unknown>>}
-   */
-  getModelBoundProviderMessages(messages) {
-    const retainedSourceIds = new Set();
-    const projectedMessages = [];
-    for (const message of messages ?? []) {
-      const sourceMessageId =
-        message?.additional_kwargs?.sourceMessageId ?? message?.messageId ?? message?.id;
-      if (
-        typeof sourceMessageId === 'string' &&
-        this.modelBoundStoredMessagesById?.has(sourceMessageId)
-      ) {
-        retainedSourceIds.add(sourceMessageId);
-        continue;
-      }
-      const rawRole = message?.role ?? message?._getType?.();
-      let role = rawRole;
-      if (rawRole === 'human') {
-        role = 'user';
-      } else if (rawRole === 'ai') {
-        role = 'assistant';
-      }
-      const projectedMessage = {
-        ...message,
-        role,
-        isCreatedByUser: role === 'user',
-        isUserSubmitted: role === 'user',
-      };
-      if (typeof message?.text === 'string') {
-        projectedMessage.text = message.text;
-      } else if (typeof message?.content === 'string') {
-        projectedMessage.text = message.content;
-      }
-      projectedMessages.push(projectedMessage);
-    }
-    return [
-      ...Array.from(retainedSourceIds, (messageId) =>
-        this.modelBoundStoredMessagesById.get(messageId),
-      ),
-      ...projectedMessages,
-    ];
+  getModelBoundFileProjection() {
+    return projectModelBoundSourceFiles({
+      messageFilesBySourceMessageId: this.message_file_map,
+      steerFileIdsBySourceMessageId: this.modelBoundSteerFileIdsBySourceMessageId,
+      replayHistoricalFiles: this.options.resendFiles !== false,
+      historicalFiles: this.authorizedHistoricalFiles?.values?.(),
+      processedCurrentFiles: Array.isArray(this.options.attachments)
+        ? this.options.attachments
+        : [],
+      canonicalCurrentFiles: Array.isArray(this.modelBoundCurrentFiles)
+        ? this.modelBoundCurrentFiles
+        : [],
+    });
   }
 
   /**
@@ -342,14 +275,14 @@ class BaseClient {
     const messages = Array.isArray(payload)
       ? payload
       : [{ role: 'user', content: payload, isCreatedByUser: true, isUserSubmitted: true }];
-    assertModelBoundContent({
+    const fileProjection = this.getModelBoundFileProjection();
+    assertModelBoundProviderContent({
       filters: this.options.req?.config?.filters,
       legacyPii: this.options.req?.config?.messageFilter?.pii,
-      storedMessages: this.getModelBoundProviderMessages(messages),
-      resolvedFiles:
-        this.options.resendFiles === false
-          ? []
-          : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []),
+      providerMessages: messages,
+      storedMessages: this.modelBoundStoredMessages,
+      fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
+      resolvedFiles: fileProjection.resolvedFiles,
     });
   }
 
@@ -745,8 +678,10 @@ class BaseClient {
           const text = editedContent[type];
           if (index >= 0 && index < latestMessage.content.length) {
             const contentPart = latestMessage.content[index];
+            let didApplyEdit = false;
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
               contentPart[ContentTypes.THINK] = text;
+              didApplyEdit = true;
               delete contentPart.reasoning_label;
               delete contentPart.reasoning_label_step_id;
               delete contentPart.reasoning_label_attempts;
@@ -755,6 +690,13 @@ class BaseClient {
               delete contentPart.reasoning_label_status;
             } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
               contentPart[ContentTypes.TEXT] = text;
+              didApplyEdit = true;
+            }
+            if (didApplyEdit) {
+              latestMessage.userSubmittedPaths = mergeUserSubmittedPaths(
+                latestMessage.userSubmittedPaths,
+                [`/content/${index}/${type}`],
+              );
             }
           }
         }
@@ -772,24 +714,14 @@ class BaseClient {
     this.parentMessageId = parentMessageId;
     const modelBoundStoredMessages = this.getModelBoundStoredMessages(this.currentMessages);
     this.setModelBoundStoredMessages(modelBoundStoredMessages);
-    let resolvedHistoricalFiles =
-      this.options.resendFiles === false
-        ? []
-        : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []);
-    if (
-      this.options.resendFiles !== false &&
-      hasActiveFilePolicy(appConfig?.filters) &&
-      this.authorizedHistoricalFiles == null
-    ) {
-      const fileInspection = await resolveCanonicalFileReferences({
-        filters: appConfig.filters,
-        input: modelBoundStoredMessages,
-        user: this.options.req?.user,
-        getFiles: db.getFiles,
-      });
-      resolvedHistoricalFiles = fileInspection.hydratedFiles;
+    this.modelBoundCurrentFiles = Array.isArray(this.options.attachments)
+      ? [...this.options.attachments]
+      : [];
+    if (this.options.resendFiles !== false && this.authorizedHistoricalFiles == null) {
+      const historicalFileIds = collectModelBoundHistoricalFileIds(modelBoundStoredMessages);
+      const files = await getOwnerHistoricalFiles(historicalFileIds, this.options.req?.user);
       this.authorizedHistoricalFiles = new Map(
-        resolvedHistoricalFiles
+        files
           .filter((file) => typeof file?.file_id === 'string' && file.file_id.length > 0)
           .map((file) => [file.file_id, file]),
       );
@@ -799,7 +731,7 @@ class BaseClient {
       tokenCountMap,
       promptTokens,
     } = await this.buildMessages(
-      this.currentMessages,
+      modelBoundStoredMessages,
       parentMessageId,
       this.getBuildMessagesOptions(opts),
       opts,
@@ -1770,36 +1702,14 @@ class BaseClient {
       }
     }
 
-    const historicalFileIds = collectHistoricalFileIds(_messages);
+    const historicalFileIds = collectModelBoundHistoricalFileIds(_messages);
     const authorizedFilesById = new Map();
-    const filters = this.options.req?.config?.filters;
-    if (hasActiveFilePolicy(filters)) {
-      const fileInspection = await resolveCanonicalFileReferences({
-        filters,
-        input: _messages,
-        user: this.options.req?.user,
-        getFiles: db.getFiles,
-      });
-      for (const file of fileInspection.hydratedFiles) {
-        if (file?.file_id) {
-          authorizedFilesById.set(file.file_id, file);
-        }
-      }
-    } else {
-      const fileFilter = buildOwnerFileFilter(historicalFileIds, this.options.req?.user);
-      if (fileFilter) {
-        const files = (await db.getFiles(fileFilter, {}, {})) ?? [];
-        for (const file of files) {
-          if (file?.file_id) {
-            authorizedFilesById.set(file.file_id, file);
-          }
-        }
+    const files = await getOwnerHistoricalFiles(historicalFileIds, this.options.req?.user);
+    for (const file of files) {
+      if (file?.file_id) {
+        authorizedFilesById.set(file.file_id, file);
       }
     }
-    assertModelBoundContent({
-      filters,
-      resolvedFiles: [...authorizedFilesById.values()],
-    });
     /** Owner-scoped docs for THIS turn, including steer-part refs — the steer
      *  replay stamp consumes this instead of issuing a second query. */
     this.authorizedHistoricalFiles = authorizedFilesById;
@@ -1854,10 +1764,6 @@ class BaseClient {
         return message;
       }
 
-      assertModelBoundContent({
-        filters: this.options.req?.config?.filters,
-        files: contextFiles,
-      });
       await Promise.all([
         this.addFileContextToMessage(message, contextFiles),
         this.processAttachments(message, contextFiles),

@@ -602,6 +602,7 @@ describe('message route conversation ownership filters', () => {
   it('marks direct assistant text edits as user-submitted', async () => {
     getMessages.mockResolvedValue([
       {
+        conversationId: 'convo-1',
         isCreatedByUser: false,
         quotes: [],
         userSubmittedPaths: ['/content/0/text'],
@@ -695,6 +696,7 @@ describe('message route conversation ownership filters', () => {
     };
     getMessages.mockResolvedValue([
       {
+        conversationId: 'convo-1',
         content: [
           { type: 'text', text: 'old content' },
           { type: 'text', text: 'existing output' },
@@ -742,6 +744,7 @@ describe('message route conversation ownership filters', () => {
     });
     getMessages.mockResolvedValue([
       {
+        conversationId: 'convo-1',
         content: [
           { type: 'text', text: 'old content' },
           { type: 'text', text: 'existing output' },

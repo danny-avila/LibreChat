@@ -32,7 +32,11 @@ import type {
   MemoryContentInput,
   AssistantActionContentInput,
 } from '~/protection/adapters/submissions';
-import type { ResumeContentInspectionInput, ResumeSnapshotAgent } from './inspection';
+import type {
+  ResumeContentInspection,
+  ResumeContentInspectionInput,
+  ResumeSnapshotAgent,
+} from './inspection';
 import type { TextContentFragment } from '~/protection/types';
 import type { CheckAccessParams } from '~/middleware/access';
 import {
@@ -207,6 +211,10 @@ export type ResumeRuntimeContentProtectionDependencies = Pick<
   ResumeContentProtectionDependencies,
   'getAgentCheckpointer' | 'getMessages' | 'getFiles'
 >;
+
+export interface ResumeRuntimeContentProjection {
+  readonly resolvedFiles: ResumeContentInspection['hydratedFiles'];
+}
 
 function hasResumeHistoryProtection(appConfig: ResumeProtectionConfig | undefined): boolean {
   return (
@@ -824,7 +832,7 @@ async function assertResumeModelBoundContentAllowed(
     files,
   }: AssertResumeModelBoundContentAllowedInput,
   dependencies: ResumeRuntimeContentProtectionDependencies,
-): Promise<void> {
+): Promise<ResumeContentInspection['hydratedFiles']> {
   if (!hasResumeHistoryProtection(appConfig)) {
     assertModelBoundContent({
       filters: appConfig?.filters,
@@ -832,7 +840,7 @@ async function assertResumeModelBoundContentAllowed(
       agents,
       files,
     });
-    return;
+    return [];
   }
 
   let checkpointMessages: readonly ResumeCheckpointMessage[];
@@ -872,6 +880,7 @@ async function assertResumeModelBoundContentAllowed(
     resolvedFiles: contentInspection.hydratedFiles,
   });
   assertResumeToolContentAllowed(appConfig?.filters, checkpointMessages, seedContent, resumeValue);
+  return contentInspection.hydratedFiles;
 }
 
 export async function assertResumeContentAllowed(
@@ -926,17 +935,18 @@ export async function assertResumeContentAllowed(
 export async function assertResumeRuntimeContentAllowed(
   input: AssertResumeRuntimeContentAllowedInput,
   dependencies: ResumeRuntimeContentProtectionDependencies,
-): Promise<void> {
+): Promise<ResumeRuntimeContentProjection> {
   if (!hasResumeContentProtection(input.appConfig)) {
-    return;
+    return { resolvedFiles: [] };
   }
-  await assertResumeModelBoundContentAllowed(
+  const resolvedFiles = await assertResumeModelBoundContentAllowed(
     {
       ...input,
       trustLiveFileContent: true,
     },
     dependencies,
   );
+  return { resolvedFiles };
 }
 
 export function getUserFacingResumeError(

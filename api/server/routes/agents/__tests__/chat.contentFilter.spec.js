@@ -30,6 +30,8 @@ jest.mock('~/server/middleware', () => ({
   canAccessAgentFromBody: jest.fn(() => (_req, _res, next) => next()),
 }));
 
+jest.mock('~/server/middleware/validate/subagentThreadTurn', () => (_req, _res, next) => next());
+
 jest.mock('~/server/services/Endpoints/agents', () => ({
   initializeClient: jest.fn(),
 }));

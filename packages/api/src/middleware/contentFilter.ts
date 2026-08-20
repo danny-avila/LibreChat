@@ -68,11 +68,18 @@ export class ContentFilterError extends Error {
 export function isContentFilterError(
   error: unknown,
 ): error is ContentFilterError | ContentTraversalLimitError | UninspectableFileError {
-  return (
-    error instanceof ContentFilterError ||
-    error instanceof ContentTraversalLimitError ||
-    error instanceof UninspectableFileError
-  );
+  const isDirectContentFilterError = (
+    candidate: unknown,
+  ): candidate is ContentFilterError | ContentTraversalLimitError | UninspectableFileError =>
+    candidate instanceof ContentFilterError ||
+    candidate instanceof ContentTraversalLimitError ||
+    candidate instanceof UninspectableFileError;
+  if (isDirectContentFilterError(error)) {
+    return true;
+  }
+  const cause =
+    error instanceof Error ? (error as Error & { readonly cause?: unknown }).cause : undefined;
+  return cause !== undefined && cause !== error && isDirectContentFilterError(cause);
 }
 
 export interface CreateContentFilterOptions {
