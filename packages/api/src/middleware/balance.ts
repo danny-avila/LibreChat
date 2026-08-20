@@ -98,11 +98,6 @@ function buildUpdateFields(
     updateFields.refillAmount = config.refillAmount;
   }
 
-  // Initialize lastRefill if it's missing when auto-refill is enabled
-  if (config.autoRefillEnabled && !userRecord?.lastRefill) {
-    updateFields.lastRefill = new Date();
-  }
-
   return updateFields;
 }
 
