@@ -103,6 +103,7 @@ const clearMatchingDrainAfterAbort = (
     : armed;
 
 const MAX_RETRIES = 5;
+const MAX_PERSISTED_MESSAGE_RECONCILIATION_RETRIES = 2;
 const START_GENERATION_NETWORK_RETRIES = 3;
 const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
@@ -702,6 +703,8 @@ export default function useResumableSSE(
   const sseRef = useRef<SSE | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const persistedMessageReconciliationAttemptsRef = useRef(0);
+  const terminalReconciliationStatusRef = useRef<StreamStatusResponse | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
   /** Suppresses the normal close/cleanup idle transition while a stale
    * generation is being atomically handed off to its live replacement. */
@@ -1501,6 +1504,99 @@ export default function useResumableSSE(
         lifecycleSignal?.aborted !== true &&
         sseRef.current === sse &&
         submissionRef.current === currentSubmission;
+      const retryPersistedMessageReconciliation = (
+        terminalStatus?: StreamStatusResponse,
+      ): boolean => {
+        if (terminalStatus?.status === 'complete') {
+          terminalReconciliationStatusRef.current = terminalStatus;
+        }
+        if (
+          persistedMessageReconciliationAttemptsRef.current >=
+          MAX_PERSISTED_MESSAGE_RECONCILIATION_RETRIES
+        ) {
+          return false;
+        }
+        persistedMessageReconciliationAttemptsRef.current += 1;
+        reconnectAttemptRef.current = 0;
+        setIsSubmitting(true);
+        setShowStopButton(false);
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (isCurrentSubscription() && submissionRef.current) {
+            subscribeToStream(
+              currentStreamId,
+              submissionRef.current,
+              true,
+              generationCreatedAt,
+              generationProtocolVersion,
+              lifecycleSignal,
+            );
+          }
+        }, 30_000);
+        return true;
+      };
+      const retryInconclusiveStatusReconciliation = (conversationId: string): void => {
+        queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(conversationId) });
+        setIsSubmitting(true);
+        setShowStopButton(generationCreatedAt != null);
+        reconnectAttemptRef.current = 0;
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (isCurrentSubscription() && submissionRef.current) {
+            subscribeToStream(
+              currentStreamId,
+              submissionRef.current,
+              true,
+              generationCreatedAt,
+              generationProtocolVersion,
+              lifecycleSignal,
+            );
+          }
+        }, 30_000);
+      };
+      const retainCompletionReceipt = (
+        previousCompletion: StreamStatusResponse | undefined,
+        refreshedStatus: StreamStatusResponse,
+      ): StreamStatusResponse | undefined => {
+        if (refreshedStatus.status === 'complete') {
+          return refreshedStatus;
+        }
+        if (
+          previousCompletion?.status !== 'complete' ||
+          previousCompletion.createdAt == null ||
+          refreshedStatus.active !== false ||
+          refreshedStatus.status != null ||
+          (refreshedStatus.createdAt != null &&
+            refreshedStatus.createdAt !== previousCompletion.createdAt)
+        ) {
+          return undefined;
+        }
+        // A jobless response has no epoch. Keep the fenced completion only as
+        // a receipt for retrying durable history; never merge it into the
+        // current status or attribute current parked steers to the old epoch.
+        return previousCompletion;
+      };
+      const belongsToReplacementGeneration = (status: StreamStatusResponse): boolean =>
+        status.createdAt != null &&
+        (generationCreatedAt == null || status.createdAt !== generationCreatedAt);
+      const releaseTerminalReplacement = (
+        conversationId: string,
+        status: StreamStatusResponse,
+        authoritativeValues: unknown[],
+      ) => {
+        queryClient.setQueryData(streamStatusQueryKey(conversationId), status);
+        settleAppliedSteerParts(conversationId, authoritativeValues);
+        resetLive({ ...currentSubmission, userMessage });
+        persistedMessageReconciliationAttemptsRef.current = 0;
+        terminalReconciliationStatusRef.current = null;
+        removeActiveJob(currentStreamId);
+        clearAttachedGenerationCreatedAt();
+        setIsSubmitting(false);
+        setShowStopButton(false);
+        setSubmission(null);
+        setStreamId(null);
+        optimisticStreamIdsRef.current.delete(currentStreamId);
+        createdStreamIdsRef.current.delete(currentStreamId);
+        reconnectAttemptRef.current = 0;
+      };
 
       sse.addEventListener('open', () => {
         if (!isCurrentSubscription()) {
@@ -2596,6 +2692,9 @@ export default function useResumableSSE(
           // recovered follow-up consumes its exact source. Prefer these
           // authoritative leftovers over guessing from local chips.
           let confirmedV2Terminal = false;
+          let terminalStatus = terminalReconciliationStatusRef.current ?? undefined;
+          let completionReceipt =
+            terminalStatus?.status === 'complete' ? terminalStatus : undefined;
           try {
             const status = await fetchStreamStatus(recoveryConvoId);
             if (!isCurrentSubscription()) {
@@ -2619,11 +2718,7 @@ export default function useResumableSSE(
               }, 1_000);
               return;
             }
-            if (
-              status.active === true &&
-              status.createdAt != null &&
-              (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-            ) {
+            if (status.active === true && belongsToReplacementGeneration(status)) {
               const handedOff = await handoffToReplacement(recoveryConvoId, status);
               if (!isCurrentSubscription()) {
                 return;
@@ -2654,6 +2749,8 @@ export default function useResumableSSE(
                * publishing a terminal run-end (which could auto-drain queued
                * text into a still-running generation). */
               const activeStreamId = status.streamId ?? currentStreamId;
+              persistedMessageReconciliationAttemptsRef.current = 0;
+              terminalReconciliationStatusRef.current = null;
               queryClient.setQueryData(streamStatusQueryKey(recoveryConvoId), status);
               if (status.createdAt != null) {
                 updateActiveGenerationCreatedAt(
@@ -2700,10 +2797,15 @@ export default function useResumableSSE(
             confirmedV2Terminal =
               generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
               supportsGenerationProtocolV2(status);
+            completionReceipt = retainCompletionReceipt(completionReceipt, status);
+            terminalStatus = status;
             const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
             const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
             if (unrecovered.length > 0) {
-              const recoverySteerId = getRecoverySteerId(currentSubmission);
+              const recoverySteerId =
+                confirmedV2Terminal && belongsToReplacementGeneration(status)
+                  ? null
+                  : getRecoverySteerId(currentSubmission);
               convertSteersToQueued(recoveryConvoId, unrecovered, {
                 generationProtocolVersion,
                 ...(recoverySteerId != null && {
@@ -2721,12 +2823,45 @@ export default function useResumableSSE(
             if (!isCurrentSubscription()) {
               return;
             }
+            // A carried terminal snapshot proves only its own past lifecycle.
+            // Without a fresh status read it cannot prove that no replacement
+            // currently owns this conversation.
+            terminalStatus = undefined;
+            completionReceipt = undefined;
             logger.warn('ResumableSSE', 'Could not recover parked steers after 404', {
               conversationId: recoveryConvoId,
               error,
             });
           }
 
+          const hasAuthoritativeFailure =
+            terminalStatus?.status === 'error' || terminalStatus?.status === 'aborted';
+          if (
+            terminalStatus?.active === false &&
+            generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
+            supportsGenerationProtocolV2(terminalStatus) &&
+            belongsToReplacementGeneration(terminalStatus)
+          ) {
+            releaseTerminalReplacement(recoveryConvoId, terminalStatus, [
+              ...(persistedMessages ?? []),
+              ...(terminalStatus.resumeState?.aggregatedContent ??
+                terminalStatus.aggregatedContent ??
+                []),
+            ]);
+            return;
+          }
+
+          if (convoId && persistedMessages == null && !hasAuthoritativeFailure) {
+            // A missing stream only proves that the transport job is gone. If
+            // durable history is temporarily unavailable, keep this
+            // submission as the recovery owner and reconcile again later.
+            if (retryPersistedMessageReconciliation(completionReceipt ?? terminalStatus)) {
+              return;
+            }
+          }
+
+          persistedMessageReconciliationAttemptsRef.current = 0;
+          terminalReconciliationStatusRef.current = null;
           removeActiveJob(currentStreamId);
           clearAttachedGenerationCreatedAt();
           if (
@@ -2759,14 +2894,19 @@ export default function useResumableSSE(
               generationProtocolVersion,
             });
           }
-          // The true outcome is unknown here (job record already cleaned up):
-          // a non-'completed' outcome releases parked interrupt flags without
-          // auto-sending queued messages the user may not want fired.
+          let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'aborted';
+          if (completionReceipt?.status === 'complete' && persistedMessages != null) {
+            recoveryOutcome = 'completed';
+          } else if (terminalStatus?.status === 'error') {
+            recoveryOutcome = 'error';
+          }
           setRunEnd({
             conversationId: recoveryConvoId,
-            outcome: 'aborted',
+            outcome: recoveryOutcome,
             startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             endedAt: Date.now(),
+            generationCreatedAt:
+              completionReceipt?.createdAt ?? terminalStatus?.createdAt ?? generationCreatedAt,
           });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
@@ -2974,16 +3114,23 @@ export default function useResumableSSE(
           sse.close();
           flushPendingDeltas();
           const recoveryConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
-          let status: Awaited<ReturnType<typeof fetchStreamStatus>> | undefined;
+          let status = terminalReconciliationStatusRef.current ?? undefined;
+          let completionReceipt = status?.status === 'complete' ? status : undefined;
           try {
-            status = await fetchStreamStatus(recoveryConvoId);
+            const refreshedStatus = await fetchStreamStatus(recoveryConvoId);
             if (!isCurrentSubscription()) {
               return;
             }
+            completionReceipt = retainCompletionReceipt(completionReceipt, refreshedStatus);
+            status = refreshedStatus;
           } catch (error) {
             if (!isCurrentSubscription()) {
               return;
             }
+            // Never adjudicate current conversation ownership from a terminal
+            // snapshot retained across an unsuccessful status refresh.
+            status = undefined;
+            completionReceipt = undefined;
             logger.warn('ResumableSSE', 'Could not determine job state after reconnect limit', {
               conversationId: recoveryConvoId,
               error,
@@ -2999,11 +3146,7 @@ export default function useResumableSSE(
             status = undefined;
           }
 
-          if (
-            status?.active === true &&
-            status.createdAt != null &&
-            (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-          ) {
+          if (status?.active === true && belongsToReplacementGeneration(status)) {
             const handedOff = await handoffToReplacement(recoveryConvoId, status);
             if (!isCurrentSubscription()) {
               return;
@@ -3031,6 +3174,8 @@ export default function useResumableSSE(
             // The transport gave up, not the generation. Keep the active-job
             // marker and accepted chips intact, then release this stale
             // submission so useResumeOnLoad can establish a fresh attachment.
+            persistedMessageReconciliationAttemptsRef.current = 0;
+            terminalReconciliationStatusRef.current = null;
             queryClient.setQueryData(streamStatusQueryKey(recoveryConvoId), status);
             seedSteerChips(
               recoveryConvoId,
@@ -3069,22 +3214,7 @@ export default function useResumableSSE(
             // An inconclusive status read is still not proof of termination.
             // Preserve server/client ownership and let the normal resume-on-load
             // status query retry rather than duplicating accepted words.
-            queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(recoveryConvoId) });
-            setIsSubmitting(true);
-            setShowStopButton(generationCreatedAt != null);
-            reconnectAttemptRef.current = 0;
-            reconnectTimeoutRef.current = setTimeout(() => {
-              if (isCurrentSubscription() && submissionRef.current) {
-                subscribeToStream(
-                  currentStreamId,
-                  submissionRef.current,
-                  true,
-                  generationCreatedAt,
-                  generationProtocolVersion,
-                  lifecycleSignal,
-                );
-              }
-            }, 30_000);
+            retryInconclusiveStatusReconciliation(recoveryConvoId);
             return;
           }
 
@@ -3120,6 +3250,59 @@ export default function useResumableSSE(
             });
           }
 
+          if (
+            status.active === false &&
+            generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
+            supportsGenerationProtocolV2(status)
+          ) {
+            try {
+              const refreshedStatus = await fetchStreamStatus(recoveryConvoId);
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              completionReceipt = retainCompletionReceipt(completionReceipt, refreshedStatus);
+              status = refreshedStatus;
+            } catch (error) {
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              logger.warn(
+                'ResumableSSE',
+                'Could not revalidate replacement generation after message reconciliation',
+                {
+                  conversationId: recoveryConvoId,
+                  error,
+                },
+              );
+              status = undefined;
+              completionReceipt = undefined;
+            }
+
+            if (status?.active === true && belongsToReplacementGeneration(status)) {
+              const handedOff = await handoffToReplacement(recoveryConvoId, status);
+              if (!isCurrentSubscription()) {
+                return;
+              }
+              if (handedOff) {
+                return;
+              }
+            }
+
+            if (status == null || status.active === true) {
+              retryInconclusiveStatusReconciliation(recoveryConvoId);
+              return;
+            }
+          }
+
+          if (completionReceipt?.status === 'complete' && persistedMessages == null) {
+            // Terminal status is authoritative for the job, but not for its
+            // durable messages. A transient history failure must not clear the
+            // submission and strand the completed response until reload.
+            if (retryPersistedMessageReconciliation(completionReceipt)) {
+              return;
+            }
+          }
+
           const authoritativeValues = [
             ...(persistedMessages ?? []),
             ...(status.resumeState?.aggregatedContent ?? status.aggregatedContent ?? []),
@@ -3127,12 +3310,16 @@ export default function useResumableSSE(
           const confirmedV2Terminal =
             generationProtocolVersion === GENERATION_PROTOCOL_VERSION &&
             supportsGenerationProtocolV2(status);
+          const terminalBelongsToReplacement =
+            confirmedV2Terminal && belongsToReplacementGeneration(status);
           const reconciledIds = new Set(collectAppliedSteerIds(authoritativeValues));
           settleAppliedSteerParts(recoveryConvoId, authoritativeValues);
           const canRecoverTerminalSteers = generationProtocolVersion === 1 || confirmedV2Terminal;
           const unrecovered = canRecoverTerminalSteers ? (status.unrecoveredSteers ?? []) : [];
           if (unrecovered.length > 0) {
-            const recoverySteerId = getRecoverySteerId(currentSubmission);
+            const recoverySteerId = terminalBelongsToReplacement
+              ? null
+              : getRecoverySteerId(currentSubmission);
             convertSteersToQueued(recoveryConvoId, unrecovered, {
               generationProtocolVersion,
               ...(recoverySteerId != null && {
@@ -3146,11 +3333,20 @@ export default function useResumableSSE(
               }
             }
           }
-          if (persistedMessages && (generationProtocolVersion === 1 || confirmedV2Terminal)) {
+          if (
+            !terminalBelongsToReplacement &&
+            persistedMessages &&
+            (generationProtocolVersion === 1 || confirmedV2Terminal)
+          ) {
             convertLocalSteersToQueued(recoveryConvoId, {
               excludeSteerIds: reconciledIds,
               generationProtocolVersion,
             });
+          }
+
+          if (terminalBelongsToReplacement) {
+            releaseTerminalReplacement(recoveryConvoId, status, authoritativeValues);
+            return;
           }
 
           resetLive({ ...currentSubmission, userMessage });
@@ -3164,17 +3360,20 @@ export default function useResumableSSE(
           }
           setIsSubmitting(false);
           setShowStopButton(false);
-          let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'error';
-          if (status.status === 'complete' && persistedMessages != null) {
+          persistedMessageReconciliationAttemptsRef.current = 0;
+          terminalReconciliationStatusRef.current = null;
+          let recoveryOutcome: 'completed' | 'aborted' | 'error' = 'aborted';
+          if (completionReceipt?.status === 'complete' && persistedMessages != null) {
             recoveryOutcome = 'completed';
-          } else if (status.status === 'aborted') {
-            recoveryOutcome = 'aborted';
+          } else if (status.status === 'error') {
+            recoveryOutcome = 'error';
           }
           setRunEnd({
             conversationId: recoveryConvoId,
             outcome: recoveryOutcome,
             endedAt: Date.now(),
-            generationCreatedAt: status.createdAt ?? generationCreatedAt,
+            generationCreatedAt:
+              completionReceipt?.createdAt ?? status.createdAt ?? generationCreatedAt,
           });
           setSubmission(null);
           setStreamId(null);
@@ -3527,6 +3726,8 @@ export default function useResumableSSE(
       }
       setStreamId(null);
       reconnectAttemptRef.current = 0;
+      persistedMessageReconciliationAttemptsRef.current = 0;
+      terminalReconciliationStatusRef.current = null;
       submissionRef.current = null;
       return;
     }
@@ -3548,6 +3749,8 @@ export default function useResumableSSE(
     });
 
     submissionRef.current = submission;
+    persistedMessageReconciliationAttemptsRef.current = 0;
+    terminalReconciliationStatusRef.current = null;
     const startController = new AbortController();
     const { signal } = startController;
     const isCurrentEffect = () => !signal.aborted && submissionRef.current === submission;
