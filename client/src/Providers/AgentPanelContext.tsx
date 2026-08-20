@@ -7,6 +7,7 @@ import {
   useLocalize,
   activateCatalog,
   useGetAgentsConfig,
+  useCatalogReady,
   useMCPConnectionStatus,
   useMCPServerManager,
 } from '~/hooks';
@@ -54,8 +55,12 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
+  /** The tools query keeps its own warmup gate: the servers list resolving
+   * alone must not pull the heavier tools request ahead of its stagger. */
+  const mcpToolsReady = useCatalogReady('mcpTools');
   const { data: mcpData, isFetching: mcpToolsFetching } = useMCPToolsQuery({
     enabled:
+      mcpToolsReady &&
       !isEphemeralAgent(agent_id) &&
       !isLoading &&
       availableMCPServers != null &&

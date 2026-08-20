@@ -165,4 +165,24 @@ describe('useCatalogWarmup', () => {
     expect(readyState.prompts).toBe(true);
     expect(readyState.mcpTools).toBe(false);
   });
+
+  it('voids idle callbacks scheduled before a logout', () => {
+    const view = render(<Harness authenticated={true} />);
+    /** Idle has not fired yet when the user logs out */
+    view.rerender(<Harness authenticated={false} />);
+
+    flushIdle();
+    act(() => {
+      jest.runAllTimers();
+    });
+    expect(readyState).toEqual({ prompts: false, mcpServers: false, mcpTools: false });
+
+    /** The next session schedules and warms normally */
+    view.rerender(<Harness authenticated={true} />);
+    flushIdle();
+    act(() => {
+      jest.advanceTimersByTime(0);
+    });
+    expect(readyState.prompts).toBe(true);
+  });
 });

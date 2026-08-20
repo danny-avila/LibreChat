@@ -30,6 +30,10 @@ const ready: Record<CatalogId, boolean> = {
 const pendingTimers = new Map<CatalogId, ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 let scheduled = false;
+/** Bumped on reset: idle callbacks and their timers capture the value at
+ * scheduling time and no-op after a reset, so a logout can never leave a
+ * stale callback releasing catalogs into the next session. */
+let generation = 0;
 
 function emitChange() {
   listeners.forEach((listener) => listener());
@@ -54,11 +58,17 @@ export function activateCatalog(id: CatalogId) {
 }
 
 function scheduleIdle(callback: () => void) {
+  const scheduledGeneration = generation;
+  const runIfCurrent = () => {
+    if (scheduledGeneration === generation) {
+      callback();
+    }
+  };
   if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(() => callback(), { timeout: IDLE_TIMEOUT_MS });
+    window.requestIdleCallback(runIfCurrent, { timeout: IDLE_TIMEOUT_MS });
     return;
   }
-  setTimeout(callback, IDLE_FALLBACK_MS);
+  setTimeout(runIfCurrent, IDLE_FALLBACK_MS);
 }
 
 /**
@@ -99,8 +109,11 @@ export function useCatalogReady(id: CatalogId): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-/** Clears timers and readiness so the next session warms on its own schedule. */
+/** Clears timers and readiness so the next session warms on its own schedule.
+ * Bumping `generation` also voids idle callbacks still pending from the
+ * previous schedule, whose handles `scheduleIdle` does not retain. */
 export function resetCatalogWarmup() {
+  generation++;
   scheduled = false;
   pendingTimers.forEach((timer) => clearTimeout(timer));
   pendingTimers.clear();
