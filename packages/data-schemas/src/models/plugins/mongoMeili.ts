@@ -23,6 +23,8 @@ interface MongoMeiliOptions {
   mongoose: typeof import('mongoose');
   syncBatchSize?: number;
   syncDelayMs?: number;
+  /** Documents carrying this path remain in MongoDB but are excluded from search. */
+  excludeFromIndexPath?: string;
 }
 
 interface MeiliIndexable {
@@ -34,6 +36,7 @@ interface SyncProgress {
   lastSyncedId?: string;
   totalProcessed: number;
   totalDocuments: number;
+  pendingCleanup: number;
   isComplete: boolean;
 }
 
@@ -98,13 +101,44 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 
-const buildIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
-  if (!hasSchemaPath(schema, 'isTemporary')) {
-    return hasSchemaPath(schema, 'expiredAt') ? legacyPermanentExpirationFilter() : {};
+const buildRetentionIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
+  if (hasSchemaPath(schema, 'isTemporary')) {
+    return buildRetentionVisibilityFilter();
+  }
+  if (hasSchemaPath(schema, 'expiredAt')) {
+    return legacyPermanentExpirationFilter();
+  }
+  return {};
+};
+
+const buildIndexableQuery = (
+  schema: Schema,
+  excludeFromIndexPath?: string,
+): FilterQuery<unknown> => {
+  const retentionFilter = buildRetentionIndexableQuery(schema);
+
+  if (excludeFromIndexPath == null) {
+    return retentionFilter;
   }
 
-  return buildRetentionVisibilityFilter();
+  return {
+    $and: [retentionFilter, { [excludeFromIndexPath]: { $exists: false } }],
+  };
 };
+
+const buildExcludedIndexedQuery = (excludeFromIndexPath?: string): FilterQuery<unknown> | null => {
+  if (excludeFromIndexPath == null) {
+    return null;
+  }
+
+  return {
+    [excludeFromIndexPath]: { $exists: true },
+    _meiliIndex: true,
+  };
+};
+
+const isExcludedFromIndex = (doc: DocumentWithMeiliIndex, excludeFromIndexPath?: string): boolean =>
+  excludeFromIndexPath != null && !_.isNil(_.get(doc, excludeFromIndexPath));
 
 const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
   _.isNil(expiredAt) || new Date(expiredAt).getTime() > Date.now();
@@ -130,11 +164,12 @@ const captureExplicitTemporaryFlag = (doc: DocumentWithMeiliIndex): void => {
  * plus legacy permanent records that have no retention deadline. Legacy records
  * with an expiration are treated as temporary and stay out of search.
  */
-const isIndexableDocument = (doc: DocumentWithMeiliIndex): boolean =>
-  (doc.isTemporary === false &&
+const isIndexableDocument = (doc: DocumentWithMeiliIndex, excludeFromIndexPath?: string): boolean =>
+  !isExcludedFromIndex(doc, excludeFromIndexPath) &&
+  ((doc.isTemporary === false &&
     hasExplicitTemporaryFlag(doc) &&
     hasActiveExpiration(doc.expiredAt)) ||
-  (!hasExplicitTemporaryFlag(doc) && _.isNil(doc.expiredAt));
+    (!hasExplicitTemporaryFlag(doc) && _.isNil(doc.expiredAt)));
 
 /**
  * Validates the required options for configuring the mongoMeili plugin.
@@ -183,12 +218,16 @@ const processBatch = async <T>(
 const createMeiliMongooseModel = ({
   index,
   getIndexableQuery,
+  getExcludedIndexedQuery,
+  excludeFromIndexPath,
   attributesToIndex,
   primaryKey,
   syncOptions,
 }: {
   index: Index<MeiliIndexable>;
   getIndexableQuery: () => FilterQuery<unknown>;
+  getExcludedIndexedQuery: () => FilterQuery<unknown> | null;
+  excludeFromIndexPath?: string;
   attributesToIndex: string[];
   primaryKey: string;
   syncOptions: { batchSize: number; delayMs: number };
@@ -201,16 +240,23 @@ const createMeiliMongooseModel = ({
      */
     static async getSyncProgress(this: SchemaWithMeiliMethods): Promise<SyncProgress> {
       const indexableQuery = getIndexableQuery();
-      const totalDocuments = await this.countDocuments(indexableQuery);
-      const indexedDocuments = await this.countDocuments({
-        ...indexableQuery,
-        _meiliIndex: true,
-      });
+      const excludedIndexedQuery = getExcludedIndexedQuery();
+      const [totalDocuments, indexedDocuments, pendingCleanup] = await Promise.all([
+        this.countDocuments(indexableQuery),
+        this.countDocuments({
+          ...indexableQuery,
+          _meiliIndex: true,
+        }),
+        excludedIndexedQuery == null
+          ? Promise.resolve(0)
+          : this.countDocuments(excludedIndexedQuery),
+      ]);
 
       return {
         totalProcessed: indexedDocuments,
         totalDocuments,
-        isComplete: indexedDocuments === totalDocuments,
+        pendingCleanup,
+        isComplete: indexedDocuments === totalDocuments && pendingCleanup === 0,
       };
     }
 
@@ -363,6 +409,11 @@ const createMeiliMongooseModel = ({
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
             await index.deleteDocuments(toDelete.map(String));
+            await this.updateMany(
+              { [primaryKey]: { $in: toDelete } },
+              { $set: { _meiliIndex: false } },
+              { timestamps: false },
+            );
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
           }
           // if fetch documents request returns less documents than limit, all documents are processed
@@ -467,7 +518,7 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
-      if (!isIndexableDocument(this)) {
+      if (!isIndexableDocument(this, excludeFromIndexPath)) {
         return next();
       }
 
@@ -512,7 +563,7 @@ const createMeiliMongooseModel = ({
       next: CallbackWithoutResultAndOptionalError,
     ): Promise<void> {
       try {
-        if (!isIndexableDocument(this)) {
+        if (!isIndexableDocument(this, excludeFromIndexPath)) {
           await index.deleteDocument(String(this[primaryKey as keyof DocumentWithMeiliIndex]));
           const model = this.constructor as Model<DocumentWithMeiliIndex>;
           await model.updateOne(
@@ -619,6 +670,7 @@ const createMeiliMongooseModel = ({
  * @param options.primaryKey - The primary key field for indexing.
  * @param options.syncBatchSize - Batch size for sync operations.
  * @param options.syncDelayMs - Delay between batches in milliseconds.
+ * @param options.excludeFromIndexPath - Presence of this path makes a document non-searchable.
  */
 export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): void {
   const mongoose = options.mongoose;
@@ -710,7 +762,9 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   schema.loadClass(
     createMeiliMongooseModel({
       index,
-      getIndexableQuery: () => buildIndexableQuery(schema),
+      getIndexableQuery: () => buildIndexableQuery(schema, options.excludeFromIndexPath),
+      getExcludedIndexedQuery: () => buildExcludedIndexedQuery(options.excludeFromIndexPath),
+      excludeFromIndexPath: options.excludeFromIndexPath,
       attributesToIndex,
       primaryKey,
       syncOptions,

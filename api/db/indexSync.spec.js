@@ -527,4 +527,28 @@ describe('performSync() - syncThreshold logic', () => {
       '[indexSync] 6 convos unindexed (below threshold: 1000, skipping)',
     );
   });
+
+  test('forces sync when search contains documents that are now excluded', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      pendingCleanup: 1,
+      isComplete: false,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingCleanup: 0,
+      isComplete: true,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      '[indexSync] Starting message sync (0 unindexed, 1 pending cleanup)',
+    );
+  });
 });
