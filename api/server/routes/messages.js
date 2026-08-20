@@ -68,6 +68,16 @@ router.get('/', async (req, res) => {
       : 'createdAt';
     const sortOrder = sortDirection === 'asc' ? 1 : -1;
 
+    if (conversationId) {
+      const conversation =
+        typeof conversationId === 'string'
+          ? await db.getConvoOwnership(user, conversationId)
+          : null;
+      if (!conversation || conversation.subagentThread != null) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+    }
+
     if (conversationId && messageId) {
       const messages = await db.getMessages({ conversationId, messageId, user });
       response = { messages: messages?.length ? [messages[0]] : [], nextCursor: null };

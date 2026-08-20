@@ -1518,6 +1518,32 @@ describe('Conversation Operations', () => {
       ).toBeNull();
       expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
     });
+
+    it('includes child-thread identity without materializing conversation content', async () => {
+      await Conversation.create({
+        conversationId: 'child-conversation',
+        user: 'user123',
+        title: 'Internal child',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'child-agent',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      const result = await methods.getConvoOwnership('user123', 'child-conversation');
+
+      expect(result).toMatchObject({
+        user: 'user123',
+        subagentThread: { parentConversationId: 'parent-conversation' },
+      });
+      expect(result).not.toHaveProperty('title');
+    });
   });
 
   describe('getConvoRetention', () => {

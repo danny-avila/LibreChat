@@ -244,12 +244,7 @@ async function performSync(flowManager, flowId, flowType) {
       const messagesPendingCleanup = messageProgress.pendingCleanup ?? 0;
       const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
-      if (
-        settingsUpdated ||
-        noneIndexed ||
-        unindexedMessages > syncThreshold ||
-        messagesPendingCleanup > 0
-      ) {
+      if (settingsUpdated || noneIndexed || unindexedMessages > syncThreshold) {
         if (noneIndexed && !settingsUpdated) {
           logger.info('[indexSync] No messages marked as indexed, forcing full sync');
         }
@@ -259,6 +254,10 @@ async function performSync(flowManager, flowId, flowType) {
             : `[indexSync] Starting message sync (${unindexedMessages} unindexed)`,
         );
         await Message.syncWithMeili();
+        messagesSync = true;
+      } else if (messagesPendingCleanup > 0) {
+        logger.info(`[indexSync] Cleaning ${messagesPendingCleanup} excluded messages from search`);
+        await Message.cleanupExcludedMeiliIndex();
         messagesSync = true;
       } else if (unindexedMessages > 0) {
         logger.info(
@@ -284,12 +283,7 @@ async function performSync(flowManager, flowId, flowType) {
       const convosPendingCleanup = convoProgress.pendingCleanup ?? 0;
       const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
-      if (
-        settingsUpdated ||
-        noneConvosIndexed ||
-        unindexedConvos > syncThreshold ||
-        convosPendingCleanup > 0
-      ) {
+      if (settingsUpdated || noneConvosIndexed || unindexedConvos > syncThreshold) {
         if (noneConvosIndexed && !settingsUpdated) {
           logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
         }
@@ -299,6 +293,12 @@ async function performSync(flowManager, flowId, flowType) {
             : `[indexSync] Starting convos sync (${unindexedConvos} unindexed)`,
         );
         await Conversation.syncWithMeili();
+        convosSync = true;
+      } else if (convosPendingCleanup > 0) {
+        logger.info(
+          `[indexSync] Cleaning ${convosPendingCleanup} excluded conversations from search`,
+        );
+        await Conversation.cleanupExcludedMeiliIndex();
         convosSync = true;
       } else if (unindexedConvos > 0) {
         logger.info(
