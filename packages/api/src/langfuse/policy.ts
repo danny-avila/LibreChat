@@ -22,17 +22,17 @@ export function isLangfuseMetricsOnlyPrivacy(appConfig?: Pick<AppConfig, 'langfu
 
 /**
  * Whether the installed `@librechat/agents` runtime enforces
- * `LangfuseConfig.privacy` (content masking and media suppression). Runtimes
- * without the export ignore the field, so a privacy mode must disable trace
- * export for the run rather than send unmasked content.
+ * `LangfuseConfig.privacy` (content redaction and media suppression).
+ * Runtimes without the export ignore the field, so a privacy mode must
+ * disable trace export for the run rather than send unmasked content.
  */
 export function isLangfusePrivacyMaskingSupported(): boolean {
   return (
     (
       agentsRuntime as {
-        LANGFUSE_PRIVACY_MASKING_SUPPORTED?: boolean;
+        LANGFUSE_PRIVACY_ENFORCEMENT_SUPPORTED?: boolean;
       }
-    ).LANGFUSE_PRIVACY_MASKING_SUPPORTED === true
+    ).LANGFUSE_PRIVACY_ENFORCEMENT_SUPPORTED === true
   );
 }
 

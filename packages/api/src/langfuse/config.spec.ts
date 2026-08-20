@@ -3,8 +3,8 @@ import type { AppConfig } from '@librechat/data-schemas';
 process.env.CREDS_KEY =
   process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
-const mockAgentsRuntime: { LANGFUSE_PRIVACY_MASKING_SUPPORTED?: boolean } = {
-  LANGFUSE_PRIVACY_MASKING_SUPPORTED: true,
+const mockAgentsRuntime: { LANGFUSE_PRIVACY_ENFORCEMENT_SUPPORTED?: boolean } = {
+  LANGFUSE_PRIVACY_ENFORCEMENT_SUPPORTED: true,
 };
 jest.mock('@librechat/agents', () => mockAgentsRuntime);
 
