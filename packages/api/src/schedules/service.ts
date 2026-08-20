@@ -24,6 +24,7 @@ import {
 import { deleteAgentCheckpoint, captureAgentCheckpointGeneration } from '../agents/checkpointer';
 import { fireSchedule, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
+import { isStopConfirmed } from '../stream/interfaces/IJobStore';
 import { buildBalanceUpdateFields } from '../middleware/balance';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { isShutdownInProgress } from '../app/shutdown';
@@ -568,10 +569,9 @@ export function createSchedulesService(
         expectedCreatedAt: job.createdAt,
         awaitProviderDrain: true,
       });
-      if (
-        aborted.failureReason === 'generation_replaced' ||
-        aborted.failureReason === 'job_still_active'
-      ) {
+      // Terminal-and-drained counts as delivered (see above); a replacement, a still-live
+      // run, or a job that vanished before the transition does not.
+      if (!isStopConfirmed(aborted)) {
         return false;
       }
       if (options?.preserve === false) {

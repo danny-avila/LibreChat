@@ -270,6 +270,28 @@ function isRecoverableTakeoverSplit(
   );
 }
 
+/**
+ * Name the reason a terminal-state CAS was lost, off the job that now holds the
+ * conversation. Losing to natural completion IS a stop; losing to a replacement, or to
+ * deletion, is not — and callers settle durable state on that distinction.
+ */
+function classifyLostAbortRace(
+  jobStillActive: boolean,
+  currentJob: SerializableJobData | null,
+  abortedCreatedAt: number,
+): NonNullable<AbortResult['failureReason']> {
+  if (jobStillActive) {
+    return 'job_still_active';
+  }
+  if (currentJob == null) {
+    return 'job_not_found';
+  }
+  if (currentJob.createdAt !== abortedCreatedAt) {
+    return 'generation_replaced';
+  }
+  return 'already_settled';
+}
+
 function buildTerminalPersistenceReconcile(
   job: Pick<SerializableJobData, 'createdAt' | 'conversationId' | 'status'>,
 ): t.FinalEvent {
@@ -3709,6 +3731,10 @@ class GenerationJobManagerClass {
         content: [],
         jobData: null,
         success: false,
+        /** The job vanished between the caller's read and this one. No transition
+         * was made and no provider drain was awaited, so this says nothing about
+         * whether trailing owner work is still in flight. */
+        failureReason: 'job_not_found',
         finalEvent: null,
         collectedUsage: [],
       };
@@ -3726,6 +3752,10 @@ class GenerationJobManagerClass {
           content: [],
           jobData: unlockedJob,
           success: false,
+          /** The pause never unlocked for THIS generation: the job was either deleted
+           * outright or a replacement took the conversation. A replacement is another
+           * run's state — settling or pruning on it would destroy the successor. */
+          failureReason: unlockedJob == null ? 'job_not_found' : 'generation_replaced',
           finalEvent: null,
           collectedUsage: [],
         };
@@ -3748,6 +3778,10 @@ class GenerationJobManagerClass {
         content: [],
         jobData,
         success: false,
+        /** No transition was needed: the generation is already terminal, and the
+         * drain above (when requested) proves its provider segment can no longer
+         * persist. This is a stop, just not one this call made. */
+        failureReason: 'already_settled',
         finalEvent: null,
         collectedUsage: [],
       };
@@ -3845,13 +3879,9 @@ class GenerationJobManagerClass {
       }
       return {
         success: false,
-        ...(jobStillActive
-          ? { failureReason: 'job_still_active' as const }
-          : options?.expectedCreatedAt != null &&
-            currentJob != null &&
-            currentJob?.createdAt !== options.expectedCreatedAt && {
-              failureReason: 'generation_replaced' as const,
-            }),
+        /** The drain above already ran when the caller required one, so an
+         * `already_settled` verdict here is a fully drained generation. */
+        failureReason: classifyLostAbortRace(jobStillActive, currentJob, jobData.createdAt),
         jobData,
         content: abortContent,
         finalEvent: null,

@@ -1584,7 +1584,7 @@ describe('provider-drained schedule aborts', () => {
       })),
     } as unknown as typeof mockJobStore;
     const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
-    manager.abortJob = jest.fn(async () => ({ success: false }));
+    manager.abortJob = jest.fn(async () => ({ success: false, failureReason: 'already_settled' }));
 
     const delivered = await service.engineDeps.abortScheduledJob(
       'c1',
@@ -1597,6 +1597,35 @@ describe('provider-drained schedule aborts', () => {
     });
     expect(delivered).toBe(true);
   });
+
+  it.each(['generation_replaced', 'job_still_active', 'job_not_found'] as const)(
+    'reports %s as an undelivered abort',
+    async (failureReason) => {
+      const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
+      const deleteJob = jest.fn(async () => true);
+      mockJobStore = {
+        getJob: jest.fn(async () => ({
+          status: 'running',
+          createdAt: 7,
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+        })),
+        deleteJob,
+      } as unknown as typeof mockJobStore;
+      const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
+      manager.abortJob = jest.fn(async () => ({ success: false, failureReason }));
+
+      const delivered = await service.engineDeps.abortScheduledJob(
+        'c1',
+        { scheduleId: 's1', scheduledFor: '2026-01-01T00:00:00.000Z' },
+        { preserve: false },
+      );
+
+      expect(delivered).toBe(false);
+      // Never destroy evidence for a generation this call did not stop.
+      expect(deleteJob).not.toHaveBeenCalled();
+    },
+  );
 
   it('deletes terminal evidence only after the exact provider drain is confirmed', async () => {
     const service = makeService(jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]));
@@ -1611,7 +1640,7 @@ describe('provider-drained schedule aborts', () => {
       deleteJob,
     } as unknown as typeof mockJobStore;
     const manager = jest.requireMock('../stream/GenerationJobManager').GenerationJobManager;
-    manager.abortJob = jest.fn(async () => ({ success: false }));
+    manager.abortJob = jest.fn(async () => ({ success: false, failureReason: 'already_settled' }));
 
     const delivered = await service.engineDeps.abortScheduledJob(
       'c1',

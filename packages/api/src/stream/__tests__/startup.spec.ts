@@ -2278,7 +2278,9 @@ describe('GenerationJobManager startup telemetry', () => {
 
       const result = await aborting;
       expect(result).toMatchObject({ success: false, finalEvent: null });
-      expect(result.failureReason).toBeUndefined();
+      // Deletion is named for what it is. The point of this test is that it is NOT
+      // reported as a replacement — nothing took the conversation over.
+      expect(result.failureReason).toBe('job_not_found');
       expect(job.abortController.signal.aborted).toBe(true);
     } finally {
       releaseTransition?.();

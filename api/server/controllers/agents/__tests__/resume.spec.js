@@ -392,6 +392,82 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 
+    // `abortJob` reports `success: false` with a REASON on every failure path. Gating on
+    // the absence of a reason treated an unreached job and a replacement generation as
+    // confirmed stops, settling the occurrence and pruning a checkpoint on neither.
+    it.each([
+      ['the job vanished before the abort landed', 'job_not_found'],
+      ['a replacement generation owns the conversation', 'generation_replaced'],
+      ['the generation is still live', 'job_still_active'],
+    ])('refuses to settle or prune when %s', async (_label, failureReason) => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({ success: false, failureReason });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    // The exact regression: an abort that reported `success: false` and nothing else was
+    // read as a confirmed stop, so the occurrence was settled and its checkpoint pruned.
+    it('refuses to settle or prune on a bare unsuccessful abort with no reason', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({ success: false });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('settles an occurrence whose generation was already terminal and drained', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      // No transition was needed, but `awaitProviderDrain` still proved the provider
+      // segment can no longer persist — a stop, just not one this call made. Refusing
+      // here would 503 a permanently terminal generation on every retry.
+      mockGenerationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'already_settled',
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'schedule-1', status: 'interrupted' }),
+      );
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalled();
+    });
+
+    it('refuses to settle the stale resume handoff on an unconfirmed stop', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockFinalizeScheduleResumeClaim.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'generation_replaced',
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+    });
+
     it('records success after resumed persistence and before terminal publication', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
 

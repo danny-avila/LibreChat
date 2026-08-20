@@ -43,6 +43,7 @@ const {
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  createScheduleWriteGate,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
@@ -86,12 +87,11 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
-let schedulesReady = false;
+/** @type {import('@librechat/api').ScheduleEngineState} */
+let scheduleEngineState = 'starting';
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
-const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
-const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -105,16 +105,10 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   });
 };
 
-const rejectScheduleWritesUntilReady = (req, res, next) => {
-  if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
-    return next();
-  }
-  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
-  return res.status(503).json({
-    code: SCHEDULES_NOT_READY_CODE,
-    error: 'Scheduler is still starting. Please retry shortly.',
-  });
-};
+const rejectScheduleWritesUntilReady = createScheduleWriteGate({
+  getState: () => scheduleEngineState,
+  retryAfterSeconds: CHAT_START_RETRY_AFTER_SECONDS,
+});
 
 const configureGenerationStreams = () => {
   const streamServices = createStreamServices();
@@ -419,9 +413,16 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       await initializeAgentTriggerService({ address: server.address() });
-      schedulesReady = (await initializeScheduleEngine()) != null;
-      if (!schedulesReady) {
-        logger.warn('[schedules] write routes remain unavailable because the engine did not arm.');
+      const scheduleEngineArmed = (await initializeScheduleEngine()) != null;
+      scheduleEngineState = scheduleEngineArmed ? 'armed' : 'unavailable';
+      if (!scheduleEngineArmed) {
+        // Terminal, not transient: arming is attempted once, so schedule writes are refused
+        // for the life of this process. Logged at error level because the only other signal
+        // an operator gets is a 503 on every write — every other health signal stays green.
+        logger.error(
+          '[schedules] write routes are PERMANENTLY unavailable in this process: the engine did not arm. ' +
+            'Resolve the cause logged above and restart.',
+        );
       }
       serverReady = true;
       logger.info('Server readiness checks passing.');
