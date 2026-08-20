@@ -28,6 +28,9 @@ export {
   isPendingActionExpired,
   isPendingActionStale,
 } from './interfaces/IJobStore';
+// Canonical "did this generation actually stop?" predicate — shared by every caller
+// that settles durable state on an abort's outcome.
+export { isStopConfirmed } from './interfaces/IJobStore';
 export {
   STEER_ENQUEUE_NOT_RUNNING,
   STEER_ENQUEUE_QUEUE_FULL,

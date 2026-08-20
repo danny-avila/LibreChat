@@ -22,6 +22,7 @@ const {
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
   isSteerPreemptSupported,
+  isStopConfirmed,
   toPendingSteer,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -608,7 +609,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         expectedCreatedAt: job.createdAt,
         awaitProviderDrain: true,
       });
-      stopped = abortResult != null && abortResult.failureReason == null;
+      // `success` is the authoritative signal, exactly as the abort route gates. A
+      // `success: false` result WITHOUT a failure reason no longer exists — an
+      // unreached job, a replacement, or a lost CAS all report one — so the old
+      // `failureReason == null` test settled the occurrence and pruned the
+      // checkpoint on aborts that were never confirmed.
+      stopped = isStopConfirmed(abortResult);
     } catch (error) {
       logger.warn('[ResumeAgentController] Failed to stop inactive scheduled run', error);
     }
@@ -979,7 +985,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
         });
-        stopped = abortResult != null && abortResult.failureReason == null;
+        // Same authoritative gate as the inactive-schedule path above: only a landed
+        // abort (or an already-terminal, drained generation) may settle this occurrence.
+        stopped = isStopConfirmed(abortResult);
       } catch (error) {
         logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
       }
