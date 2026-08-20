@@ -19,7 +19,6 @@ import {
 } from '~/hooks';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
-import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
@@ -37,6 +36,15 @@ const ConversationsSection = memo(() => {
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
   const [tags, setTags] = useState<string[]>([]);
+  /* Tag changes refetch with `keepPreviousData`, so `isLoading` never turns true
+     and the list would otherwise sit frozen on stale rows until the fetch lands.
+     Set on selection itself, cleared once the fetch settles (effect below). */
+  const [isTagsLoading, setIsTagsLoading] = useState(false);
+
+  const handleSetTags = useCallback((next: string[]) => {
+    setIsTagsLoading(true);
+    setTags(next);
+  }, []);
 
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
@@ -138,6 +146,12 @@ const ConversationsSection = memo(() => {
     }
   }, [search.query, search.isTyping, isLoading, isFetching]);
 
+  useEffect(() => {
+    if (!isLoading && !isFetching) {
+      setIsTagsLoading(false);
+    }
+  }, [isLoading, isFetching]);
+
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-2"
@@ -151,19 +165,20 @@ const ConversationsSection = memo(() => {
         <div className="flex items-center gap-0.5 px-3">
           {hasAccessToBookmarks && (
             <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={setTags} />
+              <BookmarkNav tags={tags} setTags={handleSetTags} matchSearchBar />
             </Suspense>
           )}
           {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
         </div>
       )}
-      {!search.query && (
-        <div className="px-3">
-          <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
-        </div>
-      )}
       {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
-      {!search.query && <PinnedSection conversations={pinnedConversations} toggleNav={toggleNav} />}
+      {!search.query && (
+        <PinnedSection
+          conversations={pinnedConversations}
+          toggleNav={toggleNav}
+          isSmallScreen={isSmallScreen}
+        />
+      )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}
@@ -172,14 +187,13 @@ const ConversationsSection = memo(() => {
           containerRef={conversationsRef}
           loadMoreConversations={loadMoreConversations}
           isLoading={isFetchingNextPage || isLoading}
-          isSearchLoading={isSearchLoading}
+          isSearchLoading={isSearchLoading || isTagsLoading}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
-          showFavorites={false}
           chatsHeaderTrailing={
             isSmallScreen && hasAccessToBookmarks ? (
               <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={setTags} />
+                <BookmarkNav tags={tags} setTags={handleSetTags} />
               </Suspense>
             ) : undefined
           }
