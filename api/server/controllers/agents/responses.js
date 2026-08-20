@@ -54,6 +54,7 @@ const {
   createAggregatorEventHandlers,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
+  CHILD_THREAD_READ_ONLY_ERROR,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -368,8 +369,21 @@ const executeResponse = async (envelope, { req, res }) => {
           'invalid_request',
         );
       }
-      if (!(await db.getConvo(principal.userId, request.previous_response_id))) {
+      const previousConversation = await db.getConvo(
+        principal.userId,
+        request.previous_response_id,
+      );
+      if (!previousConversation) {
         return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
+      }
+      if (previousConversation.subagentThread != null) {
+        return sendResponsesErrorResponse(
+          res,
+          409,
+          CHILD_THREAD_READ_ONLY_ERROR,
+          'invalid_request',
+          'conversation_read_only',
+        );
       }
     }
 

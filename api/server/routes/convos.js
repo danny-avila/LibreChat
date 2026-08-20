@@ -22,6 +22,7 @@ const { forkConversation, duplicateConversation } = require('~/server/utils/impo
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
+const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
 
@@ -117,6 +118,26 @@ router.get('/gen_title/:conversationId', async (req, res) => {
   }
 });
 
+const POST_DELETE_CANCEL_ATTEMPTS = 3;
+const POST_DELETE_CANCEL_BACKOFF_MS = 250;
+
+/** Replays a cancellation plan after deletion, retrying a transiently unreachable
+ * owner rather than losing the only pass that can stop a late-admitted child. */
+async function retryPostDeleteCancellation(cancellationPlan, deletedConversationIds) {
+  for (let attempt = 1; attempt <= POST_DELETE_CANCEL_ATTEMPTS; attempt += 1) {
+    try {
+      await subagentThreadTaskStore.cancelPlan(cancellationPlan, deletedConversationIds);
+      return;
+    } catch (error) {
+      if (attempt === POST_DELETE_CANCEL_ATTEMPTS) {
+        logger.warn('Post-delete subagent cancellation failed', error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, POST_DELETE_CANCEL_BACKOFF_MS * attempt));
+    }
+  }
+}
+
 router.delete('/', configMiddleware, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
@@ -149,16 +170,51 @@ router.delete('/', configMiddleware, async (req, res) => {
   }
 
   try {
-    const dbResponse = await db.deleteConvos(req.user.id, filter);
+    const tenantId =
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined;
+    let cancellationPlan;
+    let dbResponse;
+    if (filter.conversationId) {
+      /** Resolve the targets while the conversations still exist: the second pass
+       * runs after their rows are gone and can only reach registered owners. */
+      cancellationPlan = await subagentThreadTaskStore.planCancellationForConversations(
+        req.user.id,
+        [filter.conversationId],
+        tenantId,
+      );
+      await subagentThreadTaskStore.cancelPlan(cancellationPlan);
+      dbResponse = await db.deleteConvos(req.user.id, filter);
+    } else {
+      /** An empty filter deletes every conversation this owner has, so it runs behind
+       * the same admission fence as `DELETE /all` rather than a bare drain. */
+      dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(req.user.id, tenantId, () =>
+        db.deleteConvos(req.user.id, filter),
+      );
+    }
+    const deletedConversationIds =
+      dbResponse.conversationIds ?? (filter.conversationId ? [filter.conversationId] : []);
+    /** Root deletion closes new child admission. Replay the plan to catch a task
+     * admitted after the first pass but before that fence, extended with the cascade
+     * this deletion reported. */
+    if (cancellationPlan != null && deletedConversationIds.length > 0) {
+      /** The conversations are gone, so this pass is the only thing that can still
+       * stop a child admitted after the first one. It cannot fail the request — the
+       * deletion already committed — so it retries briefly before giving up. */
+      await retryPostDeleteCancellation(cancellationPlan, deletedConversationIds);
+    }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
     await deleteAgentCheckpoints(
-      dbResponse.conversationIds,
+      deletedConversationIds,
       req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
     );
     if (filter.conversationId) {
-      await db.deleteToolCalls(req.user.id, filter.conversationId);
-      await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
+      await Promise.all(deletedConversationIds.map((id) => db.deleteToolCalls(req.user.id, id)));
+      await Promise.all(
+        deletedConversationIds.map((id) => deleteConvoSharedLinksWithCleanup(req.user.id, id)),
+      );
     }
     res.status(201).json(dbResponse);
   } catch (error) {
@@ -169,7 +225,18 @@ router.delete('/', configMiddleware, async (req, res) => {
 
 router.delete('/all', configMiddleware, async (req, res) => {
   try {
-    const dbResponse = await db.deleteConvos(req.user.id, {});
+    const tenantId =
+      typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+        ? req.user.tenantId
+        : undefined;
+    /** Fences new child admission for this owner, drains the live ones, and deletes
+     * inside that fence: a child admitted on another replica mid-deletion would
+     * otherwise keep running against conversations that no longer exist. */
+    const dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(
+      req.user.id,
+      tenantId,
+      () => db.deleteConvos(req.user.id, {}),
+    );
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

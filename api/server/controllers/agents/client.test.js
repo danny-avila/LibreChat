@@ -2,6 +2,9 @@ const mockCreateRun = jest.fn();
 const mockCaptureAgentCheckpointGeneration = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockIsHITLEnabled = jest.fn().mockReturnValue(false);
+const mockRecordCollectedUsage = jest.fn();
+const mockDetachedUsageRecorder = jest.fn();
+const mockCreateDetachedSubagentUsageRecorder = jest.fn(() => mockDetachedUsageRecorder);
 const mockBuildAgentScopedContext = jest.fn((...args) =>
   jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
 );
@@ -15,6 +18,7 @@ const mockFormatAgentMessages = jest.fn(() => ({
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const { GenerationJobManager, createStreamServices } = require('@librechat/api');
+const BaseClient = require('~/app/clients/BaseClient');
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
@@ -43,6 +47,8 @@ jest.mock('@librechat/api', () => ({
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
   createTokenCounter: jest.fn(() => jest.fn(() => 0)),
+  createDetachedSubagentUsageRecorder: (...args) =>
+    mockCreateDetachedSubagentUsageRecorder(...args),
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
   decrementPendingRequest: jest.fn(async () => {}),
@@ -57,7 +63,105 @@ jest.mock('@librechat/api', () => ({
   }),
   loadAgent: jest.fn(),
   maybePrewarmCodeSandbox: jest.fn(),
+  recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
 }));
+
+describe('AgentClient - detached subagent usage', () => {
+  it('records each detached call from an immutable snapshot after parent disposal', async () => {
+    mockRecordCollectedUsage.mockClear();
+    mockCreateDetachedSubagentUsageRecorder.mockClear();
+    mockDetachedUsageRecorder.mockClear();
+    const client = Object.create(AgentClient.prototype);
+    const childTokenConfig = { input: 1, output: 2 };
+    client.user = 'user-123';
+    client.conversationId = 'conversation-123';
+    client.responseMessageId = 'response-123';
+    client.model = 'primary-model';
+    client.options = {
+      req: { user: { id: 'request-user' } },
+      agent: { model_parameters: { model: 'fallback-model' } },
+      endpointTokenConfig: { input: 3, output: 4 },
+      endpointTokenConfigByAgentId: new Map([['agent-child', childTokenConfig]]),
+    };
+    const balance = { enabled: true };
+    const transactions = { enabled: true };
+    const usage = {
+      usage_type: 'subagent',
+      input_tokens: 100,
+      output_tokens: 20,
+      agentId: 'agent-child',
+    };
+
+    const recordUsage = client.buildDetachedSubagentUsageRecorder(balance, transactions);
+    client.user = null;
+    client.conversationId = null;
+    client.responseMessageId = null;
+    client.model = null;
+    client.options = null;
+
+    await recordUsage(usage);
+
+    expect(mockCreateDetachedSubagentUsageRecorder).toHaveBeenCalledTimes(1);
+    const [deps, billing] = mockCreateDetachedSubagentUsageRecorder.mock.calls[0];
+    expect(deps).toEqual({
+      spendTokens: expect.any(Function),
+      spendStructuredTokens: expect.any(Function),
+      pricing: {
+        getMultiplier: expect.any(Function),
+        getCacheMultiplier: expect.any(Function),
+      },
+      bulkWriteOps: {
+        insertMany: expect.any(Function),
+        updateBalance: expect.any(Function),
+      },
+      isPrincipalActive: expect.any(Function),
+    });
+    expect(billing).toEqual({
+      user: 'user-123',
+      conversationId: 'conversation-123',
+      model: 'primary-model',
+      messageId: 'response-123',
+      balance,
+      transactions,
+      endpointTokenConfig: { input: 3, output: 4 },
+      endpointTokenConfigByAgentId: expect.any(Map),
+    });
+    expect(billing.endpointTokenConfigByAgentId.get('agent-child')).toBe(childTokenConfig);
+    expect(mockDetachedUsageRecorder).toHaveBeenCalledWith(usage);
+  });
+});
+
+describe('AgentClient - subagent parent persistence', () => {
+  it('registers the parent user-message write before detached child dispatch can proceed', async () => {
+    const userMessagePromise = Promise.resolve({
+      message: { messageId: 'parent-user-message', conversationId: 'parent-conversation' },
+    });
+    const registerParentPersistence = jest.fn();
+    const upstreamGetReqData = jest.fn();
+    const baseSend = jest
+      .spyOn(BaseClient.prototype, 'sendMessage')
+      .mockImplementation(async (_message, opts) => {
+        opts.getReqData({ userMessagePromise });
+        return { ok: true };
+      });
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      subagentTasks: {
+        scopeId: 'trusted-parent-scope',
+        store: { registerParentPersistence },
+      },
+    };
+
+    await client.sendMessage('Start the parent turn.', { getReqData: upstreamGetReqData });
+
+    expect(upstreamGetReqData).toHaveBeenCalledWith({ userMessagePromise });
+    expect(registerParentPersistence).toHaveBeenCalledWith(
+      'trusted-parent-scope',
+      userMessagePromise,
+    );
+    baseSend.mockRestore();
+  });
+});
 
 describe('AgentClient - label settlement', () => {
   it('drains a trailing fill enqueued by an in-flight reasoning revision', async () => {
@@ -230,9 +334,16 @@ jest.mock('~/server/services/MCP', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  bulkInsertTransactions: jest.fn(),
+  getCacheMultiplier: jest.fn(),
   getAgent: jest.fn(),
+  getMultiplier: jest.fn(),
   getRoleByName: jest.fn(),
   getFormattedMemories: jest.fn(),
+  isAgentTriggerPrincipalActive: jest.fn().mockResolvedValue(true),
+  spendStructuredTokens: jest.fn(),
+  spendTokens: jest.fn(),
+  updateBalance: jest.fn(),
 }));
 
 // Mock getMCPManager

@@ -527,6 +527,8 @@ export interface UsageMetadata {
   /** Agent that produced this usage (graph agent id / subagent agent id). Lets
    *  multi-endpoint graphs price each call with its own endpoint token config. */
   agentId?: string;
+  /** Authoritative display cost attached by the host before durable child persistence. */
+  cost?: number;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
@@ -739,6 +741,7 @@ export interface IJobStoreV2 extends IJobStore {
     recoveredSteerPayload?: RecoveredSteerPayload,
     creationAttemptId?: string,
     expectedPredecessorCreatedAt?: number,
+    rejectActivePredecessor?: boolean,
   ): Promise<CreatedJobData>;
 
   /** Remove transaction-time predecessor receipts after their handoff was

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { Button, TextareaAutosize } from '@librechat/client';
-import { Check, ChevronUp, TriangleAlert } from 'lucide-react';
+import { Check, ChevronUp, TriangleAlert, X } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import useAskQuestionsForm from '~/hooks/Input/useAskQuestionsForm';
 import { splitOtherOption } from '~/utils/approval';
@@ -18,11 +18,13 @@ export default function AskUserQuestions({
   questions,
   className,
   onExpand,
+  onDismiss,
 }: {
   actionId: string;
   questions: Agents.AskUserQuestionBatchItem[];
   className?: string;
   onExpand?: () => void;
+  onDismiss?: () => void;
 }) {
   const localize = useLocalize();
   const promptId = useId();
@@ -102,16 +104,31 @@ export default function AskUserQuestions({
 
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
-      {onExpand != null && (
-        <div className="flex shrink-0 justify-end border-b border-border-light px-2 py-1">
-          <button
-            type="button"
-            aria-label={localize('com_ui_expand')}
-            className="rounded p-1 text-text-secondary hover:bg-surface-hover"
-            onClick={onExpand}
-          >
-            <ChevronUp className="h-4 w-4" aria-hidden="true" />
-          </button>
+      {(onExpand != null || onDismiss != null) && (
+        <div className="flex shrink-0 items-center justify-end border-b border-border-light px-2 py-1">
+          {onExpand != null && (
+            <button
+              type="button"
+              aria-label={localize('com_ui_expand')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={onExpand}
+            >
+              <ChevronUp className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
+          {/** The collapsed card is the ONLY surface left for a collapsed
+           *   batch, so it has to carry the popover's dismiss too — without it
+           *   the pause can only be answered or skipped. */}
+          {onDismiss != null && (
+            <button
+              type="button"
+              aria-label={localize('com_ui_close')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={onDismiss}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
       )}
       {stepped && (
@@ -175,7 +192,7 @@ export default function AskUserQuestions({
             {question.question}
           </p>
           {question.description != null && question.description.length > 0 && (
-            <p className="mt-1 text-xs text-text-secondary [overflow-wrap:anywhere]">
+            <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
               {question.description}
             </p>
           )}
@@ -188,7 +205,7 @@ export default function AskUserQuestions({
                     key={option.value}
                     type="button"
                     size="sm"
-                    variant={isSelected ? 'submit' : 'outline'}
+                    variant={isSelected ? 'submit' : 'choice'}
                     role={question.multiSelect === true ? 'checkbox' : undefined}
                     aria-checked={question.multiSelect === true ? isSelected : undefined}
                     aria-pressed={question.multiSelect === true ? undefined : isSelected}
@@ -212,7 +229,7 @@ export default function AskUserQuestions({
             minRows={1}
             maxRows={6}
             placeholder={otherLabel ?? localize('com_ui_your_answer')}
-            className="mt-2 w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm text-text-primary"
+            className="mt-2 w-full resize-none rounded-md border border-border-xheavy bg-surface-primary p-2 text-sm text-text-primary"
             aria-label={`${question.question} ${localize('com_ui_your_answer')}`}
           />
         </fieldset>

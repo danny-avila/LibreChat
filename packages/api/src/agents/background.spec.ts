@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import type { LCTool, LCToolRegistry } from '@librechat/agents';
+import { InMemorySubagentTaskStore } from '@librechat/agents';
+import type { LCTool, LCToolRegistry, SubagentTaskConfig } from '@librechat/agents';
 import {
   isBackgroundEligibleToolName,
   isBackgroundRequested,
@@ -18,6 +19,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
 
@@ -27,6 +29,20 @@ const mcpDef = (name: string): LCTool =>
     description: `${name} description`,
     parameters: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
   }) as unknown as LCTool;
+
+async function waitForSubagentTaskToSettle(
+  store: InMemorySubagentTaskStore,
+  scopeId: string,
+  taskId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (store.get(scopeId, taskId)?.status !== 'running') {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error('Timed out waiting for the detached subagent task.');
+}
 
 describe('isBackgroundEligibleToolName', () => {
   it('excludes direct-path, host-special, and machinery tools', () => {
@@ -1041,8 +1057,8 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
 });
 
 describe('runCheckBackgroundTask (singleton)', () => {
-  it('returns not_found for an unknown id', () => {
-    const content = runCheckBackgroundTask({
+  it('returns not_found for an unknown id', async () => {
+    const content = await runCheckBackgroundTask({
       userId: 'poll_user',
       conversationId: 'poll_convo',
       args: { background_task_id: 'nope' },
@@ -1052,7 +1068,29 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('returns a single task by id and lists all when omitted', () => {
+  it('rejects an oversized task id before local or cross-replica lookup', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn(),
+      controlTask: jest.fn(),
+      listTasks: jest.fn(),
+    });
+    const content = await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: { background_task_id: 'x'.repeat(257) },
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+
+    expect(JSON.parse(content)).toEqual({
+      status: 'invalid',
+      message: 'A background_task_id cannot exceed 256 characters.',
+    });
+    expect(store.claimTask).not.toHaveBeenCalled();
+    expect(store.controlTask).not.toHaveBeenCalled();
+    expect(store.listTasks).not.toHaveBeenCalled();
+  });
+
+  it('returns a single task by id and lists all when omitted', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'poll_user',
       conversationId: 'poll_convo2',
@@ -1067,7 +1105,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     });
 
     const single = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_convo2',
         args: { background_task_id: created.task.id },
@@ -1082,7 +1120,11 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
 
     const listed = JSON.parse(
-      runCheckBackgroundTask({ userId: 'poll_user', conversationId: 'poll_convo2', args: {} }),
+      await runCheckBackgroundTask({
+        userId: 'poll_user',
+        conversationId: 'poll_convo2',
+        args: {},
+      }),
     );
     expect(listed.tasks).toHaveLength(1);
     expect(listed.tasks[0].background_task_id).toBe(created.task.id);
@@ -1094,7 +1136,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
 
     // stringified args must still resolve the specific task (with its full result)
     const singleFromString = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_convo2',
         args: `{"background_task_id":"${created.task.id}"}`,
@@ -1105,7 +1147,68 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', () => {
+  it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {
+    const ordinary = backgroundTaskRegistry.create({
+      userId: 'partial-list-owner',
+      conversationId: 'partial-list-parent',
+      toolCallId: 'ordinary-call',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in ordinary) {
+      throw new Error('unexpected capacity');
+    }
+
+    const store = new InMemorySubagentTaskStore();
+    const started = store.start({
+      scopeId: 'partial-list-owner:partial-list-parent',
+      idempotencyKey: 'partial-list-run:parent-agent:subagent-call',
+      parentRunId: 'partial-list-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'subagent-call',
+      input: 'Keep working locally.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => ({ content: 'local result' }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await waitForSubagentTaskToSettle(
+      store,
+      'partial-list-owner:partial-list-parent',
+      started.task.taskId,
+    );
+
+    const routedStore = Object.assign(store, {
+      claimTask: jest.fn(),
+      controlTask: jest.fn(),
+      listTasks: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'partial-list-owner',
+        conversationId: 'partial-list-parent',
+        args: {},
+        subagentTasks: {
+          store: routedStore,
+          scopeId: 'partial-list-owner:partial-list-parent',
+        },
+      }),
+    );
+
+    expect(listed).toEqual(
+      expect.objectContaining({
+        partial: true,
+        warning:
+          'Cross-replica subagent tasks could not be listed: The process running this subagent task is temporarily unavailable.',
+      }),
+    );
+    expect(
+      listed.tasks.map((task: { background_task_id: string }) => task.background_task_id),
+    ).toEqual(expect.arrayContaining([ordinary.task.id, started.task.taskId]));
+  });
+
+  it('retrieves a task across turns: the poll is keyed only by id, not the dispatch run/turn', async () => {
     // Turn 1 dispatches under run-turn-1 and the result lands after the turn.
     const dispatched = backgroundTaskRegistry.create({
       userId: 'poll_user',
@@ -1124,7 +1227,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
 
     // Turn 2 (a later run) polls with just the id; get/list carry no run/turn scope.
     const polled = JSON.parse(
-      runCheckBackgroundTask({
+      await runCheckBackgroundTask({
         userId: 'poll_user',
         conversationId: 'poll_xturn',
         args: { background_task_id: dispatched.task.id },
@@ -1137,6 +1240,216 @@ describe('runCheckBackgroundTask (singleton)', () => {
         background_task_id: dispatched.task.id,
       }),
     );
+  });
+
+  it('polls and one-shot claims a detached subagent result', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-1',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-1',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => ({ content: 'finished research' }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await waitForSubagentTaskToSettle(store, subagentTasks.scopeId, started.task.taskId);
+
+    const first = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(first).toEqual(
+      expect.objectContaining({
+        background_task_id: started.task.taskId,
+        subagent_thread_id: started.task.threadId,
+        tool: 'subagent',
+        status: 'completed',
+        result: 'finished research',
+      }),
+    );
+
+    const second = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
+    expect(second.result).toBeUndefined();
+  });
+
+  it('routes parent control actions only to detached subagent tasks', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-2',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-2',
+      input: 'Keep working.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => result,
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    await Promise.resolve();
+
+    const queued = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: started.task.taskId,
+          action: 'queue',
+          message: 'Also verify the source.',
+        },
+        subagentTasks,
+      }),
+    );
+    expect(queued).toEqual(
+      expect.objectContaining({ status: 'accepted', control_id: expect.any(String) }),
+    );
+
+    const cancelledMessage = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: started.task.taskId,
+          action: 'cancel_message',
+          control_id: queued.control_id,
+        },
+        subagentTasks,
+      }),
+    );
+    expect(cancelledMessage.status).toBe('accepted');
+
+    const cancelledTask = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: started.task.taskId, action: 'cancel' },
+        subagentTasks,
+      }),
+    );
+    expect(cancelledTask.status).toBe('cancelled');
+    finish({ content: 'late result' });
+  });
+
+  it('derives a bounded control invocation identity from the tool call', async () => {
+    const controlTask = jest.fn().mockResolvedValue({
+      status: 'not_running',
+      task: {
+        taskId: 'remote-task',
+        subagentType: 'researcher',
+        status: 'completed',
+        createdAt: 1,
+        updatedAt: 2,
+        resultAvailable: false,
+        resultClaimed: true,
+        pendingControls: 0,
+      },
+    });
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn(),
+      controlTask,
+      listTasks: jest.fn(),
+    });
+    const control = (toolCallId: string | undefined) =>
+      runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: {
+          background_task_id: 'remote-task',
+          action: 'queue',
+          message: 'Check one more source.',
+        },
+        toolCallId,
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+      });
+
+    /** Replaying one tool call keeps its identity, so routing can replay the result. */
+    await control('call_abc');
+    await control('call_abc');
+    const [firstInvocation, replayedInvocation] = controlTask.mock.calls.map((call) => call[3]);
+    expect(firstInvocation).toBe(replayedInvocation);
+    expect(firstInvocation).toHaveLength(32);
+
+    /** A separate tool call is a separate command even with an identical payload. */
+    await control('call_def');
+    expect(controlTask.mock.calls[2][3]).not.toBe(firstInvocation);
+
+    /** The same provider id in another run or agent is a different command. */
+    await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: {
+        background_task_id: 'remote-task',
+        action: 'queue',
+        message: 'Check one more source.',
+      },
+      toolCallId: 'call_abc',
+      runId: 'run-2:0',
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+    expect(controlTask.mock.calls[3][3]).not.toBe(firstInvocation);
+
+    /** A provider id far past the protocol bound still routes as a bounded identity. */
+    const longToolCallId = `call_${'x'.repeat(200)}`;
+    await control(longToolCallId);
+    await control(longToolCallId);
+    const [longInvocation, replayedLongInvocation] = controlTask.mock.calls
+      .slice(4)
+      .map((call) => call[3]);
+    expect(longInvocation).toHaveLength(32);
+    expect(replayedLongInvocation).toBe(longInvocation);
+
+    /** Without a tool-call id each invocation stays distinct rather than colliding. */
+    await control(undefined);
+    await control(undefined);
+    const [fallback, otherFallback] = controlTask.mock.calls.slice(6).map((call) => call[3]);
+    expect(fallback).not.toBe(otherFallback);
+    expect(fallback.length).toBeLessThanOrEqual(128);
+  });
+
+  it('reports an unreachable remote subagent owner without pretending the task is missing', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+      controlTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+      listTasks: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const content = await runCheckBackgroundTask({
+      userId: 'owner',
+      conversationId: 'parent-thread',
+      args: { background_task_id: 'remote-task' },
+      subagentTasks: { store, scopeId: 'owner:parent-thread' },
+    });
+
+    expect(JSON.parse(content)).toEqual({
+      status: 'unavailable',
+      background_task_id: 'remote-task',
+      message: 'The process running this subagent task is temporarily unavailable.',
+    });
   });
 });
 

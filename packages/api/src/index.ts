@@ -76,6 +76,8 @@ export * from './tools';
 export * from './web';
 /* Langfuse */
 export * from './langfuse';
+/* Insights */
+export * from './insights';
 /* Cache */
 export * from './cache';
 /* Shared Links */

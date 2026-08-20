@@ -465,6 +465,9 @@ export interface CreateGenerationJobOptions {
    * status result. Creation may proceed only if that exact epoch is still
    * current or the stream has no durable job. */
   expectedPredecessorCreatedAt?: number;
+  /** Atomically refuse to replace a running/paused predecessor while allowing
+   * an absent or terminal predecessor. Used by automatic continuations. */
+  rejectActivePredecessor?: boolean;
 }
 
 /**
@@ -1973,6 +1976,12 @@ class GenerationJobManagerClass {
     ) {
       throw new Error('Invalid expected generation predecessor');
     }
+    if (
+      options.rejectActivePredecessor != null &&
+      typeof options.rejectActivePredecessor !== 'boolean'
+    ) {
+      throw new Error('Invalid active generation predecessor policy');
+    }
 
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
@@ -2010,6 +2019,7 @@ class GenerationJobManagerClass {
         options.recoveredSteerPayload,
         creationAttemptId,
         options.expectedPredecessorCreatedAt,
+        options.rejectActivePredecessor,
       );
     } catch (error) {
       if (error instanceof JobPredecessorMismatchError) {

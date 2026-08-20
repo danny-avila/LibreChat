@@ -529,3 +529,131 @@ describe('useAutoSave — side-by-side pending drafts', () => {
     expect(getFilesDraft(`${Constants.NEW_CONVO}:1`)).toEqual({ fileIds: [], pendingPastes: {} });
   });
 });
+
+describe('useAutoSave — file cache updates', () => {
+  const liveAttachment = {
+    file_id: 'client-temp-id',
+    type: 'image/png',
+    size: 2048,
+    progress: 0.9,
+    preview: 'blob:local-preview',
+    tool_resource: 'file_search',
+    file: new File(['bytes'], 'cat.png', { type: 'image/png' }),
+  };
+  const persistedRecord = {
+    file_id: 'server-file-id',
+    temp_file_id: 'client-temp-id',
+    filename: 'cat.png',
+    filepath: '/images/cat.png',
+    type: 'image/png',
+    bytes: 2048,
+    object: 'file',
+    usage: 0,
+    user: 'user-1',
+    embedded: false,
+  };
+
+  const applySetFiles = (setFiles: jest.Mock, current: Map<string, unknown>) =>
+    setFiles.mock.calls.reduce(
+      (files, [update]) => (typeof update === 'function' ? update(files) : update),
+      current,
+    ) as Map<string, Record<string, unknown>>;
+
+  /**
+   * The file cache is rewritten on every upload and on every attachment an agent
+   * emits mid-run, and this hook restores from it. An empty draft there means the
+   * draft write has not caught up — not that the composer is empty — so clearing
+   * would drop an attachment the user just added (and, with no text typed, leave
+   * them with nothing submittable).
+   */
+  it('leaves live attachments alone when the file cache changes with no saved draft', () => {
+    const setFiles = jest.fn();
+    const files = new Map([['client-temp-id', liveAttachment]]);
+
+    const { rerender } = renderHook(
+      ({ fileList }: { fileList: unknown[] }) => {
+        (useGetFiles as jest.Mock).mockReturnValue({ data: fileList });
+        return useAutoSave({
+          conversationId: 'convo-1',
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        });
+      },
+      { initialProps: { fileList: [] as unknown[] } },
+    );
+
+    setFiles.mockClear();
+    /** The draft is gone the moment storage refuses or evicts the write — another
+     * tab clearing it, a quota failure, private browsing. The attachment the user
+     * just added is still in the composer either way. */
+    localStorage.clear();
+    act(() => {
+      rerender({ fileList: [persistedRecord] });
+    });
+
+    expect(applySetFiles(setFiles, files).size).toBe(1);
+  });
+
+  /**
+   * The restore also lands on entries the composer still owns, so it has to layer
+   * the persisted record over them rather than replace them: the blob preview the
+   * chip renders from and the tool resource the upload was staged under exist only
+   * locally, and `attached` decides whether removing the chip deletes the file.
+   */
+  it('layers the persisted record over a live attachment instead of replacing it', () => {
+    const setFiles = jest.fn();
+    const files = new Map([['client-temp-id', liveAttachment]]);
+    setFilesDraft('convo-1', { fileIds: ['client-temp-id'], pendingPastes: {} });
+
+    const { rerender } = renderHook(
+      ({ fileList }: { fileList: unknown[] }) => {
+        (useGetFiles as jest.Mock).mockReturnValue({ data: fileList });
+        return useAutoSave({
+          conversationId: 'convo-1',
+          textAreaRef: makeTextAreaRef(),
+          files,
+          setFiles,
+        });
+      },
+      { initialProps: { fileList: [] as unknown[] } },
+    );
+
+    /** Past the mount swap, which clears the composer itself before restoring. */
+    setFiles.mockClear();
+    act(() => {
+      rerender({ fileList: [persistedRecord] });
+    });
+
+    const restored = applySetFiles(setFiles, files).get('client-temp-id');
+    expect(restored).toMatchObject({
+      file_id: 'server-file-id',
+      filepath: '/images/cat.png',
+      progress: 1,
+      preview: 'blob:local-preview',
+      tool_resource: 'file_search',
+      attached: false,
+    });
+    expect(restored?.file).toBeInstanceOf(File);
+  });
+
+  it('marks a file restored from a draft alone as attached', () => {
+    const setFiles = jest.fn();
+    setFilesDraft('convo-1', { fileIds: ['client-temp-id'], pendingPastes: {} });
+
+    renderHook(() => {
+      (useGetFiles as jest.Mock).mockReturnValue({ data: [persistedRecord] });
+      return useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles,
+      });
+    });
+
+    expect(applySetFiles(setFiles, new Map()).get('client-temp-id')).toMatchObject({
+      attached: true,
+      progress: 1,
+    });
+  });
+});

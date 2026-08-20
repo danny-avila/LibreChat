@@ -8,6 +8,7 @@ const {
   buildEndpointOption,
 } = require('~/server/middleware');
 const validateConvoAccess = require('~/server/middleware/validate/convoAccess');
+const guardSubagentThreadTurn = require('~/server/middleware/validate/subagentThreadTurn');
 const validateAssistant = require('~/server/middleware/assistants/validate');
 const chatController = require('~/server/controllers/assistants/chatV1');
 
@@ -27,6 +28,7 @@ router.post(
   buildEndpointOption,
   validateAssistant,
   validateConvoAccess,
+  guardSubagentThreadTurn,
   setHeaders,
   chatController,
 );

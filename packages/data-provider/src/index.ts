@@ -32,6 +32,7 @@ export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
 export * from './types/graph';
+export * from './types/insights';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */
@@ -57,5 +58,6 @@ export { default as createPayload } from './createPayload';
 /* feedback */
 export * from './feedback';
 export * from './parameterSettings';
+export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';

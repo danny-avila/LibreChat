@@ -159,6 +159,8 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  CHILD_THREAD_READ_ONLY_ERROR:
+    'This subagent thread is view-only. Continue it from its parent agent or create a separate chat.',
   getLangfuseTraceMessageFields: jest.fn().mockResolvedValue({
     langfuseSampled: true,
     langfuseDestinationIds: ['destination-1'],
@@ -637,6 +639,41 @@ describe('createResponse controller', () => {
         expect.any(String),
         expect.any(String),
       );
+    });
+
+    it('rejects a remote response continuation of a view-only subagent thread', async () => {
+      const {
+        validateResponseRequest,
+        sendResponsesErrorResponse,
+        CHILD_THREAD_READ_ONLY_ERROR,
+      } = require('@librechat/api');
+      const { getConvo, saveConvo, saveMessage } = require('~/models');
+      validateResponseRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          input: 'Mutate the child.',
+          stream: false,
+          store: true,
+          previous_response_id: 'child-thread',
+        },
+      });
+      getConvo.mockResolvedValueOnce({
+        conversationId: 'child-thread',
+        user: 'user-123',
+        subagentThread: { parentConversationId: 'parent-thread' },
+      });
+
+      await createResponse(req, res);
+
+      expect(sendResponsesErrorResponse).toHaveBeenCalledWith(
+        res,
+        409,
+        CHILD_THREAD_READ_ONLY_ERROR,
+        'invalid_request',
+        'conversation_read_only',
+      );
+      expect(saveConvo).not.toHaveBeenCalled();
+      expect(saveMessage).not.toHaveBeenCalled();
     });
 
     it('should return 500 when getConvo throws a DB error', async () => {

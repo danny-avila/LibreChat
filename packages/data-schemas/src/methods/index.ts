@@ -44,7 +44,12 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  type MessageMethods,
+  type SubagentTaskResultClaim,
+} from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
@@ -122,6 +127,8 @@ import {
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
 } from './mcpAuthority';
+/* Insights */
+import { createInsightsMethods, type InsightsMethods } from './insights';
 
 export {
   RoleConflictError,
@@ -191,7 +198,8 @@ export type AllMethods = UserMethods &
   AgentTriggerDeliveryMethods &
   AgentMethods &
   ConfigMethods &
-  MCPAuthorityMethods;
+  MCPAuthorityMethods &
+  InsightsMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -332,6 +340,8 @@ export function createMethods(
     ...createConfigMethods(mongoose),
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
+    /* Insights */
+    ...createInsightsMethods(mongoose),
   };
 }
 
@@ -363,6 +373,7 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,
   TxMethods,
@@ -390,4 +401,5 @@ export type {
   MCPAuthorityMethodHooks,
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
+  InsightsMethods,
 };

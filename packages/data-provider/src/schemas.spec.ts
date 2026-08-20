@@ -10,6 +10,7 @@ import {
   eReasoningEffortSchema,
   eReasoningModeSchema,
   eReasoningContextSchema,
+  subagentThreadLineageSchema,
 } from './schemas';
 
 describe('anthropicSettings', () => {
@@ -619,5 +620,32 @@ describe('ReasoningContext', () => {
     expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
     expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
     expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
+  });
+});
+
+describe('subagentThreadLineageSchema', () => {
+  const lineage = {
+    rootConversationId: 'root-conversation',
+    parentConversationId: 'parent-conversation',
+    parentMessageId: 'parent-message',
+    parentToolCallId: 'tool-call',
+    parentAgentId: 'parent-agent',
+    subagentType: 'researcher',
+    subagentKind: 'agent',
+    depth: 1,
+  };
+
+  it('accepts durable child-thread lineage', () => {
+    expect(subagentThreadLineageSchema.parse(lineage)).toEqual(lineage);
+  });
+
+  it('rejects non-positive depth and unknown execution shapes', () => {
+    expect(() => subagentThreadLineageSchema.parse({ ...lineage, depth: 0 })).toThrow();
+    expect(() =>
+      subagentThreadLineageSchema.parse({ ...lineage, subagentKind: 'workflow' }),
+    ).toThrow();
+    expect(() =>
+      subagentThreadLineageSchema.parse({ ...lineage, parentConversationId: '' }),
+    ).toThrow();
   });
 });

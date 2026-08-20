@@ -11,6 +11,7 @@ import {
   ResourceType,
   EModelEndpoint,
   PermissionBits,
+  removeCodeExecutionCaller,
   resolveStatefulCodeEnvironment,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
@@ -91,6 +92,8 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
    * execute_code is disabled so a stale opt-in can't silently reactivate later. */
   const normalizedStatefulCodeSessions =
     data.execute_code === true ? stateful_code_sessions : false;
+  const normalizedToolOptions =
+    data.execute_code === true ? tool_options : removeCodeExecutionCaller(tool_options);
   const normalizedStatefulCodeEnvironment = stateful_code_environment ?? 'user';
 
   const shouldResetAvatar =
@@ -118,7 +121,7 @@ export function composeAgentUpdatePayload(data: AgentForm, agent_id?: string | n
       recursion_limit,
       category,
       support_contact,
-      tool_options,
+      tool_options: normalizedToolOptions,
       skills,
       skills_enabled,
       /** A hidden stale 'agent' scope must not survive disabling memory —

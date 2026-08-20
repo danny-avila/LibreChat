@@ -121,4 +121,22 @@ module.exports = {
     })),
 
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
+
+  subagentThreadStore: () => ({
+    cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
+    withOwnerDeletionFence: jest.fn().mockImplementation(async (_userId, _tenantId, deletion) => {
+      return deletion();
+    }),
+    planCancellationForConversations: jest
+      .fn()
+      .mockImplementation(async (userId, conversationIds, tenantId) => ({
+        userId,
+        tenantId,
+        conversationIds: [...conversationIds],
+        scopes: [],
+        leases: [],
+      })),
+    cancelPlan: jest.fn().mockResolvedValue(0),
+    cancelForOwner: jest.fn(),
+  }),
 };

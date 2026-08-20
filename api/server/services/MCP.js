@@ -36,6 +36,7 @@ const {
   hasRuntimeUrlPlaceholders,
   containsGraphTokenPlaceholder,
   isOAuthServer,
+  OpenIDReauthRequiredError,
 } = require('@librechat/api');
 const {
   Time,
@@ -1126,6 +1127,11 @@ function createToolInstance({
         `[MCP][${serverName}][${toolName}][User: ${userId}] Error calling MCP tool:`,
         error,
       );
+
+      /** Carries the actionable re-auth message; the substring heuristic below would misreport it as an OAuth configuration problem */
+      if (error instanceof OpenIDReauthRequiredError) {
+        throw error;
+      }
 
       /** OAuth error, provide a helpful message */
       const isOAuthError =

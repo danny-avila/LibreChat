@@ -20,10 +20,14 @@ function Header({
   links,
   expanded,
   onClose,
+  onLeaveInsights,
+  routeActiveId,
 }: {
   links: NavLink[];
   expanded: boolean;
   onClose: () => void;
+  onLeaveInsights?: () => void;
+  routeActiveId?: string;
 }) {
   const localize = useLocalize();
   const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
@@ -64,7 +68,12 @@ function Header({
       >
         <Sidebar className="icon-md" aria-hidden="true" />
       </Button>
-      <Switcher links={links} />
+      <Switcher
+        links={links}
+        onLeaveInsights={onLeaveInsights}
+        onNavigate={onClose}
+        routeActiveId={routeActiveId}
+      />
       <Suspense fallback={<Skeleton className="size-9 rounded-lg" />}>
         <AccountSettings collapsed />
       </Suspense>

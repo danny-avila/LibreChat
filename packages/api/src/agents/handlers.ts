@@ -10,6 +10,7 @@ import type {
   ToolCallRequest,
   ToolExecuteResult,
   ToolExecuteBatchRequest,
+  SubagentTaskConfig,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
@@ -82,6 +83,8 @@ export interface ToolExecuteOptions {
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
     configurable?: Record<string, unknown>;
   }>;
+  /** Trusted detached-subagent task scope for polling and parent controls. */
+  subagentTasks?: SubagentTaskConfig;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /**
@@ -3816,7 +3819,8 @@ function buildToolCallConfig(
 }
 
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment } = options;
+  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
+    options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -3890,16 +3894,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               | string[]
               | undefined;
             const backgroundEnabledForRun = (backgroundToolNames?.length ?? 0) > 0;
+            const backgroundControlEnabled = backgroundEnabledForRun || subagentTasks != null;
             const backgroundToolSet: ReadonlySet<string> = backgroundEnabledForRun
               ? new Set(backgroundToolNames)
               : EMPTY_BACKGROUND_TOOL_SET;
-            const backgroundReq = backgroundEnabledForRun
+            const backgroundReq = backgroundControlEnabled
               ? (mergedConfigurable?.req as ServerRequest | undefined)
               : undefined;
-            const backgroundUserId = backgroundEnabledForRun
+            const backgroundUserId = backgroundControlEnabled
               ? resolveBackgroundUserId(mergedConfigurable)
               : '';
-            const backgroundConversationId = backgroundEnabledForRun
+            const backgroundConversationId = backgroundControlEnabled
               ? (((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
                 (mergedConfigurable?.thread_id as string | undefined) ??
                 (backgroundReq?.body as { conversationId?: string } | undefined)?.conversationId ??
@@ -4083,11 +4088,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
 
             const results: ToolExecuteResult[] = await Promise.all(
               toolCalls.map(async (tc: ToolCallRequest) => {
-                if (backgroundEnabledForRun && tc.name === CHECK_BACKGROUND_TASK_NAME) {
-                  const pollContent = runCheckBackgroundTask({
+                if (backgroundControlEnabled && tc.name === CHECK_BACKGROUND_TASK_NAME) {
+                  const pollContent = await runCheckBackgroundTask({
                     userId: backgroundUserId,
                     conversationId: backgroundConversationId,
                     args: tc.args,
+                    toolCallId: tc.id,
+                    agentId,
+                    runId: `${backgroundRunId ?? ''}:${tc.turn ?? ''}`,
+                    subagentTasks,
                   });
                   /** Deliver a completed task's artifact through THIS live poll
                    *  turn (once): the tool's own turn finalized before the
