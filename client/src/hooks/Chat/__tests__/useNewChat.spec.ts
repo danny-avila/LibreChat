@@ -19,7 +19,13 @@ const mockState = {
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   files: new Map<string, LiveFile>(),
   fileList: undefined as
-    | { file_id: string; filepath: string; source: string; embedded?: boolean }[]
+    | {
+        file_id: string;
+        filepath: string;
+        source: string;
+        embedded?: boolean;
+        temp_file_id?: string;
+      }[]
     | undefined,
 };
 
@@ -48,6 +54,7 @@ jest.mock('~/utils', () => ({
   clearMessagesCache: (...args: unknown[]) => mockClearMessagesCache(...args),
   clearAllDrafts: (...args: unknown[]) => mockClearAllDrafts(...args),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
+  getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
   getFilesDraft: () => mockState.filesDraft,
   getBrowserTabId: () => mockState.tabId,
 }));
@@ -316,6 +323,89 @@ describe('useNewChat', () => {
         },
       ],
     });
+  });
+
+  it('deletes a deferred upload by its temporary request id once the record arrives', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['request-uuid'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['request-uuid', { file_id: 'request-uuid', progress: 0.4 }]]);
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+
+    /** The cache keys the record by the server-assigned id and keeps the request uuid as
+     * its temp id; the discard was tracked under the request uuid. */
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      {
+        file_id: 'server-id',
+        temp_file_id: 'request-uuid',
+        filepath: '/uploads/uploaded.txt',
+        source: 'local',
+      },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        {
+          file_id: 'server-id',
+          embedded: false,
+          filepath: '/uploads/uploaded.txt',
+          source: 'local',
+        },
+      ],
+    });
+  });
+
+  it('keeps earlier deferred deletions when a second reset defers more', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = { fileIds: ['upload-a'], pendingPastes: {} };
+    mockState.files = new Map([['upload-a', { file_id: 'upload-a', progress: 0.4 }]]);
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    /** A second new chat before the first upload completed, with a fresh upload of its own.
+     * The rerender stands in for the re-render the map change causes in a live composer. */
+    mockState.filesDraft = { fileIds: ['upload-b'], pendingPastes: {} };
+    mockState.files = new Map([['upload-b', { file_id: 'upload-b', progress: 0.4 }]]);
+    act(() => rerender());
+    act(() => result.current.startNewChat());
+
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'upload-a', filepath: '/uploads/a.txt', source: 'local' },
+      { file_id: 'upload-b', filepath: '/uploads/b.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        { file_id: 'upload-a', embedded: false, filepath: '/uploads/a.txt', source: 'local' },
+        { file_id: 'upload-b', embedded: false, filepath: '/uploads/b.txt', source: 'local' },
+      ],
+    });
+  });
+
+  it('clears the pending draft a running response parked this pane under', () => {
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('pending');
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
   });
 
   it('spares a deferred upload that came back attached to the fresh composer', async () => {

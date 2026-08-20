@@ -11,6 +11,7 @@ import {
   getBrowserTabId,
   getFilesDraft,
   getNewConversationDraftId,
+  getPendingDraftId,
 } from '~/utils';
 import { useGetFiles, useDeleteFilesMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
@@ -73,6 +74,12 @@ const collectOwnedIds = (files: Map<string, ExtendedFile>, pasteIds: Set<string>
   return ownedIds;
 };
 
+/** The draft and the composer map carry a request's own uuid, while the files cache keys the
+ * record by the server-assigned file id and remembers the request id as `temp_file_id`, so a
+ * discard is matched through either identity. */
+const findFilesRecord = (fileList: TFile[] | undefined, fileId: string): TFile | undefined =>
+  fileList?.find((entry) => entry.file_id === fileId || entry.temp_file_id === fileId);
+
 /**
  * Single source of truth for starting a new conversation: drops the cached
  * messages for the outgoing conversation, invalidates the messages query, then
@@ -112,7 +119,7 @@ export default function useNewChat({
       if (reattached.has(fileId)) {
         continue;
       }
-      const record = fileList.find((entry) => entry.file_id === fileId);
+      const record = findFilesRecord(fileList, fileId);
       if (record == null) {
         stillPending.push(fileId);
         continue;
@@ -149,9 +156,7 @@ export default function useNewChat({
     const draftId = getNewConversationDraftId(index);
     if (saveDrafts) {
       const filesDraft = getFilesDraft(draftId);
-      if (filesDraft.tabId != null && filesDraft.tabId !== getBrowserTabId()) {
-        setPendingDiscardIds([]);
-      } else {
+      if (filesDraft.tabId == null || filesDraft.tabId === getBrowserTabId()) {
         const pasteIds = new Set(filesDraft.pastedTextIds ?? []);
         const ownedIds = collectOwnedIds(files, pasteIds);
         const draftFileIds = new Set([
@@ -164,7 +169,7 @@ export default function useNewChat({
           if (!ownedIds.has(fileId)) {
             continue;
           }
-          const record = fileList?.find((entry) => entry.file_id === fileId);
+          const record = findFilesRecord(fileList, fileId);
           const deletableRecord = record != null ? toDeletableRecord(record) : null;
           if (deletableRecord != null) {
             deletable.push(deletableRecord);
@@ -175,9 +180,14 @@ export default function useNewChat({
         if (deletable.length > 0) {
           mutateAsync({ files: deletable });
         }
-        setPendingDiscardIds(deferred);
+        /** Merged, not replaced: a second reset while an earlier upload is still in flight
+         * must not forget that earlier id, or its eventual record is orphaned. */
+        setPendingDiscardIds((current) => Array.from(new Set([...current, ...deferred])));
       }
     }
+    /** A running response parks this pane's composer under the pending key; the clean slate
+     * discards that too, or the queued text and attachments come back with the next run. */
+    clearAllDrafts(getPendingDraftId(index));
     clearAllDrafts(draftId);
     newConversation();
     onNewChat?.();
