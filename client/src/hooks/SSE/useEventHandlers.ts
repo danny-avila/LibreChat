@@ -965,6 +965,19 @@ export default function useEventHandlers({
             });
           }
 
+          /* The sidebar list is a separate cache from the single-conversation entry above, and
+             nothing else writes to it once a run completes. Only the server's own stamp is
+             written: the seen acknowledgement is bound to whatever stamp the client observed,
+             so inventing one from the browser clock would offer the server a value it cannot
+             match. Where the payload carries none, `useReplyWatcher` fetches the real one. */
+          const serverLastResponseAt = serverConversation.lastResponseAt;
+          if (conversation.conversationId && !_isTemporary && serverLastResponseAt) {
+            updateConvoInAllQueries(queryClient, conversation.conversationId, (convo) => ({
+              ...convo,
+              lastResponseAt: serverLastResponseAt,
+            }));
+          }
+
           if (conversation.chatProjectId) {
             queryClient.invalidateQueries([QueryKeys.projects]);
             queryClient.invalidateQueries([QueryKeys.project, conversation.chatProjectId]);

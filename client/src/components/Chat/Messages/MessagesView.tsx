@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import {
+  useLocalize,
+  useScreenshot,
+  useScrollbarGutter,
+  useMessageScrolling,
+  useConversationSeen,
+} from '~/hooks';
 import { MessagesViewProvider, useChatContext, useFileMapContext } from '~/Providers';
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { useChatSurface } from '~/components/Chat/Subagents/surface';
@@ -45,11 +51,22 @@ function MessagesViewContent({
   const { conversationId } = conversation ?? {};
   const fileMap = useFileMapContext();
   const threadRows = useThreadRows(FLAT_THREAD ? messages : null, conversationId, fileMap);
-
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { showScrollButton, maximizeChatSpace } = useChatSurface();
   const autoScroll = useAtomValue(autoScrollAtom);
+
+  /** Piggybacks the messages-end observer rather than adding a second one, and stays a plain
+   *  callback so intersection flips keep re-rendering only `ScrollButton`. */
+  const reportNearBottom = useConversationSeen(conversationId ?? undefined, isSubmitting);
+  const handleNearBottom = useCallback(
+    (isNearBottom: boolean) => {
+      handleNearBottomChange(isNearBottom);
+      reportNearBottom(isNearBottom);
+    },
+    [handleNearBottomChange, reportNearBottom],
+  );
+
   /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
    *  conversation id lags the route during warm-cache navigation, and keying
    *  off it would first mount the new tree unwindowed, then narrow it after
@@ -142,7 +159,7 @@ function MessagesViewContent({
             scrollableRef={scrollableRef}
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}
-            onNearBottomChange={handleNearBottomChange}
+            onNearBottomChange={handleNearBottom}
             overlayHeight={steerOverlayHeight}
           />
 
