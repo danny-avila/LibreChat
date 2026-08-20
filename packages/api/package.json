@@ -72,6 +72,7 @@
     "@types/multer": "^1.4.13",
     "@types/node": "^24.12.4",
     "@types/node-fetch": "^2.6.13",
+    "@types/pg": "^8.15.5",
     "@types/react": "^18.2.18",
     "@types/sanitize-html": "^2.16.1",
     "@types/supertest": "^7.2.0",
@@ -169,6 +170,7 @@
     "@langchain/langgraph-checkpoint": "^1.1.2",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
     "cluster-key-slot": "^1.1.2",
+    "pg": "^8.16.3",
     "proxy-from-env": "^2.1.0"
   }
 }

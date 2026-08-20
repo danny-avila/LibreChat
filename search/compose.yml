@@ -1,4 +1,4 @@
-# Search stack PoC infrastructure (Track 1).
+# Chat search stack - local infrastructure.
 #
 # Stands up the four services the new chat-search architecture needs, all
 # isolated from the production compose files at the repo root:
@@ -6,7 +6,7 @@
 #   - ferretdb           the Mongo wire-protocol bridge LibreChat talks to
 #   - chat_search_db     a NEW, dedicated PostgreSQL 17 + pgvector service
 #                         (NOT the existing `vectordb` used by rag_api file
-#                         search - see PLAN.md decision 3 / finding R1/R2)
+#                         search)
 #   - clickhouse         the additive historical-search tier
 #
 # Image tags verified against their registries on 2026-08-07 (see
@@ -33,9 +33,9 @@ services:
     image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
     container_name: search-ferretdb-postgres
     restart: on-failure
-    # wal_level=logical is required by the Spike B ClickPipes-over-DocumentDB
-    # CDC go/no-go (see PLAN.md "ClickPipes disposition"); it is not consumed
-    # by anything in this track, only reserved for that later spike.
+    # wal_level=logical is required by the ClickPipes-over-DocumentDB CDC
+    # evaluation; nothing in this stack consumes it, and it is set here only so
+    # that evaluation does not need the volume recreated.
     command:
       - postgres
       - -c
@@ -85,7 +85,7 @@ services:
 
   # New, dedicated PostgreSQL 17 + pgvector service. Deliberately NOT the
   # `vectordb` service used by rag_api file search (pinned pg15, superuser
-  # bootstrap credential, live pgdata2 volume) - see PLAN.md decision 3.
+  # bootstrap credential, live pgdata2 volume).
   chat_search_db:
     image: pgvector/pgvector:0.8.6-pg17-trixie
     container_name: search-chat-search-db
@@ -97,6 +97,7 @@ services:
       CHAT_SEARCH_OWNER_PASSWORD: ${CHAT_SEARCH_OWNER_PASSWORD:?set in search/.env, see .env.example}
       CHAT_SEARCH_WRITER_PASSWORD: ${CHAT_SEARCH_WRITER_PASSWORD:?set in search/.env, see .env.example}
       CHAT_SEARCH_READER_PASSWORD: ${CHAT_SEARCH_READER_PASSWORD:?set in search/.env, see .env.example}
+      CHAT_SEARCH_ROLE_PREFIX: ${CHAT_SEARCH_ROLE_PREFIX:-}
     ports:
       - "${CHAT_SEARCH_DB_HOST_PORT:-5435}:5432"
     volumes:
@@ -122,8 +123,8 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-chat_search}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set in search/.env, see .env.example}
       # The default account otherwise gets full admin rights; the outbox
-      # consumer (track 6) should provision a scoped user instead of relying
-      # on this one once real ingestion lands.
+      # consumer should provision a scoped user instead of relying on this one
+      # once real ingestion lands.
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 0
     ports:
       - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"

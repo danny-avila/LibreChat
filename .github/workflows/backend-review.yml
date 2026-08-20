@@ -360,6 +360,24 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
+    env:
+      # The chat-search suites run against a real server; `describePg` fails
+      # rather than skips when CI has not provided one.
+      CHAT_SEARCH_TEST_URL: postgres://postgres:postgres@localhost:5432/postgres
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
 
@@ -401,6 +419,31 @@ jobs:
         with:
           name: build-api
           path: packages/api/dist
+
+      # The compose bootstrap script has no other executor: it only ever runs
+      # inside docker-entrypoint-initdb.d, so a defect in it ships silently
+      # unless CI runs it for real. Twice on purpose — the second pass takes
+      # the idempotent ALTER ROLE path — then a login as the created reader
+      # proves the passwords made it through psql intact. Fixture credentials
+      # only; the service container is discarded with the job.
+      - name: Bootstrap-script smoke (search/init/chat-search-roles.sh)
+        if: matrix.shard == 1
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGPASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: bootsmoke
+          CHAT_SEARCH_ROLE_PREFIX: cismoke_
+          CHAT_SEARCH_OWNER_PASSWORD: ci-owner-fixture
+          CHAT_SEARCH_WRITER_PASSWORD: ci-writer-fixture
+          CHAT_SEARCH_READER_PASSWORD: ci-reader-fixture
+        run: |
+          psql -U postgres -d postgres -c 'CREATE DATABASE bootsmoke'
+          bash search/init/chat-search-roles.sh
+          bash search/init/chat-search-roles.sh
+          PGPASSWORD=ci-reader-fixture psql -U cismoke_chat_search_reader -d bootsmoke -tAc 'SELECT current_user' \
+            | grep -qx cismoke_chat_search_reader
 
       - name: Run unit tests (shard ${{ matrix.shard }}/4)
         run: cd packages/api && npm run test:ci -- --shard=${{ matrix.shard }}/4
