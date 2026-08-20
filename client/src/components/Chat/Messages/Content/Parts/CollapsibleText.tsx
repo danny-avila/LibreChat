@@ -1,4 +1,5 @@
-import { memo, useEffect, useId, useRef, useState } from 'react';
+import { useLayoutEffect, memo, useId, useRef, useState } from 'react';
+import { Button } from '@librechat/client';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useLocalize } from '~/hooks';
@@ -46,8 +47,10 @@ const CollapsibleText = memo(function CollapsibleText({
   /** Measures the inner wrapper, which is never clamped: `scrollHeight` there
    *  is the natural content height, and its ResizeObserver fires when content
    *  grows or shrinks (font size change, a late image or diagram finishing
-   *  layout) even while the outer region is clipped. */
-  useEffect(() => {
+   *  layout) even while the outer region is clipped. A layout effect, so the
+   *  first paint already carries the clamp instead of flashing the full wall
+   *  of text on mount. */
+  useLayoutEffect(() => {
     const el = contentRef.current;
     if (el == null) {
       return;
@@ -69,17 +72,28 @@ const CollapsibleText = memo(function CollapsibleText({
 
   const clamped = !expanded && overflowing;
 
+  /** Focus stays in the tab order across the whole message (the text is in the
+   *  DOM and must remain reachable), but landing on a control that is actually
+   *  clipped reveals it rather than leaving focus inside hidden content. A
+   *  control that is already visible within the preview does not expand. */
+  const revealIfClipped = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (!clamped) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    const boundary = event.currentTarget.getBoundingClientRect().top + COLLAPSED_MAX_HEIGHT;
+    if (target.getBoundingClientRect().bottom - boundary > OVERFLOW_TOLERANCE) {
+      setExpanded(true);
+    }
+  };
+
   return (
     <div className="w-full min-w-0">
       <div
         id={contentId}
         className={cn('relative w-full', clamped && 'overflow-hidden')}
         style={clamped ? { maxHeight: COLLAPSED_MAX_HEIGHT } : undefined}
-        onFocus={() => {
-          if (clamped) {
-            setExpanded(true);
-          }
-        }}
+        onFocus={revealIfClipped}
       >
         <div ref={contentRef} className="w-full">
           {children}
@@ -92,12 +106,13 @@ const CollapsibleText = memo(function CollapsibleText({
         )}
       </div>
       {overflowing && (
-        <button
+        <Button
           type="button"
+          variant="link"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
           aria-controls={contentId}
-          className="mt-1 inline-flex items-center gap-1 rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          className="mt-1 h-auto gap-1 p-0 text-xs"
         >
           {expanded ? (
             <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
@@ -105,7 +120,7 @@ const CollapsibleText = memo(function CollapsibleText({
             <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {localize(expanded ? 'com_ui_show_less' : 'com_ui_show_more')}
-        </button>
+        </Button>
       )}
     </div>
   );

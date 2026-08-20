@@ -95,7 +95,9 @@ describe('CollapsibleText', () => {
 
   it('reveals the message when focus reaches clipped content', () => {
     // Links and code-block controls below the cutoff stay in the tab order;
-    // focusing one must not leave focus inside visually hidden content.
+    // focusing one must not leave focus inside visually hidden content. jsdom
+    // has no layout, so place the link's box below the 256px cutoff by hand
+    // (the region's own rect stays all-zero, putting its boundary at 256).
     const scrollHeight = stubScrollHeight(500);
     try {
       render(
@@ -105,12 +107,37 @@ describe('CollapsibleText', () => {
           </p>
         </CollapsibleText>,
       );
-      fireEvent(screen.getByRole('link'), new FocusEvent('focusin', { bubbles: true }));
+      const link = screen.getByRole('link');
+      link.getBoundingClientRect = () =>
+        ({ top: 300, bottom: 320, height: 20, width: 40, left: 0, right: 40 }) as DOMRect;
+      fireEvent(link, new FocusEvent('focusin', { bubbles: true }));
       expect(screen.getByRole('button', { name: 'com_ui_show_less' })).toHaveAttribute(
         'aria-expanded',
         'true',
       );
-      expect(screen.getByRole('link')).toBeVisible();
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
+  it('keeps the message collapsed when a visible control gains focus', () => {
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>
+            <a href="#target">{linkLabel}</a>
+          </p>
+        </CollapsibleText>,
+      );
+      const link = screen.getByRole('link');
+      link.getBoundingClientRect = () =>
+        ({ top: 10, bottom: 30, height: 20, width: 40, left: 0, right: 40 }) as DOMRect;
+      fireEvent(link, new FocusEvent('focusin', { bubbles: true }));
+      expect(screen.getByRole('button', { name: 'com_ui_show_more' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
     } finally {
       scrollHeight.mockRestore();
     }
