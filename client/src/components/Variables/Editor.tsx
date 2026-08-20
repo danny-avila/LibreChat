@@ -44,6 +44,8 @@ interface VariableEditorProps {
   className?: string;
   labelClassName?: string;
   containerClassName?: string;
+  /** Whether to expose special-variable insertion controls. Defaults to true. */
+  showVariables?: boolean;
   /**
    * Ariakit popovers portal to the body by default, which puts them outside a Radix
    * dialog's focus trap. Pass `false` from inside a dialog, and give that dialog
@@ -73,6 +75,7 @@ export default function VariableEditor({
   className,
   labelClassName,
   containerClassName,
+  showVariables = true,
   portal = true,
 }: VariableEditorProps) {
   const menuId = useId();
@@ -102,27 +105,29 @@ export default function VariableEditor({
           {label}
         </Label>
         <div className="flex items-center gap-0.5">
-          <DropdownPopup
-            portal={portal}
-            mountByState={true}
-            unmountOnHide={true}
-            preserveTabOrder={true}
-            isOpen={isMenuOpen}
-            setIsOpen={setIsMenuOpen}
-            trigger={
-              <Menu.MenuButton
-                id={`${id}-variables-menu-button`}
-                aria-label={localize('com_ui_variables')}
-                title={localize('com_ui_variables')}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-              >
-                <PlusCircle className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
-              </Menu.MenuButton>
-            }
-            items={variableItems}
-            menuId={menuId}
-            className="pointer-events-auto z-30"
-          />
+          {showVariables && (
+            <DropdownPopup
+              portal={portal}
+              mountByState={true}
+              unmountOnHide={true}
+              preserveTabOrder={true}
+              isOpen={isMenuOpen}
+              setIsOpen={setIsMenuOpen}
+              trigger={
+                <Menu.MenuButton
+                  id={`${id}-variables-menu-button`}
+                  aria-label={localize('com_ui_variables')}
+                  title={localize('com_ui_variables')}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+                >
+                  <PlusCircle className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+                </Menu.MenuButton>
+              }
+              items={variableItems}
+              menuId={menuId}
+              className="pointer-events-auto z-30"
+            />
+          )}
           <TooltipAnchor
             description={localize('com_ui_expand_editor')}
             render={
@@ -169,29 +174,33 @@ export default function VariableEditor({
             placeholder={placeholder}
             aria-label={label}
           />
-          <div className="flex items-center justify-between">
-            <DropdownPopup
-              portal={portal}
-              mountByState={true}
-              unmountOnHide={true}
-              preserveTabOrder={true}
-              isOpen={isDialogMenuOpen}
-              setIsOpen={setIsDialogMenuOpen}
-              trigger={
-                <Menu.MenuButton
-                  id={`${id}-variables-menu-button-dialog`}
-                  render={
-                    <Button type="button" variant="outline" className="gap-1.5">
-                      <PlusCircle className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
-                      {localize('com_ui_variables')}
-                    </Button>
-                  }
-                />
-              }
-              items={variableItems}
-              menuId={dialogMenuId}
-              className="pointer-events-auto z-[200]"
-            />
+          <div
+            className={cn('flex items-center', showVariables ? 'justify-between' : 'justify-end')}
+          >
+            {showVariables && (
+              <DropdownPopup
+                portal={portal}
+                mountByState={true}
+                unmountOnHide={true}
+                preserveTabOrder={true}
+                isOpen={isDialogMenuOpen}
+                setIsOpen={setIsDialogMenuOpen}
+                trigger={
+                  <Menu.MenuButton
+                    id={`${id}-variables-menu-button-dialog`}
+                    render={
+                      <Button type="button" variant="outline" className="gap-1.5">
+                        <PlusCircle className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+                        {localize('com_ui_variables')}
+                      </Button>
+                    }
+                  />
+                }
+                items={variableItems}
+                menuId={dialogMenuId}
+                className="pointer-events-auto z-[200]"
+              />
+            )}
             <OGDialogClose asChild>
               <Button type="button">{localize('com_ui_done')}</Button>
             </OGDialogClose>

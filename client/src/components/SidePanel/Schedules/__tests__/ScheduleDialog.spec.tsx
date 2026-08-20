@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { ToastProvider } from '@librechat/client';
 import userEvent from '@testing-library/user-event';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import ScheduleDialog from '../ScheduleDialog';
@@ -97,13 +97,54 @@ describe('ScheduleDialog', () => {
     expect(screen.getByPlaceholderText('com_ui_schedule_prompt_placeholder')).toBeInTheDocument();
   });
 
-  it('offers the special-variable menu on the prompt field', async () => {
+  it('does not offer special-variable insertion in either prompt editor', async () => {
     const user = userEvent.setup();
     renderDialog();
 
-    await user.click(screen.getByRole('button', { name: 'com_ui_variables' }));
+    expect(screen.queryByRole('button', { name: 'com_ui_variables' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_expand_editor' }));
+    const expandedDialog = screen.getAllByRole('dialog').at(-1);
+    expect(expandedDialog).toBeDefined();
     expect(
-      await screen.findByRole('menuitem', { name: 'com_ui_special_var_current_date' }),
-    ).toBeInTheDocument();
+      within(expandedDialog as HTMLElement).queryByRole('button', { name: 'com_ui_variables' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the expanded prompt editor available and synchronized', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    const prompt = screen.getByPlaceholderText('com_ui_schedule_prompt_placeholder');
+    await user.type(prompt, 'Initial prompt');
+    await user.click(screen.getByRole('button', { name: 'com_ui_expand_editor' }));
+
+    const expandedDialog = screen.getAllByRole('dialog').at(-1);
+    expect(expandedDialog).toBeDefined();
+    const expandedPrompt = within(expandedDialog as HTMLElement).getByRole('textbox', {
+      name: 'com_ui_prompt',
+    });
+    expect(expandedPrompt).toHaveValue('Initial prompt');
+
+    await user.type(expandedPrompt, ' with details');
+    expect(prompt).toHaveValue('Initial prompt with details');
+  });
+
+  it('preserves prompt validation and accessibility relationships', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    const prompt = screen.getByPlaceholderText('com_ui_schedule_prompt_placeholder');
+    expect(prompt).toHaveAccessibleName('com_ui_prompt');
+    expect(prompt).toHaveAttribute('aria-required', 'true');
+    expect(prompt).toHaveAttribute('aria-describedby', 'schedule-prompt-message');
+    expect(prompt).toHaveAttribute('aria-invalid', 'false');
+
+    await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+    await waitFor(() => expect(prompt).toHaveAttribute('aria-invalid', 'true'));
+    expect(document.getElementById('schedule-prompt-message')).toHaveTextContent(
+      'com_ui_field_required',
+    );
   });
 });
