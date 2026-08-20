@@ -159,7 +159,7 @@ export default function BashCall({
               <div
                 ref={commandPaneRef}
                 onScroll={onCommandPaneScroll}
-                className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
+                className="relative max-h-[18.75rem] overflow-auto bg-surface-tertiary dark:bg-gray-950"
               >
                 <CopyButton
                   iconOnly
@@ -180,7 +180,7 @@ export default function BashCall({
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre
                   className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
+                    'max-h-[18.75rem] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
                     outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >

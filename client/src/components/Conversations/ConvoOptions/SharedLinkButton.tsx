@@ -367,7 +367,7 @@ export default function SharedLinkButton({
         >
           <OGDialogContent
             role="alertdialog"
-            className="w-11/12 max-w-[450px]"
+            className="w-11/12 max-w-[28.125rem]"
             showCloseButton={false}
           >
             <OGDialogHeader>

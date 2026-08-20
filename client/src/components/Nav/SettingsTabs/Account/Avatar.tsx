@@ -15,6 +15,7 @@ import {
   OGDialogTitle,
   OGDialogTrigger,
   useToastContext,
+  useRemScale,
 } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
@@ -56,6 +57,7 @@ interface Position {
 
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
+  const remScale = useRemScale();
 
   const [scale, setScale] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
@@ -191,7 +193,7 @@ function Avatar() {
         <span>{localize('com_nav_profile_picture')}</span>
         <OGDialogTrigger asChild>
           <Button variant="outline">
-            <FileImage className="mr-2 flex w-[22px] items-center" aria-hidden="true" />
+            <FileImage className="mr-2 flex w-[1.375rem] items-center" aria-hidden="true" />
             <span>{localize('com_nav_change_picture')}</span>
           </Button>
         </OGDialogTrigger>
@@ -218,10 +220,10 @@ function Avatar() {
                 <AvatarEditor
                   ref={editorRef}
                   image={image}
-                  width={280}
-                  height={280}
+                  width={Math.round(280 * remScale)}
+                  height={Math.round(280 * remScale)}
                   border={0}
-                  borderRadius={140}
+                  borderRadius={Math.round(140 * remScale)}
                   color={[255, 255, 255, 0.6]}
                   scale={scale}
                   rotate={rotation}

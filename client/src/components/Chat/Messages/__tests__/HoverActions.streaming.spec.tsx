@@ -282,6 +282,6 @@ describe('streaming hover actions', () => {
   ])('holds the footer height while %s response streams', (_label, structured) => {
     renderStreamingRow(structured);
 
-    expect(screen.getByTestId('hover-buttons').parentElement).toHaveClass('min-h-[31px]');
+    expect(screen.getByTestId('hover-buttons').parentElement).toHaveClass('min-h-[1.9375rem]');
   });
 });

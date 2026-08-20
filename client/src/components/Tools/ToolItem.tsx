@@ -31,20 +31,20 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
   return (
     <div className="flex flex-col gap-4 rounded border border-border-medium bg-transparent p-6">
       <div className="flex gap-4">
-        <div className="h-[70px] w-[70px] shrink-0">
+        <div className="h-[4.375rem] w-[4.375rem] shrink-0">
           <div className="relative h-full w-full">
             {icon ? (
               <img
                 src={icon}
                 alt={localize('com_ui_logo', { 0: name })}
-                className="h-full w-full rounded-[5px] bg-surface-fixed"
+                className="h-full w-full rounded-[0.3125rem] bg-surface-fixed"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center rounded-[5px] border border-border-medium bg-transparent">
+              <div className="flex h-full w-full items-center justify-center rounded-[0.3125rem] border border-border-medium bg-transparent">
                 <Wrench className="h-8 w-8 text-text-secondary" />
               </div>
             )}
-            <div className="absolute inset-0 rounded-[5px] ring-1 ring-inset ring-border-light"></div>
+            <div className="absolute inset-0 rounded-[0.3125rem] ring-1 ring-inset ring-border-light"></div>
           </div>
         </div>
         <div className="flex min-w-0 flex-col items-start justify-between">
@@ -78,7 +78,7 @@ function ToolItem({ tool, onAddTool, onRemoveTool, isInstalled = false }: ToolIt
           )}
         </div>
       </div>
-      <div className="line-clamp-3 h-[60px] text-sm text-text-secondary">{description}</div>
+      <div className="line-clamp-3 h-[3.75rem] text-sm text-text-secondary">{description}</div>
     </div>
   );
 }

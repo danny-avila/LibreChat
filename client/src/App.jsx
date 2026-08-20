@@ -10,6 +10,7 @@ import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
+import UiScaleSync from '~/components/System/UiScaleSync';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
 import { LiveAnnouncer } from '~/a11y';
@@ -50,6 +51,7 @@ const App = () => {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <LanguageSync />
+        <UiScaleSync />
         <LiveAnnouncer>
           <ThemeProvider
             // Only pass initialTheme and themeRGB if environment theme exists

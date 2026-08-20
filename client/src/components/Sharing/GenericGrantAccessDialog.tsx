@@ -251,7 +251,7 @@ export default function GenericGrantAccessDialog({
             aria-label={localize('com_ui_permissions_failed_load')}
             className={cn('h-9', buttonClassName)}
           >
-            <div className="flex min-w-[32px] items-center justify-center text-text-destructive">
+            <div className="flex min-w-[2rem] items-center justify-center text-text-destructive">
               <span className="flex h-6 w-6 items-center justify-center">
                 {isFetchingPermissions ? (
                   <Spinner className="h-4 w-4" />
@@ -279,7 +279,7 @@ export default function GenericGrantAccessDialog({
       disabled={disabled}
       className={cn('h-9', buttonClassName)}
     >
-      <div className="flex min-w-[32px] items-center justify-center gap-2 text-status-info">
+      <div className="flex min-w-[2rem] items-center justify-center gap-2 text-status-info">
         <span className="flex h-6 w-6 items-center justify-center">
           <Share2Icon className="icon-md h-4 w-4" />
         </span>
@@ -338,8 +338,8 @@ export default function GenericGrantAccessDialog({
                   <div className="space-y-2" aria-live="polite">
                     <span className="sr-only">{localize('com_ui_loading')}</span>
                     <Skeleton className="h-10 w-full rounded-lg" />
-                    <Skeleton className="h-[62px] w-full rounded-xl" />
-                    <Skeleton className="h-[62px] w-full rounded-xl" />
+                    <Skeleton className="h-[3.875rem] w-full rounded-xl" />
+                    <Skeleton className="h-[3.875rem] w-full rounded-xl" />
                   </div>
                 ) : (
                   <>

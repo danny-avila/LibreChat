@@ -18,6 +18,7 @@ import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '.
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
+import useRemScale from '~/hooks/useRemScale';
 import { cn, logger } from '~/utils';
 import { Button } from '../Button';
 import { Label } from '../Label';
@@ -248,7 +249,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         );
       },
       meta: {
-        className: 'max-w-[20px] flex-1',
+        className: 'max-w-[1.25rem] flex-1',
       },
     };
 
@@ -298,7 +299,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     (index: number) => getRowId(data[index] as TData, index),
     [data, getRowId],
   );
-  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+  /** Rows are laid out in rem, so the virtualizer must measure in the same units. */
+  const remScale = useRemScale();
+  const scaledRowHeight = rowHeight * remScale;
+  const estimateSize = useCallback(() => scaledRowHeight, [scaledRowHeight]);
 
   const rowVirtualizer = useVirtualizer({
     enabled: virtualizationActive,
@@ -330,7 +334,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     tableBodyContent = (
       <SkeletonRows
         count={skeletonCount}
-        rowHeight={rowHeight}
+        rowHeight={scaledRowHeight}
         columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
       />
     );
@@ -356,7 +360,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
               virtualIndex={virtualRow.index}
               selected={row.getIsSelected()}
               cellsVersion={cellsVersionRef.current}
-              style={{ height: rowHeight }}
+              style={{ height: scaledRowHeight }}
             />
           );
         })}
@@ -378,7 +382,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         virtualIndex={row.index}
         selected={row.getIsSelected()}
         cellsVersion={cellsVersionRef.current}
-        style={{ height: rowHeight }}
+        style={{ height: scaledRowHeight }}
       />
     ));
   }

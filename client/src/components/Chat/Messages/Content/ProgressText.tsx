@@ -9,7 +9,7 @@ import CancelledIcon from './CancelledIcon';
 import { useLocalize } from '~/hooks';
 
 const wrapperClass =
-  'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
+  'progress-text-wrapper text-token-text-secondary relative -mt-[0.046875rem] h-5 w-full leading-5';
 
 /** `max-w-full` caps the absolutely-positioned line at the message column;
  *  the label span truncates itself, so overflow stays visible for the
@@ -138,7 +138,7 @@ export default function ProgressText({
         {hasInput && (
           <ChevronDown
             className={cn(
-              'size-4 shrink-0 translate-y-[1px] transition-transform duration-200 ease-out',
+              'size-4 shrink-0 translate-y-[0.0625rem] transition-transform duration-200 ease-out',
               isExpanded && 'rotate-180',
             )}
             aria-hidden="true"

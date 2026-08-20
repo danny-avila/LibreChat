@@ -37,7 +37,7 @@ export const ThemeSelector = ({
         value={theme}
         onChange={onChange}
         options={themeOptions}
-        sizeClasses={cn('z-50 w-[180px]', popoverClassName)}
+        sizeClasses={cn('z-50 w-[11.25rem]', popoverClassName)}
         testId="theme-selector"
         aria-labelledby={labelId}
         portal={portal}
@@ -127,7 +127,7 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses={cn('z-50 w-[220px]', popoverClassName)}
+          sizeClasses={cn('z-50 w-[13.75rem]', popoverClassName)}
           options={languageOptions}
           aria-labelledby={labelId}
           portal={portal}

@@ -191,7 +191,7 @@ function Conversation({
   );
 
   let actionVisibilityClassName =
-    'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
+    'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[3.75rem] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[3.75rem] group-hover:scale-x-100 group-hover:opacity-100';
   if (isGenerating) {
     actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
   } else if (isPopoverActive || isActiveConvo || isSmallScreen) {
@@ -201,9 +201,9 @@ function Conversation({
 
   let actionWidthClassName = '';
   if (!isGenerating && !isPopoverActive && isActiveConvo && isShiftHeld) {
-    actionWidthClassName = 'max-w-[60px]';
+    actionWidthClassName = 'max-w-[3.75rem]';
   } else if (!isGenerating) {
-    actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
+    actionWidthClassName = isSmallScreen ? 'max-w-[2.25rem]' : 'max-w-[1.75rem]';
   }
 
   let actionContent: React.ReactNode = null;

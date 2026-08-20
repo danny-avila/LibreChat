@@ -23,7 +23,7 @@ export const ThinkingContent: FC<{
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
+      <p className={cn('whitespace-pre-wrap leading-[1.625rem]', fontSize)}>{content}</p>
     </div>
   );
 });
@@ -76,11 +76,11 @@ export const ThinkingButton = memo(
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
+            'group/button flex flex-1 items-center justify-start rounded-lg leading-[1.125rem]',
             fontSize,
           )}
         >
-          <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <span className="relative mr-1.5 inline-flex h-[1.125rem] w-[1.125rem] items-center justify-center">
             <Lightbulb
               className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
               aria-hidden="true"
@@ -129,7 +129,7 @@ export const ThinkingButton = memo(
                 : localize('com_ui_copy_thoughts_to_clipboard')}
             </span>
             {isCopied ? (
-              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+              <CheckMark className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
@@ -206,9 +206,9 @@ export const FloatingThinkingBar = memo(
               )}
             >
               {isExpanded ? (
-                <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
+                <ChevronUp className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
               ) : (
-                <ChevronDown className="h-[18px] w-[18px]" aria-hidden="true" />
+                <ChevronDown className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
               )}
             </button>
           }
@@ -229,7 +229,7 @@ export const FloatingThinkingBar = memo(
                 )}
               >
                 {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <CheckMark className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
                 ) : (
                   <Clipboard size="18" aria-hidden="true" />
                 )}

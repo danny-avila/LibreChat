@@ -17,7 +17,7 @@ export const groupHeadingClass = 'text-sm font-semibold text-text-primary';
 /** Small count chip, e.g. "2 / 10". */
 export function CountPill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex h-4 items-center justify-center whitespace-nowrap rounded-full bg-surface-tertiary px-1.5 text-[10px] font-medium tabular-nums text-text-secondary">
+    <span className="inline-flex h-4 items-center justify-center whitespace-nowrap rounded-full bg-surface-tertiary px-1.5 text-[0.625rem] font-medium tabular-nums text-text-secondary">
       {children}
     </span>
   );
@@ -27,7 +27,7 @@ export function CountPill({ children }: { children: ReactNode }) {
 export function BetaPill() {
   const localize = useLocalize();
   return (
-    <span className="rounded-full border border-purple-600/40 bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-purple-700 dark:text-purple-400">
+    <span className="rounded-full border border-purple-600/40 bg-purple-500/10 px-1.5 py-0.5 text-[0.625rem] font-medium uppercase tracking-wide text-purple-700 dark:text-purple-400">
       {localize('com_ui_beta')}
     </span>
   );
@@ -70,7 +70,7 @@ export function ToggleSetting({ id, label, checked, onCheckedChange, info }: Tog
   const row = (
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-1.5">
-        <label htmlFor={id} className="truncate text-[13px] font-medium text-text-primary">
+        <label htmlFor={id} className="truncate text-[0.8125rem] font-medium text-text-primary">
           {label}
         </label>
         {info != null && <InfoTrigger />}

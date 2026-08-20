@@ -202,12 +202,12 @@ export default function ToolsMarketplaceDialog({
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-[1200px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
+      <OGDialogContent className="w-11/12 max-w-[75rem] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
         <OGDialogTitle className="sr-only">{localize('com_ui_tools_marketplace')}</OGDialogTitle>
         <OGDialogDescription className="sr-only">
           {localize('com_ui_tools_marketplace_description')}
         </OGDialogDescription>
-        <div className="flex h-[88vh] max-h-[840px]">
+        <div className="flex h-[88vh] max-h-[52.5rem]">
           <MarketplaceSidebar
             activeView={view}
             activeKind={kind}

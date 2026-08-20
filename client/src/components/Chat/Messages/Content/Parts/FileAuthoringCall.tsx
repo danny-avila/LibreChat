@@ -213,7 +213,7 @@ export default function FileAuthoringCall({
               <pre
                 ref={previewPaneRef}
                 onScroll={onPreviewPaneScroll}
-                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+                className="max-h-[18.75rem] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
               >
                 <code className={`hljs language-${previewLang} !whitespace-pre`}>
                   {highlighted ?? preview}
@@ -222,7 +222,7 @@ export default function FileAuthoringCall({
               {showOutputSection && (
                 <pre
                   className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
+                    'max-h-[18.75rem] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
                     phase === 'failed' ? 'text-status-error' : 'text-text-primary',
                   )}
                 >

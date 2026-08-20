@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import { throttle } from 'lodash';
-import { Spinner } from '@librechat/client';
+import { Spinner, useRemScale } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
@@ -36,6 +36,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   scrollElement,
 }) => {
   const localize = useLocalize();
+  const remScale = useRemScale();
   const listRef = useRef<VirtualList>(null);
   const { categories } = useAgentCategories();
 
@@ -291,7 +292,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                         onScroll={onChildScroll}
                         overscanRowCount={OVERSCAN_ROW_COUNT}
                         rowCount={rowCount}
-                        rowHeight={ROW_HEIGHT}
+                        rowHeight={ROW_HEIGHT * remScale}
                         rowRenderer={rowRenderer}
                         scrollTop={scrollTop}
                         width={width}
@@ -320,7 +321,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                     height={height}
                     overscanRowCount={OVERSCAN_ROW_COUNT}
                     rowCount={rowCount}
-                    rowHeight={ROW_HEIGHT}
+                    rowHeight={ROW_HEIGHT * remScale}
                     rowRenderer={rowRenderer}
                     width={width}
                     style={{ outline: 'none' }}

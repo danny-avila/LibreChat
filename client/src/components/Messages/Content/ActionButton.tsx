@@ -48,7 +48,10 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(
           className,
         )}
       >
-        <span className="relative flex size-[18px] items-center justify-center" aria-hidden="true">
+        <span
+          className="relative flex size-[1.125rem] items-center justify-center"
+          aria-hidden="true"
+        >
           <Icon
             size={18}
             className={cn(

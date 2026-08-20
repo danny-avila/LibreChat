@@ -1,5 +1,5 @@
-import { isAfter } from 'date-fns';
 import React, { useMemo } from 'react';
+import { isAfter } from 'date-fns';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TFile, TAttachment, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
@@ -210,7 +210,7 @@ const LogContent: React.FC<LogContentProps> = ({ output = '', renderImages, atta
               className="rounded-lg bg-surface-secondary p-3"
             >
               {file.filename && (
-                <div className="mb-1 truncate text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                <div className="mb-1 truncate text-[0.625rem] font-medium uppercase tracking-wide text-text-secondary">
                   {file.filepath ? (
                     <LogLink
                       href={file.filepath}

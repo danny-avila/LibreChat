@@ -45,7 +45,7 @@ export const ForkSettings = () => {
               value={forkSetting}
               onChange={setForkSetting}
               options={forkOptions}
-              sizeClasses="z-[50] w-[200px]"
+              sizeClasses="z-[50] w-[12.5rem]"
               testId="fork-setting-dropdown"
               className="z-[50]"
               aria-labelledby="fork-change-default-label"

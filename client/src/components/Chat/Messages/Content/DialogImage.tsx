@@ -289,7 +289,7 @@ export default function DialogImage({
 
           {/* Action buttons - top right (336px = 320px panel + 16px gap) */}
           <div
-            className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[336px]' : 'right-4'}`}
+            className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[21rem]' : 'right-4'}`}
           >
             {zoom > 1 && (
               <TooltipAnchor

@@ -75,10 +75,10 @@ export default function SkillCall({
           {hasOutput && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <div className="bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                <div className="mb-1.5 text-[0.625rem] font-medium uppercase tracking-wide text-text-secondary">
                   {localize('com_ui_output')}
                 </div>
-                <div className="max-h-[200px] overflow-auto text-text-primary">
+                <div className="max-h-[12.5rem] overflow-auto text-text-primary">
                   <Stdout output={output} />
                 </div>
               </div>

@@ -109,7 +109,7 @@ const PresetItems: FC<{
 
   return (
     <>
-      <div className="flex min-w-[300px] items-center gap-3 border-b border-border-light bg-surface-secondary px-3 py-2 md:min-w-[400px]">
+      <div className="flex min-w-[min(18.75rem,90vw)] items-center gap-3 border-b border-border-light bg-surface-secondary px-3 py-2 md:min-w-[min(25rem,90vw)]">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-text-primary">
             {localize('com_endpoint_examples')}

@@ -21,7 +21,8 @@ const classMap = {
 };
 
 const styleMap = {
-  'menu-item': { width: '20px', height: '20px' },
+  /** 1.25rem is 20px at the 16px baseline, and follows the UI scale. */
+  'menu-item': { width: '1.25rem', height: '1.25rem' },
   default: { width: '100%', height: '100%' },
 };
 

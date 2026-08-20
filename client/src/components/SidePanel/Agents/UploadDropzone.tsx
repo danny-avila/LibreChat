@@ -7,7 +7,7 @@ function DropzoneContent({ label, hint }: { label: string; hint?: string }) {
   return (
     <span className="pointer-events-none flex flex-col items-center justify-center gap-2 text-center">
       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-tertiary text-text-secondary transition-colors group-hover:text-text-primary">
-        <Upload className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+        <Upload className="h-[1.125rem] w-[1.125rem]" strokeWidth={2} aria-hidden="true" />
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="text-sm font-medium text-text-primary">{label}</span>

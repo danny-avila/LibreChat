@@ -237,7 +237,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="btn btn-primary mx-2 mt-1 h-[40px] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
+              className="btn btn-primary mx-2 mt-1 h-[2.5rem] rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -320,7 +320,7 @@ export default function AssistantPanel({
                   {...field}
                   value={field.value ?? ''}
                   {...{ max: 32768 }}
-                  className={cn(inputClass, 'min-h-[100px] resize-y')}
+                  className={cn(inputClass, 'min-h-[6.25rem] resize-y')}
                   id="instructions"
                   placeholder={localize('com_assistants_instructions_placeholder')}
                   rows={3}
@@ -368,7 +368,7 @@ export default function AssistantPanel({
                     showLabel={false}
                     className={cn(
                       cardStyle,
-                      'flex h-[40px] w-full flex-none items-center justify-center px-4 hover:cursor-pointer',
+                      'flex h-[2.5rem] w-full flex-none items-center justify-center px-4 hover:cursor-pointer',
                     )}
                     containerClassName={cn('rounded-md', error ? 'border-red-500 border-2' : '')}
                   />

@@ -121,7 +121,7 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
                 onClick={handleCopy}
               >
                 {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <CheckMark className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
                 ) : (
                   <Clipboard className="size-4" aria-hidden="true" />
                 )}
@@ -135,7 +135,7 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
           </OGDialogTitle>
           {showCode && (
             <div className="border-b border-border-light bg-surface-secondary p-4">
-              <pre className="max-h-[150px] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+              <pre className="max-h-[9.375rem] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
                 {codeContent}
               </pre>
             </div>

@@ -306,7 +306,7 @@ function FileHeader({
           className="flex items-center"
         >
           <span
-            className="shrink-0 rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] tabular-nums leading-none text-text-secondary"
+            className="shrink-0 rounded bg-surface-tertiary px-1.5 py-0.5 text-[0.6875rem] tabular-nums leading-none text-text-secondary"
             aria-label={`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`}
           >
             {Math.round(relevance * 100)}%
@@ -315,7 +315,7 @@ function FileHeader({
       )}
       <span className="flex-1" />
       {sortedPages && sortedPages.length > 0 && (
-        <span className="shrink-0 text-[11px] text-text-secondary">
+        <span className="shrink-0 text-[0.6875rem] text-text-secondary">
           {localize('com_file_pages', { pages: sortedPages.join(', ') })}
         </span>
       )}

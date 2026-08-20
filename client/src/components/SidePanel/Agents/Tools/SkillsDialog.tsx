@@ -184,11 +184,11 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-[900px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
+      <OGDialogContent className="w-11/12 max-w-[56.25rem] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
         <OGDialogDescription className="sr-only">
           {localize('com_ui_skills_dialog_description')}
         </OGDialogDescription>
-        <div className="flex h-[80vh] max-h-[760px] flex-col">
+        <div className="flex h-[80vh] max-h-[47.5rem] flex-col">
           <div className="flex flex-col gap-3 border-b border-border-light px-6 pb-4 pt-5">
             <div className="flex items-center gap-2 pr-10">
               <OGDialogTitle className="text-base font-semibold text-text-primary">
@@ -204,7 +204,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                   size="sm"
                   onClick={() => setCreateOpen(true)}
                   aria-label={localize('com_ui_create_skill')}
-                  className="h-[42px] w-[42px] shrink-0 p-0"
+                  className="h-[2.625rem] w-[2.625rem] shrink-0 p-0"
                 >
                   <Plus className="size-4" aria-hidden="true" />
                 </Button>
@@ -220,7 +220,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={localize('com_ui_search_skills')}
                   aria-label={localize('com_ui_search_skills')}
-                  className="h-[42px] bg-transparent pl-9"
+                  className="h-[2.625rem] bg-transparent pl-9"
                 />
               </div>
               <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
