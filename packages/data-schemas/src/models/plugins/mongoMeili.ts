@@ -696,6 +696,11 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   const { host, apiKey, indexName, primaryKey } = options;
+  const privateExcludedPath =
+    options.excludeFromIndexPath != null &&
+    schema.path(options.excludeFromIndexPath)?.options?.select === false
+      ? options.excludeFromIndexPath
+      : undefined;
   const syncOptions = {
     batchSize: options.syncBatchSize || getSyncConfig().batchSize,
     delayMs: options.syncDelayMs || getSyncConfig().delayMs,
@@ -793,8 +798,8 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   schema.pre('findOneAndUpdate', function (next) {
-    if (options.excludeFromIndexPath != null) {
-      (this as Query<unknown, unknown>).select(`+${options.excludeFromIndexPath}`);
+    if (privateExcludedPath != null) {
+      (this as Query<unknown, unknown>).select(`+${privateExcludedPath}`);
     }
     next();
   });
@@ -875,17 +880,25 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       res: DocumentWithMeiliIndex | { value: DocumentWithMeiliIndex | null } | null,
       next: CallbackWithoutResultAndOptionalError,
     ) {
-      if (!meiliEnabled) {
-        return next();
-      }
-
       // `saveConvo` issues `findOneAndUpdate` with `includeResultMetadata: true`, so
       // the hook receives the raw `{ value, ok, lastErrorObject }` result instead of
       // the document. Unwrap `value` so indexing runs for that path too.
       const doc = res instanceof mongoose.Document ? res : (res?.value ?? null);
+      const finish = (error?: Error | null): void => {
+        if (doc != null && privateExcludedPath != null) {
+          doc.set(privateExcludedPath, undefined);
+        }
+        next(error ?? undefined);
+      };
+
+      if (!meiliEnabled) {
+        finish();
+        return;
+      }
 
       if (!doc || doc.unfinished) {
-        return next();
+        finish();
+        return;
       }
 
       let meiliDoc: Record<string, unknown> | undefined;
@@ -902,14 +915,16 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       }
 
       if (meiliDoc && meiliDoc.title === doc.title) {
-        return next();
+        finish();
+        return;
       }
 
       if (typeof doc.postSaveHook === 'function') {
-        return doc.postSaveHook(next);
+        await doc.postSaveHook(finish);
+        return;
       }
 
-      return next();
+      finish();
     },
   );
 }

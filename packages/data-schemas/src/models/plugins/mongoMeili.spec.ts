@@ -209,7 +209,7 @@ describe('Meilisearch Mongoose plugin', () => {
     const messageModel = createMessageModel(mongoose);
     const messageId = new mongoose.Types.ObjectId().toString();
 
-    await messageModel.findOneAndUpdate(
+    const savedMessage = await messageModel.findOneAndUpdate(
       { messageId, user: 'user-123' },
       {
         messageId,
@@ -226,6 +226,7 @@ describe('Meilisearch Mongoose plugin', () => {
     );
 
     expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect(savedMessage?.subagentTask).toBeUndefined();
   });
 
   test('saving expired retained non-temporary conversation does NOT index w/ meilisearch', async () => {
