@@ -1,4 +1,4 @@
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { InfiniteCollections, QueryKeys } from 'librechat-data-provider';
 import type { PromptGroupListResponse, TPromptGroup } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
@@ -348,34 +348,58 @@ describe('addGroupToAll', () => {
     expect(queryClient.getQueryData<TPromptGroup[]>([QueryKeys.allPromptGroups])).toHaveLength(2);
   });
 
-  it('restarts a first fetch already in flight so it settles with the created group', () => {
+  it('restarts a first fetch already in flight so it settles with the created group', async () => {
     const queryClient = new QueryClient();
     const queryKey = [QueryKeys.allPromptGroups];
-    const pending = queryClient.fetchQuery(queryKey, () => new Promise<TPromptGroup[]>(() => {}), {
-      retry: false,
-    });
-    pending.catch(() => undefined);
+    const newList = [makeGroup({ _id: 'group-new' })];
+    const deferreds: Array<{ resolve: (value: TPromptGroup[]) => void }> = [];
+    const queryFn = () => new Promise<TPromptGroup[]>((resolve) => deferreds.push({ resolve }));
+    const observer = new QueryObserver<TPromptGroup[]>(queryClient, { queryKey, queryFn });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(deferreds).toHaveLength(1);
 
     addGroupToAll(queryClient, makeGroup({ _id: 'group-new' }));
+    deferreds[0].resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+    /* The pre-creation read must not be allowed to stand: a restart has to
+       have started a second fetch that can settle with the created group. */
+    expect(deferreds).toHaveLength(2);
+    deferreds[1].resolve(newList);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<TPromptGroup[]>(queryKey)).toEqual(newList);
+    unsubscribe();
     queryClient.clear();
   });
 
   it('refetches an errored list after creation so the command appears', async () => {
     const queryClient = new QueryClient();
     const queryKey = [QueryKeys.allPromptGroups];
-    const failed = queryClient.fetchQuery(
+    const newList = [makeGroup({ _id: 'group-new' })];
+    const deferreds: Array<{ resolve: (value: TPromptGroup[]) => void }> = [];
+    const queryFn = () => new Promise<TPromptGroup[]>((resolve) => deferreds.push({ resolve }));
+    const observer = new QueryObserver<TPromptGroup[]>(queryClient, {
       queryKey,
-      () => Promise.reject(new Error('boom')) as Promise<TPromptGroup[]>,
-      { retry: false },
-    );
-    await failed.catch(() => undefined);
+      queryFn,
+      retry: false,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    deferreds[0].resolve(Promise.reject(new Error('boom')) as unknown as Promise<TPromptGroup[]>);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(queryClient.getQueryState(queryKey)?.status).toBe('error');
 
     addGroupToAll(queryClient, makeGroup({ _id: 'group-new' }));
 
-    expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(deferreds).toHaveLength(2);
+    deferreds[1].resolve(newList);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(queryClient.getQueryData<TPromptGroup[]>(queryKey)).toEqual(newList);
+    unsubscribe();
     queryClient.clear();
   });
 });

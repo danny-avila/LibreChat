@@ -59,13 +59,15 @@ function isCachedIdArray(value: unknown): value is string[] {
 /**
  * Reads the tenant's invalidation generation. Cached entries are keyed by it, so a
  * bump orphans every previous entry for this tenant without touching other tenants.
+ * Resolves undefined when the marker cannot be read: guessing a generation then
+ * could serve an orphaned pre-mutation entry, so callers must bypass the cache.
  */
-async function readAccessGeneration(cache: CacheStore): Promise<number> {
+async function readAccessGeneration(cache: CacheStore): Promise<number | undefined> {
   try {
     const value = await cache.get(scopedCacheKey(ACCESS_GENERATION_KEY));
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
   } catch {
-    return 0;
+    return undefined;
   }
 }
 
@@ -825,29 +827,42 @@ export function createPromptMethods(
      * the full TTL.
      */
     const generation = cache ? await readAccessGeneration(cache) : 0;
+    const buildAccessible = async (): Promise<Types.ObjectId[]> => {
+      const principalsList = await deps.getUserPrincipals({ userId, role });
+      if (principalsList.length === 0) {
+        return [];
+      }
+      return deps.findAccessibleResources(
+        principalsList,
+        ResourceType.PROMPTGROUP,
+        PermissionBits.VIEW,
+        true,
+      );
+    };
+    const buildPublic = () =>
+      deps.findPublicResourceIds(ResourceType.PROMPTGROUP, PermissionBits.VIEW, true);
+    const buildOwned = () => getOwnedPromptGroupIds(userId, true);
+
+    if (generation === undefined) {
+      /** The marker could not be read; guessing a generation could serve an orphaned entry */
+      const [accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+        buildAccessible(),
+        buildPublic(),
+        buildOwned(),
+      ]);
+      return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };
+    }
+
     const scopedKey = (key: string) => scopedCacheKey(`access:${generation}:${key}`);
 
     const accessibleIds = await resolveCachedIds(
       scopedKey(`user:${userId}:${role ?? ''}`),
-      async () => {
-        const principalsList = await deps.getUserPrincipals({ userId, role });
-        if (principalsList.length === 0) {
-          return [];
-        }
-        return deps.findAccessibleResources(
-          principalsList,
-          ResourceType.PROMPTGROUP,
-          PermissionBits.VIEW,
-          true,
-        );
-      },
+      buildAccessible,
     );
 
     const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
-      resolveCachedIds(scopedKey('public'), () =>
-        deps.findPublicResourceIds(ResourceType.PROMPTGROUP, PermissionBits.VIEW, true),
-      ),
-      resolveCachedIds(scopedKey(`owned:${userId}`), () => getOwnedPromptGroupIds(userId, true)),
+      resolveCachedIds(scopedKey('public'), buildPublic),
+      resolveCachedIds(scopedKey(`owned:${userId}`), buildOwned),
     ]);
 
     return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };

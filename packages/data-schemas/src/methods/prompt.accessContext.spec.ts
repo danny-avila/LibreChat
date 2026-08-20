@@ -27,9 +27,15 @@ let resolvePendingSets: Array<() => void> = [];
 let delayDeletes = false;
 let resolvePendingDeletes: Array<() => void> = [];
 let generationTtls: Array<number | undefined> = [];
+let failGenerationReads = false;
 
 const cacheStore: CacheStore = {
-  get: async (key) => cacheMap.get(key),
+  get: async (key) => {
+    if (failGenerationReads && key.includes(':generation')) {
+      throw new Error('marker read failed');
+    }
+    return cacheMap.get(key);
+  },
   set: async (key, value, ttl) => {
     /** The generation entry itself must never be held back by the test gate */
     if (delaySets && !key.includes(':generation')) {
@@ -114,6 +120,7 @@ afterEach(async () => {
   delayDeletes = false;
   resolvePendingDeletes.forEach((resolve) => resolve());
   resolvePendingDeletes = [];
+  failGenerationReads = false;
 });
 
 describe('getPromptGroupAccessContext', () => {
@@ -306,6 +313,24 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(idStrings(recovered.ownedPromptGroupIds)).toEqual([ownGroup._id.toString()]);
+  });
+
+  it('bypasses the cache instead of guessing a generation when the marker read fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+    await methods.invalidatePromptGroupAccessContext();
+
+    failGenerationReads = true;
+    const bypassed = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(bypassed.accessibleIds)).not.toContain(ownGroup._id.toString());
+    failGenerationReads = false;
   });
 
   it('writes the generation marker with a ttl that outlives cached entries', async () => {

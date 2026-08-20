@@ -93,18 +93,20 @@ export const findPromptGroup = (
   );
 };
 
-export const addGroupToAll = (queryClient: QueryClient, newGroup: TPromptGroup) => {
+export const addGroupToAll = async (queryClient: QueryClient, newGroup: TPromptGroup) => {
   const queryKey = [QueryKeys.allPromptGroups];
   const state = queryClient.getQueryState(queryKey);
   /**
    * An idle, never-fetched list must not be seeded partial; its first fetch
    * includes the group. A first fetch already in flight may have read the
-   * database before this creation and settle without it, and an errored fetch
-   * never retries on its own (retry and refetch triggers are off), so restart
-   * both to settle with the created group.
+   * database before this creation and settle without it (invalidating alone
+   * does not cancel a data-less fetch in React Query v4), and an errored fetch
+   * never retries on its own (retry and refetch triggers are off), so cancel
+   * and invalidate both to settle with the created group.
    */
   if (!state || state.data === undefined) {
     if (state && (state.fetchStatus === 'fetching' || state.status === 'error')) {
+      await queryClient.cancelQueries(queryKey);
       queryClient.invalidateQueries(queryKey);
     }
     return;
