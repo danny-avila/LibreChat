@@ -102,6 +102,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           tool_call_ids: ['tool-1'],
         },
       ],
+      userSubmittedPaths: ['/content/0/text'],
     });
   });
 
@@ -141,6 +142,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           agentId: 'agent-1',
         },
       ],
+      userSubmittedPaths: ['/content/0/think'],
     });
   });
 
@@ -185,6 +187,7 @@ describe('PUT /:conversationId/:messageId content edit', () => {
           text: { value: 'Edited response', annotations },
         },
       ],
+      userSubmittedPaths: ['/content/0/text'],
     });
     expect(countTokens).toHaveBeenCalledWith('Original response', 'gpt-5');
   });

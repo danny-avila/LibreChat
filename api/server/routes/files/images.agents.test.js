@@ -204,6 +204,106 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     },
   );
 
+  it('defers extracted-text fail-close to configured OCR for a supported agent-context image', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(processAgentFileUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks extracted-text fail-close when configured OCR does not support the image MIME type', async () => {
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/jpeg'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      field: 'extracted_text',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+  });
+
+  it('preserves raw-content fail-close even when configured OCR supports the image', async () => {
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['content'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_uninspectable',
+      field: 'content',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+  });
+
   it('should allow upload for admin regardless of ownership', async () => {
     await createAgent({
       id: agentCustomId,

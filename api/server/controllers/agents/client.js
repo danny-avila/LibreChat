@@ -1432,6 +1432,33 @@ class AgentClient extends BaseClient {
     return {};
   }
 
+  /** Agent pruning and summarization happen inside the SDK after
+   * `buildMessages`, so BaseClient's post-build payload is not yet the final
+   * model selection. The fail-closed callback below enforces the exact payload
+   * at every chat-model call instead. */
+  assertBuiltModelBoundContent() {}
+
+  createModelBoundChatModelCallback() {
+    return {
+      name: 'librechat-model-bound-content-filter',
+      raiseError: true,
+      awaitHandlers: true,
+      handleChatModelStart: (_llm, messageBatches) => {
+        for (const messages of messageBatches ?? []) {
+          assertModelBoundContent({
+            filters: this.options.req?.config?.filters,
+            legacyPii: this.options.req?.config?.messageFilter?.pii,
+            storedMessages: BaseClient.prototype.getModelBoundProviderMessages.call(this, messages),
+            resolvedFiles:
+              this.options.resendFiles === false
+                ? []
+                : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []),
+          });
+        }
+      },
+    };
+  }
+
   /**
    *
    * @param {TMessage} message
@@ -1524,7 +1551,6 @@ class AgentClient extends BaseClient {
     assertModelBoundContent({
       filters: this.options.req.config?.filters,
       legacyPii: this.options.req.config?.messageFilter?.pii,
-      storedMessages: this.getModelBoundStoredMessages(orderedMessages),
       agents: allAgents.map(({ agent }) => agent),
       files: [...modelBoundFileContexts],
       resolvedFiles:
@@ -3109,6 +3135,7 @@ class AgentClient extends BaseClient {
 
       config = {
         runName: 'AgentRun',
+        callbacks: [AgentClient.prototype.createModelBoundChatModelCallback.call(this)],
         configurable: {
           thread_id: this.conversationId,
           // LangGraph owns `checkpoint_ns` and resets it to '' at every root
@@ -3718,8 +3745,14 @@ class AgentClient extends BaseClient {
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
 
+      BaseClient.prototype.setModelBoundStoredMessages.call(
+        this,
+        BaseClient.prototype.getModelBoundStoredMessages.call(this, storedMessages),
+      );
+
       config = {
         runName: 'AgentRun',
+        callbacks: [AgentClient.prototype.createModelBoundChatModelCallback.call(this)],
         configurable: {
           thread_id: this.conversationId,
           checkpoint_ns: '',

@@ -693,7 +693,7 @@ describe('BaseClient', () => {
       expect(TestClient.getSaveOptions).toHaveBeenCalled();
     });
 
-    test('blocks persisted user text under the current policy before building messages', async () => {
+    test('blocks persisted user text selected by the built model payload', async () => {
       const secret = 'PRIVATE-HISTORICAL-VALUE';
       const history = [
         {
@@ -757,8 +757,67 @@ describe('BaseClient', () => {
         },
       });
       expect(JSON.stringify({ message: error.message, body: error.body })).not.toContain(secret);
-      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.buildMessages).toHaveBeenCalledTimes(1);
       expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+    });
+
+    test('allows persisted user text that the built model payload prunes out', async () => {
+      const secret = 'PRIVATE-PRUNED-HISTORICAL-VALUE';
+      TestClient = initializeFakeClient(
+        apiKey,
+        {
+          ...options,
+          req: {
+            config: {
+              filters: {
+                messages: {
+                  pii: {
+                    fields: ['text'],
+                    starterPatterns: [],
+                    customPatterns: [
+                      {
+                        id: 'pruned-private',
+                        label: 'pruned private value',
+                        regex: 'PRIVATE-PRUNED-HISTORICAL-[A-Z]+',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+        [
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            text: `Old ${secret}`,
+            messageId: 'pruned-user',
+            parentMessageId: Constants.NO_PARENT,
+          },
+          {
+            role: 'assistant',
+            isCreatedByUser: false,
+            text: 'Safe response',
+            messageId: 'safe-assistant',
+            parentMessageId: 'pruned-user',
+          },
+        ],
+      );
+      TestClient.buildMessages.mockResolvedValue({
+        prompt: [{ role: 'user', content: 'Safe new message' }],
+        tokenCountMap: null,
+      });
+
+      await expect(
+        TestClient.sendMessage('Safe new message', {
+          conversationId: 'pruned-conversation',
+          parentMessageId: 'safe-assistant',
+        }),
+      ).resolves.toEqual(expect.objectContaining({ isCreatedByUser: false }));
+
+      expect(TestClient.buildMessages).toHaveBeenCalledTimes(1);
+      expect(TestClient.sendCompletion).toHaveBeenCalledTimes(1);
     });
 
     test('blocks historical tool arguments without classifying assistant prose as user input', async () => {
@@ -831,7 +890,7 @@ describe('BaseClient', () => {
           field: 'arguments',
         },
       });
-      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.buildMessages).toHaveBeenCalledTimes(1);
       expect(TestClient.sendCompletion).not.toHaveBeenCalled();
 
       const proseOnlyClient = initializeFakeClient(apiKey, clientOptions, [

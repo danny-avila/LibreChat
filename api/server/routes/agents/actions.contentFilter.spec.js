@@ -37,6 +37,7 @@ jest.mock('~/server/middleware', () => ({
 
 const router = require('./actions');
 const db = require('~/models');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 
 function createApp(filters) {
@@ -75,8 +76,88 @@ describe('agent action content filters', () => {
       author: 'owner-id',
     });
     db.getActions.mockResolvedValue([]);
+    db.getListAgentsByAccess.mockResolvedValue({ data: [{ id: 'agent-id' }] });
+    findAccessibleResources.mockResolvedValue(['agent-object-id']);
     db.updateAgent.mockResolvedValue({ id: 'agent-id' });
     db.updateAction.mockResolvedValue({ metadata: { domain: 'example.test' } });
+  });
+
+  it('blocks stored action metadata that violates the current read policy', async () => {
+    const app = createApp({
+      actionMetadata: {
+        pii: {
+          fields: ['privacy_policy_url'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'stored-metadata',
+              label: 'stored metadata',
+              regex: 'BLOCK-STORED',
+            },
+          ],
+        },
+      },
+    });
+    db.getActions.mockResolvedValue([
+      {
+        action_id: 'action-1',
+        agent_id: 'agent-id',
+        metadata: {
+          domain: 'example.test',
+          privacy_policy_url: 'https://example.test/BLOCK-STORED',
+        },
+      },
+    ]);
+
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_block',
+        source: 'action_metadata',
+        field: 'privacy_policy_url',
+      }),
+    );
+  });
+
+  it('blocks a stored action specification that violates the current tool-argument policy', async () => {
+    const app = createApp({
+      toolArguments: {
+        pii: {
+          fields: ['arguments'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'stored-spec',
+              label: 'stored spec',
+              regex: 'BLOCK-SPEC',
+            },
+          ],
+        },
+      },
+    });
+    db.getActions.mockResolvedValue([
+      {
+        action_id: 'action-1',
+        agent_id: 'agent-id',
+        metadata: {
+          domain: 'example.test',
+          raw_spec: 'openapi: 3.0.0\ninfo:\n  title: BLOCK-SPEC',
+        },
+      },
+    ]);
+
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        error: 'content_filter_block',
+        source: 'tool_argument',
+        field: 'arguments',
+      }),
+    );
   });
 
   it('blocks an inspected partial parameter fragment before reporting traversal exhaustion', async () => {

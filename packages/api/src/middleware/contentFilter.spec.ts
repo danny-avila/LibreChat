@@ -522,6 +522,76 @@ describe('contentFilter middleware', () => {
     expect(captured).toEqual({});
   });
 
+  it('still inspects hydrated canonical files when unrelated traversal is exhausted', async () => {
+    const secret = 'PRIVATE-CANONICAL-FILE';
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-file',
+              label: 'private file value',
+              regex: 'PRIVATE-CANONICAL-FILE',
+            },
+          ],
+        },
+      },
+    } as FiltersConfig;
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'owned-file',
+        filename: 'report.txt',
+        text: secret,
+      },
+    ]);
+    const captured: CapturedResponse = {};
+    const middleware = createContentFilter({
+      getFilters: () => filters,
+      getOpaqueFileInput: (req) => req.body,
+      getFiles,
+      extract: () => {
+        throw new ContentTraversalLimitError(
+          [],
+          [{ source: 'model_parameter', fields: ['request_fields'] }],
+        );
+      },
+    });
+    const response = {
+      status(code: number) {
+        captured.status = code;
+        return this;
+      },
+      json(body: unknown) {
+        captured.body = body;
+        return this;
+      },
+    } as Response;
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    await middleware(
+      {
+        body: { files: [{ file_id: 'owned-file' }] },
+        user: { id: 'user-1' },
+      } as unknown as Request,
+      response,
+      next,
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(captured).toEqual({
+      status: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private file value. Remove it and try again.',
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+    expect(JSON.stringify(captured.body)).not.toContain(secret);
+  });
+
   it('still blocks earlier prompt content when unrelated model traversal is exhausted', () => {
     const filters: FiltersConfig = {
       prompts: {

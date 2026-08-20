@@ -977,8 +977,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         streamId: CONVO_ID,
         conversationId: CONVO_ID,
         status: 'resuming',
+        generationProtocolVersion: 1,
       });
-      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(CONVO_ID, ACTION_ID);
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        expect.objectContaining({
+          preemptCapable: true,
+          providerDrained: true,
+          providerExecutionId: expect.any(String),
+        }),
+        1000,
+      );
       await settled;
       await flush();
       expect(mockInitializeClient).toHaveBeenCalledTimes(1);
@@ -1851,7 +1861,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(429);
       expect(mockLogger.warn).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to capture checkpoint generation',
-        expect.any(Error),
+        { type: 'Error' },
       );
     });
 
@@ -3166,7 +3176,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.failPausePersistence).toHaveBeenCalledTimes(1);
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to prune checkpoint after re-pause persistence failure',
-        checkpointError,
+        { type: 'Error' },
       );
       expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
       expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);

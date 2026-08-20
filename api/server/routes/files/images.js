@@ -14,8 +14,13 @@ const {
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
+  canInspectUploadExtractedTextAfterProcessing,
 } = require('@librechat/api');
-const { isAssistantsEndpoint, hasActivePiiPatterns } = require('librechat-data-provider');
+const {
+  isAssistantsEndpoint,
+  hasActivePiiPatterns,
+  mergeFileConfig,
+} = require('librechat-data-provider');
 const {
   processAgentFileUpload,
   processImageFile,
@@ -52,7 +57,18 @@ router.post('/', async (req, res) => {
       'content',
       'extracted_text',
     ]);
-    if (uninspectableField != null) {
+    const deferExtractedTextFailClose =
+      uninspectableField === 'extracted_text' &&
+      typeof req.file?.mimetype === 'string' &&
+      canInspectUploadExtractedTextAfterProcessing({
+        endpoint: metadata.endpoint,
+        toolResource: metadata.tool_resource,
+        mimeType: req.file.mimetype,
+        fileConfig: mergeFileConfig(req.config?.fileConfig),
+        ocrConfigured: req.config?.ocr != null,
+        ragConfigured: !!process.env.RAG_API_URL,
+      });
+    if (uninspectableField != null && !deferExtractedTextFailClose) {
       return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
     }
 

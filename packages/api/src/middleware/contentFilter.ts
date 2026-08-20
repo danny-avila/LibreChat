@@ -144,7 +144,11 @@ export function createContentFilter(options: CreateContentFilterOptions): Reques
       finding = inspector.inspect(fragments);
     } catch (error) {
       if (isContentTraversalLimitError(error)) {
-        const partialFinding = inspector.inspect(getContentTraversalFragments(error));
+        const partialFragments = [...getContentTraversalFragments(error)];
+        for (const file of hydratedFiles) {
+          partialFragments.push(...extractFileContent(file));
+        }
+        const partialFinding = inspector.inspect(partialFragments);
         if (partialFinding != null) {
           res.status(400).json(contentFilterBlockResponse(partialFinding));
           return;

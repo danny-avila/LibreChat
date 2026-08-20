@@ -906,8 +906,6 @@ describe('ToolService - Action Capability Gating', () => {
         file_search: { file_ids: ['search-file'] },
         execute_code: { file_ids: ['code-file'] },
       };
-      const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
-      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       await loadAgentTools({
@@ -925,8 +923,8 @@ describe('ToolService - Action Capability Gating', () => {
         agentId: 'agent_123',
         agentResourceType: ResourceType.REMOTE_AGENT,
       };
-      expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
-      expect(primeCodeFiles).toHaveBeenCalledWith({
+      expect(mockPrimeSearchFiles).toHaveBeenCalledWith(expectedParams);
+      expect(mockPrimeCodeFiles).toHaveBeenCalledWith({
         ...expectedParams,
         codeApiBaseUrl: 'https://api.librechat.ai',
         executionProfile: 'default',
@@ -937,7 +935,6 @@ describe('ToolService - Action Capability Gating', () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
       const req = createMockReq(capabilities);
       const tool_resources = { execute_code: { file_ids: ['stateful-file'] } };
-      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       await loadAgentTools({
@@ -955,7 +952,7 @@ describe('ToolService - Action Capability Gating', () => {
         },
       });
 
-      expect(primeCodeFiles).toHaveBeenCalledWith({
+      expect(mockPrimeCodeFiles).toHaveBeenCalledWith({
         req,
         tool_resources,
         agentId: 'stateful-agent',
@@ -971,8 +968,7 @@ describe('ToolService - Action Capability Gating', () => {
       const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
         code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
       });
-      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
-      primeCodeFiles.mockRejectedValueOnce(resourceRecoveryError);
+      mockPrimeCodeFiles.mockRejectedValueOnce(resourceRecoveryError);
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       await expect(

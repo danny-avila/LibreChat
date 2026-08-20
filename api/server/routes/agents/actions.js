@@ -90,6 +90,12 @@ router.get('/', async (req, res) => {
         ? await db.getActions({ agent_id: { $in: editableAgentIds } })
         : [];
 
+    for (const action of actions) {
+      if (blockFilteredActionProjection(req, res, action)) {
+        return;
+      }
+    }
+
     res.json(actions);
   } catch (error) {
     res.status(500).json({ error: error.message });

@@ -263,6 +263,96 @@ class BaseClient {
     return this.options.resendFiles === false ? omitUnreplayedHistoricalFiles(messages) : messages;
   }
 
+  /**
+   * Retains canonical persisted rows by the source identity stamped onto
+   * formatted model messages. Agent pruning preserves this identity, which
+   * lets the final provider-bound guard inspect only rows that survived the
+   * context-window selection while keeping their user-submitted provenance.
+   *
+   * @param {TMessage[]} messages
+   */
+  setModelBoundStoredMessages(messages) {
+    this.modelBoundStoredMessagesById = new Map();
+    for (const message of messages ?? []) {
+      const messageId = message?.messageId ?? message?.id;
+      if (typeof messageId === 'string' && messageId.length > 0) {
+        this.modelBoundStoredMessagesById.set(messageId, message);
+      }
+    }
+  }
+
+  /**
+   * Builds the source-aware inspection set for an exact provider payload.
+   * Source-backed messages reuse their canonical persisted rows so HITL/edit
+   * provenance remains authoritative. Messages created during the run have no
+   * source row and are projected from the exact payload instead.
+   *
+   * @param {Array<Record<string, unknown>>} messages
+   * @returns {Array<Record<string, unknown>>}
+   */
+  getModelBoundProviderMessages(messages) {
+    const retainedSourceIds = new Set();
+    const projectedMessages = [];
+    for (const message of messages ?? []) {
+      const sourceMessageId =
+        message?.additional_kwargs?.sourceMessageId ?? message?.messageId ?? message?.id;
+      if (
+        typeof sourceMessageId === 'string' &&
+        this.modelBoundStoredMessagesById?.has(sourceMessageId)
+      ) {
+        retainedSourceIds.add(sourceMessageId);
+        continue;
+      }
+      const rawRole = message?.role ?? message?._getType?.();
+      let role = rawRole;
+      if (rawRole === 'human') {
+        role = 'user';
+      } else if (rawRole === 'ai') {
+        role = 'assistant';
+      }
+      const projectedMessage = {
+        ...message,
+        role,
+        isCreatedByUser: role === 'user',
+        isUserSubmitted: role === 'user',
+      };
+      if (typeof message?.text === 'string') {
+        projectedMessage.text = message.text;
+      } else if (typeof message?.content === 'string') {
+        projectedMessage.text = message.content;
+      }
+      projectedMessages.push(projectedMessage);
+    }
+    return [
+      ...Array.from(retainedSourceIds, (messageId) =>
+        this.modelBoundStoredMessagesById.get(messageId),
+      ),
+      ...projectedMessages,
+    ];
+  }
+
+  /**
+   * Generic clients return their selected model payload from `buildMessages`.
+   * AgentClient overrides this because its SDK performs pruning later and
+   * enforces the same projection at the actual chat-model callback instead.
+   *
+   * @param {string | Array<Record<string, unknown>>} payload
+   */
+  assertBuiltModelBoundContent(payload) {
+    const messages = Array.isArray(payload)
+      ? payload
+      : [{ role: 'user', content: payload, isCreatedByUser: true, isUserSubmitted: true }];
+    assertModelBoundContent({
+      filters: this.options.req?.config?.filters,
+      legacyPii: this.options.req?.config?.messageFilter?.pii,
+      storedMessages: this.getModelBoundProviderMessages(messages),
+      resolvedFiles:
+        this.options.resendFiles === false
+          ? []
+          : Array.from(this.authorizedHistoricalFiles?.values?.() ?? []),
+    });
+  }
+
   async getCompletion() {
     throw new Error("Method 'getCompletion' must be implemented.");
   }
@@ -681,6 +771,7 @@ class BaseClient {
     const parentMessageId = isEdited ? head : userMessage.messageId;
     this.parentMessageId = parentMessageId;
     const modelBoundStoredMessages = this.getModelBoundStoredMessages(this.currentMessages);
+    this.setModelBoundStoredMessages(modelBoundStoredMessages);
     let resolvedHistoricalFiles =
       this.options.resendFiles === false
         ? []
@@ -703,12 +794,6 @@ class BaseClient {
           .map((file) => [file.file_id, file]),
       );
     }
-    assertModelBoundContent({
-      filters: this.options.req?.config?.filters,
-      legacyPii: this.options.req?.config?.messageFilter?.pii,
-      storedMessages: modelBoundStoredMessages,
-      resolvedFiles: resolvedHistoricalFiles,
-    });
     let {
       prompt: payload,
       tokenCountMap,
@@ -719,6 +804,7 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
       opts,
     );
+    this.assertBuiltModelBoundContent(payload);
     this.options.startupTelemetry?.mark('messages_built');
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {

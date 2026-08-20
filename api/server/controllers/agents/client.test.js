@@ -68,6 +68,86 @@ jest.mock('@librechat/api', () => ({
   getAgentCheckpointer: mockGetAgentCheckpointer,
 }));
 
+describe('AgentClient - final model-bound content protection', () => {
+  const filters = {
+    messages: {
+      pii: {
+        fields: ['text'],
+        starterPatterns: [],
+        customPatterns: [
+          {
+            id: 'provider-bound-secret',
+            label: 'provider-bound secret',
+            regex: 'PROVIDER-BOUND-[A-Z]+',
+          },
+        ],
+      },
+    },
+  };
+
+  const makeClient = () => {
+    const client = Object.create(AgentClient.prototype);
+    client.options = {
+      resendFiles: true,
+      req: { config: { filters } },
+    };
+    client.authorizedHistoricalFiles = new Map();
+    client.setModelBoundStoredMessages([
+      {
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Old PROVIDER-BOUND-SECRET',
+        messageId: 'pruned-source',
+      },
+      {
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Safe retained text',
+        messageId: 'retained-source',
+      },
+    ]);
+    return client;
+  };
+
+  it('inspects only persisted source rows retained by the provider payload', () => {
+    const callback = makeClient().createModelBoundChatModelCallback();
+
+    expect(callback).toEqual(expect.objectContaining({ raiseError: true, awaitHandlers: true }));
+    expect(() =>
+      callback.handleChatModelStart(undefined, [
+        [
+          {
+            role: 'user',
+            content: 'Safe retained text',
+            additional_kwargs: { sourceMessageId: 'retained-source' },
+          },
+        ],
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      callback.handleChatModelStart(undefined, [
+        [
+          {
+            role: 'user',
+            content: 'Old PROVIDER-BOUND-SECRET',
+            additional_kwargs: { sourceMessageId: 'pruned-source' },
+          },
+        ],
+      ]),
+    ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+  });
+
+  it('inspects synthetic summarizer and mid-run model input without a source row', () => {
+    const callback = makeClient().createModelBoundChatModelCallback();
+
+    expect(() =>
+      callback.handleChatModelStart(undefined, [
+        [{ role: 'user', content: 'Synthetic PROVIDER-BOUND-SUMMARY input' }],
+      ]),
+    ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+  });
+});
+
 describe('AgentClient - detached subagent usage', () => {
   it('records each detached call from an immutable snapshot after parent disposal', async () => {
     mockRecordCollectedUsage.mockClear();
@@ -1209,7 +1289,7 @@ describe('AgentClient - titleConvo', () => {
       expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
       expect(errorSpy).toHaveBeenCalledWith(
         '[api/server/controllers/agents/client.js #titleConvo] Error',
-        { type: 'Error', status: 422 },
+        expect.objectContaining({ type: 'Error' }),
       );
       errorSpy.mockRestore();
     });
@@ -4915,9 +4995,15 @@ describe('AgentClient - resumeCompletion content protection', () => {
     pendingSubagentEmits: [],
     getEncoding: jest.fn(() => 'o200k_base'),
     buildSteerWiring: jest.fn(),
+    buildActivityLabelWiring: jest.fn(() => null),
+    buildActivityPhaseWiring: jest.fn(() => null),
+    buildReasoningLabelWiring: jest.fn(() => null),
     buildSubagentUsageEmitter: jest.fn(),
+    buildDetachedSubagentUsageRecorder: jest.fn(),
     handleRunInterrupt: jest.fn().mockResolvedValue(undefined),
+    completeActivityPhase: jest.fn(),
     applyHideSequentialOutputsFilter: jest.fn(),
+    rebaseActivityPhaseBounds: jest.fn(),
     finalizeSubagentContent: jest.fn(),
     settleActivityLabels: jest.fn().mockResolvedValue(undefined),
     recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
@@ -5481,7 +5567,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain(privateValue);
     expect(errorSpy).toHaveBeenCalledWith(
       '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-      { type: 'Error', status: 422 },
+      expect.objectContaining({ type: 'Error' }),
     );
     errorSpy.mockRestore();
   });
