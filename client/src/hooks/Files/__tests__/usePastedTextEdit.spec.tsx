@@ -362,6 +362,54 @@ describe('usePastedTextEdit', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
   });
 
+  it('does not open an editor for an attachment a send already took', async () => {
+    let releaseDownload: (text: string) => void = () => undefined;
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDownload = (text: string) =>
+            resolve({ data: new Blob([text], { type: 'text/plain' }) });
+        }),
+    );
+    const restored = pastedFile({ file_id: 'restored-file', file: undefined });
+    const editor = renderEditor();
+    let opened: Promise<void> = Promise.resolve();
+    await act(async () => {
+      opened = editor.result.current.openEditor(restored);
+    });
+    /** Sending clears the composer's files without changing either conversation identity. */
+    await act(async () => {
+      editor.rerender({ files: new Map<string, ExtendedFile>() });
+    });
+
+    await act(async () => {
+      releaseDownload('recovered from storage');
+      await opened;
+    });
+
+    expect(editor.result.current.editing).toBeNull();
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('detaches through a restored entry keyed by its temporary upload id', async () => {
+    /** Draft restoration keys the map by the temporary id while the value carries the
+     * server-assigned one; membership must match either identity. */
+    const restored = pastedFile({ file_id: 'server-id', temp_file_id: 'temp-key' });
+    const editor = renderEditor(new Map([['temp-key', restored]]));
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+  });
+
   it('abandons the queued replacement when its composer is gone by commit time', async () => {
     /** The upload queue holds the batch open until this gate is pulled, standing in for the
      * config wait that keeps a real batch queued across a navigation. */

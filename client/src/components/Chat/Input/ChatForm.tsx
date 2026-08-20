@@ -219,7 +219,10 @@ const ChatForm = memo(function ChatForm({
   }, [index, conversationId, isSubmitting]);
   const isPastedTextFile = useCallback(
     (file: ExtendedFile) =>
-      pastedTextFileIds.has(file.file_id) || isPastedTextFileMarked(file.file_id),
+      pastedTextFileIds.has(file.file_id) ||
+      (file.temp_file_id != null && pastedTextFileIds.has(file.temp_file_id)) ||
+      isPastedTextFileMarked(file.file_id) ||
+      isPastedTextFileMarked(file.temp_file_id),
     [pastedTextFileIds],
   );
 

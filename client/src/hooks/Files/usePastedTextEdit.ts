@@ -117,6 +117,28 @@ export default function usePastedTextEdit({
     [fileList, user?.id],
   );
 
+  /** Whether a file is still one of this composer's unsent chips. The map is not always keyed by
+   * the file's own id: a restored entry keeps its temporary upload id as the key while the value
+   * carries the server-assigned one, so every identity is matched against keys and values. */
+  const isAttachedToComposer = useCallback((file: ExtendedFile): boolean => {
+    const identities = new Set([file.file_id]);
+    if (file.temp_file_id != null && file.temp_file_id !== '') {
+      identities.add(file.temp_file_id);
+    }
+    for (const [key, entry] of filesRef.current) {
+      if (identities.has(key)) {
+        return true;
+      }
+      if (
+        (entry.file_id != null && identities.has(entry.file_id)) ||
+        (entry.temp_file_id != null && identities.has(entry.temp_file_id))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
   const openEditor = useCallback(
     async (file: ExtendedFile) => {
       const conversationIdAtOpen = conversationIdRef.current;
@@ -126,6 +148,16 @@ export default function usePastedTextEdit({
         showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
         return;
       }
+      /** The resolve can span a send, which clears the composer without changing either
+       * identity. An editor for an attachment the message already took would save a replacement
+       * into the empty composer, so it never opens. */
+      if (
+        conversationIdRef.current !== conversationIdAtOpen ||
+        getNewConversationDraftToken(index) !== draftTokenAtOpen ||
+        !isAttachedToComposer(file)
+      ) {
+        return;
+      }
       setEditing({
         file,
         text,
@@ -133,7 +165,7 @@ export default function usePastedTextEdit({
         draftToken: draftTokenAtOpen,
       });
     },
-    [resolveText, showToast, localize, index],
+    [resolveText, showToast, localize, index, isAttachedToComposer],
   );
 
   const closeEditor = useCallback(() => setEditing(null), []);
@@ -220,7 +252,7 @@ export default function usePastedTextEdit({
            * this composer's unsent chip to remove. */
           if (
             isOriginatingComposer(editConversationId, editDraftToken) &&
-            filesRef.current.has(file.file_id)
+            isAttachedToComposer(file)
           ) {
             detach(file);
           }
@@ -235,6 +267,7 @@ export default function usePastedTextEdit({
       files,
       conversation?.endpoint,
       isOriginatingComposer,
+      isAttachedToComposer,
       detach,
       routeFiles,
       showToast,
@@ -271,7 +304,7 @@ export default function usePastedTextEdit({
       if (
         conversationIdRef.current !== conversationIdAtClick ||
         getNewConversationDraftToken(index) !== draftTokenAtClick ||
-        !filesRef.current.has(file.file_id)
+        !isAttachedToComposer(file)
       ) {
         return;
       }
@@ -292,7 +325,7 @@ export default function usePastedTextEdit({
       textArea.focus();
       textArea.setSelectionRange(next.length, next.length);
     },
-    [resolveText, showToast, localize, detach, textAreaRef, methods, index],
+    [resolveText, showToast, localize, detach, textAreaRef, methods, index, isAttachedToComposer],
   );
 
   return { editing, openEditor, closeEditor, saveEdit, moveInline };
