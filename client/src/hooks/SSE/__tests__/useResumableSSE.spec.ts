@@ -38,7 +38,11 @@ jest.mock('sse.js', () => {
         }),
         stream: jest.fn(),
         close: jest.fn(() => {
+          if (instance.readyState === 2) {
+            return;
+          }
           instance.readyState = 2;
+          instance._emit('abort');
         }),
         headers: { ...options?.headers },
         readyState: 1,
@@ -3792,6 +3796,44 @@ describe('useResumableSSE', () => {
     await advanceRetryTimer(1000);
 
     expect(mockSSEInstances).toHaveLength(sseCount + 1);
+    expect(getLastSSE()._url).toBe(
+      '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
+    );
+    unmount();
+  });
+
+  it('keeps climbing the ladder when the user agent aborts the replacement before it opens', async () => {
+    jest.useFakeTimers();
+    (request.post as jest.Mock).mockResolvedValue({
+      streamId: 'stream-epoch',
+      status: 'started',
+      generationCreatedAt: 1000,
+    });
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      getLastSSE()._emit('abort');
+    });
+    await advanceRetryTimer(1000);
+    expect(mockSSEInstances).toHaveLength(sseCount + 1);
+
+    /** The retry fired while the tab was still backgrounded, so the user agent
+     *  cancels the replacement too — before it ever emits `open`, which is what
+     *  would have cleared the shared reconnect counter. Recovery has to read
+     *  this as the replacement's own failure, not the previous connection's
+     *  deliberate close. */
+    await act(async () => {
+      getLastSSE()._emit('abort');
+    });
+    await advanceRetryTimer(2000);
+
+    expect(mockSSEInstances).toHaveLength(sseCount + 2);
     expect(getLastSSE()._url).toBe(
       '/api/agents/chat/stream/stream-epoch?resume=true&generationCreatedAt=1000&generationProtocolVersion=2',
     );

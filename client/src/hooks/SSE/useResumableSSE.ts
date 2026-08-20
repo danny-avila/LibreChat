@@ -1516,6 +1516,22 @@ export default function useResumableSSE(
         submissionRef.current === currentSubmission;
 
       /**
+       * Whether THIS connection was closed by this hook. The abort listener
+       * used to infer that from `reconnectAttemptRef`, but that ref is shared
+       * across the reconnect ladder and stays raised from the moment a retry is
+       * scheduled until the replacement connection opens — so a user agent that
+       * cancelled the replacement before it opened (the ordinary case when the
+       * retry timer fires while the tab is still backgrounded) read as the
+       * previous connection's deliberate close, and recovery stopped there.
+       * Ownership is per connection, so the flag must be too.
+       */
+      let closedByUs = false;
+      const closeStream = () => {
+        closedByUs = true;
+        sse.close();
+      };
+
+      /**
        * A suspended page can lose its stream without the transport ever
        * reporting it. When a mobile browser freezes the tab, an intermediary
        * closes the response body underneath it, and XHR surfaces that as an
@@ -1707,7 +1723,7 @@ export default function useResumableSSE(
             removeActiveJob(currentStreamId);
             clearAttachedGenerationCreatedAt();
             (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-            sse.close();
+            closeStream();
             setStreamId(null);
             optimisticStreamIdsRef.current.delete(currentStreamId);
             createdStreamIdsRef.current.delete(currentStreamId);
@@ -2164,7 +2180,7 @@ export default function useResumableSSE(
         });
         replacementHandoffRef.current = true;
         cancelSteerRetryFrames();
-        sse.close();
+        closeStream();
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
           reconnectTimeoutRef.current = null;
@@ -2230,7 +2246,7 @@ export default function useResumableSSE(
           reason,
         });
         reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        sse.close();
+        closeStream();
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
         }
@@ -2344,7 +2360,7 @@ export default function useResumableSSE(
           // Retry the stale epoch; the fenced HTTP endpoint will return the
           // dedicated replacement response as soon as the new job is visible.
           reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-          sse.close();
+          closeStream();
           reconnectTimeoutRef.current = setTimeout(() => {
             if (isCurrentSubscription() && submissionRef.current) {
               subscribeToStream(
@@ -2361,7 +2377,7 @@ export default function useResumableSSE(
         }
 
         reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
-        sse.close();
+        closeStream();
         clearStepMaps();
         let persistedMessages: TMessage[] | undefined;
         const messageQueryKey = [QueryKeys.messages, reconciliationConvoId] as const;
@@ -2565,7 +2581,7 @@ export default function useResumableSSE(
        *
        * Order matters: check responseCode first since HTTP errors may also include data
        */
-      sse.addEventListener('error', async (e: MessageEvent) => {
+      const handleTransportFailure = async (e: MessageEvent) => {
         if (!isCurrentSubscription()) {
           return;
         }
@@ -2603,7 +2619,7 @@ export default function useResumableSSE(
           // terminal cleanup or a handoff to a newer generation epoch.
           reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
           cancelSteerRetryFrames();
-          sse.close();
+          closeStream();
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
           resetLive({ ...currentSubmission, userMessage });
@@ -2883,7 +2899,7 @@ export default function useResumableSSE(
           }
           logger.log('ResumableSSE', 'Server-sent error event received:', e.data);
           cancelSteerRetryFrames();
-          sse.close();
+          closeStream();
           /** FLUSH (not cancel): the error card below is built from the cache
            * tail, so queued tokens must land first — and a stale trailing
            * frame must never overwrite the error write. */
@@ -3012,7 +3028,7 @@ export default function useResumableSSE(
             `Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${MAX_RETRIES})`,
           );
 
-          sse.close();
+          closeStream();
 
           reconnectTimeoutRef.current = setTimeout(() => {
             if (isCurrentSubscription() && submissionRef.current) {
@@ -3034,7 +3050,7 @@ export default function useResumableSSE(
           setShowStopButton(generationCreatedAt != null);
         } else {
           logger.error('ResumableSSE', 'Max reconnect attempts reached');
-          sse.close();
+          closeStream();
           flushPendingDeltas();
           const recoveryConvoId = currentSubmission.conversation?.conversationId ?? currentStreamId;
           let status: Awaited<ReturnType<typeof fetchStreamStatus>> | undefined;
@@ -3246,17 +3262,46 @@ export default function useResumableSSE(
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
         }
-      });
+      };
+
+      sse.addEventListener('error', handleTransportFailure);
 
       /**
        * Abort event - fired when the underlying XHR is cancelled, either by one
-       * of this hook's own `sse.close()` calls or by the user agent.
-       * Only reset state if we're NOT in a reconnection cycle.
+       * of this hook's own closes or by the user agent.
        */
       sse.addEventListener('abort', () => {
         if (!isCurrentSubscription()) {
           return;
         }
+
+        /**
+         * A cancellation this hook did not issue came from the user agent,
+         * which cancels in-flight requests when a mobile browser is
+         * backgrounded or the page is frozen — and the generation it was
+         * carrying is still running server-side.
+         *
+         * Treating that as a deliberate close is what strands the response:
+         * the pane goes idle holding whatever partial content arrived before
+         * the switch, looking finished, and nothing re-reads the conversation
+         * until a reload or a navigation remounts the messages query. It is a
+         * dropped connection by every meaningful measure, so hand it to the
+         * transport-failure path verbatim rather than re-deriving a ladder
+         * beside it: that one already climbs its backoff, adjudicates the
+         * retry ceiling against durable status, and terminalizes into the
+         * refetch when the job turns out to have finished meanwhile.
+         */
+        if (!closedByUs) {
+          logger.log(
+            'ResumableSSE',
+            'Stream aborted by the user agent - recovering as transport failure',
+          );
+          void handleTransportFailure({
+            responseCode: 0,
+          } as MessageEvent & { responseCode?: number });
+          return;
+        }
+
         if (replacementHandoffRef.current) {
           logger.log('ResumableSSE', 'Stream closed for generation handoff - preserving state');
           return;
@@ -3265,46 +3310,6 @@ export default function useResumableSSE(
         // (error handler will set up the reconnect timeout)
         if (reconnectAttemptRef.current > 0) {
           logger.log('ResumableSSE', 'Stream closed for reconnect - preserving state');
-          return;
-        }
-
-        /**
-         * Every close this hook owns is already fenced before it reaches here:
-         * effect cleanup aborts the lifecycle signal, reconnect and terminal
-         * recovery raise `reconnectAttemptRef`, a generation handoff raises its
-         * own flag, and FINAL/served-error paths set `finalReceived` first. An
-         * abort satisfying none of those came from the user agent, which
-         * cancels in-flight requests when a mobile browser is backgrounded or
-         * the page is frozen — and the generation it was carrying is still
-         * running server-side.
-         *
-         * Treating that as an intentional close is what strands the response:
-         * the pane goes idle holding whatever partial content arrived before
-         * the switch, looking finished, and nothing re-reads the conversation
-         * until a reload or a navigation remounts the messages query. Reconnect
-         * instead and let the existing recovery adjudicate — a live job replays
-         * its missed content, a finished one 404s into the durable refetch.
-         */
-        if (!finalReceived && !subscriptionRetired) {
-          logger.log('ResumableSSE', 'Stream aborted by the user agent - reconnecting');
-          reconnectAttemptRef.current = 1;
-          if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-          }
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isCurrentSubscription() && submissionRef.current) {
-              subscribeToStream(
-                currentStreamId,
-                submissionRef.current,
-                true,
-                generationCreatedAt,
-                generationProtocolVersion,
-                lifecycleSignal,
-              );
-            }
-          }, getReconnectDelay(reconnectAttemptRef.current));
-          setIsSubmitting(true);
-          setShowStopButton(generationCreatedAt != null);
           return;
         }
 
@@ -3349,7 +3354,7 @@ export default function useResumableSSE(
         debugWindow.__closeClean = () => {
           logger.log('Debug', 'Simulating clean close (navigation away)...');
           subscriptionRetired = true;
-          sse.close();
+          closeStream();
         };
       }
     },
