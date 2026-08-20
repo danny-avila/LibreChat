@@ -339,8 +339,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       const taken = new Set(
         used.map((s) => s.slot).filter((s): s is number => typeof s === 'number'),
       );
-      const unslotted = used.length - taken.size;
-      if (taken.size + unslotted >= maxPerUser) {
+      // Every live row consumes capacity, including legacy/internal rows created
+      // before the slot allocator existed. Slots remain the atomic collision key.
+      if (used.length >= maxPerUser) {
         return 'limit';
       }
       let slot = 0;
@@ -1536,8 +1537,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return [...started, ...paused];
   }
 
-  /** Stamps rows as examined, so the paused window rotates instead of re-serving the
-   *  same rows forever. Bookkeeping only: never touches `updatedAt`. */
+  /** Stamps rows as examined, so each bounded reconciliation window rotates instead
+   *  of re-serving the same rows forever. Bookkeeping only: never touches `updatedAt`. */
   async function markRunsReconciled(runs: Array<Pick<IScheduleRun, '_id'>>): Promise<void> {
     const ids = runs.map((run) => run._id).filter((id) => id != null);
     if (ids.length === 0) {

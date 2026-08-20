@@ -107,8 +107,8 @@ export interface IScheduleRun {
   abortPersistedAt?: Date;
   /** The schedule's configRevision at claim time. */
   configRevision?: number;
-  /** When reconciliation last examined this row; orders the paused window so no row
-   *  can be starved by a full batch of still-live pauses ahead of it. */
+  /** When reconciliation last examined this row; rotates each bounded non-terminal
+   *  window so no abandoned row can starve behind a full batch of live runs. */
   reconciledAt?: Date;
   resumeClaimedAt?: Date;
   createdAt?: Date;
