@@ -202,6 +202,66 @@ describe('usePastedTextEdit', () => {
     );
   });
 
+  it('queues a failed edit behind a dialog another chip occupies', async () => {
+    /** The gate stands in for the upload request: B opens while A's replacement is in flight. */
+    let releaseSave: (accepted: boolean) => void = () => undefined;
+    mockRouteFiles.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseSave = (accepted) => resolve(accepted);
+        }),
+    );
+    const fileA = pastedFile();
+    const fileB = pastedFile({ file_id: 'second-file' });
+    const editor = renderEditor(
+      new Map<string, ExtendedFile>([
+        ['pasted-file', fileA],
+        ['second-file', fileB],
+      ]),
+    );
+
+    await act(async () => {
+      await editor.result.current.openEditor(fileA);
+    });
+    await act(async () => {
+      void editor.result.current.saveEdit('fixed A');
+    });
+    await act(async () => {
+      await editor.result.current.openEditor(fileB);
+    });
+    expect(editor.result.current.editing?.file.file_id).toBe('second-file');
+
+    await act(async () => {
+      releaseSave(false);
+    });
+
+    /** A's corrections must not be dropped just because B's dialog is open. */
+    expect(editor.result.current.editing?.file.file_id).toBe('second-file');
+    act(() => {
+      editor.result.current.closeEditor();
+    });
+
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
+    expect(editor.result.current.editing?.text).toBe('fixed A');
+  });
+
+  it('refuses a second action against a chip whose replacement is uploading', async () => {
+    /** The upload stays in flight: the gate is never pulled. */
+    mockRouteFiles.mockImplementation(() => new Promise<boolean>(() => undefined));
+    const editor = await openEditor();
+    await act(async () => {
+      void editor.result.current.saveEdit('corrected');
+    });
+
+    expect(editor.result.current.isActionPending('pasted-file')).toBe(true);
+    await act(async () => {
+      await editor.result.current.openEditor(pastedFile());
+    });
+
+    expect(editor.result.current.editing).toBeNull();
+    expect(mockRouteFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('restores the corrections when the replacement is rejected', async () => {
     mockRouteFiles.mockResolvedValue(false);
     const editor = await openEditor();

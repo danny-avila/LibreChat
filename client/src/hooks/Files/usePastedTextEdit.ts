@@ -63,6 +63,12 @@ export default function usePastedTextEdit({
   const { data: fileList } = useGetFiles<TFile[]>();
   const saveDrafts = useRecoilValue(store.saveDrafts);
   const [editing, setEditing] = useState<PastedTextEdit | null>(null);
+  /** Failed edits that could not reopen their dialog because another chip was open. Their
+   * corrections have no other owner, so they wait for the dialog to free up. */
+  const [failedEdits, setFailedEdits] = useState<PastedTextEdit[]>([]);
+  /** Source attachments with a replacement upload or inline move in flight; a second action
+   * against the same original would double-replace or double-insert it. */
+  const [pendingActionIds, setPendingActionIds] = useState<Set<string>>(new Set());
 
   const { mutateAsync } = useDeleteFilesMutation();
   const { deleteFile } = useFileDeletion({ mutateAsync });
@@ -74,6 +80,8 @@ export default function usePastedTextEdit({
    * callback was captured on. */
   const filesRef = useRef(files);
   filesRef.current = files;
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   /** Sequence of editor-open requests, so a slow resolve cannot overwrite a later click. */
   const openRequestRef = useRef(0);
 
@@ -86,6 +94,10 @@ export default function usePastedTextEdit({
       editing.draftToken !== getNewConversationDraftToken(index))
   ) {
     setEditing(null);
+  }
+  if (editing == null && failedEdits.length > 0) {
+    setEditing(failedEdits[0]);
+    setFailedEdits((queue) => queue.slice(1));
   }
 
   /** The in-memory blob is the only current copy right after an edit; the file record is the
@@ -146,6 +158,11 @@ export default function usePastedTextEdit({
 
   const openEditor = useCallback(
     async (file: ExtendedFile) => {
+      /** A replacement for this chip is already in flight; acting on it again would
+       * double-replace the same original. */
+      if (pendingActionIds.has(file.file_id)) {
+        return;
+      }
       const conversationIdAtOpen = conversationIdRef.current;
       const draftTokenAtOpen = getNewConversationDraftToken(index);
       /** Restored chips resolve asynchronously; a later click on another chip must not be
@@ -174,7 +191,7 @@ export default function usePastedTextEdit({
         draftToken: draftTokenAtOpen,
       });
     },
-    [resolveText, showToast, localize, index, isAttachedToComposer],
+    [resolveText, showToast, localize, index, isAttachedToComposer, pendingActionIds],
   );
 
   const closeEditor = useCallback(() => setEditing(null), []);
@@ -257,6 +274,20 @@ export default function usePastedTextEdit({
         (isAssistantsEndpoint(conversation?.endpoint) ? undefined : EToolResources.context);
 
       setEditing(null);
+      /** The original stays until the replacement is stored, but it stops accepting actions:
+       * a second edit or a Move back against the same original would double-replace it. */
+      const sourceId = file.file_id;
+      setPendingActionIds((current) => new Set(current).add(sourceId));
+      const settleAction = () => {
+        setPendingActionIds((current) => {
+          if (!current.has(sourceId)) {
+            return current;
+          }
+          const settled = new Set(current);
+          settled.delete(sourceId);
+          return settled;
+        });
+      };
       /** The original stays until the replacement is stored. `routeFiles` resolving only means
        * the upload was accepted into the queue, and detaching first would leave neither copy
        * behind when the upload is rejected or fails. */
@@ -271,24 +302,30 @@ export default function usePastedTextEdit({
         });
       }
       /** The corrections stay recoverable: a rejected or failed upload reopens the editor with
-       * what the user typed, because the original attachment alone no longer holds it. */
+       * what the user typed, because the original attachment alone no longer holds it. When
+       * another chip's dialog is open, the failed edit queues for the freed dialog instead of
+       * being dropped: the failed upload's callback was its only remaining owner. */
       const restoreEdits = () => {
-        if (isOriginatingComposer(editConversationId, editDraftToken)) {
-          setEditing(
-            (current) =>
-              current ?? {
-                file,
-                text,
-                conversationId: editConversationId,
-                draftToken: editDraftToken,
-              },
-          );
+        if (!isOriginatingComposer(editConversationId, editDraftToken)) {
+          return;
+        }
+        const revived = {
+          file,
+          text,
+          conversationId: editConversationId,
+          draftToken: editDraftToken,
+        };
+        if (editingRef.current == null) {
+          setEditing(revived);
+        } else {
+          setFailedEdits((queue) => [...queue, revived]);
         }
       };
       const accepted = await routeFiles([replacement], toolResource, {
         fileId: uploadId,
         shouldCommit: () => isOriginatingComposer(editConversationId, editDraftToken),
         onSuccess: () => {
+          settleAction();
           /** `shouldCommit` only gates the queue, not the request: the composer can change
            * while the upload itself is in flight, and so can the map, when the message this
            * file belongs to was sent in the meantime. Either way the original is no longer
@@ -300,9 +337,13 @@ export default function usePastedTextEdit({
             detach(file);
           }
         },
-        onError: restoreEdits,
+        onError: () => {
+          settleAction();
+          restoreEdits();
+        },
       });
       if (!accepted) {
+        settleAction();
         restoreEdits();
         showToast({ message: localize('com_ui_pasted_text_save_error'), status: 'error' });
       }
@@ -334,44 +375,75 @@ export default function usePastedTextEdit({
    */
   const moveInline = useCallback(
     async (file: ExtendedFile) => {
-      const conversationIdAtClick = conversationIdRef.current;
-      const draftTokenAtClick = getNewConversationDraftToken(index);
-      const text = await resolveText(file);
-      if (text == null) {
-        showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
+      /** Same lock as an edit: a replacement already in flight must not race a move, and a
+       * second action must not race this move's own resolve. */
+      if (pendingActionIds.has(file.file_id)) {
         return;
       }
-      /** The await can span a conversation switch or a new chat (two unsaved chats share one
-       * conversation id, so the token is what distinguishes them), and the text would otherwise
-       * be written into the composer the user navigated to while the original was detached from
-       * this one. A send clears the map without changing either identity, so the chip must also
-       * still be attached here for the move to be honest. */
-      if (
-        conversationIdRef.current !== conversationIdAtClick ||
-        getNewConversationDraftToken(index) !== draftTokenAtClick ||
-        !isAttachedToComposer(file)
-      ) {
-        return;
+      setPendingActionIds((current) => new Set(current).add(file.file_id));
+      try {
+        const conversationIdAtClick = conversationIdRef.current;
+        const draftTokenAtClick = getNewConversationDraftToken(index);
+        const text = await resolveText(file);
+        if (text == null) {
+          showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
+          return;
+        }
+        /** The await can span a conversation switch or a new chat (two unsaved chats share one
+         * conversation id, so the token is what distinguishes them), and the text would
+         * otherwise be written into the composer the user navigated to while the original was
+         * detached from this one. A send clears the map without changing either identity, so
+         * the chip must also still be attached here for the move to be honest. */
+        if (
+          conversationIdRef.current !== conversationIdAtClick ||
+          getNewConversationDraftToken(index) !== draftTokenAtClick ||
+          !isAttachedToComposer(file)
+        ) {
+          return;
+        }
+
+        setEditing((current) => (current?.file.file_id === file.file_id ? null : current));
+        detach(file);
+
+        const textArea = textAreaRef.current;
+        const current = textArea?.value ?? methods.getValues('text') ?? '';
+        const next = current.length > 0 ? `${current}\n${text}` : text;
+        methods.setValue('text', next, { shouldDirty: true, shouldValidate: true });
+
+        if (textArea == null) {
+          return;
+        }
+        textArea.dispatchEvent(new Event('input', { bubbles: true }));
+        forceResize(textArea);
+        textArea.focus();
+        textArea.setSelectionRange(next.length, next.length);
+      } finally {
+        setPendingActionIds((current) => {
+          const settled = new Set(current);
+          settled.delete(file.file_id);
+          return settled;
+        });
       }
-
-      setEditing((current) => (current?.file.file_id === file.file_id ? null : current));
-      detach(file);
-
-      const textArea = textAreaRef.current;
-      const current = textArea?.value ?? methods.getValues('text') ?? '';
-      const next = current.length > 0 ? `${current}\n${text}` : text;
-      methods.setValue('text', next, { shouldDirty: true, shouldValidate: true });
-
-      if (textArea == null) {
-        return;
-      }
-      textArea.dispatchEvent(new Event('input', { bubbles: true }));
-      forceResize(textArea);
-      textArea.focus();
-      textArea.setSelectionRange(next.length, next.length);
     },
-    [resolveText, showToast, localize, detach, textAreaRef, methods, index, isAttachedToComposer],
+    [
+      resolveText,
+      showToast,
+      localize,
+      detach,
+      textAreaRef,
+      methods,
+      index,
+      isAttachedToComposer,
+      pendingActionIds,
+    ],
   );
 
-  return { editing, openEditor, closeEditor, saveEdit, moveInline };
+  /** Whether a replacement upload or inline move is in flight for a source attachment; the
+   * chip's actions hide while it is, so the same original cannot be acted on twice. */
+  const isActionPending = useCallback(
+    (fileId: string) => pendingActionIds.has(fileId),
+    [pendingActionIds],
+  );
+
+  return { editing, openEditor, closeEditor, saveEdit, moveInline, isActionPending };
 }

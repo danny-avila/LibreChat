@@ -386,11 +386,14 @@ describe('FileRow', () => {
       file: ExtendedFile,
       {
         isPaste = true,
+        actionPending = false,
         onEditPastedText,
         onMovePastedTextInline,
       }: {
         /** Stands in for the provenance registry the composer passes down. */
         isPaste?: boolean;
+        /** Stands in for the in-flight action lock the composer passes down. */
+        actionPending?: boolean;
         onEditPastedText?: (f: ExtendedFile) => void;
         onMovePastedTextInline?: (f: ExtendedFile) => void;
       } = {},
@@ -403,6 +406,7 @@ describe('FileRow', () => {
           setFiles={mockSetFiles}
           setFilesLoading={mockSetFilesLoading}
           isPastedTextFile={() => isPaste}
+          isPasteActionPending={() => actionPending}
           onEditPastedText={onEditPastedText}
           onMovePastedTextInline={onMovePastedTextInline}
         />,
@@ -493,6 +497,16 @@ describe('FileRow', () => {
       expect(
         screen.queryByRole('button', { name: 'com_ui_pasted_text_move_inline' }),
       ).not.toBeInTheDocument();
+    });
+
+    it('hides the paste actions while an action is in flight for the chip', () => {
+      renderWithEditor(pastedFile(), {
+        actionPending: true,
+        onEditPastedText: jest.fn(),
+        onMovePastedTextInline: jest.fn(),
+      });
+
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
     });
 
     it('offers no subtitle action where no handler is wired up', () => {
