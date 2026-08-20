@@ -34,7 +34,7 @@ const mockState = {
   saveDrafts: true,
   tabId: 'this-tab',
   fileList: [] as TFile[],
-  filesDraft: { fileIds: [], pendingPastes: {}, pastedTextIds: [] } as FilesDraft,
+  draftsById: {} as Record<string, FilesDraft>,
 };
 
 type TFile = { file_id: string; text?: string };
@@ -86,9 +86,10 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/utils', () => ({
   forceResize: jest.fn(),
   getNewConversationDraftToken: () => mockState.draftToken,
-  getComposerDraftId: (index: number, conversationId: string | null) =>
-    `${conversationId ?? 'new'}:${index}`,
-  getFilesDraftCached: () => mockState.filesDraft,
+  getComposerDraftId: (index: number, conversationId: string | null, isSubmitting = false) =>
+    `${conversationId ?? 'new'}:${index}:${isSubmitting ? 'pending' : 'idle'}`,
+  getFilesDraftCached: (id: string) =>
+    mockState.draftsById[id] ?? { fileIds: [], pendingPastes: {}, pastedTextIds: [] },
   getBrowserTabId: () => mockState.tabId,
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
@@ -127,7 +128,7 @@ describe('usePastedTextEdit', () => {
     mockState.saveDrafts = true;
     mockState.tabId = 'this-tab';
     mockState.fileList = [];
-    mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: [] };
+    mockState.draftsById = {};
     mockRouteFiles.mockImplementation(
       (_files: unknown, _toolResource: unknown, lifecycle: UploadLifecycleCallbacks) => {
         capturedLifecycle = lifecycle;
@@ -212,7 +213,9 @@ describe('usePastedTextEdit', () => {
   });
 
   it('deletes a restored paste record the normal removal path would keep', async () => {
-    mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] };
+    mockState.draftsById = {
+      'conversation-a:0:idle': { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] },
+    };
     const editor = renderEditor();
     const restored = pastedFile({
       attached: true,
@@ -246,11 +249,13 @@ describe('usePastedTextEdit', () => {
   it('spares a restored paste whose draft another tab wrote last', async () => {
     /** Two tabs can restore the same conversation draft; the deleting composer only owns the
      * claim when the draft carries its own tab stamp (or predates stamping). */
-    mockState.filesDraft = {
-      fileIds: [],
-      pendingPastes: {},
-      pastedTextIds: ['pasted-file'],
-      tabId: 'other-tab',
+    mockState.draftsById = {
+      'conversation-a:0:idle': {
+        fileIds: [],
+        pendingPastes: {},
+        pastedTextIds: ['pasted-file'],
+        tabId: 'other-tab',
+      },
     };
     const editor = renderEditor();
     const restored = pastedFile({
@@ -271,6 +276,40 @@ describe('usePastedTextEdit', () => {
 
     expect(mockDeleteFile).toHaveBeenCalledTimes(1);
     expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('follows the draft a finishing response migrated the claim to', async () => {
+    /** The edit was captured while submitting, so its key was the pending one; the run then
+     * finished and autosave moved the record to the conversation key. The claim must be found
+     * under either. */
+    mockState.draftsById = {
+      'conversation-a:0:pending': {
+        fileIds: [],
+        pendingPastes: {},
+        pastedTextIds: ['pasted-file'],
+      },
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [expect.objectContaining({ file_id: 'pasted-file' })],
+    });
   });
 
   it('spares a sent paste re-attached from the library', async () => {

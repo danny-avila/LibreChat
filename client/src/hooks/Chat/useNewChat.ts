@@ -159,6 +159,12 @@ export default function useNewChat({
       if (filesDraft.tabId == null || filesDraft.tabId === getBrowserTabId()) {
         const pasteIds = new Set(filesDraft.pastedTextIds ?? []);
         const ownedIds = collectOwnedIds(files, pasteIds);
+        /** A draft's own paste provenance is ownership in itself: after a reload the composer
+         * map may not be rebuilt yet when New Chat is clicked, and the chips those ids are
+         * waiting to become would otherwise be skipped rather than discarded with the draft. */
+        for (const pasteId of pasteIds) {
+          ownedIds.add(pasteId);
+        }
         const draftFileIds = new Set([
           ...filesDraft.fileIds,
           ...Object.keys(filesDraft.pendingPastes),

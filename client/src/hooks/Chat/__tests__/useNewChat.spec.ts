@@ -274,6 +274,56 @@ describe('useNewChat', () => {
     });
   });
 
+  it('deletes a draft-owned paste before the composer map is rebuilt after a reload', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['late-paste'],
+      pendingPastes: {},
+      pastedTextIds: ['late-paste'],
+    };
+    /** The reload just happened: the files query has not restored any chips into the map yet. */
+    mockState.fileList = [
+      { file_id: 'late-paste', filepath: '/uploads/late.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        { file_id: 'late-paste', embedded: false, filepath: '/uploads/late.txt', source: 'local' },
+      ],
+    });
+  });
+
+  it('defers a draft-owned paste whose record has not arrived after a reload', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['late-paste'],
+      pendingPastes: {},
+      pastedTextIds: ['late-paste'],
+    };
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.fileList = [
+      { file_id: 'late-paste', filepath: '/uploads/late.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        { file_id: 'late-paste', embedded: false, filepath: '/uploads/late.txt', source: 'local' },
+      ],
+    });
+  });
+
   it('spares draft ids the composer no longer shows, whose ownership is unknowable', () => {
     mockState.saveDrafts = true;
     mockState.filesDraft = {
