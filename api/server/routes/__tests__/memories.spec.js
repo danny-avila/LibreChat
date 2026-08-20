@@ -104,6 +104,17 @@ describe('memories routes', () => {
       expect(createMemory).not.toHaveBeenCalled();
     });
 
+    it('returns 400 when the key is not a string', async () => {
+      const response = await request(app)
+        .patch('/api/memories/my_key')
+        .send({ key: 123, value: 'updated value' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('Key must be a string.');
+      expect(setMemory).not.toHaveBeenCalled();
+      expect(createMemory).not.toHaveBeenCalled();
+    });
+
     it('trims the new key before validating and renaming', async () => {
       const { deleteMemory } = require('~/models');
       getUserMemories

@@ -258,6 +258,10 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
+  if (bodyKey !== undefined && typeof bodyKey !== 'string') {
+    return res.status(400).json({ error: 'Key must be a string.' });
+  }
+
   /** Trim to match POST's key normalization; blank/whitespace-only falls back to urlKey */
   const newKey = typeof bodyKey === 'string' && bodyKey.trim() !== '' ? bodyKey.trim() : urlKey;
 
