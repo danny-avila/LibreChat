@@ -1,7 +1,7 @@
-import { Keyv } from 'keyv';
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
+import type { Keyv } from 'keyv';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import {
@@ -9,11 +9,12 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
+import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
-import { cacheConfig } from '~/cache/cacheConfig';
+import { cacheConfig, standardCache } from '~/cache';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
@@ -171,7 +172,7 @@ export class MCPServersRegistry {
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
-  private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
+  private readonly readThroughCacheAll: ReadThroughAllCache<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
     string,
     Promise<Record<string, t.ParsedServerConfig>>
@@ -202,15 +203,17 @@ export class MCPServersRegistry {
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
-    this.readThroughCache = new Keyv<t.ParsedServerConfig>({
-      namespace: 'mcp-registry-read-through',
+    /** Redis-backed when configured, in-memory otherwise; per-server keys are
+     *  invalidated by targeted deletes, so a plain store suffices. */
+    this.readThroughCache = standardCache(
+      'mcp-registry-read-through',
       ttl,
-    });
+    ) as Keyv<t.ParsedServerConfig>;
 
-    this.readThroughCacheAll = new Keyv<Record<string, t.ParsedServerConfig>>({
-      namespace: 'mcp-registry-read-through-all',
+    this.readThroughCacheAll = new ReadThroughAllCache<Record<string, t.ParsedServerConfig>>(
+      'mcp-registry-read-through-all',
       ttl,
-    });
+    );
   }
 
   /** Creates and initializes the singleton MCPServersRegistry instance */
@@ -408,8 +411,9 @@ export class MCPServersRegistry {
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const cacheKey = userId ?? '__no_user__';
 
-    if (await this.readThroughCacheAll.has(cacheKey)) {
-      return (await this.readThroughCacheAll.get(cacheKey)) ?? {};
+    const cached = await this.readThroughCacheAll.get(cacheKey);
+    if (cached !== undefined) {
+      return cached;
     }
 
     const pending = this.pendingGetAllPromises.get(cacheKey);
@@ -828,9 +832,9 @@ export class MCPServersRegistry {
 
     await Promise.all([
       this.configCacheRepo.reset(),
-      // Only clear readThroughCacheAll (merged results that may include stale config servers).
+      // Only invalidate readThroughCacheAll (merged results that may include stale config servers).
       // readThroughCache (individual YAML/user lookups) is unaffected by config mutations.
-      this.readThroughCacheAll.clear(),
+      this.readThroughCacheAll.invalidateAll(),
     ]);
 
     if (evictedNames.length > 0) {
@@ -855,7 +859,7 @@ export class MCPServersRegistry {
     await this.cacheConfigsRepo.reset();
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
-    await this.readThroughCacheAll.clear();
+    await this.readThroughCacheAll.invalidateAll();
     this.resetYamlServerNamesMemo();
   }
 
@@ -892,7 +896,7 @@ export class MCPServersRegistry {
   private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
     const deletes = [
       this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
-      this.readThroughCacheAll.clear(),
+      this.readThroughCacheAll.invalidateAll(),
     ];
 
     if (userId) {

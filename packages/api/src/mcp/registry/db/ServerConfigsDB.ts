@@ -6,10 +6,11 @@ import {
   PrincipalType,
   PermissionBits,
 } from 'librechat-data-provider';
-import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
+import type { AllMethods, MCPServerDocument, IAgent } from '@librechat/data-schemas';
 
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
+import type { ResolvedPrincipal } from '~/types/principal';
 import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -201,6 +202,27 @@ function getChangedOAuthSecretBindingFields(
   return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
 }
 
+/** Unions `mcpServerNames` over the candidate agents the caller can access. */
+function unionMCPServerNames(
+  candidates: Array<Pick<IAgent, '_id' | 'mcpServerNames'>>,
+  accessibleAgentIds: Types.ObjectId[],
+): string[] {
+  if (accessibleAgentIds.length === 0) {
+    return [];
+  }
+  const accessible = new Set(accessibleAgentIds.map((id) => id.toString()));
+  const serverNames = new Set<string>();
+  for (const agent of candidates) {
+    if (!accessible.has(agent._id.toString())) {
+      continue;
+    }
+    for (const serverName of agent.mcpServerNames ?? []) {
+      serverNames.add(serverName);
+    }
+  }
+  return Array.from(serverNames);
+}
+
 /**
  * DB backed config storage
  * Handles CRUD Methods of dynamic mcp servers
@@ -220,36 +242,33 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
   /**
    * Checks if user has access to an MCP server via an agent they can VIEW.
+   * Starts from the agents that reference `serverName` (typically few, and an
+   * index-covered lookup) and bounds the ACL query to those ids, instead of
+   * materializing every accessible agent and scanning it (#14016).
    * @param serverName - The MCP server name to check
    * @param userId - The user ID (optional - if not provided, checks publicly accessible agents)
    * @returns true if user has VIEW access to at least one agent that has this MCP server
    */
   private async hasAccessViaAgent(serverName: string, userId?: string): Promise<boolean> {
-    let accessibleAgentIds: Types.ObjectId[];
-
-    if (!userId) {
-      /** Publicly accessible agents */
-      accessibleAgentIds = await this._aclService.findPubliclyAccessibleResources({
-        resourceType: ResourceType.AGENT,
-        requiredPermissions: PermissionBits.VIEW,
-      });
-    } else {
-      /** User-accessible agents */
-      accessibleAgentIds = await this._aclService.findAccessibleResources({
-        userId,
-        requiredPermissions: PermissionBits.VIEW,
-        resourceType: ResourceType.AGENT,
-      });
-    }
-
-    if (accessibleAgentIds.length === 0) {
+    const candidateIds = await this._dbMethods.getAgentIdsByMCPServerName(serverName);
+    if (candidateIds.length === 0) {
       return false;
     }
 
-    return await this._dbMethods.hasAgentWithMCPServerName({
-      agentIds: accessibleAgentIds,
-      serverName,
-    });
+    const accessibleAgentIds = userId
+      ? await this._aclService.findAccessibleResources({
+          userId,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.AGENT,
+          resourceIds: candidateIds,
+        })
+      : await this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceIds: candidateIds,
+        });
+
+    return accessibleAgentIds.length > 0;
   }
 
   /**
@@ -485,56 +504,72 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   }
 
   /**
+   * Agent-side access resolution bounded to the MCP-referencing candidate ids,
+   * so the ACL query cost scales with agents that use MCP servers instead of
+   * every accessible agent (#14016).
+   */
+  private findAccessibleAgentIds(
+    candidateIds: Types.ObjectId[],
+    userId?: string,
+    principalsList: ResolvedPrincipal[] = [],
+  ): Promise<Types.ObjectId[]> {
+    if (candidateIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    if (userId) {
+      return this._aclService.findAccessibleResourcesForPrincipals({
+        principalsList,
+        requiredPermissions: PermissionBits.VIEW,
+        resourceType: ResourceType.AGENT,
+        resourceIds: candidateIds,
+      });
+    }
+    return this._aclService.findPubliclyAccessibleResources({
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+      resourceIds: candidateIds,
+    });
+  }
+
+  /**
    * Return all DB stored configs (scoped by user Id if provided)
    * @param userId optional user id. if not provided only publicly shared mcp configs will be returned
    * @returns record of parsed configs
    */
   public async getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>> {
-    let directlyAccessibleMCPIds: Types.ObjectId[] = [];
-    let accessibleAgentIds: Types.ObjectId[] = [];
+    /** The candidates query and principals resolution are independent, so they
+     *  start together; the ACL pair below then runs against both results. */
+    const candidatesPromise = this._dbMethods.getAgentsWithMCPServerNames();
+    const principalsPromise = userId
+      ? this._aclService.getUserPrincipals({ userId, role })
+      : undefined;
 
-    if (!userId) {
-      logger.debug(`[ServerConfigsDB.getAll] fetching all publicly shared mcp servers`);
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
-        this._aclService.findPubliclyAccessibleResources({
-          resourceType: ResourceType.MCPSERVER,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-        this._aclService.findPubliclyAccessibleResources({
-          resourceType: ResourceType.AGENT,
-          requiredPermissions: PermissionBits.VIEW,
-        }),
-      ]);
-    } else {
-      logger.debug(
-        `[ServerConfigsDB.getAll] fetching mcp servers directly shared with the user with ID: ${userId}`,
-      );
-      const principalsList = await this._aclService.getUserPrincipals({ userId, role });
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
-        this._aclService.findAccessibleResourcesForPrincipals({
-          principalsList,
-          requiredPermissions: PermissionBits.VIEW,
-          resourceType: ResourceType.MCPSERVER,
-        }),
-        this._aclService.findAccessibleResourcesForPrincipals({
-          principalsList,
-          requiredPermissions: PermissionBits.VIEW,
-          resourceType: ResourceType.AGENT,
-        }),
-      ]);
-    }
+    const agentCandidates = await candidatesPromise;
+    const candidateIds = agentCandidates.map((agent) => agent._id);
+    const principalsList = (await principalsPromise) ?? [];
 
-    const agentMCPServerNamesPromise: Promise<string[]> =
-      accessibleAgentIds.length > 0
-        ? this._dbMethods.getMCPServerNamesByAgentIds(accessibleAgentIds)
-        : Promise.resolve([]);
-    const directResultsPromise = this._dbMethods.getListMCPServersByIds({
+    logger.debug(
+      `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${candidateIds.length} agent candidate(s) reference MCP servers`,
+    );
+
+    const [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      userId
+        ? this._aclService.findAccessibleResourcesForPrincipals({
+            principalsList,
+            requiredPermissions: PermissionBits.VIEW,
+            resourceType: ResourceType.MCPSERVER,
+          })
+        : this._aclService.findPubliclyAccessibleResources({
+            resourceType: ResourceType.MCPSERVER,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+      this.findAccessibleAgentIds(candidateIds, userId, principalsList),
+    ]);
+
+    const agentMCPServerNames = unionMCPServerNames(agentCandidates, accessibleAgentIds);
+    const directResults = await this._dbMethods.getListMCPServersByIds({
       ids: directlyAccessibleMCPIds,
     });
-    const [agentMCPServerNames, directResults] = await Promise.all([
-      agentMCPServerNamesPromise,
-      directResultsPromise,
-    ]);
 
     const parsedConfigs: Record<string, ParsedServerConfig> = {};
     const directData = directResults.data || [];

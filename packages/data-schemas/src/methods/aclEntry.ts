@@ -138,6 +138,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     requiredPermBit: number,
+    resourceIds?: Types.ObjectId[],
   ) => Promise<Types.ObjectId[]>;
   deleteAclEntries: (
     filter: Record<string, unknown>,
@@ -150,6 +151,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   findPublicResourceIds: (
     resourceType: string,
     requiredPermissions: number,
+    resourceIds?: Types.ObjectId[],
   ) => Promise<Types.ObjectId[]>;
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<unknown[]>;
   getSoleOwnedResourceIds: (
@@ -486,12 +488,17 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    * @param principalsList - List of principals, each containing { principalType, principalId }
    * @param resourceType - The type of resource
    * @param requiredPermBit - Required permission bit (use PermissionBits enum)
+   * @param resourceIds - Optional candidate bound. When provided, only these
+   *   resources are considered, so the query cost scales with the candidate set
+   *   instead of every accessible resource of the type. An empty array matches
+   *   nothing rather than lifting the bound.
    * @returns Array of resource IDs
    */
   async function findAccessibleResources(
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     requiredPermBit: number,
+    resourceIds?: Types.ObjectId[],
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
@@ -501,6 +508,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
 
     return await AclEntry.find({
       $or: principalsQuery,
+      ...(resourceIds !== undefined && { resourceId: { $in: resourceIds } }),
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermBit) },
     }).distinct('resourceId');
@@ -537,14 +545,17 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
    * See {@link permissionBitSupersets} for the Cosmos-compatible bit filter.
    * @param resourceType - The type of resource
    * @param requiredPermissions - Required permission bits
+   * @param resourceIds - Optional candidate bound; see {@link findAccessibleResources}
    */
   async function findPublicResourceIds(
     resourceType: string,
     requiredPermissions: number,
+    resourceIds?: Types.ObjectId[],
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     return await AclEntry.find({
       principalType: PrincipalType.PUBLIC,
+      ...(resourceIds !== undefined && { resourceId: { $in: resourceIds } }),
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermissions) },
     }).distinct('resourceId');

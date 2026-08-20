@@ -550,6 +550,93 @@ describe('Agent Methods', () => {
       expect(newAgent.mcpServerNames).toEqual(['authorizedServer']);
     });
 
+    describe('MCP server name candidate lookups', () => {
+      test('getAgentsWithMCPServerNames returns only agents with a non-empty list, projected', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'MCP Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['server-a', 'server-b'],
+        });
+        await createAgent({
+          id: `no-mcp-${agentId}`,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        const candidates = await methods.getAgentsWithMCPServerNames();
+
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0].mcpServerNames).toEqual(['server-a', 'server-b']);
+        expect(Object.keys(candidates[0]).sort()).toEqual(['_id', 'mcpServerNames']);
+      });
+
+      test('getAgentsWithMCPServerNames returns empty when no agent references MCP servers', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Plain Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+        });
+
+        expect(await methods.getAgentsWithMCPServerNames()).toEqual([]);
+      });
+
+      test('getAgentIdsByMCPServerName returns ids of agents referencing the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        const withServer = await createAgent({
+          id: agentId,
+          name: 'Gitlab Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab', 'other'],
+        });
+        await createAgent({
+          id: `second-${agentId}`,
+          name: 'Second Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['gitlab'],
+        });
+        await createAgent({
+          id: `unrelated-${agentId}`,
+          name: 'Unrelated Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['not-gitlab'],
+        });
+
+        const ids = (await methods.getAgentIdsByMCPServerName('gitlab')).map((id) => id.toString());
+
+        expect(ids).toHaveLength(2);
+        expect(ids).toContain(withServer._id.toString());
+      });
+
+      test('getAgentIdsByMCPServerName returns empty when no agent references the server', async () => {
+        const { agentId, authorId } = createTestIds();
+        await createAgent({
+          id: agentId,
+          name: 'Agent',
+          provider: 'test',
+          model: 'test-model',
+          author: authorId,
+          mcpServerNames: ['other-server'],
+        });
+
+        expect(await methods.getAgentIdsByMCPServerName('gitlab')).toEqual([]);
+      });
+    });
+
     test('should derive the server from a key whose raw tool name contains the delimiter', async () => {
       const { agentId, authorId } = createTestIds();
       /** DB server names are slugs and cannot contain the delimiter, so the trailing

@@ -244,7 +244,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
       await registry.addServer('server2', testRawConfig, 'CACHE');
       await registry.addServer('server3', testRawConfig, 'CACHE');
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
 
@@ -268,7 +268,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     it('should handle different userIds independently', async () => {
       await registry.addServer('shared_server', testRawConfig, 'CACHE');
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
 
@@ -290,7 +290,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         await registry.addServer(`stress_server_${i}`, testRawConfig, 'CACHE');
       }
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const concurrentCalls = 50;
       const startTime = Date.now();
@@ -320,7 +320,7 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
         'CACHE',
       );
 
-      await registry['readThroughCacheAll'].clear();
+      await registry['readThroughCacheAll'].invalidateAll();
 
       const results = await Promise.all([
         registry.getAllServerConfigs(),

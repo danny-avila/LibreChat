@@ -1411,6 +1411,68 @@ describe('AclEntry Model Tests', () => {
         expect(result).toHaveLength(1);
         expect(result[0].toString()).toBe(viewEdit.toString());
       });
+
+      describe('resourceIds bound', () => {
+        const otherResource = new mongoose.Types.ObjectId();
+        beforeEach(async () => {
+          await methods.grantPermission(
+            PrincipalType.USER,
+            userId,
+            ResourceType.AGENT,
+            resourceId,
+            PermissionBits.VIEW,
+            grantedById,
+          );
+          await methods.grantPermission(
+            PrincipalType.USER,
+            userId,
+            ResourceType.AGENT,
+            otherResource,
+            PermissionBits.VIEW,
+            grantedById,
+          );
+        });
+
+        test('intersects access with the bound candidate ids only', async () => {
+          const result = await methods.findAccessibleResources(
+            [{ principalType: PrincipalType.USER, principalId: userId }],
+            ResourceType.AGENT,
+            PermissionBits.VIEW,
+            [resourceId, new mongoose.Types.ObjectId()],
+          );
+          expect(result).toHaveLength(1);
+          expect(result[0].toString()).toBe(resourceId.toString());
+        });
+
+        test('returns nothing when every accessible resource is outside the bound', async () => {
+          const result = await methods.findAccessibleResources(
+            [{ principalType: PrincipalType.USER, principalId: userId }],
+            ResourceType.AGENT,
+            PermissionBits.VIEW,
+            [new mongoose.Types.ObjectId()],
+          );
+          expect(result).toHaveLength(0);
+        });
+
+        test('an empty bound matches nothing rather than lifting the filter', async () => {
+          const result = await methods.findAccessibleResources(
+            [{ principalType: PrincipalType.USER, principalId: userId }],
+            ResourceType.AGENT,
+            PermissionBits.VIEW,
+            [],
+          );
+          expect(result).toHaveLength(0);
+        });
+
+        test('an unbound call still returns every accessible resource', async () => {
+          const result = await methods.findAccessibleResources(
+            [{ principalType: PrincipalType.USER, principalId: userId }],
+            ResourceType.AGENT,
+            PermissionBits.VIEW,
+          );
+          expect(result).toHaveLength(2);
+        });
+      });
     });
 
     describe('findPublicResourceIds', () => {
@@ -1431,6 +1493,42 @@ describe('AclEntry Model Tests', () => {
         );
         expect(result).toHaveLength(1);
         expect(result[0].toString()).toBe(shared.toString());
+      });
+
+      test('with resourceIds bound, intersects public access with the candidate ids', async () => {
+        const shared = new mongoose.Types.ObjectId();
+        const unreachable = new mongoose.Types.ObjectId();
+        await methods.grantPermission(
+          PrincipalType.PUBLIC,
+          null,
+          ResourceType.AGENT,
+          shared,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+        await methods.grantPermission(
+          PrincipalType.PUBLIC,
+          null,
+          ResourceType.AGENT,
+          unreachable,
+          PermissionBits.VIEW,
+          grantedById,
+        );
+
+        const result = await methods.findPublicResourceIds(
+          ResourceType.AGENT,
+          PermissionBits.VIEW,
+          [shared, new mongoose.Types.ObjectId()],
+        );
+        expect(result).toHaveLength(1);
+        expect(result[0].toString()).toBe(shared.toString());
+
+        const emptyBound = await methods.findPublicResourceIds(
+          ResourceType.AGENT,
+          PermissionBits.VIEW,
+          [],
+        );
+        expect(emptyBound).toHaveLength(0);
       });
 
       test('deduplicates when duplicate public entries exist for the same resource', async () => {
