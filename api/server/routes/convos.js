@@ -335,6 +335,61 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
   }
 });
 
+/**
+ * Records that the user has caught up with the conversation's newest message.
+ * The timestamp is server-stamped, which keeps this idempotent and independent of client clocks.
+ * `lastResponseAt` names the reply the client actually had on screen, so a newer one persisted
+ * from another device in the meantime is not acknowledged along with it.
+ * @route POST /seen
+ * @param {string} req.body.arg.conversationId - The conversation the user has caught up with.
+ * @param {string} [req.body.arg.lastResponseAt] - The reply the client observed, as an ISO string.
+ * @returns {object} 200 - Whether a conversation was updated.
+ */
+router.post('/seen', validateConvoAccess, async (req, res) => {
+  const { conversationId, lastResponseAt } = req.body?.arg ?? {};
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  const observedResponseAt = lastResponseAt != null ? new Date(lastResponseAt) : undefined;
+  if (observedResponseAt && Number.isNaN(observedResponseAt.getTime())) {
+    return res.status(400).json({ error: 'lastResponseAt must be a valid date' });
+  }
+
+  try {
+    const dbResponse = await db.markConvoSeen(req.user.id, conversationId, observedResponseAt);
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error marking conversation seen', error);
+    res.status(500).send('Error marking conversation seen');
+  }
+});
+
+/**
+ * Flags a conversation as unread again for this user.
+ * The server clears the catch-up and, for a conversation without a reply yet, treats the
+ * flag itself as the unread marker, so no client timestamp is trusted.
+ * @route POST /unread
+ * @param {string} req.body.arg.conversationId - The conversation to flag as unread.
+ * @returns {object} 200 - Whether a conversation was updated.
+ */
+router.post('/unread', validateConvoAccess, async (req, res) => {
+  const { conversationId } = req.body?.arg ?? {};
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  try {
+    const dbResponse = await db.markConvoUnread(req.user.id, conversationId);
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error marking conversation unread', error);
+    res.status(500).send('Error marking conversation unread');
+  }
+});
+
 /** Maximum allowed length for conversation titles */
 const MAX_CONVO_TITLE_LENGTH = 1024;
 

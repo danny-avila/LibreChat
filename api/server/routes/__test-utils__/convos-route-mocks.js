@@ -78,6 +78,8 @@ module.exports = {
     archiveAllConvos: jest.fn(),
     saveConvo: jest.fn(),
     setConvoPinned: jest.fn(),
+    markConvoSeen: jest.fn(),
+    markConvoUnread: jest.fn(),
     deleteAllSharedLinks: jest.fn(),
     deleteConvoSharedLink: jest.fn(),
     deleteToolCalls: jest.fn(),

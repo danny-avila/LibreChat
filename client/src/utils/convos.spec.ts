@@ -13,6 +13,8 @@ import {
   collectPinnedConversations,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  findConvoInAllQueries,
+  isConversationUnseen,
   removeConvoFromAllQueries,
   addConversationToAllConversationsQueries,
 } from './convos';
@@ -618,6 +620,48 @@ describe('Conversation Utilities', () => {
       });
     });
 
+    describe('isConversationUnseen', () => {
+      it('treats a conversation with no reply as seen', () => {
+        expect(isConversationUnseen({})).toBe(false);
+      });
+
+      it('treats a reply with no catch-up as unseen', () => {
+        expect(isConversationUnseen({ lastResponseAt: '2026-08-16T10:00:00.000Z' })).toBe(true);
+      });
+
+      it('treats a catch-up older than the reply as unseen', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T09:00:00.000Z',
+          }),
+        ).toBe(true);
+      });
+
+      it('treats equal timestamps as seen, the fail-safe direction', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T10:00:00.000Z',
+          }),
+        ).toBe(false);
+      });
+
+      it('treats a catch-up newer than the reply as seen', () => {
+        expect(
+          isConversationUnseen({
+            lastResponseAt: '2026-08-16T10:00:00.000Z',
+            lastSeenAt: '2026-08-16T11:00:00.000Z',
+          }),
+        ).toBe(false);
+      });
+
+      it('handles null and undefined conversations', () => {
+        expect(isConversationUnseen(undefined)).toBe(false);
+        expect(isConversationUnseen(null)).toBe(false);
+      });
+    });
+
     describe('QueryClient helpers', () => {
       let queryClient: QueryClient;
       let convoA: TConversation;
@@ -763,6 +807,72 @@ describe('Conversation Utilities', () => {
 
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations[0].isShared).toBe(false);
+      });
+
+      it('updateConvoInAllQueries keeps the unseen timestamps when a caller replaces the convo', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T09:00:00.000Z',
+        }));
+        // SSE/rename style update that swaps in a payload without the unseen fields.
+        updateConvoInAllQueries(
+          queryClient,
+          'a',
+          () =>
+            ({
+              conversationId: 'a',
+              title: 'Renamed',
+            }) as TConversation,
+        );
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T09:00:00.000Z');
+      });
+
+      it('updateConvoInAllQueries lets an explicit lastSeenAt win over the cached one', () => {
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T09:00:00.000Z',
+        }));
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastSeenAt: '2026-08-16T11:00:00.000Z',
+        }));
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T11:00:00.000Z');
+      });
+
+      it('updateConvoInAllQueries clears lastSeenAt when the updater says so explicitly', () => {
+        /* Mark-unread needs to express "not caught up", which an undefined value
+           carries forward only when the key itself is absent. */
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastSeenAt: '2026-08-16T11:00:00.000Z',
+        }));
+        updateConvoInAllQueries(queryClient, 'a', (c) => ({
+          ...c,
+          lastSeenAt: undefined,
+        }));
+
+        const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
+        expect(data!.pages[0].conversations[0].lastSeenAt).toBeUndefined();
+        expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
+      });
+
+      it('findConvoInAllQueries reads from whichever cached list query holds the conversation', () => {
+        queryClient.setQueryData(['allConversations', { isArchived: true }], {
+          pages: [{ conversations: [convoB], nextCursor: null }],
+          pageParams: [],
+        });
+
+        expect(findConvoInAllQueries(queryClient, 'a')?.conversationId).toBe('a');
+        expect(findConvoInAllQueries(queryClient, 'b')?.conversationId).toBe('b');
+        expect(findConvoInAllQueries(queryClient, 'missing')).toBeUndefined();
       });
 
       it('updateConvoInAllQueries with moveToTop moves convo to front and updates updatedAt', () => {
