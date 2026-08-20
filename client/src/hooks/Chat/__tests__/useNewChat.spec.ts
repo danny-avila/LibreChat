@@ -92,6 +92,7 @@ const clickEvent = (overrides: Partial<MouseEvent<HTMLElement>> = {}) =>
 describe('useNewChat', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDeleteFiles.mockResolvedValue(undefined);
     mockState.saveDrafts = false;
     mockState.tabId = 'this-tab';
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
@@ -320,6 +321,77 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).toHaveBeenCalledWith({
       files: [
         { file_id: 'late-paste', embedded: false, filepath: '/uploads/late.txt', source: 'local' },
+      ],
+    });
+  });
+
+  it('retries a deferred deletion whose request failed', async () => {
+    mockDeleteFiles.mockRejectedValueOnce(new Error('offline'));
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['in-flight'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['in-flight', { file_id: 'in-flight', progress: 0.4 }]]);
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'in-flight', filepath: '/uploads/in-flight.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+
+    /** The failed delete kept the id; the next cache update retries it. */
+    mockState.fileList = [
+      { file_id: 'in-flight', filepath: '/uploads/in-flight.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains an immediate deletion whose request failed for a retry', async () => {
+    mockDeleteFiles.mockRejectedValueOnce(new Error('offline'));
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['stored-file'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['stored-file', { file_id: 'stored-file', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'stored-file', filepath: '/uploads/stored.txt', source: 'local' },
+    ];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'stored-file', filepath: '/uploads/stored.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(2);
+    expect(mockDeleteFiles).toHaveBeenLastCalledWith({
+      files: [
+        {
+          file_id: 'stored-file',
+          embedded: false,
+          filepath: '/uploads/stored.txt',
+          source: 'local',
+        },
       ],
     });
   });

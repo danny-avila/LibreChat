@@ -199,6 +199,35 @@ describe('usePastedTextEdit', () => {
     );
   });
 
+  it('restores the corrections when the replacement is rejected', async () => {
+    mockRouteFiles.mockResolvedValue(false);
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+
+    expect(editor.result.current.editing?.text).toBe('corrected');
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_pasted_text_save_error' }),
+    );
+  });
+
+  it('restores the corrections when the replacement upload fails', async () => {
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    expect(editor.result.current.editing).toBeNull();
+    await act(async () => {
+      capturedLifecycle?.onError?.('replacement-file');
+    });
+
+    expect(editor.result.current.editing?.text).toBe('corrected');
+  });
+
   it('leaves the original attached when the replacement upload fails', async () => {
     const editor = await openEditor();
 

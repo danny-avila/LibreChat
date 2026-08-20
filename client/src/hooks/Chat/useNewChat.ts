@@ -104,37 +104,50 @@ export default function useNewChat({
     if (pendingDiscardIds.length === 0 || fileList == null) {
       return;
     }
-    /** An id that came back, as a live chip or inside the fresh draft, is no longer the
-     * discarded draft's to delete. */
-    const reattached = new Set(getFilesDraft(getNewConversationDraftId(index)).fileIds);
-    files.forEach((file, key) => {
-      reattached.add(key);
-      if (file.file_id != null) {
-        reattached.add(file.file_id);
+    let cancelled = false;
+    const attempt = async () => {
+      /** An id that came back, as a live chip or inside the fresh draft, is no longer the
+       * discarded draft's to delete. */
+      const reattached = new Set(getFilesDraft(getNewConversationDraftId(index)).fileIds);
+      files.forEach((file, key) => {
+        reattached.add(key);
+        if (file.file_id != null) {
+          reattached.add(file.file_id);
+        }
+      });
+      const deletable: DeletableRecord[] = [];
+      const stillPending: string[] = [];
+      for (const fileId of pendingDiscardIds) {
+        if (reattached.has(fileId)) {
+          continue;
+        }
+        const record = findFilesRecord(fileList, fileId);
+        if (record == null) {
+          stillPending.push(fileId);
+          continue;
+        }
+        const deletableRecord = toDeletableRecord(record);
+        if (deletableRecord != null) {
+          deletable.push(deletableRecord);
+        }
       }
-    });
-    const deletable: DeletableRecord[] = [];
-    const stillPending: string[] = [];
-    for (const fileId of pendingDiscardIds) {
-      if (reattached.has(fileId)) {
-        continue;
+      if (deletable.length > 0) {
+        try {
+          await mutateAsync({ files: deletable });
+        } catch {
+          /** The draft is already gone, so these ids are the only record of what to clean:
+           * keep them for the next files-cache update rather than orphaning the uploads. */
+          return;
+        }
       }
-      const record = findFilesRecord(fileList, fileId);
-      if (record == null) {
-        stillPending.push(fileId);
-        continue;
+      if (!cancelled && stillPending.length !== pendingDiscardIds.length) {
+        setPendingDiscardIds(stillPending);
       }
-      const deletableRecord = toDeletableRecord(record);
-      if (deletableRecord != null) {
-        deletable.push(deletableRecord);
-      }
-    }
-    if (deletable.length > 0) {
-      mutateAsync({ files: deletable });
-    }
-    if (stillPending.length !== pendingDiscardIds.length) {
-      setPendingDiscardIds(stillPending);
-    }
+    };
+    void attempt();
+    return () => {
+      cancelled = true;
+    };
   }, [pendingDiscardIds, fileList, files, index, mutateAsync]);
 
   const startNewChat = useCallback(() => {
@@ -184,7 +197,12 @@ export default function useNewChat({
           }
         }
         if (deletable.length > 0) {
-          mutateAsync({ files: deletable });
+          mutateAsync({ files: deletable }).catch(() => {
+            /** A failed deletion is retried on the next files-cache update, exactly like a
+             * deferred one, instead of orphaning the uploads. */
+            const failedIds = deletable.map((record) => record.file_id);
+            setPendingDiscardIds((current) => Array.from(new Set([...current, ...failedIds])));
+          });
         }
         /** Merged, not replaced: a second reset while an earlier upload is still in flight
          * must not forget that earlier id, or its eventual record is orphaned. */

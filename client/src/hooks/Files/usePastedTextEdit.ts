@@ -268,6 +268,21 @@ export default function usePastedTextEdit({
           fileId: uploadId,
         });
       }
+      /** The corrections stay recoverable: a rejected or failed upload reopens the editor with
+       * what the user typed, because the original attachment alone no longer holds it. */
+      const restoreEdits = () => {
+        if (isOriginatingComposer(editConversationId, editDraftToken)) {
+          setEditing(
+            (current) =>
+              current ?? {
+                file,
+                text,
+                conversationId: editConversationId,
+                draftToken: editDraftToken,
+              },
+          );
+        }
+      };
       const accepted = await routeFiles([replacement], toolResource, {
         fileId: uploadId,
         shouldCommit: () => isOriginatingComposer(editConversationId, editDraftToken),
@@ -283,8 +298,10 @@ export default function usePastedTextEdit({
             detach(file);
           }
         },
+        onError: restoreEdits,
       });
       if (!accepted) {
+        restoreEdits();
         showToast({ message: localize('com_ui_pasted_text_save_error'), status: 'error' });
       }
     },
