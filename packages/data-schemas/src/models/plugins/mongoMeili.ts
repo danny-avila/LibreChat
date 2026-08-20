@@ -216,6 +216,7 @@ const processBatch = async <T>(
  * @returns A class definition that will be loaded into the Mongoose schema.
  */
 const createMeiliMongooseModel = ({
+  client,
   index,
   getIndexableQuery,
   getExcludedIndexedQuery,
@@ -224,6 +225,7 @@ const createMeiliMongooseModel = ({
   primaryKey,
   syncOptions,
 }: {
+  client: MeiliSearch;
   index: Index<MeiliIndexable>;
   getIndexableQuery: () => FilterQuery<unknown>;
   getExcludedIndexedQuery: () => FilterQuery<unknown> | null;
@@ -409,7 +411,7 @@ const createMeiliMongooseModel = ({
           const toDelete = meiliIds.filter((id) => !existingIds.has(id));
           if (toDelete.length > 0) {
             const deletion = await index.deleteDocuments(toDelete.map(String));
-            const deletionTask = await index.waitForTask(deletion.taskUid, {
+            const deletionTask = await client.waitForTask(deletion.taskUid, {
               timeOutMs: 10000,
               intervalMs: 100,
             });
@@ -775,6 +777,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   schema.loadClass(
     createMeiliMongooseModel({
+      client,
       index,
       getIndexableQuery: () => buildIndexableQuery(schema, options.excludeFromIndexPath),
       getExcludedIndexedQuery: () => buildExcludedIndexedQuery(options.excludeFromIndexPath),

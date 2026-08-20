@@ -71,13 +71,13 @@ const mockIndex = jest.fn().mockReturnValue({
   deleteDocuments: mockDeleteDocuments,
   getDocument: mockGetDocument,
   getDocuments: mockGetDocuments,
-  waitForTask: mockWaitForTask,
 });
 jest.mock('meilisearch', () => {
   return {
     MeiliSearch: jest.fn().mockImplementation(() => {
       return {
         index: mockIndex,
+        waitForTask: mockWaitForTask,
       };
     }),
   };
