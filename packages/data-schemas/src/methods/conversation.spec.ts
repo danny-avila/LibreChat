@@ -1392,6 +1392,52 @@ describe('Conversation Operations', () => {
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
+
+    it('hides durable subagent threads from conversation lists and search results', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const messageId = 'message-1';
+      const normalConversation = await Conversation.create({
+        conversationId: parentId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Parent conversation',
+      });
+      await Conversation.create({
+        conversationId: childId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Subagent: implementation',
+        subagentThread: {
+          rootConversationId: parentId,
+          parentConversationId: parentId,
+          parentMessageId: messageId,
+          parentToolCallId: 'tool-1',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest.fn().mockResolvedValue({
+          hits: [{ conversationId: parentId }, { conversationId: childId }],
+        }),
+      });
+
+      const listed = await getConvosByCursor('user123', { search: 'implementation' });
+      const queried = await getConvosQueried('user123', [
+        { conversationId: parentId },
+        { conversationId: childId },
+      ]);
+
+      expect(listed.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.convoMap[childId]).toBeUndefined();
+    });
   });
 
   describe('searchConversation', () => {
