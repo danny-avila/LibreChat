@@ -703,6 +703,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     schema.path(options.excludeFromIndexPath)?.options?.select === false
       ? options.excludeFromIndexPath
       : undefined;
+  const queriesWithInjectedPrivatePath = new WeakSet<object>();
   const syncOptions = {
     batchSize: options.syncBatchSize || getSyncConfig().batchSize,
     delayMs: options.syncDelayMs || getSyncConfig().delayMs,
@@ -802,7 +803,19 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   schema.pre('findOneAndUpdate', function (next) {
     if (privateExcludedPath != null) {
-      (this as Query<unknown, unknown>).select(`+${privateExcludedPath}`);
+      const query = this as Query<unknown, unknown>;
+      const projection = query.projection() as Record<string, number> | null;
+      const callerRequestedPrivatePath = Object.entries(projection ?? {}).some(
+        ([path, included]) =>
+          included === 1 &&
+          (path === privateExcludedPath ||
+            path === `+${privateExcludedPath}` ||
+            path.startsWith(`${privateExcludedPath}.`)),
+      );
+      if (!callerRequestedPrivatePath) {
+        query.select(`+${privateExcludedPath}`);
+        queriesWithInjectedPrivatePath.add(query);
+      }
     }
     next();
   });
@@ -886,10 +899,25 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       // `saveConvo` issues `findOneAndUpdate` with `includeResultMetadata: true`, so
       // the hook receives the raw `{ value, ok, lastErrorObject }` result instead of
       // the document. Unwrap `value` so indexing runs for that path too.
-      const doc = res instanceof mongoose.Document ? res : (res?.value ?? null);
+      let doc: DocumentWithMeiliIndex | null;
+      if (res instanceof mongoose.Document) {
+        doc = res;
+      } else if (res != null && 'value' in res) {
+        doc = res.value;
+      } else {
+        doc = res;
+      }
       const finish = (error?: Error | null): void => {
-        if (doc != null && privateExcludedPath != null) {
-          doc.set(privateExcludedPath, undefined);
+        if (
+          doc != null &&
+          privateExcludedPath != null &&
+          queriesWithInjectedPrivatePath.has(this)
+        ) {
+          if (doc instanceof mongoose.Document) {
+            doc.set(privateExcludedPath, undefined);
+          } else {
+            _.unset(doc, privateExcludedPath);
+          }
         }
         next(error ?? undefined);
       };

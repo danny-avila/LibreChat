@@ -229,6 +229,63 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(savedMessage?.subagentTask).toBeUndefined();
   });
 
+  test('findOneAndUpdate hides its injected private marker from lean results', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    const savedMessage = await messageModel
+      .findOneAndUpdate(
+        { messageId, user: 'user-lean' },
+        {
+          messageId,
+          conversationId: new mongoose.Types.ObjectId().toString(),
+          user: 'user-lean',
+          isCreatedByUser: true,
+          text: 'Private child transcript',
+          subagentTask: {
+            attemptKey: 'attempt-key',
+            status: 'running',
+          },
+        },
+        { upsert: true, new: true, projection: { unfinished: 1 } },
+      )
+      .lean();
+
+    expect(savedMessage).not.toBeNull();
+    expect(savedMessage?.subagentTask).toBeUndefined();
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
+  test('findOneAndUpdate preserves a private marker explicitly projected by a lean caller', async () => {
+    const messageModel = createMessageModel(mongoose);
+    const messageId = new mongoose.Types.ObjectId().toString();
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: 'user-explicit',
+      isCreatedByUser: true,
+      text: 'Completed child result',
+      subagentTask: {
+        attemptKey: 'attempt-key',
+        status: 'completed',
+      },
+    });
+
+    const savedMessage = await messageModel
+      .findOneAndUpdate(
+        { messageId, user: 'user-explicit' },
+        { $set: { 'subagentTask.resultClaim': { kind: 'manual', claimId: 'claim-1' } } },
+        { new: true, projection: { messageId: 1, subagentTask: 1 } },
+      )
+      .lean();
+
+    expect(savedMessage?.subagentTask).toMatchObject({
+      status: 'completed',
+      resultClaim: { kind: 'manual', claimId: 'claim-1' },
+    });
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+  });
+
   test('saving expired retained non-temporary conversation does NOT index w/ meilisearch', async () => {
     await createConversationModel(mongoose).create({
       conversationId: new mongoose.Types.ObjectId(),
