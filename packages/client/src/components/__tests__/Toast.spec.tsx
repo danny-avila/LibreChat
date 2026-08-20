@@ -10,8 +10,10 @@ const MESSAGE = 'The file is too large.';
 function ShowOnMount({ duration }: { duration?: number }): null {
   const { showToast } = useToast(0);
 
+  /** One toast per mount — re-running on a changed identity would reset the timers under test. */
   useEffect(() => {
     showToast({ message: MESSAGE, duration });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return null;
