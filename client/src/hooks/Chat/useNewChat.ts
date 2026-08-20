@@ -2,11 +2,9 @@ import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-
 import type { MouseEvent } from 'react';
-
-import useNewConvo from '~/hooks/useNewConvo';
 import { clearAllDrafts, clearMessagesCache, getNewConversationDraftId } from '~/utils';
+import useNewConvo from '~/hooks/useNewConvo';
 import store from '~/store';
 
 export type UseNewChatParams = {

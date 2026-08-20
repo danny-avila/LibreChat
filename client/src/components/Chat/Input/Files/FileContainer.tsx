@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import type { TFile } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ExtendedFile } from '~/common';
 import { getFileType, cn } from '~/utils';
 import FilePreview from './FilePreview';

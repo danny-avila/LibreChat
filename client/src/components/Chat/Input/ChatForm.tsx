@@ -23,12 +23,12 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
-import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
-import PastedTextDialog from './Files/PastedTextDialog';
+import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
+import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
 import { useGetStartupConfig } from '~/data-provider';

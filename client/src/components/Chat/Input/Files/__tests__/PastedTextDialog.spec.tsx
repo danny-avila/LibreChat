@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import type { ExtendedFile } from '~/common';
 import type { PastedTextEdit } from '~/hooks/Files/usePastedTextEdit';
+import type { ExtendedFile } from '~/common';
 import PastedTextDialog from '../PastedTextDialog';
 
 jest.mock('~/hooks', () => ({
