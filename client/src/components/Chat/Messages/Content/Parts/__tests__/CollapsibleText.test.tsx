@@ -143,6 +143,31 @@ describe('CollapsibleText', () => {
     }
   });
 
+  it('reveals a control clipped by even a pixel at the boundary', () => {
+    // The overflow tolerance absorbs trailing margins for the toggle decision
+    // only: a focused control hanging 2px past the cutoff is still hidden.
+    const scrollHeight = stubScrollHeight(500);
+    try {
+      render(
+        <CollapsibleText enabled={true}>
+          <p>
+            <a href="#target">{linkLabel}</a>
+          </p>
+        </CollapsibleText>,
+      );
+      const link = screen.getByRole('link');
+      link.getBoundingClientRect = () =>
+        ({ top: 254, bottom: 258, height: 4, width: 40, left: 0, right: 40 }) as DOMRect;
+      fireEvent(link, new FocusEvent('focusin', { bubbles: true }));
+      expect(screen.getByRole('button', { name: 'com_ui_show_less' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    } finally {
+      scrollHeight.mockRestore();
+    }
+  });
+
   it('expands in place and offers show less', () => {
     const scrollHeight = stubScrollHeight(500);
     try {

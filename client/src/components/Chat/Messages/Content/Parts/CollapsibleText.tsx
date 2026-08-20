@@ -75,14 +75,16 @@ const CollapsibleText = memo(function CollapsibleText({
   /** Focus stays in the tab order across the whole message (the text is in the
    *  DOM and must remain reachable), but landing on a control that is actually
    *  clipped reveals it rather than leaving focus inside hidden content. A
-   *  control that is already visible within the preview does not expand. */
+   *  control that is already visible within the preview does not expand; any
+   *  overhang past the boundary counts, since the overflow tolerance exists
+   *  only to absorb trailing margins when deciding if the message overflows. */
   const revealIfClipped = (event: React.FocusEvent<HTMLDivElement>) => {
     if (!clamped) {
       return;
     }
     const target = event.target as HTMLElement;
     const boundary = event.currentTarget.getBoundingClientRect().top + COLLAPSED_MAX_HEIGHT;
-    if (target.getBoundingClientRect().bottom - boundary > OVERFLOW_TOLERANCE) {
+    if (target.getBoundingClientRect().bottom > boundary) {
       setExpanded(true);
     }
   };
