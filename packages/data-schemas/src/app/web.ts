@@ -1,4 +1,4 @@
-import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
+import { SafeSearchTypes } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
@@ -16,6 +16,11 @@ export const webSearchAuth = {
       tavilyApiKey: 1 as const,
       tavilySearchUrl: 0 as const,
     },
+    exa: {
+      exaApiKey: 1 as const,
+      /** Optional (0) */
+      exaApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -30,6 +35,11 @@ export const webSearchAuth = {
     tavily: {
       tavilyApiKey: 1 as const,
       tavilyExtractUrl: 0 as const,
+    },
+    exa: {
+      exaApiKey: 1 as const,
+      /** Optional (0) */
+      exaApiUrl: 0 as const,
     },
   },
   rerankers: {
@@ -80,6 +90,8 @@ export function loadWebSearchConfig(
   const tavilyApiKey = config?.tavilyApiKey ?? '${TAVILY_API_KEY}';
   const tavilySearchUrl = config?.tavilySearchUrl ?? '${TAVILY_SEARCH_URL}';
   const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
+  const exaApiKey = config?.exaApiKey ?? '${EXA_API_KEY}';
+  const exaApiUrl = config?.exaApiUrl ?? '${EXA_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -97,6 +109,8 @@ export function loadWebSearchConfig(
     tavilyApiKey,
     tavilySearchUrl,
     tavilyExtractUrl,
+    exaApiKey,
+    exaApiUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,
