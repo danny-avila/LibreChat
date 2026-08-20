@@ -14,6 +14,7 @@ import {
   addPastedTextDraftFile,
   forceResize,
   getComposerDraftId,
+  getFilesDraftCached,
   markPastedTextFile,
   nextPastedTextFilename,
 } from '~/utils';
@@ -71,6 +72,8 @@ export default function usePastedTextEdit({
    * callback was captured on. */
   const filesRef = useRef(files);
   filesRef.current = files;
+  /** Sequence of editor-open requests, so a slow resolve cannot overwrite a later click. */
+  const openRequestRef = useRef(0);
 
   /** The dialog belongs to the composer it was opened in. Switching conversation or starting a
    * new chat retires it: saving from the new composer would detach that conversation's file and
@@ -143,6 +146,9 @@ export default function usePastedTextEdit({
     async (file: ExtendedFile) => {
       const conversationIdAtOpen = conversationIdRef.current;
       const draftTokenAtOpen = getNewConversationDraftToken(index);
+      /** Restored chips resolve asynchronously; a later click on another chip must not be
+       * overwritten by an earlier, slower resolution. */
+      const request = ++openRequestRef.current;
       const text = await resolveText(file);
       if (text == null) {
         showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
@@ -152,6 +158,7 @@ export default function usePastedTextEdit({
        * identity. An editor for an attachment the message already took would save a replacement
        * into the empty composer, so it never opens. */
       if (
+        openRequestRef.current !== request ||
         conversationIdRef.current !== conversationIdAtOpen ||
         getNewConversationDraftToken(index) !== draftTokenAtOpen ||
         !isAttachedToComposer(file)
@@ -172,13 +179,23 @@ export default function usePastedTextEdit({
 
   /** Removes the chip locally and schedules the upload's deletion. A paste restored from a
    * draft carries `attached: true`, which makes `deleteFile` keep the server record because a
-   * restored file is normally shared; a generated paste was created by this composer alone, so
-   * its upload is deleted explicitly instead of being orphaned. */
+   * restored file is normally shared. Only a paste the composer's own draft claims is deleted
+   * explicitly: the session registry also remembers ids of pastes that were already sent and
+   * re-attached from the library, and those files are shared with the messages carrying them. */
   const detach = useCallback(
     (file: ExtendedFile) => {
       const restored = file.attached === true;
       deleteFile({ file, setFiles });
-      if (restored && file.progress >= 1) {
+      if (!restored || file.progress < 1) {
+        return;
+      }
+      const draftPasteIds =
+        getFilesDraftCached(getComposerDraftId(index, conversationIdRef.current, isSubmitting))
+          .pastedTextIds ?? [];
+      const draftOwned = [file.file_id, file.temp_file_id].some(
+        (id) => id != null && id !== '' && draftPasteIds.includes(id),
+      );
+      if (draftOwned) {
         mutateAsync({
           files: [
             {
@@ -191,7 +208,7 @@ export default function usePastedTextEdit({
         });
       }
     },
-    [deleteFile, setFiles, mutateAsync],
+    [deleteFile, setFiles, mutateAsync, index, isSubmitting],
   );
 
   /** The composer an edit belongs to: same conversation, same unsaved-chat identity. */

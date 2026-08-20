@@ -15,6 +15,7 @@ if (typeof Blob.prototype.text !== 'function') {
 import { FileSources } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from '../useFileHandling';
+import type { FilesDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
 
 const mockShowToast = jest.fn();
@@ -32,6 +33,7 @@ const mockState = {
   draftToken: Symbol('new-conversation-draft'),
   saveDrafts: true,
   fileList: [] as TFile[],
+  filesDraft: { fileIds: [], pendingPastes: {}, pastedTextIds: [] } as FilesDraft,
 };
 
 type TFile = { file_id: string; text?: string };
@@ -85,6 +87,7 @@ jest.mock('~/utils', () => ({
   getNewConversationDraftToken: () => mockState.draftToken,
   getComposerDraftId: (index: number, conversationId: string | null) =>
     `${conversationId ?? 'new'}:${index}`,
+  getFilesDraftCached: () => mockState.filesDraft,
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
@@ -121,6 +124,7 @@ describe('usePastedTextEdit', () => {
     mockState.draftToken = Symbol('new-conversation-draft');
     mockState.saveDrafts = true;
     mockState.fileList = [];
+    mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: [] };
     mockRouteFiles.mockImplementation(
       (_files: unknown, _toolResource: unknown, lifecycle: UploadLifecycleCallbacks) => {
         capturedLifecycle = lifecycle;
@@ -205,6 +209,7 @@ describe('usePastedTextEdit', () => {
   });
 
   it('deletes a restored paste record the normal removal path would keep', async () => {
+    mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] };
     const editor = renderEditor();
     const restored = pastedFile({
       attached: true,
@@ -233,6 +238,59 @@ describe('usePastedTextEdit', () => {
         }),
       ],
     });
+  });
+
+  it('spares a sent paste re-attached from the library', async () => {
+    /** The registry remembers the id even though the draft does not: the paste was sent, and
+     * the stored file was re-attached, so its record is shared with the earlier message. */
+    const editor = renderEditor();
+    const reattached = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(reattached);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('discards a stale editor resolution that loses to a later click', async () => {
+    const gates: Array<(text: string) => void> = [];
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          gates.push((text: string) => resolve({ data: new Blob([text], { type: 'text/plain' }) }));
+        }),
+    );
+    const slow = pastedFile({ file_id: 'restored-file', file: undefined });
+    const fast = pastedFile({ file_id: 'pasted-file' });
+    const editor = renderEditor();
+    let slowOpen: Promise<void> = Promise.resolve();
+    await act(async () => {
+      slowOpen = editor.result.current.openEditor(slow);
+    });
+    await act(async () => {
+      await editor.result.current.openEditor(fast);
+    });
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
+
+    /** The earlier, slower click resolves last and must not take the dialog back. */
+    await act(async () => {
+      gates[0]?.('the slow paste');
+      await slowOpen;
+    });
+
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
   });
 
   it('records the replacement as a generated paste', async () => {
