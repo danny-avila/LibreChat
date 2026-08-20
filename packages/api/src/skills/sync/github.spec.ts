@@ -12,6 +12,7 @@ import type {
   UpdateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { RepoTreeEntry, GitRepoAdapter } from './adapters/types';
 import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
@@ -3416,5 +3417,90 @@ describe('createGitHubSkillSyncRunner', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('repository adapter seam', () => {
+  /** Stands in for any provider: a flat repository held in memory. */
+  function createFakeAdapter(files: Record<string, string>): GitRepoAdapter {
+    const entries: RepoTreeEntry[] = Object.entries(files).map(([path, content]) => ({
+      path,
+      type: 'blob',
+      id: `${path}@1`,
+      size: Buffer.byteLength(content),
+    }));
+    return {
+      resolveCommit: async () => ({ id: 'fake-commit', treeId: 'fake-tree' }),
+      fetchTreeEntries: async (_commit, { pathPrefix }) =>
+        entries.filter((entry) => !pathPrefix || entry.path.startsWith(`${pathPrefix}/`)),
+      fetchFileContent: async (_commit, entry) => Buffer.from(files[entry.path]),
+    };
+  }
+
+  it('publishes skills read through any repository client, with no provider requests', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md':
+            '---\nname: research\ndescription: Research things\n---\nBody',
+          'skills/research/scripts/run.sh': 'echo hi',
+        }),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.fetchFn).not.toHaveBeenCalled();
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'research',
+        sourceMetadata: expect.objectContaining({
+          commitSha: 'fake-commit',
+          skillBlobSha: 'skills/research/SKILL.md@1',
+        }),
+      }),
+    );
+    expect(deps.upsertSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relativePath: 'scripts/run.sh',
+        sourceMetadata: expect.objectContaining({
+          commitSha: 'fake-commit',
+          blobSha: 'skills/research/scripts/run.sh@1',
+        }),
+      }),
+    );
+  });
+
+  it('re-downloads a file only when the adapter reports a new content id', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md':
+            '---\nname: research\ndescription: Research things\n---\nBody',
+          'skills/research/scripts/run.sh': 'echo hi',
+        }),
+      getSkillFileByPath: jest.fn(async () => ({
+        _id: new Types.ObjectId(),
+        skillId: new Types.ObjectId(),
+        relativePath: 'scripts/run.sh',
+        file_id: 'existing-file-id',
+        filename: 'run.sh',
+        filepath: '/uploads/existing-file-id__run.sh',
+        source: 'local',
+        sourceMetadata: { blobSha: 'skills/research/scripts/run.sh@1' },
+        mimeType: 'application/x-sh',
+        bytes: 7,
+        category: 'script' as const,
+        isExecutable: false,
+        author: new Types.ObjectId(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
   });
 });
