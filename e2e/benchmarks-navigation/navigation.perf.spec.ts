@@ -201,6 +201,34 @@ async function clickConversation(page: Page, title: string): Promise<void> {
   }, `${title} conversation`);
 }
 
+/**
+ * Holds `GET /api/convos/:id` open for one conversation and resolves to a
+ * release function returning how many requests were held. Anything that awaits
+ * that record before moving the route therefore cannot complete the switch
+ * while the hold is in place, which is what makes the assertion independent of
+ * how fast the database answers.
+ */
+async function holdConversationRecord(page: Page, conversationId: string) {
+  const pattern = `**/api/convos/${conversationId}`;
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let heldRequests = 0;
+
+  await page.route(pattern, async (route) => {
+    heldRequests += 1;
+    await held;
+    await route.continue();
+  });
+
+  return async () => {
+    release();
+    await page.unroute(pattern);
+    return heldRequests;
+  };
+}
+
 async function switchTo(
   page: Page,
   target: { id: string; label: string; title: string },
@@ -280,12 +308,20 @@ test.describe('conversation navigation perf (react-scan)', () => {
      * The warm switch is the case users hit constantly — bouncing between two
      * conversations they have both already opened. Both message caches are
      * populated, so the incoming tree renders a full transcript rather than a
-     * spinner; this is the switch that goes stale.
+     * spinner; this is the switch that went stale.
+     *
+     * The conversation record request is held open across it. A wall-clock
+     * bound could not tell the two implementations apart — against a local
+     * Mongo an implementation that awaits the record still answers well inside
+     * any threshold — so this asserts the property directly: the switch
+     * completes while the request is still unresolved.
      */
     await switchTo(page, CONVO_A);
     await expect(threadHeading(page, CONVO_A.label, 1)).toBeAttached({ timeout: 60_000 });
     await resetPerf(page);
+    const releaseRecord = await holdConversationRecord(page, CONVO_B.id);
     const warm = await switchTo(page, CONVO_B);
+    const heldRequests = await releaseRecord();
     const warmPerf = await snapshotPerf(page);
 
     const coldTotals = totals(coldPerf);
@@ -342,8 +378,11 @@ test.describe('conversation navigation perf (react-scan)', () => {
      * latency: before, the outgoing transcript held for 12-14 frames
      * (~280-300ms) on every switch; after, zero frames. A couple of frames of
      * slack absorbs scheduler noise; anything more means the swap stopped
-     * being atomic (a route update back on React's transition lane, or
-     * navigation gated behind a request again).
+     * being atomic — most likely a route update back on React's transition
+     * lane, which paints the outgoing tree until the incoming one is ready.
+     *
+     * This holds for the cold switch too: waiting for the record there delays
+     * the URL, it does not desynchronise it from the transcript.
      */
     expect(cold.staleFrames).toBeLessThanOrEqual(2);
     expect(warm.staleFrames).toBeLessThanOrEqual(2);
@@ -351,12 +390,18 @@ test.describe('conversation navigation perf (react-scan)', () => {
     expect(warm.staleAfterUrlMs).toBeLessThan(120);
 
     /**
-     * The route must change without waiting on a server round trip. The
-     * clicked row already carries its conversation, so this bound holds even
-     * when the reconciling fetch is slow (measured before: 474-527ms, tracking
-     * the request; after: 180-290ms, tracking only the commit).
+     * A warm switch must not wait on the conversation record: the whole switch
+     * above completed while that request was held open. The hold must have
+     * actually engaged — zero held requests would mean the route pattern
+     * stopped matching and the assertion proved nothing.
+     *
+     * The cold switch is deliberately NOT bounded this way. A conversation
+     * with no cached record still waits for it, because the sidebar row is a
+     * projection without the prompt prefix, sampling params, tools and files a
+     * send needs; landing the route on that would expose a composer whose
+     * sends silently carry defaults.
      */
-    expect(cold.clickToUrlMs).toBeLessThan(400);
+    expect(heldRequests).toBeGreaterThan(0);
     expect(warm.clickToUrlMs).toBeLessThan(400);
 
     /** End to end, both switches stay inside a responsive budget

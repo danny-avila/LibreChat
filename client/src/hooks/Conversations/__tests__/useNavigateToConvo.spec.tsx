@@ -1,22 +1,24 @@
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { MemoryRouter, useLocation } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, act, waitFor } from '@testing-library/react';
 import { QueryKeys } from 'librechat-data-provider';
+import { MemoryRouter, useLocation } from 'react-router-dom';
+import { render, screen, act, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation, TEndpointsConfig } from 'librechat-data-provider';
-import { SetConvoProvider } from '~/Providers';
 import useNavigateToConvo from '../useNavigateToConvo';
+import { SetConvoProvider } from '~/Providers';
 import store from '~/store';
 
-/** The one thing a test cannot own: the HTTP call. Deferred so the assertions
- *  can observe the window between the click and the record landing. */
-let resolveFetch: (conversation: TConversation) => void;
-let rejectFetch: (error: unknown) => void;
+/** The one thing a test cannot own: the HTTP call. Deferred per conversation
+ *  so the assertions can observe the window before a record lands, and can
+ *  settle two in-flight requests out of order. */
+const mockPending = new Map<
+  string,
+  { resolve: (conversation: TConversation) => void; reject: (error: unknown) => void }
+>();
 const mockGetConversationById = jest.fn(
-  () =>
+  (id: string) =>
     new Promise<TConversation>((resolve, reject) => {
-      resolveFetch = resolve;
-      rejectFetch = reject;
+      mockPending.set(id, { resolve, reject });
     }),
 );
 
@@ -24,23 +26,31 @@ jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   dataService: {
     ...jest.requireActual('librechat-data-provider').dataService,
-    getConversationById: (...args: unknown[]) => mockGetConversationById(...(args as [])),
+    getConversationById: (...args: unknown[]) => mockGetConversationById(...(args as [string])),
   },
 }));
 
-const CONVO_ID = 'convo-b';
+const B = 'convo-b';
+const C = 'convo-c';
 
-/** What `getConvosByCursor` projects into the sidebar: no sampling params, no
- *  prompt prefix. Navigating from a row must not overwrite those with nothing. */
-const sidebarRow = {
-  conversationId: CONVO_ID,
+/** What `getConvosByCursor` projects into the sidebar: no prompt prefix, no
+ *  sampling params. Navigating from a row must never expose these as absent. */
+const rowB = {
+  conversationId: B,
   title: 'Bravo',
   endpoint: 'openAI',
   model: 'gpt-4o-mini',
 } as TConversation;
 
-const fullRecord = {
-  conversationId: CONVO_ID,
+const rowC = {
+  conversationId: C,
+  title: 'Charlie',
+  endpoint: 'openAI',
+  model: 'gpt-4o-mini',
+} as TConversation;
+
+const recordB = {
+  conversationId: B,
   title: 'Bravo (stale title)',
   endpoint: 'openAI',
   model: 'gpt-4o',
@@ -48,7 +58,18 @@ const fullRecord = {
   temperature: 0.2,
 } as TConversation;
 
+const recordC = {
+  conversationId: C,
+  title: 'Charlie (full)',
+  endpoint: 'openAI',
+  model: 'gpt-4o',
+  promptPrefix: 'You are verbose.',
+  temperature: 0.9,
+} as TConversation;
+
 const endpointsConfig = { openAI: {} } as unknown as TEndpointsConfig;
+
+const notFound = () => ({ status: 404, message: 'not found' });
 
 function Harness() {
   const { navigateToConvo } = useNavigateToConvo();
@@ -58,22 +79,21 @@ function Harness() {
   return (
     <div>
       <button
-        data-testid="navigate"
-        onClick={() => navigateToConvo(sidebarRow, { currentConvoId: 'convo-a' })}
+        data-testid="go-b"
+        onClick={() => navigateToConvo(rowB, { currentConvoId: 'convo-a' })}
       />
+      <button data-testid="go-c" onClick={() => navigateToConvo(rowC, { currentConvoId: B })} />
       <div data-testid="path">{location.pathname}</div>
       <div data-testid="convo">{JSON.stringify(conversation ?? null)}</div>
     </div>
   );
 }
 
-function renderHarness(cachedConversation?: TConversation) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function renderHarness(cached: TConversation[] = []) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData([QueryKeys.endpoints], endpointsConfig);
-  if (cachedConversation) {
-    queryClient.setQueryData([QueryKeys.conversation, CONVO_ID], cachedConversation);
+  for (const record of cached) {
+    queryClient.setQueryData([QueryKeys.conversation, record.conversationId], record);
   }
 
   render(
@@ -93,70 +113,152 @@ function renderHarness(cachedConversation?: TConversation) {
 
 const currentConvo = (): TConversation | null =>
   JSON.parse(screen.getByTestId('convo').textContent ?? 'null');
+const currentPath = () => screen.getByTestId('path').textContent;
 
-const clickRow = () => {
+const click = (testId: string) => {
   act(() => {
-    screen.getByTestId('navigate').click();
+    screen.getByTestId(testId).click();
+  });
+};
+
+const settle = async (id: string, outcome: TConversation | { status: number }) => {
+  const deferred = mockPending.get(id);
+  if (!deferred) {
+    throw new Error(`no in-flight request for ${id}`);
+  }
+  await act(async () => {
+    if ('conversationId' in outcome) {
+      deferred.resolve(outcome as TConversation);
+    } else {
+      deferred.reject(outcome);
+    }
   });
 };
 
 describe('useNavigateToConvo', () => {
   afterEach(() => {
     mockGetConversationById.mockClear();
+    mockPending.clear();
   });
 
-  it('changes the route and the conversation together, without waiting on the fetch', () => {
-    renderHarness();
-    clickRow();
+  describe('with the full record already cached', () => {
+    it('changes the route and the conversation together, without waiting on the fetch', () => {
+      renderHarness([recordB]);
+      click('go-b');
 
-    /** The record request is in flight and deliberately unresolved: the route
-     *  and the conversation state must already be on the target. Awaiting the
-     *  response here is what left the previous conversation on screen. */
-    expect(mockGetConversationById).toHaveBeenCalledWith(CONVO_ID);
-    expect(screen.getByTestId('path')).toHaveTextContent(`/c/${CONVO_ID}`);
-    expect(currentConvo()?.conversationId).toBe(CONVO_ID);
-  });
-
-  it('underlays the cached full record so the projection cannot drop settings', () => {
-    renderHarness(fullRecord);
-    clickRow();
-
-    const optimistic = currentConvo();
-    /** Fields only the full record carries survive the switch — a send during
-     *  the reconcile window still uses this conversation's real settings. */
-    expect(optimistic?.promptPrefix).toBe('You are terse.');
-    expect(optimistic?.temperature).toBe(0.2);
-    /** ...while the row stays authoritative for what it does carry. */
-    expect(optimistic?.title).toBe('Bravo');
-    expect(optimistic?.model).toBe('gpt-4o-mini');
-  });
-
-  it('applies the server record once it lands', async () => {
-    renderHarness();
-    clickRow();
-
-    await act(async () => {
-      resolveFetch({ ...fullRecord, title: 'Bravo (server)' });
+      /** The refresh is in flight and deliberately unresolved: the route and
+       *  the conversation state must already be on the target. Awaiting the
+       *  response here is what left the previous conversation on screen. */
+      expect(mockGetConversationById).toHaveBeenCalledWith(B);
+      expect(currentPath()).toBe(`/c/${B}`);
+      expect(currentConvo()?.conversationId).toBe(B);
     });
 
-    await waitFor(() => expect(currentConvo()?.title).toBe('Bravo (server)'));
-    expect(currentConvo()?.promptPrefix).toBe('You are terse.');
-    expect(screen.getByTestId('path')).toHaveTextContent(`/c/${CONVO_ID}`);
-  });
+    it('underlays the cached record so the sidebar projection cannot drop settings', () => {
+      renderHarness([recordB]);
+      click('go-b');
 
-  it('keeps the user on the conversation when the record fetch fails, and drops its message cache', async () => {
-    const queryClient = renderHarness();
-    queryClient.setQueryData([QueryKeys.messages, CONVO_ID], [{ messageId: 'stale' }]);
-    clickRow();
-
-    await act(async () => {
-      rejectFetch(new Error('network down'));
+      const optimistic = currentConvo();
+      /** Fields only the record carries survive the switch, so a send during
+       *  the refresh window still uses this conversation's real settings. */
+      expect(optimistic?.promptPrefix).toBe('You are terse.');
+      expect(optimistic?.temperature).toBe(0.2);
+      /** ...while the row stays authoritative for what it does carry. */
+      expect(optimistic?.title).toBe('Bravo');
+      expect(optimistic?.model).toBe('gpt-4o-mini');
     });
 
-    await waitFor(() =>
-      expect(queryClient.getQueryData([QueryKeys.messages, CONVO_ID])).toBeUndefined(),
-    );
-    expect(screen.getByTestId('path')).toHaveTextContent(`/c/${CONVO_ID}`);
-    expect(currentConvo()?.conversationId).toBe(CONVO_ID);
+    it('applies the refreshed record once it lands', async () => {
+      renderHarness([recordB]);
+      click('go-b');
+      await settle(B, { ...recordB, title: 'Bravo (server)' });
+
+      await waitFor(() => expect(currentConvo()?.title).toBe('Bravo (server)'));
+      expect(currentConvo()?.promptPrefix).toBe('You are terse.');
+    });
+  });
+
+  describe('on the first visit, with no cached record', () => {
+    it('holds the route until the record that a send needs is in hand', async () => {
+      renderHarness();
+      click('go-b');
+
+      /** The sidebar row alone would expose a usable composer whose sends
+       *  silently carry default prompt prefix and sampling params. */
+      expect(mockGetConversationById).toHaveBeenCalledWith(B);
+      expect(currentPath()).toBe('/c/convo-a');
+
+      await settle(B, recordB);
+
+      await waitFor(() => expect(currentPath()).toBe(`/c/${B}`));
+      expect(currentConvo()?.promptPrefix).toBe('You are terse.');
+      expect(currentConvo()?.temperature).toBe(0.2);
+    });
+
+    it('still lands on the conversation when the record fetch fails', async () => {
+      const queryClient = renderHarness();
+      queryClient.setQueryData([QueryKeys.messages, B], [{ messageId: 'stale' }]);
+      click('go-b');
+      await settle(B, notFound());
+
+      await waitFor(() => expect(currentPath()).toBe(`/c/${B}`));
+      expect(currentConvo()?.conversationId).toBe(B);
+      /** Cleared before the route moved, so the target mounts a fresh query. */
+      expect(queryClient.getQueryData([QueryKeys.messages, B])).toBeUndefined();
+    });
+  });
+
+  describe('when a later navigation supersedes an in-flight one', () => {
+    it('discards a refresh that resolves after the user moved on', async () => {
+      renderHarness([recordB, recordC]);
+      click('go-b');
+      click('go-c');
+      expect(currentPath()).toBe(`/c/${C}`);
+
+      /** B's refresh lands last. Writing it would restore B into state while
+       *  the route and transcript show C — and sends read from state. */
+      await settle(B, { ...recordB, title: 'Bravo (late)' });
+
+      expect(currentPath()).toBe(`/c/${C}`);
+      expect(currentConvo()?.conversationId).toBe(C);
+      expect(currentConvo()?.title).toBe('Charlie');
+    });
+
+    it('discards a first-visit navigation that resolves after the user moved on', async () => {
+      renderHarness([recordC]);
+      click('go-b');
+      click('go-c');
+      expect(currentPath()).toBe(`/c/${C}`);
+
+      await settle(B, recordB);
+
+      expect(currentPath()).toBe(`/c/${C}`);
+      expect(currentConvo()?.conversationId).toBe(C);
+    });
+  });
+
+  describe('when the refresh fails after the route already moved', () => {
+    it('keeps the mounted message cache on a transient failure', async () => {
+      const queryClient = renderHarness([recordB]);
+      queryClient.setQueryData([QueryKeys.messages, B], [{ messageId: 'loaded' }]);
+      click('go-b');
+      await settle(B, { status: 500 });
+
+      /** The messages query is already mounted, so dropping it here would
+       *  cancel or discard a history fetch with no remount left to retry it. */
+      expect(queryClient.getQueryData([QueryKeys.messages, B])).toEqual([{ messageId: 'loaded' }]);
+      expect(currentPath()).toBe(`/c/${B}`);
+    });
+
+    it('drops the message cache when the conversation is confirmed gone', async () => {
+      const queryClient = renderHarness([recordB]);
+      queryClient.setQueryData([QueryKeys.messages, B], [{ messageId: 'stale' }]);
+      click('go-b');
+      await settle(B, notFound());
+
+      await waitFor(() =>
+        expect(queryClient.getQueryData([QueryKeys.messages, B])).toBeUndefined(),
+      );
+    });
   });
 });
