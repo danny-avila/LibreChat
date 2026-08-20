@@ -418,6 +418,7 @@ export default function ScheduleDialog({
                     required={true}
                     invalid={errors.prompt != null}
                     describedBy="schedule-prompt-message"
+                    showVariables={false}
                     portal={false}
                   />
                   <FieldMessage id="schedule-prompt-message" message={errors.prompt?.message} />
