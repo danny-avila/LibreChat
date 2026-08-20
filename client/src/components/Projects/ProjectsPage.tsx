@@ -257,7 +257,11 @@ const ProjectsError: React.FC<{ error: unknown; onRetry: () => void }> = ({ erro
       ? 'bkl-api 가 구버전입니다. 프로젝트 API 가 포함된 이미지(main-3d7fb57 이후)로 교체가 필요합니다.'
       : status === 403
         ? '이 계정에는 BIMS 사용자 식별자(sid)가 없어 프로젝트를 사용할 수 없습니다. BIMS 연동 계정으로 로그인해 주세요.'
-        : '네트워크 또는 서버 오류입니다. 잠시 후 다시 시도해 주세요.';
+        : status === 401
+          ? // 만료 토큰은 보통 전역 인터셉터가 갱신·재시도해 여기까지 오지
+            // 않는다. 이 문구는 갱신까지 실패한 경우(리프레시 토큰 만료)용.
+            '세션이 만료되었습니다. 다시 로그인해 주세요.'
+          : '네트워크 또는 서버 오류입니다. 잠시 후 다시 시도해 주세요.';
 
   return (
     <div className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border border-red-300 bg-red-50 px-6 py-14 text-center dark:border-red-800 dark:bg-red-950/40">
