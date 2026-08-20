@@ -16,6 +16,9 @@ export type PendingTextAttachmentDraft = {
 export type FilesDraft = {
   fileIds: string[];
   pendingPastes: Record<string, PendingTextAttachmentDraft>;
+  /** Paste-generated attachment ids, kept after `pendingPastes` is consumed so provenance
+   * survives reloads without holding the (much larger) paste text indefinitely. */
+  pastedTextIds?: string[];
 };
 
 type StoredPendingTextAttachmentDraft = {
@@ -32,6 +35,7 @@ type StoredPendingTextAttachmentDraft = {
 type StoredFilesDraft = {
   fileIds: string[];
   pendingPastes: Record<string, StoredPendingTextAttachmentDraft>;
+  pastedTextIds?: string[];
 };
 
 const newConversationDraftTokens = new Map<number, symbol>();
@@ -376,22 +380,61 @@ export const getFilesDraft = (id: string): FilesDraft => {
     return {
       fileIds: Array.isArray(storedDraft.fileIds) ? storedDraft.fileIds : [],
       pendingPastes,
+      pastedTextIds: Array.isArray(storedDraft.pastedTextIds) ? storedDraft.pastedTextIds : [],
     };
   } catch {
     return { fileIds: [], pendingPastes: {} };
   }
 };
 
+let filesDraftCache: { id: string; raw: string | null; draft: FilesDraft } | null = null;
+
+/** Reads a files draft without re-parsing storage when the record has not changed. Paste text can
+ * dominate the draft's size, and consumers re-read per file-map change, not per write. */
+export const getFilesDraftCached = (id: string): FilesDraft => {
+  const raw = getLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  if (filesDraftCache != null && filesDraftCache.id === id && filesDraftCache.raw === raw) {
+    return filesDraftCache.draft;
+  }
+  const draft = getFilesDraft(id);
+  filesDraftCache = { id, raw, draft };
+  return draft;
+};
+
+/** Adds a paste-generated file id to a draft's persistent provenance record. */
+export const addPastedTextDraftFile = ({ id, fileId }: { id: string; fileId: string }): void => {
+  const draft = getFilesDraft(id);
+  if (draft.pastedTextIds?.includes(fileId) === true) {
+    return;
+  }
+  setFilesDraft(id, {
+    ...draft,
+    pastedTextIds: [...(draft.pastedTextIds ?? []), fileId],
+  });
+};
+
 export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
-  if (draft.fileIds.length === 0 && pendingPasteEntries.length === 0) {
+  filesDraftCache = null;
+  if (
+    draft.fileIds.length === 0 &&
+    pendingPasteEntries.length === 0 &&
+    (draft.pastedTextIds?.length ?? 0) === 0
+  ) {
     removeLocalStorageItem(key);
     return;
   }
 
   if (pendingPasteEntries.length === 0) {
-    setLocalStorageItem(key, JSON.stringify(draft.fileIds));
+    setLocalStorageItem(
+      key,
+      JSON.stringify(
+        draft.pastedTextIds?.length
+          ? { fileIds: draft.fileIds, pastedTextIds: draft.pastedTextIds }
+          : draft.fileIds,
+      ),
+    );
     return;
   }
 
@@ -424,7 +467,11 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
 
   setLocalStorageItem(
     key,
-    JSON.stringify({ fileIds: draft.fileIds, pendingPastes } satisfies StoredFilesDraft),
+    JSON.stringify({
+      fileIds: draft.fileIds,
+      pendingPastes,
+      ...(draft.pastedTextIds?.length ? { pastedTextIds: draft.pastedTextIds } : {}),
+    } satisfies StoredFilesDraft),
   );
 };
 
@@ -494,6 +541,7 @@ export const setPendingTextAttachmentDraft = ({
     Math.max(0, ...Object.values(draft.pendingPastes).map((paste) => paste.sequence ?? 0)) + 1;
   setFilesDraft(id, {
     fileIds: draft.fileIds.includes(fileId) ? draft.fileIds : [...draft.fileIds, fileId],
+    pastedTextIds: draft.pastedTextIds,
     pendingPastes: {
       ...draft.pendingPastes,
       [fileId]: {
@@ -526,6 +574,7 @@ export const removePendingTextAttachmentDraft = ({
     fileIds: removeFile
       ? draft.fileIds.filter((draftFileId) => draftFileId !== fileId)
       : draft.fileIds,
+    pastedTextIds: draft.pastedTextIds,
     pendingPastes,
   });
 };

@@ -21,6 +21,8 @@ const pastedFile = (file_id: string): ExtendedFile => ({
 const edit = (file_id: string, text: string): PastedTextEdit => ({
   file: pastedFile(file_id),
   text,
+  conversationId: 'conversation-a',
+  draftToken: Symbol('new-conversation-draft'),
 });
 
 describe('PastedTextDialog', () => {

@@ -20,6 +20,7 @@ function FileFormChat({
   files,
   setFiles,
   setFilesLoading,
+  isPastedTextFile,
   onEditPastedText,
   onMovePastedTextInline,
 }: {
@@ -27,6 +28,9 @@ function FileFormChat({
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Marks chips the composer generated from a long paste, so only those offer the paste
+   * affordances. Filenames cannot carry that decision: users can upload a `pasted-text.txt`. */
+  isPastedTextFile?: (file: ExtendedFile) => boolean;
   onEditPastedText?: (file: ExtendedFile) => void;
   onMovePastedTextInline?: (file: ExtendedFile) => void;
 }) {
@@ -50,6 +54,7 @@ function FileFormChat({
         setFilesLoading={setFilesLoading}
         isRTL={isRTL}
         Wrapper={ChatFileRowWrapper}
+        isPastedTextFile={isPastedTextFile}
         onEditPastedText={onEditPastedText}
         onMovePastedTextInline={onMovePastedTextInline}
       />

@@ -32,6 +32,7 @@ let mockConversation: { endpoint: string; conversationId?: string } = {
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/drafts'),
+  ...jest.requireActual('~/utils/files'),
   forceResize: mockForceResize,
   insertTextAtCursor: mockInsertTextAtCursor,
   resolvePastedTextFile: mockResolvePastedTextFile,
@@ -275,7 +276,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('skips upload-failure recovery when the conversation changed', async () => {
@@ -436,7 +439,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('stores a pending paste under the submitting pane draft key', async () => {
@@ -462,7 +467,9 @@ describe('useTextarea long-paste fallback', () => {
         pastedText,
       ),
     );
-    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -489,7 +496,9 @@ describe('useTextarea long-paste fallback', () => {
         getFilesDraft(getNewConversationDraftId(1)).pendingPastes['pane-1-new-file']?.text,
       ).toBe(pastedText),
     );
-    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -677,10 +686,12 @@ describe('useTextarea long-paste fallback', () => {
     );
     act(() => uploadLifecycle?.onSuccess?.('successful-file'));
 
-    expect(getFilesDraft('convo-1')).toEqual({
-      fileIds: ['successful-file'],
-      pendingPastes: {},
-    });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({
+        fileIds: ['successful-file'],
+        pendingPastes: {},
+      }),
+    );
   });
 
   it('does not treat a successful upload as failed when draft storage reads throw', async () => {

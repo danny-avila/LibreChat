@@ -94,12 +94,15 @@ const FileContainer = ({
                 focusRing,
               )}
             >
-              <span aria-hidden="true" className="group-focus-within:hidden group-hover:hidden">
+              <span
+                aria-hidden="true"
+                className="group-focus-within:hidden group-hover:hidden [@media(hover:none)]:hidden"
+              >
                 {fileType.title}
               </span>
               <span
                 aria-hidden="true"
-                className="hidden group-focus-within:inline group-hover:inline"
+                className="hidden group-focus-within:inline group-hover:inline [@media(hover:none)]:inline"
               >
                 {subtitleAction.label}
               </span>

@@ -494,15 +494,30 @@ export const PASTE_AS_FILE_MIN_LENGTH = 2500;
 
 export const PASTED_TEXT_FILENAME = 'pasted-text.txt';
 
-/** Matches every name `nextPastedTextFilename` can produce, and nothing else. */
-const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-\d+)?\.txt$/;
+/** Matches every name `nextPastedTextFilename` can produce, and nothing else: the counter
+ * starts at the bare name and jumps to 2, so `-0`, `-1`, and zero-padded variants are never
+ * generated and must not read as generated. The alternation is "any integer of 2 or more":
+ * a single digit 2-9, or two or more digits. */
+const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-([2-9]|[1-9]\d+))?\.txt$/;
 
 /**
- * Whether an attachment came from a long paste rather than a deliberate upload. The name is the
- * only marker that survives a reload: `source` is `text` for every "Upload as Text" file too.
+ * Whether a filename is one `nextPastedTextFilename` can produce. Name alone cannot prove an
+ * attachment is a paste, though: a user can deliberately upload a file with one of these names.
+ * Provenance comes from the paste registry and the files draft, not the name.
  */
 export const isPastedTextFilename = (filename?: string | null): boolean =>
   filename != null && PASTED_TEXT_FILENAME_PATTERN.test(filename);
+
+const pastedTextFileIds = new Set<string>();
+
+/** Records that a file id belongs to a paste the composer generated, so its chip can offer the
+ * paste affordances. The registry lives for the session; the files draft persists the ids. */
+export const markPastedTextFile = (fileId: string): void => {
+  pastedTextFileIds.add(fileId);
+};
+
+export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
+  fileId != null && pastedTextFileIds.has(fileId);
 
 export type PasteAsFileContext = {
   /** The user's `pasteLongTextAsFile` preference. */

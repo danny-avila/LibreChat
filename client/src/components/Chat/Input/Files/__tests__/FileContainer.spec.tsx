@@ -148,6 +148,19 @@ describe('FileContainer subtitle action', () => {
     );
   });
 
+  it('keeps the action revealed on devices with no hover to reveal it', () => {
+    render(
+      <FileContainer file={baseFile()} onClick={jest.fn()} subtitleAction={subtitleAction()} />,
+    );
+
+    /** Touch has no hover or focus to announce the swap with, so the label itself must show:
+     * an inert-looking "Plain Text" subtitle that detaches on tap is a trap, not an affordance. */
+    expect(screen.getByText('Plain').className).toContain('[@media(hover:none)]:hidden');
+    expect(screen.getByText('Move back into message').className).toContain(
+      '[@media(hover:none)]:inline',
+    );
+  });
+
   it('styles the action exactly like the subtitle it replaces', () => {
     render(
       <FileContainer file={baseFile()} onClick={jest.fn()} subtitleAction={subtitleAction()} />,

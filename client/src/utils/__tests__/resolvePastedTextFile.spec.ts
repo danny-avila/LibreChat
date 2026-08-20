@@ -219,6 +219,8 @@ describe('isPastedTextFilename', () => {
       'pasted-text-4.txt',
     ]);
     expect(generated.every(isPastedTextFilename)).toBe(true);
+    /** The counter has no ceiling: a busy composer reaches double digits. */
+    expect(isPastedTextFilename('pasted-text-10.txt')).toBe(true);
   });
 
   it.each([
@@ -226,6 +228,9 @@ describe('isPastedTextFilename', () => {
     ['a different extension', 'pasted-text.md'],
     ['a suffix that is not a paste number', 'pasted-text-final.txt'],
     ['a name with the marker in the middle', 'notes-pasted-text.txt'],
+    ['a counter the generator never produces', 'pasted-text-1.txt'],
+    ['a zero counter the generator never produces', 'pasted-text-0.txt'],
+    ['a zero-padded counter the generator never produces', 'pasted-text-02.txt'],
     ['an empty name', ''],
   ])('rejects %s', (_label, filename) => {
     expect(isPastedTextFilename(filename)).toBe(false);

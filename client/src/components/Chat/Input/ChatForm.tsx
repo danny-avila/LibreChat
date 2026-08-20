@@ -17,12 +17,20 @@ import {
   useFocusChatEffect,
 } from '~/hooks';
 import {
+  cn,
+  getModelSpec,
+  hasIncompleteFiles,
+  removeFocusRings,
+  getComposerDraftId,
+  getFilesDraftCached,
+  isPastedTextFileMarked,
+} from '~/utils';
+import {
   useChatContext,
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
-import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import usePastedTextEdit from '~/hooks/Files/usePastedTextEdit';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
@@ -199,7 +207,21 @@ const ChatForm = memo(function ChatForm({
     draftId: answerMode.draftId,
   });
 
-  const pastedTextEdit = usePastedTextEdit({ files, setFiles, textAreaRef });
+  const pastedTextEdit = usePastedTextEdit({ index, files, setFiles, textAreaRef });
+
+  /** Provenance, not the filename, decides which chips are pastes: a user can deliberately
+   * upload a `pasted-text.txt`. Restored provenance comes from the files draft; marks made
+   * this session are read live from the registry, so new pastes need no recompute. */
+  const pastedTextFileIds = useMemo(() => {
+    const draftId = getComposerDraftId(index, conversationId, isSubmitting);
+    const draftIds = getFilesDraftCached(draftId).pastedTextIds ?? [];
+    return new Set<string>(draftIds);
+  }, [index, conversationId, isSubmitting]);
+  const isPastedTextFile = useCallback(
+    (file: ExtendedFile) =>
+      pastedTextFileIds.has(file.file_id) || isPastedTextFileMarked(file.file_id),
+    [pastedTextFileIds],
+  );
 
   const { submitMessage, submitPrompt } = useSubmitMessage();
 
@@ -594,6 +616,7 @@ const ChatForm = memo(function ChatForm({
                 files={files}
                 setFiles={setFiles}
                 setFilesLoading={setFilesLoading}
+                isPastedTextFile={isPastedTextFile}
                 onEditPastedText={pastedTextEdit.openEditor}
                 onMovePastedTextInline={pastedTextEdit.moveInline}
               />

@@ -15,7 +15,9 @@ import {
   getComposerDraftId,
   setPendingTextAttachmentDraft,
   removePendingTextAttachmentDraft,
+  addPastedTextDraftFile,
   setDraft,
+  markPastedTextFile,
   getEntityName,
   getEntity,
   checkIfScrollable,
@@ -400,7 +402,9 @@ export default function useTextarea({
       }
       const composerValue = textArea.value;
       const pendingFileId = v4();
+      markPastedTextFile(pendingFileId);
       if (saveDrafts) {
+        addPastedTextDraftFile({ id: draftId, fileId: pendingFileId });
         try {
           setDraft({ id: draftId, value: composerValue, persistExact: true });
           setPendingTextAttachmentDraft({
@@ -465,10 +469,12 @@ export default function useTextarea({
         fileId: pendingFileId,
         shouldCommit: isOriginatingComposer,
         onStart: (fileId) => {
+          markPastedTextFile(fileId);
           if (!saveDrafts || fileId === pendingFileId) {
             return;
           }
           try {
+            addPastedTextDraftFile({ id: draftId, fileId });
             removePendingTextAttachmentDraft({
               id: draftId,
               fileId: pendingFileId,

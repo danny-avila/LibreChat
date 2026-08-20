@@ -20,6 +20,7 @@ import {
   setFilesDraft,
 } from '~/utils';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
+import { markPastedTextFile } from '~/utils/files';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
@@ -77,6 +78,7 @@ export const useAutoSave = ({
       const activeFileIds = new Set(filesRef.current.keys());
       const fileIdsToKeep: string[] = [];
       const pendingPastes = { ...filesDraft.pendingPastes };
+      const pastedTextIds = [...(filesDraft.pastedTextIds ?? [])];
       const pastesToRecover: PendingTextAttachmentDraft[] = [];
 
       // Retrieve files stored in localStorage from files in fileList and set them to `setFiles`
@@ -93,6 +95,14 @@ export const useAutoSave = ({
 
         if (fileToRecover) {
           fileIdsToKeep.push(fileId);
+          if (pendingPastes[fileId] != null && !pastedTextIds.includes(fileId)) {
+            /** Consuming the paste record here, so its id moves to the persistent provenance
+             * list: the text is no longer kept, but the chip must stay recognizable as a paste. */
+            pastedTextIds.push(fileId);
+          }
+          if (pastedTextIds.includes(fileId)) {
+            markPastedTextFile(fileToRecover.file_id);
+          }
           delete pendingPastes[fileId];
           setFiles((currentFiles) => {
             const updatedFiles = new Map(currentFiles);
@@ -127,7 +137,11 @@ export const useAutoSave = ({
         fileIdsToKeep.push(fileId);
       });
 
-      setFilesDraft(id, { fileIds: fileIdsToKeep, pendingPastes });
+      setFilesDraft(id, {
+        fileIds: fileIdsToKeep,
+        pastedTextIds,
+        pendingPastes,
+      });
       return pastesToRecover;
     },
     [fileList, setFiles],
@@ -316,6 +330,7 @@ export const useAutoSave = ({
     ];
     setFilesDraft(conversationId, {
       fileIds: draftFileIds,
+      pastedTextIds: existingDraft.pastedTextIds,
       pendingPastes: existingDraft.pendingPastes,
     });
   }, [conversationId, saveDrafts, currentConversationId, fileIds]);
