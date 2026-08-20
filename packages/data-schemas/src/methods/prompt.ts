@@ -59,13 +59,22 @@ function isCachedIdArray(value: unknown): value is string[] {
 /**
  * Reads the tenant's invalidation generation. Cached entries are keyed by it, so a
  * bump orphans every previous entry for this tenant without touching other tenants.
- * Resolves undefined when the marker cannot be read: guessing a generation then
- * could serve an orphaned pre-mutation entry, so callers must bypass the cache.
+ * A missing marker (fresh tenant, or evicted under a Redis eviction policy) is
+ * reinitialized to a fresh never-before-used value rather than falling back to
+ * zero, where an evicted era's orphaned entry could still be read. Resolves
+ * undefined when the marker cannot be read: guessing a generation then could
+ * serve an orphaned entry, so callers must bypass the cache.
  */
 async function readAccessGeneration(cache: CacheStore): Promise<number | undefined> {
+  const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
   try {
-    const value = await cache.get(scopedCacheKey(ACCESS_GENERATION_KEY));
-    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    const value = await cache.get(generationKey);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    const initialized = Math.max(Date.now(), 1);
+    await cache.set(generationKey, initialized, Time.ONE_DAY);
+    return initialized;
   } catch {
     return undefined;
   }

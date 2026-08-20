@@ -315,6 +315,24 @@ describe('getPromptGroupAccessContext', () => {
     expect(idStrings(recovered.ownedPromptGroupIds)).toEqual([ownGroup._id.toString()]);
   });
 
+  it('reinitializes an evicted marker instead of reusing generation zero', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+    await methods.invalidatePromptGroupAccessContext();
+    /** Simulate the marker being evicted while the pre-revocation entry is still alive */
+    cacheMap.delete('access:generation');
+
+    const after = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(after.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
   it('bypasses the cache instead of guessing a generation when the marker read fails', async () => {
     const userId = new mongoose.Types.ObjectId();
     const ownGroup = await seedGroupAndPrompt(userId);
