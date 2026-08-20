@@ -32,42 +32,33 @@ export class ReadThroughCache<T> {
     return this.ttl > 0;
   }
 
-  /** Whether the store holds an entry for `key`, including one that decodes to
-   *  an absent value; lets callers negative-cache lookups like Keyv did. */
-  async has(key: string): Promise<boolean> {
+  /** Single decoded read: `hit` distinguishes a stored value (which may
+   *  legitimately be absent) from a miss, so callers can negative-cache. An
+   *  undecodable entry (e.g. after a credentials-key rotation) self-heals: it
+   *  is deleted and reported as a miss so the caller refetches. */
+  async getEntry(key: string): Promise<{ hit: boolean; value: T | undefined }> {
     if (!this.enabled) {
-      return false;
-    }
-    try {
-      return (await this.cache.get(key)) !== undefined;
-    } catch (error) {
-      logger.warn('[ReadThroughCache] Store read failed; treating as a miss:', error);
-      return false;
-    }
-  }
-
-  async get(key: string): Promise<T | undefined> {
-    if (!this.enabled) {
-      return undefined;
+      return { hit: false, value: undefined };
     }
     let raw: unknown;
     try {
       raw = await this.cache.get(key);
     } catch (error) {
       logger.warn('[ReadThroughCache] Store read failed; treating as a miss:', error);
-      return undefined;
+      return { hit: false, value: undefined };
     }
     if (raw === undefined) {
-      return undefined;
+      return { hit: false, value: undefined };
     }
     if (!this.transforms?.decode) {
-      return raw as T;
+      return { hit: true, value: raw as T };
     }
     try {
-      return await this.transforms.decode(raw as string);
+      return { hit: true, value: await this.transforms.decode(raw as string) };
     } catch (error) {
-      logger.warn('[ReadThroughCache] Failed to decode cached entry; treating as a miss:', error);
-      return undefined;
+      logger.warn('[ReadThroughCache] Failed to decode cached entry; deleting and missing:', error);
+      await this.delete(key);
+      return { hit: false, value: undefined };
     }
   }
 

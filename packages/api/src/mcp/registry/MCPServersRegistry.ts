@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
-import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
+import { logger, encryptV2, decryptV2, scopedCacheKey } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type { ReadThroughTransforms } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
@@ -354,8 +354,9 @@ export class MCPServersRegistry {
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
     let base: t.ParsedServerConfig | undefined;
-    if (await this.readThroughCache.has(cacheKey)) {
-      base = await this.readThroughCache.get(cacheKey);
+    const cached = await this.readThroughCache.getEntry(cacheKey);
+    if (cached.hit) {
+      base = cached.value;
     } else {
       const configFromYaml = await this.cacheConfigsRepo.get(serverName);
       if (configFromYaml) {
@@ -435,7 +436,10 @@ export class MCPServersRegistry {
     userId?: string,
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    const cacheKey = userId ?? '__no_user__';
+    /** Tenant-scoped (also covering the single-flight map): the DB read behind
+     *  a miss is filtered by the active tenant, so entries and in-flight
+     *  builds must partition the same way. */
+    const cacheKey = scopedCacheKey(userId ?? '__no_user__');
 
     const cached = await this.readThroughCacheAll.get(cacheKey);
     if (cached !== undefined) {
@@ -915,8 +919,10 @@ export class MCPServersRegistry {
     }
   }
 
+  /** Tenant-scoped because DB-backed lookups are filtered by the active tenant:
+   *  an entry populated in one tenant's context must never satisfy another's. */
   private getReadThroughCacheKey(serverName: string, userId?: string): string {
-    return userId ? `${serverName}::${userId}` : serverName;
+    return scopedCacheKey(userId ? `${serverName}::${userId}` : serverName);
   }
 
   private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {

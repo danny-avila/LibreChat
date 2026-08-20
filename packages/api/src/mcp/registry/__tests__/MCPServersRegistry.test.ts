@@ -106,6 +106,36 @@ describe('MCPServersRegistry', () => {
       expect(configs).toHaveProperty('user_server');
     });
 
+    it('should partition read-through entries by tenant', async () => {
+      const { tenantStorage } = await import('@librechat/data-schemas');
+      const dbGetAll = jest.spyOn(registry['dbConfigsRepo'], 'getAll');
+      dbGetAll.mockResolvedValueOnce({ tenant_a_server: testParsedConfig });
+      dbGetAll.mockResolvedValueOnce({ tenant_b_server: testParsedConfig });
+
+      /** The DB read behind each miss is tenant-filtered, so the cached maps
+       *  must never cross tenants even for the same userId. */
+      const inA = await tenantStorage.run(
+        { tenantId: 'tenant-a' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+      const inB = await tenantStorage.run(
+        { tenantId: 'tenant-b' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+
+      expect(Object.keys(inA)).toEqual(['tenant_a_server']);
+      expect(Object.keys(inB)).toEqual(['tenant_b_server']);
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      /** Within one tenant the entry is reused without a second DB read. */
+      const inAAgain = await tenantStorage.run(
+        { tenantId: 'tenant-a' },
+        async () => await registry.getAllServerConfigs('user-1'),
+      );
+      expect(Object.keys(inAAgain)).toEqual(['tenant_a_server']);
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+    });
+
     it('should keep YAML servers authoritative when a DB server has the same name', async () => {
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
       const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };

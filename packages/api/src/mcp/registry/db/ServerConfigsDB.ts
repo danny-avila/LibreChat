@@ -537,23 +537,32 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @returns record of parsed configs
    */
   public async getAll(userId?: string, role?: string): Promise<Record<string, ParsedServerConfig>> {
-    /** The candidate scan, principals resolution, and the public direct-server
-     *  ACL read are independent, so they all start together; awaiting them
-     *  through one Promise.all attaches rejection handlers to each as created. */
     const candidatesPromise = this._dbMethods.getAgentsWithMCPServerNames();
     const principalsPromise: Promise<ResolvedPrincipal[]> | undefined = userId
       ? this._aclService.getUserPrincipals({ userId, role })
       : undefined;
-    const publicDirectIdsPromise = userId
-      ? undefined
+    /** Direct-server ids depend on principals only for the user path; chaining
+     *  off the principals promise attaches a rejection handler at creation for
+     *  both branches, and the public branch starts immediately. */
+    const directIdsPromise: Promise<Types.ObjectId[]> = principalsPromise
+      ? principalsPromise.then((principalsList) =>
+          this._aclService.findAccessibleResourcesForPrincipals({
+            principalsList,
+            requiredPermissions: PermissionBits.VIEW,
+            resourceType: ResourceType.MCPSERVER,
+          }),
+        )
       : this._aclService.findPubliclyAccessibleResources({
           resourceType: ResourceType.MCPSERVER,
           requiredPermissions: PermissionBits.VIEW,
         });
 
-    const [agentCandidates, principalsList] = await Promise.all([
+    /** One settlement for the three started reads, so none of their rejections
+     *  can surface as unhandled. */
+    const [agentCandidates, principalsList, directlyAccessibleMCPIds] = await Promise.all([
       candidatesPromise,
       principalsPromise ?? Promise.resolve([]),
+      directIdsPromise,
     ]);
     const candidateIds = agentCandidates.map((agent) => agent._id);
 
@@ -561,15 +570,11 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       `[ServerConfigsDB.getAll] resolving access for ${userId ?? 'public'}; ${candidateIds.length} agent candidate(s) reference MCP servers`,
     );
 
-    const [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
-      publicDirectIdsPromise ??
-        this._aclService.findAccessibleResourcesForPrincipals({
-          principalsList,
-          requiredPermissions: PermissionBits.VIEW,
-          resourceType: ResourceType.MCPSERVER,
-        }),
-      this.findAccessibleAgentIds(candidateIds, userId, principalsList),
-    ]);
+    const accessibleAgentIds = await this.findAccessibleAgentIds(
+      candidateIds,
+      userId,
+      principalsList,
+    );
 
     const agentMCPServerNames = unionMCPServerNames(agentCandidates, accessibleAgentIds);
     const directResults = await this._dbMethods.getListMCPServersByIds({

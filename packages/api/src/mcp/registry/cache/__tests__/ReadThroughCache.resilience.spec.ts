@@ -129,7 +129,10 @@ describe('per-server ReadThroughCache resilience', () => {
     const store = storeFor(namespace);
 
     await cache.set('server::user', 'never-cached');
-    await expect(cache.get('server::user')).resolves.toBeUndefined();
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: false,
+      value: undefined,
+    });
     expect(store.set).not.toHaveBeenCalled();
   });
 
@@ -141,7 +144,10 @@ describe('per-server ReadThroughCache resilience', () => {
     store.set.mockRejectedValue(new Error('redis unavailable'));
     store.delete.mockRejectedValue(new Error('redis unavailable'));
 
-    await expect(cache.get('server::user')).resolves.toBeUndefined();
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: false,
+      value: undefined,
+    });
     await expect(cache.set('server::user', 'value')).resolves.toBeUndefined();
     await expect(cache.delete('server::user')).resolves.toBeUndefined();
   });
@@ -159,6 +165,27 @@ describe('per-server ReadThroughCache resilience', () => {
     const [, stored] = store.set.mock.calls[0];
     expect(String(stored)).not.toContain('secret-value');
     store.get.mockResolvedValueOnce(stored);
-    await expect(cache.get('server::user')).resolves.toBe('secret-value');
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: true,
+      value: 'secret-value',
+    });
+  });
+
+  test('an undecodable entry is deleted and reported as a miss', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const cache = new ReadThroughCache<string>(namespace, 60_000, {
+      encode: (value) => value,
+      decode: () => {
+        throw new Error('key rotation');
+      },
+    });
+    const store = storeFor(namespace);
+    store.get.mockResolvedValueOnce('stale-ciphertext');
+
+    await expect(cache.getEntry('server::user')).resolves.toEqual({
+      hit: false,
+      value: undefined,
+    });
+    expect(store.delete).toHaveBeenCalledWith('server::user');
   });
 });

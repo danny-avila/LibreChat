@@ -119,25 +119,29 @@ export class ReadThroughAllCache<T> {
     if (raw === undefined) {
       return undefined;
     }
-    /** Re-check after the fetch: an invalidation landing mid-read must not have
-     *  its pre-mutation value memoized for a full TTL window. */
+    let value: T;
+    if (!this.transforms?.decode) {
+      value = raw as T;
+    } else {
+      try {
+        value = await this.transforms.decode(raw as string);
+      } catch (error) {
+        /** Fail open to a miss: an undecodable entry is stale across a key
+         *  rotation, not a reason to break the request. */
+        logger.warn(
+          '[ReadThroughAllCache] Failed to decode cached entry; treating as a miss:',
+          error,
+        );
+        return undefined;
+      }
+    }
+    /** Re-check after the full read (decode included): an invalidation landing
+     *  mid-read must not have its pre-mutation value memoized for a full TTL
+     *  window. */
     if ((await this.readGeneration()) !== generation) {
       return undefined;
     }
-    if (!this.transforms?.decode) {
-      return this.memoize(key, raw as T);
-    }
-    try {
-      return this.memoize(key, await this.transforms.decode(raw as string));
-    } catch (error) {
-      /** Fail open to a miss: an undecodable entry is stale across a key
-       *  rotation, not a reason to break the request. */
-      logger.warn(
-        '[ReadThroughAllCache] Failed to decode cached entry; treating as a miss:',
-        error,
-      );
-      return undefined;
-    }
+    return this.memoize(key, value);
   }
 
   private memoize(key: string, value: T): T {
