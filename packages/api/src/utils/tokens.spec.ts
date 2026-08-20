@@ -7,6 +7,12 @@ describe('getModelMaxTokens partial-override fallback', () => {
     'custom-model': { prompt: 1, completion: 2, context: 32000, output: 4096 },
   };
 
+  it('returns undefined for non-string model values from JavaScript consumers', () => {
+    for (const model of [undefined, null, 123]) {
+      expect(getModelMaxTokens(model as unknown as string)).toBeUndefined();
+    }
+  });
+
   it('uses the override for a listed model', () => {
     expect(getModelMaxTokens('custom-model', EModelEndpoint.openAI, partialOverride)).toBe(32000);
   });

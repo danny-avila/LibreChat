@@ -15,8 +15,8 @@ import {
   BedrockProviders,
   anthropicSettings,
 } from './types';
-import { supportsPromptCache } from './bedrock';
 import { SettingDefinition, SettingsConfiguration } from './generate';
+import { supportsPromptCache } from './bedrock';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {

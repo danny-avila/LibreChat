@@ -670,6 +670,10 @@ export function getModelMaxTokens(
   endpoint: EModelEndpoint = EModelEndpoint.openAI,
   endpointTokenConfig?: EndpointTokenConfig,
 ): number | undefined {
+  if (typeof modelName !== 'string') {
+    return undefined;
+  }
+
   /** A partial override only covers the models it lists; fall back to the
    *  built-in map for unlisted models instead of dropping to the default
    *  budget (matches buildTokenConfigMap and getMultiplier). */

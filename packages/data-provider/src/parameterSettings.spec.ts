@@ -1,6 +1,6 @@
-import { EModelEndpoint } from './types';
-import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
 import type { SettingDefinition } from './generate';
+import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
+import { EModelEndpoint } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const anthropicParams = paramSettings[EModelEndpoint.anthropic] as SettingDefinition[];
