@@ -11,6 +11,7 @@ export type ConvoActionsProps = {
   title: string | null;
   isPinned?: boolean;
   isArchived?: boolean;
+  isUnseen?: boolean;
   isActiveConvo: boolean;
   isShiftHeld?: boolean;
   isPopoverActive: boolean;
