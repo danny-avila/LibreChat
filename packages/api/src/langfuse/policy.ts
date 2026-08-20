@@ -1,3 +1,4 @@
+import * as agentsRuntime from '@librechat/agents';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
 
@@ -6,6 +7,22 @@ const MAX_TRACE_ID_ACCUMULATION = 0xffffffff;
 
 export function isLangfuseTenantExportEnabled(): boolean {
   return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
+}
+
+/**
+ * Whether the installed `@librechat/agents` runtime enforces
+ * `LangfuseConfig.privacy` (content masking and media suppression). Runtimes
+ * without the export ignore the field, so a privacy mode must disable trace
+ * export for the run rather than send unmasked content.
+ */
+export function isLangfusePrivacyMaskingSupported(): boolean {
+  return (
+    (
+      agentsRuntime as {
+        LANGFUSE_PRIVACY_MASKING_SUPPORTED?: boolean;
+      }
+    ).LANGFUSE_PRIVACY_MASKING_SUPPORTED === true
+  );
 }
 
 export function isLangfuseCentralMediaUploadDisabled(): boolean {
