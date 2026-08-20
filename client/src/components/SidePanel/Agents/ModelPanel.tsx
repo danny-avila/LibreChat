@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
-import { Button, ControlCombobox } from '@librechat/client';
+import { Alert, Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import {
   alternateName,
@@ -23,9 +23,14 @@ import { cn } from '~/utils';
 
 export default function ModelPanel({
   providers,
+  modelsError,
+  modelsLoaded,
   setActivePanel,
   models: modelsData,
-}: Pick<AgentModelPanelProps, 'models' | 'providers' | 'setActivePanel'>) {
+}: Pick<
+  AgentModelPanelProps,
+  'models' | 'modelsError' | 'modelsLoaded' | 'providers' | 'setActivePanel'
+>) {
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
 
@@ -46,8 +51,18 @@ export default function ModelPanel({
     () => (provider ? (modelsData[provider] ?? []) : []),
     [modelsData, provider],
   );
+  let modelPlaceholder = localize('com_ui_select_provider_first');
+  if (!modelsLoaded && !modelsError) {
+    modelPlaceholder = localize('com_ui_loading');
+  } else if (provider) {
+    modelPlaceholder = localize('com_ui_select_model');
+  }
 
   useEffect(() => {
+    if (!modelsLoaded) {
+      return;
+    }
+
     const _model = model ?? '';
     if (provider && _model) {
       const modelExists = models.includes(_model);
@@ -62,7 +77,7 @@ export default function ModelPanel({
     if (provider && !_model) {
       setValue('model', models[0] ?? '');
     }
-  }, [provider, models, modelsData, setValue, model]);
+  }, [provider, models, modelsData, modelsLoaded, setValue, model]);
 
   const { data: endpointsConfig = {} } = useGetEndpointsQuery();
 
@@ -146,6 +161,7 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="provider"
                     selectedValue={value}
                     displayValue={alternateName[display] ?? display}
                     selectPlaceholder={localize('com_ui_select_provider')}
@@ -171,7 +187,7 @@ export default function ModelPanel({
           />
         </div>
         {/* Model */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={!modelsLoaded && !modelsError}>
           <label
             id="model-label"
             className={cn(
@@ -190,19 +206,16 @@ export default function ModelPanel({
               return (
                 <>
                   <ControlCombobox
+                    selectId="model"
                     selectedValue={field.value || ''}
-                    selectPlaceholder={
-                      provider
-                        ? localize('com_ui_select_model')
-                        : localize('com_ui_select_provider_first')
-                    }
+                    selectPlaceholder={modelPlaceholder}
                     searchPlaceholder={localize('com_ui_select_model')}
                     setValue={field.onChange}
                     items={models.map((model) => ({
                       label: model,
                       value: model,
                     }))}
-                    disabled={!provider}
+                    disabled={!provider || !modelsLoaded}
                     className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_model')}
                     isCollapsed={false}
@@ -217,6 +230,11 @@ export default function ModelPanel({
               );
             }}
           />
+          {modelsError && (
+            <Alert variant="error" className="mt-1">
+              {localize('com_error_models_not_loaded')}
+            </Alert>
+          )}
         </div>
       </div>
       {/* Model Parameters */}

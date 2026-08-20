@@ -314,7 +314,12 @@ export default function AgentPanel() {
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
-  const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+  const modelsLoaded = modelsQuery.isSuccess && modelsQuery.isFetchedAfterMount;
+  const modelsError = !modelsQuery.isSuccess && modelsQuery.isFetchedAfterMount;
+  const models = useMemo(
+    () => (modelsLoaded ? (modelsQuery.data ?? {}) : {}),
+    [modelsLoaded, modelsQuery.data],
+  );
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(defaultStatefulCodeEnvironment),
     mode: 'onChange',
@@ -633,7 +638,13 @@ export default function AgentPanel() {
             </div>
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+            <ModelPanel
+              models={models}
+              modelsError={modelsError}
+              modelsLoaded={modelsLoaded}
+              providers={providers}
+              setActivePanel={setActivePanel}
+            />
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
             <AgentConfig />
