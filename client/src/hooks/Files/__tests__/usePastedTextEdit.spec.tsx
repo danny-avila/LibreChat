@@ -25,6 +25,7 @@ const mockDeleteFiles = jest.fn();
 const mockRouteFiles = jest.fn();
 const mockFileDownload = jest.fn();
 const mockMarkPastedTextFile = jest.fn();
+const mockRetainFileDeletion = jest.fn();
 const mockAddPastedTextDraftFile = jest.fn();
 
 /** Values the module-level mocks read, so each test can stage its own scenario. */
@@ -92,6 +93,7 @@ jest.mock('~/utils', () => ({
     mockState.draftsById[id] ?? { fileIds: [], pendingPastes: {}, pastedTextIds: [] },
   getBrowserTabId: () => mockState.tabId,
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
+  retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
 }));
@@ -119,6 +121,7 @@ describe('usePastedTextEdit', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockDeleteFiles.mockResolvedValue(undefined);
     capturedLifecycle = undefined;
     mockState.conversation = {
       conversationId: 'conversation-a',
@@ -338,6 +341,37 @@ describe('usePastedTextEdit', () => {
     expect(mockDeleteFile).toHaveBeenCalledTimes(1);
     expect(mockDeleteFiles).toHaveBeenCalledWith({
       files: [expect.objectContaining({ file_id: 'pasted-file' })],
+    });
+  });
+
+  it('retains a failed restored-paste deletion for retry', async () => {
+    mockDeleteFiles.mockRejectedValueOnce(new Error('offline'));
+    mockState.draftsById = {
+      'conversation-a:0:idle': { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] },
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+    expect(mockRetainFileDeletion).toHaveBeenCalledWith({
+      file_id: 'pasted-file',
+      embedded: false,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
     });
   });
 

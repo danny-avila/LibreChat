@@ -18,6 +18,7 @@ const mockState = {
   tabId: 'this-tab',
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   files: new Map<string, LiveFile>(),
+  retainedDeletions: [] as { file_id: string; filepath: string; source: string }[],
   fileList: undefined as
     | {
         file_id: string;
@@ -57,6 +58,12 @@ jest.mock('~/utils', () => ({
   getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
   getFilesDraft: () => mockState.filesDraft,
   getBrowserTabId: () => mockState.tabId,
+  takeRetainedFileDeletions: () => mockState.retainedDeletions,
+  clearRetainedFileDeletion: (fileId: string) => {
+    mockState.retainedDeletions = mockState.retainedDeletions.filter(
+      (record) => record.file_id !== fileId,
+    );
+  },
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -98,6 +105,7 @@ describe('useNewChat', () => {
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
     mockState.files = new Map();
     mockState.fileList = undefined;
+    mockState.retainedDeletions = [];
   });
 
   it('clears the outgoing conversation before resetting', () => {
@@ -323,6 +331,62 @@ describe('useNewChat', () => {
         { file_id: 'late-paste', embedded: false, filepath: '/uploads/late.txt', source: 'local' },
       ],
     });
+  });
+
+  it('drains a deletion another flow retained after a failed request', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['stored-file'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['stored-file', { file_id: 'stored-file', progress: 1 }]]);
+    mockState.retainedDeletions = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    /** The retained payload rides along the retry effect's next files-cache tick. */
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'stored-file', filepath: '/uploads/stored.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        {
+          file_id: 'stored-file',
+          embedded: false,
+          filepath: '/uploads/stored.txt',
+          source: 'local',
+        },
+        { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+      ],
+    });
+    expect(mockState.retainedDeletions).toHaveLength(0);
+  });
+
+  it('keeps retained deletions when the retried request fails again', async () => {
+    mockDeleteFiles.mockRejectedValueOnce(new Error('offline'));
+    mockState.retainedDeletions = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    mockState.fileList = [];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+    expect(mockState.retainedDeletions).toHaveLength(1);
   });
 
   it('retries a deferred deletion whose request failed', async () => {

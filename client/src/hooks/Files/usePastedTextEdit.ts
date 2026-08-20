@@ -18,6 +18,7 @@ import {
   getFilesDraftCached,
   markPastedTextFile,
   nextPastedTextFilename,
+  retainFileDeletion,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetFiles } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
@@ -205,15 +206,16 @@ export default function usePastedTextEdit({
         );
       });
       if (draftOwned) {
-        mutateAsync({
-          files: [
-            {
-              file_id: file.file_id,
-              embedded: file.embedded ?? false,
-              filepath: file.filepath ?? '',
-              source: file.source ?? FileSources.local,
-            },
-          ],
+        const deletion = {
+          file_id: file.file_id,
+          embedded: file.embedded ?? false,
+          filepath: file.filepath ?? '',
+          source: file.source ?? FileSources.local,
+        };
+        /** The chip is already gone, so a failed request cannot be rebuilt from the composer;
+         * the payload is retained for the discard path's next retry. */
+        mutateAsync({ files: [deletion] }).catch(() => {
+          retainFileDeletion(deletion);
         });
       }
     },

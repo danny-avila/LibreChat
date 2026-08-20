@@ -8,10 +8,12 @@ import type { ExtendedFile } from '~/common';
 import {
   clearAllDrafts,
   clearMessagesCache,
+  clearRetainedFileDeletion,
   getBrowserTabId,
   getFilesDraft,
   getNewConversationDraftId,
   getPendingDraftId,
+  takeRetainedFileDeletions,
 } from '~/utils';
 import { useGetFiles, useDeleteFilesMutation } from '~/data-provider';
 import useNewConvo from '~/hooks/useNewConvo';
@@ -101,7 +103,8 @@ export default function useNewChat({
   const [pendingDiscardIds, setPendingDiscardIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if (pendingDiscardIds.length === 0 || fileList == null) {
+    const retained = takeRetainedFileDeletions();
+    if ((pendingDiscardIds.length === 0 && retained.length === 0) || fileList == null) {
       return;
     }
     let cancelled = false;
@@ -131,13 +134,19 @@ export default function useNewChat({
           deletable.push(deletableRecord);
         }
       }
-      if (deletable.length > 0) {
+      /** Deletions other flows retained after a failed request ride along: their payloads
+       * cannot be rebuilt, so they retry here until one succeeds. */
+      const batch = [...deletable, ...retained];
+      if (batch.length > 0) {
         try {
-          await mutateAsync({ files: deletable });
+          await mutateAsync({ files: batch });
         } catch {
           /** The draft is already gone, so these ids are the only record of what to clean:
            * keep them for the next files-cache update rather than orphaning the uploads. */
           return;
+        }
+        for (const record of retained) {
+          clearRetainedFileDeletion(record.file_id);
         }
       }
       if (!cancelled && stillPending.length !== pendingDiscardIds.length) {

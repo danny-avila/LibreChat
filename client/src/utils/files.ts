@@ -21,7 +21,13 @@ import {
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig, RegexLike } from 'librechat-data-provider';
+import type {
+  TFile,
+  EndpointFileConfig,
+  FileConfig,
+  FileSources,
+  RegexLike,
+} from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
@@ -518,6 +524,29 @@ export const markPastedTextFile = (fileId: string): void => {
 
 export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
   fileId != null && pastedTextFileIds.has(fileId);
+
+/** A file deletion whose request failed, kept with everything needed to retry it: the chip it
+ * came from is already gone, so the payload cannot be rebuilt from the composer. */
+export type PendingFileDeletion = {
+  file_id: string;
+  embedded: boolean;
+  filepath: string;
+  source: FileSources;
+};
+
+const retainedFileDeletions = new Map<string, PendingFileDeletion>();
+
+export const retainFileDeletion = (record: PendingFileDeletion): void => {
+  retainedFileDeletions.set(record.file_id, record);
+};
+
+export const clearRetainedFileDeletion = (fileId: string): void => {
+  retainedFileDeletions.delete(fileId);
+};
+
+/** The deletions waiting for a retry; ownership stays with the store until one succeeds. */
+export const takeRetainedFileDeletions = (): PendingFileDeletion[] =>
+  Array.from(retainedFileDeletions.values());
 
 export type PasteAsFileContext = {
   /** The user's `pasteLongTextAsFile` preference. */
