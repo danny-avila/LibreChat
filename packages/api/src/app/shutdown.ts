@@ -23,6 +23,7 @@ const tasks: ShutdownTask[] = [];
 let nextRegistrationOrder = 0;
 let isShuttingDown = false;
 let httpServer: Server | null = null;
+let forceExitTimer: NodeJS.Timeout | null = null;
 
 /**
  * Register a cleanup task for graceful shutdown. Post-drain is the default phase.
@@ -73,6 +74,11 @@ export function __resetShutdownStateForTests(): void {
   nextRegistrationOrder = 0;
   isShuttingDown = false;
   httpServer = null;
+  /** A drain that never settles leaves this armed. It is `unref`'d, so it does
+   *  not hold the process open — but it does fire if anything else keeps the
+   *  process alive past the timeout, exiting a suite that had long since moved
+   *  on with code 1 and no attributable failure. */
+  clearForceExitTimer();
 }
 
 async function runShutdownTasks(phase: ShutdownPhase): Promise<void> {
@@ -93,6 +99,13 @@ async function runShutdownTasks(phase: ShutdownPhase): Promise<void> {
   }
 }
 
+function clearForceExitTimer(): void {
+  if (forceExitTimer) {
+    clearTimeout(forceExitTimer);
+    forceExitTimer = null;
+  }
+}
+
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (isShuttingDown) {
     return;
@@ -100,24 +113,33 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   isShuttingDown = true;
   logger.info(`Received ${signal}, draining HTTP server...`);
 
+  /** Owned locally so a late `finally` from a superseded drain cannot clear the
+   *  safety net belonging to a shutdown that started after it. */
   const forceExit = setTimeout(() => {
     logger.warn(`Graceful shutdown exceeded ${SHUTDOWN_TIMEOUT_MS}ms, forcing exit`);
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
   forceExit.unref();
+  forceExitTimer = forceExit;
 
   let exitCode = 0;
 
-  const serverClosePromise = closeHttpServer().catch((err) => {
-    logger.error('Error closing HTTP server during graceful shutdown:', err);
-    exitCode = 1;
-  });
+  try {
+    const serverClosePromise = closeHttpServer().catch((err) => {
+      logger.error('Error closing HTTP server during graceful shutdown:', err);
+      exitCode = 1;
+    });
 
-  await runShutdownTasks('pre-drain');
-  await serverClosePromise;
-  await runShutdownTasks('post-drain');
+    await runShutdownTasks('pre-drain');
+    await serverClosePromise;
+    await runShutdownTasks('post-drain');
+  } finally {
+    clearTimeout(forceExit);
+    if (forceExitTimer === forceExit) {
+      forceExitTimer = null;
+    }
+  }
 
-  clearTimeout(forceExit);
   logger.info('Graceful shutdown complete, exiting');
   process.exit(exitCode);
 }

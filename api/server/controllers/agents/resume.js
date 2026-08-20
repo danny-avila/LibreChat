@@ -1,6 +1,6 @@
 const { randomUUID } = require('crypto');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, EModelEndpoint, ViolationTypes } = require('librechat-data-provider');
 const {
   GenerationJobManager,
   isPendingActionStale,
@@ -30,6 +30,14 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { saveMessage, getConvo, getMessages } = require('~/models');
+const {
+  recordScheduleOutcome,
+  claimScheduleResume,
+  releaseScheduleResumeClaim,
+  finalizeScheduleResumeClaim,
+  releaseScheduleResumeFence,
+  isScheduleLive,
+} = require('~/server/services/Schedules');
 const {
   GENERATION_PROTOCOL_HEADER,
   negotiateNewGenerationProtocol,
@@ -422,6 +430,20 @@ async function finalizeResumedTurn({
     }
     conversation.title = conversation.title || 'New Chat';
 
+    if (meta.scheduleId) {
+      await recordScheduleOutcome({
+        scheduleId: meta.scheduleId,
+        scheduledFor: meta.scheduledFor,
+        streamId,
+        jobCreatedAt: job.createdAt,
+        status: preemptIncomplete ? 'interrupted' : 'success',
+        conversationId,
+        ...(preemptIncomplete && {
+          error: 'Scheduled run was interrupted before completion',
+        }),
+      });
+    }
+
     const pendingSteers = terminalClaim.drainedSteers.map(toPendingSteer);
     const finalEvent = {
       final: true,
@@ -567,6 +589,65 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       res,
       403,
       { error: 'Cannot resume on a different endpoint' },
+      generationProtocolVersion,
+    );
+  }
+
+  const scheduleId = job.metadata?.scheduleId;
+  const scheduledFor = job.metadata?.scheduledFor;
+  if (
+    scheduleId &&
+    !(await isScheduleLive(scheduleId, job.metadata?.scheduleConfigRevision, {
+      automatic: job.metadata?.scheduleManual !== true,
+      policy: true,
+    }))
+  ) {
+    let stopped = false;
+    try {
+      const abortResult = await GenerationJobManager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        awaitProviderDrain: true,
+      });
+      stopped = abortResult != null && abortResult.failureReason == null;
+    } catch (error) {
+      logger.warn('[ResumeAgentController] Failed to stop inactive scheduled run', error);
+    }
+    if (!stopped) {
+      res.set('Retry-After', '1');
+      return sendGenerationJson(
+        res,
+        503,
+        {
+          code: 'SCHEDULE_STOP_UNCONFIRMED',
+          error: 'The inactive scheduled run could not be confirmed stopped. Please retry.',
+        },
+        generationProtocolVersion,
+      );
+    }
+    await recordScheduleOutcome({
+      scheduleId,
+      scheduledFor,
+      streamId,
+      jobCreatedAt: job.createdAt,
+      status: 'interrupted',
+      conversationId,
+      error: 'Schedule was disabled, changed, or deleted before approval',
+    });
+    const checkpointNamespace = job.metadata?.checkpointNamespace;
+    if (typeof checkpointNamespace === 'string' && checkpointNamespace !== '') {
+      await deleteAgentCheckpoint(
+        conversationId,
+        req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+        undefined,
+        { checkpointNamespace },
+      ).catch((error) => {
+        logger.warn('[ResumeAgentController] Failed to prune inactive schedule checkpoint', error);
+      });
+    }
+    return sendGenerationJson(
+      res,
+      409,
+      { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
       generationProtocolVersion,
     );
   }
@@ -720,6 +801,109 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     );
   }
 
+  // Finish the legacy checkpoint snapshot before claiming scheduled capacity.
+  // It is independent of the approval claim, and holding a deployment-wide slot
+  // while an indexed saver read stalls would unnecessarily block other schedules
+  // and lengthen the Mongo-claim -> approval-CAS hand-off window below.
+  const checkpointGeneration = await checkpointGenerationPromise;
+
+  // A pause frees its scheduled-run capacity slot. Before consuming the approval,
+  // atomically promote the run row back to `started` and claim a fresh global slot.
+  // The database's partial unique indexes arbitrate both deployment capacity and a
+  // concurrent active occurrence of the same schedule.
+  let scheduleCapacitySlot;
+  let scheduleResumeClaimToken;
+  let scheduleResumeLeaseBy;
+  const scheduleResumeOptions = {
+    expectedConfigRevision: job.metadata?.scheduleConfigRevision,
+    automatic: job.metadata?.scheduleManual !== true,
+  };
+  if (scheduleId) {
+    let scheduleClaim;
+    try {
+      scheduleClaim = await claimScheduleResume(scheduleId, scheduledFor, scheduleResumeOptions);
+    } catch (err) {
+      await decrementPendingRequest(userId);
+      logger.error('[ResumeAgentController] Failed to claim scheduled resume capacity', err);
+      return sendGenerationJson(
+        res,
+        500,
+        { error: 'Failed to reserve scheduled-run capacity' },
+        generationProtocolVersion,
+      );
+    }
+    if ('conflict' in scheduleClaim) {
+      await decrementPendingRequest(userId);
+      if (scheduleClaim.conflict === 'capacity' || scheduleClaim.conflict === 'overlap') {
+        res.set('Retry-After', '1');
+        return sendGenerationJson(
+          res,
+          429,
+          {
+            code:
+              scheduleClaim.conflict === 'capacity'
+                ? 'SCHEDULE_CAPACITY'
+                : 'SCHEDULE_OCCURRENCE_ACTIVE',
+            error:
+              scheduleClaim.conflict === 'capacity'
+                ? 'Scheduled-run capacity is currently full. Please retry.'
+                : 'Another occurrence of this schedule is still running. Please retry.',
+          },
+          generationProtocolVersion,
+        );
+      }
+      return sendGenerationJson(
+        res,
+        409,
+        {
+          code:
+            scheduleClaim.conflict === 'inactive'
+              ? 'SCHEDULE_NO_LONGER_ACTIVE'
+              : 'SCHEDULE_RUN_NOT_PAUSED',
+          error: 'This scheduled run can no longer be resumed',
+        },
+        generationProtocolVersion,
+      );
+    }
+    scheduleCapacitySlot = scheduleClaim.capacitySlot;
+    scheduleResumeClaimToken = scheduleClaim.claimToken;
+    scheduleResumeLeaseBy = scheduleClaim.leaseBy;
+  }
+
+  const releaseScheduleFence = async () => {
+    if (scheduleId == null || scheduleResumeLeaseBy == null) {
+      return;
+    }
+    try {
+      await releaseScheduleResumeFence(scheduleId, scheduleResumeLeaseBy);
+    } catch (releaseError) {
+      logger.warn('[ResumeAgentController] Failed to release scheduled resume fence', releaseError);
+    }
+  };
+
+  /** Release only when the exact generation demonstrably remains paused. If the
+   * approval CAS reply is ambiguous and the job cannot be read, retaining the slot
+   * until reconciliation is the safe direction: releasing it could exceed the cap
+   * while a committed continuation is already running. */
+  const rollbackUnconsumedScheduleClaim = async (currentJob) => {
+    if (
+      scheduleId == null ||
+      scheduleCapacitySlot == null ||
+      currentJob?.createdAt !== job.createdAt ||
+      currentJob?.status !== 'requires_action'
+    ) {
+      return;
+    }
+    try {
+      await releaseScheduleResumeClaim(scheduleId, scheduledFor, scheduleCapacitySlot);
+    } catch (rollbackError) {
+      logger.warn(
+        '[ResumeAgentController] Failed to release unconsumed scheduled resume capacity',
+        rollbackError,
+      );
+    }
+  };
+
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
   // re-execute tools and double-bill.
@@ -729,10 +913,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
   // the user when they retry the still-paused approval. Release the slot on that path too.
   let claimed;
-  let checkpointGeneration;
   const providerExecutionId = randomUUID();
   try {
-    checkpointGeneration = await checkpointGenerationPromise;
     /** The CAS that reopens steering must also publish THIS owner's seal
      *  capability. A separate write after status=`running` leaves a window in
      *  which steer/arm requests read the previous replica's capability. */
@@ -748,6 +930,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       job.createdAt,
     );
   } catch (err) {
+    const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+    await rollbackUnconsumedScheduleClaim(currentJob);
+    await releaseScheduleFence();
     await decrementPendingRequest(userId);
     logger.error('[ResumeAgentController] Failed to claim resume', err);
     return sendGenerationJson(res, 500, { error: 'Failed to resume' }, generationProtocolVersion);
@@ -755,6 +940,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (!claimed) {
     await decrementPendingRequest(userId);
     const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+    await rollbackUnconsumedScheduleClaim(currentJob);
+    await releaseScheduleFence();
     if (currentJob != null && currentJob.createdAt !== job.createdAt) {
       return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
     }
@@ -764,6 +951,73 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       { error: 'This action was already resolved or has expired' },
       generationProtocolVersion,
     );
+  }
+
+  // Linearize the consumed approval against the schedule's live config. The schedule
+  // document fence was acquired only after all async policy reads, and this atomic
+  // consume checks its token/revision/enabled state immediately after the approval CAS.
+  // An edit/disable that won first makes this fail; one that lands afterward is ordered
+  // after the continuation has started. Never begin provider execution on a stale claim.
+  if (scheduleId) {
+    let scheduleClaimCurrent = false;
+    try {
+      scheduleClaimCurrent = await finalizeScheduleResumeClaim(
+        scheduleId,
+        scheduleResumeClaimToken,
+        scheduleResumeLeaseBy,
+        scheduleResumeOptions,
+      );
+    } catch (error) {
+      logger.error('[ResumeAgentController] Failed to finalize scheduled resume fence', error);
+      await releaseScheduleFence();
+    }
+    if (!scheduleClaimCurrent) {
+      await decrementPendingRequest(userId);
+      let stopped = false;
+      try {
+        const abortResult = await GenerationJobManager.abortJob(streamId, {
+          expectedCreatedAt: job.createdAt,
+          awaitProviderDrain: true,
+        });
+        stopped = abortResult != null && abortResult.failureReason == null;
+      } catch (error) {
+        logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
+      }
+      if (!stopped) {
+        res.set('Retry-After', '1');
+        return sendGenerationJson(
+          res,
+          503,
+          {
+            code: 'SCHEDULE_STOP_UNCONFIRMED',
+            error: 'The stale scheduled resume could not be confirmed stopped.',
+          },
+          generationProtocolVersion,
+        );
+      }
+      await recordScheduleOutcome({
+        scheduleId,
+        scheduledFor,
+        streamId,
+        jobCreatedAt: job.createdAt,
+        status: 'interrupted',
+        conversationId,
+        error: 'Schedule was disabled, changed, or deleted before approval',
+      });
+      if (checkpointNamespace !== '') {
+        await deleteAgentCheckpoint(conversationId, checkpointerCfg, undefined, {
+          checkpointNamespace,
+        }).catch((error) => {
+          logger.warn('[ResumeAgentController] Failed to prune stale schedule checkpoint', error);
+        });
+      }
+      return sendGenerationJson(
+        res,
+        409,
+        { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
+        generationProtocolVersion,
+      );
+    }
   }
 
   /**
@@ -1018,6 +1272,16 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
             `[ResumeAgentController] Re-pause persistence barrier changed before release: ${streamId}`,
           );
         }
+        if (scheduleId) {
+          await recordScheduleOutcome({
+            scheduleId,
+            scheduledFor,
+            streamId,
+            jobCreatedAt: job.createdAt,
+            status: 'requires_action',
+            conversationId,
+          });
+        }
       } else {
         logger.debug(
           `[ResumeAgentController] Skipping stale re-pause persistence — ${streamId} no longer owns its barrier`,
@@ -1027,11 +1291,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
 
     // If the user aborted mid-resume, the abort route already emitted the terminal
-    // event and finalized the job — don't double-save / double-finalize here.
+    // event and finalized the job — don't double-save / double-finalize here. This
+    // continuation is nevertheless the scheduled-run owner, so it must settle the
+    // run row after observing its own abort; the generic Stop route deliberately
+    // delegates a running generation's settlement to that generation owner.
     if (job.abortController.signal.aborted) {
       logger.debug(
         `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
       );
+      if (scheduleId) {
+        await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          streamId,
+          jobCreatedAt: job.createdAt,
+          status: 'interrupted',
+          conversationId,
+          error: 'Scheduled run was stopped',
+        });
+      }
       return;
     }
 
@@ -1060,6 +1338,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           },
           're-pause persistence failure',
         );
+      }
+      if (scheduleId && pausePersistenceFailureFinalized) {
+        await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          streamId,
+          jobCreatedAt: job.createdAt,
+          status: 'error',
+          conversationId,
+          error: err?.message ?? 'Re-pause persistence failed',
+        });
       }
       return;
     }
@@ -1103,6 +1392,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           },
           'failed resume finalization',
         );
+      }
+      if (scheduleId && errorFinalized) {
+        const balanceRefusal = err?.message?.includes(ViolationTypes.TOKEN_BALANCE);
+        await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          streamId,
+          jobCreatedAt: job.createdAt,
+          status: balanceRefusal ? 'skipped_balance' : 'error',
+          conversationId,
+          ...(!balanceRefusal && { error: err?.message ?? 'Resume failed' }),
+        });
       }
     }
   } finally {

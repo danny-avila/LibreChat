@@ -28,6 +28,7 @@ export * from './types/files';
 export * from './types/mcpServers';
 export * from './types/mutations';
 export * from './types/queries';
+export * from './types/schedules';
 export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';
@@ -58,5 +59,6 @@ export { default as createPayload } from './createPayload';
 /* feedback */
 export * from './feedback';
 export * from './parameterSettings';
+export * from './agentToolOptions';
 /* code-execution sandbox */
 export * from './codeEnvRef';

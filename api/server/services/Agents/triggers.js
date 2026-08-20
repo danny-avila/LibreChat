@@ -1,9 +1,17 @@
-const { createAgentTriggerService } = require('@librechat/api');
+const {
+  createAgentTriggerService,
+  createSubagentCompletionWakeupResolver,
+  GenerationJobManager,
+} = require('@librechat/api');
 const methods = require('~/models');
 
 const service = createAgentTriggerService({
   methods,
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
+  prepareContinue: createSubagentCompletionWakeupResolver({
+    methods,
+    getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  }),
 });
 
 module.exports = {

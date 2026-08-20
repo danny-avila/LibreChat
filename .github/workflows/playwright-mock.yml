@@ -251,18 +251,17 @@ jobs:
         continue-on-error: true
         run: timeout -k 10 90 npx playwright install ffmpeg
 
-      # Optional fonts only — see the note in the e2e_shards job.
-      - name: Install optional Playwright font dependencies (best effort)
-        timeout-minutes: 4
-        continue-on-error: true
-        run: .github/scripts/install-playwright-fonts.sh
+      # This job deliberately skips the optional font install: its bounded
+      # Playwright apt process can outlive the wrapper on a slow mirror and
+      # retain the package-manager lock needed by the required Redis install.
+      # The MCP suite does not enable visual snapshot assertions.
 
       # Redis is a hard requirement for this job, so this step stays fatal.
       - name: Install Redis runtime dependencies
         timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y redis-server redis-tools
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y redis-server redis-tools
 
       - name: Start standalone Redis and Redis Cluster
         run: |

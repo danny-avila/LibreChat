@@ -18,6 +18,7 @@ interface MCPToolItemProps {
   intentDisabled: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
+  programmaticToolsAvailable: boolean;
   backgroundToolsEnabled: boolean;
   toolIntentsEnabled: boolean;
   onToggleSelect: () => void;
@@ -44,6 +45,7 @@ export default function MCPToolItem({
   onToggleIntent,
   deferredToolsEnabled,
   programmaticToolsEnabled,
+  programmaticToolsAvailable,
   backgroundToolsEnabled,
   toolIntentsEnabled,
 }: MCPToolItemProps) {
@@ -95,8 +97,13 @@ export default function MCPToolItem({
               icon={Code2}
               pressed={isProgrammatic}
               label={localize('com_ui_mcp_programmatic')}
-              tooltip={localize('com_ui_mcp_click_to_programmatic')}
+              tooltip={localize(
+                programmaticToolsAvailable
+                  ? 'com_ui_mcp_click_to_programmatic'
+                  : 'com_ui_mcp_programmatic_requires_code',
+              )}
               activeClass="text-violet-500"
+              disabled={!programmaticToolsAvailable && !isProgrammatic}
               onToggle={onToggleProgrammatic}
             />
           )}

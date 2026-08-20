@@ -13,7 +13,8 @@ LibreChat is a monorepo with the following key workspaces:
 | `/client` | TypeScript/React | Frontend | `packages/data-provider`, `packages/client` | Frontend SPA |
 | `/packages/client` | TypeScript | Frontend | `packages/data-provider` | Shared frontend utilities |
 
-The source code for `@librechat/agents` (major backend dependency, same team) is at `/home/danny/agentus`.
+The source code for `@librechat/agents` (major backend dependency, same team) lives at
+<https://github.com/danny-avila/agents>.
 
 ---
 
@@ -167,6 +168,16 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Cursor pagination for large datasets.
 - Proper dependency arrays to avoid unnecessary re-renders.
 - Leverage React Query caching and background refetching.
+
+---
+
+## Backend Rules (`api/**`, `packages/api/**`)
+
+### Auth cache invalidation
+
+When adding or changing code that mutates user documents, invalidate the auth user document cache
+for the affected users. This covers single-user updates as well as bulk role and user mutations.
+Without it, OpenID JWT request burst caching can serve a stale `req.user` until its TTL expires.
 
 ---
 

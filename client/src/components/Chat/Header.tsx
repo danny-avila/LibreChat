@@ -1,6 +1,12 @@
 import { memo, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { getConfigDefaults, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { useParams } from 'react-router-dom';
+import {
+  getConfigDefaults,
+  Constants,
+  PermissionTypes,
+  Permissions,
+} from 'librechat-data-provider';
 import { OpenSidebar, PresetsMenu, NewChat, HeaderMenu } from './Menus';
 import ModelSelector from './Menus/Endpoints/ModelSelector';
 import { useGetStartupConfig } from '~/data-provider';
@@ -30,6 +36,13 @@ function Header({
 }) {
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
+
+  /** The mobile row only offers a new chat when there is one to leave. Read
+   *  from the route rather than the context conversation, which still holds the
+   *  previous chat for a render after a history or link navigation. An unsaved
+   *  conversation has no id in the route yet, so absence counts as new too. */
+  const { conversationId: routeConversationId } = useParams();
+  const isNewChat = routeConversationId == null || routeConversationId === Constants.NEW_CONVO;
 
   const interfaceConfig = useMemo(
     () => startupConfig?.interface ?? defaultInterface,
@@ -90,7 +103,7 @@ function Header({
       </div>
 
       <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
-        <NewChat className="md:hidden" />
+        {!isNewChat && <NewChat className="md:hidden" />}
         <HeaderMenu startupConfig={startupConfig} className="md:hidden" />
         <div className="hidden items-center gap-2 md:flex">
           <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />

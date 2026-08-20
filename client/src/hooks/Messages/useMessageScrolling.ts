@@ -1,11 +1,11 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { reconcileMessageContentLayout } from './messageLayout';
 import useScrollToRef from '~/hooks/useScrollToRef';
-import store from '~/store';
+import { autoScrollAtom } from '~/store/autoScroll';
 
 const resizeFollowThreshold = 120;
 
@@ -26,7 +26,7 @@ const prefersReducedMotion = () =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
-  const autoScroll = useRecoilValue(store.autoScroll);
+  const autoScroll = useAtomValue(autoScrollAtom);
 
   const scrollableRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -48,6 +48,9 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const lastScrollTopRef = useRef(-1);
   const wasSubmittingRef = useRef(false);
   const suppressNextResizeFollowRef = useRef(false);
+  /** The conversation whose newest message has already been landed on, so the
+   *  stream deltas that follow cannot re-take a reader who scrolled away. */
+  const landedConversationRef = useRef<string | null>(null);
   const { conversation, conversationId } = useMessagesConversation();
   const { setAbortScroll, isSubmitting, abortScroll } = useMessagesSubmission();
 
@@ -411,15 +414,59 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     };
   }, [isSubmitting, messagesTree, scrollToBottom, abortScroll, followBottom]);
 
+  /**
+   * Land on the newest message when a conversation is opened.
+   *
+   * Keyed on the conversation whose rows are actually MOUNTED, not on the id
+   * alone. The id reaches this hook a commit or more before the tree does, and
+   * firing on it scrolled the outgoing thread to its end and then never ran
+   * again — the reader was left wherever that put them, which on a long thread
+   * is the top. Waiting for the rendered tree to name the same conversation
+   * costs nothing and is the only moment `messages-end` is where the reader
+   * expects it.
+   *
+   * One landing per conversation: the tree's identity changes on every stream
+   * delta and cache reconcile, and re-running on those would drag a reader who
+   * has scrolled away back to the bottom.
+   */
   useEffect(() => {
-    if (!messagesEndRef.current || !scrollableRef.current) {
+    if (!autoScroll) {
+      /** Switching the setting off releases the landing, so switching it back
+       *  on while the same conversation is open honours it again. */
+      landedConversationRef.current = null;
       return;
     }
 
-    if (scrollToBottom && autoScroll && conversationId !== Constants.NEW_CONVO) {
-      scrollToBottom();
+    if (conversationId == null || conversationId === Constants.NEW_CONVO) {
+      return;
     }
-  }, [autoScroll, conversationId, scrollToBottom]);
+
+    if (!scrollToBottom || !messagesEndRef.current || !scrollableRef.current) {
+      return;
+    }
+
+    /** Rows are gated by the progressive mount window during a first commit,
+     *  but that window only ever grows UPWARD from the newest row, so the end
+     *  of the mounted content is already the end of the thread. */
+    if (!messagesTree?.length) {
+      return;
+    }
+
+    /** Same fallback `MessagesView` uses to key the mount window: a tree whose
+     *  rows carry no conversation id is taken to be this conversation's, so a
+     *  locally-built thread still lands instead of waiting forever. */
+    const renderedConversationId = messagesTree[0]?.conversationId ?? conversationId;
+    if (renderedConversationId !== conversationId) {
+      return;
+    }
+
+    if (landedConversationRef.current === conversationId) {
+      return;
+    }
+
+    landedConversationRef.current = conversationId;
+    scrollToBottom();
+  }, [autoScroll, conversationId, messagesTree, scrollToBottom]);
 
   return {
     conversation,

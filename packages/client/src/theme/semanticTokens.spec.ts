@@ -112,12 +112,23 @@ describe('light brand text', () => {
 
 describe('shared field and dropdown interaction styles', () => {
   it('keeps pointer focus stable and keyboard focus visible on text fields', () => {
-    ['Input.tsx', 'Textarea.tsx'].forEach((component) => {
-      const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
+    /** The focus treatment lives in the shared field module, so guard it there and
+     *  assert the primitives still compose it rather than restating the classes. */
+    const field = readFileSync(join(__dirname, '..', 'components', 'Field.ts'), 'utf8');
 
-      expect(source).toMatch(/focus-visible:border-border-medium/);
-      expect(source).toMatch(/focus-visible:ring-2/);
-      expect(source).toMatch(/focus-visible:ring-text-primary/);
+    expect(field).toMatch(/focus-visible:border-border-medium/);
+    expect(field).toMatch(/focus-visible:ring-2/);
+    expect(field).toMatch(/focus-visible:ring-text-primary/);
+
+    const composers: Array<[string, RegExp]> = [
+      ['Input.tsx', /\bfieldControl\b/],
+      ['Textarea.tsx', /\bfieldBase\b/],
+      ['Dropdown.tsx', /\bfieldControl\b/],
+      ['ControlCombobox.tsx', /\bfieldControl\b/],
+    ];
+    composers.forEach(([component, token]) => {
+      const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
+      expect(source).toMatch(token);
     });
 
     const secretInput = readFileSync(

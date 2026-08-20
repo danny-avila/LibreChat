@@ -5,6 +5,7 @@ import { ScrollText, ChevronDown, ChevronRight, Folder, Pin } from 'lucide-react
 import type { FixedSizeNodeData, TreeWalkerValue, TreeWalker } from 'react-vtree';
 import type { TSkillSummary, TSkillFile } from 'librechat-data-provider';
 import { useListSkillFilesQuery } from '~/data-provider';
+import { Collapse } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -323,7 +324,7 @@ function SkillListItem({
         </span>
 
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className={cn('truncate', isActive && 'font-semibold')}>{skill.name}</span>
+          <span className="truncate">{skill.name}</span>
           {skill.alwaysApply === true && (
             <Pin
               className="size-3 shrink-0 text-cyan-500"
@@ -351,16 +352,9 @@ function SkillListItem({
       </div>
 
       {/* Inline file tree */}
-      <div
-        className={cn(
-          'ml-5 overflow-hidden transition-all duration-200 ease-in-out',
-          expanded && hasFiles ? 'opacity-100' : 'max-h-0 opacity-0',
-        )}
-        style={expanded && hasFiles ? { maxHeight: `${MAX_HEIGHT}px` } : undefined}
-        inert={!expanded ? '' : undefined}
-      >
+      <Collapse open={expanded && hasFiles} className="ml-5">
         <InlineFileTree files={files} activeFile={activeFile} onFileClick={handleFileClick} />
-      </div>
+      </Collapse>
     </div>
   );
 }
