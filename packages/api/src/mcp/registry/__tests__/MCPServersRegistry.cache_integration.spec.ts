@@ -67,6 +67,10 @@ describe('MCPServersRegistry Redis Integration Tests', () => {
     process.env.REDIS_KEY_PREFIX =
       process.env.REDIS_KEY_PREFIX ??
       `MCPServersRegistry-IntegrationTest-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    // The read-through caches encrypt entries before they reach the shared store
+    process.env.CREDS_KEY =
+      process.env.CREDS_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.CREDS_IV = process.env.CREDS_IV ?? '0123456789abcdef0123456789abcdef';
 
     // Import modules after setting env vars
     const registryModule = await import('../MCPServersRegistry');

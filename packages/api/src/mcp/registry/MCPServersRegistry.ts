@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import { logger, encryptV2, decryptV2 } from '@librechat/data-schemas';
-import type { Keyv } from 'keyv';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
+import type { ReadThroughTransforms } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
 import {
   ServerConfigsCacheFactory,
@@ -12,13 +12,38 @@ import {
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
+import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
-import { cacheConfig, standardCache } from '~/cache';
+import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/** Cached configs carry decrypted oauth/apiKey credentials, so the shared
+ *  stores only ever see ciphertext; plaintext stays in process memory,
+ *  exactly where it lived before these caches became shared. */
+function encryptedStoreTransforms<T>(): ReadThroughTransforms<T> {
+  return {
+    encode: async (value) => encryptV2(JSON.stringify(value)),
+    decode: async (raw) => JSON.parse(await decryptV2(raw)),
+  };
+}
+
+/** The per-server cache also negative-caches lookups, so its envelope keeps a
+ *  stored "absent" (null) distinguishable from "not cached". */
+function perServerStoreTransforms(): ReadThroughTransforms<t.ParsedServerConfig | undefined> {
+  return {
+    encode: async (value) => encryptV2(JSON.stringify({ config: value ?? null })),
+    decode: async (raw) => {
+      const decoded = JSON.parse(await decryptV2(raw)) as {
+        config: t.ParsedServerConfig | null;
+      };
+      return decoded.config ?? undefined;
+    },
+  };
+}
 
 /**
  * Provenance to persist for a config being stored in `tier`.
@@ -171,7 +196,7 @@ export class MCPServersRegistry {
   private readonly allowedAddresses?: string[] | null;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
-  private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
+  private readonly readThroughCache: ReadThroughCache<t.ParsedServerConfig | undefined>;
   private readonly readThroughCacheAll: ReadThroughAllCache<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
     string,
@@ -203,23 +228,17 @@ export class MCPServersRegistry {
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
-    /** Redis-backed when configured, in-memory otherwise; per-server keys are
-     *  invalidated by targeted deletes, so a plain store suffices. */
-    this.readThroughCache = standardCache(
+    /** Per-server entries are invalidated by targeted deletes. */
+    this.readThroughCache = new ReadThroughCache<t.ParsedServerConfig | undefined>(
       'mcp-registry-read-through',
       ttl,
-    ) as Keyv<t.ParsedServerConfig>;
+      perServerStoreTransforms(),
+    );
 
     this.readThroughCacheAll = new ReadThroughAllCache<Record<string, t.ParsedServerConfig>>(
       'mcp-registry-read-through-all',
       ttl,
-      {
-        /** The resolved map carries decrypted oauth/apiKey credentials, so the
-         *  shared store only ever sees ciphertext; plaintext stays in process
-         *  memory, exactly where it lived before this cache became shared. */
-        encode: async (value) => encryptV2(JSON.stringify(value)),
-        decode: async (raw) => JSON.parse(await decryptV2(raw)),
-      },
+      encryptedStoreTransforms<Record<string, t.ParsedServerConfig>>(),
     );
   }
 

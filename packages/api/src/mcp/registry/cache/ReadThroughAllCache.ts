@@ -69,8 +69,16 @@ export class ReadThroughAllCache<T> {
     return `${generation}::${key}`;
   }
 
+  /** Never throws: an unreadable generation degrades the next store read to a
+   *  miss, so a Redis outage stays off the request failure path. */
   private async readGeneration(): Promise<string> {
-    const generation = await this.generationCache.get(GENERATION_KEY);
+    let generation: unknown;
+    try {
+      generation = await this.generationCache.get(GENERATION_KEY);
+    } catch (error) {
+      logger.warn('[ReadThroughAllCache] Generation read failed:', error);
+      return '0';
+    }
     return typeof generation === 'string' ? generation : '0';
   }
 
@@ -101,8 +109,19 @@ export class ReadThroughAllCache<T> {
       this.memo.delete(key);
     }
     const generation = await this.readGeneration();
-    const raw = await this.cache.get(this.entryKey(generation, key));
+    let raw: unknown;
+    try {
+      raw = await this.cache.get(this.entryKey(generation, key));
+    } catch (error) {
+      logger.warn('[ReadThroughAllCache] Store read failed; treating as a miss:', error);
+      return undefined;
+    }
     if (raw === undefined) {
+      return undefined;
+    }
+    /** Re-check after the fetch: an invalidation landing mid-read must not have
+     *  its pre-mutation value memoized for a full TTL window. */
+    if ((await this.readGeneration()) !== generation) {
       return undefined;
     }
     if (!this.transforms?.decode) {
@@ -140,6 +159,11 @@ export class ReadThroughAllCache<T> {
        *  is already computed and must still be served. */
       logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
     }
+    /** Same recheck as get(): skip the memo when an invalidation landed while
+     *  this write was in flight, so the next read recomputes. */
+    if ((await this.readGeneration()) !== generation) {
+      return;
+    }
     this.memo.set(key, { value, expiresAt: Date.now() + this.ttl });
     this.sweepMemo();
   }
@@ -150,8 +174,12 @@ export class ReadThroughAllCache<T> {
     if (!this.enabled) {
       return;
     }
-    /** A fresh UUID cannot regress: two racing invalidations may overwrite each
-     *  other's tag, but neither can resurrect a prior generation's entries. */
-    await this.generationCache.set(GENERATION_KEY, randomUUID());
+    try {
+      /** A fresh UUID cannot regress: two racing invalidations may overwrite each
+       *  other's tag, but neither can resurrect a prior generation's entries. */
+      await this.generationCache.set(GENERATION_KEY, randomUUID());
+    } catch (error) {
+      logger.warn('[ReadThroughAllCache] Generation write failed:', error);
+    }
   }
 }
