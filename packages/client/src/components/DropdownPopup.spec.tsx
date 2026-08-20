@@ -1,6 +1,6 @@
 import React from 'react';
-import { render } from '@testing-library/react';
 import * as Ariakit from '@ariakit/react';
+import { render } from '@testing-library/react';
 import DropdownPopup from './DropdownPopup';
 
 describe('DropdownPopup', () => {
