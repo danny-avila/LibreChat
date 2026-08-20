@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import {
   dataService,
@@ -9,14 +10,21 @@ import {
 } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import {
+  addPastedTextDraftFile,
+  forceResize,
+  getComposerDraftId,
+  markPastedTextFile,
+  nextPastedTextFilename,
+} from '~/utils';
 import { useDeleteFilesMutation, useGetFiles } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
-import { forceResize, nextPastedTextFilename } from '~/utils';
 import useFileUploadRouter from './useFileUploadRouter';
 import { getNewConversationDraftToken } from '~/utils';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useFileDeletion from './useFileDeletion';
 import { useLocalize } from '~/hooks';
+import store from '~/store';
 
 /** The attachment being edited, with its text already resolved so the dialog stays controlled. */
 export type PastedTextEdit = {
@@ -46,10 +54,11 @@ export default function usePastedTextEdit({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { user } = useAuthContext();
-  const { conversation } = useChatContext();
+  const { conversation, isSubmitting } = useChatContext();
   const methods = useChatFormContext();
   const routeFiles = useFileUploadRouter();
   const { data: fileList } = useGetFiles<TFile[]>();
+  const saveDrafts = useRecoilValue(store.saveDrafts);
   const [editing, setEditing] = useState<PastedTextEdit | null>(null);
 
   const { mutateAsync } = useDeleteFilesMutation();
@@ -58,6 +67,10 @@ export default function usePastedTextEdit({
   const conversationId = conversation?.conversationId ?? null;
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
+  /** Async resolves must re-check the composer against its current state, not the render the
+   * callback was captured on. */
+  const filesRef = useRef(files);
+  filesRef.current = files;
 
   /** The dialog belongs to the composer it was opened in. Switching conversation or starting a
    * new chat retires it: saving from the new composer would detach that conversation's file and
@@ -187,10 +200,31 @@ export default function usePastedTextEdit({
       /** The original stays until the replacement is stored. `routeFiles` resolving only means
        * the upload was accepted into the queue, and detaching first would leave neither copy
        * behind when the upload is rejected or fails. */
+      const uploadId = v4();
+      /** The replacement is itself a generated paste: without recording its provenance the
+       * fresh chip immediately loses the Edit and Move back affordances it exists for. */
+      markPastedTextFile(uploadId);
+      if (saveDrafts) {
+        addPastedTextDraftFile({
+          id: getComposerDraftId(index, conversationIdRef.current, isSubmitting),
+          fileId: uploadId,
+        });
+      }
       const accepted = await routeFiles([replacement], toolResource, {
-        fileId: v4(),
+        fileId: uploadId,
         shouldCommit: () => isOriginatingComposer(editConversationId, editDraftToken),
-        onSuccess: () => detach(file),
+        onSuccess: () => {
+          /** `shouldCommit` only gates the queue, not the request: the composer can change
+           * while the upload itself is in flight, and so can the map, when the message this
+           * file belongs to was sent in the meantime. Either way the original is no longer
+           * this composer's unsent chip to remove. */
+          if (
+            isOriginatingComposer(editConversationId, editDraftToken) &&
+            filesRef.current.has(file.file_id)
+          ) {
+            detach(file);
+          }
+        },
       });
       if (!accepted) {
         showToast({ message: localize('com_ui_pasted_text_save_error'), status: 'error' });
@@ -205,6 +239,9 @@ export default function usePastedTextEdit({
       routeFiles,
       showToast,
       localize,
+      index,
+      saveDrafts,
+      isSubmitting,
     ],
   );
 
@@ -220,14 +257,22 @@ export default function usePastedTextEdit({
   const moveInline = useCallback(
     async (file: ExtendedFile) => {
       const conversationIdAtClick = conversationIdRef.current;
+      const draftTokenAtClick = getNewConversationDraftToken(index);
       const text = await resolveText(file);
       if (text == null) {
         showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
         return;
       }
-      /** The await can span a conversation switch, and the text would otherwise be written into
-       * the composer the user navigated to while the original was detached from this one. */
-      if (conversationIdRef.current !== conversationIdAtClick) {
+      /** The await can span a conversation switch or a new chat (two unsaved chats share one
+       * conversation id, so the token is what distinguishes them), and the text would otherwise
+       * be written into the composer the user navigated to while the original was detached from
+       * this one. A send clears the map without changing either identity, so the chip must also
+       * still be attached here for the move to be honest. */
+      if (
+        conversationIdRef.current !== conversationIdAtClick ||
+        getNewConversationDraftToken(index) !== draftTokenAtClick ||
+        !filesRef.current.has(file.file_id)
+      ) {
         return;
       }
 
@@ -247,7 +292,7 @@ export default function usePastedTextEdit({
       textArea.focus();
       textArea.setSelectionRange(next.length, next.length);
     },
-    [resolveText, showToast, localize, detach, textAreaRef, methods],
+    [resolveText, showToast, localize, detach, textAreaRef, methods, index],
   );
 
   return { editing, openEditor, closeEditor, saveEdit, moveInline };

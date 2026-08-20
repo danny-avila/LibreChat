@@ -9,11 +9,15 @@ const mockInvalidateQueries = jest.fn();
 const mockClearAllDrafts = jest.fn();
 const mockDeleteFiles = jest.fn();
 
+/** A live composer entry: what the ownership check reads off the file map. */
+type LiveFile = { file_id: string; attached?: boolean; progress?: number };
+
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
   saveDrafts: false,
   tabId: 'this-tab',
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
+  files: new Map<string, LiveFile>(),
   fileList: undefined as
     | { file_id: string; filepath: string; source: string; embedded?: boolean }[]
     | undefined,
@@ -24,10 +28,15 @@ jest.mock('@tanstack/react-query', () => ({
 }));
 
 jest.mock('recoil', () => ({
-  useRecoilValue: (key: unknown) =>
-    typeof key === 'string' && key.startsWith('conversationIdByIndex')
-      ? 'convo-1'
-      : mockState.saveDrafts,
+  useRecoilValue: (key: unknown) => {
+    if (typeof key === 'string' && key.startsWith('conversationIdByIndex')) {
+      return 'convo-1';
+    }
+    if (typeof key === 'string' && key.startsWith('files-by-index')) {
+      return mockState.files;
+    }
+    return mockState.saveDrafts;
+  },
 }));
 
 jest.mock('~/hooks/useNewConvo', () => ({
@@ -52,6 +61,7 @@ jest.mock('~/store', () => ({
   __esModule: true,
   default: {
     conversationIdByIndex: (index: number) => `conversationIdByIndex-${index}`,
+    filesByIndex: (index: number) => `files-by-index-${index}`,
     saveDrafts: 'saveDrafts',
   },
 }));
@@ -78,6 +88,7 @@ describe('useNewChat', () => {
     mockState.saveDrafts = false;
     mockState.tabId = 'this-tab';
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
     mockState.fileList = undefined;
   });
 
@@ -117,6 +128,10 @@ describe('useNewChat', () => {
       fileIds: ['stored-file'],
       pendingPastes: { 'in-flight-paste': { text: 'x', selectionStart: 0 } },
     };
+    mockState.files = new Map([
+      ['stored-file', { file_id: 'stored-file', progress: 1 }],
+      ['in-flight-paste', { file_id: 'in-flight-paste', progress: 0.4 }],
+    ]);
     mockState.fileList = [
       { file_id: 'stored-file', filepath: '/uploads/stored.txt', source: 'local' },
       { file_id: 'in-flight-paste', filepath: '/uploads/pending.txt', source: 'local' },
@@ -168,6 +183,10 @@ describe('useNewChat', () => {
       fileIds: ['known', 'embedded', 'missing'],
       pendingPastes: {},
     };
+    mockState.files = new Map([
+      ['known', { file_id: 'known', progress: 1 }],
+      ['embedded', { file_id: 'embedded', progress: 1 }],
+    ]);
     mockState.fileList = [
       { file_id: 'known', filepath: '/uploads/known.txt', source: 'local' },
       { file_id: 'embedded', filepath: '/uploads/embedded.txt', source: 'local', embedded: true },
@@ -208,6 +227,7 @@ describe('useNewChat', () => {
       pendingPastes: {},
       tabId: 'this-tab',
     };
+    mockState.files = new Map([['own-file', { file_id: 'own-file', progress: 1 }]]);
     mockState.fileList = [{ file_id: 'own-file', filepath: '/uploads/own.txt', source: 'local' }];
     const { result } = renderHook(() => useNewChat());
 
@@ -218,6 +238,108 @@ describe('useNewChat', () => {
         { file_id: 'own-file', embedded: false, filepath: '/uploads/own.txt', source: 'local' },
       ],
     });
+  });
+
+  it('spares library files the draft recorded through a re-attach', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['library-file', 'own-file'],
+      pendingPastes: {},
+    };
+    /** `attached: true` is how a re-attached stored file enters the composer: it has other
+     * references, so discarding this draft must not delete it. */
+    mockState.files = new Map([
+      ['library-file', { file_id: 'library-file', attached: true, progress: 1 }],
+      ['own-file', { file_id: 'own-file', progress: 1 }],
+    ]);
+    mockState.fileList = [
+      { file_id: 'library-file', filepath: '/uploads/library.txt', source: 'local' },
+      { file_id: 'own-file', filepath: '/uploads/own.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        { file_id: 'own-file', embedded: false, filepath: '/uploads/own.txt', source: 'local' },
+      ],
+    });
+  });
+
+  it('spares draft ids the composer no longer shows, whose ownership is unknowable', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['absent-file'],
+      pendingPastes: {},
+    };
+    mockState.fileList = [
+      { file_id: 'absent-file', filepath: '/uploads/absent.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('deletes an in-flight upload once its record arrives in the files cache', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['in-flight'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['in-flight', { file_id: 'in-flight', progress: 0.4 }]]);
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+
+    /** What the reset itself does: the draft key is dropped and the composer map cleared. */
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'in-flight', filepath: '/uploads/in-flight.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        {
+          file_id: 'in-flight',
+          embedded: false,
+          filepath: '/uploads/in-flight.txt',
+          source: 'local',
+        },
+      ],
+    });
+  });
+
+  it('spares a deferred upload that came back attached to the fresh composer', async () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = {
+      fileIds: ['in-flight'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['in-flight', { file_id: 'in-flight', progress: 0.4 }]]);
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    /** The user immediately re-attached the same file (dedupe lands on the same id). */
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.files = new Map([['in-flight', { file_id: 'in-flight', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'in-flight', filepath: '/uploads/in-flight.txt', source: 'local' },
+    ];
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
   it('runs the optional callback after the reset', () => {

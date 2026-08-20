@@ -1,9 +1,10 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import type { TFile } from 'librechat-data-provider';
+import type { FileSources, TFile } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
+import type { ExtendedFile } from '~/common';
 import {
   clearAllDrafts,
   clearMessagesCache,
@@ -32,6 +33,46 @@ export type UseNewChatResult = {
   newConversation: ReturnType<typeof useNewConvo>['newConversation'];
 };
 
+type DeletableRecord = {
+  file_id: string;
+  embedded: false;
+  filepath: string;
+  source: FileSources;
+};
+
+const toDeletableRecord = (record: TFile): DeletableRecord | null => {
+  if (
+    record.embedded === true ||
+    record.filepath == null ||
+    record.filepath === '' ||
+    !record.source
+  ) {
+    return null;
+  }
+  return {
+    file_id: record.file_id,
+    embedded: false,
+    filepath: record.filepath,
+    source: record.source,
+  };
+};
+
+/** Every id the composer currently owns: map keys plus their resolved file ids. Pastes stay
+ * owned even when restoration stamped them `attached`, because the draft says they are ours. */
+const collectOwnedIds = (files: Map<string, ExtendedFile>, pasteIds: Set<string>): Set<string> => {
+  const ownedIds = new Set<string>();
+  files.forEach((file, key) => {
+    if (file.attached === true && !pasteIds.has(key) && !pasteIds.has(file.file_id)) {
+      return;
+    }
+    ownedIds.add(key);
+    if (file.file_id != null) {
+      ownedIds.add(file.file_id);
+    }
+  });
+  return ownedIds;
+};
+
 /**
  * Single source of truth for starting a new conversation: drops the cached
  * messages for the outgoing conversation, invalidates the messages query, then
@@ -44,9 +85,50 @@ export default function useNewChat({
   const queryClient = useQueryClient();
   const { newConversation } = useNewConvo(index);
   const conversationId = useRecoilValue(store.conversationIdByIndex(index));
+  const files = useRecoilValue(store.filesByIndex(index));
   const saveDrafts = useRecoilValue(store.saveDrafts);
   const { data: fileList } = useGetFiles<TFile[]>();
   const { mutateAsync } = useDeleteFilesMutation();
+  /** Draft uploads whose records were not resolvable when the draft was discarded: the files
+   * cache was still loading, or the upload was still in flight and completed only after. */
+  const [pendingDiscardIds, setPendingDiscardIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (pendingDiscardIds.length === 0 || fileList == null) {
+      return;
+    }
+    /** An id that came back, as a live chip or inside the fresh draft, is no longer the
+     * discarded draft's to delete. */
+    const reattached = new Set(getFilesDraft(getNewConversationDraftId(index)).fileIds);
+    files.forEach((file, key) => {
+      reattached.add(key);
+      if (file.file_id != null) {
+        reattached.add(file.file_id);
+      }
+    });
+    const deletable: DeletableRecord[] = [];
+    const stillPending: string[] = [];
+    for (const fileId of pendingDiscardIds) {
+      if (reattached.has(fileId)) {
+        continue;
+      }
+      const record = fileList.find((entry) => entry.file_id === fileId);
+      if (record == null) {
+        stillPending.push(fileId);
+        continue;
+      }
+      const deletableRecord = toDeletableRecord(record);
+      if (deletableRecord != null) {
+        deletable.push(deletableRecord);
+      }
+    }
+    if (deletable.length > 0) {
+      mutateAsync({ files: deletable });
+    }
+    if (stillPending.length !== pendingDiscardIds.length) {
+      setPendingDiscardIds(stillPending);
+    }
+  }, [pendingDiscardIds, fileList, files, index, mutateAsync]);
 
   const startNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversationId);
@@ -58,41 +140,42 @@ export default function useNewChat({
      *
      * With draft saving on, `newConversation` deliberately leaves the draft's files alive
      * because a draft normally keeps them restorable; discarding the draft removes the only
-     * reference to them, so the uploads are deleted here rather than orphaned. The unsaved-chat
-     * key is shared by every tab's default composer, though, and a record another tab owns may
-     * still be that tab's live composer: deleting its uploads would discard unsent work there,
-     * so only this tab's own drafts are deleted. */
+     * reference to them, so the uploads are deleted here rather than orphaned. Two limits keep
+     * that deletion safe: the unsaved-chat key is shared by every tab's default composer, so a
+     * record stamped with another tab's id is left alone, and only ids the composer still owns
+     * are deleted, because the draft also records library attaches whose files other messages
+     * share. Ids the composer no longer shows cannot be told apart from those, so they are left
+     * to retention cleanup; ids still uploading are kept until their records arrive. */
     const draftId = getNewConversationDraftId(index);
     if (saveDrafts) {
       const filesDraft = getFilesDraft(draftId);
-      if (filesDraft.tabId == null || filesDraft.tabId === getBrowserTabId()) {
+      if (filesDraft.tabId != null && filesDraft.tabId !== getBrowserTabId()) {
+        setPendingDiscardIds([]);
+      } else {
+        const pasteIds = new Set(filesDraft.pastedTextIds ?? []);
+        const ownedIds = collectOwnedIds(files, pasteIds);
         const draftFileIds = new Set([
           ...filesDraft.fileIds,
           ...Object.keys(filesDraft.pendingPastes),
         ]);
-        const filesToDelete = Array.from(draftFileIds).flatMap((fileId) => {
-          const record = fileList?.find((entry) => entry.file_id === fileId);
-          if (
-            record == null ||
-            record.embedded === true ||
-            record.filepath == null ||
-            record.filepath === '' ||
-            !record.source
-          ) {
-            return [];
+        const deletable: DeletableRecord[] = [];
+        const deferred: string[] = [];
+        for (const fileId of draftFileIds) {
+          if (!ownedIds.has(fileId)) {
+            continue;
           }
-          return [
-            {
-              file_id: record.file_id,
-              embedded: false,
-              filepath: record.filepath,
-              source: record.source,
-            },
-          ];
-        });
-        if (filesToDelete.length > 0) {
-          mutateAsync({ files: filesToDelete });
+          const record = fileList?.find((entry) => entry.file_id === fileId);
+          const deletableRecord = record != null ? toDeletableRecord(record) : null;
+          if (deletableRecord != null) {
+            deletable.push(deletableRecord);
+          } else if (record == null) {
+            deferred.push(fileId);
+          }
         }
+        if (deletable.length > 0) {
+          mutateAsync({ files: deletable });
+        }
+        setPendingDiscardIds(deferred);
       }
     }
     clearAllDrafts(draftId);
@@ -107,6 +190,7 @@ export default function useNewChat({
     saveDrafts,
     fileList,
     mutateAsync,
+    files,
   ]);
 
   const handleNewChatClick = useCallback(

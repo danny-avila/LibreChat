@@ -23,11 +23,14 @@ const mockDeleteFile = jest.fn();
 const mockDeleteFiles = jest.fn();
 const mockRouteFiles = jest.fn();
 const mockFileDownload = jest.fn();
+const mockMarkPastedTextFile = jest.fn();
+const mockAddPastedTextDraftFile = jest.fn();
 
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
   conversation: { conversationId: 'conversation-a', endpoint: 'openAI' } as TConversation,
   draftToken: Symbol('new-conversation-draft'),
+  saveDrafts: true,
   fileList: [] as TFile[],
 };
 
@@ -41,12 +44,21 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
+jest.mock('recoil', () => ({
+  useRecoilValue: () => mockState.saveDrafts,
+}));
+
+jest.mock('~/store', () => ({
+  __esModule: true,
+  default: { saveDrafts: { key: 'saveDrafts' } },
+}));
+
 jest.mock('~/hooks/AuthContext', () => ({
   useAuthContext: () => ({ user: { id: 'user-1' } }),
 }));
 
 jest.mock('~/Providers', () => ({
-  useChatContext: () => ({ conversation: mockState.conversation }),
+  useChatContext: () => ({ conversation: mockState.conversation, isSubmitting: false }),
   useChatFormContext: () => ({
     getValues: () => '',
     setValue: mockSetValue,
@@ -71,6 +83,10 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/utils', () => ({
   forceResize: jest.fn(),
   getNewConversationDraftToken: () => mockState.draftToken,
+  getComposerDraftId: (index: number, conversationId: string | null) =>
+    `${conversationId ?? 'new'}:${index}`,
+  markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
+  addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
 }));
 
@@ -103,6 +119,7 @@ describe('usePastedTextEdit', () => {
       endpoint: 'openAI',
     } as TConversation;
     mockState.draftToken = Symbol('new-conversation-draft');
+    mockState.saveDrafts = true;
     mockState.fileList = [];
     mockRouteFiles.mockImplementation(
       (_files: unknown, _toolResource: unknown, lifecycle: UploadLifecycleCallbacks) => {
@@ -112,12 +129,23 @@ describe('usePastedTextEdit', () => {
     );
   });
 
-  const renderEditor = () =>
+  const renderEditor = (files?: Map<string, ExtendedFile>) =>
     renderHook(
-      ({ files }) =>
-        usePastedTextEdit({ files, setFiles: jest.fn(), textAreaRef: { current: null } }),
+      ({ files: composerFiles }) =>
+        usePastedTextEdit({
+          files: composerFiles,
+          setFiles: jest.fn(),
+          textAreaRef: { current: null },
+        }),
       {
-        initialProps: { files: new Map<string, ExtendedFile>([['pasted-file', pastedFile()]]) },
+        initialProps: {
+          files:
+            files ??
+            new Map<string, ExtendedFile>([
+              ['pasted-file', pastedFile()],
+              ['restored-file', pastedFile({ file_id: 'restored-file', file: undefined })],
+            ]),
+        },
       },
     );
 
@@ -205,6 +233,133 @@ describe('usePastedTextEdit', () => {
         }),
       ],
     });
+  });
+
+  it('records the replacement as a generated paste', async () => {
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+
+    /** Without provenance the fresh chip renders as an ordinary attachment and immediately
+     * loses the Edit and Move back affordances it exists for. */
+    expect(mockMarkPastedTextFile).toHaveBeenCalledWith(expect.any(String));
+    expect(mockAddPastedTextDraftFile).toHaveBeenCalledWith({
+      id: expect.any(String),
+      fileId: expect.any(String),
+    });
+  });
+
+  it('marks replacement provenance in memory when draft saving is off', async () => {
+    mockState.saveDrafts = false;
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+
+    expect(mockMarkPastedTextFile).toHaveBeenCalledWith(expect.any(String));
+    expect(mockAddPastedTextDraftFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the original when the composer changes while the replacement uploads', async () => {
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    mockState.conversation = {
+      conversationId: 'conversation-b',
+      endpoint: 'openAI',
+    } as TConversation;
+    await act(async () => {
+      editor.rerender({ files: new Map<string, ExtendedFile>() });
+    });
+
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the original when a send cleared the composer while the replacement uploads', async () => {
+    const editor = await openEditor();
+
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      editor.rerender({ files: new Map<string, ExtendedFile>() });
+    });
+
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+  });
+
+  it('aborts a move into a composer that was reset while the text resolved', async () => {
+    let releaseDownload: (text: string) => void = () => undefined;
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDownload = (text: string) =>
+            resolve({ data: new Blob([text], { type: 'text/plain' }) });
+        }),
+    );
+    const restored = pastedFile({ file_id: 'restored-file', file: undefined });
+    const editor = renderEditor();
+    let moved: Promise<void> = Promise.resolve();
+    await act(async () => {
+      moved = editor.result.current.moveInline(restored);
+    });
+    /** A second new chat: same conversation id, new unsaved-chat identity. */
+    mockState.draftToken = Symbol('new-conversation-draft');
+    await act(async () => {
+      editor.rerender({
+        files: new Map<string, ExtendedFile>([['restored-file', restored]]),
+      });
+    });
+
+    await act(async () => {
+      releaseDownload('recovered from storage');
+      await moved;
+    });
+
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+    expect(mockSetValue).not.toHaveBeenCalled();
+  });
+
+  it('aborts a move when the message was sent while the text resolved', async () => {
+    let releaseDownload: (text: string) => void = () => undefined;
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDownload = (text: string) =>
+            resolve({ data: new Blob([text], { type: 'text/plain' }) });
+        }),
+    );
+    const restored = pastedFile({ file_id: 'restored-file', file: undefined });
+    const editor = renderEditor();
+    let moved: Promise<void> = Promise.resolve();
+    await act(async () => {
+      moved = editor.result.current.moveInline(restored);
+    });
+    /** Sending clears the composer's files without changing either conversation identity. */
+    await act(async () => {
+      editor.rerender({ files: new Map<string, ExtendedFile>() });
+    });
+
+    await act(async () => {
+      releaseDownload('recovered from storage');
+      await moved;
+    });
+
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+    expect(mockSetValue).not.toHaveBeenCalled();
   });
 
   it('abandons the queued replacement when its composer is gone by commit time', async () => {
