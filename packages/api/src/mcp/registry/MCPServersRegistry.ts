@@ -9,8 +9,8 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
-import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';

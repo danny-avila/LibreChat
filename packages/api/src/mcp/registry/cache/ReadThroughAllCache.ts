@@ -1,5 +1,5 @@
-import { randomUUID } from 'crypto';
 import { Keyv } from 'keyv';
+import { randomUUID } from 'crypto';
 import { standardCache } from '~/cache';
 
 /** Namespace-internal key holding the active generation tag. */
