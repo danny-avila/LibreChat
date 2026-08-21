@@ -64,7 +64,7 @@ const createResponse = () => {
   const json = jest.fn();
   const status = jest.fn(() => ({ json }));
   return {
-    response: { status } as Partial<Response> as Response,
+    response: { status } as unknown as Response,
     status,
     json,
   };
