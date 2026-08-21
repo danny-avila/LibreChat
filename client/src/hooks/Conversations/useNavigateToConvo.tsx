@@ -45,6 +45,23 @@ import store from '~/store';
  */
 const currentRoute = () => window.location.pathname;
 
+/**
+ * Counts navigations this hook starts, so the user's LAST click is the one
+ * that lands.
+ *
+ * The route check alone cannot separate two first-visit clicks from each
+ * other: that path deliberately leaves the route where it is until the record
+ * arrives, so both captures read the same pathname and whichever request the
+ * network answered first would win. The two guards are orthogonal and neither
+ * subsumes the other — the generation says "a newer intent replaced this one",
+ * the route says "the user left by some means this hook never saw".
+ *
+ * Module-scoped for the same reason the route is read from the browser: every
+ * sidebar row mounts its own `useNavigateToConvo`, so a ref would be private
+ * to the row that was clicked and blind to the click that superseded it.
+ */
+let navigationGeneration = 0;
+
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -89,17 +106,19 @@ const useNavigateToConvo = (index = 0) => {
    * server-side changes — awaiting it before navigating would spend a round
    * trip with the DEPARTING conversation still on screen.
    */
-  const reconcileConversation = async (conversationId: string) => {
+  const reconcileConversation = async (conversationId: string, generation: number) => {
     /** The route this refresh belongs to — already this conversation, since
      * the caller navigated synchronously before starting it. */
     const routeAtStart = currentRoute();
+    const isCurrent = () => generation === navigationGeneration && currentRoute() === routeAtStart;
     try {
       const data = await fetchConversationRecord(conversationId);
-      /** The user may have gone elsewhere while this was in flight. Writing
-       * anyway would restore THIS conversation into state while the route and
-       * transcript show another one, and sends read from state — so the user
-       * could submit into a conversation they are no longer looking at. */
-      if (currentRoute() !== routeAtStart) {
+      /** The user may have clicked another conversation, or gone elsewhere
+       * entirely, while this was in flight. Writing anyway would restore THIS
+       * conversation into state while the route and transcript show another
+       * one, and sends read from state — so the user could submit into a
+       * conversation they are no longer looking at. */
+      if (!isCurrent()) {
         logger.log('conversation', 'Discarding superseded reconciliation', conversationId);
         return;
       }
@@ -112,7 +131,7 @@ const useNavigateToConvo = (index = 0) => {
        * cache on a transient failure would cancel an in-flight history fetch
        * (or discard one that already succeeded) with no route change left to
        * remount it, blanking a transcript that was fine. */
-      if (currentRoute() === routeAtStart && isNotFoundError(error)) {
+      if (isCurrent() && isNotFoundError(error)) {
         queryClient.removeQueries([QueryKeys.messages, conversationId]);
       }
     }
@@ -127,7 +146,7 @@ const useNavigateToConvo = (index = 0) => {
    * once the real record is in hand. Every later switch to this conversation
    * takes the instant path above.
    */
-  const navigateWithRecord = async (conversation: TConversation) => {
+  const navigateWithRecord = async (conversation: TConversation, generation: number) => {
     const conversationId = conversation.conversationId;
     if (!conversationId) {
       return;
@@ -135,7 +154,9 @@ const useNavigateToConvo = (index = 0) => {
     /** The route the user was on when they asked for this one. The route has
      * NOT moved yet on this path, so "still here" is what makes finishing the
      * navigation legitimate — leaving it would mean pulling the user back to a
-     * conversation they already navigated away from. */
+     * conversation they already navigated away from. Two first-visit clicks in
+     * a row both capture THIS route, which is why the generation is what keeps
+     * them in click order rather than in response order. */
     const routeAtStart = currentRoute();
     let record = conversation;
     try {
@@ -148,7 +169,7 @@ const useNavigateToConvo = (index = 0) => {
        * query rather than rendering contents that may no longer exist. */
       queryClient.removeQueries([QueryKeys.messages, conversationId]);
     }
-    if (currentRoute() !== routeAtStart) {
+    if (generation !== navigationGeneration || currentRoute() !== routeAtStart) {
       logger.log('conversation', 'Discarding superseded navigation', conversationId);
       return;
     }
@@ -169,6 +190,9 @@ const useNavigateToConvo = (index = 0) => {
     const { currentConvoId } = options || {};
     logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
+    /** Claim this click's place in the order before any await, so a request
+     * still in flight for an earlier one cannot land on top of it. */
+    const generation = ++navigationGeneration;
     setSubmission(null);
 
     let convo = { ...conversation };
@@ -229,7 +253,7 @@ const useNavigateToConvo = (index = 0) => {
       ]);
       queryClient.invalidateQueries([QueryKeys.conversation, convo.conversationId]);
       if (!cachedConvo) {
-        navigateWithRecord(convo);
+        navigateWithRecord(convo, generation);
         return;
       }
       /** Route and conversation state change together, in the click's own
@@ -240,7 +264,7 @@ const useNavigateToConvo = (index = 0) => {
        * the reconcile window still carries this conversation's real settings. */
       applyConversation({ ...cachedConvo, ...convo });
       navigate(`/c/${convo.conversationId}`);
-      reconcileConversation(convo.conversationId);
+      reconcileConversation(convo.conversationId, generation);
     } else {
       setConversation(convo);
       requestChatFocus();

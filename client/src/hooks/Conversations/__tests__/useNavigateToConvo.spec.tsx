@@ -266,6 +266,23 @@ describe('useNavigateToConvo', () => {
       expect(currentPath()).toBe('/c/new');
     });
 
+    it('lands on the last conversation clicked, not the first record to arrive', async () => {
+      renderHarness();
+      click('go-b');
+      click('go-c');
+      /** Neither has moved the route yet — the first-visit path waits for its
+       *  record — so both requests started from the same pathname and only
+       *  click order can say which one the user actually wants. */
+      expect(currentPath()).toBe('/c/convo-a');
+
+      /** B answers first, but C was clicked last. */
+      await settle(B, recordB);
+      await settle(C, recordC);
+
+      expect(currentPath()).toBe(`/c/${C}`);
+      expect(currentConvo()?.conversationId).toBe(C);
+    });
+
     it('discards a first-visit navigation that resolves after the user moved on', async () => {
       renderHarness([recordC]);
       click('go-b');
