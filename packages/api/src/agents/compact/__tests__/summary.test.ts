@@ -38,7 +38,7 @@ import {
   buildCompactionInstruction,
   DEFAULT_COMPACTION_PROMPT,
   DEFAULT_COMPACTION_UPDATE_PROMPT,
-} from '~/agents/compact';
+} from '~/agents/compact/summary';
 
 function userMessage(id: string, parentMessageId: string, text: string): TMessage {
   return {
@@ -387,11 +387,46 @@ describe('compactConversation', () => {
     expect(mockStream).not.toHaveBeenCalled();
   });
 
-  it('rejects an empty summary rather than persisting a useless boundary', async () => {
-    mockStream.mockImplementation(() => chunksOf('   '));
+  it('rejects an empty summary but keeps the usage it was billed for', async () => {
+    mockStream.mockImplementation(() =>
+      chunksOf('   ', { input_tokens: 900, output_tokens: 1, total_tokens: 901 }),
+    );
 
+    /** The provider still charged for the call, so the host needs the usage to
+     *  bill it even though no summary lands. */
     await expect(
       compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
-    ).rejects.toThrow('Compaction produced empty output');
+    ).rejects.toMatchObject({
+      name: 'EmptyCompactionError',
+      usage: { input_tokens: 900, provider: 'openAI' },
+    });
+  });
+
+  it('hydrates attachment text so an uploaded document survives the summary', async () => {
+    const withFile = {
+      ...userMessage('f1', Constants.NO_PARENT, 'summarize the attached spec'),
+      files: [{ file_id: 'file_1' }],
+    } as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_1', filename: 'spec.md', source: 'text', text: 'RFC-9110 defines GET.' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles,
+    });
+
+    /** Owner-scoped: the lookup must never widen past the requesting user. */
+    expect(getFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ user: 'user_1', file_id: { $in: ['file_1'] } }),
+    );
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent[0].content)).toContain('RFC-9110 defines GET.');
   });
 });

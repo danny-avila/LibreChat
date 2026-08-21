@@ -4,6 +4,7 @@ import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { CurrencyConfig } from '~/utils';
 import { useGetLangfuseSessionLinkQuery, useGetStartupConfig } from '~/data-provider';
+import { supportsCompaction } from '~/hooks/Chat/useCompactConversation';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 import CompactAction from './CompactAction';
 import { formatTokens, cn } from '~/utils';
@@ -230,7 +231,7 @@ function TokenUsageIndicator({
             currency={currency}
             langfuseSessionUrl={langfuseSession?.url ?? undefined}
           />
-          {compactionEnabled && (
+          {compactionEnabled && supportsCompaction(conversation?.endpoint) && (
             <>
               <div className="border-t border-border-light" role="separator" />
               <CompactAction />
