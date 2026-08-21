@@ -294,6 +294,41 @@ describe('handleCompactRequest', () => {
     );
   });
 
+  it('reads the job before the siblings so a settling turn cannot slip between', async () => {
+    /** The terminal claim sets `terminalPersistencePending` before saving the
+     *  response and clears it after, so a job that reads inactive has already
+     *  written any child it was going to write. Reading the children first
+     *  leaves the window where a turn saves and settles between the two. */
+    const order: string[] = [];
+    let sawInsert = false;
+    const deps = makeDeps({
+      getJob: jest.fn(async () => {
+        if (sawInsert) {
+          order.push('job');
+        }
+        return null;
+      }),
+      getMessages: jest.fn(async (filter) => {
+        if (filter.parentMessageId == null) {
+          return BRANCH as TMessage[];
+        }
+        if (sawInsert) {
+          order.push('siblings');
+        }
+        return sawInsert ? [{ messageId: 'ours' } as TMessage] : [];
+      }),
+      saveMessage: jest.fn(async (_ctx, message) => {
+        sawInsert = true;
+        return message as TMessage;
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result).toMatchObject({ status: 201 });
+    expect(order).toEqual(['job', 'siblings']);
+  });
+
   it('bills a locally counted estimate when the provider reported no usage', async () => {
     mockCompactConversation.mockResolvedValue({
       summary: SUMMARY,
