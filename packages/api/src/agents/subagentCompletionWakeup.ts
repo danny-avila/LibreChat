@@ -268,7 +268,7 @@ async function resolveOrchestrationSnapshot(
     readUncertain = true;
   }
   const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
-  const activeRead =
+  const activeSeedRead =
     boundedActiveLeases.length === 0
       ? Promise.resolve([])
       : methods.getMessages(
@@ -277,13 +277,12 @@ async function resolveOrchestrationSnapshot(
             messageId: {
               $in: boundedActiveLeases.map(({ taskId }) => `${taskId}:user`),
             },
-            'subagentTask.parentRunId': input.parentMessageId,
             'subagentTask.status': 'running',
           },
           ORCHESTRATION_TASK_SELECT,
-          { sort: false, limit: MAX_ORCHESTRATION_TASKS + 1 },
+          { sort: false, limit: MAX_ORCHESTRATION_ACTIVE_LEASES },
         );
-  const [terminalResult, activeResult] = await Promise.allSettled([
+  const [terminalResult, activeSeedResult] = await Promise.allSettled([
     methods.getMessages(
       {
         user: input.userId,
@@ -293,23 +292,34 @@ async function resolveOrchestrationSnapshot(
       ORCHESTRATION_TASK_SELECT,
       { sort: { updatedAt: -1, _id: -1 }, limit: MAX_ORCHESTRATION_CANDIDATES },
     ),
-    activeRead,
+    activeSeedRead,
   ]);
-  readUncertain ||= terminalResult.status === 'rejected' || activeResult.status === 'rejected';
+  readUncertain ||= terminalResult.status === 'rejected' || activeSeedResult.status === 'rejected';
   const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
-  const activeMessages = activeResult.status === 'fulfilled' ? activeResult.value : [];
-  if (activeMessages.length < MAX_ORCHESTRATION_TASKS + 1) {
-    const resolvedActiveTaskIds = new Set(
-      activeMessages.flatMap((message) => {
-        const taskId = taskIdFromMessage(message);
-        return taskId == null ? [] : [taskId];
+  const activeSeedMessages = activeSeedResult.status === 'fulfilled' ? activeSeedResult.value : [];
+  const validActiveSeeds = activeSeedMessages.flatMap((message) => {
+    const candidate = candidateFromMessage(message);
+    return candidate?.status === 'running' ? [{ message, candidate }] : [];
+  });
+  const activeMessages = validActiveSeeds
+    .filter(({ message }) => message.subagentTask?.parentRunId === input.parentMessageId)
+    .map(({ message }) => message);
+  if (activeSeedResult.status === 'fulfilled' && terminalResult.status === 'fulfilled') {
+    const resolvedLeaseTaskIds = new Set([
+      ...validActiveSeeds
+        .filter(({ message }) => typeof message.subagentTask?.parentRunId === 'string')
+        .map(({ candidate }) => candidate.taskId),
+      ...terminalMessages.flatMap((message) => {
+        const candidate = candidateFromMessage(message);
+        return candidate == null ? [] : [candidate.taskId];
       }),
-    );
+    ]);
     /** A retry can acquire a replacement task lease before persisting its terminal
-     * assistant row, while retaining only the abandoned attempt's seed. Without a
-     * durable lease-to-attempt identity, report that gap instead of inventing a
-     * child identity or claiming the sibling set is complete. */
-    readUncertain ||= boundedActiveLeases.some(({ taskId }) => !resolvedActiveTaskIds.has(taskId));
+     * assistant row, while retaining only the abandoned attempt's seed. A valid
+     * seed from another parent run excludes that lease from this branch, and a
+     * visible same-task terminal resolves the lease during post-settlement cleanup.
+     * Anything left unmatched is an identity gap, not permission to invent one. */
+    readUncertain ||= boundedActiveLeases.some(({ taskId }) => !resolvedLeaseTaskIds.has(taskId));
   }
   if (terminalMessages.length === 0 && activeMessages.length === 0 && readUncertain) {
     const lineage = input.currentThread.subagentThread;
@@ -420,7 +430,7 @@ async function resolveOrchestrationSnapshot(
     candidateLimitReached:
       terminalMessages.length === MAX_ORCHESTRATION_CANDIDATES ||
       activeLeases.length > MAX_ORCHESTRATION_ACTIVE_LEASES ||
-      activeMessages.length === MAX_ORCHESTRATION_TASKS + 1 ||
+      activeMessages.length > MAX_ORCHESTRATION_TASKS ||
       candidates.length > MAX_ORCHESTRATION_TASKS,
     lineageUncertain,
     readUncertain,
