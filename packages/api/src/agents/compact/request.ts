@@ -6,7 +6,13 @@ import {
   isAssistantsEndpoint,
   supportsBalanceCheck,
 } from 'librechat-data-provider';
-import type { Agent, TMessage, TModelsConfig, TResponseUsage } from 'librechat-data-provider';
+import type {
+  Agent,
+  TMessage,
+  TModelsConfig,
+  TResponseUsage,
+  AgentModelParameters,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   GetAgentFn,
@@ -25,6 +31,7 @@ import type { EndpointTokenConfig } from '~/types/tokens';
 import type { RecordUsageDeps } from '~/agents/usage';
 import {
   compactConversation,
+  resolveAgentModelParameters,
   selectBranchMessages,
   BilledCompactionError,
   NothingToCompactError,
@@ -331,15 +338,34 @@ export async function handleCompactRequest(
     }
     holdsSlot = true;
 
-    const [agent, allMessages, modelsConfig] = await Promise.all([
-      (body.endpointOption as { agent?: Promise<Agent | null> } | undefined)?.agent,
+    const endpointOption = body.endpointOption as
+      | { agent?: Promise<Agent | null>; model_parameters?: Partial<AgentModelParameters> }
+      | undefined;
+    const [loadedAgent, allMessages, modelsConfig] = await Promise.all([
+      endpointOption?.agent,
       deps.getMessages({ conversationId, user: userId }),
       deps.getModelsConfig(req),
     ]);
 
-    if (!agent) {
+    if (!loadedAgent) {
       return { status: 404, error: 'Agent not found', code: CompactErrorCodes.AGENT_NOT_FOUND };
     }
+
+    /** `endpointOption.agent` is the raw stored document, and the request's own
+     *  resolved parameters (a model spec among them) live beside it. Merging
+     *  them here, with the precedence `initializeAgent` uses for the initial
+     *  agent, is what makes compaction run the same model and generation
+     *  settings as the turns it is summarizing. The validation below then sees
+     *  the model that will ACTUALLY be used. */
+    const modelParameters = resolveAgentModelParameters(
+      loadedAgent,
+      endpointOption?.model_parameters,
+    );
+    const agent: Agent = {
+      ...loadedAgent,
+      model: modelParameters.model ?? loadedAgent.model,
+      model_parameters: modelParameters as Agent['model_parameters'],
+    };
 
     /** The ephemeral agent `buildEndpointOption` builds carries the request's
      *  own `model` verbatim, so without this a caller could compact against a
