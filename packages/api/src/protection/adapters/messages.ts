@@ -1,5 +1,6 @@
 import { isProxy } from 'node:util/types';
 import type { ContentFieldMap, ContentSource, TextContentFragment } from '../types';
+import type { ContentTraversalScope, VisitNestedStringsBudget } from './nested';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -10,7 +11,6 @@ import {
   shouldIncludeNestedSubmittedText,
   visitNestedStrings,
 } from './nested';
-import type { ContentTraversalScope, VisitNestedStringsBudget } from './nested';
 
 export interface ExternalMessagePart {
   readonly type?: string;
@@ -123,6 +123,9 @@ const EXTERNAL_MESSAGE_TRAVERSAL_SCOPES: readonly ContentTraversalScope[] = [
   { source: 'agent_instruction', fields: ['instructions'] },
   { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text'] },
   { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
+];
+const ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE: readonly ContentTraversalScope[] = [
+  { source: 'assembled_context', fields: ['assembled_context'] },
 ];
 
 const PART_SNAPSHOT_KEYS = [
@@ -784,6 +787,14 @@ export function* extractMessageContent(
     traversalComplete = false;
     haltAfterCurrentMessage = true;
   };
+  const markAssembledContextIncomplete = (): void => {
+    traversalComplete = false;
+    haltAfterCurrentMessage = true;
+    deferredPreparationError ??= new ContentTraversalLimitError(
+      [],
+      ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE,
+    );
+  };
   const appendFragment = (fragment: TextContentFragment): boolean => {
     if (emittedFragments >= MAX_EXTERNAL_MESSAGE_FRAGMENTS) {
       markTraversalIncomplete();
@@ -898,7 +909,9 @@ export function* extractMessageContent(
         assembledText.length >= MAX_ASSEMBLED_CONTEXT_PARTS ||
         !reserveContentMaterialization(traversalBudget, requestedCharacters)
       ) {
-        markTraversalIncomplete();
+        // Individual content parts have already been emitted. Only their
+        // aggregate cannot be materialized, so preserve that narrower scope.
+        markAssembledContextIncomplete();
         return;
       }
       assembledBudgetReserved = true;

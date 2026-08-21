@@ -1769,6 +1769,31 @@ describe('assertModelBoundContent', () => {
     expect(traversalBudget.materializedCharacters).toBe(1_024);
   });
 
+  it('allows submitted content-part inspection after only its aggregate overflows', () => {
+    const part = 'safe'.repeat(125_000);
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        submittedMessages: Array.from({ length: 5 }, () => ({
+          role: 'user',
+          content: [
+            { type: 'text', text: part },
+            { type: 'text', text: part },
+          ],
+        })),
+      }),
+    ).not.toThrow();
+  });
+
   it('bounds a second mixed-row aggregate while preserving a later direct finding', () => {
     const traversalBudget = {
       visitedNodes: 0,
@@ -2143,6 +2168,48 @@ describe('assertModelBoundContent', () => {
 });
 
 describe('assertModelBoundProviderContent', () => {
+  it('ignores provider-part snapshot overflow for unrelated model-parameter policies', () => {
+    const payload = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`safe_${index}`, `value_${index}`]),
+    );
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          modelParameters: {
+            pii: {
+              fields: ['request_fields'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'vendor_content', payload }] }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('fails closed for a selected provider content field after part snapshot overflow', () => {
+    const payload = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`safe_${index}`, `value_${index}`]),
+    );
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'vendor_content', payload }] }],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
   it('collects every provider-supported historical file locator', () => {
     expect(
       collectModelBoundHistoricalFileIds([

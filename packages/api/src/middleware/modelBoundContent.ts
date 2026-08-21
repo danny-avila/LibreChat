@@ -1,5 +1,5 @@
-import { StreamLimitExceededError } from '@librechat/agents';
 import { isProxy } from 'node:util/types';
+import { StreamLimitExceededError } from '@librechat/agents';
 import {
   FILE_FILTER_FIELDS,
   HITL_MESSAGE_FILTER_FIELDS,
@@ -20,13 +20,25 @@ import type {
   SkillContentInput,
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
-import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type {
   ContentTraversalScope,
   VisitNestedStringsBudget,
 } from '../protection/adapters/nested';
+import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
 import type { CanonicalFileInspectionFile } from '../protection/files';
+import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
+  CONTENT_TRAVERSAL_MAX_NODES,
+  CONTENT_MATERIALIZATION_MAX_CHARACTERS,
+  getBoundedOwnEnumerableEntries,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+  isNestedMessageTraversalProtected,
+  reserveContentMaterialization,
+} from '../protection/adapters/nested';
 import {
   allowHydratedFileReferences,
   assertHydratedFileInspectable,
@@ -46,27 +58,16 @@ import {
   extractStoredMessageContent,
 } from '../protection/adapters/submissions';
 import {
-  CONTENT_TRAVERSAL_MAX_DEPTH,
-  CONTENT_TRAVERSAL_MAX_NODES,
-  CONTENT_MATERIALIZATION_MAX_CHARACTERS,
-  getBoundedOwnEnumerableEntries,
-  getContentTraversalFragments,
-  isContentTraversalProtected,
-  isContentTraversalLimitError,
-  isNestedMessageTraversalProtected,
-  reserveContentMaterialization,
-} from '../protection/adapters/nested';
-import {
   MAX_USER_SUBMITTED_PATHS,
   getCapturedUserSubmittedPathMetadata,
   getSafeUserSubmittedPathSegments,
   getUserSubmittedMessageFieldPathState,
   getUserSubmittedPathState,
 } from '../protection/provenance';
+import { extractMessageContent, snapshotExternalMessages } from '../protection/adapters/messages';
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
-import { extractMessageContent, snapshotExternalMessages } from '../protection/adapters/messages';
 
 export type ModelBoundProviderAttribution = 'user' | 'model' | 'tool' | 'synthetic';
 
@@ -145,6 +146,21 @@ const MAX_PROVIDER_STORED_STATE_WORK =
   MAX_PROVIDER_PROJECTION_WORK + MAX_PROVIDER_PROVENANCE_PARTS * 2;
 /** One root plus bounded structural bookkeeping for every valid provider part. */
 const MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK = CONTENT_TRAVERSAL_MAX_NODES * 2;
+
+function getProviderPartSnapshotTraversalScopes(
+  providerRoles: readonly (string | undefined)[],
+): ContentTraversalScope[] {
+  const scopes: ContentTraversalScope[] = [
+    { source: 'message', fields: ['name', 'text', 'content_part', 'attachment_reference'] },
+    { source: 'assembled_context', fields: ['assembled_context'] },
+    { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text'] },
+    { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
+  ];
+  if (providerRoles.some((role) => role === 'system' || role === 'developer')) {
+    scopes.push({ source: 'agent_instruction', fields: ['instructions'] });
+  }
+  return scopes;
+}
 
 interface ProviderProjectionWorkBudget {
   remaining: number;
@@ -3002,12 +3018,16 @@ function projectModelBoundProviderContent(
   if (
     projectionBudget.overflowed ||
     providerContentBudget.overflowed ||
-    partSnapshotBudget.overflowed ||
     fileScanBudget.overflowed ||
     provenanceBudget.overflowed ||
     storedStateBudget.overflowed
   ) {
     deferredTraversalErrors.push(new ContentTraversalLimitError());
+  }
+  if (partSnapshotBudget.overflowed) {
+    deferredTraversalErrors.push(
+      new ContentTraversalLimitError([], getProviderPartSnapshotTraversalScopes(providerRoles)),
+    );
   }
   return { storedMessages: selectedMessages, resolvedFiles, deferredTraversalErrors };
 }
@@ -3368,7 +3388,21 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       finding = inspectionSession?.inspectFragment(fragment) ?? null;
     }
   };
-  const traversalErrors: ContentTraversalLimitError[] = [...(input.deferredTraversalErrors ?? [])];
+  const traversalErrors: ContentTraversalLimitError[] = [
+    ...(input.deferredTraversalErrors ?? []),
+  ].filter((error) => {
+    // Unscoped errors come from pre-existing fail-closed projection limits.
+    // New part-snapshot errors describe exactly what they could not capture,
+    // so only those use the selected-policy gate.
+    if (getContentTraversalScopes(error).length === 0) {
+      return true;
+    }
+    return isContentTraversalProtected({
+      error,
+      filters: input.filters,
+      legacyPii: input.legacyPii,
+    });
+  });
   const storedMessageTraversalBudget = input.traversalBudget ?? {
     visitedNodes: 0,
     maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,

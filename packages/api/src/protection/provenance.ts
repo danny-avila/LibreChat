@@ -1,7 +1,7 @@
 import { HITL_MESSAGE_FILTER_FIELDS } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
-import { CONTENT_TRAVERSAL_MAX_NODES } from './adapters/nested';
 import type { JsonPointer } from './types';
+import { CONTENT_TRAVERSAL_MAX_NODES } from './adapters/nested';
 
 export const MAX_USER_SUBMITTED_PATHS = 256;
 export const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;

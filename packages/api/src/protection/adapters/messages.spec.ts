@@ -1,7 +1,11 @@
 import type { FiltersConfig } from 'librechat-data-provider';
-import { ContentTraversalLimitError, isNestedMessageTraversalProtected } from './nested';
-import { extractMessageContent, snapshotExternalMessages } from './messages';
 import type { ExternalChatMessage, ExternalMessagePart, ExternalToolCall } from './messages';
+import {
+  ContentTraversalLimitError,
+  getContentTraversalScopes,
+  isNestedMessageTraversalProtected,
+} from './nested';
+import { extractMessageContent, snapshotExternalMessages } from './messages';
 import { inspectContent } from '../runtime';
 
 describe('extractMessageContent', () => {
@@ -608,6 +612,9 @@ describe('extractMessageContent', () => {
 
     expect(traversalError).toBeInstanceOf(ContentTraversalLimitError);
     expect(assembledCharacters).toBeLessThanOrEqual(8 * 1024 * 1024);
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toEqual([
+      { source: 'assembled_context', fields: ['assembled_context'] },
+    ]);
   });
 
   it('bounds a sparse ten-million-item generic carrier before numeric expansion', () => {

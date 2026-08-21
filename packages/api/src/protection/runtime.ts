@@ -15,16 +15,16 @@ import type {
 import type { ContentSource, ProtectionFinding, TextContentFragment } from './types';
 import type { ContentTraversalLimitError } from './adapters/nested';
 import {
-  getContentTraversalFragments,
-  isContentTraversalLimitError,
-  isContentTraversalProtected,
-} from './adapters/nested';
-import {
   cachePatternContentInspector,
   createPatternContentInspector,
   getPatternContentInspectorPreflightCost,
   PatternConfigurationError,
 } from './detectors/pattern';
+import {
+  getContentTraversalFragments,
+  isContentTraversalLimitError,
+  isContentTraversalProtected,
+} from './adapters/nested';
 import { isLegacyPiiFragment } from './legacy';
 
 interface CompiledFilter {
