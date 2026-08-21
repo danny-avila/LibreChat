@@ -521,12 +521,24 @@ export async function handleCompactRequest(
       endpointTokenConfig: result.endpointTokenConfig,
     });
 
+    /**
+     * Job FIRST, then the children. The two reads are not one operation, but
+     * that order makes the pair sound: the terminal claim sets
+     * `terminalPersistencePending` before the response is saved and clears it
+     * only after, so a job that reads inactive here has already written any
+     * child it was going to write, and the read that follows sees it. The
+     * reverse order leaves the window where a turn saves and settles between
+     * the two reads and neither observes it.
+     */
     const tailMoved = async (): Promise<boolean> => {
+      if (await isGenerating(deps.getJob, conversationId)) {
+        return true;
+      }
       const children = await deps.getMessages(
         { conversationId, user: userId, parentMessageId: leafId },
         'messageId',
       );
-      return (children?.length ?? 0) > 0 || (await isGenerating(deps.getJob, conversationId));
+      return (children?.length ?? 0) > 0;
     };
 
     /** A turn that started during the model call owns the tail, and writing
@@ -595,15 +607,17 @@ export async function handleCompactRequest(
 
     /** The check above and this insert are not one operation, so confirm the
      *  tail is still ours afterwards and roll back if a turn slipped in. The
-     *  compensating delete is what makes the outcome atomic for the reader. */
-    const siblings = await deps.getMessages(
-      { conversationId, user: userId, parentMessageId: leafId },
-      'messageId',
-    );
-    /** A turn that claimed the conversation during the model call may not have
-     *  written its message yet, so the job is checked here too rather than
-     *  trusting the sibling count alone. */
-    if ((siblings?.length ?? 0) > 1 || (await isGenerating(deps.getJob, conversationId))) {
+     *  compensating delete is what makes the outcome atomic for the reader.
+     *  Ordered as in `tailMoved`: the job read has to come first, or a turn
+     *  that saves and settles between the two reads is seen by neither. */
+    const racingTurn = await isGenerating(deps.getJob, conversationId);
+    const siblings = racingTurn
+      ? undefined
+      : await deps.getMessages(
+          { conversationId, user: userId, parentMessageId: leafId },
+          'messageId',
+        );
+    if (racingTurn || (siblings?.length ?? 0) > 1) {
       await deps.deleteMessages({ conversationId, user: userId, messageId }).catch((error) => {
         logger.error('[compact] Could not roll back a raced compaction message', error);
       });

@@ -738,16 +738,27 @@ const MAX_COMPACTION_PASSES = 8;
  * than the budget becomes its own oversized chunk; the provider's own limits
  * govern from there rather than this module silently discarding it.
  */
-async function chunkTranscript(messages: BaseMessage[], budget: number): Promise<BaseMessage[][]> {
-  if (messages.length === 0) {
-    return [];
-  }
+async function measureTranscript(messages: BaseMessage[]): Promise<MeasuredTranscript> {
   const counts: number[] = [];
   let total = 0;
   for (const message of messages) {
     const size = await countMessageTokens(message);
     counts.push(size);
     total += size;
+  }
+  return { messages, counts, total };
+}
+
+/** Per-message token sizes, measured once and reused across budget attempts. */
+interface MeasuredTranscript {
+  messages: BaseMessage[];
+  counts: number[];
+  total: number;
+}
+
+function chunkTranscript({ messages, counts, total }: MeasuredTranscript, budget: number) {
+  if (messages.length === 0) {
+    return [];
   }
   if (total <= budget) {
     return [messages];
@@ -890,8 +901,12 @@ async function invokeCompactionModel(
   llm: Runnable,
   messages: BaseMessage[],
   config: RunnableConfig & { runName?: string },
+  /** False only when the resolved config asked for it: a LangChain runnable
+   *  always exposes `stream()`, so a gateway that rejects streamed requests is
+   *  reachable only through the endpoint's own `streaming: false`. */
+  streaming = true,
 ): Promise<AIMessage | undefined> {
-  if (typeof llm.stream !== 'function') {
+  if (streaming === false || typeof llm.stream !== 'function') {
     return (await llm.invoke(messages, config)) as AIMessage;
   }
   const stream = await llm.stream(messages, config);
@@ -1157,23 +1172,42 @@ export async function compactConversation({
    *  checkpoint is at most one full model output. Reserved unconditionally
    *  because the pass count is only known once the budget has chunked. */
   const checkpointReserve = outputReserve > 0 ? outputReserve : DEFAULT_CHECKPOINT_RESERVE;
-  const priorSummaryTokens = priorSummary?.text ? await countTokens(priorSummary.text) : 0;
-  /** The FIRST pass carries the existing checkpoint instead, and that one was
-   *  written by whatever summarizer ran last: an administrator who lowered
+  /** The FIRST pass carries the existing checkpoint, and that one was written
+   *  by whatever summarizer ran last: an administrator who lowered
    *  `maxSummaryTokens` or moved to a smaller model leaves a prior checkpoint
    *  larger than the current output cap, and sizing to the cap alone would
    *  overflow the window on a pass the budget had judged valid. */
-  const carriedReserve = Math.max(checkpointReserve, priorSummaryTokens);
-  const chunkBudget = Math.floor(
-    (contextWindow - outputReserve - instructionReserve - carriedReserve) * TRANSCRIPT_BUDGET_RATIO,
-  );
+  const priorSummaryTokens = priorSummary?.text ? await countTokens(priorSummary.text) : 0;
+  const budgetFor = (carried: number) =>
+    Math.floor(
+      (contextWindow - outputReserve - instructionReserve - carried) * TRANSCRIPT_BUDGET_RATIO,
+    );
   /** A floor here would hand the provider a request that cannot fit however
    *  small the chunk is: the output cap and carried checkpoint alone already
    *  consume the window. Refusing names the real problem instead. */
-  if (chunkBudget < MIN_CHUNK_BUDGET_TOKENS) {
-    throw new UnworkableContextError(contextWindow, outputReserve);
+  const refuseIfUnworkable = (budget: number) => {
+    if (budget < MIN_CHUNK_BUDGET_TOKENS) {
+      throw new UnworkableContextError(contextWindow, outputReserve);
+    }
+  };
+  /**
+   * Sized for ONE pass first. A running checkpoint only exists from the second
+   * pass onward, so reserving for it up front refuses transcripts that fit
+   * comfortably: an 8K window with a 4K output cap has no budget left at all
+   * once a checkpoint it will never produce is subtracted too.
+   */
+  const singlePassBudget = budgetFor(priorSummaryTokens);
+  refuseIfUnworkable(singlePassBudget);
+  /** Measured once: re-chunking below must not re-tokenize the branch. */
+  const measured = await measureTranscript(messages as BaseMessage[]);
+  let chunks = chunkTranscript(measured, singlePassBudget);
+  if (chunks.length > 1) {
+    /** It does not fit in one pass after all, so every pass but the first has
+     *  to carry the running checkpoint as well. */
+    const multiPassBudget = budgetFor(Math.max(checkpointReserve, priorSummaryTokens));
+    refuseIfUnworkable(multiPassBudget);
+    chunks = chunkTranscript(measured, multiPassBudget);
   }
-  const chunks = await chunkTranscript(messages as BaseMessage[], chunkBudget);
   if (chunks.length > MAX_COMPACTION_PASSES) {
     /** Refuse rather than drop: a checkpoint that silently omitted the oldest
      *  turns would still replace them in every later prompt. */
@@ -1238,14 +1272,19 @@ export async function compactConversation({
 
     let response: AIMessage | undefined;
     try {
-      response = await invokeCompactionModel(llm, passMessages, {
-        signal: abortSignal,
-        runName: 'CompactRun',
-        configurable: {
-          thread_id: ids.conversationId,
-          user_id: req.user?.id,
+      response = await invokeCompactionModel(
+        llm,
+        passMessages,
+        {
+          signal: abortSignal,
+          runName: 'CompactRun',
+          configurable: {
+            thread_id: ids.conversationId,
+            user_id: req.user?.id,
+          },
         },
-      });
+        (clientOptions as { streaming?: boolean }).streaming !== false,
+      );
     } catch (error) {
       /** A rejected call (bad credential, rate limit) produced no provider
        *  work, so its prompt is not counted, whether it was refused outright or

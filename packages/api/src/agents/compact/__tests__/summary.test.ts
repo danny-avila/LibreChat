@@ -702,7 +702,7 @@ describe('compactConversation', () => {
       provider: 'openAI',
       endpoint: 'openAI',
       model: 'test-small-window',
-      model_parameters: { model: 'test-small-window', maxTokens: 31000 },
+      model_parameters: { model: 'test-small-window', maxTokens: 32000 },
     };
 
     await expect(
@@ -860,6 +860,48 @@ describe('compactConversation', () => {
     expect(mockStream.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('does not reserve a checkpoint the first pass will never produce', async () => {
+    /** A running checkpoint exists only from the second pass onward. Reserving
+     *  for it up front refused transcripts that fit comfortably in one pass. */
+    const halfWindowCapAgent = {
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'test-small-window',
+      model_parameters: { model: 'test-small-window', maxTokens: 16000 },
+    };
+
+    const result = await compactConversation({
+      req: makeReq(),
+      agent: halfWindowCapAgent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    expect(mockStream).toHaveBeenCalledTimes(1);
+    expect(result.summary.content).toBeDefined();
+  });
+
+  it('honors an endpoint configured not to stream', async () => {
+    /** A LangChain runnable always exposes `stream()`, so a gateway that
+     *  rejects streamed requests is only reachable through this override. */
+    mockInvoke.mockResolvedValue(new AIMessage('## Checkpoint\nDid the thing.'));
+
+    const result = await compactConversation({
+      req: makeReq({ parameters: { streaming: false } }),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    expect(mockStream).not.toHaveBeenCalled();
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+    expect(result.summary.content).toEqual([
+      { type: ContentTypes.TEXT, text: '## Checkpoint\nDid the thing.' },
+    ]);
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so
@@ -869,7 +911,7 @@ describe('compactConversation', () => {
       provider: 'openAI',
       endpoint: 'openAI',
       model: 'gpt-5',
-      model_parameters: { model: 'gpt-5', max_tokens: 350000 },
+      model_parameters: { model: 'gpt-5', max_tokens: 399000 },
     };
 
     await expect(
