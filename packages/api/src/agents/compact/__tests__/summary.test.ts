@@ -1026,6 +1026,124 @@ describe('compactConversation', () => {
     }
   });
 
+  it('applies a summary cap where a GPT-5 model expects it', async () => {
+    /** `getOptions` already moved the inherited cap into `modelKwargs` and
+     *  deleted the top-level key; writing the override back there would send
+     *  `max_tokens` alongside it, which those models reject. */
+    mockInitializeModel.mockClear();
+
+    const cappedGpt5Agent = {
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'gpt-5',
+      model_parameters: { model: 'gpt-5', max_tokens: 8000 },
+    };
+
+    await compactConversation({
+      req: makeReq({ maxSummaryTokens: 2048 }),
+      agent: cappedGpt5Agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const clientOptions = mockInitializeModel.mock.calls[0][0].clientOptions as {
+      maxTokens?: number;
+      modelKwargs?: Record<string, unknown>;
+    };
+    expect(clientOptions.modelKwargs?.max_completion_tokens).toBe(2048);
+    expect(clientOptions.maxTokens).toBeUndefined();
+  });
+
+  it('counts replayed reasoning content when sizing a pass', async () => {
+    const reasoningBranch: TMessage[] = [
+      userMessage('t1', Constants.NO_PARENT, 'run it'),
+      assistantMessage('t2', 't1', [
+        { type: ContentTypes.THINK, think: bulk('thought', 400) },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { id: 'call_t', name: 'bash_tool', args: '{"cmd":"ls"}', output: 'a.ts' },
+        },
+      ] as TMessage['content']),
+    ];
+    const estimate = async (model: string): Promise<number> => {
+      let promptTokens = 0;
+      await compactConversation({
+        req: makeReq(),
+        agent: { provider: 'openAI', endpoint: 'openAI', model, model_parameters: { model } },
+        branch: reasoningBranch,
+        ids: { ...ids, parentMessageId: 't2' },
+        db: dbMethods,
+        beforeInvoke: async (params) => {
+          promptTokens = params.promptTokens;
+        },
+      });
+      return promptTokens;
+    };
+
+    /** The reasoning is reconstructed only for a target that replays it, and
+     *  it is sent with the request, so the estimate has to grow with it. */
+    const withReplay = await estimate('deepseek-reasoner');
+    const withoutReplay = await estimate('gpt-4o-mini');
+    expect(withReplay).toBeGreaterThan(withoutReplay);
+  });
+
+  it('sizes chunks from a configured context limit, not the model map', async () => {
+    /** A normal turn treats `maxContextTokens` as authoritative, so a custom
+     *  model configured for a small window must not be sized against the 32K
+     *  fallback. */
+    const wideBranch: TMessage[] = [
+      userMessage('c1', Constants.NO_PARENT, bulk('alpha', 900)),
+      userMessage('c2', 'c1', bulk('beta', 900)),
+      userMessage('c3', 'c2', bulk('gamma', 900)),
+    ];
+
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...smallWindowAgent, maxContextTokens: 6000 },
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'c3' },
+      db: dbMethods,
+    });
+    const constrainedPasses = mockStream.mock.calls.length;
+
+    mockStream.mockClear();
+    await compactConversation({
+      req: makeReq(),
+      agent: smallWindowAgent,
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'c3' },
+      db: dbMethods,
+    });
+
+    expect(constrainedPasses).toBeGreaterThan(mockStream.mock.calls.length);
+  });
+
+  it('does not re-send historical files when resendFiles is off', async () => {
+    const withFile = {
+      ...userMessage('f1', Constants.NO_PARENT, 'summarize the attached spec'),
+      files: [{ file_id: 'file_1' }],
+    } as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_1', filename: 'spec.md', source: 'text', text: 'RFC-9110 defines GET.' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...agent, resendFiles: false },
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles,
+    });
+
+    expect(getFiles).not.toHaveBeenCalled();
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent[0].content)).not.toContain('RFC-9110 defines GET.');
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so
