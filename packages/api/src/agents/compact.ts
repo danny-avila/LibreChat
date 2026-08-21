@@ -6,6 +6,7 @@ import {
   formatMessage,
   initializeModel,
   formatAgentMessages,
+  getMaxOutputTokensKey,
 } from '@librechat/agents';
 import type {
   TMessage,
@@ -18,9 +19,11 @@ import type { Runnable, RunnableConfig } from '@langchain/core/runnables';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ClientOptions } from '@librechat/agents';
 import type { EndpointDbMethods, OpenAIConfiguration, ServerRequest } from '~/types';
+import type { FormattedMessageWithContent } from '~/agents/client';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
+import { prependQuotes } from '~/agents/client';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
 
@@ -100,6 +103,13 @@ type MaybeAzureConfig = ClientOptions & {
 /** Normalized usage of a single compaction call, shaped for `recordCollectedUsage`. */
 export interface CompactionUsage {
   model?: string;
+  /**
+   * REQUIRED for correct billing. `splitUsage` only subtracts cache units from
+   * `input_tokens` when the provider is one whose input already includes them
+   * (`inputTokensIncludesCache`); dropping it bills a cached compaction as raw
+   * input PLUS the cache units again.
+   */
+  provider?: string;
   input_tokens?: number;
   output_tokens?: number;
   input_token_details?: { cache_read?: number; cache_creation?: number };
@@ -131,6 +141,29 @@ export interface ResolveCompactionModelParams {
   /** Request-scoped ids for header placeholder resolution. */
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
   db: EndpointDbMethods;
+}
+
+/**
+ * Splits `summarization.parameters` the way the SDK's summarize node does:
+ * `maxSummaryTokens` is a summarization-only knob routed to the provider's
+ * output-cap key, everything else is a plain client option.
+ */
+function separateSummarizationParameters(parameters?: SummarizationConfig['parameters']): {
+  llmParams: Record<string, unknown>;
+  maxSummaryTokens?: number;
+} {
+  const llmParams: Record<string, unknown> = {};
+  let maxSummaryTokens: number | undefined;
+  for (const [key, value] of Object.entries(parameters ?? {})) {
+    if (key === 'maxSummaryTokens') {
+      if (typeof value === 'number' && value > 0) {
+        maxSummaryTokens = value;
+      }
+      continue;
+    }
+    llmParams[key] = value;
+  }
+  return { llmParams, maxSummaryTokens };
 }
 
 function normalizeEndpointName(value: string): string {
@@ -186,14 +219,22 @@ export function selectBranchMessages(
  * hands it on a normal turn. Without the explicit role the formatter falls
  * back to sender sniffing and every assistant turn loses its tool-call
  * reconstruction.
+ *
+ * Quoted excerpts are merged back in for the same reason the send path does it:
+ * `formatMessage` leaves `message.quotes` out of the content, and a summary
+ * built without them drops the referenced material permanently once it becomes
+ * the context boundary.
  */
 function toPayload(branch: TMessage[]): Array<Partial<TMessage>> {
-  return branch.map(
-    (message) =>
-      formatMessage({
-        message: { ...message, role: message.isCreatedByUser ? 'user' : 'assistant' },
-      }) as Partial<TMessage>,
-  );
+  return branch.map((message) => {
+    const formatted = formatMessage({
+      message: { ...message, role: message.isCreatedByUser ? 'user' : 'assistant' },
+    }) as FormattedMessageWithContent;
+    if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+      prependQuotes(formatted, message.quotes);
+    }
+    return formatted as Partial<TMessage>;
+  });
 }
 
 /**
@@ -271,6 +312,22 @@ export async function resolveCompactionModel({
     clientOptions.configuration = options.configOptions as OpenAIConfiguration;
   }
 
+  /**
+   * Admin summarization overrides win over the conversation's own generation
+   * settings, exactly as `buildSummarizationClientConfig` applies them on the
+   * automatic path: `parameters` are spread on top, and `maxSummaryTokens`
+   * replaces the run's output cap under the provider's own key.
+   */
+  const { llmParams, maxSummaryTokens } = separateSummarizationParameters(
+    summarization?.parameters,
+  );
+  Object.assign(clientOptions, llmParams);
+  const effectiveMaxSummaryTokens = maxSummaryTokens ?? summarization?.maxSummaryTokens;
+  if (effectiveMaxSummaryTokens != null && effectiveMaxSummaryTokens > 0) {
+    (clientOptions as Record<string, unknown>)[getMaxOutputTokensKey(provider)] =
+      effectiveMaxSummaryTokens;
+  }
+
   resolveConfigHeaders({
     llmConfig: clientOptions,
     user: createSafeUser(req.user),
@@ -302,6 +359,20 @@ export function buildCompactionInstruction(
   return `${updatePromptText}\n\n<previous-summary>\n${prior}\n</previous-summary>`;
 }
 
+/**
+ * Prompt-size estimate for the pre-flight balance check. Counts the serialized
+ * content of every message the provider will receive, matching how the send
+ * path derives its `promptTokens` argument closely enough for a spend gate.
+ */
+async function countPromptTokens(messages: BaseMessage[]): Promise<number> {
+  let total = 0;
+  for (const message of messages) {
+    const { content } = message;
+    total += await countTokens(typeof content === 'string' ? content : JSON.stringify(content));
+  }
+  return total;
+}
+
 function extractResponseText(message: BaseMessage | undefined): string {
   const content = message?.content;
   if (typeof content === 'string') {
@@ -316,13 +387,18 @@ function extractResponseText(message: BaseMessage | undefined): string {
     .trim();
 }
 
-function extractUsage(message: AIMessage | undefined, model?: string): CompactionUsage | undefined {
+function extractUsage(
+  message: AIMessage | undefined,
+  model: string | undefined,
+  provider: string,
+): CompactionUsage | undefined {
   const usage = message?.usage_metadata;
   if (!usage) {
     return undefined;
   }
   return {
     model,
+    provider,
     input_tokens: usage.input_tokens,
     output_tokens: usage.output_tokens,
     ...(usage.input_token_details != null
@@ -378,6 +454,18 @@ export interface CompactConversationParams {
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
   db: EndpointDbMethods;
   signal?: AbortSignal;
+  /**
+   * Runs after the prompt is assembled and the model resolved, but BEFORE the
+   * provider is contacted. The host uses it for the same pre-flight balance
+   * check `BaseClient` runs on a normal turn; throwing aborts the compaction
+   * without spending.
+   */
+  beforeInvoke?: (estimate: {
+    promptTokens: number;
+    model?: string;
+    provider: string;
+    endpointTokenConfig?: unknown;
+  }) => Promise<void>;
 }
 
 /** Raised when there is nothing left to compact on the active branch. */
@@ -404,6 +492,7 @@ export async function compactConversation({
   ids,
   db,
   signal,
+  beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
   const { messages, summary: priorSummary } = formatAgentMessages(
     stripActivityLabelParts(toPayload(branch)),
@@ -427,31 +516,37 @@ export async function compactConversation({
   const instruction = buildCompactionInstruction(promptText, updatePromptText, priorSummary?.text);
   const llm = initializeModel({ provider, clientOptions });
 
+  const promptMessages = [...messages, new HumanMessage(instruction)] as BaseMessage[];
+  if (beforeInvoke) {
+    await beforeInvoke({
+      promptTokens: await countPromptTokens(promptMessages),
+      model,
+      provider,
+      endpointTokenConfig,
+    });
+  }
+
   const timeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS);
   const abortSignal =
     signal != null && typeof AbortSignal.any === 'function'
       ? AbortSignal.any([signal, timeout])
       : timeout;
 
-  const response = await invokeCompactionModel(
-    llm,
-    [...messages, new HumanMessage(instruction)] as BaseMessage[],
-    {
-      signal: abortSignal,
-      runName: 'CompactRun',
-      configurable: {
-        thread_id: ids.conversationId,
-        user_id: req.user?.id,
-      },
+  const response = await invokeCompactionModel(llm, promptMessages, {
+    signal: abortSignal,
+    runName: 'CompactRun',
+    configurable: {
+      thread_id: ids.conversationId,
+      user_id: req.user?.id,
     },
-  );
+  });
 
   const text = extractResponseText(response);
   if (text === '') {
     throw new Error('Compaction produced empty output');
   }
 
-  const usage = extractUsage(response, model);
+  const usage = extractUsage(response, model, provider);
   const providerOutputTokens = usage?.output_tokens ?? 0;
   const tokenCount =
     (providerOutputTokens > 0 ? providerOutputTokens : await countTokens(text)) +
