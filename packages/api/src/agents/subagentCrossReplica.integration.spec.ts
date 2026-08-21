@@ -80,9 +80,9 @@ async function createRoutingTransport(instanceId: string, namespace: string) {
   return new RedisSubagentTaskControlTransport(publisher, subscriber, {
     instanceId,
     namespace,
-    registrationHeartbeatMs: 25,
-    requestTimeoutMs: 200,
-    retryDelayMs: 10,
+    registrationHeartbeatMs: 1_000,
+    requestTimeoutMs: 1_000,
+    retryDelayMs: 25,
   });
 }
 
