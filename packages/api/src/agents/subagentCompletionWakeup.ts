@@ -314,6 +314,13 @@ async function resolveOrchestrationSnapshot(
         message.subagentTask?.parentRunId === input.parentMessageId,
     )
     .map(({ message }) => message);
+  const leaseTerminalMessages = validLeaseEvidence
+    .filter(
+      ({ message, candidate }) =>
+        candidate.status !== 'running' &&
+        message.subagentTask?.parentRunId === input.parentMessageId,
+    )
+    .map(({ message }) => message);
   if (leaseEvidenceResult.status === 'fulfilled') {
     const resolvedLeaseTaskIds = new Set(
       validLeaseEvidence
@@ -327,7 +334,12 @@ async function resolveOrchestrationSnapshot(
      * Anything left unmatched is an identity gap, not permission to invent one. */
     readUncertain ||= boundedActiveLeases.some(({ taskId }) => !resolvedLeaseTaskIds.has(taskId));
   }
-  if (terminalMessages.length === 0 && activeMessages.length === 0 && readUncertain) {
+  if (
+    terminalMessages.length === 0 &&
+    activeMessages.length === 0 &&
+    leaseTerminalMessages.length === 0 &&
+    readUncertain
+  ) {
     const lineage = input.currentThread.subagentThread;
     if (lineage == null) {
       return {
@@ -355,7 +367,7 @@ async function resolveOrchestrationSnapshot(
   }
 
   const byAttemptKey = new Map<string, OrchestrationTaskCandidate>();
-  for (const message of [...activeMessages, ...terminalMessages]) {
+  for (const message of [...activeMessages, ...terminalMessages, ...leaseTerminalMessages]) {
     const candidate = candidateFromMessage(message);
     if (candidate == null) {
       continue;

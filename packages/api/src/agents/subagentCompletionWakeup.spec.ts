@@ -918,7 +918,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
     expect(snapshot.value.additional_children_may_exist).toBe(false);
   });
 
-  it('treats a visible same-task terminal as resolving its still-held lease', async () => {
+  it('retains a same-branch retry terminal seen only by lease evidence', async () => {
     const { methods, terminal } = resolverMethods();
     const retryTerminal = {
       ...terminal,
@@ -965,7 +965,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
         return [retryTerminal];
       }
       if (filter['subagentTask.parentRunId'] === 'response-1') {
-        return [terminal, retryTerminal];
+        return [terminal];
       }
       return [];
     });
@@ -998,6 +998,104 @@ describe('createSubagentCompletionWakeupResolver', () => {
     ]);
     expect(snapshot.value.completeness).toBe('complete');
     expect(snapshot.value.additional_children_may_exist).toBe(false);
+  });
+
+  it('lets a lease-evidence terminal supersede the same attempt running seed', async () => {
+    const { methods, terminal } = resolverMethods();
+    const runningSeed = {
+      messageId: 'settling-task:user',
+      conversationId: 'thread-settling',
+      sender: 'User',
+      isCreatedByUser: true,
+      createdAt: new Date(NOW - 30),
+      updatedAt: new Date(NOW - 30),
+      subagentTask: {
+        attemptKey: 'settling-attempt',
+        parentRunId: 'response-1',
+        status: 'running' as const,
+      },
+    };
+    const settledTerminal = {
+      ...terminal,
+      messageId: 'settling-task:assistant',
+      conversationId: 'thread-settling',
+      sender: 'reviewer',
+      createdAt: new Date(NOW - 20),
+      updatedAt: new Date(NOW - 10),
+      subagentTask: {
+        attemptKey: 'settling-attempt',
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    };
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-settling',
+        parentConversationId: 'conversation-1',
+        taskId: 'settling-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [runningSeed, settledTerminal];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => ({
+      conversationId,
+      tenantId: 'tenant-1',
+      ...(conversationId === 'conversation-1'
+        ? {}
+        : {
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'response-1',
+              parentAgentId: 'agent_parent_1',
+              subagentType: conversationId === 'thread-settling' ? 'reviewer' : 'researcher',
+            },
+          }),
+    }));
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+      expect.objectContaining({
+        background_task_id: 'settling-task',
+        status: 'completed',
+        result_state: 'available',
+      }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
   });
 
   it('omits sibling task records outside the authorized parent lineage', async () => {
