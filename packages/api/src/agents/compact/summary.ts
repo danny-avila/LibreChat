@@ -191,6 +191,13 @@ export interface CompactionAgent {
    *  `provider` already names the endpoint. */
   endpoint?: string | null;
   model_parameters?: Partial<AgentModelParameters> & { model?: string };
+  /** Resolved `maxContextTokens`. Authoritative over the built-in token map,
+   *  exactly as it is for a normal turn: a custom model the map does not know
+   *  is otherwise sized against the fallback window. */
+  maxContextTokens?: number;
+  /** Resolved `resendFiles`. False means the user turned OFF re-sending
+   *  previously uploaded files, which historical hydration must respect. */
+  resendFiles?: boolean;
 }
 
 /** Stored user-key expiry lookup, used to build the freshness marker. */
@@ -497,17 +504,31 @@ function toPayload(
  * are stripped exactly as the normal path strips them: they are not provider
  * parameters.
  */
+export interface ResolvedAgentParameters {
+  modelOptions: Partial<AgentModelParameters> & { model?: string };
+  /** Authoritative context budget when the conversation or spec sets one. */
+  maxContextTokens?: number;
+  /** False when the user turned off re-sending previously uploaded files. */
+  resendFiles: boolean;
+}
+
 export function resolveAgentModelParameters(
   agent: CompactionAgent,
   endpointParameters?: Partial<AgentModelParameters>,
-): Partial<AgentModelParameters> & { model?: string } {
+): ResolvedAgentParameters {
   const merged = Object.assign(
     { model: agent.model ?? undefined },
     agent.model_parameters ?? {},
     endpointParameters ?? {},
   );
-  const { modelOptions } = extractLibreChatParams(merged as Record<string, unknown>);
-  return modelOptions as Partial<AgentModelParameters> & { model?: string };
+  const { modelOptions, maxContextTokens, resendFiles } = extractLibreChatParams(
+    merged as Record<string, unknown>,
+  );
+  return {
+    modelOptions: modelOptions as Partial<AgentModelParameters> & { model?: string },
+    maxContextTokens,
+    resendFiles,
+  };
 }
 
 /**
@@ -687,8 +708,7 @@ export async function resolveCompactionModel({
   }
   const effectiveMaxSummaryTokens = maxSummaryTokens ?? summarization?.maxSummaryTokens;
   if (effectiveMaxSummaryTokens != null && effectiveMaxSummaryTokens > 0) {
-    (clientOptions as Record<string, unknown>)[getMaxOutputTokensKey(provider)] =
-      effectiveMaxSummaryTokens;
+    applyOutputCap(clientOptions, provider, effectiveMaxSummaryTokens);
   }
 
   /** The whole request body, not just the generated ids: a custom endpoint
@@ -845,6 +865,14 @@ async function countMessageTokens(message: BaseMessage): Promise<number> {
   if (typeof message.name === 'string' && message.name !== '') {
     parts.push(message.name);
   }
+  /** Reconstructed by `formatAgentMessages` for a target that replays it, and
+   *  sent with the request, so a reasoning-heavy branch is sized short without
+   *  it: chunked past the window, gated on an underestimate, and underbilled
+   *  whenever the gateway omits usage. */
+  const reasoning = message.additional_kwargs?.reasoning_content;
+  if (typeof reasoning === 'string' && reasoning !== '') {
+    parts.push(reasoning);
+  }
   return countTokens(parts.join(' '));
 }
 
@@ -882,6 +910,37 @@ function extractResponseText(message: BaseMessage | undefined): string {
  */
 /** Where `getOpenAILLMConfig` relocates an output cap it cannot send verbatim. */
 const NESTED_OUTPUT_CAP_KEYS = ['max_completion_tokens', 'max_output_tokens'] as const;
+
+/** Models whose cap `getOpenAILLMConfig` moves, because they reject `max_tokens`. */
+const RELOCATED_CAP_MODEL_PATTERN = /\bgpt-[5-9](?:\.\d+)?\b/i;
+
+/**
+ * Writes an output cap where the RESOLVED config expects it.
+ *
+ * `getOptions` has already run by the time an admin's `maxSummaryTokens`
+ * override is applied, and for a GPT-5+ model it moved the inherited cap into
+ * `modelKwargs` and deleted the top-level key. Writing the override back at the
+ * top level would send `max_tokens` alongside the relocated one, which those
+ * models reject, and would leave the stale nested value governing the request.
+ * Same decision the label and memory paths make for the same reason.
+ */
+function applyOutputCap(clientOptions: ClientOptions, provider: Providers, cap: number): void {
+  const options = clientOptions as Record<string, unknown>;
+  const model = typeof options.model === 'string' ? options.model : '';
+  if (!RELOCATED_CAP_MODEL_PATTERN.test(model)) {
+    options[getMaxOutputTokensKey(provider)] = cap;
+    return;
+  }
+  const relocatedKey =
+    options.useResponsesApi === true ? 'max_output_tokens' : 'max_completion_tokens';
+  const modelKwargs = isPlainObject(options.modelKwargs) ? { ...options.modelKwargs } : {};
+  for (const key of NESTED_OUTPUT_CAP_KEYS) {
+    delete modelKwargs[key];
+  }
+  modelKwargs[relocatedKey] = cap;
+  options.modelKwargs = modelKwargs;
+  delete options[getMaxOutputTokensKey(provider)];
+}
 
 function resolveOutputReserve(clientOptions: ClientOptions, provider: Providers): number {
   const options = clientOptions as Record<string, unknown>;
@@ -1168,7 +1227,14 @@ export async function compactConversation({
     replaysReasoningContent,
   } = await resolveCompactionModel({ req, agent, ids, db });
 
-  const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
+  /** `resendFiles: false` means the user turned off re-sending previously
+   *  uploaded files, and the normal history path returns before loading any.
+   *  Re-inlining them here would send those documents again, possibly to a
+   *  different configured summarization provider. */
+  const fileContextByMessageId =
+    agent.resendFiles === false
+      ? new Map<string, string>()
+      : await hydrateAttachments(branch, req, getFiles);
   const agentConfigs = await resolveHistoryAgents(branch, getAgent);
   const payload = stripActivityLabelParts(
     toPayload(branch, fileContextByMessageId, createMultiAgentMapper(agent as Agent, agentConfigs)),
@@ -1210,7 +1276,9 @@ export async function compactConversation({
    *  and falls back to a tiny window. Named custom endpoints resolve to
    *  `custom`, where their models actually live in the token map. */
   const contextWindow =
-    getModelMaxTokens(model ?? '', tokenLookupEndpoint, endpointTokenConfig) ??
+    (agent.maxContextTokens != null && agent.maxContextTokens > 0
+      ? agent.maxContextTokens
+      : getModelMaxTokens(model ?? '', tokenLookupEndpoint, endpointTokenConfig)) ??
     FALLBACK_CONTEXT_TOKENS;
   /** The request asks for output too: a chunk sized against the whole window
    *  plus an inherited output cap exceeds the provider's combined limit. */
