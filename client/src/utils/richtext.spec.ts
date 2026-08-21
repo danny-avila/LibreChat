@@ -125,6 +125,31 @@ describe('markdownToHtml', () => {
     );
   });
 
+  it('shows an inline directive by name, as the artifact plugin does', () => {
+    expect(markdownToHtml('a :foo[bar] b')).toBe('<p>a :foo b</p>');
+  });
+
+  it('numbers footnotes by the order their references appear', () => {
+    const html = markdownToHtml('Second[^b] then first[^a].\n\n[^a]: alpha\n\n[^b]: beta');
+
+    expect(html).toContain('Second<sup>1</sup> then first<sup>2</sup>.');
+    expect(html).toContain('<div><sup>1</sup><p>beta</p></div>');
+    expect(html).toContain('<div><sup>2</sup><p>alpha</p></div>');
+  });
+
+  it('omits a footnote definition nothing references, as the renderer does', () => {
+    expect(markdownToHtml('Plain text.\n\n[^unused]: never cited')).toBe('<p>Plain text.</p>');
+  });
+
+  it('keeps reserved labels from capturing a reference', () => {
+    const markdown = 'Cited [1].\n\n[1]: https://other.example';
+
+    expect(markdownToHtml(markdown)).toBe('<p>Cited <a href="https://other.example">1</a>.</p>');
+    expect(
+      markdownToHtml(markdown, { variant: 'full', latex: false, reserved: new Set(['1']) }),
+    ).toBe('<p>Cited [1].</p>');
+  });
+
   it('leaves paired currency alone, as the renderer does', () => {
     expect(markdownToHtml('Costs rose from $5 to $10.')).toBe('<p>Costs rose from $5 to $10.</p>');
   });

@@ -3,6 +3,7 @@ import copy from 'copy-to-clipboard';
 import { renderHook, act } from '@testing-library/react';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
+import type { MarkdownVariant } from '~/utils/richtext';
 import { useCopyMessageToClipboard } from '~/hooks/Messages/useCopyToClipboard';
 import store from '~/store';
 
@@ -21,6 +22,7 @@ describe('useCopyMessageToClipboard', () => {
   const renderWithSettings = (
     settings: { copyRichText: boolean; enableUserMsgMarkdown: boolean; latexParsing?: boolean },
     isCreatedByUser: boolean,
+    variant?: MarkdownVariant,
   ) => {
     const initializeState = ({ set }: MutableSnapshot) => {
       set(store.copyRichText, settings.copyRichText);
@@ -28,7 +30,7 @@ describe('useCopyMessageToClipboard', () => {
       set(store.LaTeXParsing, settings.latexParsing ?? true);
     };
 
-    return renderHook(() => useCopyMessageToClipboard({ text: TEXT, isCreatedByUser }), {
+    return renderHook(() => useCopyMessageToClipboard({ text: TEXT, isCreatedByUser, variant }), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
       ),
@@ -152,6 +154,21 @@ describe('useCopyMessageToClipboard', () => {
       withoutLatex.result.current(mockSetIsCopied);
     });
 
+    expect(copiedHtml()).toBe('<p>$E=mc^2$</p>');
+  });
+
+  it('honors a forced variant over the authorship default', () => {
+    const { result } = renderWithSettings(
+      { copyRichText: true, enableUserMsgMarkdown: false, latexParsing: true },
+      true,
+      'lite',
+    );
+
+    act(() => {
+      result.current(mockSetIsCopied);
+    });
+
+    expect(copiedAsHtml()).toBe(true);
     expect(copiedHtml()).toBe('<p>$E=mc^2$</p>');
   });
 

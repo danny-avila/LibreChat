@@ -23,6 +23,12 @@ export type RichTextMode = {
   variant: MarkdownVariant;
   /** Whether `Markdown`'s LaTeX preprocessing is on, mirroring `LaTeXParsing`. */
   latex: boolean;
+  /**
+   * Reference labels that must not resolve against a definition. Citation
+   * markers are generated as `[1]`, `[2]`, and a message that also defines
+   * `[1]: https://elsewhere` would otherwise capture them.
+   */
+  reserved?: ReadonlySet<string>;
 };
 
 /**
@@ -60,6 +66,8 @@ const STYLES = {
   cell: `border:${BORDER};padding:6px 13px;`,
 } as const;
 
+const EMPTY_RESERVED: ReadonlySet<string> = new Set();
+
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -67,7 +75,12 @@ const HTML_ESCAPES: Record<string, string> = {
   '"': '&quot;',
 };
 
-type Definitions = Map<string, Definition>;
+type SerializeContext = {
+  definitions: Map<string, Definition>;
+  /** Footnote label to its displayed number, in the order references appear. */
+  footnotes: Map<string, number>;
+  reserved: ReadonlySet<string>;
+};
 
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"]/g, (character) => HTML_ESCAPES[character]);
@@ -132,22 +145,49 @@ const image = (url: string, alt: string): string => {
 
 /**
  * Reference-style links resolve against definitions that may appear anywhere in
- * the message, including after their use, so they are collected before any node
- * is serialized.
+ * the message, including after their use, and footnotes are numbered by the
+ * order their references appear, so both are collected before any node is
+ * serialized.
  */
-function collectDefinitions(nodes: readonly SerializableNode[], definitions: Definitions): void {
+function collectContext(nodes: readonly SerializableNode[], context: SerializeContext): void {
   for (const node of nodes) {
     if (node.type === 'definition') {
-      definitions.set(node.identifier, node);
+      context.definitions.set(node.identifier, node);
       continue;
     }
+    if (node.type === 'footnoteReference' && !context.footnotes.has(node.identifier)) {
+      context.footnotes.set(node.identifier, context.footnotes.size + 1);
+    }
     if ('children' in node) {
-      collectDefinitions(node.children, definitions);
+      collectContext(node.children, context);
     }
   }
 }
 
-function serializeTable(node: Table, definitions: Definitions): string {
+type Reference = {
+  identifier: string;
+  label?: string | null;
+  referenceType: 'shortcut' | 'collapsed' | 'full';
+};
+
+const resolveReference = (node: Reference, context: SerializeContext): Definition | undefined =>
+  context.reserved.has(node.identifier) ? undefined : context.definitions.get(node.identifier);
+
+/**
+ * An unresolved reference falls back to its own source form, the way
+ * remark-rehype reverts one it cannot match.
+ */
+function revertReference(node: Reference, inner: string, prefix: string): string {
+  if (node.referenceType === 'full') {
+    return `${prefix}[${inner}][${escapeText(node.label ?? node.identifier)}]`;
+  }
+  if (node.referenceType === 'collapsed') {
+    return `${prefix}[${inner}][]`;
+  }
+  return `${prefix}[${inner}]`;
+}
+
+function serializeTable(node: Table, context: SerializeContext): string {
   const align = node.align ?? [];
   const [headerRow, ...bodyRows] = node.children;
 
@@ -157,7 +197,7 @@ function serializeTable(node: Table, definitions: Definitions): string {
       const cell = row.children[index];
       html += `<${tag} style="${style}${alignStyle(align[index])}">${serializeChildren(
         cell.children,
-        definitions,
+        context,
       )}</${tag}>`;
     }
     return `<tr>${html}</tr>`;
@@ -178,25 +218,25 @@ function serializeTable(node: Table, definitions: Definitions): string {
  * `rehype-raw` either: what the user sees is the literal markup, and the
  * clipboard copy must not smuggle live markup into the paste target.
  */
-function serializeNode(node: SerializableNode, definitions: Definitions): string {
+function serializeNode(node: SerializableNode, context: SerializeContext): string {
   switch (node.type) {
     case 'text':
     case 'html':
       return escapeText(node.value);
     case 'paragraph':
-      return `<p>${serializeChildren(node.children, definitions)}</p>`;
+      return `<p>${serializeChildren(node.children, context)}</p>`;
     case 'heading':
-      return `<h${node.depth}>${serializeChildren(node.children, definitions)}</h${node.depth}>`;
+      return `<h${node.depth}>${serializeChildren(node.children, context)}</h${node.depth}>`;
     case 'strong':
-      return `<strong>${serializeChildren(node.children, definitions)}</strong>`;
+      return `<strong>${serializeChildren(node.children, context)}</strong>`;
     case 'emphasis':
-      return `<em>${serializeChildren(node.children, definitions)}</em>`;
+      return `<em>${serializeChildren(node.children, context)}</em>`;
     case 'delete':
-      return `<s>${serializeChildren(node.children, definitions)}</s>`;
+      return `<s>${serializeChildren(node.children, context)}</s>`;
     case 'superscript':
-      return `<sup>${serializeChildren(node.children, definitions)}</sup>`;
+      return `<sup>${serializeChildren(node.children, context)}</sup>`;
     case 'subscript':
-      return `<sub>${serializeChildren(node.children, definitions)}</sub>`;
+      return `<sub>${serializeChildren(node.children, context)}</sub>`;
     case 'inlineCode':
       return `<code style="${STYLES.inlineCode}">${escapeHtml(node.value)}</code>`;
     case 'code':
@@ -204,40 +244,40 @@ function serializeNode(node: SerializableNode, definitions: Definitions): string
     case 'blockquote':
       return `<blockquote style="${STYLES.blockquote}">${serializeChildren(
         node.children,
-        definitions,
+        context,
       )}</blockquote>`;
     case 'list': {
       const tag = node.ordered === true ? 'ol' : 'ul';
       const start = node.ordered === true && node.start != null && node.start !== 1;
       return `<${tag}${start ? ` start="${node.start}"` : ''}>${serializeChildren(
         node.children,
-        definitions,
+        context,
       )}</${tag}>`;
     }
     case 'listItem': {
       const [firstChild] = node.children;
       const tight = node.spread !== true && firstChild?.type === 'paragraph';
       const children = tight
-        ? serializeChildren(firstChild.children, definitions) +
-          serializeChildren(node.children.slice(1), definitions)
-        : serializeChildren(node.children, definitions);
+        ? serializeChildren(firstChild.children, context) +
+          serializeChildren(node.children.slice(1), context)
+        : serializeChildren(node.children, context);
       return `<li>${taskMarker(node.checked)}${children}</li>`;
     }
     case 'table':
-      return serializeTable(node, definitions);
+      return serializeTable(node, context);
     case 'link':
-      return anchor(node.url, serializeChildren(node.children, definitions));
+      return anchor(node.url, serializeChildren(node.children, context));
     case 'image':
       return image(node.url, node.alt ?? '');
     case 'linkReference': {
-      const children = serializeChildren(node.children, definitions);
-      const definition = definitions.get(node.identifier);
-      return definition ? anchor(definition.url, children) : children;
+      const children = serializeChildren(node.children, context);
+      const definition = resolveReference(node, context);
+      return definition ? anchor(definition.url, children) : revertReference(node, children, '');
     }
     case 'imageReference': {
       const alt = node.alt ?? '';
-      const definition = definitions.get(node.identifier);
-      return definition ? image(definition.url, alt) : escapeHtml(alt);
+      const definition = resolveReference(node, context);
+      return definition ? image(definition.url, alt) : revertReference(node, escapeText(alt), '!');
     }
     case 'thematicBreak':
       return '<hr />';
@@ -248,23 +288,27 @@ function serializeNode(node: SerializableNode, definitions: Definitions): string
     case 'math':
       return `<p>${escapeText(node.value)}</p>`;
     case 'footnoteReference':
-      return `<sup>${escapeHtml(node.label ?? node.identifier)}</sup>`;
-    case 'footnoteDefinition':
-      return `<div><sup>${escapeHtml(node.label ?? node.identifier)}</sup>${serializeChildren(
-        node.children,
-        definitions,
-      )}</div>`;
+      return `<sup>${context.footnotes.get(node.identifier) ?? ''}</sup>`;
+    case 'footnoteDefinition': {
+      const number = context.footnotes.get(node.identifier);
+      if (number == null) {
+        return '';
+      }
+      return `<div><sup>${number}</sup>${serializeChildren(node.children, context)}</div>`;
+    }
+    case 'textDirective':
+      return escapeText(`:${node.name}`);
     case 'definition':
       return '';
     default:
-      return 'children' in node ? serializeChildren(node.children, definitions) : '';
+      return 'children' in node ? serializeChildren(node.children, context) : '';
   }
 }
 
-function serializeChildren(nodes: readonly SerializableNode[], definitions: Definitions): string {
+function serializeChildren(nodes: readonly SerializableNode[], context: SerializeContext): string {
   let html = '';
   for (const node of nodes) {
-    html += serializeNode(node, definitions);
+    html += serializeNode(node, context);
   }
   return html;
 }
@@ -299,12 +343,16 @@ export function markdownToHtml(
   applySuperSub(tree);
 
   const children = tree.children as SerializableNode[];
-  const definitions: Definitions = new Map();
-  collectDefinitions(children, definitions);
+  const context: SerializeContext = {
+    definitions: new Map(),
+    footnotes: new Map(),
+    reserved: mode.reserved ?? EMPTY_RESERVED,
+  };
+  collectContext(children, context);
 
   let html = '';
   for (const node of children) {
-    const serialized = serializeNode(node, definitions);
+    const serialized = serializeNode(node, context);
     if (serialized.length > 0) {
       html += html.length > 0 ? `\n${serialized}` : serialized;
     }

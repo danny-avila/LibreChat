@@ -746,6 +746,27 @@ Citations:
       expect(html).not.toContain('<code>Prose');
     });
 
+    it('does not let a definition capture a generated citation marker', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          text: 'Cited \ue202turn0search0.\n\n[1]: https://other.example',
+          searchResults: {
+            '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+          } as { [key: string]: SearchResultData },
+          richText: { variant: 'full', latex: false },
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const html = getClipboardHtml();
+      expect(html).toContain('Cited [1].');
+      expect(html).not.toContain('other.example">1</a>');
+      expect(html).toContain('https://example.com/1');
+    });
+
     it('keeps the part boundary out of the plain text', () => {
       const { result } = renderHook(() =>
         useCopyToClipboard({
