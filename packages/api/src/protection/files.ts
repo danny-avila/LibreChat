@@ -983,7 +983,7 @@ function omitResolvedFileLocators(
   }
   const entries = boundedEntries.entries;
 
-  const cloned: MutableUnknownDictionary = {};
+  const cloned = Object.create(null) as MutableUnknownDictionary;
   traversal.seen.set(value, cloned);
   const fileId = entries.find(([key]) => key === 'file_id')?.[1];
   const resolvedFile = typeof fileId === 'string' ? resolvedFilesById.get(fileId) : undefined;

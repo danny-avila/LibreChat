@@ -1,4 +1,5 @@
 import { StreamLimitExceededError } from '@librechat/agents';
+import { isProxy } from 'node:util/types';
 import {
   FILE_FILTER_FIELDS,
   HITL_MESSAGE_FILTER_FIELDS,
@@ -45,11 +46,15 @@ import {
   extractStoredMessageContent,
 } from '../protection/adapters/submissions';
 import {
+  CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
+  CONTENT_MATERIALIZATION_MAX_CHARACTERS,
+  getBoundedOwnEnumerableEntries,
   getContentTraversalFragments,
   isContentTraversalProtected,
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
+  reserveContentMaterialization,
 } from '../protection/adapters/nested';
 import {
   MAX_USER_SUBMITTED_PATHS,
@@ -61,7 +66,7 @@ import {
 import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
-import { extractMessageContent } from '../protection/adapters/messages';
+import { extractMessageContent, snapshotExternalMessages } from '../protection/adapters/messages';
 
 export type ModelBoundProviderAttribution = 'user' | 'model' | 'tool' | 'synthetic';
 
@@ -105,6 +110,12 @@ type StoredModelBoundMessage = StoredMessageContentInput & {
   readonly userSubmittedMessageFieldPaths?: readonly UserSubmittedMessageFieldPath[];
 };
 
+type SnapshottedModelBoundProviderMessage = ModelBoundProviderMessage &
+  Pick<
+    StoredModelBoundMessage,
+    'isCreatedByUser' | 'isUserSubmitted' | 'userSubmittedPaths' | 'userSubmittedMessageFieldPaths'
+  >;
+
 type ModelBoundCanonicalFile = FileContentInput & CanonicalFileInspectionFile;
 
 type ModelBoundPolicyError =
@@ -143,6 +154,7 @@ interface ProviderProjectionWorkBudget {
 interface ProviderProjectionWorkBudgets {
   readonly projection: ProviderProjectionWorkBudget;
   readonly providerContent: ProviderProjectionWorkBudget;
+  readonly partSnapshot: ProviderProjectionWorkBudget;
   readonly fileScan: ProviderProjectionWorkBudget;
   readonly provenance: ProviderProjectionWorkBudget;
   readonly storedState: ProviderProjectionWorkBudget;
@@ -843,19 +855,39 @@ function getExactUserSubmittedMessageFragments(
  */
 function createUserSubmittedAssembledContext(
   text: readonly string[],
-): Extract<TextContentFragment, { source: 'assembled_context' }> | undefined {
+  materializationBudget: VisitNestedStringsBudget,
+): {
+  readonly fragment?: Extract<TextContentFragment, { source: 'assembled_context' }>;
+  readonly overflowed: boolean;
+} {
   if (text.length === 0) {
-    return undefined;
+    return { overflowed: false };
+  }
+  let materializedCharacters = 0;
+  for (const value of text) {
+    materializedCharacters += value.length;
+    if (!Number.isSafeInteger(materializedCharacters)) {
+      return { overflowed: true };
+    }
+  }
+  if (
+    text.length > 1 &&
+    !reserveContentMaterialization(materializationBudget, materializedCharacters)
+  ) {
+    return { overflowed: true };
   }
   return {
-    id: 'stored-message.user-submitted-assembled',
-    path: '/$assembled/user-submitted',
-    text: text.join(''),
-    source: 'assembled_context',
-    field: 'assembled_context',
-    format: 'plain',
-    treatment: 'inspect_only',
-    provenance: 'user',
+    fragment: {
+      id: 'stored-message.user-submitted-assembled',
+      path: '/$assembled/user-submitted',
+      text: text.length === 1 ? text[0] : text.join(''),
+      source: 'assembled_context',
+      field: 'assembled_context',
+      format: 'plain',
+      treatment: 'inspect_only',
+      provenance: 'user',
+    },
+    overflowed: false,
   };
 }
 
@@ -868,7 +900,7 @@ function projectUserSubmittedPaths(
   message: StoredModelBoundMessage,
   paths: readonly JsonPointer[],
 ): Record<string, unknown> | undefined {
-  const projection: Record<string, unknown> = {};
+  const projection = Object.create(null) as Record<string, unknown>;
   let projected = false;
 
   for (const path of paths) {
@@ -904,7 +936,9 @@ function projectUserSubmittedPaths(
       const nextSegment = segments[index + 1];
       const existing = (target as Record<string, unknown>)[segment];
       if (existing == null || typeof existing !== 'object') {
-        (target as Record<string, unknown>)[segment] = /^\d+$/.test(nextSegment) ? [] : {};
+        (target as Record<string, unknown>)[segment] = /^\d+$/.test(nextSegment)
+          ? []
+          : Object.create(null);
       }
       target = (target as Record<string, unknown>)[segment] as Record<string, unknown> | unknown[];
     }
@@ -1448,10 +1482,329 @@ function appendStoredMessageFileIds(
 
 type ProviderExactAttribution = 'user' | 'tool' | 'non_user';
 
+const MODEL_BOUND_CONTENT_PART_KEYS = [
+  'type',
+  'text',
+  'think',
+  'original',
+  'updated',
+  'steer',
+  'error',
+  'image_url',
+  'video_url',
+  'input_audio',
+  'image_file',
+  'file',
+  'files',
+  'file_id',
+  'filename',
+  'content',
+  'tool_call',
+  'data',
+  'url',
+  'source_type',
+  'source',
+  'document',
+  'payload',
+] as const;
+const MODEL_BOUND_FILE_PART_KEYS = new Set(['file', 'files', 'image_file', 'file_id']);
+
+interface ModelBoundPartSnapshotContext {
+  readonly budget: ProviderProjectionWorkBudget;
+  readonly seen: WeakMap<object, unknown>;
+}
+
+function snapshotModelBoundPartArray(
+  candidate: readonly unknown[],
+  context: ModelBoundPartSnapshotContext,
+  snapshotItem: (value: unknown) => unknown,
+): readonly unknown[] {
+  const existing = context.seen.get(candidate);
+  if (existing != null) {
+    return existing as readonly unknown[];
+  }
+  const snapshot: unknown[] = [];
+  context.seen.set(candidate, snapshot);
+  try {
+    if (isProxy(candidate)) {
+      markProviderProjectionWorkOverflow(context.budget);
+    }
+    const length = captureProviderArrayLength(candidate);
+    let index = 0;
+    for (; index < length; index++) {
+      if (!consumeProviderProjectionWork(context.budget, 1)) {
+        break;
+      }
+      snapshot.push(snapshotItem(candidate[index]));
+    }
+    if (index < length) {
+      markProviderProjectionWorkOverflow(context.budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(context.budget);
+  }
+  return snapshot;
+}
+
+function snapshotModelBoundPartObject(
+  candidate: object,
+  knownKeys: readonly string[],
+  context: ModelBoundPartSnapshotContext,
+  snapshotValue: (key: string, value: unknown) => unknown,
+  omittedKeys: ReadonlySet<string> = new Set(),
+): Readonly<Record<string, unknown>> {
+  const existing = context.seen.get(candidate);
+  if (existing != null) {
+    return existing as Readonly<Record<string, unknown>>;
+  }
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  context.seen.set(candidate, snapshot);
+  const seenKeys = new Set<string>();
+  let candidateIsProxy = false;
+  try {
+    candidateIsProxy = isProxy(candidate);
+  } catch {
+    markProviderProjectionWorkOverflow(context.budget);
+    return snapshot;
+  }
+  if (candidateIsProxy) {
+    markProviderProjectionWorkOverflow(context.budget);
+  } else {
+    const entryLimit = knownKeys.length + context.budget.remaining;
+    const boundedEntries = getBoundedOwnEnumerableEntries(candidate, entryLimit);
+    for (const [key, value] of boundedEntries.entries) {
+      seenKeys.add(key);
+      if (omittedKeys.has(key)) {
+        continue;
+      }
+      if (!knownKeys.includes(key)) {
+        if (!consumeProviderProjectionWork(context.budget, 1)) {
+          break;
+        }
+      }
+      snapshot[key] = snapshotValue(key, value);
+    }
+    if (!boundedEntries.complete) {
+      markProviderProjectionWorkOverflow(context.budget);
+    }
+  }
+  for (const key of knownKeys) {
+    if (seenKeys.has(key) || omittedKeys.has(key)) {
+      continue;
+    }
+    try {
+      if (Object.prototype.hasOwnProperty.call(candidate, key)) {
+        snapshot[key] = snapshotValue(key, (candidate as Record<string, unknown>)[key]);
+      }
+    } catch {
+      markProviderProjectionWorkOverflow(context.budget);
+    }
+  }
+  return snapshot;
+}
+
+function snapshotGenericModelBoundPartValue(
+  value: unknown,
+  context: ModelBoundPartSnapshotContext,
+  depth = 0,
+): unknown {
+  if (value == null || typeof value !== 'object') {
+    return value;
+  }
+  if (depth > CONTENT_TRAVERSAL_MAX_DEPTH) {
+    markProviderProjectionWorkOverflow(context.budget);
+    return undefined;
+  }
+  let valueIsArray = false;
+  try {
+    valueIsArray = Array.isArray(value);
+  } catch {
+    markProviderProjectionWorkOverflow(context.budget);
+    return undefined;
+  }
+  if (valueIsArray) {
+    return snapshotModelBoundPartArray(value as readonly unknown[], context, (item) =>
+      snapshotGenericModelBoundPartValue(item, context, depth + 1),
+    );
+  }
+  return snapshotModelBoundPartObject(value, [], context, (_key, child) =>
+    snapshotGenericModelBoundPartValue(child, context, depth + 1),
+  );
+}
+
+function snapshotPartWrapper(
+  value: unknown,
+  keys: readonly string[],
+  context: ModelBoundPartSnapshotContext,
+  snapshotValue: (key: string, child: unknown) => unknown = (_key, child) =>
+    snapshotGenericModelBoundPartValue(child, context),
+): unknown {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+  return snapshotModelBoundPartObject(value, keys, context, snapshotValue);
+}
+
+function snapshotModelBoundPartProperty(
+  key: string,
+  value: unknown,
+  context: ModelBoundPartSnapshotContext,
+): unknown {
+  switch (key) {
+    case 'content':
+      // Stabilize nested children for both extraction and later opaque-file checks.
+      // The submissions adapter still owns the shared nested traversal accounting.
+      return Array.isArray(value)
+        ? snapshotModelBoundPartArray(value, context, (child) =>
+            snapshotGenericModelBoundPartValue(child, context),
+          )
+        : snapshotGenericModelBoundPartValue(value, context);
+    case 'text':
+    case 'think':
+      return snapshotPartWrapper(value, ['value'], context);
+    case 'image_url':
+      return snapshotPartWrapper(value, ['url', 'detail'], context);
+    case 'video_url':
+      return snapshotPartWrapper(value, ['url'], context);
+    case 'input_audio':
+      return snapshotPartWrapper(value, ['data', 'format'], context);
+    case 'image_file':
+      return snapshotPartWrapper(value, ['file_id', 'filename'], context);
+    case 'file':
+      return snapshotPartWrapper(
+        value,
+        [
+          'file_id',
+          'file_data',
+          'name',
+          'filename',
+          'originalname',
+          'filepath',
+          'uri',
+          'url',
+          'preview',
+        ],
+        context,
+      );
+    case 'files':
+      return Array.isArray(value)
+        ? snapshotModelBoundPartArray(value, context, (file) =>
+            snapshotPartWrapper(
+              file,
+              [
+                'file_id',
+                'file_data',
+                'name',
+                'filename',
+                'originalname',
+                'filepath',
+                'uri',
+                'url',
+                'preview',
+              ],
+              context,
+            ),
+          )
+        : value;
+    case 'source':
+      return snapshotPartWrapper(value, ['type', 'data', 'url'], context);
+    case 'tool_call':
+      return snapshotPartWrapper(
+        value,
+        ['name', 'args', 'arguments', 'output', 'function', 'code_interpreter'],
+        context,
+        (toolKey, child) => {
+          if (toolKey === 'function') {
+            return snapshotPartWrapper(child, ['name', 'arguments', 'output'], context);
+          }
+          if (toolKey === 'code_interpreter') {
+            return snapshotPartWrapper(child, ['input', 'outputs'], context);
+          }
+          return snapshotGenericModelBoundPartValue(child, context);
+        },
+      );
+    default:
+      return snapshotGenericModelBoundPartValue(value, context);
+  }
+}
+
+function snapshotModelBoundContentPart(
+  part: unknown,
+  budget: ProviderProjectionWorkBudget,
+  options: { readonly omitFileReferences?: boolean } = {},
+): unknown {
+  if (part == null || typeof part !== 'object') {
+    return part;
+  }
+  const context: ModelBoundPartSnapshotContext = {
+    budget,
+    seen: new WeakMap<object, unknown>(),
+  };
+  const snapshot = snapshotModelBoundPartObject(
+    part,
+    MODEL_BOUND_CONTENT_PART_KEYS,
+    context,
+    (key, value) => snapshotModelBoundPartProperty(key, value, context),
+    options.omitFileReferences === true ? MODEL_BOUND_FILE_PART_KEYS : undefined,
+  ) as Record<string, unknown>;
+  return snapshot;
+}
+
+function cloneSnapshottedContentPartWithTextType(
+  part: object,
+  budget: ProviderProjectionWorkBudget,
+): Readonly<Record<string, unknown>> {
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  const boundedEntries = getBoundedOwnEnumerableEntries(
+    part,
+    MODEL_BOUND_CONTENT_PART_KEYS.length + MAX_PROVIDER_PROJECTION_WORK,
+  );
+  for (const [key, value] of boundedEntries.entries) {
+    snapshot[key] = value;
+  }
+  if (!boundedEntries.complete) {
+    markProviderProjectionWorkOverflow(budget);
+  }
+  snapshot.type = 'text';
+  return snapshot;
+}
+
+function cloneSnapshottedContentPartWithoutFileReferences(
+  part: unknown,
+  budget: ProviderProjectionWorkBudget,
+): unknown {
+  if (part == null || typeof part !== 'object') {
+    return part;
+  }
+  try {
+    if (isProxy(part)) {
+      markProviderProjectionWorkOverflow(budget);
+      return undefined;
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+    return undefined;
+  }
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  const boundedEntries = getBoundedOwnEnumerableEntries(
+    part,
+    MODEL_BOUND_CONTENT_PART_KEYS.length + MAX_PROVIDER_PROJECTION_WORK,
+  );
+  for (const [key, value] of boundedEntries.entries) {
+    if (!MODEL_BOUND_FILE_PART_KEYS.has(key)) {
+      snapshot[key] = value;
+    }
+  }
+  if (!boundedEntries.complete) {
+    markProviderProjectionWorkOverflow(budget);
+  }
+  return snapshot;
+}
+
 function snapshotProviderMessageEnvelope(
   message: ModelBoundProviderMessage,
   budget: ProviderProjectionWorkBudget,
-): ModelBoundProviderMessage {
+): SnapshottedModelBoundProviderMessage {
   const read = <Value>(getter: () => Value): Value | undefined => {
     try {
       return getter();
@@ -1500,6 +1853,7 @@ function snapshotProviderMessageEnvelope(
 function snapshotProviderMessageContent(
   message: ModelBoundProviderMessage,
   budget: ProviderProjectionWorkBudget,
+  partSnapshotBudget: ProviderProjectionWorkBudget,
 ): unknown {
   try {
     const messageContent = message.content;
@@ -1515,7 +1869,7 @@ function snapshotProviderMessageContent(
       if (!consumeProviderProjectionWork(budget, 1)) {
         break;
       }
-      content.push(candidate[index]);
+      content.push(snapshotModelBoundContentPart(candidate[index], partSnapshotBudget));
     }
     if (index < candidateLength) {
       markProviderProjectionWorkOverflow(budget);
@@ -1528,10 +1882,11 @@ function snapshotProviderMessageContent(
 }
 
 function projectProviderMessage(
-  message: ModelBoundProviderMessage,
+  message: SnapshottedModelBoundProviderMessage,
   attribution: ProviderExactAttribution | undefined,
   capturedProviderContent: unknown,
   providerRole: string | undefined,
+  partSnapshotBudget: ProviderProjectionWorkBudget,
 ): StoredModelBoundMessage {
   const role = attribution === 'tool' ? 'tool' : providerRole;
   const providerSource = message.additional_kwargs?.source;
@@ -1541,7 +1896,6 @@ function projectProviderMessage(
     (message.additional_kwargs?.injected === true && providerSource !== 'steer');
   const isUser =
     attribution === 'user' || (attribution == null && role === 'user' && !isSyntheticContext);
-  const { content: _providerContent, text: _providerText, ...messageWithoutContent } = message;
   const rawProviderContent = capturedProviderContent;
   let providerContent = rawProviderContent;
   if ((attribution === 'non_user' || attribution === 'tool') && Array.isArray(rawProviderContent)) {
@@ -1558,7 +1912,7 @@ function projectProviderMessage(
       if (projectedContent == null) {
         projectedContent = rawProviderContent.slice(0, index);
       }
-      projectedContent.push({ ...part, type: 'text' });
+      projectedContent.push(cloneSnapshottedContentPartWithTextType(part, partSnapshotBudget));
     }
     providerContent = projectedContent ?? rawProviderContent;
   }
@@ -1572,8 +1926,21 @@ function projectProviderMessage(
     projectedContentFields.content = providerContent as StoredModelBoundMessage['content'];
   }
   return {
-    ...messageWithoutContent,
+    id: message.id,
+    messageId: message.messageId,
     role,
+    name: message.name,
+    sender: message.sender,
+    summary: message.summary,
+    quotes: message.quotes,
+    tool_calls: message.tool_calls,
+    files: message.files,
+    attachments: message.attachments,
+    original: message.original,
+    updated: message.updated,
+    feedback: message.feedback,
+    userSubmittedPaths: message.userSubmittedPaths,
+    userSubmittedMessageFieldPaths: message.userSubmittedMessageFieldPaths,
     isCreatedByUser: isUser,
     isUserSubmitted: isUser,
     ...projectedContentFields,
@@ -1583,6 +1950,7 @@ function projectProviderMessage(
 function projectStoredMessageForProvider(
   message: StoredModelBoundMessage,
   budget: ProviderProjectionWorkBudget,
+  partSnapshotBudget: ProviderProjectionWorkBudget,
   selectedContentPartIndices?: ReadonlySet<number>,
   attribution?: Extract<ProviderExactAttribution, 'user' | 'tool'>,
   capturedContentParts?: Map<number, unknown>,
@@ -1590,25 +1958,18 @@ function projectStoredMessageForProvider(
   submittedPathsSnapshot?: readonly string[],
   submittedFieldPathsSnapshot?: readonly UserSubmittedMessageFieldPath[],
 ): StoredModelBoundMessage {
-  const {
-    attachments: _attachments,
-    content: messageContentCandidate,
-    feedback: _feedback,
-    files: _files,
-    name: _name,
-    original: _original,
-    sender: _sender,
-    summary: _summary,
-    text: storedText,
-    updated: _updated,
-    userSubmittedMessageFieldPaths: rawFieldPathCandidate,
-    userSubmittedPaths: rawPathCandidate,
-    ...providerMessageWithoutText
-  } = message;
+  const messageContentCandidate = message.content;
+  const storedText = message.text;
+  const rawFieldPathCandidate = message.userSubmittedMessageFieldPaths;
+  const rawPathCandidate = message.userSubmittedPaths;
   const pathCandidate = submittedPathsSnapshot ?? rawPathCandidate;
   const fieldPathCandidate = submittedFieldPathsSnapshot ?? rawFieldPathCandidate;
   const providerMessage: StoredModelBoundMessage = {
-    ...providerMessageWithoutText,
+    id: message.id,
+    messageId: message.messageId,
+    role: message.role,
+    isCreatedByUser: message.isCreatedByUser,
+    isUserSubmitted: message.isUserSubmitted,
     ...(selectedContentPartIndices == null && messageContentCandidate == null && storedText != null
       ? { text: storedText }
       : {}),
@@ -1643,17 +2004,10 @@ function projectStoredMessageForProvider(
   const projectPart = (
     part: NonNullable<StoredMessageContentInput['content']>[number],
   ): NonNullable<StoredMessageContentInput['content']>[number] => {
-    if (part == null) {
-      return part;
-    }
-    const {
-      file: _partFile,
-      files: _partFiles,
-      image_file: _imageFile,
-      file_id: _fileId,
-      ...providerPart
-    } = part;
-    return providerPart;
+    return cloneSnapshottedContentPartWithoutFileReferences(
+      part,
+      partSnapshotBudget,
+    ) as NonNullable<StoredMessageContentInput['content']>[number];
   };
   const compactIndexBySourceIndex = new Map<number, number>();
   const content: Array<NonNullable<StoredMessageContentInput['content']>[number]> = [];
@@ -1665,11 +2019,12 @@ function projectStoredMessageForProvider(
         StoredMessageContentInput['content']
       >[number];
     }
-    const part = messageContent?.[index] as NonNullable<
+    const rawPart = messageContent?.[index] as NonNullable<
       StoredMessageContentInput['content']
     >[number];
+    const part = snapshotModelBoundContentPart(rawPart, partSnapshotBudget);
     capturedContentParts?.set(index, part);
-    return part;
+    return part as NonNullable<StoredMessageContentInput['content']>[number];
   };
   if (hasArrayContent && selectedContentPartIndices == null) {
     let index = 0;
@@ -1776,7 +2131,7 @@ function projectStoredMessageForProvider(
         } else {
           const path = remapSelectedPath(entry?.path);
           if (path != null) {
-            userSubmittedMessageFieldPaths.push({ ...entry, path });
+            userSubmittedMessageFieldPaths.push({ field: entry.field, path });
           }
         }
       }
@@ -1803,6 +2158,7 @@ interface CachedStoredProviderState {
   readonly messageSnapshot: StoredModelBoundMessage;
   readonly contentLength?: number;
   readonly contentParts: Map<number, unknown>;
+  readonly partSnapshotBudget: ProviderProjectionWorkBudget;
   readonly explicitSubmittedPathState: ReturnType<typeof getUserSubmittedPathState>;
   readonly submittedMessageFieldState: ReturnType<typeof getUserSubmittedMessageFieldPathState>;
   explicitSubmittedPaths?: ReadonlySet<string>;
@@ -1834,7 +2190,7 @@ function readCachedStoredContentPart(
       markProviderProjectionWorkOverflow(budget);
       return undefined;
     }
-    const part = content[index];
+    const part = snapshotModelBoundContentPart(content[index], cachedState.partSnapshotBudget);
     cachedState.contentParts.set(index, part);
     return part;
   } catch {
@@ -1971,7 +2327,7 @@ function getStoredProviderContributionState(
         hasSelectedSemanticPath ||=
           typeof part === 'object' &&
           Object.prototype.hasOwnProperty.call(part, 'type') &&
-          part.type === 'steer';
+          (part as { readonly type?: unknown }).type === 'steer';
       }
     }
   }
@@ -2146,6 +2502,7 @@ function getCachedStoredProviderState(
   index: ModelBoundProviderContentIndex,
   message: StoredModelBoundMessage,
   budget: ProviderProjectionWorkBudget,
+  partSnapshotBudget: ProviderProjectionWorkBudget,
 ): CachedStoredProviderState {
   const cached = index.storedStateByMessage.get(message);
   if (cached != null) {
@@ -2193,6 +2550,7 @@ function getCachedStoredProviderState(
     hasCapturedContent: true,
     capturedContentLength: contentLength,
     capturedContentParts: contentParts,
+    captureContentPart: (part: unknown) => snapshotModelBoundContentPart(part, partSnapshotBudget),
   };
   const explicitSubmittedPathState = getUserSubmittedPathState(messageSnapshot, {
     ...provenanceOptions,
@@ -2209,6 +2567,7 @@ function getCachedStoredProviderState(
     messageSnapshot,
     contentLength,
     contentParts,
+    partSnapshotBudget,
     explicitSubmittedPathState,
     submittedMessageFieldState,
   };
@@ -2289,6 +2648,10 @@ function createProviderProjectionWorkBudgets(
       remaining: MAX_PROVIDER_PROJECTION_WORK,
       overflowed: index.overflowed,
     },
+    partSnapshot: {
+      remaining: MAX_PROVIDER_PROJECTION_WORK,
+      overflowed: index.overflowed,
+    },
     fileScan: {
       remaining: MAX_PROVIDER_PROJECTION_WORK,
       overflowed: index.overflowed,
@@ -2323,6 +2686,7 @@ function projectModelBoundProviderContent(
   const deferredTraversalErrors: ContentTraversalLimitError[] = [];
   const projectionBudget = workBudgets.projection;
   const providerContentBudget = workBudgets.providerContent;
+  const partSnapshotBudget = workBudgets.partSnapshot;
   const fileScanBudget = workBudgets.fileScan;
   const provenanceBudget = workBudgets.provenance;
   const storedStateBudget = workBudgets.storedState;
@@ -2345,6 +2709,7 @@ function projectModelBoundProviderContent(
       projectStoredMessageForProvider(
         cachedState.messageSnapshot,
         projectionBudget,
+        partSnapshotBudget,
         undefined,
         undefined,
         cachedState.contentParts,
@@ -2354,7 +2719,7 @@ function projectModelBoundProviderContent(
       ),
     );
   };
-  const providerMessages: ModelBoundProviderMessage[] = [];
+  const providerMessages: SnapshottedModelBoundProviderMessage[] = [];
   const providerRoles: Array<string | undefined> = [];
   const providerContents: unknown[] = [];
   try {
@@ -2370,7 +2735,9 @@ function projectModelBoundProviderContent(
       );
       providerMessages.push(providerMessage);
       providerRoles.push(providerMessage.role);
-      providerContents.push(snapshotProviderMessageContent(providerMessage, providerContentBudget));
+      providerContents.push(
+        snapshotProviderMessageContent(providerMessage, providerContentBudget, partSnapshotBudget),
+      );
     }
   } catch {
     markProviderProjectionWorkOverflow(projectionBudget);
@@ -2395,7 +2762,12 @@ function projectModelBoundProviderContent(
         const contentSelectionKey = getProviderContentSelectionKey(
           contribution.selectedContentPartIndices,
         );
-        const cachedState = getCachedStoredProviderState(index, storedMessage, storedStateBudget);
+        const cachedState = getCachedStoredProviderState(
+          index,
+          storedMessage,
+          storedStateBudget,
+          partSnapshotBudget,
+        );
         let contributionState = exactContributionStates
           .get(storedMessage)
           ?.get(contentSelectionKey);
@@ -2433,6 +2805,7 @@ function projectModelBoundProviderContent(
               projectStoredMessageForProvider(
                 cachedState.messageSnapshot,
                 projectionBudget,
+                partSnapshotBudget,
                 contribution.selectedContentPartIndices,
                 exactAttribution,
                 cachedState.contentParts,
@@ -2473,7 +2846,12 @@ function projectModelBoundProviderContent(
           continue;
         }
         matchedStoredMessages.add(storedMessage);
-        const cachedState = getCachedStoredProviderState(index, storedMessage, storedStateBudget);
+        const cachedState = getCachedStoredProviderState(
+          index,
+          storedMessage,
+          storedStateBudget,
+          partSnapshotBudget,
+        );
         const submittedPathState = getStoredSubmittedPathState(
           undefined,
           cachedState,
@@ -2536,6 +2914,7 @@ function projectModelBoundProviderContent(
             attribution,
             capturedProviderContent,
             providerRole,
+            partSnapshotBudget,
           );
           selectedMessages.push(projectedMessage);
           appendStoredMessageFileIds(
@@ -2561,6 +2940,7 @@ function projectModelBoundProviderContent(
         isLegacyArtifactHuman ? 'tool' : undefined,
         capturedProviderContent,
         providerRole,
+        partSnapshotBudget,
       );
       if (
         !isLegacyArtifactHuman &&
@@ -2597,6 +2977,7 @@ function projectModelBoundProviderContent(
         attribution,
         capturedProviderContent,
         providerRole,
+        partSnapshotBudget,
       );
       selectedMessages.push(projectedMessage);
       appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters, fileScanBudget);
@@ -2621,6 +3002,7 @@ function projectModelBoundProviderContent(
   if (
     projectionBudget.overflowed ||
     providerContentBudget.overflowed ||
+    partSnapshotBudget.overflowed ||
     fileScanBudget.overflowed ||
     provenanceBudget.overflowed ||
     storedStateBudget.overflowed
@@ -2970,8 +3352,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     legacyPii: input.legacyPii,
   });
   const hasFileFailClose =
-    getBlockedUninspectableFileField(input.filters, ['content', 'extracted_text', 'transcript']) !=
-    null;
+    getBlockedUninspectableFileField(input.filters, FILE_FILTER_FIELDS) != null;
   if (inspector == null && !hasFileFailClose) {
     return;
   }
@@ -2988,6 +3369,10 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     }
   };
   const traversalErrors: ContentTraversalLimitError[] = [...(input.deferredTraversalErrors ?? [])];
+  const storedMessageTraversalBudget = input.traversalBudget ?? {
+    visitedNodes: 0,
+    maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,
+  };
   const appendExtractedContent = (extract: () => readonly TextContentFragment[]) => {
     try {
       inspectFragments(extract());
@@ -3036,42 +3421,49 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     }
   }
   if (input.submittedMessages != null) {
-    assertInspectableFileInput(input.filters, input.submittedMessages);
+    const preparedSubmittedMessages = snapshotExternalMessages(
+      input.submittedMessages,
+      storedMessageTraversalBudget,
+    );
+    assertInspectableFileInput(input.filters, preparedSubmittedMessages.messages);
+    const appendSubmittedTraversalError = (error: ContentTraversalLimitError): void => {
+      if (
+        isContentTraversalProtected({
+          error,
+          filters: input.filters,
+          legacyPii: input.legacyPii,
+          roles: preparedSubmittedMessages.roles,
+        }) ||
+        isNestedMessageTraversalProtected({
+          filters: input.filters,
+          legacyPii: input.legacyPii,
+          roles: preparedSubmittedMessages.roles,
+        })
+      ) {
+        traversalErrors.push(error);
+      }
+    };
     try {
-      for (const fragment of extractMessageContent(
-        input.submittedMessages.map((message) => ({
-          ...message,
-          role: normalizeRole(message),
-          content: message.content,
-        })),
-      )) {
+      for (const fragment of extractMessageContent(preparedSubmittedMessages)) {
         inspectFragment(fragment);
       }
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
         throw error;
       }
-      if (
-        isNestedMessageTraversalProtected({
-          filters: input.filters,
-          legacyPii: input.legacyPii,
-          roles: input.submittedMessages.map(normalizeRole),
-        })
-      ) {
-        traversalErrors.push(error);
-      }
+      inspectFragments(getContentTraversalFragments(error));
+      appendSubmittedTraversalError(error);
     }
   }
   const storedUserMessages: StoredModelBoundMessage[] = [];
-  const storedMessageTraversalBudget = input.traversalBudget ?? {
-    visitedNodes: 0,
-    maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,
-  };
   let aggregateStoredTraversalErrorAdded = false;
   const appendStoredTraversalError = (error: ContentTraversalLimitError): void => {
     if (
       storedMessageTraversalBudget.visitedNodes >=
-      (storedMessageTraversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES)
+        (storedMessageTraversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES) ||
+      (storedMessageTraversalBudget.materializedCharacters ?? 0) >=
+        (storedMessageTraversalBudget.maxMaterializedCharacters ??
+          CONTENT_MATERIALIZATION_MAX_CHARACTERS)
     ) {
       if (aggregateStoredTraversalErrorAdded) {
         return;
@@ -3211,11 +3603,25 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
           if (finding == null) {
             inspectFragments(exactMessageFragments);
           }
-          if (finding == null) {
-            const userSubmittedAssembledContext =
-              createUserSubmittedAssembledContext(assembledText);
-            if (userSubmittedAssembledContext != null) {
-              inspectFragment(userSubmittedAssembledContext);
+          if (
+            finding == null &&
+            (hasActivePiiPatterns(input.legacyPii) ||
+              hasActivePiiFields(input.filters?.messages?.pii, ['assembled_context']))
+          ) {
+            const userSubmittedAssembledContext = createUserSubmittedAssembledContext(
+              assembledText,
+              storedMessageTraversalBudget,
+            );
+            if (userSubmittedAssembledContext.fragment != null) {
+              inspectFragment(userSubmittedAssembledContext.fragment);
+            }
+            if (userSubmittedAssembledContext.overflowed) {
+              appendStoredTraversalError(
+                new ContentTraversalLimitError(
+                  [],
+                  [{ source: 'assembled_context', fields: ['assembled_context'] }],
+                ),
+              );
             }
           }
         }

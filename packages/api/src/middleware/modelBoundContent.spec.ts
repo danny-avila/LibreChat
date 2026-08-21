@@ -881,6 +881,35 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted file content could not be inspected before processing.');
   });
 
+  it('retains own __proto__ file locators while omitting owner-resolved references', () => {
+    const storedMessage = JSON.parse(
+      '{"isCreatedByUser":true,"role":"user","files":[{"file_id":"file-owned"}],"__proto__":{"file_id":"file-opaque"}}',
+    );
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['extracted_text'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        storedMessages: [storedMessage],
+        resolvedFiles: [
+          {
+            file_id: 'file-owned',
+            filename: 'owned.txt',
+            filepath: '/uploads/owned.txt',
+            text: 'safe canonical content',
+          },
+        ],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
   it('accepts a submitted locator only when it exactly matches the owner-resolved row', () => {
     const canonicalFile = {
       file_id: 'file-owned',
@@ -1137,6 +1166,229 @@ describe('assertModelBoundContent', () => {
         ],
       }),
     ).toThrow('Submitted file content could not be inspected before processing.');
+  });
+
+  it('uses one stable submitted-part snapshot for file checks and content inspection', () => {
+    let textReads = 0;
+    const part = {
+      type: 'text',
+      get text() {
+        textReads++;
+        return textReads === 1 ? 'PRIVATE-SUBMITTED-CONTENT' : 'safe later value';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private',
+                  label: 'private value',
+                  regex: 'PRIVATE-SUBMITTED-CONTENT',
+                },
+              ],
+            },
+          },
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        submittedMessages: [{ role: 'user', content: [part] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(textReads).toBe(1);
+  });
+
+  it('uses one stable submitted file-wrapper snapshot across policy phases', () => {
+    let filenameReads = 0;
+    const file = {
+      get filename() {
+        filenameReads++;
+        return filenameReads === 1 ? 'PRIVATE-SUBMITTED-FILE.txt' : 'safe.txt';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private',
+                  label: 'private file value',
+                  regex: 'PRIVATE-SUBMITTED-FILE',
+                },
+              ],
+              uninspectable: 'block',
+            },
+          },
+        },
+        submittedMessages: [{ role: 'user', content: [{ type: 'file', file }] }],
+      }),
+    ).toThrow('Submitted content contains a private file value');
+    expect(filenameReads).toBe(1);
+  });
+
+  it('snapshots submitted message envelopes without enumerating irrelevant keys', () => {
+    let roleReads = 0;
+    let typeReads = 0;
+    let typeCalls = 0;
+    let contentReads = 0;
+    let irrelevantReads = 0;
+    const message = {
+      get role() {
+        roleReads++;
+        return undefined;
+      },
+      get _getType() {
+        typeReads++;
+        return () => {
+          typeCalls++;
+          return 'human';
+        };
+      },
+      get content() {
+        contentReads++;
+        return 'PRIVATE-SUBMITTED-ENVELOPE';
+      },
+      get irrelevant() {
+        irrelevantReads++;
+        return 'must not be enumerated';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private',
+                  label: 'private value',
+                  regex: 'PRIVATE-SUBMITTED-ENVELOPE',
+                },
+              ],
+            },
+          },
+        },
+        submittedMessages: [message],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(roleReads).toBe(1);
+    expect(typeReads).toBe(1);
+    expect(typeCalls).toBe(1);
+    expect(contentReads).toBe(1);
+    expect(irrelevantReads).toBe(0);
+  });
+
+  it('bounds submitted message arrays numerically without dispatching their iterator', () => {
+    let lengthReads = 0;
+    let numericReads = 0;
+    let iteratorReads = 0;
+    const values = new Array<unknown>(10_000_000);
+    values[0] = { role: 'user', content: 'PRIVATE-SUBMITTED-PREFIX' };
+    const submittedMessages = new Proxy(values, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+        } else if (property === Symbol.iterator) {
+          iteratorReads++;
+          throw new Error('submitted message iterator must not run');
+        } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private',
+                  label: 'private value',
+                  regex: 'PRIVATE-SUBMITTED-PREFIX',
+                },
+              ],
+            },
+          },
+        },
+        submittedMessages: submittedMessages as never,
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(lengthReads).toBe(1);
+    expect(numericReads).toBe(4_096);
+    expect(iteratorReads).toBe(0);
+  });
+
+  it('allows 4,096 submitted parts under file-field inspection', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private file value', regex: 'PRIVATE-HIDDEN-FILE' },
+              ],
+            },
+          },
+        },
+        submittedMessages: [{ role: 'user', content: new Array(4_096).fill(null) }],
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    {
+      label: 'active file-field patterns',
+      pii: {
+        fields: ['name'],
+        starterPatterns: [],
+        customPatterns: [
+          { id: 'private', label: 'private file value', regex: 'PRIVATE-HIDDEN-FILE' },
+        ],
+      } as NonNullable<NonNullable<FiltersConfig['files']>['pii']>,
+    },
+    {
+      label: 'strict uninspectable-file handling',
+      pii: {
+        fields: ['name'],
+        starterPatterns: [],
+        uninspectable: 'block',
+      } as NonNullable<NonNullable<FiltersConfig['files']>['pii']>,
+    },
+  ])('fails closed for a hidden 4,097th submitted file part under $label', ({ pii }) => {
+    const content = new Array<unknown>(4_097).fill(null);
+    content[4_096] = { type: 'file', filename: 'PRIVATE-HIDDEN-FILE.txt' };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: { files: { pii } },
+        submittedMessages: [{ role: 'user', content: content as never }],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
   it('blocks historical agent resource references and file records', () => {
@@ -1481,6 +1733,83 @@ describe('assertModelBoundContent', () => {
         ],
       }),
     ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('shares one assembled-character budget across stored messages', () => {
+    const traversalBudget = {
+      visitedNodes: 0,
+      maxNodes: 8_192,
+      materializedCharacters: 0,
+      maxMaterializedCharacters: 1_024,
+    };
+    const repeated = 'safe'.repeat(100);
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['assembled_context'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        storedMessages: Array.from({ length: 128 }, () => ({
+          role: 'user',
+          isCreatedByUser: true,
+          content: [
+            { type: 'text', text: repeated },
+            { type: 'text', text: repeated },
+          ],
+        })),
+        traversalBudget,
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(traversalBudget.materializedCharacters).toBe(1_024);
+  });
+
+  it('bounds a second mixed-row aggregate while preserving a later direct finding', () => {
+    const traversalBudget = {
+      visitedNodes: 0,
+      maxNodes: 8_192,
+      materializedCharacters: 0,
+      maxMaterializedCharacters: 20,
+    };
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part', 'assembled_context'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-LATE-FINDING' },
+              ],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [
+              { type: 'text', text: '1234567890' },
+              { type: 'text', text: 'abcdefghij' },
+            ],
+            userSubmittedPaths: ['/content/0/text', '/content/1/text'],
+          },
+          {
+            role: 'user',
+            isCreatedByUser: true,
+            content: [{ type: 'text', text: 'PRIVATE-LATE-FINDING' }],
+          },
+        ],
+        traversalBudget,
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(traversalBudget.materializedCharacters).toBe(20);
   });
 
   it('preserves a concrete finding before bounded manual nested-content overflow', () => {
@@ -3135,6 +3464,69 @@ describe('assertModelBoundProviderContent', () => {
     expect(contentReads).toBe(1);
   });
 
+  it('reuses one selected file-id property snapshot for projection and file selection', () => {
+    let fileIdReads = 0;
+    const part = {
+      type: 'input_file',
+      get file_id() {
+        fileIdReads++;
+        return fileIdReads === 1 ? 'private-selected-file-property' : undefined;
+      },
+    };
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages: [
+          {
+            messageId: 'selected-file-property-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [part],
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'private-selected-file-property',
+            filename: 'private.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        fileIdsBySourceMessageId: new Map([
+          ['selected-file-property-source', ['private-selected-file-property']],
+        ]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider derivative',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'user',
+                    sourceMessageId: 'selected-file-property-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private file');
+    expect(fileIdReads).toBe(1);
+  });
+
   it('uses one top-level file snapshot for canonical file selection', () => {
     let fileCarrierReads = 0;
     const storedMessage = {
@@ -4120,6 +4512,318 @@ describe('assertModelBoundProviderContent', () => {
         providerMessages: [createMessage(sensitivePrefix)],
       }),
     ).toThrow('Submitted content contains a private value');
+  });
+
+  it('snapshots provider part getters once before attribution and extraction', () => {
+    let textReads = 0;
+    const part = {
+      type: 'text',
+      get text() {
+        textReads++;
+        return textReads === 1 ? 'PRIVATE-FIRST-PART' : 'safe later value';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-FIRST-PART' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [part] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(textReads).toBe(1);
+  });
+
+  it('snapshots nested content child getters once before manual and generic extraction', () => {
+    let textReads = 0;
+    const nestedPart = {
+      get text() {
+        textReads++;
+        return textReads === 1 ? 'PRIVATE-FIRST-NESTED' : 'safe later value';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-FIRST-NESTED' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'custom', content: [nestedPart] }] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(textReads).toBe(1);
+  });
+
+  it('reuses nested content snapshots for extraction and opaque-file checks', () => {
+    let fileIdReads = 0;
+    const nestedPart = {
+      get file_id() {
+        fileIdReads++;
+        return fileIdReads === 1 ? 'opaque-private-file' : undefined;
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'custom', content: [nestedPart] }] }],
+      }),
+    ).toThrow('Submitted file content could not be inspected before processing.');
+    expect(fileIdReads).toBe(1);
+  });
+
+  it('snapshots nested tool-call wrappers once before tool-argument extraction', () => {
+    let functionReads = 0;
+    const toolCall = {
+      get function() {
+        functionReads++;
+        return functionReads === 1
+          ? { name: 'submit', arguments: 'PRIVATE-FIRST-TOOL' }
+          : { name: 'submit', arguments: 'safe later value' };
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['arguments'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-FIRST-TOOL' },
+              ],
+            },
+          },
+        },
+        providerMessages: [
+          { role: 'human', content: [{ type: 'tool_call', tool_call: toolCall }] },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(functionReads).toBe(1);
+  });
+
+  it.each(['image_url', 'video_url'] as const)('snapshots %s wrapper getters once', (field) => {
+    let urlReads = 0;
+    const wrapper = {
+      get url() {
+        urlReads++;
+        return urlReads === 1 ? 'https://example.test/PRIVATE-FIRST-URI' : 'https://safe.test';
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['attachment_reference'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-FIRST-URI' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'custom', [field]: wrapper }] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(urlReads).toBe(1);
+  });
+
+  it('retains bounded generic provider fields for fallback inspection', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-GENERIC-FIELD' },
+              ],
+            },
+          },
+        },
+        providerMessages: [
+          {
+            role: 'human',
+            content: [{ type: 'custom', vendor: { secret: 'PRIVATE-GENERIC-FIELD' } }],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('retains an own __proto__ provider field in the bounded snapshot', () => {
+    const part = JSON.parse('{"type":"custom","__proto__":{"secret":"PRIVATE-PROTO-FIELD"}}');
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-PROTO-FIELD' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [part] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('retains an own __proto__ field on a nested content child', () => {
+    const nestedPart = JSON.parse('{"__proto__":{"secret":"PRIVATE-NESTED-PROTO"}}');
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-NESTED-PROTO' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [{ type: 'custom', content: [nestedPart] }] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('rejects proxy provider parts without dispatching unbounded ownKeys', () => {
+    let ownKeyReads = 0;
+    let textReads = 0;
+    const part = new Proxy(
+      { type: 'text', text: 'PRIVATE-PROXY-PART' },
+      {
+        ownKeys(target) {
+          ownKeyReads++;
+          return Reflect.ownKeys(target);
+        },
+        get(target, property, receiver) {
+          if (property === 'text') {
+            textReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-PROXY-PART' },
+              ],
+            },
+          },
+        },
+        providerMessages: [{ role: 'human', content: [part] }],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(ownKeyReads).toBe(0);
+    expect(textReads).toBe(1);
+  });
+
+  it('rejects proxy stored parts without raw rest enumeration', () => {
+    let ownKeyReads = 0;
+    let textReads = 0;
+    const part = new Proxy(
+      { type: 'text', text: 'PRIVATE-PROXY-STORED' },
+      {
+        ownKeys(target) {
+          ownKeyReads++;
+          return Reflect.ownKeys(target);
+        },
+        get(target, property, receiver) {
+          if (property === 'text') {
+            textReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-PROXY-STORED' },
+              ],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'stored-proxy-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [part],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider content',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'user',
+                    sourceMessageId: 'stored-proxy-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(ownKeyReads).toBe(0);
+    expect(textReads).toBe(1);
   });
 
   it('bounds sparse provider-part projection before steer normalization', () => {

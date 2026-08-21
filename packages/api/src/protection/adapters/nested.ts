@@ -3,6 +3,7 @@ import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment }
 
 export const CONTENT_TRAVERSAL_MAX_DEPTH = 24;
 export const CONTENT_TRAVERSAL_MAX_NODES = 4096;
+export const CONTENT_MATERIALIZATION_MAX_CHARACTERS: number = 8 * 1024 * 1024;
 const DATA_URI_PREFIX = 'data:';
 const BASE64_VALUE = /^[A-Za-z0-9+/]+={0,2}$/;
 const STRUCTURAL_CONTENT_KEYS = new Set([
@@ -31,6 +32,31 @@ export interface VisitNestedStringsBudget {
   visitedNodes: number;
   /** Optional aggregate ceiling for callers whose valid envelope spans several traversals. */
   readonly maxNodes?: number;
+  /** Aggregate characters copied into joined/assembled inspection strings. */
+  materializedCharacters?: number;
+  readonly maxMaterializedCharacters?: number;
+}
+
+export function reserveContentMaterialization(
+  budget: VisitNestedStringsBudget,
+  requestedCharacters: number,
+): boolean {
+  const maxCharacters = budget.maxMaterializedCharacters ?? CONTENT_MATERIALIZATION_MAX_CHARACTERS;
+  const usedCharacters = budget.materializedCharacters ?? 0;
+  if (
+    !Number.isSafeInteger(maxCharacters) ||
+    maxCharacters < 0 ||
+    !Number.isSafeInteger(usedCharacters) ||
+    usedCharacters < 0 ||
+    !Number.isSafeInteger(requestedCharacters) ||
+    requestedCharacters < 0 ||
+    requestedCharacters > maxCharacters - usedCharacters
+  ) {
+    budget.materializedCharacters = Math.max(0, maxCharacters);
+    return false;
+  }
+  budget.materializedCharacters = usedCharacters + requestedCharacters;
+  return true;
 }
 
 export interface VisitNestedStringsOptions {
@@ -186,6 +212,23 @@ function isScopedTraversalProtected(
   );
 }
 
+function isScopedFileTraversalProtected(
+  scopes: readonly ContentTraversalScope[],
+  pii: NonNullable<FiltersConfig['files']>['pii'],
+): boolean {
+  if (pii == null || (!hasActivePatterns(pii) && pii.uninspectable !== 'block')) {
+    return false;
+  }
+  const fileScopes = scopes.filter((scope) => scope.source === 'file');
+  if (fileScopes.length === 0) {
+    return false;
+  }
+  return (
+    pii.fields == null ||
+    fileScopes.some(({ fields }) => fields.some((field) => pii.fields?.includes(field) === true))
+  );
+}
+
 export function isNestedMessageTraversalProtected(params: {
   readonly filters?: FiltersConfig;
   readonly legacyPii?: MessageFilterPiiConfig;
@@ -250,6 +293,7 @@ export function isContentTraversalProtected(params: {
     isScopedTraversalProtected(scopes, 'message', params.filters?.messages?.pii) ||
     isScopedTraversalProtected(scopes, 'assembled_context', params.filters?.messages?.pii) ||
     isScopedTraversalProtected(scopes, 'memory', params.filters?.memories?.pii) ||
+    isScopedFileTraversalProtected(scopes, params.filters?.files?.pii) ||
     isScopedTraversalProtected(
       scopes,
       'agent_instruction',

@@ -1787,27 +1787,45 @@ describe('submitted content adapters', () => {
       label: 'agent conversation starters',
       first: 'VISIBLE-CRUD-PREFIX',
       extract: (values: readonly unknown[]) =>
-        extractAgentContent({ conversation_starters: values }),
+        extractAgentContent({
+          conversation_starters: values as NonNullable<
+            Parameters<typeof extractAgentContent>[0]
+          >['conversation_starters'],
+        }),
     },
     {
       label: 'agent edges',
       first: { prompt: 'VISIBLE-CRUD-PREFIX' },
-      extract: (values: readonly unknown[]) => extractAgentContent({ edges: values }),
+      extract: (values: readonly unknown[]) =>
+        extractAgentContent({
+          edges: values as NonNullable<Parameters<typeof extractAgentContent>[0]>['edges'],
+        }),
     },
     {
       label: 'agent tool definitions',
       first: { name: 'VISIBLE-CRUD-PREFIX' },
-      extract: (values: readonly unknown[]) => extractAgentContent({ toolDefinitions: values }),
+      extract: (values: readonly unknown[]) =>
+        extractAgentContent({
+          toolDefinitions: values as NonNullable<
+            Parameters<typeof extractAgentContent>[0]
+          >['toolDefinitions'],
+        }),
     },
     {
       label: 'preset examples',
       first: { input: 'VISIBLE-CRUD-PREFIX' },
-      extract: (values: readonly unknown[]) => extractPresetContent({ examples: values }),
+      extract: (values: readonly unknown[]) =>
+        extractPresetContent({
+          examples: values as NonNullable<Parameters<typeof extractPresetContent>[0]>['examples'],
+        }),
     },
     {
       label: 'skill files',
       first: { text: 'VISIBLE-CRUD-PREFIX' },
-      extract: (values: readonly unknown[]) => extractSkillContent({ files: values }),
+      extract: (values: readonly unknown[]) =>
+        extractSkillContent({
+          files: values as NonNullable<Parameters<typeof extractSkillContent>[0]>['files'],
+        }),
     },
   ])('bounds sparse $label arrays', ({ first, extract }) => {
     let lengthReads = 0;

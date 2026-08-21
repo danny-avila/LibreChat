@@ -1,3 +1,4 @@
+import { isProxy } from 'node:util/types';
 import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment } from '../types';
 import type { ContentTraversalScope, VisitNestedStringsBudget } from './nested';
 import {
@@ -10,6 +11,7 @@ import {
   getContentTraversalScopes,
   isDataUri,
   prependContentTraversalFragments,
+  reserveContentMaterialization,
   shouldIncludeNestedSubmittedText,
   visitNestedStrings,
 } from './nested';
@@ -1213,6 +1215,7 @@ function extractStoredMessageContentWithBudget(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const assembledText: string[] = [];
+  let assembledCharacters = 0;
   const traversalScopes: ContentTraversalScope[] = [];
   let traversalComplete = true;
   const traversalMaxNodes = traversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
@@ -1309,11 +1312,41 @@ function extractStoredMessageContentWithBudget(
       return traversalMaxNodes - reservedTraversalWork;
     },
   };
+  const snapshotNestedContentPart = (candidate: unknown): unknown => {
+    if (candidate == null || typeof candidate !== 'object') {
+      return candidate;
+    }
+    const snapshot = Object.create(null) as Record<string, unknown>;
+    try {
+      if (isProxy(candidate)) {
+        markTraversalIncomplete(STORED_MESSAGE_NESTED_CONTENT_SCOPES);
+        snapshot.text = (candidate as { readonly text?: unknown }).text;
+        return snapshot;
+      }
+      const entryLimit = Math.max(
+        1,
+        (activeTraversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES) -
+          activeTraversalBudget.visitedNodes +
+          1,
+      );
+      const boundedEntries = getBoundedOwnEnumerableEntries(candidate, entryLimit);
+      for (const [key, value] of boundedEntries.entries) {
+        snapshot[key] = value;
+      }
+      if (!boundedEntries.complete) {
+        markTraversalIncomplete(STORED_MESSAGE_NESTED_CONTENT_SCOPES);
+      }
+    } catch {
+      markTraversalIncomplete(STORED_MESSAGE_NESTED_CONTENT_SCOPES);
+    }
+    return snapshot;
+  };
   const isInstruction = input?.role === 'system' || input?.role === 'developer';
   const isToolOutput = input?.role === 'tool';
   const addMessagePart = (value: unknown, id: string, path: JsonPointer) => {
     if (typeof value === 'string' && value.length > 0) {
       assembledText.push(value);
+      assembledCharacters += value.length;
     }
     pushString(fragments, value, {
       id,
@@ -1444,6 +1477,7 @@ function extractStoredMessageContentWithBudget(
   });
   if (typeof input?.text === 'string' && input.text.length > 0) {
     assembledText.push(input.text);
+    assembledCharacters += input.text.length;
   }
   if (isInstruction) {
     pushString(fragments, input?.text, {
@@ -1547,21 +1581,25 @@ function extractStoredMessageContentWithBudget(
             visitBoundedArray<{
               readonly text?: string | { readonly value?: string };
             }>(nestedContent, STORED_MESSAGE_NESTED_CONTENT_SCOPES, (nestedPart, nestedIndex) => {
-              const value = nestedPart?.text;
+              const capturedNestedPart = snapshotNestedContentPart(nestedPart) as
+                | { readonly text?: string | { readonly value?: string } }
+                | null
+                | undefined;
+              const value = capturedNestedPart?.text;
               const nestedPath = `/content/${index}/content/${nestedIndex}` as JsonPointer;
               addMessagePart(
                 typeof value === 'string' ? value : value?.value,
                 `stored-message.content.${index}.content.${nestedIndex}.text`,
                 `${nestedPath}/text`,
               );
-              if (nestedPart == null) {
+              if (capturedNestedPart == null) {
                 return;
               }
               let fallbackIndex = 0;
               // Replace the numeric array-read reservation with the generic child-root charge.
               traversalBudget.visitedNodes--;
               const complete = visitNestedStrings(
-                nestedPart,
+                capturedNestedPart,
                 nestedPath,
                 (nestedText, path) => {
                   addMessagePart(
@@ -1809,43 +1847,53 @@ function extractStoredMessageContentWithBudget(
     field: 'content_part',
   });
   if (assembledText.length > 1) {
-    const text = assembledText.join('');
-    fragments.push(
-      fragment(
-        'stored-message.assembled',
-        '/content',
-        text,
-        'assembled_context',
-        'assembled_context',
-        'plain',
-        'inspect_only',
-      ),
-    );
-    if (isInstruction) {
+    if (reserveContentMaterialization(traversalBudget, assembledCharacters)) {
+      const text = assembledText.join('');
       fragments.push(
         fragment(
-          'stored-message.assembled.instruction',
+          'stored-message.assembled',
           '/content',
           text,
-          'agent_instruction',
-          'instructions',
+          'assembled_context',
+          'assembled_context',
           'plain',
           'inspect_only',
         ),
       );
-    }
-    if (isToolOutput) {
-      fragments.push(
-        fragment(
-          'stored-message.assembled.tool-output',
-          '/content',
-          text,
-          'tool_argument',
-          'output',
-          'plain',
-          'inspect_only',
-        ),
-      );
+      if (isInstruction) {
+        fragments.push(
+          fragment(
+            'stored-message.assembled.instruction',
+            '/content',
+            text,
+            'agent_instruction',
+            'instructions',
+            'plain',
+            'inspect_only',
+          ),
+        );
+      }
+      if (isToolOutput) {
+        fragments.push(
+          fragment(
+            'stored-message.assembled.tool-output',
+            '/content',
+            text,
+            'tool_argument',
+            'output',
+            'plain',
+            'inspect_only',
+          ),
+        );
+      }
+    } else {
+      traversalScopes.push({ source: 'assembled_context', fields: ['assembled_context'] });
+      if (isInstruction) {
+        traversalScopes.push({ source: 'agent_instruction', fields: ['instructions'] });
+      }
+      if (isToolOutput) {
+        traversalScopes.push({ source: 'tool_argument', fields: ['output'] });
+      }
     }
   }
   fragments.push(...extractFeedbackContent(input));
@@ -1879,6 +1927,15 @@ export function extractStoredMessageContent(
       CONTENT_TRAVERSAL_MAX_NODES + (aggregateBudget.maxNodes == null ? 0 : 2),
       remainingAggregateNodes,
     ),
+    get materializedCharacters() {
+      return aggregateBudget.materializedCharacters;
+    },
+    set materializedCharacters(value: number | undefined) {
+      aggregateBudget.materializedCharacters = value;
+    },
+    get maxMaterializedCharacters() {
+      return aggregateBudget.maxMaterializedCharacters;
+    },
   };
   try {
     return extractStoredMessageContentWithBudget(input, traversalBudget);

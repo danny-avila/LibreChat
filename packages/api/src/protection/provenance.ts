@@ -51,6 +51,8 @@ export interface UserSubmittedPathOptions {
   readonly capturedContentLength?: number;
   /** Reuses each content-part value across attribution and projection phases. */
   readonly capturedContentParts?: Map<number, unknown>;
+  /** Materializes a content part once before any attribution or projection read. */
+  readonly captureContentPart?: (part: unknown, index: number) => unknown;
 }
 
 export interface UserSubmittedProvenanceWorkBudget {
@@ -122,11 +124,13 @@ function readCapturedContentPart(
   content: readonly unknown[],
   index: number,
   capturedContentParts: Map<number, unknown>,
+  captureContentPart?: UserSubmittedPathOptions['captureContentPart'],
 ): unknown {
   if (capturedContentParts.has(index)) {
     return capturedContentParts.get(index);
   }
-  const part = content[index];
+  const rawPart = content[index];
+  const part = captureContentPart == null ? rawPart : captureContentPart(rawPart, index);
   capturedContentParts.set(index, part);
   return part;
 }
@@ -154,6 +158,7 @@ function isEffectiveUserSubmittedPath(
   capturedContent: unknown,
   capturedContentLength: number | undefined,
   capturedContentParts: Map<number, unknown>,
+  captureContentPart?: UserSubmittedPathOptions['captureContentPart'],
 ): EffectiveUserSubmittedPathState {
   const segments = getSafeUserSubmittedPathSegments(path);
   if (segments == null) {
@@ -184,7 +189,12 @@ function isEffectiveUserSubmittedPath(
       ) {
         return { effective: false, contentPartIsSteer: false };
       }
-      source = readCapturedContentPart(capturedContent, numericIndex, capturedContentParts);
+      source = readCapturedContentPart(
+        capturedContent,
+        numericIndex,
+        capturedContentParts,
+        captureContentPart,
+      );
       contentPartIndex = numericIndex;
       contentPart = source;
       continue;
@@ -220,6 +230,7 @@ function visitSemanticUserSubmittedPaths(
   budget?: UserSubmittedProvenanceWorkBudget,
   capturedLength?: number,
   capturedContentParts = new Map<number, unknown>(),
+  captureContentPart?: UserSubmittedPathOptions['captureContentPart'],
 ): boolean {
   let content: readonly unknown[];
   let contentLength: number;
@@ -243,7 +254,12 @@ function visitSemanticUserSubmittedPaths(
       return false;
     }
     try {
-      const part = readCapturedContentPart(content, index, capturedContentParts);
+      const part = readCapturedContentPart(
+        content,
+        index,
+        capturedContentParts,
+        captureContentPart,
+      );
       if (
         part != null &&
         typeof part === 'object' &&
@@ -345,6 +361,7 @@ export function getUserSubmittedPathState(
         capturedContent,
         capturedContentLength,
         capturedContentParts,
+        options.captureContentPart,
       );
       if (effectiveState.effective) {
         paths.push(pointer);
@@ -392,6 +409,7 @@ export function getUserSubmittedPathState(
         options.budget,
         capturedContentLength,
         capturedContentParts,
+        options.captureContentPart,
       )
     ) {
       return createState(true);
@@ -465,6 +483,7 @@ export function getUserSubmittedMessageFieldPathState(
           capturedContent,
           capturedContentLength,
           capturedContentParts,
+          options.captureContentPart,
         ).effective
       ) {
         continue;

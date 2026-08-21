@@ -1,6 +1,7 @@
 import type { FiltersConfig } from 'librechat-data-provider';
 import { ContentTraversalLimitError, isNestedMessageTraversalProtected } from './nested';
-import { extractMessageContent } from './messages';
+import { extractMessageContent, snapshotExternalMessages } from './messages';
+import type { ExternalChatMessage, ExternalMessagePart, ExternalToolCall } from './messages';
 import { inspectContent } from '../runtime';
 
 describe('extractMessageContent', () => {
@@ -504,11 +505,41 @@ describe('extractMessageContent', () => {
     );
   });
 
+  it('yields inspected-prefix findings before enforcing a deferred traversal failure', () => {
+    const payload = Array.from({ length: 5000 }, (_, index) =>
+      index === 0 ? 'BLOCK-FIRST' : `submitted-${index}`,
+    );
+
+    expect(
+      inspectContent(
+        extractMessageContent([{ role: 'user', content: [{ type: 'vendor_content', payload }] }]),
+        {
+          filters: {
+            messages: {
+              pii: {
+                fields: ['content_part'],
+                starterPatterns: [],
+                customPatterns: [{ id: 'first', label: 'first', regex: 'BLOCK-FIRST' }],
+              },
+            },
+          },
+        },
+      ),
+    ).toMatchObject({
+      source: 'message',
+      field: 'content_part',
+      label: 'first',
+      fragmentPath: '/0/content/0/payload/0',
+    });
+  });
+
   it('fails closed when a nested value cannot be enumerated', () => {
+    let ownKeyReads = 0;
     const hostile = new Proxy(
       {},
       {
         ownKeys() {
+          ownKeyReads++;
           throw new Error('blocked enumeration');
         },
       },
@@ -522,6 +553,374 @@ describe('extractMessageContent', () => {
             content: [{ type: 'vendor_content', payload: hostile }],
           },
         ]),
+      ),
+    ).toThrow(ContentTraversalLimitError);
+    expect(ownKeyReads).toBe(0);
+  });
+
+  it('shares one traversal budget across parts and bounds aggregate fragment work', () => {
+    let carrierReads = 0;
+    const carrier = new Proxy(new Array<string>(3500), {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          carrierReads++;
+          return `submitted-${property}`;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const content = Array.from({ length: 512 }, () => ({ payload: carrier }));
+    const fragments = [];
+    let traversalError: unknown;
+
+    try {
+      for (const fragment of extractMessageContent([{ role: 'user', content }])) {
+        fragments.push(fragment);
+      }
+    } catch (error) {
+      traversalError = error;
+    }
+
+    expect(traversalError).toBeInstanceOf(ContentTraversalLimitError);
+    expect(carrierReads).toBeLessThanOrEqual(4200);
+    expect(fragments.length).toBeLessThanOrEqual(4100);
+  });
+
+  it('bounds assembled-context copies across the full extraction callback', () => {
+    const first = 'A'.repeat(1024 * 1024);
+    const second = 'B'.repeat(1024 * 1024);
+    const messages = Array.from({ length: 128 }, () => ({
+      role: 'user',
+      content: [{ text: first }, { text: second }],
+    }));
+    let assembledCharacters = 0;
+    let traversalError: unknown;
+
+    try {
+      for (const fragment of extractMessageContent(messages)) {
+        if (fragment.source === 'assembled_context') {
+          assembledCharacters += fragment.text.length;
+        }
+      }
+    } catch (error) {
+      traversalError = error;
+    }
+
+    expect(traversalError).toBeInstanceOf(ContentTraversalLimitError);
+    expect(assembledCharacters).toBeLessThanOrEqual(8 * 1024 * 1024);
+  });
+
+  it('bounds a sparse ten-million-item generic carrier before numeric expansion', () => {
+    let lengthReads = 0;
+    let numericReads = 0;
+    const carrier = new Proxy(new Array<string>(10_000_000), {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+        } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      Array.from(
+        extractMessageContent([
+          { role: 'user', content: [{ type: 'vendor_content', payload: carrier }] },
+        ]),
+      ),
+    ).toThrow(ContentTraversalLimitError);
+    expect(lengthReads).toBe(1);
+    expect(numericReads).toBeLessThanOrEqual(4200);
+  });
+
+  it.each(['messages', 'content', 'tool_calls'] as const)(
+    'captures and caps the %s array without dispatching its iterator',
+    (arrayKind) => {
+      let iteratorReads = 0;
+      let lengthReads = 0;
+      let numericReads = 0;
+      const carrier = new Proxy(new Array<unknown>(10_000_000), {
+        get(target, property, receiver) {
+          if (property === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('submitted iterator must not run');
+          }
+          if (property === 'length') {
+            lengthReads++;
+          } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+            numericReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const messages =
+        arrayKind === 'messages'
+          ? (carrier as readonly ExternalChatMessage[])
+          : [
+              arrayKind === 'content'
+                ? ({ content: carrier } as ExternalChatMessage)
+                : ({ tool_calls: carrier } as ExternalChatMessage),
+            ];
+
+      expect(() => Array.from(extractMessageContent(messages))).toThrow(ContentTraversalLimitError);
+      expect(iteratorReads).toBe(0);
+      expect(lengthReads).toBe(1);
+      expect(numericReads).toBe(4096);
+    },
+  );
+
+  it('accepts 4,096 nested leaves and rejects 4,097', () => {
+    expect(() =>
+      Array.from(
+        extractMessageContent([
+          {
+            role: 'user',
+            content: [{ payload: Array.from({ length: 4096 }, () => 'submitted') }],
+          },
+        ]),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      Array.from(
+        extractMessageContent([
+          {
+            role: 'user',
+            content: [{ payload: Array.from({ length: 4097 }, () => 'submitted') }],
+          },
+        ]),
+      ),
+    ).toThrow(ContentTraversalLimitError);
+  });
+
+  it('captures mutable provider and generic properties once and retains their first values', () => {
+    let textReads = 0;
+    let imageReads = 0;
+    let imageUrlReads = 0;
+    let secretReads = 0;
+    const image = {} as { readonly url?: string };
+    Object.defineProperty(image, 'url', {
+      enumerable: true,
+      get() {
+        imageUrlReads++;
+        return imageUrlReads === 1 ? 'https://example.test/PRIVATE-IMAGE' : 'safe-image';
+      },
+    });
+    const payload = {} as { readonly secret?: string };
+    Object.defineProperty(payload, 'secret', {
+      enumerable: true,
+      get() {
+        secretReads++;
+        return secretReads === 1 ? 'PRIVATE-GENERIC' : 'safe-generic';
+      },
+    });
+    const part = { type: 'vendor_content', payload } as ExternalMessagePart;
+    Object.defineProperty(part, 'text', {
+      enumerable: true,
+      get() {
+        textReads++;
+        return textReads === 1 ? 'PRIVATE-TEXT' : 'safe-text';
+      },
+    });
+    Object.defineProperty(part, 'image_url', {
+      enumerable: true,
+      get() {
+        imageReads++;
+        return imageReads === 1 ? image : 'safe-image';
+      },
+    });
+
+    const fragments = Array.from(extractMessageContent([{ role: 'user', content: [part] }]));
+
+    expect({ textReads, imageReads, imageUrlReads, secretReads }).toEqual({
+      textReads: 1,
+      imageReads: 1,
+      imageUrlReads: 1,
+      secretReads: 1,
+    });
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: '/0/content/0/text', text: 'PRIVATE-TEXT' }),
+        expect.objectContaining({
+          path: '/0/content/0/image_url',
+          text: 'https://example.test/PRIVATE-IMAGE',
+        }),
+        expect.objectContaining({
+          path: '/0/content/0/payload/secret',
+          text: 'PRIVATE-GENERIC',
+        }),
+      ]),
+    );
+    expect(fragments.some(({ text }) => text.startsWith('safe-'))).toBe(false);
+  });
+
+  it('captures mutable message, content-array, and tool-call fields exactly once', () => {
+    let contentReads = 0;
+    let contentLengthReads = 0;
+    let contentItemReads = 0;
+    let toolCallsReads = 0;
+    let toolCallLengthReads = 0;
+    let toolCallItemReads = 0;
+    let functionReads = 0;
+    let nameReads = 0;
+    let argumentReads = 0;
+    const content = new Proxy([{ text: 'PRIVATE-CONTENT' }], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          contentLengthReads++;
+        } else if (property === '0') {
+          contentItemReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const fn = {} as { readonly name?: string; readonly arguments?: string };
+    Object.defineProperties(fn, {
+      name: {
+        enumerable: true,
+        get() {
+          nameReads++;
+          return nameReads === 1 ? 'PRIVATE-TOOL' : 'safe-tool';
+        },
+      },
+      arguments: {
+        enumerable: true,
+        get() {
+          argumentReads++;
+          return argumentReads === 1 ? '{"token":"PRIVATE-ARGS"}' : '{}';
+        },
+      },
+    });
+    const toolCall = {} as ExternalToolCall;
+    Object.defineProperty(toolCall, 'function', {
+      enumerable: true,
+      get() {
+        functionReads++;
+        return fn;
+      },
+    });
+    const toolCalls = new Proxy([toolCall], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          toolCallLengthReads++;
+        } else if (property === '0') {
+          toolCallItemReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const message = { role: 'user' } as ExternalChatMessage;
+    Object.defineProperties(message, {
+      content: {
+        enumerable: true,
+        get() {
+          contentReads++;
+          return content;
+        },
+      },
+      tool_calls: {
+        enumerable: true,
+        get() {
+          toolCallsReads++;
+          return toolCalls;
+        },
+      },
+    });
+
+    const fragments = Array.from(extractMessageContent([message]));
+
+    expect({
+      contentReads,
+      contentLengthReads,
+      contentItemReads,
+      toolCallsReads,
+      toolCallLengthReads,
+      toolCallItemReads,
+      functionReads,
+      nameReads,
+      argumentReads,
+    }).toEqual({
+      contentReads: 1,
+      contentLengthReads: 1,
+      contentItemReads: 1,
+      toolCallsReads: 1,
+      toolCallLengthReads: 1,
+      toolCallItemReads: 1,
+      functionReads: 1,
+      nameReads: 1,
+      argumentReads: 1,
+    });
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'PRIVATE-CONTENT', source: 'message' }),
+        expect.objectContaining({ text: 'PRIVATE-TOOL', field: 'name' }),
+        expect.objectContaining({ text: '{"token":"PRIVATE-ARGS"}', field: 'arguments' }),
+      ]),
+    );
+  });
+
+  it('reuses one frozen snapshot for file-locator and text inspection', () => {
+    let contentReads = 0;
+    let textReads = 0;
+    let fileIdReads = 0;
+    const part = {} as ExternalMessagePart;
+    Object.defineProperties(part, {
+      text: {
+        enumerable: true,
+        get() {
+          textReads++;
+          return textReads === 1 ? 'PRIVATE-TEXT' : 'safe-text';
+        },
+      },
+      file_id: {
+        enumerable: true,
+        get() {
+          fileIdReads++;
+          return fileIdReads === 1 ? 'file-PRIVATE' : 'file-safe';
+        },
+      },
+    });
+    const message = { role: 'user' } as ExternalChatMessage;
+    Object.defineProperty(message, 'content', {
+      enumerable: true,
+      get() {
+        contentReads++;
+        return contentReads === 1 ? [part] : [{ text: 'safe-content', file_id: 'file-safe' }];
+      },
+    });
+
+    const prepared = snapshotExternalMessages([message]);
+    const preparedPart = prepared.messages[0]?.content?.[0] as ExternalMessagePart;
+    expect(Object.isFrozen(prepared.messages)).toBe(true);
+    expect(Object.isFrozen(preparedPart)).toBe(true);
+    expect(preparedPart.file_id).toBe('file-PRIVATE');
+
+    const fragments = Array.from(extractMessageContent(prepared));
+
+    expect({ contentReads, textReads, fileIdReads }).toEqual({
+      contentReads: 1,
+      textReads: 1,
+      fileIdReads: 1,
+    });
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: 'PRIVATE-TEXT', field: 'content_part' }),
+        expect.objectContaining({ text: 'file-PRIVATE', field: 'attachment_reference' }),
+      ]),
+    );
+    expect(fragments.some(({ text }) => text.includes('safe-'))).toBe(false);
+  });
+
+  it('fails closed when prepared-brand detection receives a revoked proxy', () => {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+
+    expect(() =>
+      Array.from(
+        extractMessageContent(
+          proxy as unknown as readonly (ExternalChatMessage | null | undefined)[],
+        ),
       ),
     ).toThrow(ContentTraversalLimitError);
   });
