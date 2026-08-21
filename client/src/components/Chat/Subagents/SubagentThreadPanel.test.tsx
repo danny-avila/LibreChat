@@ -195,6 +195,7 @@ describe('SubagentThreadPanel', () => {
     );
 
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'dispatched');
   });
 
   it('surfaces a durable read failure after the readiness window', () => {

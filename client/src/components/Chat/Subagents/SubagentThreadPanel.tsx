@@ -74,7 +74,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     [detachedLiveSubmitting, foregroundTitle, progress, selection],
   );
   const activity = useMemo(() => {
-    if (selection.durable == null || data == null) return liveActivity;
+    if (selection.durable == null) return liveActivity;
+    if (data == null) {
+      return progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
+    }
     const durable = adaptDurableThreadActivity(data, selection.durable.taskId);
     if (
       (durable.status === 'running' || durable.status === 'dispatched') &&
@@ -91,7 +94,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       prompt: durable.prompt ?? liveActivity.prompt,
       items: durable.items.length > 0 ? durable.items : liveActivity.items,
     };
-  }, [data, liveActivity, selection.durable]);
+  }, [data, liveActivity, progress, selection.durable]);
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (
     selection.durable != null &&
