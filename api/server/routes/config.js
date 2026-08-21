@@ -305,6 +305,7 @@ router.get('/', async function (req, res) {
       langfuseFanoutEnabled,
       langfuseConnectionAccess,
       insightsEnabled: isEnabled(process.env.ENABLE_INSIGHTS),
+      compactionEnabled: appConfig?.summarization?.enabled !== false,
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),

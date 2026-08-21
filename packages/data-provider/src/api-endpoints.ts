@@ -328,6 +328,7 @@ export const agentQueuedTurnsByConversation = (
 };
 export const agentQueuedTurn = (queuedTurnId: string) =>
   `${agentQueuedTurnsRoot}/${encodeURIComponent(queuedTurnId)}`;
+export const compactConversation = () => `${BASE_URL}/api/agents/chat/compact`;
 
 export const mcp = {
   tools: `${BASE_URL}/api/mcp/tools`,

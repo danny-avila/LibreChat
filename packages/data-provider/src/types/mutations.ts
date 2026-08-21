@@ -491,6 +491,28 @@ export type EditArtifactOptions = MutationOptions<
   Error
 >;
 
+/**
+ * Agent-selection fields the compaction route needs so its shared
+ * `buildEndpointOption` middleware reconstructs the same agent the
+ * conversation runs on. Mirrors what a normal chat message carries.
+ */
+export type TCompactConversationRequest = {
+  conversationId: string;
+  /** Leaf of the branch to compact; everything up to it is summarized. */
+  parentMessageId?: string | null;
+  endpoint?: types.EModelEndpoint | string | null;
+  endpointType?: types.EModelEndpoint | string | null;
+  agent_id?: string | null;
+  model?: string | null;
+  spec?: string | null;
+  promptPrefix?: string | null;
+  ephemeralAgent?: types.TEphemeralAgent | null;
+  isTemporary?: boolean;
+};
+
+/** The persisted compaction message, whose only content part is the summary. */
+export type TCompactConversationResponse = types.TMessage;
+
 export type TBranchMessageRequest = {
   messageId: string;
   agentId: string;
