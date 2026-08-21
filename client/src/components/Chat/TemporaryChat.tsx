@@ -39,3 +39,21 @@ export function TemporaryChat() {
     </div>
   );
 }
+
+/** Once the first message is sent the toggle retires, so the active mode still
+ * needs a persistent, read-only cue in the header. */
+export function TemporaryChatIndicator() {
+  const localize = useLocalize();
+  const { isActive } = useTemporaryChat();
+
+  if (!isActive) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-xl border border-border-light bg-surface-tertiary px-2.5 text-xs font-medium text-text-secondary">
+      <MessageCircleDashed className="size-4" aria-hidden="true" />
+      <span className="max-md:sr-only">{localize('com_ui_temporary')}</span>
+    </div>
+  );
+}
