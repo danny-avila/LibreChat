@@ -77,3 +77,27 @@ export const shouldSwapOnHover = ({
   }
   return offsetY <= middleY;
 };
+
+/** Rewrites only the slots the visible keys occupy in the stored order, so a
+ *  reorder performed while a filter hides part of the list keeps every hidden
+ *  key exactly where it was instead of dropping it. Visible keys the stored
+ *  order does not know about append at the end. */
+export const mergeVisibleOrder = (stored: string[], visible: string[]): string[] => {
+  const visibleSet = new Set(visible);
+  const merged: string[] = [];
+  let next = 0;
+  for (const key of stored) {
+    if (!visibleSet.has(key)) {
+      merged.push(key);
+      continue;
+    }
+    if (next < visible.length) {
+      merged.push(visible[next]);
+      next++;
+    }
+  }
+  for (; next < visible.length; next++) {
+    merged.push(visible[next]);
+  }
+  return merged;
+};

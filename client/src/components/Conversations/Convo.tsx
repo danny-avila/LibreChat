@@ -18,6 +18,7 @@ import { areConversationRenderPropsEqual } from './utils';
 import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { CONVERSATION_DRAG_TYPE } from './dnd';
+import { resolveRowBeside } from './focus';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import ConvoLink from './ConvoLink';
@@ -142,33 +143,22 @@ function Conversation({
     }
   }, [hasInteracted]);
 
-  /* The row unmounts once the pinned refetch lands, so hand focus to a
-   * neighbouring row before it goes. The row element is a plain div with no
-   * tabindex, so focus has to land on the link inside it, and the row being
-   * unpinned has to be skipped: it is still mounted when this runs. */
-  const focusNeighbouringRow = useCallback(() => {
-    const row = containerRef.current;
-    const scope = row?.closest('[role="region"]') ?? row?.closest('ul');
-    if (!row || !scope) {
-      return;
-    }
-    const rows = Array.from(scope.querySelectorAll<HTMLElement>('[data-testid="convo-item"]'));
-    const current = rows.indexOf(row);
-    const neighbour = rows[current + 1] ?? rows[current - 1];
-    neighbour?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
-  }, []);
-
   /* Matches the favorites' row-level unpin: one click on the pin badge, no
-   * menu digging. */
+   * menu digging. The row unmounts once the pinned refetch lands, so focus is
+   * handed to a neighbouring row first. Where that row is has to be resolved
+   * before the mutation, not in its callback: by then the refetch may already
+   * have unmounted this row and cleared the ref the search starts from. */
   const unpinConvo = useCallback(() => {
     if (!conversationId) {
       return;
     }
+    const row = containerRef.current;
+    const successor = row?.contains(document.activeElement) === true ? resolveRowBeside(row) : null;
     unpinMutation.mutate(
       { conversationId, pinned: false },
       {
         onSuccess: () => {
-          requestAnimationFrame(focusNeighbouringRow);
+          successor?.focus();
         },
         onError: () => {
           showToast({
@@ -179,7 +169,7 @@ function Conversation({
         },
       },
     );
-  }, [conversationId, unpinMutation, focusNeighbouringRow, showToast, localize]);
+  }, [conversationId, unpinMutation, showToast, localize]);
 
   const handleMouseLeave = useCallback(() => {
     if (!isPopoverActive) {
