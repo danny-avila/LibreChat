@@ -446,6 +446,7 @@ export async function handleCompactRequest(
          *  a custom endpoint's name is not a key in `supportsBalanceCheck`. */
         beforeInvoke: async ({
           promptTokens,
+          passPromptTokens,
           model,
           endpoint: summarizerEndpoint,
           balanceEndpoint,
@@ -473,6 +474,14 @@ export async function handleCompactRequest(
                 user: userId,
                 tokenType: 'prompt',
                 amount: promptTokens,
+                /** Premium long-context rates are keyed off ONE call's input,
+                 *  and this is a single gate: the largest pass is the one that
+                 *  can cross the threshold, so it picks the tier. Omitting it
+                 *  priced every compaction at the standard rate and approved
+                 *  calls `recordCollectedUsage` then charged at the premium
+                 *  one. */
+                inputTokenCount:
+                  passPromptTokens.length > 0 ? Math.max(...passPromptTokens) : promptTokens,
                 endpoint: summarizerEndpoint,
                 endpointTokenConfig,
               },

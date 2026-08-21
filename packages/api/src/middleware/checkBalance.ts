@@ -21,6 +21,10 @@ interface TxData {
   valueKey?: string;
   tokenType?: string;
   amount: number;
+  /** Input size of ONE call, when the caller knows it. Premium long-context
+   *  rates are keyed off it, so a gate that omits it prices at the standard
+   *  tier and approves a call that is then charged at the premium one. */
+  inputTokenCount?: number;
   endpointTokenConfig?: unknown;
   generations?: unknown[];
 }
@@ -56,6 +60,7 @@ async function checkBalanceRecord(
     model,
     endpoint,
     endpointTokenConfig,
+    ...(txData.inputTokenCount != null && { inputTokenCount: txData.inputTokenCount }),
   });
   const tokenCost = amount * multiplier;
 
