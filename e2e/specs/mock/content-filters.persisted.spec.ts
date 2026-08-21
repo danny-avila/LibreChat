@@ -2119,12 +2119,13 @@ test.describe('persisted source-aware content filters', () => {
       expectLegacyBlock(blockedFork);
 
       const continuationMessageId = randomUUID();
+      const continuationText = `Safe legacy persisted continuation ${suffix}`;
       const startedContinuation = await requestResult(request, {
         path: `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
         token,
         method: 'POST',
         data: {
-          text: `Safe legacy persisted continuation ${suffix}`,
+          text: continuationText,
           sender: 'User',
           clientTimestamp: new Date().toISOString(),
           isCreatedByUser: true,
@@ -2152,7 +2153,10 @@ test.describe('persisted source-aware content filters', () => {
       await withMongo(async (db) => {
         expect(
           await db.collection('messages').countDocuments({
-            messageId: { $in: [continuationMessageId, `${continuationMessageId}_response`] },
+            conversationId: fixtures.messageConversationId,
+            parentMessageId: fixtures.messageId,
+            isCreatedByUser: true,
+            text: continuationText,
           }),
         ).toBe(0);
       });

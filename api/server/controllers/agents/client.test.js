@@ -147,6 +147,58 @@ describe('AgentClient - final model-bound content protection', () => {
     ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
   });
 
+  it('preflights legacy restored history before user-message persistence', () => {
+    const client = makeClient();
+    client.options.req.config.messageFilter = {
+      pii: {
+        starterPatterns: [],
+        customPatterns: [
+          {
+            id: 'legacy-provider-bound-secret',
+            label: 'legacy provider-bound secret',
+            regex: 'PROVIDER-BOUND-[A-Z]+',
+          },
+        ],
+      },
+    };
+
+    expect(() => client.assertStoredModelBoundContent()).toThrow(
+      expect.objectContaining({ code: 'content_filter_block' }),
+    );
+  });
+
+  it('keeps source-aware restored history enforcement at the final provider boundary', () => {
+    const client = makeClient();
+
+    expect(() => client.assertStoredModelBoundContent()).not.toThrow();
+  });
+
+  it('allows safe restored history under legacy message filtering', () => {
+    const client = makeClient();
+    client.options.req.config.messageFilter = {
+      pii: {
+        starterPatterns: [],
+        customPatterns: [
+          {
+            id: 'legacy-provider-bound-secret',
+            label: 'legacy provider-bound secret',
+            regex: 'PROVIDER-BOUND-[A-Z]+',
+          },
+        ],
+      },
+    };
+    client.setModelBoundStoredMessages([
+      {
+        role: 'user',
+        isCreatedByUser: true,
+        text: 'Safe restored text',
+        messageId: 'safe-source',
+      },
+    ]);
+
+    expect(() => client.assertStoredModelBoundContent()).not.toThrow();
+  });
+
   it('keeps materialized current attachments inspectable when historical replay is disabled', () => {
     const client = makeClient();
     const currentFile = {

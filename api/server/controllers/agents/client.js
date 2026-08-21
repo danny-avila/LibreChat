@@ -1433,6 +1433,20 @@ class AgentClient extends BaseClient {
     return {};
   }
 
+  /** Legacy `messageFilter.pii` historically covered the restored branch
+   * before model-input construction and persistence. Retain that contract
+   * without scanning new source-aware filters before SDK pruning. */
+  assertStoredModelBoundContent() {
+    const legacyPii = this.options.req?.config?.messageFilter?.pii;
+    if (!hasModelBoundContentProtection(undefined, legacyPii)) {
+      return;
+    }
+    assertModelBoundContent({
+      legacyPii,
+      storedMessages: this.modelBoundStoredMessages,
+    });
+  }
+
   /** Agent pruning and summarization happen inside the SDK after
    * `buildMessages`, so BaseClient's post-build payload is not yet the final
    * model selection. The fail-closed callback below enforces the exact payload

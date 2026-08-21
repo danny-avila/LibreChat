@@ -699,6 +699,21 @@ describe('BaseClient', () => {
       expect(TestClient.getSaveOptions).toHaveBeenCalled();
     });
 
+    test('runs the restored-history guard before building model input', async () => {
+      const policyError = Object.assign(new Error('Blocked restored history'), {
+        code: 'content_filter_block',
+      });
+      TestClient.assertStoredModelBoundContent = jest.fn(() => {
+        throw policyError;
+      });
+
+      await expect(TestClient.sendMessage('Safe new message')).rejects.toBe(policyError);
+
+      expect(TestClient.assertStoredModelBoundContent).toHaveBeenCalledTimes(1);
+      expect(TestClient.buildMessages).not.toHaveBeenCalled();
+      expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+    });
+
     test('blocks persisted user text selected by the built model payload', async () => {
       const secret = 'PRIVATE-HISTORICAL-VALUE';
       const history = [

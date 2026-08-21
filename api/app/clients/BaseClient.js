@@ -264,6 +264,10 @@ class BaseClient {
     });
   }
 
+  /** Optional pre-build guard for policies that cover restored history
+   * independently of the final provider selection. */
+  assertStoredModelBoundContent() {}
+
   /**
    * Generic clients return their selected model payload from `buildMessages`.
    * AgentClient overrides this because its SDK performs pruning later and
@@ -714,6 +718,7 @@ class BaseClient {
     this.parentMessageId = parentMessageId;
     const modelBoundStoredMessages = this.getModelBoundStoredMessages(this.currentMessages);
     this.setModelBoundStoredMessages(modelBoundStoredMessages);
+    this.assertStoredModelBoundContent();
     this.modelBoundCurrentFiles = Array.isArray(this.options.attachments)
       ? [...this.options.attachments]
       : [];
