@@ -58,6 +58,19 @@ export class ServerConfigsCacheRedis
     this.successCheck(`upsert ${this.namespace} server "${serverName}"`, success);
   }
 
+  /** Merges derived fields into an existing entry without bumping `updatedAt` —
+   * see the interface doc: a bump would mark live connections stale. */
+  public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
+    if (this.leaderOnly) await this.leaderCheck(`patch ${this.namespace} MCP servers`);
+    const existing = (await this.cache.get(serverName)) as ParsedServerConfig | undefined;
+    if (!existing) {
+      return false;
+    }
+    const success = await this.cache.set(serverName, { ...existing, ...fields });
+    this.successCheck(`patch ${this.namespace} server "${serverName}"`, success);
+    return true;
+  }
+
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck(`remove ${this.namespace} MCP servers`);
     const success = await this.cache.delete(serverName);

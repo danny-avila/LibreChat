@@ -515,6 +515,47 @@ export class MCPServersRegistry {
   }
 
   /**
+   * Backfills the inspector-derived `resolvedInstructions` for a server whose
+   * startup inspection never connected: OAuth/OBO servers are skipped by the
+   * inspector, so an enabled `serverInstructions` declaration has no fetched
+   * text to resolve to. Called once a live connection has delivered the
+   * server's instructions.
+   *
+   * YAML-tier servers only. Config-overlay servers are cached under
+   * config-hash keys and cannot be addressed by name here; DB-backed user
+   * servers need an identity-preserving write through mongoose timestamps and
+   * the credential-sanitization pipeline, which is its own change. Both are
+   * left untouched.
+   *
+   * The entry's `updatedAt` is deliberately preserved (the storage `patch`
+   * contract): the config identity did not change, and bumping it would mark
+   * every live connection for this server stale.
+   *
+   * @returns true when a stored config was updated.
+   */
+  public async setResolvedInstructions(
+    serverName: string,
+    instructions: string,
+    userId?: string,
+  ): Promise<boolean> {
+    if (!this.cacheConfigsRepo.patch) {
+      return false;
+    }
+    const yamlEntry = await this.cacheConfigsRepo.get(serverName);
+    if (!yamlEntry || yamlEntry.resolvedInstructions === instructions) {
+      return false;
+    }
+    const patched = await this.cacheConfigsRepo.patch(serverName, {
+      resolvedInstructions: instructions,
+    });
+    if (!patched) {
+      return false;
+    }
+    await this.invalidateServerReadCaches(serverName, userId);
+    return true;
+  }
+
+  /**
    * Re-inspects a server that previously failed initialization.
    * Uses the stored stub config to attempt a full inspection and replaces the stub on success.
    */
