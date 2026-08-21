@@ -74,12 +74,16 @@ describe('markdownToHtml', () => {
   });
 
   it('keeps directive markers literal for the lite renderer, which has no directives', () => {
-    expect(markdownToHtml(':::warning\ntext\n:::', 'lite')).toBe('<p>:::warning\ntext\n:::</p>');
+    expect(markdownToHtml(':::warning\ntext\n:::', { variant: 'lite', latex: false })).toBe(
+      '<p>:::warning<br />text<br />:::</p>',
+    );
   });
 
   it('applies the supersub transform the renderers apply', () => {
     expect(markdownToHtml('x^2^ is squared')).toBe('<p>x<sup>2</sup> is squared</p>');
-    expect(markdownToHtml('x^2^ is squared', 'lite')).toBe('<p>x<sup>2</sup> is squared</p>');
+    expect(markdownToHtml('x^2^ is squared', { variant: 'lite', latex: false })).toBe(
+      '<p>x<sup>2</sup> is squared</p>',
+    );
   });
 
   it('leaves an approximate tilde out of the subscript pairing', () => {
@@ -92,6 +96,32 @@ describe('markdownToHtml', () => {
     );
     expect(markdownToHtml('![chart](/images/chart.png)')).toBe(
       `<p><img src="${new URL('/images/chart.png', document.baseURI).href}" alt="chart" /></p>`,
+    );
+  });
+
+  it('keeps soft line breaks visible, as the pre-wrap renderer does', () => {
+    expect(markdownToHtml('first line\nsecond line')).toBe('<p>first line<br />second line</p>');
+  });
+
+  it('keeps bare relative links and images, resolved against the app', () => {
+    expect(markdownToHtml('[guide](docs/guide.html)')).toBe(
+      `<p><a href="${new URL('docs/guide.html', document.baseURI).href}">guide</a></p>`,
+    );
+    expect(markdownToHtml('![plot](images/plot.png)')).toBe(
+      `<p><img src="${new URL('images/plot.png', document.baseURI).href}" alt="plot" /></p>`,
+    );
+  });
+
+  it('renders single-dollar math when the renderer preprocesses LaTeX', () => {
+    expect(markdownToHtml('Energy is $E=mc^2$ inline.', { variant: 'full', latex: true })).toBe(
+      '<p>Energy is E=mc^2 inline.</p>',
+    );
+    expect(markdownToHtml('Energy is $E=mc^2$ inline.')).toBe('<p>Energy is $E=mc^2$ inline.</p>');
+  });
+
+  it('still leaves currency alone with LaTeX preprocessing on', () => {
+    expect(markdownToHtml('Costs rose from $5 to $10.', { variant: 'full', latex: true })).toBe(
+      '<p>Costs rose from $5 to $10.</p>',
     );
   });
 

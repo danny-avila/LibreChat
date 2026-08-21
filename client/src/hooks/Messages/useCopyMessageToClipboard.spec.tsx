@@ -9,6 +9,7 @@ import store from '~/store';
 jest.mock('copy-to-clipboard');
 
 describe('useCopyMessageToClipboard', () => {
+  const TEXT = '$E=mc^2$';
   const mockSetIsCopied = jest.fn();
   const mockCopy = copy as jest.MockedFunction<typeof copy>;
 
@@ -18,15 +19,16 @@ describe('useCopyMessageToClipboard', () => {
   });
 
   const renderWithSettings = (
-    settings: { copyRichText: boolean; enableUserMsgMarkdown: boolean },
+    settings: { copyRichText: boolean; enableUserMsgMarkdown: boolean; latexParsing?: boolean },
     isCreatedByUser: boolean,
   ) => {
     const initializeState = ({ set }: MutableSnapshot) => {
       set(store.copyRichText, settings.copyRichText);
       set(store.enableUserMsgMarkdown, settings.enableUserMsgMarkdown);
+      set(store.LaTeXParsing, settings.latexParsing ?? true);
     };
 
-    return renderHook(() => useCopyMessageToClipboard({ text: '# Title', isCreatedByUser }), {
+    return renderHook(() => useCopyMessageToClipboard({ text: TEXT, isCreatedByUser }), {
       wrapper: ({ children }: { children: ReactNode }) => (
         <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
       ),
@@ -102,7 +104,7 @@ describe('useCopyMessageToClipboard', () => {
       result.current(mockSetIsCopied);
     });
 
-    expect(copiedHtml()).toBe('<p>:::warning\ntext\n:::</p>');
+    expect(copiedHtml()).toBe('<p>:::warning<br />text<br />:::</p>');
   });
 
   it('mirrors Markdown for an assistant message, which unwraps directives', () => {
@@ -124,6 +126,33 @@ describe('useCopyMessageToClipboard', () => {
     });
 
     expect(copiedHtml()).toBe('<p>text</p>');
+  });
+
+  it('follows the LaTeX parsing setting for assistant messages', () => {
+    const withLatex = renderWithSettings(
+      { copyRichText: true, enableUserMsgMarkdown: false, latexParsing: true },
+      false,
+    );
+
+    act(() => {
+      withLatex.result.current(mockSetIsCopied);
+    });
+
+    expect(copiedHtml()).toBe('<p>E=mc^2</p>');
+
+    jest.clearAllMocks();
+    mockCopy.mockReturnValue(true);
+
+    const withoutLatex = renderWithSettings(
+      { copyRichText: true, enableUserMsgMarkdown: false, latexParsing: false },
+      false,
+    );
+
+    act(() => {
+      withoutLatex.result.current(mockSetIsCopied);
+    });
+
+    expect(copiedHtml()).toBe('<p>$E=mc^2$</p>');
   });
 
   it('stays plain for every author when the preference is off', () => {

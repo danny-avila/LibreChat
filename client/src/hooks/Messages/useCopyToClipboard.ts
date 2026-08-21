@@ -3,7 +3,7 @@ import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
-import type { MarkdownVariant } from '~/utils/richtext';
+import type { RichTextMode } from '~/utils/richtext';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -35,10 +35,10 @@ type ClipboardSource = Partial<Pick<TMessage, 'text' | 'content'>> & {
   searchResults?: { [key: string]: SearchResultData };
   /**
    * Also place the markdown rendered as HTML on the clipboard, for paste
-   * targets that ignore Markdown. The variant selects the message renderer to
+   * targets that ignore Markdown. The mode selects the message renderer to
    * mirror; omitting it copies plain text only.
    */
-  richText?: MarkdownVariant;
+  richText?: RichTextMode;
 };
 
 function getPartText(part: TMessageContentParts): string {
@@ -118,7 +118,7 @@ export function hasCopyableText(source: ClipboardSource): boolean {
 
 function buildCopyOptions(
   segments: readonly string[],
-  richText: MarkdownVariant | undefined,
+  richText: RichTextMode | undefined,
 ): Parameters<typeof copy>[1] {
   if (!richText) {
     return { format: 'text/plain' };
@@ -200,21 +200,23 @@ type MessageClipboardSource = ClipboardSource & Partial<Pick<TMessage, 'isCreate
  * A user message is only rendered as markdown when `enableUserMsgMarkdown` is
  * on, so with it off the HTML flavor is skipped: otherwise text that reads as
  * literal on screen would arrive formatted in the paste target. User turns that
- * do render go through `MarkdownLite`, hence the lighter variant.
+ * do render go through `MarkdownLite`, which neither enables directives nor
+ * preprocesses LaTeX, hence the lighter mode.
  */
 export function useCopyMessageToClipboard({ isCreatedByUser, ...source }: MessageClipboardSource) {
   const copyRichText = useRecoilValue(store.copyRichText);
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const latexParsing = useRecoilValue(store.LaTeXParsing);
 
-  const richText = useMemo((): MarkdownVariant | undefined => {
+  const richText = useMemo((): RichTextMode | undefined => {
     if (!copyRichText) {
       return undefined;
     }
     if (isCreatedByUser !== true) {
-      return 'full';
+      return { variant: 'full', latex: latexParsing };
     }
-    return enableUserMsgMarkdown ? 'lite' : undefined;
-  }, [copyRichText, enableUserMsgMarkdown, isCreatedByUser]);
+    return enableUserMsgMarkdown ? { variant: 'lite', latex: false } : undefined;
+  }, [copyRichText, enableUserMsgMarkdown, isCreatedByUser, latexParsing]);
 
   return useCopyToClipboard({ ...source, richText });
 }

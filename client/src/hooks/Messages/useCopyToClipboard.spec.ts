@@ -683,7 +683,10 @@ Citations:
 
     it('should copy markdown as html alongside the plain text', () => {
       const { result } = renderHook(() =>
-        useCopyToClipboard({ text: '# Title\n\nSome **bold** text.', richText: 'full' }),
+        useCopyToClipboard({
+          text: '# Title\n\nSome **bold** text.',
+          richText: { variant: 'full', latex: false },
+        }),
       );
 
       act(() => {
@@ -709,7 +712,7 @@ Citations:
             { type: ContentTypes.TEXT, text: 'Cited \ue202turn0search0' },
           ] as TMessageContentParts[],
           searchResults: mockSearchResults,
-          richText: 'full',
+          richText: { variant: 'full', latex: false },
         }),
       );
 
@@ -730,7 +733,7 @@ Citations:
             { type: ContentTypes.TEXT, text: '```js' },
             { type: ContentTypes.TEXT, text: 'Prose that renders on its own.' },
           ] as TMessageContentParts[],
-          richText: 'full',
+          richText: { variant: 'full', latex: false },
         }),
       );
 
@@ -753,7 +756,7 @@ Citations:
           searchResults: {
             '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
           } as { [key: string]: SearchResultData },
-          richText: 'full',
+          richText: { variant: 'full', latex: false },
         }),
       );
 

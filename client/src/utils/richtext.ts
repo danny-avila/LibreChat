@@ -3,13 +3,14 @@ import { gfm } from 'micromark-extension-gfm';
 import { math } from 'micromark-extension-math';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { mathFromMarkdown } from 'mdast-util-math';
+import { defaultUrlTransform } from 'react-markdown';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { directive } from 'micromark-extension-directive';
 import { directiveFromMarkdown } from 'mdast-util-directive';
 import type { AlignType, Definition, Root, RootContent, Table } from 'mdast';
 import type { Extension as MicromarkExtension } from 'micromark-util-types';
 import { remarkApproxTilde } from './tilde';
-import { isSafeUrl } from './markdown';
+import { preprocessLaTeX } from './latex';
 
 /**
  * Which message renderer this copy has to match. `Markdown` (assistant turns)
@@ -17,6 +18,12 @@ import { isSafeUrl } from './markdown';
  * showing literal `:::` markers must keep them.
  */
 export type MarkdownVariant = 'full' | 'lite';
+
+export type RichTextMode = {
+  variant: MarkdownVariant;
+  /** Whether `Markdown`'s LaTeX preprocessing is on, mirroring `LaTeXParsing`. */
+  latex: boolean;
+};
 
 /**
  * `remark-supersub` is typed as a unified `Transformer`, which declares a
@@ -65,6 +72,13 @@ type Definitions = Map<string, Definition>;
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"]/g, (character) => HTML_ESCAPES[character]);
 
+/**
+ * Message text renders under `white-space: pre-wrap`, so a soft line break is a
+ * visible line on screen. HTML would collapse the newline to a space, which is
+ * what every paste target would then show.
+ */
+const escapeText = (value: string): string => escapeHtml(value).replace(/\n/g, '<br />');
+
 const alignStyle = (align: AlignType | undefined): string =>
   align == null ? '' : `text-align:${align};`;
 
@@ -75,33 +89,46 @@ const taskMarker = (checked: boolean | null | undefined): string => {
   return checked === false ? '☐ ' : '';
 };
 
-/**
- * A path-relative URL resolves against LibreChat on screen but against the
- * destination document once pasted, so generated file and image links have to
- * leave as absolute URLs. Absolute URLs are passed through verbatim rather than
- * normalized, and a bare `#` fragment is left alone: it is an in-document
- * anchor either way.
- */
-function absoluteUrl(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed.startsWith('/') && !trimmed.startsWith('.')) {
-    return url;
-  }
-
+function isAbsoluteUrl(url: string): boolean {
   try {
-    return new URL(trimmed, document.baseURI).href;
+    new URL(url);
+    return true;
   } catch {
-    return url;
+    return false;
   }
 }
 
-const anchor = (url: string, children: string): string =>
-  isSafeUrl(url) ? `<a href="${escapeHtml(absoluteUrl(url))}">${children}</a>` : children;
+/**
+ * Screens the URL exactly as the renderer does, through react-markdown's own
+ * transform, then resolves what it keeps. A relative URL resolves against
+ * LibreChat on screen but against the destination document once pasted, so it
+ * has to leave absolute. Already-absolute URLs are passed through verbatim
+ * rather than normalized, which would rewrite what the user sees.
+ */
+function resolveUrl(url: string): string {
+  const transformed = defaultUrlTransform(url);
+  if (transformed.length === 0 || isAbsoluteUrl(transformed)) {
+    return transformed;
+  }
 
-const image = (url: string, alt: string): string =>
-  isSafeUrl(url)
-    ? `<img src="${escapeHtml(absoluteUrl(url))}" alt="${escapeHtml(alt)}" />`
+  try {
+    return new URL(transformed, document.baseURI).href;
+  } catch {
+    return transformed;
+  }
+}
+
+const anchor = (url: string, children: string): string => {
+  const resolved = resolveUrl(url);
+  return resolved.length > 0 ? `<a href="${escapeHtml(resolved)}">${children}</a>` : children;
+};
+
+const image = (url: string, alt: string): string => {
+  const resolved = resolveUrl(url);
+  return resolved.length > 0
+    ? `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(alt)}" />`
     : escapeHtml(alt);
+};
 
 /**
  * Reference-style links resolve against definitions that may appear anywhere in
@@ -155,7 +182,7 @@ function serializeNode(node: SerializableNode, definitions: Definitions): string
   switch (node.type) {
     case 'text':
     case 'html':
-      return escapeHtml(node.value);
+      return escapeText(node.value);
     case 'paragraph':
       return `<p>${serializeChildren(node.children, definitions)}</p>`;
     case 'heading':
@@ -217,9 +244,9 @@ function serializeNode(node: SerializableNode, definitions: Definitions): string
     case 'break':
       return '<br />';
     case 'inlineMath':
-      return escapeHtml(node.value);
+      return escapeText(node.value);
     case 'math':
-      return `<p>${escapeHtml(node.value)}</p>`;
+      return `<p>${escapeText(node.value)}</p>`;
     case 'footnoteReference':
       return `<sup>${escapeHtml(node.label ?? node.identifier)}</sup>`;
     case 'footnoteDefinition':
@@ -247,18 +274,23 @@ function serializeChildren(nodes: readonly SerializableNode[], definitions: Defi
  * the clipboard as `text/html`. Paste targets that ignore Markdown (Teams,
  * Outlook, Word) strip stylesheets, so every visual cue has to be inline.
  *
- * Parsing mirrors the message renderers: the same micromark extensions,
- * `singleDollarTextMath` included so currency such as `$5 to $10` stays
- * currency, followed by the same `remarkApproxTilde` and `remark-supersub`
- * transforms they apply to the parsed tree.
+ * Parsing mirrors the message renderers: the same LaTeX preprocessing, the same
+ * micromark extensions with `singleDollarTextMath` off so currency such as
+ * `$5 to $10` stays currency, then the same `remarkApproxTilde` and
+ * `remark-supersub` transforms they apply to the parsed tree.
  */
-export function markdownToHtml(markdown: string, variant: MarkdownVariant = 'full'): string {
+export function markdownToHtml(
+  markdown: string,
+  mode: RichTextMode = { variant: 'full', latex: false },
+): string {
   const extensions: MicromarkExtension[] = [gfm(), math({ singleDollarTextMath: false })];
-  if (variant === 'full') {
+  if (mode.variant === 'full') {
     extensions.push(directive());
   }
 
-  const tree = fromMarkdown(markdown, {
+  const source = mode.latex ? preprocessLaTeX(markdown) : markdown;
+
+  const tree = fromMarkdown(source, {
     extensions,
     mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown(), mathFromMarkdown()],
   });
