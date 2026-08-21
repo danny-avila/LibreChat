@@ -83,12 +83,20 @@ export default function FilePreviewDialog({
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
   const { shareId } = useShareContext();
+  // Preview reads revoke their blob after consumption, so they need a separate
+  // query identity from user-triggered downloads that may be in flight concurrently.
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
+  const { refetch: previewOwned } = useFileDownload(user?.id ?? '', fileId, {
+    direct: false,
+    purpose: 'preview',
+  });
+  const { refetch: previewShared } = useSharedFileDownload(shareId, fileId, 'preview');
   // Use the share route only for snapshotted files (filepath rewritten to the
   // share path); otherwise fall back to the owner route.
   const useShared = !!shareId && (filePath?.startsWith('/api/share/') ?? false);
   const downloadFile = useShared ? downloadShared : downloadOwned;
+  const previewFile = useShared ? previewShared : previewOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -112,7 +120,7 @@ export default function FilePreviewDialog({
     setPreviewError(false);
 
     try {
-      const result = await downloadFile();
+      const result = await previewFile();
       if (!result.data) {
         if (!cancelledRef.current) {
           setPreviewError(true);
@@ -152,7 +160,7 @@ export default function FilePreviewDialog({
         setLoading(false);
       }
     }
-  }, [fileId, previewKind, downloadFile]);
+  }, [fileId, previewKind, previewFile]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {

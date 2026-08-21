@@ -61,6 +61,7 @@ export const useGetFileConfig = <TData = t.TFileConfig>(
 type FileDownloadOptions = {
   source?: string | null;
   direct?: boolean;
+  purpose?: 'download' | 'preview';
 };
 
 export const isDirectDownloadSource = (source?: string | null): boolean =>
@@ -81,7 +82,13 @@ export const useFileDownload = (
 ): QueryObserverResult<string> => {
   const queryClient = useQueryClient();
   return useQuery(
-    [QueryKeys.fileDownload, file_id, options.source ?? '', options.direct ?? true],
+    [
+      QueryKeys.fileDownload,
+      file_id,
+      options.source ?? '',
+      options.direct ?? true,
+      options.purpose ?? 'download',
+    ],
     async () => {
       if (!userId || !file_id) {
         console.warn('No user ID provided for file download');
@@ -136,9 +143,10 @@ export const useFileDownload = (
 export const useSharedFileDownload = (
   shareId?: string,
   file_id?: string,
+  purpose: 'download' | 'preview' = 'download',
 ): QueryObserverResult<string> => {
   return useQuery(
-    [QueryKeys.fileDownload, 'share', shareId ?? '', file_id ?? ''],
+    [QueryKeys.fileDownload, 'share', shareId ?? '', file_id ?? '', purpose],
     async () => {
       if (!shareId || !file_id) {
         return;
