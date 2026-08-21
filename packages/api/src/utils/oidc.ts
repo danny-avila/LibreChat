@@ -5,6 +5,7 @@ export interface OpenIDTokenInfo {
   accessToken?: string;
   idToken?: string;
   expiresAt?: number;
+  idTokenExpiresAt?: number;
   userId?: string;
   userEmail?: string;
   userName?: string;
@@ -39,6 +40,25 @@ export const GRAPH_TOKEN_PLACEHOLDER = '{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}';
  * Can be overridden via GRAPH_API_SCOPES environment variable.
  */
 export const DEFAULT_GRAPH_SCOPES = 'https://graph.microsoft.com/.default';
+
+/** Shared with AuthController's OpenID session reuse check: a token within the buffer would expire in transit and 401 downstream */
+export const OPENID_EXPIRY_BUFFER_SECONDS = 30;
+
+/**
+ * Signals that the stored OpenID credentials cannot satisfy a placeholder, so the user must
+ * re-authenticate. `ErrorController` maps this to a 401, and `statusCode` additionally lets
+ * status-reading callers (the agent generation path's `getInitializationFailure`) answer 401
+ * instead of a bare 500. Deliberately carries no `body`, so the structural `isCustomError`
+ * guard cannot capture it ahead of the explicit mapping.
+ */
+export class OpenIDReauthRequiredError extends Error {
+  readonly statusCode = 401;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'OpenIDReauthRequiredError';
+  }
+}
 
 export function extractOpenIDTokenInfo(
   user: Partial<IUser> | null | undefined,
@@ -85,10 +105,13 @@ export function extractOpenIDTokenInfo(
         );
         tokenInfo.claims = payload;
 
+        /** Cached profile claims, not an authentication assertion: stale claims stay usable for identity fields even when the ID token itself is expired */
         if (payload.sub) tokenInfo.userId = payload.sub;
         if (payload.email) tokenInfo.userEmail = payload.email;
         if (payload.name) tokenInfo.userName = payload.name;
-        if (payload.exp) tokenInfo.expiresAt = payload.exp;
+        if (typeof payload.exp === 'number') {
+          tokenInfo.idTokenExpiresAt = payload.exp;
+        }
       } catch (jwtError) {
         logger.warn('Could not parse ID token claims:', jwtError);
       }
@@ -101,14 +124,22 @@ export function extractOpenIDTokenInfo(
   }
 }
 
+/** Advisory freshness check, not a security boundary: the ID token signature is not verified here. `exp` is REQUIRED in an ID token, so a missing value means the token is malformed or unparseable and fails closed. */
+function isIdTokenCurrent(tokenInfo: OpenIDTokenInfo): boolean {
+  if (tokenInfo.idTokenExpiresAt == null) {
+    return false;
+  }
+  return Math.floor(Date.now() / 1000) < tokenInfo.idTokenExpiresAt - OPENID_EXPIRY_BUFFER_SECONDS;
+}
+
 export function isOpenIDTokenValid(tokenInfo: OpenIDTokenInfo | null): boolean {
   if (!tokenInfo || !tokenInfo.accessToken) {
     return false;
   }
 
-  if (tokenInfo.expiresAt) {
+  if (tokenInfo.expiresAt != null) {
     const now = Math.floor(Date.now() / 1000);
-    if (now >= tokenInfo.expiresAt) {
+    if (now >= tokenInfo.expiresAt - OPENID_EXPIRY_BUFFER_SECONDS) {
       logger.warn('OpenID token has expired');
       return false;
     }
@@ -140,7 +171,13 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.accessToken || '';
         break;
       case 'ID_TOKEN':
-        replacementValue = tokenInfo.idToken || '';
+        if (!tokenInfo.idToken || !isIdTokenCurrent(tokenInfo)) {
+          logger.warn('OpenID ID token is expired or unavailable; re-authentication is required');
+          throw new OpenIDReauthRequiredError(
+            'OpenID ID token is expired or unavailable; re-authentication is required to resolve {{LIBRECHAT_OPENID_ID_TOKEN}}',
+          );
+        }
+        replacementValue = tokenInfo.idToken;
         break;
       case 'USER_ID':
         replacementValue = tokenInfo.userId || '';
@@ -152,7 +189,8 @@ export function processOpenIDPlaceholders(
         replacementValue = tokenInfo.userName || '';
         break;
       case 'EXPIRES_AT':
-        replacementValue = tokenInfo.expiresAt ? String(tokenInfo.expiresAt) : '';
+        /** The stored token-set expires_at only: the ID token exp never stands in for it */
+        replacementValue = tokenInfo.expiresAt != null ? String(tokenInfo.expiresAt) : '';
         break;
     }
 

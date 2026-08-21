@@ -2,23 +2,114 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import { createMethods, createModels, logger } from '@librechat/data-schemas';
 import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
+import {
+  createMethods,
+  createModels,
+  getTenantId,
+  getUserId,
+  logger,
+  tenantStorage,
+} from '@librechat/data-schemas';
 import type {
+  SubagentTaskClaim,
+  SubagentTaskControlCommand,
+  SubagentTaskControlResult,
   SubagentTaskRuntime,
+  SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
 } from '@librechat/agents';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import type {
+  SubagentTaskControlHandler,
+  SubagentTaskControlTransport,
+} from './subagentTaskRouting';
+import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import {
+  buildSubagentThreadTaskConfig,
+  createSubagentThreadTaskStore,
+  SubagentThreadTaskStore,
+} from './subagentThreads';
+import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
 let methods: AllMethods;
 let loggerErrorSpy: jest.SpyInstance;
+
+class TestTaskRoutingHub {
+  readonly owners = new Map<string, TestTaskControlTransport>();
+
+  key(scopeId: string, taskId: string): string {
+    return `${scopeId}\u0000${taskId}`;
+  }
+}
+
+class TestTaskControlTransport implements SubagentTaskControlTransport {
+  private handler?: SubagentTaskControlHandler;
+  readonly registrations: Array<{ scopeId: string; taskId: string; ttlMs: number }> = [];
+
+  constructor(private readonly hub: TestTaskRoutingHub) {}
+
+  async bind(handler: SubagentTaskControlHandler): Promise<void> {
+    this.handler = handler;
+  }
+
+  async registerTask(scopeId: string, taskId: string, ttlMs: number): Promise<void> {
+    this.registrations.push({ scopeId, taskId, ttlMs });
+    this.hub.owners.set(this.hub.key(scopeId, taskId), this);
+  }
+
+  async hasTasks(scopeId: string): Promise<boolean> {
+    const prefix = `${scopeId}\u0000`;
+    return [...this.hub.owners.keys()].some((key) => key.startsWith(prefix));
+  }
+
+  async claim(scopeId: string, taskId: string): Promise<SubagentTaskClaim | undefined> {
+    return this.hub.owners.get(this.hub.key(scopeId, taskId))?.handler?.claim(scopeId, taskId);
+  }
+
+  async control(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    _invocationId: string,
+  ): Promise<SubagentTaskControlResult | undefined> {
+    return this.hub.owners
+      .get(this.hub.key(scopeId, taskId))
+      ?.handler?.control(scopeId, taskId, command, _invocationId);
+  }
+
+  async list(scopeId: string): Promise<SubagentTaskSnapshot[]> {
+    return [...this.remoteOwners(scopeId)].flatMap((owner) => owner.handler?.list(scopeId) ?? []);
+  }
+
+  async cancelScope(scopeId: string, threadIds: string[] | null): Promise<number> {
+    let cancelled = 0;
+    for (const owner of this.remoteOwners(scopeId)) {
+      cancelled += owner.handler?.cancelScope(scopeId, threadIds) ?? 0;
+    }
+    return cancelled;
+  }
+
+  async destroy(): Promise<void> {}
+
+  private remoteOwners(scopeId: string): Set<TestTaskControlTransport> {
+    const owners = new Set<TestTaskControlTransport>();
+    const prefix = `${scopeId}\u0000`;
+    for (const [key, owner] of this.hub.owners) {
+      if (key.startsWith(prefix) && owner !== this) {
+        owners.add(owner);
+      }
+    }
+    return owners;
+  }
+}
 
 function taskRequest(
   scopeId: string,
@@ -51,6 +142,32 @@ function taskRequest(
   };
 }
 
+function replayTransport(claim: SubagentTaskClaim): SubagentTaskControlTransport {
+  return {
+    bind: async () => undefined,
+    registerTask: async () => undefined,
+    hasTasks: async () => true,
+    claim: async () => claim,
+    control: async () => undefined,
+    list: async () => [],
+    cancelScope: async () => 0,
+    destroy: async () => undefined,
+  };
+}
+
+function threadSnapshot(taskId: string): SubagentTaskSnapshot {
+  return {
+    taskId,
+    subagentType: 'researcher',
+    status: 'cancelled',
+    createdAt: 1,
+    updatedAt: 2,
+    resultAvailable: false,
+    resultClaimed: true,
+    pendingControls: 0,
+  };
+}
+
 async function waitForSettled(
   store: SubagentThreadTaskStore,
   scopeId: string,
@@ -65,6 +182,16 @@ async function waitForSettled(
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
   throw new Error('Timed out waiting for the subagent task.');
+}
+
+async function waitUntil(condition: () => boolean, description: string): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (condition()) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${description}.`);
 }
 
 function requireAccepted(
@@ -127,6 +254,16 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
+  it('records the host-selected automatic delivery contract only when wakeups are enabled', () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const scope = { userId: 'delivery-user', parentConversationId: randomUUID() };
+
+    expect(buildSubagentThreadTaskConfig(store, scope).completionDelivery).toBeUndefined();
+    expect(
+      buildSubagentThreadTaskConfig(store, scope, { completionWakeups: true }).completionDelivery,
+    ).toBe(SUBAGENT_COMPLETION_DELIVERY);
+  });
+
   it('maps one logical SDK thread to a durable, view-only LibreChat conversation', async () => {
     const userId = 'user-1';
     const parentConversationId = randomUUID();
@@ -167,6 +304,68 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('registers a host-safe wakeup before child provider work begins', async () => {
+    const userId = 'wakeup-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const run = jest.fn(taskRequest('').run);
+    const onTaskPrepared = jest.fn(async (registration: SubagentTaskWakeupRegistration) => {
+      const messages = await methods.getMessages({
+        user: userId,
+        conversationId: registration.threadId,
+        messageId: `${registration.taskId}:assistant`,
+      });
+      expect(messages).toHaveLength(0);
+      expect(run).not.toHaveBeenCalled();
+    });
+    const store = new SubagentThreadTaskStore(methods, { onTaskPrepared });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        parentRunId: 'parent-response-1',
+        parentAgentId: 'agent_parent_1',
+        run,
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+
+    const settledTask = store.get(config.scopeId, requireAccepted(started).task.taskId);
+    expect(settledTask?.error).toBeUndefined();
+    expect(settledTask).toMatchObject({
+      status: 'completed',
+    });
+    expect(onTaskPrepared).toHaveBeenCalledWith({
+      userId,
+      parentConversationId,
+      parentMessageId: 'parent-response-1',
+      parentAgentId: 'agent_parent_1',
+      taskId: requireAccepted(started).task.taskId,
+      threadId: requireThreadId(started),
+      subagentType: 'researcher-agent',
+      createdAt: expect.any(Number),
+    });
+  });
+
+  it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {
+    const userId = 'wakeup-failure-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const run = jest.fn(taskRequest('').run);
+    const store = new SubagentThreadTaskStore(methods, {
+      onTaskPrepared: async () => Promise.reject(new Error('trigger queue unavailable')),
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(run).not.toHaveBeenCalled();
+    await expect(
+      store.claimTask(config.scopeId, requireAccepted(started).task.taskId),
+    ).resolves.toMatchObject({
+      status: 'error',
+    });
+  });
+
   it('waits for initial parent persistence before creating the first child', async () => {
     const userId = 'parent-gate-user';
     const parentConversationId = randomUUID();
@@ -193,6 +392,50 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(await methods.getConvo(userId, requireThreadId(started))).not.toBeNull();
+  });
+
+  it('reconstructs trusted owner context after the admitting request has ended', async () => {
+    const userId = 'detached-context-user';
+    const tenantId = 'detached-context-tenant';
+    const parentConversationId = randomUUID();
+    await tenantStorage.run({ tenantId, userId }, async () =>
+      saveParent(userId, parentConversationId, { tenantId }),
+    );
+
+    const observedContexts: Array<{ tenantId?: string; userId?: string }> = [];
+    const observeContext = () => {
+      observedContexts.push({ tenantId: getTenantId(), userId: getUserId() });
+    };
+    const store = new SubagentThreadTaskStore(methods, {
+      isOwnerActive: async () => {
+        observeContext();
+        return true;
+      },
+    });
+    const config = buildSubagentThreadTaskConfig(store, {
+      userId,
+      tenantId,
+      parentConversationId,
+    });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      observeContext();
+      return defaultRun(...args);
+    });
+
+    /** `start` deliberately runs outside `tenantStorage.run`: the detached task
+     * owns only its serialized host scope once the HTTP request has returned. */
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(observedContexts.length).toBeGreaterThan(0);
+    expect(observedContexts).toEqual(observedContexts.map(() => ({ tenantId, userId })));
+    const messages = await tenantStorage.run({ tenantId, userId }, async () =>
+      methods.getMessages({ user: userId, conversationId: requireThreadId(started) }),
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages.every((message) => message.tenantId === tenantId)).toBe(true);
   });
 
   it('fails without leaving an orphan when parent persistence rejects', async () => {
@@ -334,22 +577,35 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'durable-idempotency-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const firstWorker = new SubagentThreadTaskStore(methods);
-    const secondWorker = new SubagentThreadTaskStore(methods);
+    const firstWakeup = jest.fn(async (_registration: SubagentTaskWakeupRegistration) => undefined);
+    const replayWakeup = jest.fn(
+      async (_registration: SubagentTaskWakeupRegistration) => undefined,
+    );
+    const firstWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: firstWakeup });
+    const secondWorker = new SubagentThreadTaskStore(methods, { onTaskPrepared: replayWakeup });
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
     const firstRun = jest.fn(async () => ({
       content: 'Original durable result.',
       messages: [new HumanMessage('Run once.'), new AIMessage('Original durable result.')],
     }));
+    const firstParentRunId = 'original-parent-response';
     const first = firstWorker.start(
       taskRequest(config.scopeId, {
         idempotencyKey: 'cross-worker-attempt',
+        parentRunId: firstParentRunId,
         requestFingerprint: 'same-inputs',
         input: 'Run once.',
         run: firstRun,
       }),
     );
     await waitForSettled(firstWorker, config.scopeId, first);
+    const durableAttempt = await methods.getMessages(
+      { user: userId, conversationId: requireThreadId(first) },
+      '+subagentTask',
+    );
+    expect(durableAttempt[durableAttempt.length - 1]?.subagentTask?.parentRunId).toBe(
+      firstParentRunId,
+    );
 
     const replayRun = jest.fn(taskRequest(config.scopeId).run);
     const replay = secondWorker.start(
@@ -365,6 +621,18 @@ describe('SubagentThreadTaskStore', () => {
 
     expect(firstRun).toHaveBeenCalledTimes(1);
     expect(replayRun).not.toHaveBeenCalled();
+    expect(firstWakeup).toHaveBeenCalledTimes(1);
+    const firstRegistration = firstWakeup.mock.calls[0]?.[0];
+    const replayRegistration = replayWakeup.mock.calls[0]?.[0];
+    expect(firstRegistration?.createdAt).toBe(durableAttempt[0]?.createdAt?.getTime());
+    expect(replayRegistration?.createdAt).toBe(firstRegistration?.createdAt);
+    expect(replayWakeup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: requireAccepted(first).task.taskId,
+        parentMessageId: firstParentRunId,
+        createdAt: firstRegistration?.createdAt,
+      }),
+    );
     expect(secondWorker.claim(config.scopeId, requireAccepted(replay).task.taskId)).toMatchObject({
       status: 'completed',
       result: 'Original durable result.',
@@ -583,8 +851,26 @@ describe('SubagentThreadTaskStore', () => {
     const preparationRelease = new Promise<void>((resolve) => {
       releasePreparation = resolve;
     });
+    let leaseDeadline = new Date(0);
+    let renewedPastDeadline = false;
     const slowMethods = {
       ...methods,
+      acquireSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['acquireSubagentThreadLease']>) => {
+          const acquired = await methods.acquireSubagentThreadLease(...args);
+          if (acquired) {
+            leaseDeadline = args[0].expiresAt;
+          }
+          return acquired;
+        },
+      ),
+      renewSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['renewSubagentThreadLease']>) => {
+          const renewed = await methods.renewSubagentThreadLease(...args);
+          renewedPastDeadline ||= renewed && args[0].now > leaseDeadline;
+          return renewed;
+        },
+      ),
       getMessages: jest.fn(async (...args: Parameters<AllMethods['getMessages']>) => {
         if (blockNextRead && args[0].conversationId === slowThreadId) {
           blockNextRead = false;
@@ -594,7 +880,7 @@ describe('SubagentThreadTaskStore', () => {
         return methods.getMessages(...args);
       }),
     };
-    const options = { leaseTtlMs: 60, leaseHeartbeatMs: 10 };
+    const options = { leaseTtlMs: 500, leaseHeartbeatMs: 50 };
     const firstWorker = new SubagentThreadTaskStore(slowMethods, options);
     const secondWorker = new SubagentThreadTaskStore(methods, options);
     const config = buildSubagentThreadTaskConfig(firstWorker, { userId, parentConversationId });
@@ -602,6 +888,10 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(firstWorker, config.scopeId, initial);
     slowThreadId = requireThreadId(initial);
     blockNextRead = true;
+    const intervalSpy = jest.spyOn(global, 'setInterval');
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+    const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
 
     const firstRun = jest.fn(taskRequest(config.scopeId).run);
     const first = firstWorker.start(
@@ -612,7 +902,18 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     await preparing;
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    const heartbeatCall = intervalSpy.mock.calls.find(([, delay]) => delay === 50);
+    const heartbeatIndex =
+      heartbeatCall == null ? -1 : intervalSpy.mock.calls.indexOf(heartbeatCall);
+    const heartbeat = intervalSpy.mock.results[heartbeatIndex]?.value as NodeJS.Timeout | undefined;
+    const warningIndex = timeoutSpy.mock.calls.length - 1;
+    expect(timeoutSpy.mock.calls[warningIndex]?.[1]).toBe(5_000);
+    const warning = timeoutSpy.mock.results[warningIndex]?.value as NodeJS.Timeout | undefined;
+    expect(heartbeat?.hasRef()).toBe(true);
+    expect(warning?.hasRef()).toBe(true);
+    /** Wait for evidence rather than a fixed delay: a renewal that succeeds after the
+     * acquired lease's own deadline proves the heartbeat carried it past expiry. */
+    await waitUntil(() => renewedPastDeadline, 'the shared lease to outlive its original deadline');
 
     const overlappingRun = jest.fn(taskRequest(config.scopeId).run);
     const overlapping = secondWorker.start(
@@ -628,6 +929,67 @@ describe('SubagentThreadTaskStore', () => {
     releasePreparation();
     await waitForSettled(firstWorker, config.scopeId, first);
     expect(firstRun).toHaveBeenCalledTimes(1);
+    expect(clearIntervalSpy).toHaveBeenCalledWith(heartbeat);
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(warning);
+    intervalSpy.mockRestore();
+    timeoutSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
+  });
+
+  it('cancels a child when its lease renewal only commits after expiry', async () => {
+    const userId = 'late-lease-renewal-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let providerEntered = false;
+    let previousExpiry = 0;
+    let markLateRenewal = (): void => undefined;
+    const lateRenewal = new Promise<void>((resolve) => {
+      markLateRenewal = resolve;
+    });
+    const slowMethods = {
+      ...methods,
+      renewSubagentThreadLease: jest.fn(
+        async (...args: Parameters<AllMethods['renewSubagentThreadLease']>) => {
+          if (providerEntered) {
+            markLateRenewal();
+            /** Wait on the last confirmed lease deadline rather than a tiny fixed TTL:
+             * the renewal definitely commits after the gap, without assuming how fast
+             * a loaded runner completes preparation and its first Mongo write. */
+            await new Promise<void>((resolve) =>
+              setTimeout(resolve, Math.max(0, previousExpiry - Date.now() + 10)),
+            );
+          }
+          const renewed = await methods.renewSubagentThreadLease(...args);
+          if (renewed) {
+            previousExpiry = args[0].expiresAt.getTime();
+          }
+          return renewed;
+        },
+      ),
+    };
+    const store = new SubagentThreadTaskStore(slowMethods, {
+      leaseTtlMs: 1_000,
+      leaseHeartbeatMs: 20,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const run = jest.fn(async (runtime: SubagentTaskRuntime) => {
+      providerEntered = true;
+      return new Promise<{ content: string }>((_resolve, reject) => {
+        runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+          once: true,
+        });
+      });
+    });
+    const started = store.start(taskRequest(config.scopeId, { run }));
+
+    await lateRenewal;
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(store.claim(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'cancelled',
+    });
   });
 
   it('rechecks account deletion after acquiring the shared lease', async () => {
@@ -1295,6 +1657,999 @@ describe('SubagentThreadTaskStore', () => {
       JSON.stringify(store.claim(config.scopeId, requireAccepted(started).task.taskId)),
     ).not.toContain('provider-secret');
     expect(JSON.stringify(loggerErrorSpy.mock.calls)).not.toContain('provider-secret');
+  });
+
+  it('routes live task polling and controls to the replica that owns the execution', async () => {
+    const userId = 'routed-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    const ownerTransport = new TestTaskControlTransport(hub);
+    await ownerStore.configureTaskControlTransport(ownerTransport);
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => result,
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+    expect(ownerTransport.registrations).toContainEqual({
+      scopeId: config.scopeId,
+      taskId,
+      ttlMs: 30_000,
+    });
+
+    await expect(requesterStore.hasTasks(config.scopeId)).resolves.toBe(true);
+    await expect(requesterStore.listTasks(config.scopeId)).resolves.toEqual([
+      expect.objectContaining({ taskId, status: 'running' }),
+    ]);
+    await expect(
+      requesterStore.controlTask(config.scopeId, taskId, {
+        action: 'queue',
+        message: 'Verify the primary source too.',
+      }),
+    ).resolves.toMatchObject({ status: 'accepted' });
+
+    finish({ content: 'Cross-replica result.' });
+    await waitForSettled(ownerStore, config.scopeId, started);
+    await expect(requesterStore.claimTask(config.scopeId, taskId)).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Cross-replica result.',
+    });
+    await expect(requesterStore.claimTask(config.scopeId, taskId)).resolves.toMatchObject({
+      status: 'claimed',
+    });
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      requesterStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('applies one control invocation once whether it arrives locally or through routing', async () => {
+    const userId = 'invocation-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => result,
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
+    const routed = await requesterStore.controlTask(config.scopeId, taskId, steer, 'invocation-1');
+    expect(routed).toMatchObject({ status: 'accepted' });
+
+    /** The same invocation reaching the owner directly replays that result rather than
+     * queueing a second steer, so local and routed callers agree. */
+    await expect(
+      ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
+    ).resolves.toEqual(routed);
+    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    /** Reusing one invocation id for different content is a caller error, not a retry. */
+    await expect(
+      requesterStore.controlTask(
+        config.scopeId,
+        taskId,
+        { action: 'queue', message: 'Something else entirely.' },
+        'invocation-1',
+      ),
+    ).resolves.toMatchObject({ status: 'invalid' });
+    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    finish({ content: 'Cross-replica result.' });
+    await waitForSettled(ownerStore, config.scopeId, started);
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      requesterStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('fails a child closed when its owner address cannot be published', async () => {
+    const userId = 'unregistered-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const transport = new TestTaskControlTransport(hub);
+    transport.registerTask = async () => {
+      throw new Error('registration failed');
+    };
+    const store = new SubagentThreadTaskStore(methods);
+    await store.configureTaskControlTransport(transport);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const run = jest.fn(async () => ({ content: 'never reached' }));
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    /** An unaddressable child cannot be polled, controlled, or cancelled, so no
+     * provider work may start behind a failed registration. */
+    expect(run).not.toHaveBeenCalled();
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'error',
+    });
+    await store.destroyTaskControlTransport();
+  });
+
+  it('returns a lost result to the same poll invocation and refuses a different one', async () => {
+    const userId = 'durable-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const requesterStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Cross-replica result.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(ownerStore, config.scopeId, started);
+
+    await expect(requesterStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      { status: 'completed', result: 'Cross-replica result.' },
+    );
+
+    /** The owner's one-shot result is gone, but the child's durable thread still holds
+     * it, so the invocation that already collected it recovers its own result. */
+    await expect(requesterStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      { status: 'completed', result: 'Cross-replica result.' },
+    );
+
+    /** A different invocation is told it was collected rather than handed a copy. */
+    await expect(requesterStore.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject(
+      { status: 'claimed' },
+    );
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      requesterStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('bounds a result recovered from its durable child message', async () => {
+    const userId = 'large-result-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'x'.repeat(150_000) }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+    });
+
+    /** The durable message keeps the child's untruncated output, so recovering it
+     * must apply the same bound a routed response would have. */
+    const recovered = await store.claimTask(config.scopeId, taskId, 'poll-1');
+    expect(recovered.status).toBe('completed');
+    if (recovered.status === 'completed') {
+      expect(recovered.result.length).toBeLessThanOrEqual(100_000);
+    }
+  });
+
+  it('recovers a durable result after the owning process and registration are gone', async () => {
+    const userId = 'restarted-owner-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Recovered without owner memory.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(ownerStore, config.scopeId, started);
+
+    /** A fresh store has neither the in-memory task nor a Redis owner registration. */
+    const restartedStore = new SubagentThreadTaskStore(methods);
+    const unrelatedParentConversationId = randomUUID();
+    await saveParent(userId, unrelatedParentConversationId);
+    const unrelatedConfig = buildSubagentThreadTaskConfig(restartedStore, {
+      userId,
+      parentConversationId: unrelatedParentConversationId,
+    });
+    await expect(
+      restartedStore.claimTask(unrelatedConfig.scopeId, taskId, 'wrong-parent-poll'),
+    ).resolves.toEqual({ status: 'not_found' });
+
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      {
+        status: 'completed',
+        result: 'Recovered without owner memory.',
+      },
+    );
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      {
+        status: 'completed',
+        result: 'Recovered without owner memory.',
+      },
+    );
+    await expect(restartedStore.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject(
+      {
+        status: 'claimed',
+      },
+    );
+  });
+
+  it('tells a second invocation a retained result was already collected', async () => {
+    const userId = 'duplicate-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Only one caller may hold this.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+    const threadId = requireThreadId(started);
+
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Only one caller may hold this.',
+    });
+
+    /** An owner replaying a retained response would hand the same terminal result to
+     * another invocation; the durable record decides, so that one is told it was
+     * already collected rather than being given a second copy. */
+    const replayingStore = new SubagentThreadTaskStore(methods);
+    await replayingStore.configureTaskControlTransport(
+      replayTransport({
+        status: 'completed',
+        task: { ...threadSnapshot(taskId), threadId, status: 'completed' },
+        result: 'Only one caller may hold this.',
+      }),
+    );
+    await expect(replayingStore.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject(
+      { status: 'claimed' },
+    );
+
+    /** The invocation that already holds it still recovers its own result. */
+    await expect(replayingStore.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject(
+      { status: 'completed', result: 'Only one caller may hold this.' },
+    );
+
+    await replayingStore.destroyTaskControlTransport();
+  });
+
+  it('refuses to build a store the host wired without a required method', () => {
+    const { claimSubagentTaskResult: _omitted, ...incomplete } = methods;
+
+    /** The host wires this from JavaScript, so a missing method has to fail at
+     * startup rather than as an unavailable result the first time a task settles. */
+    expect(() =>
+      createSubagentThreadTaskStore(
+        incomplete as unknown as Parameters<typeof createSubagentThreadTaskStore>[0],
+      ),
+    ).toThrow('claimSubagentTaskResult');
+    expect(() => createSubagentThreadTaskStore(methods)).not.toThrow();
+  });
+
+  it('renews its own fence while a long deletion is still running', async () => {
+    const userId = 'long-deletion-user';
+    const renewals: string[] = [];
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainPollMs: 1,
+      ownerDrainTimeoutMs: 30,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      renewOwnerAdmission: async (_userId: string, token: string) => {
+        renewals.push(token);
+        return true;
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    const listLeases = jest.spyOn(methods, 'listActiveSubagentThreadLeases').mockResolvedValue([]);
+    try {
+      await store.withOwnerDeletionFence(userId, undefined, async () => {
+        /** A deletion outlasting its 90ms fence window must not let the fence lapse. */
+        await new Promise<void>((resolve) => setTimeout(resolve, 300));
+        return 'deleted';
+      });
+    } finally {
+      listLeases.mockRestore();
+    }
+
+    expect(renewals.length).toBeGreaterThan(0);
+    expect(new Set(renewals).size).toBe(1);
+  });
+
+  it('re-fences and drains again after a fence gap during deletion', async () => {
+    const userId = 'deletion-gap-user';
+    let recoveryAllowed = false;
+    const fenceOwnerAdmission = jest.fn(async () => undefined);
+    const listActiveSubagentThreadLeases = jest.fn(async () => []);
+    const testMethods = { ...methods, listActiveSubagentThreadLeases };
+    const renewOwnerAdmission = jest.fn(async () => {
+      if (!recoveryAllowed) {
+        throw new Error('database temporarily unavailable');
+      }
+      return false;
+    });
+    const store = new SubagentThreadTaskStore(testMethods, {
+      ownerDrainPollMs: 1,
+      ownerDrainTimeoutMs: 30,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission,
+      renewOwnerAdmission,
+      releaseOwnerAdmission: async () => undefined,
+    });
+    await expect(
+      store.withOwnerDeletionFence(userId, undefined, async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        recoveryAllowed = true;
+        return 'deleted';
+      }),
+    ).resolves.toBe('deleted');
+
+    expect(fenceOwnerAdmission).toHaveBeenCalledTimes(2);
+    expect(listActiveSubagentThreadLeases).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not report deletion success when post-gap recovery fails', async () => {
+    const userId = 'deletion-gap-failure-user';
+    const listActiveSubagentThreadLeases = jest.fn(async () => []);
+    const testMethods = { ...methods, listActiveSubagentThreadLeases };
+    const store = new SubagentThreadTaskStore(testMethods, {
+      ownerDrainPollMs: 1,
+      ownerDrainTimeoutMs: 30,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      renewOwnerAdmission: async () => {
+        throw new Error('database unavailable');
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    await expect(
+      store.withOwnerDeletionFence(userId, undefined, async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        return 'deleted';
+      }),
+    ).rejects.toThrow('database unavailable');
+  });
+
+  it('cancels a grandchild whose own conversation the cascade removed', async () => {
+    const userId = 'cascade-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods, { maxThreadDepth: 3 });
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const childConversationId = randomUUID();
+    await saveParent(userId, childConversationId, {
+      subagentThread: {
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentAgentId: 'parent-agent',
+        subagentType: 'researcher',
+        depth: 1,
+      },
+    });
+    /** The grandchild runs inside the child's scope, which a plan naming only the
+     * deleted root never covers. */
+    const config = buildSubagentThreadTaskConfig(ownerStore, {
+      userId,
+      parentConversationId: childConversationId,
+    });
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const started = ownerStore.start(taskRequest(config.scopeId, { run: async () => running }));
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await expect(
+      deletingStore.cancelPlan(plan, [parentConversationId, childConversationId]),
+    ).resolves.toBeGreaterThanOrEqual(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    finish({ content: 'late' });
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('reports a result as unavailable when its collection cannot be recorded', async () => {
+    const userId = 'unrecordable-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({ content: 'Recorded before it is handed over.' }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await waitForSettled(store, config.scopeId, started);
+
+    /** Handing the result over without recording its claimant would let another
+     * invocation collect the same one-shot output once the database recovers. */
+    const claimResult = jest
+      .spyOn(methods, 'claimSubagentTaskResult')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    try {
+      await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).rejects.toBeInstanceOf(
+        SubagentTaskOwnerUnavailableError,
+      );
+    } finally {
+      claimResult.mockRestore();
+    }
+
+    /** The result stays unclaimed, so a later poll still collects it exactly once. */
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-1')).resolves.toMatchObject({
+      status: 'completed',
+      result: 'Recorded before it is handed over.',
+    });
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-2')).resolves.toMatchObject({
+      status: 'claimed',
+    });
+  });
+
+  it('keeps a live task’s control invocation when settled tasks fill the window', async () => {
+    const userId = 'invocation-eviction-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      maxControlInvocations: 2,
+      completedTtlMs: 20,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const live = store.start(taskRequest(config.scopeId, { run: async () => running }));
+    const liveTaskId = requireAccepted(live).task.taskId;
+    const settled = store.start(
+      taskRequest(config.scopeId, { run: async () => ({ content: 'done' }) }),
+    );
+    const settledTaskId = requireAccepted(settled).task.taskId;
+    await waitForSettled(store, config.scopeId, settled);
+
+    const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
+    const applied = store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live');
+    expect(applied).toMatchObject({ status: 'accepted' });
+    store.controlInvocation(config.scopeId, settledTaskId, steer, 'invocation-settled');
+
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (store.get(config.scopeId, settledTaskId) == null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(store.get(config.scopeId, settledTaskId)).toBeUndefined();
+
+    /** The window is full, so admitting another invocation sweeps the records of tasks
+     * this store no longer holds. The live task's record survives, so a caller
+     * retrying it replays instead of steering that child a second time. */
+    store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-later');
+    expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live')).toEqual(
+      applied,
+    );
+    expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
+
+    /** With every remaining record belonging to a live task, a further invocation is
+     * refused rather than displacing one: applying it unrecorded would let its own
+     * retry apply the command twice. */
+    expect(
+      store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-third'),
+    ).toMatchObject({ status: 'invalid' });
+    expect(store.get(config.scopeId, liveTaskId)?.pendingControls).toBe(2);
+
+    finish({ content: 'done' });
+    await waitForSettled(store, config.scopeId, live);
+  });
+
+  it('caps the merged local and remote task list the poll tool reads', async () => {
+    const userId = 'merged-list-cap-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    /** The base store caps concurrent runs twice over — ten per scope and a hundred
+     * across the store — and this test is about what the merge returns rather than
+     * about admission, so both are raised to admit every task it starts. */
+    const store = new SubagentThreadTaskStore(methods, {
+      maxRunningPerScope: 150,
+      maxRunningTotal: 150,
+    });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const remote = Array.from({ length: 150 }, (_unused, index) =>
+      threadSnapshot(`remote-task-${index + 1}`),
+    );
+    await store.configureTaskControlTransport({
+      ...replayTransport({ status: 'claimed', task: threadSnapshot('remote-task-1') }),
+      list: async () => remote,
+    });
+
+    const local = await Promise.all(
+      Array.from({ length: 150 }, () => store.start(taskRequest(config.scopeId))),
+    );
+    await Promise.all(local.map((started) => waitForSettled(store, config.scopeId, started)));
+    expect(store.list(config.scopeId)).toHaveLength(150);
+
+    /** Each owner's reply and the remote aggregation are bounded on their own, but the
+     * poll tool reads this merge — 300 distinct tasks must still arrive as 200. */
+    await expect(store.listTasks(config.scopeId)).resolves.toHaveLength(200);
+
+    await store.destroyTaskControlTransport();
+  });
+
+  it('routes a control for a remote task while the local invocation window is full', async () => {
+    const userId = 'remote-control-under-load-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, { maxControlInvocations: 1 });
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const remoteResult: SubagentTaskControlResult = {
+      status: 'cancelled',
+      task: threadSnapshot('remote-task'),
+    };
+    const routed = jest.fn(async () => remoteResult);
+    await store.configureTaskControlTransport({
+      ...replayTransport({ status: 'claimed', task: threadSnapshot('remote-task') }),
+      control: routed,
+    });
+
+    let finish = (_value: { content: string }): void => undefined;
+    const running = new Promise<{ content: string }>((resolve) => {
+      finish = resolve;
+    });
+    const live = store.start(taskRequest(config.scopeId, { run: async () => running }));
+    const liveTaskId = requireAccepted(live).task.taskId;
+    const steer = { action: 'queue' as const, message: 'Check the changelog as well.' };
+    expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'local-1')).toMatchObject({
+      status: 'accepted',
+    });
+
+    /** The window holds a live task's record and cannot be swept, but a task this
+     * replica never owned is the remote owner's to refuse or apply. */
+    await expect(
+      store.controlTask(config.scopeId, 'remote-task', { action: 'cancel' }, 'remote-1'),
+    ).resolves.toEqual(remoteResult);
+    expect(routed).toHaveBeenCalledWith(
+      config.scopeId,
+      'remote-task',
+      { action: 'cancel' },
+      'remote-1',
+    );
+
+    finish({ content: 'done' });
+    await waitForSettled(store, config.scopeId, live);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('fails a deletion closed when the admission fence cannot be held', async () => {
+    const userId = 'fence-lapse-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      renewOwnerAdmission: async () => {
+        throw new Error('database unavailable');
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    /** A drain that outlasts the 120ms fence window while every renewal rejects: the
+     * last confirmed `fencedUntil` passes and nothing is left holding admission shut. */
+    const leases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 200));
+        return [];
+      });
+    const deletion = jest.fn(async () => 'deleted');
+    try {
+      await expect(store.withOwnerDeletionFence(userId, undefined, deletion)).rejects.toThrow(
+        'admission fence expired',
+      );
+      /** Nothing was removed, so the caller can retry once the fence holds again. */
+      expect(deletion).not.toHaveBeenCalled();
+    } finally {
+      leases.mockRestore();
+    }
+  });
+
+  it('treats a renewal that lands after its own deadline as a lapse', async () => {
+    const userId = 'fence-late-renewal-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let renewals = 0;
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission: async () => undefined,
+      /** Succeeds, but the first write only lands well past the 120ms deadline it was
+       * meant to extend — admission stood open for the difference. */
+      renewOwnerAdmission: async () => {
+        renewals += 1;
+        if (renewals === 1) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        }
+        return true;
+      },
+      releaseOwnerAdmission: async () => undefined,
+    });
+    const leases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+        return [];
+      });
+    const deletion = jest.fn(async () => 'deleted');
+    try {
+      await expect(store.withOwnerDeletionFence(userId, undefined, deletion)).rejects.toThrow(
+        'admission fence expired',
+      );
+      /** Every renewal reported success, so a deadline restored from the write's own
+       * start time would have read as continuously fenced. */
+      expect(renewals).toBeGreaterThan(0);
+      expect(deletion).not.toHaveBeenCalled();
+    } finally {
+      leases.mockRestore();
+    }
+  });
+
+  it('releases the owner fence after an in-flight renewal instead of racing it', async () => {
+    const userId = 'fence-renewal-race-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let releaseRenewal = (): void => undefined;
+    const renewalBlocked = new Promise<void>((resolve) => {
+      releaseRenewal = resolve;
+    });
+    let markRenewing = (): void => undefined;
+    const renewing = new Promise<void>((resolve) => {
+      markRenewing = resolve;
+    });
+    const order: string[] = [];
+    const fenceOwnerAdmission = jest.fn(async () => {
+      order.push('fence');
+    });
+    /** The renewal is still waiting on the database when the deletion finishes, and it
+     * reports the fence lost — the shape that used to leave a fresh, unreleasable one. */
+    let renewalAttempts = 0;
+    const renewOwnerAdmission = jest.fn(async () => {
+      renewalAttempts += 1;
+      markRenewing();
+      await renewalBlocked;
+      order.push('renew');
+      /** The in-flight renewal discovers the entry missing and re-takes it; the
+       * recovery renewal then confirms that replacement while the second drain runs. */
+      return renewalAttempts > 1;
+    });
+    const releaseOwnerAdmission = jest.fn(async () => {
+      order.push('release');
+    });
+    const testMethods = {
+      ...methods,
+      listActiveSubagentThreadLeases: jest.fn(async () => []),
+    };
+    const store = new SubagentThreadTaskStore(testMethods, {
+      ownerDrainTimeoutMs: 60,
+      ownerFenceGraceMs: 60,
+      fenceOwnerAdmission,
+      renewOwnerAdmission,
+      releaseOwnerAdmission,
+    });
+
+    let releaseDeletion = (): void => undefined;
+    const deletionBlocked = new Promise<void>((resolve) => {
+      releaseDeletion = resolve;
+    });
+    const fenced = store.withOwnerDeletionFence(userId, undefined, async () => {
+      await deletionBlocked;
+      return 'deleted';
+    });
+    await renewing;
+    releaseDeletion();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(['fence']);
+
+    releaseRenewal();
+    await expect(fenced).resolves.toBe('deleted');
+    /** The lost entry is re-taken before the recovery drain and only released after
+     * the in-flight renewal and recovery renewal both settle. */
+    expect(order).toEqual(['fence', 'renew', 'fence', 'renew', 'release']);
+    expect(fenceOwnerAdmission).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels each drained task once and retries only unconfirmed deliveries', async () => {
+    const userId = 'drain-user';
+    const parentConversationId = randomUUID();
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainPollMs: 1,
+      ownerDrainTimeoutMs: 5_000,
+    });
+    const lease = { taskId: 'task-1', parentConversationId, conversationId: randomUUID() };
+    const listLeases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockResolvedValueOnce([lease])
+      .mockResolvedValueOnce([lease])
+      .mockResolvedValueOnce([lease])
+      .mockResolvedValueOnce([lease])
+      .mockResolvedValue([]);
+    const controlTask = jest
+      .spyOn(store, 'controlTask')
+      .mockRejectedValueOnce(new Error('owner unavailable'))
+      .mockResolvedValueOnce({ status: 'not_found' })
+      .mockResolvedValue({ status: 'cancelled', task: threadSnapshot('task-1') });
+    try {
+      await store.cancelAndDrainForOwner(userId);
+
+      /** An unconfirmed delivery is retried under the same invocation — including a
+       * `not_found`, which means the owner's registration is missing while its lease
+       * is live — and once the owner confirms, the drain only waits for the lease. */
+      expect(controlTask).toHaveBeenCalledTimes(3);
+      expect(new Set(controlTask.mock.calls.map((call) => call[3])).size).toBe(1);
+      expect(listLeases).toHaveBeenCalledTimes(5);
+    } finally {
+      listLeases.mockRestore();
+      controlTask.mockRestore();
+    }
+  });
+
+  it('fences owner admission around the deletion it drains for', async () => {
+    const userId = 'fenced-user';
+    const order: string[] = [];
+    const tokens: string[] = [];
+    const renewed: string[] = [];
+    const released: string[] = [];
+    const store = new SubagentThreadTaskStore(methods, {
+      ownerDrainPollMs: 1,
+      fenceOwnerAdmission: async (_userId: string, token: string) => {
+        tokens.push(token);
+        order.push('fence');
+      },
+      renewOwnerAdmission: async (_userId: string, token: string) => {
+        renewed.push(token);
+        return true;
+      },
+      releaseOwnerAdmission: async (_userId: string, token: string) => {
+        released.push(token);
+        order.push('release');
+      },
+    });
+    const listLeases = jest
+      .spyOn(methods, 'listActiveSubagentThreadLeases')
+      .mockImplementation(async () => {
+        order.push('drain');
+        return [];
+      });
+    try {
+      await expect(
+        store.withOwnerDeletionFence(userId, undefined, async () => {
+          order.push('delete');
+          return 'deleted';
+        }),
+      ).resolves.toBe('deleted');
+      expect(order).toEqual(['fence', 'drain', 'delete', 'release']);
+      /** Only the fence this deletion took is lifted, so an overlapping deletion
+       * keeps admission closed until its own fence is released. */
+      expect(released).toEqual(tokens);
+      expect(tokens[0]).toEqual(expect.any(String));
+
+      /** A failed deletion still lifts the fence, so one bad request cannot leave the
+       * account unable to run subagents. */
+      order.length = 0;
+      await expect(
+        store.withOwnerDeletionFence(userId, undefined, async () => {
+          throw new Error('deletion failed');
+        }),
+      ).rejects.toThrow('deletion failed');
+      expect(order).toEqual(['fence', 'drain', 'release']);
+    } finally {
+      listLeases.mockRestore();
+    }
+  });
+
+  it('routes conversation-deletion cancellation to a remote task owner', async () => {
+    const userId = 'routed-delete-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    await Promise.resolve();
+
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await expect(deletingStore.cancelPlan(plan)).resolves.toBe(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('routes cancellation for a deleted child thread to its remote owner', async () => {
+    const userId = 'routed-child-delete-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if ((await methods.getConvo(userId, threadId)) != null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(await methods.getConvo(userId, threadId)).not.toBeNull();
+
+    /** The parent survives this deletion, so the child's own thread is the only target. */
+    const plan = await deletingStore.planCancellationForConversations(userId, [threadId]);
+    await expect(deletingStore.cancelPlan(plan)).resolves.toBe(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('cancels a child admitted after the deletion snapshot from its durable lease', async () => {
+    const userId = 'lease-cancel-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods);
+    const deletingStore = new SubagentThreadTaskStore(methods);
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const leases = await methods.listActiveSubagentThreadLeases({
+        user: userId,
+        now: new Date(),
+      });
+      if (leases.length > 0) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+
+    /** Production ordering: the plan is resolved first, the cascade is deleted, and
+     * only then is the plan replayed against the owner directory. */
+    const plan = await deletingStore.planCancellationForConversations(userId, [
+      parentConversationId,
+    ]);
+    await methods.deleteConvos(userId, { conversationId: parentConversationId });
+    await expect(
+      deletingStore.cancelPlan(plan, [parentConversationId, requireThreadId(started)]),
+    ).resolves.toBeGreaterThanOrEqual(1);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
+  });
+
+  it('drains only active lease addresses when deleting every conversation across replicas', async () => {
+    const userId = 'routed-owner-drain-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const hub = new TestTaskRoutingHub();
+    const ownerStore = new SubagentThreadTaskStore(methods, { ownerDrainPollMs: 5 });
+    const deletingStore = new SubagentThreadTaskStore(methods, { ownerDrainPollMs: 5 });
+    await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
+    const config = buildSubagentThreadTaskConfig(ownerStore, { userId, parentConversationId });
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const started = ownerStore.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) => {
+          markEntered();
+          return new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          });
+        },
+      }),
+    );
+    await entered;
+
+    await deletingStore.cancelAndDrainForOwner(userId);
+    await waitForSettled(ownerStore, config.scopeId, started);
+    expect(ownerStore.get(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
+      status: 'cancelled',
+    });
+
+    await Promise.all([
+      ownerStore.destroyTaskControlTransport(),
+      deletingStore.destroyTaskControlTransport(),
+    ]);
   });
 
   it('bounds durable delegation depth to one by default', async () => {

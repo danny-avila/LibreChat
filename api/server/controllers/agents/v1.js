@@ -37,6 +37,7 @@ const {
   AgentCapabilities,
   EModelEndpoint,
   resolveAllowedStatefulCodeEnvironments,
+  removeCodeExecutionCaller,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -269,6 +270,12 @@ const isSubagentsCapabilityEnabled = (req) => {
   const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
   if (!Array.isArray(capabilities)) return false;
   return capabilities.includes(AgentCapabilities.subagents);
+};
+
+const isCodeInterpreterCapabilityEnabled = (req) => {
+  const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.includes(AgentCapabilities.execute_code);
 };
 
 /** Reject a newly selected stateful workspace scope that the deployment owner
@@ -532,6 +539,13 @@ const createAgentHandler = async (req, res) => {
   try {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
+
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) || !tools.includes(Tools.execute_code)) &&
+      agentData.tool_options != null
+    ) {
+      agentData.tool_options = removeCodeExecutionCaller(agentData.tool_options);
+    }
 
     if (
       !validateStatefulCodeEnvironment(
@@ -818,7 +832,12 @@ const updateAgentHandler = async (req, res) => {
       updateData.stateful_code_sessions !== undefined ||
       updateData.stateful_code_environment !== undefined;
     const includesToolsConfiguration = Array.isArray(updateData.tools);
-    if (includesStatefulConfiguration || includesToolsConfiguration) {
+    const includesToolOptionsConfiguration = updateData.tool_options !== undefined;
+    if (
+      includesStatefulConfiguration ||
+      includesToolsConfiguration ||
+      includesToolOptionsConfiguration
+    ) {
       existingAgent = await db.getAgent({ id });
       if (!existingAgent) {
         return res.status(404).json({ error: 'Agent not found' });
@@ -849,6 +868,18 @@ const updateAgentHandler = async (req, res) => {
           )
         ) {
           return;
+        }
+      }
+
+      if (includesToolsConfiguration || includesToolOptionsConfiguration) {
+        const effectiveTools = updateData.tools ?? existingAgent.tools;
+        const effectiveToolOptions = updateData.tool_options ?? existingAgent.tool_options;
+        if (
+          (!isCodeInterpreterCapabilityEnabled(req) ||
+            !effectiveTools?.includes(Tools.execute_code)) &&
+          effectiveToolOptions != null
+        ) {
+          updateData.tool_options = removeCodeExecutionCaller(effectiveToolOptions);
         }
       }
     }
@@ -1263,6 +1294,14 @@ const duplicateAgentHandler = async (req, res) => {
         ownerIds: userId,
         logPrefix: '[/Agents/:id/duplicate]',
       });
+    }
+
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) ||
+        !newAgentData.tools?.includes(Tools.execute_code)) &&
+      newAgentData.tool_options != null
+    ) {
+      newAgentData.tool_options = removeCodeExecutionCaller(newAgentData.tool_options);
     }
 
     const newAgent = await db.createAgent(newAgentData);
@@ -1755,6 +1794,18 @@ const revertAgentVersionHandler = async (req, res) => {
       if (filteredTools.length !== updatedAgent.tools.length) {
         revertUpdates.tools = filteredTools;
       }
+    }
+
+    const effectiveRevertTools = revertUpdates.tools ?? updatedAgent.tools;
+    const hasCodeExecutionCaller = Object.values(updatedAgent.tool_options ?? {}).some((options) =>
+      options.allowed_callers?.includes('code_execution'),
+    );
+    if (
+      (!isCodeInterpreterCapabilityEnabled(req) ||
+        !effectiveRevertTools?.includes(Tools.execute_code)) &&
+      hasCodeExecutionCaller
+    ) {
+      revertUpdates.tool_options = removeCodeExecutionCaller(updatedAgent.tool_options);
     }
 
     if (updatedAgent.tool_resources) {

@@ -296,7 +296,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'session-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -315,7 +315,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'cookie-access',
       id_token: 'cookie-id',
       refresh_token: 'cookie-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -340,7 +340,7 @@ describe('openIdJwtStrategy – token source handling', () => {
       access_token: 'session-access',
       id_token: 'cookie-id',
       refresh_token: 'session-refresh',
-      expires_at: payload.exp,
+      expires_at: undefined,
     });
   });
 
@@ -357,6 +357,52 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('raw-bearer-token');
     expect(user.federatedTokens.id_token).toBe('cookie-id');
     expect(user.federatedTokens.refresh_token).toBe('cookie-refresh');
+    expect(user.federatedTokens.expires_at).toBe(payload.exp);
+  });
+
+  it('should decode expires_at from a session access token that is itself a JWT', async () => {
+    const sessionAccessExp = 1234567890;
+    const sessionAccessToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: sessionAccessExp }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: sessionAccessToken,
+          idToken: 'session-id',
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe(sessionAccessToken);
+    expect(user.federatedTokens.expires_at).toBe(sessionAccessExp);
+    expect(user.federatedTokens.expires_at).not.toBe(payload.exp);
+  });
+
+  it('should store an opaque session access token with no expiry alongside a decodable stale ID token', async () => {
+    const staleIdToken = `header.${Buffer.from(
+      JSON.stringify({ sub: 'oidc-123', exp: Math.floor(Date.now() / 1000) - 3600 }),
+    ).toString('base64')}.signature`;
+    const req = {
+      headers: { authorization: 'Bearer raw-bearer-token' },
+      session: {
+        openidTokens: {
+          accessToken: 'opaque-session-access',
+          idToken: staleIdToken,
+          refreshToken: 'session-refresh',
+        },
+      },
+    };
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user.federatedTokens.access_token).toBe('opaque-session-access');
+    expect(user.federatedTokens.id_token).toBe(staleIdToken);
+    expect(user.federatedTokens.expires_at).toBeUndefined();
   });
 
   it('should set id_token to undefined when not available in session or cookies', async () => {

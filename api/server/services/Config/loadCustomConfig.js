@@ -8,7 +8,9 @@ const { logger } = require('@librechat/data-schemas');
 const {
   configSchema,
   paramSettings,
+  EModelEndpoint,
   EImageOutputType,
+  setMaxSubagents,
   agentParamSettings,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
@@ -108,6 +110,11 @@ async function loadCustomConfig(printConfig = true) {
       return null;
     }
   }
+
+  // Applied before parsing so specs validated in the same pass (whose subagent
+  // presets share the cap) check against the configured limit. Invalid values
+  // are ignored here and rejected by the schema parse below.
+  setMaxSubagents(customConfig?.endpoints?.[EModelEndpoint.agents]?.maxSubagents);
 
   const result = configSchema.strict().safeParse(customConfig);
   if (result?.error?.errors?.some((err) => err?.path && err.path?.includes('imageOutputType'))) {

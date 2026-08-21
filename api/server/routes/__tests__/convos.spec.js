@@ -25,7 +25,7 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
+  const { deleteToolCalls, deleteConvos, getConvo, saveConvo } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
@@ -52,6 +52,35 @@ describe('Convos Routes', () => {
     jest.clearAllMocks();
   });
 
+  describe('GET /:conversationId', () => {
+    it('returns an ordinary owned conversation', async () => {
+      getConvo.mockResolvedValue({ conversationId: 'ordinary', title: 'Ordinary' });
+
+      const response = await request(app).get('/api/convos/ordinary');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ conversationId: 'ordinary', title: 'Ordinary' });
+      expect(getConvo).toHaveBeenCalledWith('test-user-123', 'ordinary');
+    });
+
+    it('returns the same not-found response for an owned child thread', async () => {
+      getConvo.mockResolvedValue({
+        conversationId: 'child',
+        subagentThread: { parentConversationId: 'parent' },
+      });
+
+      const childResponse = await request(app).get('/api/convos/child');
+      getConvo.mockResolvedValue(null);
+      const missingResponse = await request(app).get('/api/convos/missing');
+
+      expect(childResponse.status).toBe(404);
+      expect(childResponse.text).toBe('');
+      expect(childResponse.status).toBe(missingResponse.status);
+      expect(childResponse.text).toBe(missingResponse.text);
+      expect(getConvo).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
+    });
+  });
+
   describe('DELETE /all', () => {
     it('prunes the deleted conversations’ agent checkpoints (bulk, ids from deleteConvos)', async () => {
       // HITL: a paused conversation's durable checkpoint must not outlive the conversation.
@@ -65,7 +94,13 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
-      expect(subagentThreadStore.cancelForOwner).toHaveBeenCalledWith('test-user-123', undefined);
+      /** The deletion runs inside the owner admission fence, not around it. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      const [fencedUserId, fencedTenantId] =
+        subagentThreadStore.withOwnerDeletionFence.mock.calls[0];
+      expect(fencedUserId).toBe('test-user-123');
+      expect(fencedTenantId).toBeUndefined();
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -130,6 +165,21 @@ describe('Convos Routes', () => {
       /** Verify error was logged */
       const { logger } = require('@librechat/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error clearing conversations', expect.any(Error));
+    });
+
+    it('does not delete conversations when cross-replica task draining fails', async () => {
+      /** Draining happens inside the admission fence, so its failure fails the fence. */
+      subagentThreadStore.withOwnerDeletionFence.mockRejectedValueOnce(
+        new Error('task owner unavailable'),
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(500);
+      expect(deleteConvos).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteToolCalls).not.toHaveBeenCalled();
+      expect(deleteAllSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
 
     it('should return 500 if deleteToolCalls fails', async () => {
@@ -239,6 +289,21 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('fences the owner when DELETE / is called without a conversation filter', async () => {
+      deleteConvos.mockResolvedValue({ deletedCount: 3, conversationIds: ['a', 'b', 'c'] });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      /** An empty filter deletes everything, so it takes the same admission fence. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
+      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+    });
+
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
       deleteConvos.mockResolvedValue({
         deletedCount: 2,
@@ -254,18 +319,22 @@ describe('Convos Routes', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
-        1,
+      /** The plan is resolved before deletion, while those rows can still be read. */
+      expect(subagentThreadStore.planCancellationForConversations).toHaveBeenCalledWith(
         'test-user-123',
         ['parent-conversation'],
         undefined,
       );
-      expect(subagentThreadStore.cancelForConversations).toHaveBeenNthCalledWith(
-        2,
-        'test-user-123',
-        ['parent-conversation', 'child-conversation'],
-        undefined,
-      );
+      expect(
+        subagentThreadStore.planCancellationForConversations.mock.invocationCallOrder[0],
+      ).toBeLessThan(deleteConvos.mock.invocationCallOrder[0]);
+      /** It is applied once before deletion and replayed after with the cascade. */
+      expect(subagentThreadStore.cancelPlan).toHaveBeenCalledTimes(2);
+      expect(subagentThreadStore.cancelPlan.mock.calls[0][1]).toBeUndefined();
+      expect(subagentThreadStore.cancelPlan.mock.calls[1][1]).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
       expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
         'parent-conversation',
         'child-conversation',

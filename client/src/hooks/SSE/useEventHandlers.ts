@@ -481,7 +481,7 @@ export default function useEventHandlers({
   const syncHandler = useCallback(
     (data: TSyncData, submission: EventSubmission) => {
       const { conversationId, thread_id, responseMessage, requestMessage } = data;
-      const { initialResponse, messages: _messages, userMessage } = submission;
+      const { initialResponse, messages: _messages, userMessage, isTemporary = false } = submission;
       /** Swap the optimistic user row for the server-stamped one IN PLACE.
        *  Filtering it out and re-appending at the tail would order any of its
        *  already-present children (abandoned responses from preempted
@@ -525,14 +525,16 @@ export default function useEventHandlers({
           return update;
         });
 
-        if (requestMessage.parentMessageId === Constants.NO_PARENT) {
-          upsertConvoInAllQueries(queryClient, update);
-        } else {
-          updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
-        }
-        if (update.chatProjectId) {
-          queryClient.invalidateQueries([QueryKeys.projects]);
-          queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+        if (!isTemporary) {
+          if (requestMessage.parentMessageId === Constants.NO_PARENT) {
+            upsertConvoInAllQueries(queryClient, update);
+          } else {
+            updateConvoInAllQueries(queryClient, update.conversationId!, (_c) => update, true);
+          }
+          if (update.chatProjectId) {
+            queryClient.invalidateQueries([QueryKeys.projects]);
+            queryClient.invalidateQueries([QueryKeys.project, update.chatProjectId]);
+          }
         }
       } else if (setConversation) {
         setConversation((prevState) => {

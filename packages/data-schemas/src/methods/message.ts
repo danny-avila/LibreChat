@@ -48,6 +48,22 @@ interface MessageQueryOptions {
   sort?: Record<string, 1 | -1> | false;
 }
 
+export type SubagentTaskResultClaim =
+  | { status: 'not_found' }
+  | { status: 'claimed'; message: IMessage }
+  | { status: 'acquired'; message: IMessage };
+
+export type SubagentThreadViewMessageRecord = Pick<
+  IMessage,
+  | 'messageId'
+  | 'parentMessageId'
+  | 'isCreatedByUser'
+  | 'text'
+  | 'createdAt'
+  | 'error'
+  | 'subagentTask'
+> & { textProjectionTruncated?: boolean };
+
 export interface MessageMethods {
   saveMessage(
     ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
@@ -82,6 +98,20 @@ export interface MessageMethods {
     message: Partial<IMessage> & { newMessageId?: string },
     metadata?: { context?: string },
   ): Promise<Partial<IMessage>>;
+  claimSubagentTaskResult(params: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<SubagentTaskResultClaim>;
+  releaseSubagentTaskResultClaim(params: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean>;
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
@@ -91,6 +121,13 @@ export interface MessageMethods {
     select?: string,
     options?: MessageQueryOptions,
   ): Promise<IMessage[]>;
+  getMessagesForSubagentThreadView(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    limit: number;
+    textCodePointLimit: number;
+  }): Promise<SubagentThreadViewMessageRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -518,6 +555,134 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
+  /** Atomically assigns one durable terminal child result to either its
+   * explicit poller or one idempotent automatic wakeup delivery. */
+  async function claimSubagentTaskResult({
+    userId,
+    conversationId,
+    taskId,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<SubagentTaskResultClaim> {
+    if (
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
+      claimId.length === 0 ||
+      claimId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task result claim');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const messageId = `${taskId}:assistant`;
+    const terminal = ['completed', 'error', 'cancelled'];
+    const claim = {
+      kind,
+      claimId,
+      claimedAt: new Date(),
+    };
+    const claimable = {
+      $or: [
+        { 'subagentTask.resultClaim': { $exists: false } },
+        {
+          'subagentTask.resultClaim.kind': kind,
+          'subagentTask.resultClaim.claimId': claimId,
+        },
+        ...(kind === 'manual'
+          ? [
+              {
+                'subagentTask.resultClaim.kind': { $exists: false },
+                'subagentTask.resultClaim.claimId': claimId,
+              },
+            ]
+          : []),
+      ],
+    };
+    const projection = {
+      messageId: 1,
+      conversationId: 1,
+      parentMessageId: 1,
+      sender: 1,
+      text: 1,
+      error: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      subagentTask: 1,
+    };
+    const acquired = await Message.findOneAndUpdate(
+      {
+        user: userId,
+        conversationId,
+        messageId,
+        'subagentTask.status': { $in: terminal },
+        ...claimable,
+      },
+      { $set: { 'subagentTask.resultClaim': claim } },
+      { new: true, projection },
+    ).lean<IMessage | null>();
+    if (acquired != null) {
+      return { status: 'acquired', message: acquired };
+    }
+    const existing = await Message.findOne({
+      user: userId,
+      conversationId,
+      messageId,
+      'subagentTask.status': { $in: terminal },
+    })
+      .select(projection)
+      .lean<IMessage | null>();
+    return existing == null ? { status: 'not_found' } : { status: 'claimed', message: existing };
+  }
+
+  /** Releases only the exact consumer assignment. This is used when a
+   * pre-admission automatic continuation is definitively rejected, allowing a
+   * later manual poll (or the same delivery retry) to claim the durable result. */
+  async function releaseSubagentTaskResultClaim({
+    userId,
+    conversationId,
+    taskId,
+    kind,
+    claimId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    kind: 'manual' | 'wakeup';
+    claimId: string;
+  }): Promise<boolean> {
+    if (
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      (kind !== 'manual' && kind !== 'wakeup') ||
+      claimId.length === 0 ||
+      claimId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task result claim release');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const result = await Message.updateOne(
+      {
+        user: userId,
+        conversationId,
+        messageId: `${taskId}:assistant`,
+        'subagentTask.resultClaim.kind': kind,
+        'subagentTask.resultClaim.claimId': claimId,
+      },
+      { $unset: { 'subagentTask.resultClaim': 1 } },
+    );
+    return result.modifiedCount === 1;
+  }
+
   /**
    * Deletes messages in a conversation since a specific message.
    */
@@ -566,6 +731,55 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return await query.lean<IMessage[]>();
     } catch (err) {
       logger.error('Error getting messages:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Reads the fixed public child-thread projection and truncates text inside
+   * MongoDB so oversized persisted messages are never materialized by the API.
+   */
+  async function getMessagesForSubagentThreadView(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    limit: number;
+    textCodePointLimit: number;
+  }): Promise<SubagentThreadViewMessageRecord[]> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      return await Message.aggregate<SubagentThreadViewMessageRecord>([
+        {
+          $match: {
+            user: input.user,
+            conversationId: input.conversationId,
+            ...(input.tenantId == null
+              ? { tenantId: { $exists: false } }
+              : { tenantId: input.tenantId }),
+          },
+        },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: input.limit },
+        {
+          $project: {
+            _id: 0,
+            messageId: 1,
+            parentMessageId: 1,
+            isCreatedByUser: 1,
+            text: {
+              $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
+            },
+            textProjectionTruncated: {
+              $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
+            },
+            createdAt: 1,
+            error: 1,
+            subagentTask: 1,
+          },
+        },
+      ]);
+    } catch (err) {
+      logger.error('Error getting bounded subagent thread messages:', err);
       throw err;
     }
   }
@@ -655,8 +869,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateMessageText,
     updateToolCallResult,
     updateMessage,
+    claimSubagentTaskResult,
+    releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
+    getMessagesForSubagentThreadView,
     getMessage,
     getMessagesByCursor,
     searchMessages,

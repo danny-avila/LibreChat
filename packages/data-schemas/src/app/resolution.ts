@@ -2,6 +2,7 @@ import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
+  RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
   isProcessMCPServerConfig,
 } from 'librechat-data-provider';
@@ -201,6 +202,30 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
         depth,
         currentPath,
       );
+    } else if (
+      typeof sourceVal === 'boolean' &&
+      targetVal != null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // A runtime-config interface field (e.g. schedules) toggled by a boolean
+      // override is a runtime enable/disable, not a replacement of its config. Fold
+      // the boolean into the `use` flag so inherited object-form limits (maxPerUser,
+      // minIntervalMinutes, ...) survive instead of collapsing to global defaults.
+      result[key] = { ...(targetVal as AnyObject), use: sourceVal };
+    } else if (
+      typeof targetVal === 'boolean' &&
+      sourceVal != null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      RUNTIME_CONFIG_INTERFACE_FIELDS.has(key)
+    ) {
+      // Symmetric case: an OBJECT override (e.g. tuning maxPerUser) on top of a
+      // BOOLEAN base must inherit the base's enable state unless it sets `use`
+      // explicitly — otherwise setting a limit on a globally-disabled feature
+      // (`schedules: false`) would silently re-enable it.
+      result[key] = { use: targetVal, ...(sourceVal as AnyObject) };
     } else {
       result[key] = sourceVal;
     }
@@ -313,8 +338,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
               if (Object.keys(uiOnly).length > 0) {
                 filtered[field] = uiOnly;
               }
+            } else if (RUNTIME_CONFIG_INTERFACE_FIELDS.has(field)) {
+              // Dual-purpose field: the boolean form is a runtime disable, not a
+              // permission toggle, so preserve it (e.g. schedules: false).
+              filtered[field] = fieldVal;
             }
-            // boolean permission fields (e.g. runCode: false) are fully stripped
+            // other boolean permission fields (e.g. runCode: false) are fully stripped
           }
           if (Object.keys(filtered).length > 0) {
             remapped[mappedKey] = filtered;
@@ -327,5 +356,59 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     }
   }
 
-  return merged;
+  return preserveRuntimeStops(baseConfig, merged);
+}
+
+/** Whether a runtime-config interface field reads as OFF in either of its two shapes:
+ *  boolean `false`, or the object form with `use: false`. Exported so runtime gates
+ *  (e.g. the schedule engine's global stop) apply the same semantics as the merge. */
+export function isRuntimeDisabled(value: unknown): boolean {
+  if (value === false) {
+    return true;
+  }
+  return (
+    value != null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as AnyObject).use === false
+  );
+}
+
+/**
+ * Re-applies a BASE-level runtime stop after all overrides are merged.
+ *
+ * A deployment that turns a runtime feature off is not making a preference an override
+ * can outrank: the service reads the base value and keeps refusing writes, so an
+ * override that only flips the client's view produces a panel whose every action fails.
+ *
+ * Applied here rather than inside the merge deliberately. The merge folds overrides in
+ * priority order into an ACCUMULATED value, so a guard there compares against whatever
+ * the previous override left — which let a LOW-priority `false` block a HIGH-priority
+ * `true` and broke highest-priority-wins. Overrides still order normally among
+ * themselves; only the base stop is non-negotiable.
+ */
+function preserveRuntimeStops<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
+  const baseInterface = (baseConfig as unknown as AnyObject).interfaceConfig as
+    | AnyObject
+    | undefined;
+  const mergedInterface = (merged as unknown as AnyObject).interfaceConfig as AnyObject | undefined;
+  if (baseInterface == null || mergedInterface == null) {
+    return merged;
+  }
+  let patched: AnyObject | undefined;
+  for (const key of RUNTIME_CONFIG_INTERFACE_FIELDS) {
+    if (!isRuntimeDisabled(baseInterface[key]) || isRuntimeDisabled(mergedInterface[key])) {
+      continue;
+    }
+    const current = mergedInterface[key];
+    patched ??= { ...mergedInterface };
+    patched[key] =
+      current != null && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as AnyObject), use: false }
+        : false;
+  }
+  if (patched == null) {
+    return merged;
+  }
+  return { ...(merged as unknown as AnyObject), interfaceConfig: patched } as unknown as T;
 }

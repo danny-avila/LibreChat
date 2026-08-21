@@ -44,7 +44,13 @@ import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
 /* Tier 2 — Moderate (service deps injected) */
 import { createConversationTagMethods, type ConversationTagMethods } from './conversationTag';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  type MessageMethods,
+  type SubagentThreadViewMessageRecord,
+  type SubagentTaskResultClaim,
+} from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
@@ -93,6 +99,7 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
@@ -191,6 +198,7 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  ScheduleMethods &
   AgentMethods &
   ConfigMethods &
   MCPAuthorityMethods &
@@ -329,6 +337,7 @@ export function createMethods(
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
     ...createAgentTriggerDeliveryMethods(mongoose),
+    ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -368,6 +377,8 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  SubagentThreadViewMessageRecord,
+  SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,
   TxMethods,
@@ -389,6 +400,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  ScheduleMethods,
   AgentMethods,
   ConfigMethods,
   MCPAuthorityMethods,

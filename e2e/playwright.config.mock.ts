@@ -241,6 +241,12 @@ export default defineConfig({
       // network fixtures so inspection and persistent connections agree.
       command: `node ${serverPath}`,
       cwd: rootPath,
+      // Only the one-replica harness may assert the scheduler's single-process topology.
+      // The two-replica MCP suite must leave scheduled writes disabled.
+      env: {
+        ...process.env,
+        ...(replicaCount === 1 ? { SCHEDULES_SINGLE_PROCESS: 'true' } : {}),
+      },
       url: baseURL,
       stdout: 'pipe',
       ignoreHTTPSErrors: true,

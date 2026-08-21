@@ -1,9 +1,11 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { logger, tenantStorage } from '@librechat/data-schemas';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type {
+  AgentContinueTriggerEnvelope,
   AgentFireTriggerEnvelope,
   AgentSteerTriggerEnvelope,
   AgentTriggerEnvelope,
+  AgentTriggerMode,
 } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
@@ -30,12 +32,25 @@ type FireStatus = 'started' | 'resumed' | 'replaced' | 'settled';
 
 export type AgentTriggerFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export type AgentTriggerContinuePreparation =
+  | {
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      /** Compensates a durable pre-admission claim only when the host knows
+       * that no generation was admitted. Ambiguous outcomes retain the claim. */
+      releaseOnDefiniteFailure?: () => MaybePromise<void>;
+    }
+  | { status: 'settled' };
+
 export type AgentTriggerFailureCertainty = 'definite' | 'ambiguous';
 
 export interface AgentTriggerExecutionErrorOptions {
-  mode: 'fire' | 'steer';
+  mode: AgentTriggerMode;
   certainty: AgentTriggerFailureCertainty;
   retryable: boolean;
+  /** Release the delivery lease without consuming its logical retry budget. */
+  deferWithoutAttempt?: boolean;
   code?: string;
   status?: number;
   retryAfter?: string;
@@ -47,9 +62,10 @@ export interface AgentTriggerExecutionErrorOptions {
  * remains unchanged.
  */
 export class AgentTriggerExecutionError extends Error {
-  readonly mode: 'fire' | 'steer';
+  readonly mode: AgentTriggerMode;
   readonly certainty: AgentTriggerFailureCertainty;
   readonly retryable: boolean;
+  readonly deferWithoutAttempt: boolean;
   readonly code?: string;
   readonly status?: number;
   readonly retryAfter?: string;
@@ -60,6 +76,7 @@ export class AgentTriggerExecutionError extends Error {
     this.mode = options.mode;
     this.certainty = options.certainty;
     this.retryable = options.retryable;
+    this.deferWithoutAttempt = options.deferWithoutAttempt === true;
     this.code = options.code;
     this.status = options.status;
     this.retryAfter = options.retryAfter;
@@ -87,7 +104,18 @@ export interface AgentTriggerSteerResult {
   leftover?: boolean;
 }
 
-export type AgentTriggerExecutionResult = AgentTriggerFireResult | AgentTriggerSteerResult;
+export interface AgentTriggerContinueResult {
+  mode: 'continue';
+  status: FireStatus;
+  conversationId: string;
+  streamId?: string;
+  generationCreatedAt?: number;
+}
+
+export type AgentTriggerExecutionResult =
+  | AgentTriggerContinueResult
+  | AgentTriggerFireResult
+  | AgentTriggerSteerResult;
 
 export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
@@ -97,8 +125,14 @@ export interface AgentTriggerExecutionHostDeps {
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
   getTimezone?: (
     principal: AgentRunPrincipal,
-    envelope: AgentFireTriggerEnvelope,
+    envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
   ) => MaybePromise<string | undefined>;
+  /** Optional server-owned resolver for durable internal continuation inputs.
+   * External/source-neutral envelopes remain unchanged when this returns undefined. */
+  prepareContinue?: (
+    envelope: AgentContinueTriggerEnvelope,
+    context: AgentTriggerDispatchContext,
+  ) => MaybePromise<AgentTriggerContinuePreparation | undefined>;
   fetch?: AgentTriggerFetch;
   /** Total bound for setup, admission, and the bounded response read. */
   timeoutMs?: number;
@@ -163,7 +197,7 @@ function abortScope(parent: AbortSignal | undefined, timeoutMs: number): AbortSc
 }
 
 function abortError(
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
   stage: string,
@@ -183,15 +217,18 @@ function abortError(
 
 function observeAbort<T>(
   operation: () => MaybePromise<T>,
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
+  onLateValue?: (value: T) => MaybePromise<void>,
 ): Promise<T> {
   if (scope.signal.aborted) {
     return Promise.reject(abortError(mode, scope, parent, 'before dispatch', 'definite'));
   }
   return new Promise<T>((resolve, reject) => {
+    let abandoned = false;
     const onAbort = () => {
+      abandoned = true;
       scope.signal.removeEventListener('abort', onAbort);
       reject(abortError(mode, scope, parent, 'during setup', 'definite'));
     };
@@ -201,6 +238,12 @@ function observeAbort<T>(
       .then(
         (value) => {
           scope.signal.removeEventListener('abort', onAbort);
+          if (abandoned) {
+            Promise.resolve(onLateValue?.(value)).catch((error: unknown) => {
+              logger.error('[agentTriggers] Failed to compensate late setup result', error);
+            });
+            return;
+          }
           resolve(value);
         },
         (error: unknown) => {
@@ -213,12 +256,13 @@ function observeAbort<T>(
 
 async function setupValue<T>(
   operation: () => MaybePromise<T>,
-  mode: 'fire' | 'steer',
+  mode: AgentTriggerMode,
   scope: AbortScope,
   parent: AbortSignal | undefined,
+  onLateValue?: (value: T) => MaybePromise<void>,
 ): Promise<T> {
   try {
-    return await observeAbort(operation, mode, scope, parent);
+    return await observeAbort(operation, mode, scope, parent, onLateValue);
   } catch (error) {
     if (error instanceof AgentTriggerExecutionError) {
       throw error;
@@ -342,7 +386,7 @@ function abortCode(scope: AbortScope, parent: AbortSignal | undefined, fallback:
   return fallback;
 }
 
-function requireToken(value: unknown, mode: 'fire' | 'steer'): string {
+function requireToken(value: unknown, mode: AgentTriggerMode): string {
   if (typeof value !== 'string' || value.length === 0 || /\s/.test(value)) {
     throw executionError('Agent trigger token mint returned an invalid token', {
       mode,
@@ -354,7 +398,7 @@ function requireToken(value: unknown, mode: 'fire' | 'steer'): string {
   return value;
 }
 
-function triggerUrl(baseUrl: string, path: string, mode: 'fire' | 'steer'): string {
+function triggerUrl(baseUrl: string, path: string, mode: AgentTriggerMode): string {
   let url: URL;
   try {
     url = new URL(baseUrl);
@@ -384,6 +428,10 @@ function fireUrl(baseUrl: string): string {
   return triggerUrl(baseUrl, `/api/agents/chat/${EModelEndpoint.agents}`, 'fire');
 }
 
+function continueUrl(baseUrl: string): string {
+  return triggerUrl(baseUrl, `/api/agents/chat/${EModelEndpoint.agents}`, 'continue');
+}
+
 function steerUrl(baseUrl: string): string {
   return triggerUrl(baseUrl, '/api/agents/chat/steer/deliver', 'steer');
 }
@@ -402,7 +450,10 @@ function fireStatus(value: unknown): FireStatus | undefined {
     : undefined;
 }
 
-function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
+function parseStartResult(
+  payload: unknown,
+  mode: 'continue' | 'fire',
+): AgentTriggerContinueResult | AgentTriggerFireResult | undefined {
   if (payload == null || typeof payload !== 'object') {
     return undefined;
   }
@@ -421,7 +472,7 @@ function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
     'generationCreatedAt' in payload ? payload.generationCreatedAt : undefined,
   );
   return {
-    mode: 'fire',
+    mode,
     status,
     conversationId,
     ...(streamId != null && { streamId }),
@@ -429,33 +480,103 @@ function parseFireResult(payload: unknown): AgentTriggerFireResult | undefined {
   };
 }
 
-async function fire(
+function resolveParentMessageId(
+  preparation: AgentTriggerContinuePreparation | undefined,
+  envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
+): string {
+  if (preparation?.status === 'ready') {
+    return preparation.parentMessageId;
+  }
+  if (envelope.mode === 'continue') {
+    return envelope.target.parentMessageId;
+  }
+  return Constants.NO_PARENT;
+}
+
+/** A response can be definite at the HTTP layer while the idempotent logical
+ * generation is still outcome-ambiguous. In particular, a retry can receive a
+ * 5xx while the first request owns the generation claim or is finalizing its
+ * accepted run. Compensate the prepared durable result only for failures that
+ * prove admission did not happen. */
+function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
+  if (error.certainty !== 'definite') {
+    return false;
+  }
+  if (error.code === 'START_ABORTED' || error.status == null) {
+    return true;
+  }
+  if (error.code === 'PARENT_NOT_READY' || error.code === 'PARENT_STATE_UNAVAILABLE') {
+    return true;
+  }
+  return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;
+}
+
+function startRun(
   envelope: AgentFireTriggerEnvelope,
   context: AgentTriggerDispatchContext,
   deps: AgentTriggerExecutionHostDeps,
   timeoutMs: number,
-): Promise<AgentTriggerFireResult> {
+): Promise<AgentTriggerFireResult>;
+function startRun(
+  envelope: AgentContinueTriggerEnvelope,
+  context: AgentTriggerDispatchContext,
+  deps: AgentTriggerExecutionHostDeps,
+  timeoutMs: number,
+): Promise<AgentTriggerContinueResult>;
+async function startRun(
+  envelope: AgentContinueTriggerEnvelope | AgentFireTriggerEnvelope,
+  context: AgentTriggerDispatchContext,
+  deps: AgentTriggerExecutionHostDeps,
+  timeoutMs: number,
+): Promise<AgentTriggerContinueResult | AgentTriggerFireResult> {
+  const mode = envelope.mode;
   const scope = abortScope(context.signal, timeoutMs);
+  let preparation: AgentTriggerContinuePreparation | undefined;
   try {
-    const [token, timezone, baseUrl] = await Promise.all([
+    preparation =
+      mode === 'continue' && deps.prepareContinue != null
+        ? await setupValue(
+            () => deps.prepareContinue?.(envelope, context),
+            mode,
+            scope,
+            context.signal,
+            async (latePreparation) => {
+              if (latePreparation?.status === 'ready') {
+                await latePreparation.releaseOnDefiniteFailure?.();
+              }
+            },
+          )
+        : undefined;
+    if (preparation?.status === 'settled' && envelope.mode === 'continue') {
+      return {
+        mode: 'continue',
+        status: 'settled',
+        conversationId: envelope.target.conversationId,
+      };
+    }
+    const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
+    const parentMessageId = resolveParentMessageId(preparation, envelope);
+    const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
-        'fire',
+        mode,
         scope,
         context.signal,
-      ).then((value) => requireToken(value, 'fire')),
+      ).then((value) => requireToken(value, mode)),
       setupValue(
         () => deps.getTimezone?.(envelope.principal, envelope),
-        'fire',
+        mode,
         scope,
         context.signal,
       ),
-      setupValue(() => deps.getBaseUrl(), 'fire', scope, context.signal),
+      setupValue(() => deps.getBaseUrl(), mode, scope, context.signal),
     ]).catch((error: unknown) => {
       scope.abort();
       throw error;
     });
-    const url = fireUrl(baseUrl);
+    const run = envelope.mode === 'fire' ? envelope.run : undefined;
+    const timezone = run?.timezone ?? resolvedTimezone;
+    const url = mode === 'fire' ? fireUrl(baseUrl) : continueUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
     try {
@@ -472,14 +593,37 @@ async function fire(
           [GENERATION_PROTOCOL_HEADER]: '2',
         },
         body: JSON.stringify({
-          text: envelope.input,
+          text: input,
           endpoint: EModelEndpoint.agents,
           agent_id: envelope.target.agentId,
-          parentMessageId: Constants.NO_PARENT,
+          parentMessageId,
+          ...(envelope.mode === 'continue' && {
+            conversationId: envelope.target.conversationId,
+          }),
           isContinued: false,
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          ...(envelope.mode === 'fire' && {
+            agentTrigger: {
+              version: envelope.version,
+              deliveryId: envelope.deliveryId,
+              event: {
+                id: envelope.event.id,
+                type: envelope.event.type,
+                occurredAt: envelope.event.occurredAt,
+                source: envelope.event.source,
+              },
+              ...(run?.metadata !== undefined && {
+                metadata: run.metadata,
+              }),
+            },
+          }),
+          ...(run?.conversationId != null && {
+            newConversationId: run.conversationId,
+          }),
+          ...(run?.chatProjectId != null && { chatProjectId: run.chatProjectId }),
+          ...(run?.files != null && { files: run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }
             : {}),
@@ -489,9 +633,9 @@ async function fire(
       const definite = isDefiniteConnectFailure(error);
       const message = error instanceof Error ? error.message : String(error);
       throw executionError(
-        `Agent trigger fire ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
+        `Agent trigger ${mode} ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
         {
-          mode: 'fire',
+          mode,
           certainty: definite ? 'definite' : 'ambiguous',
           retryable: true,
           code: abortCode(scope, context.signal, 'NETWORK_ERROR'),
@@ -505,11 +649,11 @@ async function fire(
     } catch (error) {
       if (response.ok) {
         throw executionError(
-          `Agent trigger fire response has an unknown outcome: ${
+          `Agent trigger ${mode} response has an unknown outcome: ${
             error instanceof Error ? error.message : String(error)
           }`,
           {
-            mode: 'fire',
+            mode,
             certainty: 'ambiguous',
             retryable: true,
             code: abortCode(scope, context.signal, 'INVALID_RESPONSE'),
@@ -522,11 +666,19 @@ async function fire(
     if (!response.ok) {
       const message =
         errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
-      throw executionError(`Agent trigger fire was rejected (${response.status}): ${message}`, {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} was rejected (${response.status}): ${message}`, {
+        mode,
         certainty: 'definite',
-        retryable: isRetryableStatus(response.status),
-        code: errorCode(payload) ?? 'FIRE_REJECTED',
+        retryable:
+          isRetryableStatus(response.status) ||
+          (mode === 'continue' &&
+            response.status === 409 &&
+            errorCode(payload) === 'PARENT_NOT_READY'),
+        deferWithoutAttempt:
+          mode === 'continue' &&
+          response.status === 409 &&
+          errorCode(payload) === 'PARENT_NOT_READY',
+        code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {
           retryAfter: response.headers.get('retry-after') ?? undefined,
@@ -534,8 +686,8 @@ async function fire(
       });
     }
     if (boundedBody.truncated) {
-      throw executionError('Agent trigger fire returned an oversized success response', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} returned an oversized success response`, {
+        mode,
         certainty: 'ambiguous',
         retryable: true,
         code: 'RESPONSE_TOO_LARGE',
@@ -548,18 +700,27 @@ async function fire(
       'status' in payload &&
       payload.status === 'aborted'
     ) {
-      throw executionError('Agent trigger fire was aborted before generation started', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} was aborted before generation started`, {
+        mode,
         certainty: 'definite',
         retryable: false,
         code: 'START_ABORTED',
         status: response.status,
       });
     }
-    const result = parseFireResult(payload);
+    const result = parseStartResult(payload, mode);
     if (result == null) {
-      throw executionError('Agent trigger fire returned an invalid success response', {
-        mode: 'fire',
+      throw executionError(`Agent trigger ${mode} returned an invalid success response`, {
+        mode,
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+        status: response.status,
+      });
+    }
+    if (mode === 'continue' && result.conversationId !== envelope.target.conversationId) {
+      throw executionError('Agent trigger continue returned a mismatched conversation', {
+        mode,
         certainty: 'ambiguous',
         retryable: true,
         code: 'INVALID_RESPONSE',
@@ -567,6 +728,30 @@ async function fire(
       });
     }
     return result;
+  } catch (error) {
+    if (
+      preparation?.status === 'ready' &&
+      preparation.releaseOnDefiniteFailure != null &&
+      error instanceof AgentTriggerExecutionError &&
+      canReleasePreparedResult(error)
+    ) {
+      try {
+        await preparation.releaseOnDefiniteFailure();
+      } catch (releaseError) {
+        throw executionError(
+          `Agent trigger ${mode} could not release its rejected preparation: ${
+            releaseError instanceof Error ? releaseError.message : String(releaseError)
+          }`,
+          {
+            mode,
+            certainty: 'definite',
+            retryable: true,
+            code: 'PREPARATION_RELEASE_FAILED',
+          },
+        );
+      }
+    }
+    throw error;
   } finally {
     scope.cleanup();
   }
@@ -800,7 +985,13 @@ export function createAgentTriggerExecutionHost(
           envelope,
           {
             fire: (normalized, context) =>
-              runAsPrincipal(normalized, context, () => fire(normalized, context, deps, timeoutMs)),
+              runAsPrincipal(normalized, context, () =>
+                startRun(normalized, context, deps, timeoutMs),
+              ),
+            continue: (normalized, context) =>
+              runAsPrincipal(normalized, context, () =>
+                startRun(normalized, context, deps, timeoutMs),
+              ),
             steer: (normalized, context) =>
               runAsPrincipal(normalized, context, () =>
                 steer(normalized, context, deps, timeoutMs),

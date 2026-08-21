@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
 import {
   Button,
@@ -18,17 +27,16 @@ import type {
 } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
+import store, { activeSubagentPanel, subagentProgressByToolCallId } from '~/store';
 import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
-import SubagentThreadLink from '~/components/Chat/SubagentThreadLink';
 import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
 import Container from '~/components/Chat/Messages/Content/Container';
 import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
 import { MessageContext } from '~/Providers/MessageContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
-import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
 import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
@@ -184,7 +192,11 @@ export default function SubagentCall({
   hideAttachments = false,
 }: SubagentCallProps) {
   const localize = useLocalize();
+  const parentMessageContext = useContext(MessageContext);
   const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
+  const setSelectedSubagent = useSetRecoilState(activeSubagentPanel);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
+  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const agentsMap = useAgentsMapContext();
   const [open, setOpen] = useState(false);
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -192,6 +204,8 @@ export default function SubagentCall({
     () => parseSubagentBackgroundHandle(output, args),
     [output, args],
   );
+  const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
+  const canOpenDurablePanel = backgroundHandle != null && parentConversationId !== '';
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
@@ -234,6 +248,7 @@ export default function SubagentCall({
     : initialProgress >= 1 || progress?.status === 'stop' || hasError;
   const cancelled = isClosed ? runStepStatus === 'cancelled' : !isSubmitting && !finished;
   const running = !finished && !cancelled;
+  const detachedStatusUnknown = backgroundHandle != null && progress == null && !isSubmitting;
 
   /**
    * Content parts for the dialog. Preference order:
@@ -297,6 +312,7 @@ export default function SubagentCall({
   const getHeaderText = () => {
     if (hasError) return localize('com_ui_subagent_errored');
     if (cancelled) return localize('com_ui_subagent_cancelled');
+    if (detachedStatusUnknown) return localize('com_ui_subagent_activity');
     if (intent != null) return intent;
     if (running) return localize('com_ui_subagent_running');
     return localize('com_ui_subagent_complete');
@@ -433,6 +449,30 @@ export default function SubagentCall({
     setIsAtBottom(true);
   }, []);
 
+  const openDetails = useCallback(() => {
+    if (backgroundHandle != null && canOpenDurablePanel) {
+      resetCurrentArtifactId();
+      setArtifactsVisible(false);
+      setSelectedSubagent({
+        parentConversationId,
+        threadId: backgroundHandle.subagent_thread_id,
+        taskId: backgroundHandle.background_task_id,
+        toolCallId,
+        subagentType: backgroundHandle.subagent_type,
+      });
+      return;
+    }
+    setOpen(true);
+  }, [
+    backgroundHandle,
+    canOpenDurablePanel,
+    parentConversationId,
+    resetCurrentArtifactId,
+    setArtifactsVisible,
+    setSelectedSubagent,
+    toolCallId,
+  ]);
+
   const renderDialogBody = () => {
     if (contentParts.length > 0) {
       return (
@@ -498,10 +538,14 @@ export default function SubagentCall({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDetails}
+        data-subagent-thread={
+          canOpenDurablePanel ? backgroundHandle?.subagent_thread_id : undefined
+        }
+        data-subagent-tool-call={canOpenDurablePanel ? toolCallId : undefined}
         className={cn(
           'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
-          running && 'animate-pulse-slow',
+          running && !detachedStatusUnknown && 'animate-pulse-slow',
         )}
         aria-label={headerText}
       >
@@ -557,76 +601,72 @@ export default function SubagentCall({
         </ul>
       </button>
 
-      <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogContent
-          className={cn(
-            'flex h-[min(85vh,56rem)] flex-col overflow-hidden p-0',
-            /** Tighter inter-row gap than the dialog default (`gap-4`)
-             *  — title + description + scroll area read as one block
-             *  rather than three separated panels. */
-            'gap-0',
-            /** Responsive width: narrow on phones, scales up to ~80rem on
-             *  widescreens. Viewport-relative max keeps margin on the
-             *  edges while still using real estate on laptops / large
-             *  displays — noticeably wider than the default dialog. */
-            'w-[min(96vw,80rem)] max-w-[min(96vw,80rem)]',
-          )}
-        >
-          <div className="shrink-0 px-6 pb-3 pr-14 pt-6">
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <OGDialogTitle>
-                {isSelfSpawn
-                  ? localize('com_ui_subagent_dialog_title_self')
-                  : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
-              </OGDialogTitle>
-              {backgroundHandle != null && (
-                <SubagentThreadLink
-                  threadId={backgroundHandle.subagent_thread_id}
-                  relation="child"
-                />
-              )}
-            </div>
-            <OGDialogDescription className="sr-only">
-              {localize('com_ui_subagent_dialog_description')}
-            </OGDialogDescription>
-          </div>
-
-          <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
-            {!isAtBottom && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={scrollDialogToBottom}
-                aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                className="absolute bottom-3 right-4 z-10 h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
-              >
-                <ArrowDown size={16} aria-hidden="true" />
-              </Button>
+      {!canOpenDurablePanel && (
+        <OGDialog open={open} onOpenChange={setOpen}>
+          <OGDialogContent
+            className={cn(
+              'flex h-[min(85vh,56rem)] flex-col overflow-hidden p-0',
+              /** Tighter inter-row gap than the dialog default (`gap-4`)
+               *  — title + description + scroll area read as one block
+               *  rather than three separated panels. */
+              'gap-0',
+              /** Responsive width: narrow on phones, scales up to ~80rem on
+               *  widescreens. Viewport-relative max keeps margin on the
+               *  edges while still using real estate on laptops / large
+               *  displays — noticeably wider than the default dialog. */
+              'w-[min(96vw,80rem)] max-w-[min(96vw,80rem)]',
             )}
-            <div
-              ref={scrollRef}
-              onScroll={handleScroll}
-              /** The prompt and activity trace share one scroller so expanded
-               *  prompt content participates in the same reading flow as the
-               *  subagent output instead of reserving fixed dialog space.
-               *  Part-specific wrappers (`Container`, `Reasoning`,
-               *  `ToolCallGroup`) handle their own widths and spacing. */
-              className="h-full overflow-y-auto px-3 py-3"
-            >
-              <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
-                {prompt ? (
-                  <SubagentPrompt
-                    prompt={prompt}
-                    expanded={promptExpanded}
-                    onToggle={() => setPromptExpanded((expanded) => !expanded)}
-                  />
-                ) : null}
-                {renderDialogBody()}
+          >
+            <div className="shrink-0 px-6 pb-3 pr-14 pt-6">
+              <div className="flex min-w-0 items-center justify-between gap-3">
+                <OGDialogTitle>
+                  {isSelfSpawn
+                    ? localize('com_ui_subagent_dialog_title_self')
+                    : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
+                </OGDialogTitle>
+              </div>
+              <OGDialogDescription className="sr-only">
+                {localize('com_ui_subagent_dialog_description')}
+              </OGDialogDescription>
+            </div>
+
+            <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
+              {!isAtBottom && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={scrollDialogToBottom}
+                  aria-label={localize('com_ui_subagent_scroll_to_bottom')}
+                  className="absolute bottom-3 right-4 z-10 h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
+                >
+                  <ArrowDown size={16} aria-hidden="true" />
+                </Button>
+              )}
+              <div
+                ref={scrollRef}
+                onScroll={handleScroll}
+                /** The prompt and activity trace share one scroller so expanded
+                 *  prompt content participates in the same reading flow as the
+                 *  subagent output instead of reserving fixed dialog space.
+                 *  Part-specific wrappers (`Container`, `Reasoning`,
+                 *  `ToolCallGroup`) handle their own widths and spacing. */
+                className="h-full overflow-y-auto px-3 py-3"
+              >
+                <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
+                  {prompt ? (
+                    <SubagentPrompt
+                      prompt={prompt}
+                      expanded={promptExpanded}
+                      onToggle={() => setPromptExpanded((expanded) => !expanded)}
+                    />
+                  ) : null}
+                  {renderDialogBody()}
+                </div>
               </div>
             </div>
-          </div>
-        </OGDialogContent>
-      </OGDialog>
+          </OGDialogContent>
+        </OGDialog>
+      )}
 
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />

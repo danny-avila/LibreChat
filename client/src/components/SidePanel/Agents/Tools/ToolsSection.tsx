@@ -1,7 +1,12 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { Plus } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { PermissionTypes, Permissions, AgentCapabilities } from 'librechat-data-provider';
+import {
+  PermissionTypes,
+  Permissions,
+  AgentCapabilities,
+  removeCodeExecutionCaller,
+} from 'librechat-data-provider';
 import {
   Label,
   Switch,
@@ -153,6 +158,11 @@ export default function ToolsSection({ agentId }: Props) {
       switch (patch.type) {
         case 'builtin':
           setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
+          if (patch.field === AgentCapabilities.execute_code && patch.value === false) {
+            setValue('tool_options', removeCodeExecutionCaller(getValues('tool_options')), {
+              shouldDirty: true,
+            });
+          }
           break;
         case 'tool-remove': {
           const current = (getValues('tools') ?? []) as string[];

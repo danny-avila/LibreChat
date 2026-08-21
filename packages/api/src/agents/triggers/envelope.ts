@@ -6,7 +6,7 @@ import { cloneJsonValue } from '../json';
 export const AGENT_TRIGGER_ENVELOPE_VERSION = 1 as const;
 export const AGENT_TRIGGER_IDEMPOTENCY_PREFIX = 'trigger_';
 
-export type AgentTriggerMode = 'fire' | 'steer';
+export type AgentTriggerMode = 'continue' | 'fire' | 'steer';
 
 export interface AgentTriggerSource {
   /** Stable identity of the configured source, such as a webhook or schedule id. */
@@ -31,10 +31,34 @@ interface AgentTriggerTarget {
 }
 
 /**
+ * Trusted host controls for a new fire. These values shape LibreChat's own
+ * generation request; they are never sourced directly from model output.
+ * `metadata` is opaque to the trigger core and lets an authenticated adapter
+ * identify its delivery to host-side lifecycle hooks without widening the
+ * public chat request surface.
+ */
+export interface AgentFireRunContext {
+  conversationId?: string;
+  timezone?: string;
+  /** Chat project the new conversation is filed under. Host-controlled like the
+   *  rest of this context — never sourced from the event payload. */
+  chatProjectId?: string;
+  files?: JsonValue[];
+  metadata?: JsonValue;
+}
+
+/**
  * One fire delivery represents one new conversation for this agent; retries
  * reuse the delivery id instead of starting another conversation.
  */
 export type AgentFireTarget = AgentTriggerTarget;
+
+export interface AgentContinueTarget extends AgentTriggerTarget {
+  /** Existing conversation that receives a new host-authored turn. */
+  conversationId: string;
+  /** Persisted branch leaf below which the new turn is appended. */
+  parentMessageId: string;
+}
 
 export interface AgentSteerTarget extends AgentTriggerTarget {
   /** Existing conversation whose active generation receives the input. */
@@ -61,6 +85,12 @@ interface AgentTriggerEnvelopeBase {
 export interface AgentFireTriggerEnvelope extends AgentTriggerEnvelopeBase {
   mode: 'fire';
   target: AgentFireTarget;
+  run?: AgentFireRunContext;
+}
+
+export interface AgentContinueTriggerEnvelope extends AgentTriggerEnvelopeBase {
+  mode: 'continue';
+  target: AgentContinueTarget;
 }
 
 export interface AgentSteerTriggerEnvelope extends AgentTriggerEnvelopeBase {
@@ -68,7 +98,10 @@ export interface AgentSteerTriggerEnvelope extends AgentTriggerEnvelopeBase {
   target: AgentSteerTarget;
 }
 
-export type AgentTriggerEnvelope = AgentFireTriggerEnvelope | AgentSteerTriggerEnvelope;
+export type AgentTriggerEnvelope =
+  | AgentContinueTriggerEnvelope
+  | AgentFireTriggerEnvelope
+  | AgentSteerTriggerEnvelope;
 
 interface CreateAgentTriggerEnvelopeBase {
   requestId: string;
@@ -83,6 +116,11 @@ export type CreateAgentTriggerEnvelopeInput =
   | (CreateAgentTriggerEnvelopeBase & {
       mode: 'fire';
       target: AgentFireTarget;
+      run?: AgentFireRunContext;
+    })
+  | (CreateAgentTriggerEnvelopeBase & {
+      mode: 'continue';
+      target: AgentContinueTarget;
     })
   | (CreateAgentTriggerEnvelopeBase & {
       mode: 'steer';
@@ -149,6 +187,35 @@ function createEvent(input: AgentTriggerEvent | null | undefined): AgentTriggerE
   };
 }
 
+function createFireRunContext(
+  input: AgentFireRunContext | null | undefined,
+): AgentFireRunContext | undefined {
+  if (input == null) {
+    return undefined;
+  }
+  const run = requireRecord(input, 'run');
+  const context: AgentFireRunContext = {};
+  if (run.conversationId != null) {
+    context.conversationId = requireString(run.conversationId, 'run.conversationId');
+  }
+  if (run.timezone != null) {
+    context.timezone = requireString(run.timezone, 'run.timezone');
+  }
+  if (run.chatProjectId != null) {
+    context.chatProjectId = requireString(run.chatProjectId, 'run.chatProjectId');
+  }
+  if (run.files != null) {
+    if (!Array.isArray(run.files)) {
+      throw error('run.files must be an array');
+    }
+    context.files = cloneJsonValue(run.files, 'run.files', error) as JsonValue[];
+  }
+  if (run.metadata !== undefined) {
+    context.metadata = cloneJsonValue(run.metadata, 'run.metadata', error) as JsonValue;
+  }
+  return context;
+}
+
 export function createAgentTriggerEnvelope(
   input: CreateAgentTriggerEnvelopeInput,
 ): AgentTriggerEnvelope {
@@ -164,10 +231,12 @@ export function createAgentTriggerEnvelope(
   };
 
   if (input.mode === 'fire') {
+    const run = createFireRunContext(input.run);
     return {
       ...base,
       mode: input.mode,
       target: { agentId: requireString(input.target?.agentId, 'target.agentId') },
+      ...(run != null && { run }),
     };
   }
 
@@ -191,6 +260,18 @@ export function createAgentTriggerEnvelope(
     };
   }
 
+  if (input.mode === 'continue') {
+    return {
+      ...base,
+      mode: input.mode,
+      target: {
+        agentId: requireString(input.target?.agentId, 'target.agentId'),
+        conversationId: requireString(input.target?.conversationId, 'target.conversationId'),
+        parentMessageId: requireString(input.target?.parentMessageId, 'target.parentMessageId'),
+      },
+    };
+  }
+
   throw error(`Unsupported agent trigger mode: ${receivedMode}`);
 }
 
@@ -205,7 +286,7 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
   }
 
   const mode = envelope.mode;
-  if (mode !== 'fire' && mode !== 'steer') {
+  if (mode !== 'continue' && mode !== 'fire' && mode !== 'steer') {
     throw error(`Unsupported agent trigger mode: ${String(mode)}`);
   }
 
@@ -245,10 +326,26 @@ export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope 
   const target = requireRecord(envelope.target, 'target');
 
   if (mode === 'fire') {
+    const run = createFireRunContext(
+      envelope.run == null ? undefined : (envelope.run as AgentFireRunContext),
+    );
     return {
       ...base,
       mode,
       target: { agentId: requireString(target.agentId, 'target.agentId') },
+      ...(run != null && { run }),
+    };
+  }
+
+  if (mode === 'continue') {
+    return {
+      ...base,
+      mode,
+      target: {
+        agentId: requireString(target.agentId, 'target.agentId'),
+        conversationId: requireString(target.conversationId, 'target.conversationId'),
+        parentMessageId: requireString(target.parentMessageId, 'target.parentMessageId'),
+      },
     };
   }
 
@@ -288,7 +385,8 @@ export function getAgentTriggerIdempotencyKey(envelope: AgentTriggerEnvelope): s
         envelope.deliveryId,
         envelope.mode,
         envelope.target.agentId,
-        envelope.mode === 'steer' ? envelope.target.conversationId : '',
+        envelope.mode === 'fire' ? '' : envelope.target.conversationId,
+        envelope.mode === 'continue' ? envelope.target.parentMessageId : '',
       ]),
     )
     .digest('hex');

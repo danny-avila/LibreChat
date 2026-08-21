@@ -31,6 +31,20 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Trusted scheduled-occurrence identity. These fields are accepted only from a
+   * verified agent-trigger request and let pause/resume/reconciliation keep the
+   * occurrence attached to the exact generation that owns it. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Intended terminal classification retained when Mongo outcome persistence
+   * fails. The scheduler reconciler consumes this evidence before clearing the job. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  /** Prevent normal terminal cleanup until schedule reconciliation has consumed
+   * the retained outcome evidence. */
+  preserveForScheduleReconcile?: boolean;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so

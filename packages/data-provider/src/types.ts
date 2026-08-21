@@ -17,6 +17,7 @@ import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 
 export * from './schemas';
+export * from './types/subagents';
 
 export type TMessages = TMessage[];
 
@@ -547,6 +548,8 @@ export type TConfig = {
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
   };
+  /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
+  maxSubagents?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;

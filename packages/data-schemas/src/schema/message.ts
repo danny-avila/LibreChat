@@ -138,11 +138,21 @@ const messageSchema: Schema<IMessage> = new Schema(
     subagentTask: {
       type: {
         attemptKey: { type: String, required: true },
+        parentRunId: { type: String },
         requestFingerprint: { type: String },
         status: {
           type: String,
           enum: ['running', 'completed', 'error', 'cancelled'],
           required: true,
+        },
+        resultClaim: {
+          type: {
+            kind: { type: String, enum: ['manual', 'wakeup'], required: true },
+            claimId: { type: String, required: true },
+            claimedAt: { type: Date, required: true },
+          },
+          _id: false,
+          default: undefined,
         },
       },
       _id: false,
@@ -235,12 +245,22 @@ messageSchema.index({
 
 /**
  * Serves the conversation fetch ({conversationId, user} filter + createdAt
- * sort) from the index alone; without it Mongo fetches every full document in
- * the conversation and sorts them in memory. tenantId is deliberately not in
- * the middle: untenanted deployments issue no tenantId predicate, and a gap in
- * the prefix would push the sort back into memory for them.
+ * sort) and the deterministic child-thread view sort from the index alone;
+ * without it Mongo fetches every full document in the conversation and sorts
+ * them in memory. tenantId is deliberately not in the middle: untenanted
+ * deployments issue no tenantId predicate, and a gap in the prefix would push
+ * the sort back into memory for them.
  */
-messageSchema.index({ conversationId: 1, user: 1, createdAt: 1 });
+messageSchema.index({ conversationId: 1, user: 1, createdAt: 1, _id: 1 });
+
+/** Bounds parent-run completion snapshots without scanning a user's message history. */
+messageSchema.index(
+  { user: 1, 'subagentTask.parentRunId': 1, 'subagentTask.status': 1, updatedAt: -1, _id: -1 },
+  {
+    name: 'subagent_parent_run_status_updated',
+    partialFilterExpression: { 'subagentTask.parentRunId': { $exists: true } },
+  },
+);
 
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });

@@ -228,6 +228,12 @@ describe('MCP Routes', () => {
     currentUser = undefined;
     mockResolveAllMcpConfigs.mockResolvedValue({});
     mockResolveMcpConfigNames.mockResolvedValue([]);
+    // `clearAllMocks` preserves queued `mockReturnValueOnce` entries. A callback
+    // test can legitimately leave one unconsumed, which then masks a later test's
+    // default implementation when this file shares a CI shard with other suites.
+    // Reset the cache accessor itself so every test starts from a deterministic
+    // default and can opt into a one-shot value deliberately.
+    require('~/cache').getLogStores.mockReset().mockReturnValue({});
     const { MCPOAuthHandler } = require('@librechat/api');
     const { getTenantId } = require('@librechat/data-schemas');
     getTenantId.mockReturnValue(undefined);

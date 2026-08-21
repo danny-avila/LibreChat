@@ -28,6 +28,8 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  GenerationJobManager,
+  waitForKeyvRedisClient,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -36,6 +38,11 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const {
+  recordExpiredScheduleApproval,
+  initializeScheduleErasureSweep,
+} = require('./services/Schedules');
+const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -274,6 +281,11 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  // The clustered entrypoint deliberately does not arm the v1 schedule engine,
+  // but an already-fired scheduled generation can still reach HITL here. Settle
+  // its durable run when the generic approval runtime expires it.
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config
@@ -282,6 +294,17 @@ if (cluster.isMaster) {
   let shouldStartExpiredFileSweep = false;
   let expiredFileSweepOptions = null;
   let expiredFileSweepStarted = false;
+  const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
+
+  const rejectScheduleWritesUntilReady = (req, res, next) => {
+    if (SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
+      return next();
+    }
+    return res.status(501).json({
+      code: 'SCHEDULES_NOT_SUPPORTED',
+      error: 'Scheduled chats are not available in clustered mode.',
+    });
+  };
 
   const startExpiredFileSweepOnce = () => {
     if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
@@ -304,6 +327,9 @@ if (cluster.isMaster) {
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
 
+    await waitForKeyvRedisClient();
+    await configureSubagentTaskRouting();
+
     if (typeof Bun !== 'undefined') {
       axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
     }
@@ -316,6 +342,13 @@ if (cluster.isMaster) {
     indexSync().catch((err) => {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
+
+    // This entrypoint deliberately does not arm the schedule engine, but DELETE stays
+    // open — so soft-deleted rows still accrue with no reconciler to erase them. Start
+    // the erasure-ONLY sweep (Mongo is up, GenerationJobManager was initialized above):
+    // it never claims, fires, advances, or infers owner death from a process-local
+    // missing job, and its idempotent guard makes this safe once per worker.
+    initializeScheduleErasureSweep();
 
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
@@ -483,6 +516,7 @@ if (cluster.isMaster) {
     app.use('/api/agents', routes.agents);
     app.use('/api/banner', routes.banner);
     app.use('/api/memories', routes.memories);
+    app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
     app.use('/api/permissions', routes.accessPermissions);
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);

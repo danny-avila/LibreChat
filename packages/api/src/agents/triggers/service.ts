@@ -34,6 +34,7 @@ export interface AgentTriggerServiceOptions {
 export interface AgentTriggerServiceDeps {
   fetch?: AgentTriggerExecutionHostDeps['fetch'];
   getTimezone?: AgentTriggerExecutionHostDeps['getTimezone'];
+  prepareContinue?: AgentTriggerExecutionHostDeps['prepareContinue'];
   mintToken?: AgentTriggerExecutionHostDeps['mintToken'];
   timeoutMs?: number;
   methods?: AgentTriggerDeliveryPersistence;
@@ -201,6 +202,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       ((principal) => generateAgentTriggerToken(principal.userId, AGENT_TRIGGER_TOKEN_TTL)),
     ...(deps.fetch != null && { fetch: deps.fetch }),
     ...(deps.getTimezone != null && { getTimezone: deps.getTimezone }),
+    ...(deps.prepareContinue != null && { prepareContinue: deps.prepareContinue }),
     ...(deps.timeoutMs != null && { timeoutMs: deps.timeoutMs }),
   });
 

@@ -2,6 +2,7 @@ export * from './Attachment';
 export * from './OpenAIImageGen';
 
 export { default as Text } from './Text';
+export { default as CollapsibleText } from './CollapsibleText';
 export { default as Reasoning } from './Reasoning';
 export { default as EmptyText } from './EmptyText';
 export { default as LogContent } from './LogContent';

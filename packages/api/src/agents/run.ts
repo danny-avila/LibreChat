@@ -59,6 +59,10 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
+import {
+  createSubagentWakeupHandleHook,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -1639,6 +1643,7 @@ export async function createRun({
       agentInput.toolDefinitions = registerBackgroundTaskTool({
         toolRegistry: agentInput.toolRegistry,
         toolDefinitions: agentInput.toolDefinitions,
+        subagentCompletionWakeups: usesSubagentCompletionWakeups(subagentTasks),
       }).toolDefinitions;
     }
     agentInputs.push(agentInput);
@@ -1747,6 +1752,14 @@ export async function createRun({
    * this guard is defense in depth).
    */
   let hooks = hitl?.hooks;
+  if (usesSubagentCompletionWakeups(subagentTasks)) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolUse', {
+      pattern: String(Constants.SUBAGENT),
+      hooks: [createSubagentWakeupHandleHook()],
+      internal: true,
+    });
+  }
   /** Activity labels register BEFORE the steer drain: the label must claim
    *  its slot while the batch's tool parts are still the content tail. If a
    *  steer drained first, its injected part would flush the tool block in

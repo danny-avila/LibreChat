@@ -9,6 +9,7 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
+import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { isActionTool } from './types/assistants';
@@ -19,6 +20,9 @@ import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
 export {
   MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  getMaxSubagents,
+  setMaxSubagents,
   MAX_GRAPH_SUBAGENT_MEMBERS,
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
@@ -1003,6 +1007,16 @@ export const agentsEndpointSchema = baseEndpointSchema
       maxCitations: z.number().min(1).max(50).optional().default(30),
       maxCitationsPerFile: z.number().min(1).max(10).optional().default(7),
       minRelevanceScore: z.number().min(0.0).max(1.0).optional().default(0.45),
+      /** Maximum explicit subagents per agent (`agent_ids` and `graphs`); raised from
+       * the shipped default of 10 for orchestration-heavy deployments, bounded by
+       * `MAX_SUBAGENTS_CEILING`. */
+      maxSubagents: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_SUBAGENTS_CEILING)
+        .optional()
+        .default(MAX_SUBAGENTS),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
@@ -1034,6 +1048,7 @@ export const agentsEndpointSchema = baseEndpointSchema
     maxCitations: 30,
     maxCitationsPerFile: 7,
     minRelevanceScore: 0.45,
+    maxSubagents: MAX_SUBAGENTS,
   });
 
 export type TAgentsEndpoint = z.infer<typeof agentsEndpointSchema>;
@@ -1495,6 +1510,7 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     contextUsage: z.boolean().optional(),
     contextCost: z.boolean().optional(),
+    feedback: z.boolean().optional(),
     currency: z
       .object({
         code: z.string(),
@@ -1549,6 +1565,28 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    schedules: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          maxPerUser: z.number().int().min(0).optional(),
+          minIntervalMinutes: z.number().int().min(1).optional(),
+          autoDisableAfterFailures: z.number().int().min(1).optional(),
+          fireConcurrency: z.number().int().min(1).optional(),
+          /** Refuse schedules that are not filed under a chat project. Enforced on
+           *  create/update AND at every fire, so raising it later stops schedules
+           *  that predate the policy instead of grandfathering them. */
+          requireProject: z.boolean().optional(),
+          /** Pins every scheduled run to ONE chat project, ignoring any client
+           *  choice. Implies `requireProject`. The project must belong to the
+           *  schedule's owner, so a deployment-wide value only makes sense with a
+           *  per-user/per-role config override. */
+          projectId: z.string().trim().min(1).optional(),
+        }),
+      ])
+      .optional(),
   })
   .default({
     modelSelect: true,
@@ -1575,6 +1613,7 @@ export const interfaceSchema = z
     webSearch: true,
     contextUsage: true,
     contextCost: false,
+    feedback: true,
     peoplePicker: {
       users: true,
       groups: true,
@@ -1611,6 +1650,11 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    // `schedules` is deliberately ABSENT from this default. It is experimental and
+    // default-off in v1, and zod applies this whole object when `interface` is omitted
+    // from librechat.yaml — including it would silently enable the feature (and permit
+    // billable scheduled runs) on every deployment that never opted in. The PERMISSION
+    // defaults live in updateInterfacePermissions, which is a separate concern.
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -1801,6 +1845,22 @@ export enum SafeSearchTypes {
   STRICT = 2,
 }
 
+/**
+ * Normalizes a SearXNG engine list into the comma-separated form the API expects.
+ * Accepts the YAML list or comma-separated string an operator may write, and is
+ * applied both at the schema boundary and when loading the runtime config, since
+ * `loadCustomConfig` returns the raw YAML object rather than the parsed result.
+ */
+export function normalizeSearxngEngines(engines?: string | string[]): string | undefined {
+  if (engines == null) {
+    return undefined;
+  }
+  const normalized = (Array.isArray(engines) ? engines : engines.split(','))
+    .map((engine) => engine.trim())
+    .filter(Boolean);
+  return normalized.length ? normalized.join(',') : undefined;
+}
+
 export const webSearchSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
@@ -1857,6 +1917,17 @@ export const webSearchSchema = z.object({
           tag: z.string().nullable().optional(),
         })
         .optional(),
+    })
+    .optional(),
+  searxngSearchOptions: z
+    .object({
+      engines: z
+        .union([z.string(), z.array(z.string())])
+        .transform(normalizeSearxngEngines)
+        .optional(),
+      language: z.string().optional(),
+      timeRange: z.enum(['day', 'month', 'year']).optional(),
+      timeout: z.number().int().positive().max(120000).optional(),
     })
     .optional(),
   tavilySearchOptions: z
@@ -2167,6 +2238,19 @@ export type DeepPartial<T> = T extends (infer U)[]
 
 export const getConfigDefaults = () => getSchemaDefaults(configSchema);
 export type TCustomConfig = DeepPartial<z.infer<typeof configSchema>>;
+
+/**
+ * Shape of the `webSearch` block as written in `librechat.yaml`, where
+ * `searxngSearchOptions.engines` may still be the YAML list or untrimmed string an
+ * operator wrote. `loadCustomConfig` returns the raw YAML object rather than the
+ * parsed result, so the runtime loader receives this shape, not the parsed one.
+ */
+export type TWebSearchConfigInput = Omit<
+  NonNullable<TCustomConfig['webSearch']>,
+  'searxngSearchOptions'
+> & {
+  searxngSearchOptions?: z.input<typeof webSearchSchema>['searxngSearchOptions'];
+};
 export type TCustomEndpoints = z.infer<typeof customEndpointsSchema>;
 
 export type TProviderSchema =

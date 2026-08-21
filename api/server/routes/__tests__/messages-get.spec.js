@@ -13,6 +13,7 @@ jest.mock('@librechat/api', () => ({
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
   isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
+  requireFeedbackEnabled: (req, res, next) => next(),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
@@ -36,6 +37,7 @@ jest.mock('~/models', () => ({
   getMessage: jest.fn(),
   saveMessage: jest.fn(),
   getMessages: jest.fn(),
+  getConvoOwnership: jest.fn(),
   updateMessage: jest.fn(),
   deleteMessages: jest.fn(),
   getConvosQueried: jest.fn(),
@@ -52,6 +54,7 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 
 jest.mock('~/server/middleware', () => {
   const validateMessageReq = jest.fn((req, res, next) => next());
+  const canReadActiveJobConversation = jest.fn().mockResolvedValue(false);
   const prepareMessageRequestValidation = jest.fn((req, res, next) => {
     req.messageRequestValidation = {
       conversationId: 'convo-1',
@@ -70,6 +73,7 @@ jest.mock('~/server/middleware', () => {
   return {
     requireJwtAuth: (req, res, next) => next(),
     validateMessageReq,
+    canReadActiveJobConversation,
     sendValidationResponse,
     prepareMessageRequestValidation,
     configMiddleware: (req, res, next) => next(),
@@ -86,8 +90,17 @@ jest.mock('~/db/models', () => ({
 
 describe('message route conversation ownership filters', () => {
   let app;
-  const { getMessages, saveConvo, saveMessage } = require('~/models');
-  const { prepareMessageRequestValidation } = require('~/server/middleware');
+  const {
+    getConvoOwnership,
+    getMessages,
+    getMessagesByCursor,
+    saveConvo,
+    saveMessage,
+  } = require('~/models');
+  const {
+    canReadActiveJobConversation,
+    prepareMessageRequestValidation,
+  } = require('~/server/middleware');
 
   const authenticatedUserId = 'user-owner-123';
 
@@ -105,6 +118,7 @@ describe('message route conversation ownership filters', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    canReadActiveJobConversation.mockResolvedValue(false);
     prepareMessageRequestValidation.mockImplementation((req, res, next) => {
       req.messageRequestValidation = {
         conversationId: 'convo-1',
@@ -177,6 +191,111 @@ describe('message route conversation ownership filters', () => {
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'convo-1', user: authenticatedUserId },
       CLIENT_MESSAGE_SELECT,
+    );
+  });
+
+  it('returns indistinguishable not-found responses for child and missing query reads', async () => {
+    getConvoOwnership.mockResolvedValueOnce({
+      user: authenticatedUserId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+
+    const childResponse = await request(app).get(
+      '/api/messages?conversationId=child-convo&messageId=child-message',
+    );
+    getConvoOwnership.mockResolvedValueOnce(null);
+    const missingResponse = await request(app).get(
+      '/api/messages?conversationId=missing-convo&messageId=missing-message',
+    );
+
+    expect(childResponse.status).toBe(404);
+    expect(childResponse.body).toEqual({ error: 'Conversation not found' });
+    expect(childResponse.status).toBe(missingResponse.status);
+    expect(childResponse.body).toEqual(missingResponse.body);
+    expect(getMessages).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    {
+      name: 'single-message',
+      path: '/api/messages?conversationId=convo-1&messageId=message-1',
+      readMock: getMessages,
+      readResult: [{ messageId: 'message-1', conversationId: 'convo-1' }],
+    },
+    {
+      name: 'cursor',
+      path: '/api/messages?conversationId=convo-1',
+      readMock: getMessagesByCursor,
+      readResult: { messages: [], nextCursor: null },
+    },
+  ])(
+    'starts the $name query read before ownership validation resolves',
+    async ({ path, readMock, readResult }) => {
+      const events = [];
+      let resolveOwnership;
+      const ownershipPromise = new Promise((resolve) => {
+        resolveOwnership = resolve;
+      });
+      getConvoOwnership.mockImplementationOnce(() => {
+        events.push('ownership-started');
+        return ownershipPromise;
+      });
+
+      let resolveReadStarted;
+      const readStartedPromise = new Promise((resolve) => {
+        resolveReadStarted = resolve;
+      });
+      readMock.mockImplementationOnce(() => {
+        events.push('messages-started');
+        resolveReadStarted();
+        return Promise.resolve(readResult);
+      });
+
+      const responsePromise = new Promise((resolve, reject) => {
+        request(app)
+          .get(path)
+          .end((error, response) => (error ? reject(error) : resolve(response)));
+      });
+
+      await Promise.race([readStartedPromise, new Promise((resolve) => setTimeout(resolve, 100))]);
+      const eventsBeforeValidation = [...events];
+      resolveOwnership({ user: authenticatedUserId });
+      const response = await responsePromise;
+
+      expect(eventsBeforeValidation).toEqual(['ownership-started', 'messages-started']);
+      expect(response.status).toBe(200);
+    },
+  );
+
+  it('allows an ordinary owned conversation query read', async () => {
+    getConvoOwnership.mockResolvedValue({ user: authenticatedUserId });
+    getMessages.mockResolvedValue([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+
+    const response = await request(app).get(
+      '/api/messages?conversationId=convo-1&messageId=message-1',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toEqual([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+  });
+
+  it('allows an owner-scoped active generation before its conversation row exists', async () => {
+    getConvoOwnership.mockResolvedValue(null);
+    canReadActiveJobConversation.mockResolvedValue(true);
+    getMessagesByCursor.mockResolvedValue({
+      messages: [{ messageId: 'prompt-1', conversationId: 'active-convo' }],
+      nextCursor: null,
+    });
+
+    const response = await request(app).get('/api/messages?conversationId=active-convo');
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toEqual([
+      { messageId: 'prompt-1', conversationId: 'active-convo' },
+    ]);
+    expect(canReadActiveJobConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ user: { id: authenticatedUserId } }),
+      'active-convo',
     );
   });
 

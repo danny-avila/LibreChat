@@ -1,14 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Button, TooltipAnchor } from '@librechat/client';
-import { Eye, Code, User, Pencil, Calendar, EarthIcon } from 'lucide-react';
+import { User, Pencil, Calendar, EarthIcon } from 'lucide-react';
 import type { TSkill } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSkillPermissions, useSkillActiveState } from '~/hooks';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { ShareSkill, SkillToggle } from '../buttons';
 import DeleteSkill from '../dialogs/DeleteSkill';
 import { parseFrontmatter } from '../utils';
-import { cn } from '~/utils';
+import ViewToggle from './ViewToggle';
 
 interface SkillDetailProps {
   skill: TSkill;
@@ -17,52 +17,6 @@ interface SkillDetailProps {
 }
 
 const SKIP_KEYS = new Set(['name', 'description']);
-
-function ViewToggle({
-  viewMode,
-  setViewMode,
-  localize,
-}: {
-  viewMode: 'rendered' | 'source';
-  setViewMode: (mode: 'rendered' | 'source') => void;
-  localize: ReturnType<typeof useLocalize>;
-}) {
-  return (
-    <div
-      role="group"
-      className="inline-flex h-7 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"
-    >
-      <button
-        type="button"
-        onClick={() => setViewMode('rendered')}
-        className={cn(
-          'flex items-center justify-center rounded-md px-1.5 transition-colors',
-          viewMode === 'rendered'
-            ? 'bg-surface-primary text-text-primary shadow-sm'
-            : 'text-text-secondary hover:text-text-primary',
-        )}
-        aria-label={localize('com_ui_skill_view_rendered')}
-        aria-pressed={viewMode === 'rendered'}
-      >
-        <Eye className="size-4" />
-      </button>
-      <button
-        type="button"
-        onClick={() => setViewMode('source')}
-        className={cn(
-          'flex items-center justify-center rounded-md px-1.5 transition-colors',
-          viewMode === 'source'
-            ? 'bg-surface-primary text-text-primary shadow-sm'
-            : 'text-text-secondary hover:text-text-primary',
-        )}
-        aria-label={localize('com_ui_skill_view_source')}
-        aria-pressed={viewMode === 'source'}
-      >
-        <Code className="size-4" />
-      </button>
-    </div>
-  );
-}
 
 export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProps) {
   const localize = useLocalize();
@@ -159,7 +113,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
       {/* Divider with view toggle */}
       <div className="flex items-center gap-3 py-1">
         <hr className="flex-1 border-border-medium" />
-        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} localize={localize} />
+        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
       </div>
 
       {/* Frontmatter metadata */}

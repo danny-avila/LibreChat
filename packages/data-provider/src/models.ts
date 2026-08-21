@@ -8,7 +8,7 @@ import {
   AuthType,
   authTypeSchema,
 } from './schemas';
-import { MAX_SUBAGENTS } from './limits';
+import { getMaxSubagents } from './limits';
 
 type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
 
@@ -84,11 +84,22 @@ export type TModelSpec = {
   subagents?: ModelSpecSubagentsConfig;
 };
 
-export const modelSpecSubagentsSchema = z.object({
-  enabled: z.boolean().optional(),
-  allowSelf: z.boolean().optional(),
-  agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
-});
+export const modelSpecSubagentsSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    allowSelf: z.boolean().optional(),
+    agent_ids: z.array(z.string()).optional(),
+  })
+  .superRefine((subagents, ctx) => {
+    const maxSubagents = getMaxSubagents();
+    if ((subagents.agent_ids?.length ?? 0) > maxSubagents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agent_ids'],
+        message: `agent_ids must contain at most ${maxSubagents} item(s)`,
+      });
+    }
+  });
 
 /**
  * The endpoint a spec targets. Only the agents endpoint can serve a preset that

@@ -1392,6 +1392,52 @@ describe('Conversation Operations', () => {
       expect(result?.convoMap[expiredRetainedConvo.conversationId]).toBeUndefined();
       expect(result?.convoMap[tempConvo.conversationId]).toBeUndefined();
     });
+
+    it('hides durable subagent threads from conversation lists and search results', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const messageId = 'message-1';
+      const normalConversation = await Conversation.create({
+        conversationId: parentId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Parent conversation',
+      });
+      await Conversation.create({
+        conversationId: childId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        title: 'Subagent: implementation',
+        subagentThread: {
+          rootConversationId: parentId,
+          parentConversationId: parentId,
+          parentMessageId: messageId,
+          parentToolCallId: 'tool-1',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      Object.assign(Conversation, {
+        meiliSearch: jest.fn().mockResolvedValue({
+          hits: [{ conversationId: parentId }, { conversationId: childId }],
+        }),
+      });
+
+      const listed = await getConvosByCursor('user123', { search: 'implementation' });
+      const queried = await getConvosQueried('user123', [
+        { conversationId: parentId },
+        { conversationId: childId },
+      ]);
+
+      expect(listed.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.conversations.map((convo) => convo.conversationId)).toEqual([
+        normalConversation.conversationId,
+      ]);
+      expect(queried.convoMap[childId]).toBeUndefined();
+    });
   });
 
   describe('searchConversation', () => {
@@ -1444,6 +1490,7 @@ describe('Conversation Operations', () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
         user: 'user123',
+        tenantId: 'tenant-a',
         title: 'Test Conversation',
         endpoint: EModelEndpoint.openAI,
       });
@@ -1454,6 +1501,7 @@ describe('Conversation Operations', () => {
       );
 
       expect(result?.user).toBe('user123');
+      expect(result?.tenantId).toBe('tenant-a');
       expect(result).not.toHaveProperty('title');
       expect(result).not.toHaveProperty('messages');
       expect(result).not.toHaveProperty('endpoint');
@@ -1471,6 +1519,62 @@ describe('Conversation Operations', () => {
         await methods.getConvoOwnership('someone-else', mockConversationData.conversationId),
       ).toBeNull();
       expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
+    });
+
+    it('includes child-thread identity without materializing conversation content', async () => {
+      await Conversation.create({
+        conversationId: 'child-conversation',
+        user: 'user123',
+        title: 'Internal child',
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'child-agent',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      const result = await methods.getConvoOwnership('user123', 'child-conversation');
+
+      expect(result).toMatchObject({
+        user: 'user123',
+        subagentThread: { parentConversationId: 'parent-conversation' },
+      });
+      expect(result).not.toHaveProperty('title');
+    });
+
+    it('selects the exact tenant when conversation identifiers collide', async () => {
+      await runAsSystem(async () => {
+        await Conversation.create([
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            title: 'Tenantless parent',
+            endpoint: EModelEndpoint.agents,
+          },
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            tenantId: 'tenant-a',
+            title: 'Tenant parent',
+            endpoint: EModelEndpoint.agents,
+          },
+        ]);
+      });
+
+      const tenantless = await methods.getConvoOwnership('user123', 'shared-conversation-id', null);
+      const tenant = await methods.getConvoOwnership(
+        'user123',
+        'shared-conversation-id',
+        'tenant-a',
+      );
+
+      expect(tenantless?.tenantId).toBeUndefined();
+      expect(tenant?.tenantId).toBe('tenant-a');
     });
   });
 
@@ -1832,21 +1936,43 @@ describe('Conversation Operations', () => {
       const first = uuidv4();
       const second = uuidv4();
       const otherUsers = uuidv4();
+      const childThread = uuidv4();
       await Conversation.create([
         { conversationId: first, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: second, user: 'user123', endpoint: EModelEndpoint.openAI },
         { conversationId: otherUsers, user: 'user456', endpoint: EModelEndpoint.openAI },
+        {
+          conversationId: childThread,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: first,
+            parentConversationId: first,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool-call',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
       ]);
 
       const result = await archiveAllConvos('user123');
 
       expect(result.archivedCount).toBe(2);
-      const archived = await Conversation.find({ user: 'user123' }).lean<IConversation[]>();
+      const archived = await Conversation.find({
+        user: 'user123',
+        conversationId: { $in: [first, second] },
+      }).lean<IConversation[]>();
       expect(archived.every((convo) => convo.isArchived === true)).toBe(true);
       const untouched = await Conversation.findOne({
         conversationId: otherUsers,
       }).lean<IConversation>();
       expect(untouched?.isArchived).not.toBe(true);
+      const child = await Conversation.findOne({
+        conversationId: childThread,
+      }).lean<IConversation>();
+      expect(child?.isArchived).not.toBe(true);
     });
 
     it('archives large snapshots in bounded batches', async () => {
@@ -3302,6 +3428,72 @@ describe('Conversation Operations', () => {
       expect(saved?.subagentThread).toEqual(lineage);
     });
 
+    it('reads a child only through its exact parent and tenant with the private lease', async () => {
+      const parentConversationId = uuidv4();
+      const conversationId = uuidv4();
+      await Conversation.create([
+        {
+          conversationId: parentConversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+        },
+        {
+          conversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentConversationId,
+            parentConversationId,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool',
+            subagentType: 'researcher',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-1',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+        },
+      ]);
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          conversationId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-1' }),
+        }),
+      );
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId: 'another-parent',
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-b',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
+        'subagentThreadLease',
+      );
+    });
+
     it('admits one cross-replica owner and fences renewal and release by token', async () => {
       const conversationId = uuidv4();
       await Conversation.create({
@@ -3338,6 +3530,15 @@ describe('Conversation Operations', () => {
       const winner = claims[0] ? 'token-a' : 'token-b';
       const loser = winner === 'token-a' ? 'token-b' : 'token-a';
       expect(await methods.countActiveSubagentThreadLeases({ user: 'lease-user', now })).toBe(1);
+      await expect(
+        methods.listActiveSubagentThreadLeases({ user: 'lease-user', now }),
+      ).resolves.toEqual([
+        {
+          conversationId,
+          parentConversationId: 'parent',
+          taskId: `task-${winner}`,
+        },
+      ]);
       expect(await methods.getConvo('lease-user', conversationId)).not.toHaveProperty(
         'subagentThreadLease',
       );

@@ -4,6 +4,7 @@ import type { DeleteResult } from 'mongoose';
 import type {
   AppConfig,
   IChatProjectDocument,
+  IActiveSubagentThreadLease,
   IConversation,
   ISharedLink,
   ISubagentThreadReservation,
@@ -36,6 +37,17 @@ type ConversationUpdateResult = {
     updatedExisting?: boolean;
   };
 };
+
+export type SubagentThreadReadRecord = Pick<
+  IConversation,
+  | 'conversationId'
+  | 'tenantId'
+  | 'title'
+  | 'agent_id'
+  | 'updatedAt'
+  | 'subagentThread'
+  | 'subagentThreadLease'
+>;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -149,6 +161,12 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<SubagentThreadReadRecord | null>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -183,10 +201,16 @@ export interface ConversationMethods {
     now: Date;
     tenantId?: string;
   }): Promise<number>;
+  listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]>;
   getConvoOwnership(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'user'> | null>;
+    tenantId?: string | null,
+  ): Promise<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'> | null>;
   getConvoRetention(
     user: string,
     conversationId: string,
@@ -212,6 +236,11 @@ export function createConversationMethods(
 
   function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
     return buildRetentionVisibilityFilter<IConversation>();
+  }
+
+  /** Child threads are durable execution records, not user-navigable conversations. */
+  function getHumanConversationFilter(): FilterQuery<IConversation> {
+    return { subagentThread: { $exists: false } } as FilterQuery<IConversation>;
   }
 
   /**
@@ -240,6 +269,31 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /** Resolves a child only through its owning parent and includes its private live lease. */
+  async function getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<SubagentThreadReadRecord | null> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({
+        user: input.user,
+        conversationId: input.conversationId,
+        'subagentThread.parentConversationId': input.parentConversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+      })
+        .select(
+          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease',
+        )
+        .lean<SubagentThreadReadRecord>();
+    } catch (error) {
+      logger.error('[getSubagentThreadForParent] Error getting child conversation', error);
+      throw new Error('Error getting child conversation');
     }
   }
 
@@ -389,17 +443,55 @@ export function createConversationMethods(
     });
   }
 
+  /** Resolves only live task addresses so account-wide cancellation stays O(active tasks). */
+  async function listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversations = await Conversation.find({
+      user: input.user,
+      ...subagentLeaseTenantFilter(input.tenantId),
+      'subagentThreadLease.expiresAt': { $gt: input.now },
+    })
+      .select('conversationId subagentThread.parentConversationId +subagentThreadLease')
+      .lean<
+        Array<Pick<IConversation, 'conversationId' | 'subagentThread' | 'subagentThreadLease'>>
+      >();
+    return conversations.flatMap((conversation) => {
+      const { conversationId } = conversation;
+      const parentConversationId = conversation.subagentThread?.parentConversationId;
+      const taskId = conversation.subagentThreadLease?.taskId;
+      return typeof conversationId === 'string' &&
+        conversationId !== '' &&
+        typeof parentConversationId === 'string' &&
+        parentConversationId !== '' &&
+        typeof taskId === 'string' &&
+        taskId !== ''
+        ? [{ conversationId, parentConversationId, taskId }]
+        : [];
+    });
+  }
+
   /**
-   * Ownership probe for request validation: resolves only the owning user id
-   * instead of materializing the full conversation document (preset spread +
+   * Public-read probe: resolves ownership plus the child-thread discriminator
+   * without materializing the full conversation document (preset spread +
    * message ObjectId array).
    */
-  async function getConvoOwnership(user: string, conversationId: string) {
+  async function getConvoOwnership(user: string, conversationId: string, tenantId?: string | null) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }, 'user').lean<
-        Pick<IConversation, 'user'>
-      >();
+      const tenantFilter =
+        tenantId === undefined ? {} : subagentLeaseTenantFilter(tenantId ?? undefined);
+      return await Conversation.findOne(
+        {
+          user,
+          conversationId,
+          ...tenantFilter,
+        },
+        'user tenantId subagentThread',
+      ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
     } catch (error) {
       logger.error('[getConvoOwnership] Error checking conversation ownership', error);
       throw new Error('Error checking conversation ownership');
@@ -1007,6 +1099,7 @@ export function createConversationMethods(
     }
 
     filters.push(getVisibleConversationRetentionFilter());
+    filters.push(getHumanConversationFilter());
 
     if (search) {
       try {
@@ -1196,10 +1289,12 @@ export function createConversationMethods(
       const conversationIds = convoIds.map((convo) => convo.conversationId);
 
       const results = await Conversation.find({
-        user,
-        conversationId: { $in: conversationIds },
-        ...getVisibleConversationRetentionFilter(),
-      }).lean<IConversation[]>();
+        $and: [
+          { user, conversationId: { $in: conversationIds } },
+          getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
+        ],
+      } as FilterQuery<IConversation>).lean<IConversation[]>();
 
       results.sort(
         (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
@@ -1408,6 +1503,7 @@ export function createConversationMethods(
         $and: [
           { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
           getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
         ],
       } as FilterQuery<IConversation>;
 
@@ -1520,11 +1616,13 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getSubagentThreadForParent,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,
     releaseSubagentThreadLease,
     countActiveSubagentThreadLeases,
+    listActiveSubagentThreadLeases,
     getConvoOwnership,
     getConvoRetention,
     getConvoTitle,
