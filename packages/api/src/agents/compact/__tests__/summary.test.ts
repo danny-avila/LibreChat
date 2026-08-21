@@ -902,6 +902,130 @@ describe('compactConversation', () => {
     ]);
   });
 
+  it('reports each pass estimate so the gate can price its own tier', async () => {
+    /** Premium long-context rates are keyed off ONE call's input, which a
+     *  summed figure cannot express. */
+    const bigBranch: TMessage[] = [
+      userMessage('b1', Constants.NO_PARENT, bulk('one', 1500)),
+      userMessage('b2', 'b1', bulk('two', 1500)),
+      userMessage('b3', 'b2', bulk('three', 1500)),
+    ];
+    let seen: number[] = [];
+
+    await compactConversation({
+      req: makeReq(),
+      agent: smallWindowAgent,
+      branch: bigBranch,
+      ids: { ...ids, parentMessageId: 'b3' },
+      db: dbMethods,
+      beforeInvoke: async ({ promptTokens, passPromptTokens }) => {
+        seen = passPromptTokens;
+        expect(passPromptTokens.reduce((total, pass) => total + pass, 0)).toBe(promptTokens);
+      },
+    });
+
+    expect(seen.length).toBe(mockStream.mock.calls.length);
+    expect(seen.every((pass) => pass > 0)).toBe(true);
+  });
+
+  it('keeps the larger budget for the first pass of a multi-pass branch', async () => {
+    /** Only passes after the first carry the generated checkpoint. Shrinking
+     *  the first one too spends an extra provider call. */
+    const longBranch: TMessage[] = [];
+    let parent = Constants.NO_PARENT as string;
+    for (let i = 0; i < 8; i++) {
+      longBranch.push(userMessage(`L${i}`, parent, bulk(`seg${i}`, 1400)));
+      parent = `L${i}`;
+    }
+
+    await compactConversation({
+      req: makeReq({ maxSummaryTokens: 6000 }),
+      agent: smallWindowAgent,
+      branch: longBranch,
+      ids: { ...ids, parentMessageId: 'L7' },
+      db: dbMethods,
+    });
+
+    const firstPass = mockStream.mock.calls[0][0] as BaseMessage[];
+    const secondPass = mockStream.mock.calls[1][0] as BaseMessage[];
+    /** The first pass carries no running checkpoint, so it holds more turns
+     *  than one sized against the checkpoint-reduced budget. */
+    expect(mockStream.mock.calls.length).toBeGreaterThan(1);
+    expect(firstPass.length).toBeGreaterThan(secondPass.length);
+  });
+
+  it('reconstructs reasoning content for a target that replays it', async () => {
+    /** Resolved through the OpenAI-compatible initializer, as a gateway serving
+     *  a DeepSeek reasoning model is: the model name is what carries the
+     *  replay requirement. */
+    const reasoningAgent = {
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'deepseek-reasoner',
+      model_parameters: { model: 'deepseek-reasoner' },
+    };
+    const thinkingBranch: TMessage[] = [
+      userMessage('r1', Constants.NO_PARENT, 'run it'),
+      assistantMessage('r2', 'r1', [
+        { type: ContentTypes.THINK, think: 'weighing the options' },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { id: 'call_r', name: 'bash_tool', args: '{"cmd":"ls"}', output: 'a.ts' },
+        },
+      ] as TMessage['content']),
+    ];
+
+    await compactConversation({
+      req: makeReq(),
+      agent: reasoningAgent,
+      branch: thinkingBranch,
+      ids: { ...ids, parentMessageId: 'r2' },
+      db: dbMethods,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const aiMessage = sent.find((message) => message.getType() === 'ai');
+    expect(aiMessage?.additional_kwargs?.reasoning_content).toBe('weighing the options');
+  });
+
+  it('refuses a cross-endpoint user key whose expiry could not be read', async () => {
+    /** The initializer validates the TARGET's stored credential against
+     *  `body.key`. The conversation's own marker belongs to another endpoint,
+     *  and a value of `never` there would let an expired key through, so an
+     *  unreadable expiry has to fail closed rather than fall through to it. */
+    const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'user_provided';
+    try {
+      await expect(
+        compactConversation({
+          req: {
+            body: { key: 'never' },
+            user: { id: 'user_1' },
+            config: {
+              endpoints: {},
+              summarization: { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' },
+            } as AppConfig,
+          } as unknown as ServerRequest,
+          agent,
+          branch,
+          ids,
+          db: {
+            ...dbMethods,
+            getUserKey: jest.fn(async () => 'target-key'),
+            getUserKeyExpiry: jest.fn().mockRejectedValue(new Error('cache down')),
+          },
+        }),
+      ).rejects.toThrow(/expired_user_key/);
+      expect(mockStream).not.toHaveBeenCalled();
+    } finally {
+      if (originalAnthropicKey == null) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+      }
+    }
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so

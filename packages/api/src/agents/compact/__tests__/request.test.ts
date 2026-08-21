@@ -329,6 +329,42 @@ describe('handleCompactRequest', () => {
     expect(order).toEqual(['job', 'siblings']);
   });
 
+  it('prices the balance gate at the largest pass, not the summed estimate', async () => {
+    /** Premium long-context rates are keyed off ONE call's input. Without it
+     *  the gate approves at the standard rate a call that is then charged at
+     *  the premium one. */
+    const req = makeReq();
+    (req.config as AppConfig).balance = { enabled: true } as AppConfig['balance'];
+    const deps = makeDeps({
+      findBalanceByUser: jest.fn().mockResolvedValue({ tokenCredits: 100_000_000 }),
+    });
+
+    await handleCompactRequest({ req, res }, deps);
+
+    const params = mockCompactConversation.mock.calls[0][0] as {
+      beforeInvoke: (estimate: {
+        promptTokens: number;
+        passPromptTokens: number[];
+        model?: string;
+        provider: string;
+        endpoint: string;
+        balanceEndpoint: string;
+      }) => Promise<void>;
+    };
+    await params.beforeInvoke({
+      promptTokens: 300_000,
+      passPromptTokens: [100_000, 200_000],
+      model: 'gpt-5.4',
+      provider: 'openAI',
+      endpoint: 'openAI',
+      balanceEndpoint: 'openAI',
+    });
+
+    expect(deps.getMultiplier).toHaveBeenCalledWith(
+      expect.objectContaining({ inputTokenCount: 200_000, tokenType: 'prompt' }),
+    );
+  });
+
   it('bills a locally counted estimate when the provider reported no usage', async () => {
     mockCompactConversation.mockResolvedValue({
       summary: SUMMARY,
