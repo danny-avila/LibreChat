@@ -96,7 +96,7 @@ describe('subagent thread parent-scoped view', () => {
 
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: threadId, user: 'user-1', tenantId: 'tenant-1' },
-      expect.stringContaining('+subagentTask'),
+      'messageId parentMessageId isCreatedByUser text createdAt error +subagentTask',
       {
         limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
         sort: { createdAt: -1, _id: -1 },

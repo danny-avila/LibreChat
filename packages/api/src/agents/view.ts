@@ -1,4 +1,4 @@
-import { CLIENT_MESSAGE_SELECT, logger } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import type {
   SubagentThreadMessage,
   SubagentThreadStatus,
@@ -14,7 +14,8 @@ const MAX_RESPONSE_TEXT_BYTES = 128 * 1024;
 const MAX_RESPONSE_BYTES = 160 * 1024;
 const MAX_PUBLIC_ID_BYTES = 512;
 const MAX_TITLE_BYTES = 1024;
-const SUBAGENT_TASK_SELECT = `${CLIENT_MESSAGE_SELECT} +subagentTask`;
+const SUBAGENT_TASK_SELECT =
+  'messageId parentMessageId isCreatedByUser text createdAt error +subagentTask';
 
 type SubagentThreadViewDependencies = Pick<
   ConversationMethods,
