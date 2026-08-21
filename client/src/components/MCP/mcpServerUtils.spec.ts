@@ -22,6 +22,20 @@ describe('isMCPServerReadyForAgent', () => {
     expect(isMCPServerReadyForAgent(status('error', 'error'), true)).toBe(false);
   });
 
+  it('requires declared custom variables before an on-demand server is ready', () => {
+    const missingConfiguration = {
+      ...status('disconnected', 'not_required'),
+      configurationState: 'needs_configuration' as const,
+    };
+    const configured = {
+      ...missingConfiguration,
+      configurationState: 'configured' as const,
+    };
+
+    expect(isMCPServerReadyForAgent(missingConfiguration, true, true)).toBe(false);
+    expect(isMCPServerReadyForAgent(configured, true, true)).toBe(true);
+  });
+
   it('requires a live connection for servers that are not request-scoped', () => {
     expect(isMCPServerReadyForAgent(status('disconnected', 'not_required'), false)).toBe(false);
     expect(isMCPServerReadyForAgent(status('connected', 'not_required'), false)).toBe(true);

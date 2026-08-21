@@ -29,6 +29,7 @@ const {
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
+  hasCustomUserVars,
   checkAccessWithRequestCache,
   getMissingCustomUserVars,
   getUserMCPAuthMap,
@@ -1461,6 +1462,19 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
   });
 }
 
+async function getMCPUserConfigurationState(serverName, config, runtimeContext = {}) {
+  if (!hasCustomUserVars(config)) {
+    return undefined;
+  }
+
+  const userMCPAuthMap =
+    runtimeContext.userMCPAuthMap ?? (await runtimeContext.loadUserMCPAuthMap?.());
+  const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+  return getMissingCustomUserVars(config, customUserVars).length > 0
+    ? 'needs_configuration'
+    : 'configured';
+}
+
 function canDetectMCPRuntimeOAuth(config) {
   return config.requiresOAuth == null && config.apiKey == null && hasRuntimeUrlPlaceholders(config);
 }
@@ -1492,6 +1506,9 @@ async function getServerConnectionStatus(
   const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
   const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
   const requestScoped = requiresEphemeralUserConnection(config);
+  const configurationState = requestScoped
+    ? await getMCPUserConfigurationState(serverName, config, runtimeContext)
+    : undefined;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
@@ -1537,6 +1554,7 @@ async function getServerConnectionStatus(
   return {
     requiresOAuth,
     ...(requestScoped && { requestScoped: true }),
+    ...(configurationState && { configurationState }),
     connectionState: finalConnectionState,
     authorizationState,
   };

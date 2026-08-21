@@ -504,7 +504,10 @@ describe('OpenAIChatCompletionController', () => {
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
       await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
-        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+        expect.objectContaining({
+          agentResourceType: ResourceType.REMOTE_AGENT,
+          requestBody: initializeParams.requestBody,
+        }),
       );
     });
 

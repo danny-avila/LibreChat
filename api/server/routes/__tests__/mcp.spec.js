@@ -2759,6 +2759,7 @@ describe('MCP Routes', () => {
           server1: {
             source: 'config',
             headers: { 'X-Message': '{{LIBRECHAT_BODY_MESSAGEID}}' },
+            customUserVars: { API_KEY: { title: 'API key' } },
           },
         },
         appConnections: new Map(),
@@ -2771,7 +2772,11 @@ describe('MCP Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.connectionStatus.server1).toEqual(
-        expect.objectContaining({ connectionState: 'error', requestScoped: true }),
+        expect.objectContaining({
+          connectionState: 'error',
+          requestScoped: true,
+          configurationState: 'needs_configuration',
+        }),
       );
     });
 

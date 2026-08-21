@@ -336,6 +336,7 @@ const initializeClient = async ({
         signal,
         streamId,
         conversationId,
+        requestBody: req.body,
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,

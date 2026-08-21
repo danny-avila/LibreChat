@@ -191,7 +191,11 @@ export function serverNeedsAction(
 export function isMCPServerReadyForAgent(
   status: MCPServerStatus | undefined,
   requestScoped: boolean,
+  hasCustomUserVars = false,
 ): boolean {
+  if (requestScoped && hasCustomUserVars && status?.configurationState !== 'configured') {
+    return false;
+  }
   if (status?.connectionState === 'connected') {
     return true;
   }

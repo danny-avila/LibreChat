@@ -104,6 +104,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           isReadyForAgent: isMCPServerReadyForAgent(
             serverStatus,
             serverConfig?.requestScoped === true,
+            Object.keys(serverConfig?.customUserVars ?? {}).length > 0,
           ),
           requestScoped: serverConfig?.requestScoped,
           metadata,
@@ -141,6 +142,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         isReadyForAgent: isMCPServerReadyForAgent(
           serverStatus,
           serverConfig?.requestScoped === true,
+          Object.keys(serverConfig?.customUserVars ?? {}).length > 0,
         ),
         requestScoped: serverConfig?.requestScoped,
         consumeOnly: serverConfig?.consumeOnly,

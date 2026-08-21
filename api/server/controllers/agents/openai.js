@@ -563,6 +563,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           res,
           agentResourceType: ResourceType.REMOTE_AGENT,
           conversationId,
+          requestBody: mcpRequestBody,
           toolNames,
           agent: ctx.agent ?? agent,
           signal: abortController.signal,

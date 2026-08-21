@@ -1684,6 +1684,7 @@ async function loadAgentTools({
  * @param {ServerResponse} params.res - The response object
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} params.agent - The agent object
+ * @param {import('@librechat/api').RequestBody} [params.requestBody] - Normalized MCP body
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string[]} params.toolNames - Names of tools to load
  * @param {Map} [params.toolRegistry] - Tool registry
@@ -1703,6 +1704,7 @@ async function loadToolsForExecution({
   res,
   signal,
   agent,
+  requestBody,
   agentResourceType,
   toolNames,
   toolRegistry,
@@ -1720,8 +1722,13 @@ async function loadToolsForExecution({
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
+  const runtimeRequestBody = requestBody ?? req.body;
   const mcpRequestScopedConnections = requestScopedConnections ?? getMCPRequestContext(req, res);
-  const configurable = { userMCPAuthMap, requestScopedConnections: mcpRequestScopedConnections };
+  const configurable = {
+    userMCPAuthMap,
+    requestBody: runtimeRequestBody,
+    requestScopedConnections: mcpRequestScopedConnections,
+  };
   /** Per-agent set of tools that received the injected `run_in_background`
    *  param; the event-driven executor gates background dispatch and the
    *  `check_background_task` poll tool on this reliable per-agent channel. */
@@ -1778,7 +1785,7 @@ async function loadToolsForExecution({
     environment: agent?.stateful_code_environment,
     userId: req.user.id,
     agentId: agent?.id,
-    conversationId: conversationId ?? req.body?.conversationId,
+    conversationId: conversationId ?? runtimeRequestBody?.conversationId,
   });
   configurable.codeExecutionContext = codeExecutionContext;
 
@@ -1908,6 +1915,7 @@ async function loadToolsForExecution({
       options: {
         req,
         res,
+        requestBody: runtimeRequestBody,
         agentResourceType,
         jobCreatedAt,
         tool_resources,

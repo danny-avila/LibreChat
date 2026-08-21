@@ -214,6 +214,8 @@ export interface MCPServerStatus {
   requiresOAuth: boolean;
   /** The server connects only inside a chat request because its config reads BODY placeholders. */
   requestScoped?: boolean;
+  /** Whether all declared per-user variables are present for an on-demand connection. */
+  configurationState?: 'configured' | 'needs_configuration';
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
   authorizationState?:
     | 'not_required'
@@ -235,6 +237,7 @@ export interface MCPServerConnectionStatusResponse {
   serverName: string;
   requiresOAuth: boolean;
   requestScoped?: boolean;
+  configurationState?: MCPServerStatus['configurationState'];
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   authorizationState?: MCPServerStatus['authorizationState'];
 }

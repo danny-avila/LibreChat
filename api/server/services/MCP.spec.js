@@ -568,6 +568,38 @@ describe('tests for the new helper functions used by the MCP connection status e
       });
     });
 
+    it('reports whether custom variables are configured for request-scoped servers', async () => {
+      const config = {
+        ...mockConfig,
+        source: 'yaml',
+        headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+        customUserVars: { API_KEY: { title: 'API key' } },
+      };
+      const connectionArgs = [new Map(), new Map(), new Set()];
+
+      const missing = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        ...connectionArgs,
+        { userMCPAuthMap: {} },
+      );
+      const configured = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        config,
+        ...connectionArgs,
+        {
+          userMCPAuthMap: {
+            [`${Constants.mcp_prefix}${mockServerName}`]: { API_KEY: 'secret' },
+          },
+        },
+      );
+
+      expect(missing.configurationState).toBe('needs_configuration');
+      expect(configured.configurationState).toBe('configured');
+    });
+
     it('should prioritize app connection over user connection', async () => {
       const appConnections = new Map([
         [
