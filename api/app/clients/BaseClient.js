@@ -9,6 +9,7 @@ const {
   sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
+  buildOwnerFileFilter,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   getTransactionsConfig,
@@ -92,21 +93,6 @@ const mergeUserSubmittedMessageFieldPaths = (...entryLists) => {
     entries.push(entry);
   }
   return entries;
-};
-
-const buildOwnerFileFilter = (fileIds, user) => {
-  if (!user?.id || fileIds.length === 0) {
-    return null;
-  }
-
-  const filter = {
-    file_id: { $in: fileIds },
-    user: user.id,
-  };
-  if (user.tenantId) {
-    filter.tenantId = user.tenantId;
-  }
-  return filter;
 };
 
 const getOwnerHistoricalFiles = async (fileIds, user) => {

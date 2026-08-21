@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import { Constants } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
+import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCompactConversationMutation } from '~/data-provider';
 import { isTemporaryConversation } from '~/utils';
 import { NotificationSeverity } from '~/common';
@@ -20,9 +20,10 @@ const isNothingToCompact = (error: unknown): boolean =>
  * Manual context compaction: summarizes the active branch on demand and
  * persists the summary as the boundary every later turn starts from.
  *
- * The request carries the same agent-selection fields a normal message does,
- * so the route's shared `buildEndpointOption` middleware resolves the agent
- * the conversation actually runs on.
+ * The request carries the conversation's own fields, the same ones a normal
+ * submission sends, so the route's shared `buildEndpointOption` middleware
+ * resolves both the agent and the generation parameters the conversation runs
+ * on rather than endpoint defaults.
  */
 export default function useCompactConversation() {
   const localize = useLocalize();
@@ -42,18 +43,14 @@ export default function useCompactConversation() {
     if (!hasConversation || isSubmitting || isLoading) {
       return;
     }
+    /** Everything the endpoint's own schema defines, minus the transcript the
+     *  server reads from the database anyway. */
+    const { messages: _messages, ...conversationFields } = conversation ?? {};
     mutate(
       {
+        ...conversationFields,
         conversationId,
         parentMessageId: latestMessageId,
-        endpoint: conversation?.endpoint,
-        endpointType: conversation?.endpointType,
-        agent_id: conversation?.agent_id,
-        model: conversation?.model,
-        spec: conversation?.spec,
-        /** Ephemeral agents derive their instructions from this, so it is
-         *  re-sent to resolve the same agent the conversation runs on. */
-        promptPrefix: conversation?.promptPrefix,
         ephemeralAgent: getEphemeralAgent(conversationId),
         /** Without this the summary is saved as a permanent message inside a
          *  temporary conversation and outlives every message it replaced. */
@@ -92,3 +89,11 @@ export default function useCompactConversation() {
 
   return { compact, canCompact, isCompacting: isLoading };
 }
+
+/**
+ * An Assistants thread lives on the provider, so an inserted summary would
+ * compact nothing and the compaction route cannot resolve that provider at
+ * all. Callers hide the action rather than let it fail every time.
+ */
+export const supportsCompaction = (endpoint?: string | null): boolean =>
+  endpoint != null && endpoint !== '' && !isAssistantsEndpoint(endpoint);
