@@ -2079,6 +2079,7 @@ describe('Share Methods', () => {
       const rootMessageId = `msg_${nanoid()}`;
       const targetMessageId = `msg_${nanoid()}`;
       const siblingMessageId = `msg_${nanoid()}`;
+      const targetCreatedAt = Date.now();
 
       await SharedLink.create({
         shareId,
@@ -2096,6 +2097,7 @@ describe('Share Methods', () => {
           text: 'Root prompt',
           isCreatedByUser: true,
           parentMessageId: Constants.NO_PARENT,
+          createdAt: new Date(targetCreatedAt - 3000),
         },
         {
           messageId: targetMessageId,
@@ -2104,6 +2106,7 @@ describe('Share Methods', () => {
           text: 'Selected answer',
           isCreatedByUser: false,
           parentMessageId: rootMessageId,
+          createdAt: new Date(targetCreatedAt),
         },
         {
           messageId: siblingMessageId,
@@ -2112,6 +2115,7 @@ describe('Share Methods', () => {
           text: 'Sibling answer',
           isCreatedByUser: false,
           parentMessageId: rootMessageId,
+          createdAt: new Date(targetCreatedAt - 2000),
         },
         {
           messageId: `msg_${nanoid()}`,
@@ -2120,6 +2124,7 @@ describe('Share Methods', () => {
           text: 'Unselected sibling branch tail',
           isCreatedByUser: true,
           parentMessageId: siblingMessageId,
+          createdAt: new Date(targetCreatedAt - 1000),
         },
       ]);
 
