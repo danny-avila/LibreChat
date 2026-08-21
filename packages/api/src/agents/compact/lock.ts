@@ -8,6 +8,10 @@ import { cacheConfig, instrumentIORedisClient, ioredisClient } from '~/cache';
 const RELEASE_IF_OWNER =
   'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0';
 
+/** Extends only our own lease, for the same reason. */
+const RENEW_IF_OWNER =
+  'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0';
+
 /** Conversations this process is compacting right now. */
 const inFlight = new Set<string>();
 
@@ -61,8 +65,27 @@ export async function acquireCompactionLock(
     logger.error('[compact] Could not claim the compaction lock', error);
     return { release: async () => releaseLocal() };
   }
+  /**
+   * The TTL starts before the message reads, hydration, tokenization and the
+   * balance check, so a slow preprocessing step could let it expire while the
+   * first provider call is still running and let another instance start a
+   * second paid compaction of the same branch. Heartbeating keeps the lease
+   * alive for as long as this holder is actually working.
+   */
+  const heartbeat = setInterval(
+    () => {
+      redis.eval(RENEW_IF_OWNER, 1, key, token, ttlMs).catch((error) => {
+        logger.debug('[compact] Could not renew the compaction lock', error);
+      });
+    },
+    Math.max(1000, Math.floor(ttlMs / 3)),
+  );
+  /** Never keep the process alive for a lock heartbeat. */
+  heartbeat.unref?.();
+
   return {
     release: async () => {
+      clearInterval(heartbeat);
       releaseLocal();
       try {
         await redis.eval(RELEASE_IF_OWNER, 1, key, token);

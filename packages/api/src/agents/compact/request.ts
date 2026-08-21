@@ -406,16 +406,15 @@ export async function handleCompactRequest(
           promptTokens,
           model,
           endpoint: summarizerEndpoint,
+          balanceEndpoint,
           endpointTokenConfig,
         }) => {
-          /** The endpoint the call resolved to, which a cross-endpoint
-           *  `summarization.provider` makes different from the conversation's.
-           *  Both the support check and the multiplier must key on it, or the
-           *  gate approves at the wrong provider's rate. */
-          const balanceKey =
-            summarizerEndpoint === endpoint
-              ? ((body.endpointType as string | undefined) ?? endpoint)
-              : summarizerEndpoint;
+          /** `supportsBalanceCheck` is keyed by endpoint TYPE: a named custom
+           *  endpoint (`Ollama`) lives under `custom`, and looking it up by its
+           *  own name silently skipped the gate on a call that is still
+           *  billed. `balanceEndpoint` carries that resolved type. Pricing
+           *  still uses the real endpoint name plus its token config. */
+          const balanceKey = balanceEndpoint;
           if (
             balanceConfig?.enabled !== true ||
             supportsBalanceCheck[balanceKey as keyof typeof supportsBalanceCheck] !== true
