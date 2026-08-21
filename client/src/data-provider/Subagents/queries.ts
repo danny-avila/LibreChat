@@ -17,7 +17,18 @@ export const subagentThreadRefetchInterval = (
   view: SubagentThreadView | undefined,
   readinessDeadline: number,
   now = Date.now(),
+  expectedTaskId?: string,
 ): number | false => {
+  if (
+    expectedTaskId != null &&
+    !view?.messages.some(
+      (message) =>
+        message.messageId === `${expectedTaskId}:user` ||
+        message.messageId === `${expectedTaskId}:assistant`,
+    )
+  ) {
+    return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
+  }
   if (view == null || view.status === 'dispatched') {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
   }
@@ -43,15 +54,15 @@ export type SubagentThreadQueryResult = QueryObserverResult<SubagentThreadView> 
 export const useSubagentThreadQuery = (
   parentConversationId: string,
   threadId: string,
-  invocationId: string,
+  taskId: string,
   config?: UseQueryOptions<SubagentThreadView>,
 ): SubagentThreadQueryResult => {
-  const readinessKey = `${parentConversationId}\u0000${threadId}\u0000${invocationId}`;
+  const readinessKey = `${parentConversationId}\u0000${threadId}\u0000${taskId}`;
   const readiness = useMemo(
     () => ({ key: readinessKey, deadline: Date.now() + CHILD_READY_POLL_WINDOW_MS }),
     [readinessKey],
   );
-  const previousInvocationId = useRef(invocationId);
+  const previousTaskId = useRef(taskId);
   const query = useQuery<SubagentThreadView>(
     [QueryKeys.subagentThread, parentConversationId, threadId],
     () => dataService.getSubagentThread(parentConversationId, threadId),
@@ -59,16 +70,17 @@ export const useSubagentThreadQuery = (
       enabled: parentConversationId !== '' && threadId !== '',
       retry: false,
       refetchOnWindowFocus: true,
-      refetchInterval: (view) => subagentThreadRefetchInterval(view, readiness.deadline),
+      refetchInterval: (view) =>
+        subagentThreadRefetchInterval(view, readiness.deadline, Date.now(), taskId),
       ...config,
     },
   );
   const { refetch } = query;
   useEffect(() => {
-    if (previousInvocationId.current === invocationId) return;
-    previousInvocationId.current = invocationId;
+    if (previousTaskId.current === taskId) return;
+    previousTaskId.current = taskId;
     void refetch();
-  }, [invocationId, refetch]);
+  }, [taskId, refetch]);
 
   return {
     ...query,

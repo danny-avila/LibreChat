@@ -456,6 +456,7 @@ export default function SubagentCall({
       setSelectedSubagent({
         parentConversationId,
         threadId: backgroundHandle.subagent_thread_id,
+        taskId: backgroundHandle.background_task_id,
         toolCallId,
         subagentType: backgroundHandle.subagent_type,
       });

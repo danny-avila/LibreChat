@@ -1,5 +1,5 @@
-import type { SubagentThreadView } from 'librechat-data-provider';
 import { renderHook } from '@testing-library/react';
+import type { SubagentThreadView } from 'librechat-data-provider';
 import {
   isSubagentReadinessPending,
   subagentThreadRefetchInterval,
@@ -31,6 +31,21 @@ describe('subagent thread refresh policy', () => {
     },
   );
 
+  it('keeps polling a cached terminal thread until the selected task appears', () => {
+    const prior = {
+      ...view('completed'),
+      messages: [{ messageId: 'old-task:assistant' }],
+    } as SubagentThreadView;
+    const current = {
+      ...view('completed'),
+      messages: [{ messageId: 'new-task:assistant' }],
+    } as SubagentThreadView;
+
+    expect(subagentThreadRefetchInterval(prior, 1_000, 500, 'new-task')).toBe(2_000);
+    expect(subagentThreadRefetchInterval(current, 1_000, 500, 'new-task')).toBe(false);
+    expect(subagentThreadRefetchInterval(prior, 1_000, 1_000, 'new-task')).toBe(false);
+  });
+
   it('treats only readiness-window 404s as pending', () => {
     expect(isSubagentReadinessPending({ response: { status: 404 } }, 1_000, 500)).toBe(true);
     expect(isSubagentReadinessPending({ response: { status: 404 } }, 1_000, 1_000)).toBe(false);
@@ -45,13 +60,12 @@ describe('subagent thread refresh policy', () => {
       refetch,
     });
     const { rerender } = renderHook(
-      ({ invocationId }) =>
-        useSubagentThreadQuery('parent-conversation', 'child-thread', invocationId),
-      { initialProps: { invocationId: 'tool-call-1' } },
+      ({ taskId }) => useSubagentThreadQuery('parent-conversation', 'child-thread', taskId),
+      { initialProps: { taskId: 'task-1' } },
     );
 
     expect(refetch).not.toHaveBeenCalled();
-    rerender({ invocationId: 'tool-call-2' });
+    rerender({ taskId: 'task-2' });
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 });

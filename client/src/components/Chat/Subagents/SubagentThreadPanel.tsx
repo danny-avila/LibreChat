@@ -36,7 +36,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
     selection.parentConversationId,
     selection.threadId,
-    selection.toolCallId,
+    selection.taskId,
   );
 
   const close = useCallback(() => {

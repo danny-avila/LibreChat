@@ -691,6 +691,7 @@ describe('SubagentCall — dialog content', () => {
     expect(selectedPanel).toEqual({
       parentConversationId: 'parent-conversation',
       threadId: 'child-thread-1',
+      taskId: 'task-1',
       toolCallId: 'call_detached',
       subagentType: 'self',
     });

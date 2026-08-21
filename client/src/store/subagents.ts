@@ -44,6 +44,7 @@ export interface SubagentProgress {
 export type ActiveSubagentPanel = {
   parentConversationId: string;
   threadId: string;
+  taskId: string;
   toolCallId: string;
   subagentType: string;
 };

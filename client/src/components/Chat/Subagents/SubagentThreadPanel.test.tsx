@@ -44,6 +44,7 @@ jest.mock('lucide-react', () => ({
 const selection: ActiveSubagentPanel = {
   parentConversationId: 'parent-conversation',
   threadId: 'child-thread',
+  taskId: 'task',
   toolCallId: 'tool-call',
   subagentType: 'researcher',
 };
@@ -103,7 +104,7 @@ describe('SubagentThreadPanel', () => {
     expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
       'parent-conversation',
       'child-thread',
-      'tool-call',
+      'task',
     );
     expect(screen.getByText('Research child')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_completed')).toBeInTheDocument();
