@@ -1,19 +1,10 @@
 import { memo, useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useDrop } from 'react-dnd';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useDrop } from 'react-dnd';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import {
-  Button,
-  Skeleton,
-  Spinner,
-  TooltipAnchor,
-  DropdownPopup,
-  NewChatIcon,
-  buttonVariants,
-} from '@librechat/client';
 import {
   ChevronDown,
   ChevronRight,
@@ -24,22 +15,31 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import {
+  Button,
+  Skeleton,
+  Spinner,
+  TooltipAnchor,
+  DropdownPopup,
+  NewChatIcon,
+  buttonVariants,
+} from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
+import type { ConversationDragItem } from './dnd';
 import type { MenuItemProps } from '~/common';
 import {
   useProjectsInfiniteQuery,
   useActiveJobs,
   useConversationsInfiniteQuery,
 } from '~/data-provider';
+import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import { clearMessagesCache, cn } from '~/utils';
 import { Collapse } from '~/components/ui';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
-import type { ConversationDragItem } from './dnd';
 import Convo from './Convo';
 import store from '~/store';
 

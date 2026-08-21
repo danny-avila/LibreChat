@@ -1,11 +1,12 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useDrag } from 'react-dnd';
 import { useRecoilValue } from 'recoil';
 import { Link2, PinOff } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { useDrag } from 'react-dnd';
 import { Constants } from 'librechat-data-provider';
 import { Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
+import type { ConversationDragItem } from './dnd';
 import {
   useGetStartupConfig,
   usePinConversationMutation,
@@ -14,10 +15,9 @@ import {
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
-import { CONVERSATION_DRAG_TYPE } from './dnd';
-import type { ConversationDragItem } from './dnd';
 import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
+import { CONVERSATION_DRAG_TYPE } from './dnd';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import ConvoLink from './ConvoLink';
