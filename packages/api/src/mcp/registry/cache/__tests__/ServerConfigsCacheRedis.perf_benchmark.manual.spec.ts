@@ -298,7 +298,7 @@ describe('ServerConfigsCacheRedis Performance Benchmark', () => {
     it('should compare raw MGET vs Keyv GET for value retrieval', async () => {
       const ns = `${PREFIX}-mget`;
       const configCount = 30;
-      const cache = await populateCache(ns, configCount);
+      await populateCache(ns, configCount);
 
       try {
         // First, discover keys via SCAN (same for both approaches)
@@ -309,6 +309,7 @@ describe('ServerConfigsCacheRedis Performance Benchmark', () => {
         })) {
           keys.push(...page);
         }
+        expect(keys.length).toBeGreaterThan(0);
 
         // Approach 1: Keyv batch GET (current implementation)
         const keyvCache = standardCache(`MCP::ServersRegistry::Servers::${ns}`);
