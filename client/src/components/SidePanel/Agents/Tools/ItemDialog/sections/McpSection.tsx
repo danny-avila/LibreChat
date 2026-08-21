@@ -449,7 +449,7 @@ export default function McpSection({ item }: Props) {
               aria-hidden="true"
             />
             <span className="text-sm font-medium text-text-primary">
-              {localize(statusDisplay.labelKey)}
+              {localize(statusDisplay.labelKey, { 0: serverName })}
             </span>
           </div>
           {isReadyForAgent && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}

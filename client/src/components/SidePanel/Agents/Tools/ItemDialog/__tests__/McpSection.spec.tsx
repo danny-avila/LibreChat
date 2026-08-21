@@ -8,6 +8,7 @@ const mockSetValue = jest.fn();
 const mockGetValues = jest.fn((): string[] => []);
 const mockGetToolOptions = jest.fn((): Record<string, object> | undefined => undefined);
 const mockMcpServersMap = jest.fn((): Map<string, object> => new Map());
+const mockGetServerStatusIconProps = jest.fn((): object | null => null);
 const mockInitializeServer = jest.fn();
 const mockIsConnectionDeferred = jest.fn((): boolean => false);
 const mockToggleIntentAll = jest.fn();
@@ -20,6 +21,9 @@ const mockCapabilities = {
   backgroundToolsEnabled: false,
   toolIntentsEnabled: false,
 };
+const mockLocalize = jest.fn((key: string, values?: Record<number, string>) =>
+  key === 'com_nav_mcp_status_connecting' ? `${values?.[0]} - Connecting` : key,
+);
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({ control: {}, setValue: mockSetValue, getValues: mockGetValues }),
@@ -46,12 +50,12 @@ jest.mock('~/components/ui', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string) => key,
+  useLocalize: () => mockLocalize,
   useCopyToClipboard: () => jest.fn(),
   useAgentCapabilities: () => mockCapabilities,
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: [] } }),
   useMCPServerManager: () => ({
-    getServerStatusIconProps: () => null,
+    getServerStatusIconProps: mockGetServerStatusIconProps,
     getConfigDialogProps: () => null,
     initializeServer: mockInitializeServer,
     isConnectionDeferred: mockIsConnectionDeferred,
@@ -181,6 +185,9 @@ describe('McpSection', () => {
     mockGetToolOptions.mockReturnValue(undefined);
     mockMcpServersMap.mockReset();
     mockMcpServersMap.mockReturnValue(new Map());
+    mockGetServerStatusIconProps.mockReset();
+    mockGetServerStatusIconProps.mockReturnValue(null);
+    mockLocalize.mockClear();
     mockCodeInterpreterSelected.mockReset();
     mockCodeInterpreterSelected.mockReturnValue(false);
     mockCapabilities.codeEnabled = false;
@@ -194,6 +201,21 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     expect(screen.getByTestId('tool-mcp:srv:a')).toBeInTheDocument();
     expect(screen.getByTestId('tool-mcp:srv:b')).toBeInTheDocument();
+  });
+
+  test('interpolates the server name when another manager reports a connecting state', () => {
+    mockGetServerStatusIconProps.mockReturnValue({
+      serverStatus: {
+        connectionState: 'connecting',
+        requiresOAuth: true,
+      },
+      isInitializing: false,
+    });
+
+    render(<McpSection item={item} />);
+
+    expect(screen.getByText('srv - Connecting')).toBeInTheDocument();
+    expect(mockLocalize).toHaveBeenCalledWith('com_nav_mcp_status_connecting', { 0: 'srv' });
   });
 
   test('toggling a tool writes its id plus the server token into agent.tools', () => {
