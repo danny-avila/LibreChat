@@ -174,6 +174,19 @@ describe('handleCompactRequest', () => {
     expect(mockCompactConversation).not.toHaveBeenCalled();
   });
 
+  it('waits for a terminal generation whose message has not been saved yet', async () => {
+    /** The status CAS runs before the DB write, so compacting here would load
+     *  the old leaf and bill a summarizer for a branch about to change. */
+    const deps = makeDeps({
+      getJob: jest
+        .fn()
+        .mockResolvedValue({ status: 'complete', metadata: { terminalPersistencePending: true } }),
+    });
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 409, code: CompactErrorCodes.GENERATING });
+    expect(mockCompactConversation).not.toHaveBeenCalled();
+  });
+
   it('rejects a model the caller is not allowed to use', async () => {
     const deps = makeDeps({ getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-4o'] }) });
     const result = await handleCompactRequest({ req: makeReq(), res }, deps);

@@ -99,7 +99,11 @@ export interface CompactRequestDeps
     messageId: string;
   }) => Promise<unknown>;
   getModelsConfig: (req: ServerRequest) => Promise<TModelsConfig>;
-  getJob: (streamId: string) => Promise<{ status?: string } | null | undefined>;
+  getJob: (
+    streamId: string,
+  ) => Promise<
+    { status?: string; metadata?: { terminalPersistencePending?: boolean } } | null | undefined
+  >;
   getFiles: GetFilesFn;
   /** Resolves the agents named in multi-agent history, for attribution. */
   getAgent?: GetAgentFn;
@@ -144,13 +148,25 @@ function billableUsages(
   return passes.map((pass) => pass.usage ?? { model, provider, ...pass.counted });
 }
 
-/** True while another turn owns the conversation's branch tail. */
+/**
+ * True while another turn owns the conversation's branch tail.
+ *
+ * A terminal status is not the end of that ownership: the generation CASes
+ * itself complete before its final message reaches the database, and during
+ * that window the leaf this request would compact is still the OLD one. Same
+ * three states `isParentActive` fences a subagent wakeup on, and `getJob`
+ * already expires a pending flag left behind by a crash.
+ */
 async function isGenerating(
   getJob: CompactRequestDeps['getJob'],
   conversationId: string,
 ): Promise<boolean> {
   const job = await getJob(conversationId);
-  return job?.status === 'running' || job?.status === 'requires_action';
+  return (
+    job?.status === 'running' ||
+    job?.status === 'requires_action' ||
+    job?.metadata?.terminalPersistencePending === true
+  );
 }
 
 /**
