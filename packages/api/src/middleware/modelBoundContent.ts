@@ -682,18 +682,20 @@ function getProviderMessageProvenanceState(
     return { invalid: true };
   }
   const value = candidate as { readonly version?: unknown; readonly parts?: unknown };
-  if (
-    value.version !== 1 ||
-    !Array.isArray(value.parts) ||
-    value.parts.length === 0 ||
-    value.parts.length > MAX_PROVIDER_PROVENANCE_PARTS
-  ) {
+  const version = value.version;
+  const candidateParts = value.parts;
+  if (version !== 1 || !Array.isArray(candidateParts)) {
+    return { invalid: true };
+  }
+  const candidatePartCount = candidateParts.length;
+  if (candidatePartCount === 0 || candidatePartCount > MAX_PROVIDER_PROVENANCE_PARTS) {
     return { invalid: true };
   }
 
   const parts: ModelBoundProviderProvenancePart[] = [];
   let totalIndexRefs = 0;
-  for (const candidatePart of value.parts) {
+  for (let partIndex = 0; partIndex < candidatePartCount; partIndex++) {
+    const candidatePart = candidateParts[partIndex];
     if (
       candidatePart == null ||
       typeof candidatePart !== 'object' ||
@@ -706,35 +708,39 @@ function getProviderMessageProvenanceState(
       readonly sourceMessageId?: unknown;
       readonly sourceContentPartIndices?: unknown;
     };
+    const attribution = part.attribution;
+    const candidateSourceMessageId = part.sourceMessageId;
+    const candidateSourceContentPartIndices = part.sourceContentPartIndices;
     if (
-      typeof part.attribution !== 'string' ||
-      !PROVIDER_PROVENANCE_ATTRIBUTIONS.has(part.attribution as ModelBoundProviderAttribution)
+      typeof attribution !== 'string' ||
+      !PROVIDER_PROVENANCE_ATTRIBUTIONS.has(attribution as ModelBoundProviderAttribution)
     ) {
       return { invalid: true };
     }
     let sourceMessageId: string | undefined;
-    if (part.sourceMessageId !== undefined) {
-      sourceMessageId = normalizeProviderSourceMessageId(part.sourceMessageId);
+    if (candidateSourceMessageId !== undefined) {
+      sourceMessageId = normalizeProviderSourceMessageId(candidateSourceMessageId);
       if (sourceMessageId == null) {
         return { invalid: true };
       }
     }
     let sourceContentPartIndices: number[] | undefined;
-    if (part.sourceContentPartIndices !== undefined) {
-      if (
-        !Array.isArray(part.sourceContentPartIndices) ||
-        part.sourceContentPartIndices.length === 0 ||
-        part.sourceContentPartIndices.length > MAX_PROVIDER_SOURCE_PART_INDICES
-      ) {
+    if (candidateSourceContentPartIndices !== undefined) {
+      if (!Array.isArray(candidateSourceContentPartIndices)) {
         return { invalid: true };
       }
-      totalIndexRefs += part.sourceContentPartIndices.length;
+      const candidateIndexCount = candidateSourceContentPartIndices.length;
+      if (candidateIndexCount === 0 || candidateIndexCount > MAX_PROVIDER_SOURCE_PART_INDICES) {
+        return { invalid: true };
+      }
+      totalIndexRefs += candidateIndexCount;
       if (totalIndexRefs > MAX_PROVIDER_PROVENANCE_INDEX_REFS) {
         return { invalid: true };
       }
       sourceContentPartIndices = [];
       const seenIndices = new Set<number>();
-      for (const index of part.sourceContentPartIndices) {
+      for (let indexPosition = 0; indexPosition < candidateIndexCount; indexPosition++) {
+        const index = candidateSourceContentPartIndices[indexPosition];
         if (
           !Number.isSafeInteger(index) ||
           index < 0 ||
@@ -749,7 +755,7 @@ function getProviderMessageProvenanceState(
       }
     }
     parts.push({
-      attribution: part.attribution as ModelBoundProviderAttribution,
+      attribution: attribution as ModelBoundProviderAttribution,
       ...(sourceMessageId != null && { sourceMessageId }),
       ...(sourceContentPartIndices != null && { sourceContentPartIndices }),
     });
@@ -763,20 +769,23 @@ function getLegacyProviderLineage(message: ModelBoundProviderMessage): LegacyPro
   let hasPluralLineage = false;
   const pluralCandidate: unknown = message.additional_kwargs?.sourceMessageIds;
   if (pluralCandidate != null) {
-    if (
-      !Array.isArray(pluralCandidate) ||
-      pluralCandidate.length > MAX_PROVIDER_SOURCE_MESSAGE_IDS
-    ) {
+    if (!Array.isArray(pluralCandidate)) {
       invalid = true;
     } else {
-      hasPluralLineage = pluralCandidate.length > 0;
-      for (const candidate of pluralCandidate) {
-        const sourceMessageId = normalizeProviderSourceMessageId(candidate);
-        if (sourceMessageId == null) {
-          invalid = true;
-          continue;
+      const sourceMessageIdCount = pluralCandidate.length;
+      if (sourceMessageIdCount > MAX_PROVIDER_SOURCE_MESSAGE_IDS) {
+        invalid = true;
+      } else {
+        hasPluralLineage = sourceMessageIdCount > 0;
+        for (let index = 0; index < sourceMessageIdCount; index++) {
+          const candidate = pluralCandidate[index];
+          const sourceMessageId = normalizeProviderSourceMessageId(candidate);
+          if (sourceMessageId == null) {
+            invalid = true;
+            continue;
+          }
+          sourceIds.add(sourceMessageId);
         }
-        sourceIds.add(sourceMessageId);
       }
     }
   }

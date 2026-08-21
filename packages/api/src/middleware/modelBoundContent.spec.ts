@@ -3071,6 +3071,108 @@ describe('assertModelBoundProviderContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
+  it('canonicalizes accessor-backed provenance before validating and consuming it', () => {
+    let attributionReads = 0;
+    let sourceMessageIdReads = 0;
+    let sourcePartIndicesReads = 0;
+    let sourcePartIndicesLengthReads = 0;
+    let versionReads = 0;
+    let partsReads = 0;
+    let partsLengthReads = 0;
+    const sourcePartIndices = new Proxy([0], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          sourcePartIndicesLengthReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const adversarialPart = {
+      get attribution(): 'user' | 'model' {
+        attributionReads++;
+        return attributionReads <= 2 ? 'user' : 'model';
+      },
+      get sourceMessageId(): undefined {
+        sourceMessageIdReads++;
+        return undefined;
+      },
+      get sourceContentPartIndices(): readonly number[] {
+        sourcePartIndicesReads++;
+        return sourcePartIndices;
+      },
+    };
+    const parts = new Proxy([adversarialPart], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          partsLengthReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const provenance = {
+      get version(): 1 {
+        versionReads++;
+        return 1;
+      },
+      get parts(): readonly (typeof adversarialPart)[] {
+        partsReads++;
+        return parts;
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'PRIVATE-ACCESSOR',
+            additional_kwargs: {
+              provenance,
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(attributionReads).toBe(1);
+    expect(sourceMessageIdReads).toBe(1);
+    expect(sourcePartIndicesReads).toBe(1);
+    expect(sourcePartIndicesLengthReads).toBe(1);
+    expect(versionReads).toBe(1);
+    expect(partsReads).toBe(1);
+    expect(partsLengthReads).toBe(1);
+  });
+
+  it('bounds accessor-backed legacy lineage to its captured array length', () => {
+    let lengthReads = 0;
+    let sourceIdReads = 0;
+    const sourceMessageIds = new Proxy(['source-message'], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+        } else if (property === '0') {
+          sourceIdReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider projection',
+            additional_kwargs: { sourceMessageIds },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(lengthReads).toBe(1);
+    expect(sourceIdReads).toBe(1);
+  });
+
   it('looks up maximum typed lineage without traversing unrelated large history rows', () => {
     let unrelatedContentReads = 0;
     const unrelatedMessages = Array.from({ length: 3_840 }, (_, index) => ({
