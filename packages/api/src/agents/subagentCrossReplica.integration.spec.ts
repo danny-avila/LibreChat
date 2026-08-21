@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import IoRedis from 'ioredis';
+import mongoose from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -11,18 +11,18 @@ import type {
 } from '@librechat/agents';
 import type { AllMethods } from '@librechat/data-schemas';
 import type { AgentTriggerDeliveryPersistence, AgentTriggerService } from './triggers/service';
-import type { AgentTriggerFetch } from './triggers/host';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
-import { __resetShutdownStateForTests } from '../app/shutdown';
-import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
-import {
-  RedisSubagentTaskControlTransport,
-  SubagentTaskOwnerUnavailableError,
-} from './subagentTaskRouting';
+import type { AgentTriggerFetch } from './triggers/host';
 import {
   createSubagentCompletionWakeupHandler,
   createSubagentCompletionWakeupResolver,
 } from './subagentCompletionWakeup';
+import {
+  RedisSubagentTaskControlTransport,
+  SubagentTaskOwnerUnavailableError,
+} from './subagentTaskRouting';
+import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import { __resetShutdownStateForTests } from '../app/shutdown';
 import { createAgentTriggerService } from './triggers/service';
 
 const DB_SETUP_TIMEOUT_MS = 60_000;
