@@ -36,6 +36,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractInvokedSkillsFromPayload } from '~/agents/run';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
+import { extractLibreChatParams } from '~/utils/llm';
 import { getModelMaxTokens } from '~/utils/tokens';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
@@ -482,6 +483,31 @@ function toPayload(
 }
 
 /**
+ * Effective model parameters for a compaction call.
+ *
+ * `buildEndpointOption` resolves the request, and any enforced model spec, into
+ * `endpointOption.model_parameters`, while `endpointOption.agent` stays the raw
+ * stored document. `initializeAgent` merges the two for the initial agent, so a
+ * normal turn runs the resolved parameters; compaction has to apply the same
+ * precedence or it silently summarizes with a different model, output cap or
+ * routing setting than the conversation it is summarizing. LibreChat-only keys
+ * are stripped exactly as the normal path strips them: they are not provider
+ * parameters.
+ */
+export function resolveAgentModelParameters(
+  agent: CompactionAgent,
+  endpointParameters?: Partial<AgentModelParameters>,
+): Partial<AgentModelParameters> & { model?: string } {
+  const merged = Object.assign(
+    { model: agent.model ?? undefined },
+    agent.model_parameters ?? {},
+    endpointParameters ?? {},
+  );
+  const { modelOptions } = extractLibreChatParams(merged as Record<string, unknown>);
+  return modelOptions as Partial<AgentModelParameters> & { model?: string };
+}
+
+/**
  * Endpoint key the built-in maps index this call under, which is not always the
  * endpoint it runs on. A NAMED custom endpoint (`Ollama`) has its models under
  * `custom`, and Vertex AI, which differs from Google only in how it
@@ -799,10 +825,32 @@ function extractResponseText(message: BaseMessage | undefined): string {
  * combined context limit alongside the prompt. Reads the same key the client
  * options carry it under, so an inherited conversation cap is respected.
  */
+/** Where `getOpenAILLMConfig` relocates an output cap it cannot send verbatim. */
+const NESTED_OUTPUT_CAP_KEYS = ['max_completion_tokens', 'max_output_tokens'] as const;
+
 function resolveOutputReserve(clientOptions: ClientOptions, provider: Providers): number {
-  const key = getMaxOutputTokensKey(provider);
-  const configured = (clientOptions as Record<string, unknown>)[key];
-  return typeof configured === 'number' && configured > 0 ? configured : 0;
+  const options = clientOptions as Record<string, unknown>;
+  const configured = options[getMaxOutputTokensKey(provider)];
+  if (typeof configured === 'number' && configured > 0) {
+    return configured;
+  }
+  /**
+   * A GPT-5+ model has its `maxTokens` MOVED into `modelKwargs` and the
+   * top-level key deleted, so reading only the provider's key reports no cap at
+   * all and sizes chunks as though the response were free. The relocated value
+   * is the same cap and reserves the same room.
+   */
+  const modelKwargs = options.modelKwargs;
+  if (!isPlainObject(modelKwargs)) {
+    return 0;
+  }
+  for (const key of NESTED_OUTPUT_CAP_KEYS) {
+    const nested = modelKwargs[key];
+    if (typeof nested === 'number' && nested > 0) {
+      return nested;
+    }
+  }
+  return 0;
 }
 
 function extractUsage(
