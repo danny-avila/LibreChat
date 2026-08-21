@@ -144,6 +144,22 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     );
   });
 
+  it('omits an unavailable parent for an existing chat-completions conversation', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.conversation_id = 'conversation-123';
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    const requestBody = (deps.initializeAgent as jest.Mock).mock.calls[0][0].requestBody;
+    expect(requestBody).toEqual({
+      messageId: expect.any(String),
+      conversationId: 'conversation-123',
+    });
+    expect(requestBody).not.toHaveProperty('parentMessageId');
+  });
+
   it('forwards appConfig and tenantId to createRun', async () => {
     const appConfig = {
       endpoints: {

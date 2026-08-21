@@ -258,10 +258,16 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
     const conversationId = request.conversation_id ?? nanoid();
     const parentMessageId = request.parent_message_id ?? null;
+    let mcpParentMessageId;
+    if (typeof request.parent_message_id === 'string' && request.parent_message_id.trim() !== '') {
+      mcpParentMessageId = request.parent_message_id;
+    } else if (request.conversation_id == null) {
+      mcpParentMessageId = null;
+    }
     const mcpRequestBody = createMCPRuntimeRequestBody({
       messageId: responseId,
       conversationId,
-      parentMessageId,
+      parentMessageId: mcpParentMessageId,
     });
 
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];

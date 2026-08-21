@@ -128,7 +128,9 @@ jest.mock('@librechat/api', () => ({
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
     messageId,
     conversationId,
-    parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    }),
   }),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
@@ -737,6 +739,29 @@ describe('OpenAIChatCompletionController', () => {
         }),
         expect.anything(),
       );
+    });
+
+    it('does not synthesize an MCP parent for a continuation that omits it', async () => {
+      const { validateRequest, initializeAgent } = require('@librechat/api');
+      const { getConvo } = require('~/models');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'conversation-123',
+        },
+      });
+      getConvo.mockResolvedValueOnce({ conversationId: 'conversation-123', user: 'user-123' });
+
+      await OpenAIChatCompletionController(req, res);
+
+      const requestBody = initializeAgent.mock.calls.at(-1)[0].requestBody;
+      expect(requestBody).toEqual({
+        messageId: 'chatcmpl-mock-nanoid-123',
+        conversationId: 'conversation-123',
+      });
+      expect(requestBody).not.toHaveProperty('parentMessageId');
     });
 
     it('should pass resolveRecursionLimit result to processStream config', async () => {

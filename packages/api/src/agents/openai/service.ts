@@ -439,10 +439,16 @@ export async function createAgentChatCompletion(
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
+  let mcpParentMessageId: string | null | undefined;
+  if (typeof request.parent_message_id === 'string' && request.parent_message_id.trim() !== '') {
+    mcpParentMessageId = request.parent_message_id;
+  } else if (request.conversation_id == null) {
+    mcpParentMessageId = null;
+  }
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
-    parentMessageId: request.parent_message_id ?? null,
+    parentMessageId: mcpParentMessageId,
   });
   const created = Math.floor(Date.now() / 1000);
 
