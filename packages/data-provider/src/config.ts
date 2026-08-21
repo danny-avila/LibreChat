@@ -2224,6 +2224,7 @@ export enum KnownEndpoints {
   perplexity = 'perplexity',
   shuttleai = 'shuttleai',
   'together.ai' = 'together.ai',
+  trustedrouter = 'trustedrouter',
   unify = 'unify',
   vercel = 'vercel',
   xai = 'xai',
