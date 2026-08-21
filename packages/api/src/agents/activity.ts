@@ -158,18 +158,16 @@ const normalizeToolCall = (
 const uniqueToolActivityId = (
   rawId: string,
   used: Set<string>,
-  nextOccurrenceByBase: Map<string, number>,
+  nextGeneratedOccurrence: { value: number },
 ): string => {
   const base = truncateUtf8(rawId, MAX_TOOL_CALL_ID_BYTES).value || 'tool';
   let candidate = base;
-  let occurrence = nextOccurrenceByBase.get(base) ?? 2;
   while (used.has(candidate)) {
-    const suffix = `#${occurrence}`;
+    const suffix = `#${nextGeneratedOccurrence.value}`;
+    nextGeneratedOccurrence.value += 1;
     const prefix = truncateUtf8(base, MAX_TOOL_CALL_ID_BYTES - Buffer.byteLength(suffix)).value;
     candidate = `${prefix}${suffix}`;
-    occurrence += 1;
   }
-  nextOccurrenceByBase.set(base, occurrence);
   used.add(candidate);
   return candidate;
 };
@@ -221,7 +219,9 @@ export function projectSubagentActivity(
   const activity: ProjectedActivityEntry[] = [];
   const toolsByRawId = new Map<string, MutableToolQueue>();
   const usedToolActivityIds = new Set<string>();
-  const nextToolOccurrenceByBase = new Map<string, number>();
+  // A global cursor makes collision probing amortized linear even when many
+  // maximum-length provider IDs collapse to the same suffixed prefix.
+  const nextGeneratedToolOccurrence = { value: 2 };
   let truncated = false;
   const append = (item: SubagentActivityItem) => {
     const entry = { item, active: true };
@@ -252,7 +252,7 @@ export function projectSubagentActivity(
         normalized.item.toolCallId = uniqueToolActivityId(
           normalized.item.toolCallId,
           usedToolActivityIds,
-          nextToolOccurrenceByBase,
+          nextGeneratedToolOccurrence,
         );
         const entry = append(normalized.item);
         const queue = toolsByRawId.get(normalized.rawId) ?? { items: [], nextPending: 0 };
@@ -279,7 +279,7 @@ export function projectSubagentActivity(
     const projectedToolCallId = uniqueToolActivityId(
       toolCallId || `tool-result-${activity.length}`,
       usedToolActivityIds,
-      nextToolOccurrenceByBase,
+      nextGeneratedToolOccurrence,
     );
     const orphan: MutableToolActivity = {
       type: 'tool',

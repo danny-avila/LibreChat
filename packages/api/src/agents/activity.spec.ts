@@ -182,6 +182,33 @@ describe('durable subagent activity projection', () => {
     );
   });
 
+  it('allocates suffixes globally when long provider IDs share a truncated namespace', () => {
+    const prefix = 'x'.repeat(510);
+    const first = `${prefix}aa`;
+    const second = `${prefix}bb`;
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        {
+          type: 'ai',
+          data: {
+            tool_calls: [
+              { id: first, name: 'first-a' },
+              { id: first, name: 'first-b' },
+              { id: second, name: 'second-a' },
+              { id: second, name: 'second-b' },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const ids = projection.activity.flatMap((item) =>
+      item.type === 'tool' ? [item.toolCallId] : [],
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([first, `${prefix}#2`, second, `${prefix}#3`]);
+  });
+
   it('retains a late tool completion even when its declaration predates the item tail', () => {
     const projection = projectSubagentActivity(
       JSON.stringify([

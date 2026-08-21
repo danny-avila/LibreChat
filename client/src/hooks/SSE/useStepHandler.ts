@@ -180,7 +180,9 @@ export default function useStepHandler({
    * reflected in `messageMap`. Keyed by `subagentRunId`. Once a tool call is
    * claimed we drain the buffer into the Recoil atom in arrival order.
    */
-  const pendingSubagentBuffer = useRef(new Map<string, SubagentUpdateEvent[]>());
+  const pendingSubagentBuffer = useRef(
+    new Map<string, { parentMessageId: string; events: SubagentUpdateEvent[] }>(),
+  );
   /**
    * Tracked atom keys so `clearStepMaps` can reset them. Without this, each
    * subagent invocation leaks an `events: SubagentUpdateEvent[]` array in the
@@ -259,17 +261,20 @@ export default function useStepHandler({
         const invocationKey = resolveSubagentInvocationKey(payload, parentMessageId);
 
         if (!invocationKey) {
-          const queue = pendingSubagentBuffer.current.get(payload.subagentRunId) ?? [];
-          queue.push(payload);
-          pendingSubagentBuffer.current.set(payload.subagentRunId, queue);
+          const pending = pendingSubagentBuffer.current.get(payload.subagentRunId) ?? {
+            parentMessageId,
+            events: [],
+          };
+          pending.events.push(payload);
+          pendingSubagentBuffer.current.set(payload.subagentRunId, pending);
           return;
         }
 
-        const buffered = pendingSubagentBuffer.current.get(payload.subagentRunId);
-        if (buffered && buffered.length > 0) {
+        const pending = pendingSubagentBuffer.current.get(payload.subagentRunId);
+        if (pending && pending.events.length > 0) {
           pendingSubagentBuffer.current.delete(payload.subagentRunId);
         }
-        const toApply = buffered ? [...buffered, payload] : [payload];
+        const toApply = pending ? [...pending.events, payload] : [payload];
 
         knownSubagentAtomKeys.current.add(invocationKey);
         set(subagentProgressByToolCallId(invocationKey), (prev) => {
@@ -1452,11 +1457,22 @@ export default function useStepHandler({
    * Call this after receiving sync event to ensure subsequent deltas
    * build on the synced content, not stale content.
    */
-  const syncStepMessage = useCallback((message: TMessage) => {
-    if (message?.messageId) {
+  const syncStepMessage = useCallback(
+    (message: TMessage) => {
+      if (!message?.messageId) return;
       messageMap.current.set(message.messageId, { ...message });
-    }
-  }, []);
+      const ready = [...pendingSubagentBuffer.current.entries()].filter(
+        ([, pending]) => pending.parentMessageId === message.messageId,
+      );
+      for (const [subagentRunId, pending] of ready) {
+        pendingSubagentBuffer.current.delete(subagentRunId);
+        for (const event of pending.events) {
+          applySubagentUpdate(event, message.messageId);
+        }
+      }
+    },
+    [applySubagentUpdate],
+  );
 
   return {
     stepHandler,

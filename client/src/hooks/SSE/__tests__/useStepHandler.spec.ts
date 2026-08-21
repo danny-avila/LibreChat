@@ -3430,7 +3430,8 @@ describe('useStepHandler', () => {
               runId: 'response-two',
               subagentRunId: 'child-two',
               parentToolCallId: 'call_shared',
-              label: 'arrived before parent two',
+              phase: 'stop',
+              label: 'finished before parent two arrived',
             }),
           },
           createSubmission(),
@@ -3445,24 +3446,15 @@ describe('useStepHandler', () => {
       };
       act(() => {
         (result.current as any).syncStepMessage(secondResponse);
-        (result.current as any).stepHandler(
-          {
-            event: StepEvents.ON_SUBAGENT_UPDATE,
-            data: makeUpdate({
-              runId: 'response-two',
-              subagentRunId: 'child-two',
-              parentToolCallId: 'call_shared',
-              phase: 'run_step',
-              label: 'parent two ready',
-            }),
-          },
-          createSubmission(),
-        );
       });
 
       expect(getProgress('call_shared', 'response-one')).toBeNull();
       expect(getProgress('call_shared', 'response-two')).toEqual(
-        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'parent two ready' }),
+        expect.objectContaining({
+          subagentRunId: 'child-two',
+          status: 'stop',
+          latestLabel: 'finished before parent two arrived',
+        }),
       );
     });
 
