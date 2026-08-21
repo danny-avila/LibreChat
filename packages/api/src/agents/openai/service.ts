@@ -32,6 +32,7 @@ import type {
   ToolCall,
 } from './types';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
 import {
   createOpenAIContentAggregator,
@@ -41,6 +42,7 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { createSafeUser } from '~/utils';
 
 /**
@@ -135,6 +137,7 @@ interface InitializeAgentParams {
   agent: Agent;
   conversationId?: string | null;
   parentMessageId?: string | null;
+  requestBody?: MCPRuntimeRequestBody;
   requestFiles?: unknown[];
   loadTools?: LoadToolsFn;
   endpointOption?: Record<string, unknown>;
@@ -191,6 +194,7 @@ type LoadToolsFn = (params: {
   model: string | null;
   tool_options: unknown;
   tool_resources: unknown;
+  requestBody?: MCPRuntimeRequestBody;
 }) => Promise<{
   tools: unknown[];
   toolContextMap: Record<string, unknown>;
@@ -435,6 +439,17 @@ export async function createAgentChatCompletion(
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
+  let mcpParentMessageId: string | null | undefined;
+  if (typeof request.parent_message_id === 'string' && request.parent_message_id.trim() !== '') {
+    mcpParentMessageId = request.parent_message_id;
+  } else if (request.conversation_id == null) {
+    mcpParentMessageId = null;
+  }
+  const mcpRequestBody = createMCPRuntimeRequestBody({
+    messageId: requestId,
+    conversationId,
+    parentMessageId: mcpParentMessageId,
+  });
   const created = Math.floor(Date.now() / 1000);
 
   // Build response context
@@ -502,6 +517,7 @@ export async function createAgentChatCompletion(
       agent,
       conversationId,
       parentMessageId: request.parent_message_id,
+      requestBody: mcpRequestBody,
       loadTools: deps.loadAgentTools,
       endpointOption: {
         endpoint: agent.provider,
@@ -570,17 +586,13 @@ export async function createAgentChatCompletion(
        * correctly leaves MCP gated.
        */
       const safeUser: Record<string, unknown> = { ...createSafeUser(reqUser), id: userId };
-
       const run = await deps.createRun({
         agents: [initializedAgent],
         messages,
         runId: requestId,
         signal: abortController.signal,
         customHandlers: eventHandlers,
-        requestBody: {
-          messageId: requestId,
-          conversationId,
-        },
+        requestBody: mcpRequestBody,
         user: safeUser,
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
         appConfig: deps.appConfig
@@ -600,6 +612,7 @@ export async function createAgentChatCompletion(
               thread_id: conversationId,
               user_id: userId,
               user: safeUser,
+              requestBody: mcpRequestBody,
               /** Same per-agent channel the in-repo controllers thread via
                *  `loadTools`: without it, the executor's PTC path cannot
                *  strip host-injected `intent` params from the schemas the

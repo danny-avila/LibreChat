@@ -15,6 +15,7 @@ const createFireEnvelope = () =>
     run: {
       conversationId: 'scheduled-conversation-1',
       timezone: 'Europe/Paris',
+      chatProjectId: 'project-1',
       files: [{ file_id: 'file-1' }],
       metadata: { manual: false },
     },
@@ -172,6 +173,7 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
         metadata: { manual: false },
       },
       newConversationId: 'scheduled-conversation-1',
+      chatProjectId: 'project-1',
       files: [{ file_id: 'file-1' }],
       timezone: 'Europe/Paris',
     });

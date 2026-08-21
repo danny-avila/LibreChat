@@ -84,4 +84,5 @@ async function configureSubagentTaskRouting() {
 }
 
 module.exports = subagentThreadTaskStore;
+module.exports.completionWakeupsEnabled = completionWakeupsEnabled;
 module.exports.configureSubagentTaskRouting = configureSubagentTaskRouting;

@@ -1,6 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
-import { Constants, tMessageSchema, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  Constants,
+  QueryKeys,
+  tMessageSchema,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { StreamStatusResponse } from '~/data-provider';
@@ -16,9 +22,15 @@ import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
+import { useStreamStatus, useActiveJobs, streamStatusQueryKey } from '~/data-provider';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
+
+/**
+ * Matches the active-job list's own poll interval: answering an announcement
+ * faster than the list can change it would only re-read the same snapshot.
+ */
+const ACTIVE_JOB_REARM_INTERVAL_MS = 5_000;
 
 function hasSubmissionUserMessage(
   submission: TSubmission | null,
@@ -116,15 +128,27 @@ function buildSubmissionFromResumeState(
     (m) => m.isCreatedByUser && m.messageId === userMessageData?.messageId,
   );
 
-  // Try to find existing response message in the messages array (from database).
-  // Regeneration can expose the in-flight placeholder id with trailing underscores
-  // while the persisted sibling uses the unpadded id. Prefer both exact identities
-  // before falling back to the shared parent, where several branch siblings can match.
+  // A trailing underscore distinguishes an in-flight regeneration from the persisted
+  // response it replaces. Only the exact response id proves generation ownership.
+  const existingResponseMessage = messages.find(
+    (m) => !m.isCreatedByUser && m.messageId === responseMessageId,
+  );
+  // The persisted row may seed display metadata, but never identity or deduplication.
   const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  const existingResponseMessage =
-    messages.find((m) => !m.isCreatedByUser && m.messageId === responseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.parentMessageId === userMessageData?.messageId);
+  const persistedRegenerationResponse =
+    unpaddedResponseMessageId !== responseMessageId
+      ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
+      : undefined;
+  const responseMetadataMessage = existingResponseMessage ?? persistedRegenerationResponse;
+  const isRegenerateResume =
+    resumeState.isRegenerate === true || persistedRegenerationResponse != null;
+  let regenerateMessages: TMessage[] | undefined;
+  if (isRegenerateResume) {
+    regenerateMessages =
+      unpaddedResponseMessageId === responseMessageId
+        ? [...messages]
+        : messages.filter((message) => message.messageId !== responseMessageId);
+  }
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -157,9 +181,9 @@ function buildSubmissionFromResumeState(
     content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
     isCreatedByUser: false,
     role: 'assistant',
-    sender: existingResponseMessage?.sender ?? resumeState.sender,
-    model: preferDefinedString(existingResponseMessage?.model, resumeState.model),
-    iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
+    sender: responseMetadataMessage?.sender ?? resumeState.sender,
+    model: preferDefinedString(responseMetadataMessage?.model, resumeState.model),
+    iconURL: preferDefinedString(responseMetadataMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
   // Re-paused turn: seed the approval / ask-user controls straight onto the
@@ -174,17 +198,13 @@ function buildSubmissionFromResumeState(
     endpoint: null,
   } as TConversation;
 
-  // On reload, `messages` is the full DB array, which already holds the paused user
-  // row and the partial (unfinished) assistant row under the same ids that
-  // `userMessage` / `initialResponse` (and the resume final event's request/response
-  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
-  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
-  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
+  // Non-regenerate resumes strip the persisted request/response pair before handlers
+  // re-supply it. A regeneration keeps the original branch for early-abort rollback;
+  // explicit resume metadata covers edited regenerations that reuse the exact response id.
   const dedupedMessages = messages.filter(
     (m) =>
-      m.messageId !== userMessage.messageId &&
       m.messageId !== initialResponse.messageId &&
-      m.messageId !== pausedResponseIdUnpadded,
+      (isRegenerateResume || m.messageId !== userMessage.messageId),
   );
 
   return {
@@ -192,7 +212,8 @@ function buildSubmissionFromResumeState(
     userMessage,
     initialResponse,
     conversation,
-    isRegenerate: false,
+    isRegenerate: isRegenerateResume,
+    ...(regenerateMessages && { regenerateMessages }),
     isTemporary: false,
     endpointOption: {},
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new
@@ -223,6 +244,7 @@ export default function useResumeOnLoad(
   runIndex = 0,
   messagesLoaded = true,
 ) {
+  const queryClient = useQueryClient();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
   const currentConversation = useRecoilValue(store.conversationByIndex(runIndex));
@@ -232,6 +254,21 @@ export default function useResumeOnLoad(
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
+  /**
+   * When this pane last answered an active-job announcement, per conversation.
+   * A job stays listed for its whole lifetime, so the announcement cannot be
+   * consumed once and latched: two external runs back to back leave the list
+   * reading `[conversationId]` continuously, and a latch keyed on observing it
+   * empty would never release. Rate-limit to the list's own heartbeat instead —
+   * repeatable, and still one status read per interval at worst.
+   */
+  const answeredActiveJobRef = useRef<{ conversationId: string; at: number } | null>(null);
+  /**
+   * Bumped when an announcement is answered. Clearing `processedConvoRef` alone
+   * cannot restart the check below: a ref mutation neither schedules a render
+   * nor re-runs an effect, so the arm has to be a value the effect depends on.
+   */
+  const [externalRunArm, setExternalRunArm] = useState(0);
   /** `generationHandoff` lives in the React Query snapshot until a later
    * status refetch. Remember the exact epoch already consumed so clearing the
    * replacement submission on FINAL cannot re-install that stale snapshot and
@@ -370,6 +407,33 @@ export default function useResumeOnLoad(
     !!currentSubmission && (hasExplicitSubmissionMatch || hasHydratedMessageMatch);
   const hasStaleSubmissionForDifferentConvo =
     !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
+
+  /**
+   * A run this pane did not start — another tab, another device, a scheduled
+   * trigger — announces itself only through the user-scoped active-job list,
+   * which already polls while anything is running and refetches on focus. The
+   * status query is the one thing that could turn that into an attachment, and
+   * it switches off for the rest of this conversation's mount the moment it has
+   * answered inactive once. Without a re-arm the pane sits on history it cannot
+   * see has moved on, and a send from here forks a branch off a stale tail.
+   *
+   * Consumed once per run rather than held open: a job stays listed for its
+   * whole lifetime, and re-opening the query on every poll would turn a
+   * five-second heartbeat into a five-second status read.
+   */
+  /**
+   * `dataUpdatedAt` is the trigger, not `activeJobsData`. React Query keeps the
+   * previous reference when a refetch is deep-equal, and a run that stays
+   * listed produces exactly that — so the derived boolean below never changes
+   * and an effect keyed on it would run once and never again. The stamp moves
+   * on every fetch, which is the heartbeat this needs.
+   */
+  const { data: activeJobsData, dataUpdatedAt: activeJobsUpdatedAt } =
+    useActiveJobs(resumableEnabled);
+  const hasActiveJobForThisConvo =
+    !!conversationId &&
+    conversationId !== Constants.NEW_CONVO &&
+    activeJobsData?.activeJobIds?.includes(conversationId) === true;
 
   const shouldCheck =
     resumableEnabled &&
@@ -599,6 +663,7 @@ export default function useResumeOnLoad(
     settleAppliedSteerParts,
     convertSteersToQueued,
     setActiveGenerationCreatedAt,
+    externalRunArm,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking
@@ -611,6 +676,65 @@ export default function useResumeOnLoad(
       });
       processedConvoRef.current = null;
       consumedHandoffGenerationRef.current = null;
+      answeredActiveJobRef.current = null;
     }
   }, [conversationId]);
+
+  /**
+   * Answer an active-job announcement for the conversation on screen.
+   *
+   * The announcement means "your history may have moved", not merely "re-open
+   * the status query", so both reads this pane is about to make are forced
+   * fresh first. Toggling `enabled` alone would not do it: an inactive status
+   * answered less than `staleTime` ago is still fresh, and React Query would
+   * hand back that cached "nothing running" and let the effect above record the
+   * announcement as handled without ever attaching.
+   *
+   * History is invalidated for the same reason, and it matters whichever way
+   * the status read lands. An external client may have completed whole turns
+   * this pane never saw before starting the one now running: the resume
+   * submission and `finalHandler` both build on this snapshot, so attaching
+   * without it grafts the live turn onto a hole. And when the run turns out to
+   * have already finished, the refetch is the entire repair — the messages
+   * query disables refetch on focus, mount and reconnect, so nothing else would
+   * ever collect those turns. The refetch also re-gates `messagesLoaded`, which
+   * defers the effect above until the authoritative history has landed.
+   */
+  useEffect(() => {
+    if (
+      !resumableEnabled ||
+      !hasActiveJobForThisConvo ||
+      !conversationId ||
+      hasActiveSubmissionForThisConvo
+    ) {
+      if (!hasActiveJobForThisConvo) {
+        answeredActiveJobRef.current = null;
+      }
+      return;
+    }
+
+    const answered = answeredActiveJobRef.current;
+    const now = Date.now();
+    if (
+      answered != null &&
+      answered.conversationId === conversationId &&
+      now - answered.at < ACTIVE_JOB_REARM_INTERVAL_MS
+    ) {
+      return;
+    }
+    answeredActiveJobRef.current = { conversationId, at: now };
+
+    console.log('[ResumeOnLoad] Active job announced without an attachment', { conversationId });
+    queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(conversationId) });
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.messages, conversationId] });
+    processedConvoRef.current = null;
+    setExternalRunArm((arm) => arm + 1);
+  }, [
+    conversationId,
+    resumableEnabled,
+    hasActiveJobForThisConvo,
+    hasActiveSubmissionForThisConvo,
+    activeJobsUpdatedAt,
+    queryClient,
+  ]);
 }

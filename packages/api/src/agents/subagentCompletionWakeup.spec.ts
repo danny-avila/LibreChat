@@ -14,6 +14,15 @@ import {
 
 const NOW = 1_775_000_000_000;
 
+interface TestMessageFilter {
+  conversationId?: string;
+  messageId?: { $in: string[] };
+  user?: string;
+  'subagentTask.parentRunId'?: string;
+  'subagentTask.attemptKey'?: string;
+  'subagentTask.status'?: string | { $in: string[] };
+}
+
 function enqueueMock(): jest.MockedFunction<EnqueueAgentTrigger> {
   return jest.fn<ReturnType<EnqueueAgentTrigger>, Parameters<EnqueueAgentTrigger>>(async () => ({
     id: 'delivery-1',
@@ -207,10 +216,46 @@ function resolverMethods() {
             terminal,
           ],
     ),
+    listActiveSubagentThreadLeases: jest.fn(
+      async (): Promise<
+        Array<{ conversationId: string; parentConversationId: string; taskId: string }>
+      > => [],
+    ),
     claimSubagentTaskResult: jest.fn(async () => ({ status: 'acquired', message: terminal })),
     releaseSubagentTaskResultClaim: jest.fn(async () => true),
   };
   return { methods, terminal };
+}
+
+function orchestrationSnapshot(
+  prepared: Awaited<ReturnType<ReturnType<typeof createSubagentCompletionWakeupResolver>>>,
+) {
+  if (prepared?.status !== 'ready') {
+    throw new Error('Expected a ready continuation.');
+  }
+  const marker = 'Host-authored bounded orchestration snapshot:\n';
+  const start = prepared.input.indexOf(marker);
+  if (start < 0) {
+    throw new Error('Expected an orchestration snapshot.');
+  }
+  return {
+    rendered: prepared.input.slice(start + marker.length),
+    value: JSON.parse(prepared.input.slice(start + marker.length)) as {
+      parent_message_id?: string;
+      parent_message_id_truncated?: boolean;
+      completeness: 'complete' | 'bounded' | 'uncertain';
+      known_children: Array<{
+        background_task_id: string;
+        subagent_thread_id: string;
+        subagent_type: string;
+        status: string;
+        result_state: string;
+        current_completion: boolean;
+      }>;
+      additional_children_may_exist: boolean;
+      note: string;
+    },
+  };
 }
 
 describe('createSubagentCompletionWakeupResolver', () => {
@@ -260,6 +305,960 @@ describe('createSubagentCompletionWakeupResolver', () => {
 
     expect(prepared).toMatchObject({ status: 'ready' });
     expect(prepared?.status === 'ready' && prepared.input.length).toBeLessThan(110_000);
+  });
+
+  it('keeps delayed sibling completions in deterministic host-authored order', async () => {
+    const { methods, terminal } = resolverMethods();
+    terminal.subagentTask = {
+      ...terminal.subagentTask!,
+      parentRunId: 'response-1',
+      resultClaim: { kind: 'wakeup', claimId: 'trigger_claim_1', claimedAt: new Date(NOW) },
+    };
+    const delayedSibling = {
+      ...terminal,
+      messageId: 'task-2:assistant',
+      conversationId: 'thread-2',
+      sender: 'analyst',
+      text: 'private sibling transcript text',
+      subagentTranscript: {
+        taskId: 'task-2',
+        mode: 'replace' as const,
+        messagesJson: '[{"role":"assistant","content":"hidden reasoning"}]',
+      },
+      createdAt: new Date(NOW - 500),
+      updatedAt: new Date(NOW - 400),
+      subagentTask: {
+        attemptKey: 'attempt-2',
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+        resultClaim: {
+          kind: 'manual' as const,
+          claimId: 'older-poll',
+          claimedAt: new Date(NOW - 300),
+        },
+      },
+    };
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => {
+      if (conversationId === 'conversation-1') {
+        return { conversationId, tenantId: 'tenant-1' };
+      }
+      return {
+        conversationId,
+        tenantId: 'tenant-1',
+        subagentThread: {
+          parentConversationId: 'conversation-1',
+          parentMessageId: 'response-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType: conversationId === 'thread-2' ? 'analyst' : 'researcher',
+        },
+      };
+    });
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal, delayedSibling];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'acquired',
+      message: terminal,
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({
+        background_task_id: 'task-1',
+        status: 'completed',
+        result_state: 'claimed',
+        current_completion: true,
+      }),
+      expect.objectContaining({
+        background_task_id: 'task-2',
+        subagent_type: 'analyst',
+        status: 'completed',
+        result_state: 'claimed',
+        current_completion: false,
+      }),
+    ]);
+    expect(snapshot.rendered).not.toContain('private sibling transcript text');
+    expect(snapshot.rendered).not.toContain('hidden reasoning');
+  });
+
+  it('bounds sibling count and rendered snapshot bytes', async () => {
+    const { methods, terminal } = resolverMethods();
+    const long = '界'.repeat(240);
+    const siblingMessages = Array.from({ length: 40 }, (_, index) => ({
+      ...terminal,
+      messageId: `task-${index}-${long}:assistant`,
+      conversationId: `thread-${index}-${long}`,
+      sender: `agent-${index}-${long}`,
+      createdAt: new Date(NOW - index),
+      updatedAt: new Date(NOW - index),
+      subagentTask: {
+        attemptKey: `attempt-${index}`,
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    }));
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return siblingMessages.slice(0, 12);
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => {
+      if (conversationId === 'conversation-1') {
+        return { conversationId, tenantId: 'tenant-1' };
+      }
+      const match = /^thread-(\d+)-/.exec(conversationId);
+      return {
+        conversationId,
+        tenantId: 'tenant-1',
+        subagentThread: {
+          parentConversationId: 'conversation-1',
+          parentMessageId: 'response-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType: match == null ? 'researcher' : `agent-${match[1]}-${long}`,
+        },
+      };
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children.length).toBeLessThanOrEqual(16);
+    expect(snapshot.value.known_children.length).toBeLessThan(13);
+    expect(Buffer.byteLength(snapshot.rendered, 'utf8')).toBeLessThanOrEqual(8 * 1_024);
+    expect(snapshot.value.completeness).toBe('bounded');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+  });
+
+  it('bounds an oversized parent identity before rendering the UTF-8 snapshot', async () => {
+    const { methods, terminal } = resolverMethods();
+    const oversizedParentMessageId = '界'.repeat(10_000);
+    terminal.subagentTask = {
+      ...terminal.subagentTask!,
+      parentRunId: oversizedParentMessageId,
+    };
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: oversizedParentMessageId,
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === oversizedParentMessageId) {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'acquired',
+      message: terminal,
+    });
+    const envelope = wakeupEnvelope();
+    envelope.target.parentMessageId = oversizedParentMessageId;
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(envelope, { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(Buffer.byteLength(snapshot.rendered, 'utf8')).toBeLessThanOrEqual(8 * 1_024);
+    expect(snapshot.value.parent_message_id).toBe('界'.repeat(256));
+    expect(snapshot.value.parent_message_id_truncated).toBe(true);
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+  });
+
+  it('keeps an older actively leased child ahead of newer settled siblings', async () => {
+    const { methods, terminal } = resolverMethods();
+    const settled = Array.from({ length: 20 }, (_, index) => ({
+      ...terminal,
+      messageId: `settled-${index}:assistant`,
+      conversationId: `thread-settled-${index}`,
+      sender: `settled-agent-${index}`,
+      createdAt: new Date(NOW - index),
+      updatedAt: new Date(NOW - index),
+      subagentTask: {
+        attemptKey: `settled-attempt-${index}`,
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    }));
+    const running = {
+      ...terminal,
+      messageId: 'running-task:user',
+      conversationId: 'thread-running',
+      sender: 'User',
+      createdAt: new Date(NOW - 10_000),
+      updatedAt: new Date(NOW - 10_000),
+      subagentTask: {
+        attemptKey: 'running-attempt',
+        parentRunId: 'response-1',
+        status: 'running' as const,
+      },
+    };
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-running',
+        parentConversationId: 'conversation-1',
+        taskId: 'running-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [running];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal, ...settled];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => {
+      if (conversationId === 'conversation-1') {
+        return { conversationId, tenantId: 'tenant-1' };
+      }
+      const settledIndex = /^thread-settled-(\d+)$/.exec(conversationId)?.[1];
+      let subagentType = 'researcher';
+      if (conversationId === 'thread-running') {
+        subagentType = 'running-agent';
+      } else if (settledIndex != null) {
+        subagentType = `settled-agent-${settledIndex}`;
+      }
+      return {
+        conversationId,
+        tenantId: 'tenant-1',
+        subagentThread: {
+          parentConversationId: 'conversation-1',
+          parentMessageId: 'response-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType,
+        },
+      };
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children.slice(0, 2)).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+      expect.objectContaining({
+        background_task_id: 'running-task',
+        status: 'running',
+        result_state: 'pending',
+      }),
+    ]);
+  });
+
+  it('preserves uncertainty for a retry lease without a same-task seed or terminal', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-2',
+        parentConversationId: 'conversation-1',
+        taskId: 'retry-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null || filter['subagentTask.parentRunId'] === 'response-1') {
+        return [];
+      }
+      return [];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+    expect(snapshot.value.note).toContain('Do not infer that no other children ran');
+  });
+
+  it('checks an unmatched retry lease even when ordinary active seeds exceed the task cap', async () => {
+    const { methods, terminal } = resolverMethods();
+    const activeSeeds = Array.from({ length: 17 }, (_, index) => ({
+      messageId: `active-${index}:user`,
+      conversationId: `thread-active-${index}`,
+      sender: 'User',
+      isCreatedByUser: true,
+      createdAt: new Date(NOW - index),
+      updatedAt: new Date(NOW - index),
+      subagentTask: {
+        attemptKey: `active-attempt-${index}`,
+        parentRunId: 'response-1',
+        status: 'running' as const,
+      },
+    }));
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      ...activeSeeds.map((message, index) => ({
+        conversationId: message.conversationId,
+        parentConversationId: 'conversation-1',
+        taskId: `active-${index}`,
+      })),
+      {
+        conversationId: 'thread-retry',
+        parentConversationId: 'conversation-1',
+        taskId: 'retry-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return activeSeeds;
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => ({
+      conversationId,
+      tenantId: 'tenant-1',
+      ...(conversationId === 'conversation-1'
+        ? {}
+        : {
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'response-1',
+              parentAgentId: 'agent_parent_1',
+              subagentType:
+                conversationId === 'thread-1'
+                  ? 'researcher'
+                  : `active-agent-${conversationId.slice('thread-active-'.length)}`,
+            },
+          }),
+    }));
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toHaveLength(16);
+    expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+  });
+
+  it('excludes a captured lease whose durable seed belongs to another parent run', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-other-run',
+        parentConversationId: 'conversation-1',
+        taskId: 'other-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [
+          {
+            messageId: 'other-task:user',
+            conversationId: 'thread-other-run',
+            sender: 'User',
+            isCreatedByUser: true,
+            subagentTask: {
+              attemptKey: 'other-attempt',
+              parentRunId: 'response-other',
+              status: 'running' as const,
+            },
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
+    expect(snapshot.value.additional_children_may_exist).toBe(false);
+  });
+
+  it('excludes a captured lease whose same-task terminal belongs to another parent run', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-other-run',
+        parentConversationId: 'conversation-1',
+        taskId: 'other-retry',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [
+          {
+            messageId: 'other-retry:assistant',
+            conversationId: 'thread-other-run',
+            sender: 'other-agent',
+            isCreatedByUser: false,
+            subagentTask: {
+              attemptKey: 'other-attempt',
+              parentRunId: 'response-other',
+              status: 'error' as const,
+            },
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
+    expect(snapshot.value.additional_children_may_exist).toBe(false);
+  });
+
+  it('retains a same-branch retry terminal seen only by lease evidence', async () => {
+    const { methods, terminal } = resolverMethods();
+    const retryTerminal = {
+      ...terminal,
+      messageId: 'retry-task:assistant',
+      conversationId: 'thread-retry',
+      sender: 'reviewer',
+      createdAt: new Date(NOW - 20),
+      updatedAt: new Date(NOW - 10),
+      subagentTask: {
+        attemptKey: 'retry-attempt',
+        parentRunId: 'response-1',
+        status: 'error' as const,
+      },
+    };
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-retry',
+        parentConversationId: 'conversation-1',
+        taskId: 'retry-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [retryTerminal];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => ({
+      conversationId,
+      tenantId: 'tenant-1',
+      ...(conversationId === 'conversation-1'
+        ? {}
+        : {
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'response-1',
+              parentAgentId: 'agent_parent_1',
+              subagentType: conversationId === 'thread-retry' ? 'reviewer' : 'researcher',
+            },
+          }),
+    }));
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+      expect.objectContaining({ background_task_id: 'retry-task', status: 'error' }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
+    expect(snapshot.value.additional_children_may_exist).toBe(false);
+  });
+
+  it('lets a lease-evidence terminal supersede the same attempt running seed', async () => {
+    const { methods, terminal } = resolverMethods();
+    const runningSeed = {
+      messageId: 'settling-task:user',
+      conversationId: 'thread-settling',
+      sender: 'User',
+      isCreatedByUser: true,
+      createdAt: new Date(NOW - 30),
+      updatedAt: new Date(NOW - 30),
+      subagentTask: {
+        attemptKey: 'settling-attempt',
+        parentRunId: 'response-1',
+        status: 'running' as const,
+      },
+    };
+    const settledTerminal = {
+      ...terminal,
+      messageId: 'settling-task:assistant',
+      conversationId: 'thread-settling',
+      sender: 'reviewer',
+      createdAt: new Date(NOW - 20),
+      updatedAt: new Date(NOW - 10),
+      subagentTask: {
+        attemptKey: 'settling-attempt',
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    };
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-settling',
+        parentConversationId: 'conversation-1',
+        taskId: 'settling-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [runningSeed, settledTerminal];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => ({
+      conversationId,
+      tenantId: 'tenant-1',
+      ...(conversationId === 'conversation-1'
+        ? {}
+        : {
+            subagentThread: {
+              parentConversationId: 'conversation-1',
+              parentMessageId: 'response-1',
+              parentAgentId: 'agent_parent_1',
+              subagentType: conversationId === 'thread-settling' ? 'reviewer' : 'researcher',
+            },
+          }),
+    }));
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+      expect.objectContaining({
+        background_task_id: 'settling-task',
+        status: 'completed',
+        result_state: 'available',
+      }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
+  });
+
+  it('omits sibling task records outside the authorized parent lineage', async () => {
+    const { methods, terminal } = resolverMethods();
+    const sibling = (taskId: string, threadId: string, sender: string) => ({
+      ...terminal,
+      messageId: `${taskId}:assistant`,
+      conversationId: threadId,
+      sender,
+      text: `secret-${taskId}`,
+      subagentTask: {
+        attemptKey: `attempt-${taskId}`,
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    });
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        expect(filter.user).toBe('user-1');
+        return [
+          terminal,
+          sibling('valid', 'thread-valid', 'valid-agent'),
+          sibling('wrong-tenant', 'thread-wrong-tenant', 'tenant-agent'),
+          sibling('wrong-parent', 'thread-wrong-parent', 'parent-agent'),
+          sibling('wrong-agent', 'thread-wrong-agent', 'agent-agent'),
+        ];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => {
+      if (conversationId === 'conversation-1') {
+        return { conversationId, tenantId: 'tenant-1' };
+      }
+      const variants: Record<
+        string,
+        {
+          tenantId: string;
+          parentConversationId: string;
+          parentAgentId: string;
+          subagentType: string;
+        }
+      > = {
+        'thread-1': {
+          tenantId: 'tenant-1',
+          parentConversationId: 'conversation-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType: 'researcher',
+        },
+        'thread-valid': {
+          tenantId: 'tenant-1',
+          parentConversationId: 'conversation-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType: 'valid-agent',
+        },
+        'thread-wrong-tenant': {
+          tenantId: 'tenant-2',
+          parentConversationId: 'conversation-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType: 'tenant-agent',
+        },
+        'thread-wrong-parent': {
+          tenantId: 'tenant-1',
+          parentConversationId: 'conversation-2',
+          parentAgentId: 'agent_parent_1',
+          subagentType: 'parent-agent',
+        },
+        'thread-wrong-agent': {
+          tenantId: 'tenant-1',
+          parentConversationId: 'conversation-1',
+          parentAgentId: 'agent_parent_2',
+          subagentType: 'agent-agent',
+        },
+      };
+      const variant = variants[conversationId];
+      return {
+        conversationId,
+        tenantId: variant.tenantId,
+        subagentThread: {
+          parentConversationId: variant.parentConversationId,
+          parentMessageId: 'response-1',
+          parentAgentId: variant.parentAgentId,
+          subagentType: variant.subagentType,
+        },
+      };
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(
+      snapshot.value.known_children.map(({ background_task_id }) => background_task_id),
+    ).toEqual(['task-1', 'valid']);
+    expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+    expect(snapshot.value.note).toContain('Do not infer that no other children ran');
+    expect(snapshot.rendered).not.toContain('wrong-tenant');
+    expect(snapshot.rendered).not.toContain('wrong-parent');
+    expect(snapshot.rendered).not.toContain('wrong-agent');
+    expect(snapshot.rendered).not.toContain('secret-');
+  });
+
+  it('states uncertainty when the bounded sibling read is unavailable', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        throw new Error('temporary sibling read failure');
+      }
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+    expect(snapshot.value.note).toContain('Do not infer that no other children ran');
   });
 
   it('dead-letters a child whose process disappeared after the task timeout grace', async () => {
@@ -318,7 +1317,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
       messageId: 'task-2:assistant',
       parentMessageId: 'task-1:user',
     };
-    methods.getMessages.mockImplementation(async (filter: Record<string, unknown>) => {
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
       if (filter.conversationId === 'conversation-1') {
         return [
           {
@@ -362,6 +1361,11 @@ describe('createSubagentCompletionWakeupResolver', () => {
       status: 'ready',
       input: expect.stringContaining('"background_task_id":"task-2"'),
     });
+    expect(
+      orchestrationSnapshot(prepared).value.known_children.map(
+        ({ background_task_id }) => background_task_id,
+      ),
+    ).toEqual(['task-2']);
     expect(methods.claimSubagentTaskResult).toHaveBeenCalledWith({
       userId: 'user-1',
       conversationId: 'thread-1',

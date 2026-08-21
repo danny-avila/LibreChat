@@ -622,6 +622,7 @@ async function startRun(
           ...(run?.conversationId != null && {
             newConversationId: run.conversationId,
           }),
+          ...(run?.chatProjectId != null && { chatProjectId: run.chatProjectId }),
           ...(run?.files != null && { files: run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }

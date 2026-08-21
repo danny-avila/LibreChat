@@ -157,11 +157,11 @@ export async function scanKeys(
 
   const scanCount = count ?? cacheConfig.REDIS_SCAN_COUNT;
 
-  for await (const key of client.scanIterator({
+  for await (const page of client.scanIterator({
     MATCH: pattern,
     COUNT: scanCount,
   })) {
-    keys.push(key);
+    keys.push(...page);
   }
 
   // Performance monitoring

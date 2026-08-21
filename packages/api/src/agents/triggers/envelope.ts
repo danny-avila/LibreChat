@@ -40,6 +40,9 @@ interface AgentTriggerTarget {
 export interface AgentFireRunContext {
   conversationId?: string;
   timezone?: string;
+  /** Chat project the new conversation is filed under. Host-controlled like the
+   *  rest of this context — never sourced from the event payload. */
+  chatProjectId?: string;
   files?: JsonValue[];
   metadata?: JsonValue;
 }
@@ -197,6 +200,9 @@ function createFireRunContext(
   }
   if (run.timezone != null) {
     context.timezone = requireString(run.timezone, 'run.timezone');
+  }
+  if (run.chatProjectId != null) {
+    context.chatProjectId = requireString(run.chatProjectId, 'run.chatProjectId');
   }
   if (run.files != null) {
     if (!Array.isArray(run.files)) {

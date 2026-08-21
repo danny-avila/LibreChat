@@ -263,6 +263,8 @@ export namespace Agents {
     aggregatedContent?: MessageContentComplex[];
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
+    /** True when the live generation replaces an existing assistant branch. */
+    isRegenerate?: boolean;
     conversationId?: string;
     sender?: string;
     iconURL?: string;

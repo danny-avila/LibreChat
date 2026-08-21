@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { RecoilRoot, useRecoilCallback } from 'recoil';
+import { RecoilRoot, useRecoilCallback, useRecoilValue } from 'recoil';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type {
@@ -8,15 +8,16 @@ import type {
   SubagentTickerState,
   SubagentAggregatorState,
 } from '~/utils/subagentContent';
-import type { SubagentProgress } from '~/store/subagents';
+import type { ActiveSubagentPanel, SubagentProgress } from '~/store/subagents';
 import {
   foldSubagentEvent,
   foldSubagentEventIntoTicker,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
-import { subagentProgressByToolCallId } from '~/store/subagents';
+import { MessageContext } from '~/Providers/MessageContext';
 
 const mockNavigateToConvo = jest.fn();
 
@@ -32,6 +33,7 @@ jest.mock('~/hooks', () => ({
       const arg1 = (values?.[1] as string | undefined) ?? '';
       const translations: Record<string, string> = {
         com_ui_subagent_running: 'Running agent',
+        com_ui_subagent_activity: 'Agent activity',
         com_ui_subagent_complete: 'Ran agent',
         com_ui_subagent_cancelled: 'Cancelled agent',
         com_ui_subagent_errored: 'Agent errored',
@@ -151,6 +153,7 @@ jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/groupToolCalls'),
   ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
+  logger: { log: jest.fn() },
 }));
 
 afterEach(() => {
@@ -646,7 +649,7 @@ describe('SubagentCall — dialog content', () => {
     rerender(<RecoilRoot>{null}</RecoilRoot>);
   });
 
-  it('links only an exact host-issued detached result to its durable child chat', () => {
+  it('opens only an exact host-issued detached result in the parent activity panel', () => {
     const output = JSON.stringify({
       background_task_id: 'task-1',
       subagent_thread_id: 'child-thread-1',
@@ -656,23 +659,44 @@ describe('SubagentCall — dialog content', () => {
       message:
         'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
     });
+    let selectedPanel: ActiveSubagentPanel | null = null;
+    const SelectionObserver = () => {
+      selectedPanel = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
     render(
       <MemoryRouter>
         <RecoilRoot>
-          <SubagentCall
-            toolCallId="call_detached"
-            initialProgress={1}
-            isSubmitting={false}
-            args={{ subagent_type: 'self', run_in_background: true }}
-            output={output}
-          />
+          <SelectionObserver />
+          <MessageContext.Provider
+            value={{
+              messageId: 'parent-message',
+              conversationId: 'parent-conversation',
+              isExpanded: false,
+            }}
+          >
+            <SubagentCall
+              toolCallId="call_detached"
+              initialProgress={1}
+              isSubmitting={false}
+              args={{ subagent_type: 'self', run_in_background: true }}
+              output={output}
+            />
+          </MessageContext.Provider>
         </RecoilRoot>
       </MemoryRouter>,
     );
 
-    openSubagentDialog();
-    fireEvent.click(screen.getByRole('button', { name: 'Open child chat' }));
-    expect(mockNavigateToConvo).toHaveBeenCalledWith({ conversationId: 'child-thread-1' });
+    fireEvent.click(screen.getByRole('button', { name: 'Agent activity' }));
+    expect(selectedPanel).toEqual({
+      parentConversationId: 'parent-conversation',
+      threadId: 'child-thread-1',
+      taskId: 'task-1',
+      toolCallId: 'call_detached',
+      subagentType: 'self',
+    });
+    expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('dialog-content')).not.toBeInTheDocument();
     expect(screen.queryByText(output)).not.toBeInTheDocument();
   });
 

@@ -8,7 +8,9 @@ import {
   splitMCPToolKey,
   normalizeServerName,
   buildServerNameAliases,
+  stripServerNamePrefix,
 } from 'librechat-data-provider';
+import type { MCPServerStatus } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { McpItem } from '../../items/types';
@@ -20,6 +22,7 @@ import {
   useMCPToolOptions,
 } from '~/hooks';
 import { matchesMcpServer, mcpAllToken, mcpServerToken } from '../../items/selectors';
+import { getStatusColor, getStatusTextKey } from '~/components/MCP/mcpServerUtils';
 import MCPServerStatusIcon from '~/components/MCP/MCPServerStatusIcon';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
@@ -37,29 +40,23 @@ interface StatusDisplay {
 }
 
 function getStatusDisplay(
-  connectionState: string | undefined,
+  serverName: string,
+  serverStatus: MCPServerStatus | undefined,
   isInitializing: boolean,
   isConfigured: boolean,
 ): StatusDisplay {
-  if (isInitializing || connectionState === 'connecting') {
-    return {
-      labelKey: 'com_nav_mcp_status_initializing',
-      dotClass: 'bg-blue-500 animate-pulse',
-    };
+  if (!serverStatus && !isInitializing && !isConfigured) {
+    return { labelKey: 'com_ui_tools_mcp_status_unconfigured', dotClass: 'bg-status-neutral' };
   }
-  if (connectionState === 'connected') {
-    return { labelKey: 'com_nav_mcp_status_connected', dotClass: 'bg-emerald-500' };
-  }
-  if (connectionState === 'error') {
-    return { labelKey: 'com_nav_mcp_status_error', dotClass: 'bg-red-500' };
-  }
-  if (connectionState === 'disconnected') {
-    return { labelKey: 'com_nav_mcp_status_disconnected', dotClass: 'bg-amber-500' };
-  }
-  if (!isConfigured) {
-    return { labelKey: 'com_ui_tools_mcp_status_unconfigured', dotClass: 'bg-gray-400' };
-  }
-  return { labelKey: 'com_nav_mcp_status_unknown', dotClass: 'bg-gray-400' };
+  const connectionStatus = serverStatus ? { [serverName]: serverStatus } : undefined;
+  const initializing = () => isInitializing;
+  return {
+    labelKey: getStatusTextKey(serverName, connectionStatus, initializing) as TranslationKeys,
+    dotClass: cn(
+      getStatusColor(serverName, connectionStatus, initializing),
+      (isInitializing || serverStatus?.connectionState === 'connecting') && 'animate-pulse',
+    ),
+  };
 }
 
 interface Props {
@@ -79,7 +76,7 @@ export default function McpSection({ item }: Props) {
   } = useMCPServerManager();
   const [oauthOpen, setOauthOpen] = useState(false);
   const [oauthUrl, setOauthUrl] = useState<string | null>(null);
-  const [prevConnected, setPrevConnected] = useState(false);
+  const [prevReadyForAgent, setPrevReadyForAgent] = useState(false);
   const [autoSelectPending, setAutoSelectPending] = useState(false);
   const { mcpServersMap, mcpToolsLoading } = useAgentPanelContext();
   const { agentsConfig } = useGetAgentsConfig();
@@ -136,7 +133,7 @@ export default function McpSection({ item }: Props) {
    * runtime heal keeps them active, and per-tool updates could never replace
    * the legacy entry. Tokens and other servers' entries pass through.
    */
-  const toCurrentToolId = useCallback(
+  const toNormalizedToolId = useCallback(
     (entry: string): string => {
       const normalizedName = normalizeServerName(serverName);
       if (
@@ -170,6 +167,44 @@ export default function McpSection({ item }: Props) {
       return `${entry.slice(0, entry.length - serverName.length)}${normalizedName}`;
     },
     [serverName, serverToken, serverAllToken, mcpServersMap],
+  );
+
+  /**
+   * Second migration stage: catalog keys drop a redundant leading server-name
+   * prefix, so a pre-strip persisted id would show its tool unchecked and a
+   * per-tool toggle could silently drop it from the selection. The rewrite is
+   * identity-verified — it only lands when the stripped catalog entry records
+   * this exact raw name as its upstream tool — so a stale id for a removed
+   * tool can never migrate onto a different sibling.
+   */
+  /** Constant-time lookups for the migration below — the form heal calls it
+   *  per persisted key, so linear catalog scans go O(options × tools). */
+  const toolsById = useMemo(() => new Map(tools.map((tool) => [tool.tool_id, tool])), [tools]);
+
+  const toStrippedToolId = useCallback(
+    (entry: string): string => {
+      if (entry === serverToken || entry === serverAllToken || toolsById.has(entry)) {
+        return entry;
+      }
+      const normalizedName = normalizeServerName(serverName);
+      const [toolPart, parsed] = splitMCPToolKey(entry, [normalizedName]);
+      if (parsed !== normalizedName) {
+        return entry;
+      }
+      const strippedPart = stripServerNamePrefix(toolPart, normalizedName);
+      if (strippedPart === toolPart) {
+        return entry;
+      }
+      const strippedId = `${strippedPart}${Constants.mcp_delimiter}${normalizedName}`;
+      const target = toolsById.get(strippedId);
+      return target?.metadata.serverToolName === toolPart ? strippedId : entry;
+    },
+    [serverName, serverToken, serverAllToken, toolsById],
+  );
+
+  const toCurrentToolId = useCallback(
+    (entry: string): string => toStrippedToolId(toNormalizedToolId(entry)),
+    [toNormalizedToolId, toStrippedToolId],
   );
 
   const isServerSelection = useCallback(
@@ -296,21 +331,27 @@ export default function McpSection({ item }: Props) {
   const configDialogProps = getConfigDialogProps();
   const connectionState = statusIconProps?.serverStatus?.connectionState;
   const isInitializing = statusIconProps?.isInitializing ?? false;
-  const statusDisplay = getStatusDisplay(connectionState, isInitializing, liveServer.isConfigured);
+  const statusDisplay = getStatusDisplay(
+    serverName,
+    statusIconProps?.serverStatus,
+    isInitializing,
+    liveServer.isConfigured,
+  );
   /** A connected server's tools arrive with the (cold-cache) MCP tools fetch, and
    * the server is also briefly toolless while initializing — show a skeleton in
    * both cases instead of a misleading "no tools" message. */
   const toolsLoading =
     !hasTools && (mcpToolsLoading || isInitializing || connectionState === 'connecting');
   const isConnected = connectionState === 'connected' || liveServer.isConnected === true;
+  const isReadyForAgent = liveServer.isReadyForAgent ?? isConnected;
   const isBusy = isInitializing || connectionState === 'connecting';
 
-  /** Close + clear the OAuth dialog once the server connects, and don't let it
+  /** Close + clear the OAuth dialog once the server is ready, and don't let it
    * reopen on its own if the connection later drops. No useEffect — adjust state
    * during render by comparing against the previous connection result. */
-  if (prevConnected !== isConnected) {
-    setPrevConnected(isConnected);
-    if (isConnected) {
+  if (prevReadyForAgent !== isReadyForAgent) {
+    setPrevReadyForAgent(isReadyForAgent);
+    if (isReadyForAgent) {
       setOauthOpen(false);
       setOauthUrl(null);
     }
@@ -331,7 +372,7 @@ export default function McpSection({ item }: Props) {
   const initConnectionDeferred = isConnectionDeferred(serverName);
   const requestScoped = liveServer.requestScoped === true;
   const runtimeToolsAvailable =
-    !hasTools && !toolsLoading && (isWildcardAttached || (requestScoped && isConnected));
+    !hasTools && !toolsLoading && (isWildcardAttached || (requestScoped && isReadyForAgent));
   const runtimeToolsMessage = isWildcardAttached
     ? 'com_ui_tools_mcp_runtime_tools'
     : 'com_ui_tools_mcp_runtime_tools_available';
@@ -408,19 +449,19 @@ export default function McpSection({ item }: Props) {
               aria-hidden="true"
             />
             <span className="text-sm font-medium text-text-primary">
-              {localize(statusDisplay.labelKey)}
+              {localize(statusDisplay.labelKey, { 0: serverName })}
             </span>
           </div>
-          {isConnected && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
+          {isReadyForAgent && statusIconProps && <MCPServerStatusIcon {...statusIconProps} />}
         </div>
 
-        {/* Connect collapses smoothly once connected. Its top spacing lives inside
+        {/* Connect collapses smoothly once ready. Its top spacing lives inside
          * the reveal so the parent's flex gap never leaves a hole when it's gone,
          * and the auto-height dialog follows the grid-rows tween in one motion. */}
         <div
           className={cn(
             'grid transition-[grid-template-rows] [transition-duration:var(--resize-dur)] [transition-timing-function:var(--resize-ease)] motion-reduce:transition-none',
-            isConnected ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+            isReadyForAgent ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
           )}
         >
           <div className="min-h-0 overflow-hidden">
@@ -429,8 +470,8 @@ export default function McpSection({ item }: Props) {
               variant="submit"
               className="mt-5 w-full gap-2"
               disabled={isBusy}
-              tabIndex={isConnected ? -1 : undefined}
-              aria-hidden={isConnected || undefined}
+              tabIndex={isReadyForAgent ? -1 : undefined}
+              aria-hidden={isReadyForAgent || undefined}
               onClick={handleConnect}
             >
               {isBusy && <Spinner className="size-4" />}
@@ -575,7 +616,7 @@ export default function McpSection({ item }: Props) {
 
       {configDialogProps && <MCPConfigDialog {...configDialogProps} />}
       <McpOAuthDialog
-        open={oauthOpen && !isConnected}
+        open={oauthOpen && !isReadyForAgent}
         onOpenChange={setOauthOpen}
         serverName={serverName}
         oauthUrl={oauthUrl ?? getOAuthUrl(serverName) ?? ''}

@@ -78,6 +78,8 @@ export interface ToolExecuteOptions {
   loadTools: (
     toolNames: string[],
     agentId?: string,
+    /** Immutable run configuration available before deferred tools connect. */
+    configurable?: Record<string, unknown>,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -3848,12 +3850,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         await runOutsideTracing(async () => {
           try {
             const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
+            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const { loadedTools, configurable: toolConfigurable } = await loadTools(
               toolNames,
               agentId,
+              sourceConfigurable,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
-            const sourceConfigurable = configurable as Record<string, unknown> | undefined;
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
             const mergedConfigurable = mergeToolConfigurables(
               sourceConfigurable,

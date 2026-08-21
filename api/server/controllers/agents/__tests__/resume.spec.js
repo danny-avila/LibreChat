@@ -103,6 +103,11 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
   isSteerPreemptSupported: jest.fn(() => true),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/models', () => ({
@@ -292,7 +297,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
-    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace }) => {
+    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace, requestBody }) => {
       // Capture the request state the controller seeds BEFORE reconstruction.
       capturedInit = {
         parentMessageId: req.body.parentMessageId,
@@ -301,6 +306,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationCreatedAt: req.conversationCreatedAt,
         timezone: req.body.timezone,
         checkpointNamespace,
+        requestBody,
       };
       return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
     });
@@ -351,9 +357,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      // `scheduledFor` identifies the OCCURRENCE: a later fire can redirect the
+      // schedule while this run sits paused, so the policy recheck validates the
+      // destination this run recorded rather than the schedule's current one.
       expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 4, {
         automatic: true,
         policy: true,
+        scheduledFor,
       });
       expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
         expectedCreatedAt: 1000,
@@ -390,6 +400,82 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
       expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    // `abortJob` reports `success: false` with a REASON on every failure path. Gating on
+    // the absence of a reason treated an unreached job and a replacement generation as
+    // confirmed stops, settling the occurrence and pruning a checkpoint on neither.
+    it.each([
+      ['the job vanished before the abort landed', 'job_not_found'],
+      ['a replacement generation owns the conversation', 'generation_replaced'],
+      ['the generation is still live', 'job_still_active'],
+    ])('refuses to settle or prune when %s', async (_label, failureReason) => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({ success: false, failureReason });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    // The exact regression: an abort that reported `success: false` and nothing else was
+    // read as a confirmed stop, so the occurrence was settled and its checkpoint pruned.
+    it('refuses to settle or prune on a bare unsuccessful abort with no reason', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({ success: false });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('settles an occurrence whose generation was already terminal and drained', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockIsScheduleLive.mockResolvedValue(false);
+      // No transition was needed, but `awaitProviderDrain` still proved the provider
+      // segment can no longer persist — a stop, just not one this call made. Refusing
+      // here would 503 a permanently terminal generation on every retry.
+      mockGenerationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'already_settled',
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ scheduleId: 'schedule-1', status: 'interrupted' }),
+      );
+      expect(mockDeleteAgentCheckpoint).toHaveBeenCalled();
+    });
+
+    it('refuses to settle the stale resume handoff on an unconfirmed stop', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockFinalizeScheduleResumeClaim.mockResolvedValue(false);
+      mockGenerationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'generation_replaced',
+      });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_STOP_UNCONFIRMED' });
+      expect(mockRecordScheduleOutcome).not.toHaveBeenCalled();
+      expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
+      expect(mockInitializeClient).not.toHaveBeenCalled();
     });
 
     it('records success after resumed persistence and before terminal publication', async () => {
@@ -1115,6 +1201,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // initializeAgent scopes thread files off req.body.parentMessageId, seeded
       // from the paused user message's parent before initializeClient runs.
       expect(capturedInit.parentMessageId).toBe(THREAD_PARENT_ID);
+      expect(capturedInit.requestBody).toEqual({
+        messageId: RESPONSE_MSG_ID,
+        conversationId: CONVO_ID,
+        parentMessageId: USER_MSG_ID,
+      });
 
       expect(mockInitializeClient).toHaveBeenCalledTimes(1);
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
@@ -1124,6 +1215,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           userMCPAuthMap: { server1: { token: 't' } },
         }),
       );
+    });
+
+    it('reuses the persisted MCP identity for edited and overridden turns', async () => {
+      const persistedMCPRequestBody = {
+        messageId: RESPONSE_MSG_ID,
+        conversationId: 'overridden-conversation',
+        parentMessageId: RESPONSE_MSG_ID,
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { mcpRequestBody: persistedMCPRequestBody } }),
+      );
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(capturedInit.requestBody).toBe(persistedMCPRequestBody);
     });
 
     it('reuses the persisted generation checkpoint namespace and keeps legacy fallback explicit', async () => {

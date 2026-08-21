@@ -7,6 +7,7 @@ import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import Image from '~/components/Chat/Messages/Content/Image';
+import CollapsibleText from './CollapsibleText';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -40,6 +41,7 @@ const SteerPart = memo(function SteerPart({
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
+  const collapseLongUserMessages = useRecoilValue<boolean>(store.collapseLongUserMessages);
 
   /** The share surface must never label the SHARER's steers with the
    *  viewer's identity; always the generic user label there. */
@@ -101,15 +103,17 @@ const SteerPart = memo(function SteerPart({
               ))}
             </div>
           )}
-          <div
-            className={cn(
-              'markdown prose message-content dark:prose-invert light w-full break-words',
-              !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-              'text-text-primary',
-            )}
-          >
-            {enableUserMsgMarkdown ? <MarkdownLite content={steer} /> : steer}
-          </div>
+          <CollapsibleText enabled={collapseLongUserMessages}>
+            <div
+              className={cn(
+                'markdown prose message-content dark:prose-invert light w-full break-words',
+                !enableUserMsgMarkdown && 'whitespace-pre-wrap',
+                'text-text-primary',
+              )}
+            >
+              {enableUserMsgMarkdown ? <MarkdownLite content={steer} /> : steer}
+            </div>
+          </CollapsibleText>
         </div>
         <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
           <span
@@ -129,6 +133,7 @@ const SteerPart = memo(function SteerPart({
           fileId={selectedFile?.file_id}
           filePath={selectedFile?.filepath}
           fileType={selectedFile?.type ?? undefined}
+          fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
         />
       )}

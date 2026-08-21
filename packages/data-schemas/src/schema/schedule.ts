@@ -52,6 +52,9 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
       default: 'new',
       required: true,
     },
+    chatProjectId: {
+      type: String,
+    },
     file_ids: {
       type: [String],
       default: undefined,
@@ -76,6 +79,8 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
         'invalid_schedule',
         'permission_revoked',
         'insufficient_balance',
+        'project_deleted',
+        'project_required',
       ],
     },
     nextRunAt: {

@@ -18,6 +18,7 @@ import {
   useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
+import { isMCPServerReadyForAgent } from '~/components/MCP/mcpServerUtils';
 import { Panel, isEphemeralAgent } from '~/common';
 import store from '~/store';
 
@@ -92,6 +93,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       for (const [serverName, serverData] of Object.entries(mcpData.servers)) {
         // Get title and description from config with fallbacks
         const serverConfig = availableMCPServersMap?.[serverName];
+        const serverStatus = connectionStatus?.[serverName];
         const displayName = serverConfig?.title || serverName;
         const displayDescription =
           serverConfig?.description || `${localize('com_ui_tool_collection_prefix')} ${serverName}`;
@@ -119,7 +121,12 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           serverName,
           tools,
           isConfigured: configuredServers.has(serverName),
-          isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
+          isConnected: serverStatus?.connectionState === 'connected',
+          isReadyForAgent: isMCPServerReadyForAgent(
+            serverStatus,
+            serverConfig?.requestScoped === true,
+            Object.keys(serverConfig?.customUserVars ?? {}).length > 0,
+          ),
           requestScoped: serverConfig?.requestScoped,
           metadata,
           consumeOnly: serverConfig?.consumeOnly,
@@ -134,6 +141,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
       }
       // Get title and description from config with fallbacks
       const serverConfig = availableMCPServersMap?.[mcpServerName];
+      const serverStatus = connectionStatus?.[mcpServerName];
       const displayName = serverConfig?.title || mcpServerName;
       const displayDescription =
         serverConfig?.description ||
@@ -151,7 +159,12 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         metadata,
         isConfigured: true,
         serverName: mcpServerName,
-        isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+        isConnected: serverStatus?.connectionState === 'connected',
+        isReadyForAgent: isMCPServerReadyForAgent(
+          serverStatus,
+          serverConfig?.requestScoped === true,
+          Object.keys(serverConfig?.customUserVars ?? {}).length > 0,
+        ),
         requestScoped: serverConfig?.requestScoped,
         consumeOnly: serverConfig?.consumeOnly,
       });

@@ -56,6 +56,7 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
+import { SUBAGENT_WAKEUP_GUIDANCE, usesSubagentCompletionWakeups } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
@@ -307,6 +308,16 @@ const CHECK_BACKGROUND_TASK_DESCRIPTION = `Check, control, and retrieve tool or 
 
 Provide a background_task_id to poll one task; omit it to list every background task in this thread. A task is only finished when its status is "completed", "error", or "cancelled" — never assume completion without polling. Results are not pushed to you; you must call this tool to collect them. Subagent tasks additionally accept steer, queue, interrupt, cancel, and cancel_message actions while running. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
+const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
+
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Ordinary background tool tasks require polling to retrieve their results. Detached subagent tasks use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+
+function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
+  return subagentCompletionWakeups
+    ? CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION
+    : CHECK_BACKGROUND_TASK_DESCRIPTION;
+}
+
 /**
  * `maxLength` is valid JSON Schema and is honored by providers, but the SDK's
  * `JsonSchemaType` does not declare it, so the model-facing bounds are typed here.
@@ -357,11 +368,13 @@ const CHECK_BACKGROUND_TASK_PARAMETERS = Object.freeze<CheckBackgroundTaskParame
   required: [],
 });
 
-const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
-  name: CHECK_BACKGROUND_TASK_NAME,
-  description: CHECK_BACKGROUND_TASK_DESCRIPTION,
-  parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
-});
+function buildCheckBackgroundTaskDefinition(subagentCompletionWakeups: boolean): LCTool {
+  return {
+    name: CHECK_BACKGROUND_TASK_NAME,
+    description: checkBackgroundTaskDescription(subagentCompletionWakeups),
+    parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
+  };
+}
 
 /**
  * Idempotently registers the `check_background_task` poll tool into the run's
@@ -370,17 +383,23 @@ const CHECK_BACKGROUND_TASK_DEF: LCTool = Object.freeze<LCTool>({
 export function registerBackgroundTaskTool(params: {
   toolRegistry: LCToolRegistry | undefined;
   toolDefinitions: LCTool[] | undefined;
+  subagentCompletionWakeups?: boolean;
 }): { toolDefinitions: LCTool[] } {
-  const { toolRegistry, toolDefinitions } = params;
+  const { toolRegistry, toolDefinitions, subagentCompletionWakeups = false } = params;
   const defs = toolDefinitions ?? [];
+  const desiredDescription = checkBackgroundTaskDescription(subagentCompletionWakeups);
   const isOurs = (tool?: { description?: string }): boolean =>
-    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION;
+    tool?.description === CHECK_BACKGROUND_TASK_DESCRIPTION ||
+    tool?.description === CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION;
 
   const existingDef = defs.find((d) => d.name === CHECK_BACKGROUND_TASK_NAME);
   const existingRegistry = toolRegistry?.get(CHECK_BACKGROUND_TASK_NAME);
 
   /** Already registered by us — idempotent no-op. */
-  if (isOurs(existingDef) || isOurs(existingRegistry)) {
+  if (
+    existingDef?.description === desiredDescription &&
+    (existingRegistry == null || existingRegistry.description === desiredDescription)
+  ) {
     return { toolDefinitions: defs };
   }
 
@@ -392,21 +411,29 @@ export function registerBackgroundTaskTool(params: {
    * and warn that the colliding tool is shadowed.
    */
   const collides = existingDef != null || existingRegistry != null;
-  if (collides) {
+  const foreignCollision =
+    (existingDef != null && !isOurs(existingDef)) ||
+    (existingRegistry != null && !isOurs(existingRegistry));
+  if (foreignCollision) {
     logger.warn(
       `[background] A tool named "${CHECK_BACKGROUND_TASK_NAME}" collides with the reserved background poll tool; the host poll tool takes precedence and the colliding tool is shadowed for this run.`,
     );
   }
   toolRegistry?.set(CHECK_BACKGROUND_TASK_NAME, {
     name: CHECK_BACKGROUND_TASK_NAME,
-    description: CHECK_BACKGROUND_TASK_DESCRIPTION,
+    description: desiredDescription,
     parameters: CHECK_BACKGROUND_TASK_PARAMETERS,
     allowed_callers: ['direct'],
   });
   const withoutCollision = collides
     ? defs.filter((d) => d.name !== CHECK_BACKGROUND_TASK_NAME)
     : defs;
-  return { toolDefinitions: [...withoutCollision, CHECK_BACKGROUND_TASK_DEF] };
+  return {
+    toolDefinitions: [
+      ...withoutCollision,
+      buildCheckBackgroundTaskDefinition(subagentCompletionWakeups),
+    ],
+  };
 }
 
 /**
@@ -1053,7 +1080,12 @@ interface SerializedSubagentTask {
 
 function serializeSubagentSnapshot(
   task: SubagentTaskSnapshot,
-  options: { includeResult?: string; status?: string; controlId?: string } = {},
+  options: {
+    includeResult?: string;
+    status?: string;
+    controlId?: string;
+    completionWakeups?: boolean;
+  } = {},
 ): SerializedSubagentTask {
   return {
     background_task_id: task.taskId,
@@ -1069,10 +1101,16 @@ function serializeSubagentSnapshot(
     ...(task.pendingControls > 0 ? { pending_controls: task.pendingControls } : {}),
     ...(task.error == null ? {} : { error: task.error }),
     ...(options.controlId == null ? {} : { control_id: options.controlId }),
+    ...(options.completionWakeups === true && task.status === 'running'
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
   };
 }
 
-function serializeSubagentClaim(claim: SubagentTaskClaim): SerializedSubagentTask | undefined {
+function serializeSubagentClaim(
+  claim: SubagentTaskClaim,
+  completionWakeups: boolean,
+): SerializedSubagentTask | undefined {
   if (claim.status === 'not_found') {
     return undefined;
   }
@@ -1085,7 +1123,7 @@ function serializeSubagentClaim(claim: SubagentTaskClaim): SerializedSubagentTas
       error: claim.error,
     };
   }
-  return serializeSubagentSnapshot(claim.task, { status: claim.status });
+  return serializeSubagentSnapshot(claim.task, { status: claim.status, completionWakeups });
 }
 
 function serializeSubagentControl(
@@ -1216,7 +1254,10 @@ export async function runCheckBackgroundTask(params: {
             routedStore == null
               ? subagentTasks.store.claim(subagentTasks.scopeId, taskId)
               : await routedStore.claimTask(subagentTasks.scopeId, taskId, invocationId);
-          const claimed = serializeSubagentClaim(claim);
+          const claimed = serializeSubagentClaim(
+            claim,
+            usesSubagentCompletionWakeups(subagentTasks),
+          );
           if (claimed != null) {
             return JSON.stringify(claimed);
           }
@@ -1267,6 +1308,7 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   let listWarning: string | undefined;
+  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
   if (params.subagentTasks != null) {
     try {
       const routedStore = routedSubagentStore(params.subagentTasks.store);
@@ -1297,6 +1339,9 @@ export async function runCheckBackgroundTask(params: {
       ...tasks.map((task) => serializeTask(task, { includeResult: false })),
       ...subagentTasks,
     ],
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
     ...(listWarning != null && { partial: true, warning: listWarning }),
   });
 }

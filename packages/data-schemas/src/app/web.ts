@@ -1,5 +1,5 @@
-import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
-import type { TCustomConfig } from 'librechat-data-provider';
+import { SafeSearchTypes, normalizeSearxngEngines } from 'librechat-data-provider';
+import type { TCustomConfig, TWebSearchConfigInput } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
 export const webSearchAuth = {
@@ -69,7 +69,7 @@ export function getWebSearchKeys(): TWebSearchKeys[] {
 export const webSearchKeys: TWebSearchKeys[] = getWebSearchKeys();
 
 export function loadWebSearchConfig(
-  config: TCustomConfig['webSearch'],
+  config: TWebSearchConfigInput | undefined,
 ): TCustomConfig['webSearch'] {
   const serperApiKey = config?.serperApiKey ?? '${SERPER_API_KEY}';
   const searxngInstanceUrl = config?.searxngInstanceUrl ?? '${SEARXNG_INSTANCE_URL}';
@@ -85,10 +85,15 @@ export function loadWebSearchConfig(
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
   const rerankerType = config?.rerankerType;
+  const searxngSearchOptions = config?.searxngSearchOptions && {
+    ...config.searxngSearchOptions,
+    engines: normalizeSearxngEngines(config.searxngSearchOptions.engines),
+  };
 
   return {
     ...config, // Preserve provider-specific option blocks such as firecrawlOptions and tavilySearchOptions.
     safeSearch,
+    searxngSearchOptions,
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,

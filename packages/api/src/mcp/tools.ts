@@ -1,5 +1,10 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, buildServerNameAliases, normalizeServerName } from 'librechat-data-provider';
+import {
+  Constants,
+  buildServerNameAliases,
+  normalizeServerName,
+  stripServerNamePrefixes,
+} from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
 import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './types';
@@ -234,8 +239,13 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
        *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
        *  by the raw config name. */
       const keyServerName = normalizeServerName(serverName);
+      const keyToolNames = stripServerNamePrefixes(
+        tools.map((tool) => tool.name),
+        keyServerName,
+      );
       for (const tool of tools) {
-        const name = `${tool.name}${mcpDelimiter}${keyServerName}`;
+        const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
+        const name = `${keyToolName}${mcpDelimiter}${keyServerName}`;
         const entry: LCFunctionTool = {
           type: 'function',
           ['function']: {
@@ -246,6 +256,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
               : ({ type: 'object', properties: {} } as JsonSchemaType),
           },
         };
+        if (keyToolName !== tool.name) {
+          entry.serverToolName = tool.name;
+        }
         serverTools[name] = entry;
       }
 

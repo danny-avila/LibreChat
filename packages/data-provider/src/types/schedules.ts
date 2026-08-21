@@ -11,7 +11,9 @@ export type ScheduleDisabledReason =
   | 'agent_deleted'
   | 'invalid_schedule'
   | 'permission_revoked'
-  | 'insufficient_balance';
+  | 'insufficient_balance'
+  | 'project_deleted'
+  | 'project_required';
 
 export type ScheduleRunStatus =
   | 'started'
@@ -47,6 +49,12 @@ export const createSchedulePayloadSchema = z.object({
     .max(10)
     .transform((ids) => Array.from(new Set(ids)))
     .optional(),
+  /**
+   * Chat project each run's conversation is filed under. `null` clears the scope.
+   * Ownership is checked server-side at write time and again at every fire, so a
+   * deleted project disables the schedule instead of silently filing runs loose.
+   */
+  chatProjectId: z.string().trim().min(1).nullable().optional(),
   enabled: z.boolean().default(true),
   /**
    * Client-generated key making creation idempotent across retries. Creation commits
@@ -93,6 +101,7 @@ export type TSchedule = {
   timezone: string;
   target: ScheduleTarget;
   file_ids?: string[];
+  chatProjectId?: string | null;
   enabled: boolean;
   disabledReason?: ScheduleDisabledReason;
   nextRunAt?: string;
@@ -115,9 +124,21 @@ export type TScheduleRun = {
   durationMs?: number;
 };
 
+/** Server-resolved policy the dialog must mirror. Sourced from the same
+ *  per-principal `interface.schedules` resolution the write handlers and the fire
+ *  path enforce, so the form can never offer a choice the server would refuse. */
+export type TScheduleLimits = {
+  maxPerUser: number;
+  /** Every schedule must be filed under a chat project. */
+  requireProject: boolean;
+  /** Operator-pinned destination project; when set it is the ONLY destination and
+   *  the client must not offer a picker. */
+  projectId?: string;
+};
+
 export type TSchedulesResponse = {
   schedules: TSchedule[];
-  limits: { maxPerUser: number };
+  limits: TScheduleLimits;
 };
 
 export type TScheduleRunNowResponse = {
