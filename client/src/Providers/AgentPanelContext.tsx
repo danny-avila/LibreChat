@@ -102,6 +102,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           requestScoped: serverConfig?.requestScoped,
           metadata,
           consumeOnly: serverConfig?.consumeOnly,
+          deferLoading: serverData.deferLoading ?? serverConfig?.deferLoading,
         });
       }
     }
@@ -133,6 +134,7 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
         requestScoped: serverConfig?.requestScoped,
         consumeOnly: serverConfig?.consumeOnly,
+        deferLoading: serverConfig?.deferLoading,
       });
     }
 
