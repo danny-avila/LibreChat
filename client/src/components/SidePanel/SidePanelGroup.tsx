@@ -4,7 +4,8 @@ import { ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@librechat/c
 import ArtifactsPanel from './ArtifactsPanel';
 
 const PANEL_IDS_SINGLE = ['messages-view'];
-const PANEL_IDS_SPLIT = ['messages-view', 'side-panel'];
+/** Keep the persisted id stable so existing artifact panel widths carry over. */
+const PANEL_IDS_SPLIT = ['messages-view', 'artifacts-panel'];
 
 interface SidePanelProps {
   panel?: React.ReactNode;

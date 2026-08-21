@@ -46,7 +46,7 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         collapsible={true}
         minSize={minSizeMain}
         panelRef={artifactsPanelRef}
-        id="side-panel"
+        id="artifacts-panel"
       >
         <div className="h-full min-w-[400px] overflow-hidden">{panel}</div>
       </ResizablePanel>

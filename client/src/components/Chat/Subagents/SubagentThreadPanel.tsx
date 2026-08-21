@@ -42,11 +42,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     resetSelection();
     requestAnimationFrame(() => {
       const trigger = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-subagent-thread]'),
-      ).find((element) => element.dataset.subagentThread === selection.threadId);
+        document.querySelectorAll<HTMLElement>('[data-subagent-tool-call]'),
+      ).find((element) => element.dataset.subagentToolCall === selection.toolCallId);
       trigger?.focus();
     });
-  }, [resetSelection, selection.threadId]);
+  }, [resetSelection, selection.toolCallId]);
 
   useFocusTrap(panelRef, isMobile, close);
 

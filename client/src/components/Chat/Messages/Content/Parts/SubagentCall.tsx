@@ -541,6 +541,7 @@ export default function SubagentCall({
         data-subagent-thread={
           canOpenDurablePanel ? backgroundHandle?.subagent_thread_id : undefined
         }
+        data-subagent-tool-call={canOpenDurablePanel ? toolCallId : undefined}
         className={cn(
           'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
           running && !detachedStatusUnknown && 'animate-pulse-slow',
