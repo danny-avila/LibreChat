@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, ContentTypes } from 'librechat-data-provider';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
@@ -15,6 +16,7 @@ jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
     mockUseStreamStatus(conversationId, enabled),
   useActiveJobs: (enabled?: boolean) => mockUseActiveJobs(enabled),
+  streamStatusQueryKey: (conversationId: string) => ['streamStatus', conversationId],
 }));
 
 const CONVERSATION_ID = 'conv-current';
@@ -87,6 +89,9 @@ function renderUseResumeOnLoad({
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   let setSubmissionState: ((submission: TSubmission | null) => void) | undefined;
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
@@ -121,16 +126,19 @@ function renderUseResumeOnLoad({
   };
 
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <RecoilRoot initializeState={initializeState}>
-      <SubmissionProbe />
-      <SiblingIndexProbe />
-      <PendingSteersProbe />
-      <QueuedMessagesProbe />
-      {children}
-    </RecoilRoot>
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot initializeState={initializeState}>
+        <SubmissionProbe />
+        <SiblingIndexProbe />
+        <PendingSteersProbe />
+        <QueuedMessagesProbe />
+        {children}
+      </RecoilRoot>
+    </QueryClientProvider>
   );
 
   return {
+    queryClient,
     getMessages,
     setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
     ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
@@ -149,7 +157,7 @@ describe('useResumeOnLoad', () => {
       isFetching: false,
     });
     mockUseActiveJobs.mockReset();
-    mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] } });
+    mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 1 });
   });
 
   afterEach(() => {
@@ -200,6 +208,9 @@ describe('useResumeOnLoad', () => {
   });
 
   describe('a run started by another client', () => {
+    /** Mirrors `ACTIVE_JOB_REARM_INTERVAL_MS` in the hook. */
+    const ACTIVE_JOB_REARM_INTERVAL_MS = 5_000;
+
     const INACTIVE_STATUS = {
       isSuccess: true,
       isFetching: false,
@@ -257,7 +268,10 @@ describe('useResumeOnLoad', () => {
        *  `/chat/active` is scoped to the user, not to the client that started
        *  the run, so this pane can see it — and it refetches on focus. */
       mockUseStreamStatus.mockClear();
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
       mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
       rerender();
       await act(async () => {
@@ -285,7 +299,10 @@ describe('useResumeOnLoad', () => {
 
       /** The job is listed, but the status read that answers the announcement
        *  finds it already finished — a run that ended between the two calls. */
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
       rerender();
       await act(async () => {
         await Promise.resolve();
@@ -293,14 +310,124 @@ describe('useResumeOnLoad', () => {
       expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
 
       mockUseStreamStatus.mockClear();
-      /** The list keeps reporting the same job on its five-second heartbeat. */
+      /** The list keeps reporting the same job on its heartbeat. Each poll is a
+       *  fresh fetch stamp, so the effect does run — only the elapsed-time gate
+       *  stops it from re-reading status every time. */
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 3,
+      });
       rerender();
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 4,
+      });
       rerender();
       await act(async () => {
         await Promise.resolve();
       });
 
       expect(mockUseStreamStatus).not.toHaveBeenCalledWith(CONVERSATION_ID, true);
+    });
+
+    it('forces fresh status and history reads instead of trusting warm caches', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender, queryClient } = renderUseResumeOnLoad({ messages: [] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** An inactive status answered inside its `staleTime` is still fresh, so
+       *  re-enabling the query would replay "nothing running" and the
+       *  announcement would be consumed without ever attaching. */
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ['streamStatus', CONVERSATION_ID],
+      });
+      /** History has to be authoritative whichever way the status lands: the
+       *  resume submission and `finalHandler` both build on this snapshot. */
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+    });
+
+    it('refetches history even when the announced run has already finished', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      /** Announced, but the run ends before the status read answers. Nothing
+       *  attaches — so the refetch is the entire repair, and without it the
+       *  turns that other client just completed stay missing here. */
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+    });
+
+    it('answers a second external run that never left the list', async () => {
+      const nowSpy = jest.spyOn(Date, 'now');
+      let clock = 1_000_000;
+      nowSpy.mockImplementation(() => clock);
+
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender } = renderUseResumeOnLoad({ messages: [] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseStreamStatus.mockClear();
+      /**
+       * The first run ended and a second began between two polls of the active
+       * list, so the list reads `[conversationId]` the whole time and never
+       * shows the gap a latch would need. Only elapsed time distinguishes them.
+       */
+      clock += ACTIVE_JOB_REARM_INTERVAL_MS + 1;
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 3,
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      nowSpy.mockRestore();
     });
 
     it('re-arms again for the next run once the previous one leaves the list', async () => {
@@ -310,20 +437,26 @@ describe('useResumeOnLoad', () => {
         await Promise.resolve();
       });
 
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
       rerender();
       await act(async () => {
         await Promise.resolve();
       });
 
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] } });
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] }, dataUpdatedAt: 1 });
       rerender();
       await act(async () => {
         await Promise.resolve();
       });
 
       mockUseStreamStatus.mockClear();
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
       rerender();
       await act(async () => {
         await Promise.resolve();
@@ -344,7 +477,10 @@ describe('useResumeOnLoad', () => {
         await Promise.resolve();
       });
 
-      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [STALE_CONVERSATION_ID] } });
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [STALE_CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
       rerender();
       await act(async () => {
         await Promise.resolve();
