@@ -1,0 +1,7 @@
+<%- include('partials/head', { title, user, nav: 'billing' }) %>
+<div class="card center-card">
+  <h1><%= title %></h1>
+  <p class="muted"><%= message %></p>
+  <p><a class="btn" href="<%= basePath %>">К странице оплаты</a></p>
+</div>
+<%- include('partials/foot') %>

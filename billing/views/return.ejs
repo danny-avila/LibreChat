@@ -1,0 +1,18 @@
+<%- include('partials/head', { title: 'Результат оплаты', user, nav: 'billing' }) %>
+<div class="card center-card">
+  <% if (order.status === 'paid') { %>
+    <div class="result-icon ok">✓</div>
+    <h1>Оплата прошла успешно</h1>
+    <p>Пакет «<%= order.tariff.title %>» — на баланс зачислено <b><%= fmtCredits(order.tariff.credits) %></b> кредитов.</p>
+  <% } else if (order.status === 'pending' || order.status === 'hold') { %>
+    <div class="result-icon wait">⏳</div>
+    <h1>Платёж обрабатывается</h1>
+    <p class="muted">Банк ещё не подтвердил оплату. Кредиты будут зачислены автоматически, страницу можно закрыть.</p>
+  <% } else { %>
+    <div class="result-icon fail">✕</div>
+    <h1>Оплата не прошла</h1>
+    <p class="muted">Статус: <%= statusRu(order.status) %>. Средства не списаны — попробуйте ещё раз.</p>
+  <% } %>
+  <p><a class="btn primary" href="<%= basePath %>">К тарифам</a> <a class="btn" href="/">В чат</a></p>
+</div>
+<%- include('partials/foot') %>

@@ -1,0 +1,57 @@
+<%- include('partials/head', { title: 'Тарифы и оплата', user, nav: 'billing' }) %>
+
+<section class="balance-strip">
+  <div>
+    <div class="muted">Ваш баланс</div>
+    <div class="balance-value"><%= fmtCredits(balance) %> <span class="muted small">кредитов</span></div>
+  </div>
+  <div class="muted small">Кредиты списываются автоматически по мере использования моделей.<br>1 млн кредитов ≈ 1 $ расхода на модели.</div>
+</section>
+
+<h1>Тарифы</h1>
+<section class="tariffs">
+  <% if (!tariffs.length) { %>
+    <p class="muted">Тарифы пока не настроены. Загляните позже.</p>
+  <% } %>
+  <% tariffs.forEach((t) => { %>
+    <div class="card tariff">
+      <h2><%= t.title %></h2>
+      <div class="tariff-price"><%= fmtRub(t.priceKopecks) %></div>
+      <div class="tariff-credits"><%= fmtCredits(t.credits) %> кредитов</div>
+      <% if (t.description) { %><p class="muted small"><%= t.description %></p><% } %>
+      <form method="post" action="<%= basePath %>/buy">
+        <input type="hidden" name="tariffId" value="<%= t._id %>">
+        <button class="btn primary" type="submit">Оплатить</button>
+      </form>
+    </div>
+  <% }) %>
+</section>
+
+<h1 id="history">История покупок</h1>
+<section class="card">
+  <% if (!orders.length) { %>
+    <p class="muted">Покупок пока не было.</p>
+  <% } else { %>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Дата</th><th>Пакет</th><th>Сумма</th><th>Кредиты</th><th>Статус</th><th></th></tr></thead>
+    <tbody>
+      <% orders.forEach((o) => { %>
+      <tr>
+        <td><%= fmtDate(o.createdAt) %></td>
+        <td><%= o.tariff.title %></td>
+        <td><%= fmtRub(o.tariff.priceKopecks) %></td>
+        <td><%= fmtCredits(o.tariff.credits) %></td>
+        <td><span class="status st-<%= o.status %>"><%= statusRu(o.status) %></span></td>
+        <td>
+          <% if (o.status === 'pending' && o.paymentUrl) { %>
+            <a class="btn small-btn" href="<%= o.paymentUrl %>">Продолжить оплату</a>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <% } %>
+</section>
+
+<%- include('partials/foot') %>

@@ -6,6 +6,7 @@ import {
   Archive,
   ChevronRight,
   CircleHelp,
+  CreditCard,
   Keyboard,
   LifeBuoy,
   LogOut,
@@ -144,10 +145,21 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <DropdownMenuSeparator />
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+            <Menu.MenuItem
+              onClick={() => (window.location.href = '/billing')}
+              className="select-item text-sm"
+              data-testid="nav-balance"
+            >
               {localize('com_nav_balance')}:{' '}
               {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
-            </div>
+            </Menu.MenuItem>
+            <Menu.MenuItem
+              onClick={() => (window.location.href = '/billing')}
+              className="select-item text-sm"
+            >
+              <CreditCard className="icon-md" aria-hidden="true" />
+              Тарифы и оплата
+            </Menu.MenuItem>
             <DropdownMenuSeparator />
           </>
         )}

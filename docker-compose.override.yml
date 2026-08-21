@@ -1,0 +1,76 @@
+# DSTLab production overrides: build from this repo's source, publish nothing
+# to host ports, route through the shared Traefik "edge" network instead.
+services:
+  api:
+    image: librechat-dstlab:main
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    volumes:
+      - type: bind
+        source: ./librechat.yaml
+        target: /app/librechat.yaml
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      traefik.http.routers.librechat.rule: "Host(`librechat.aidstlab.top`)"
+      traefik.http.routers.librechat.entrypoints: "websecure"
+      traefik.http.routers.librechat.tls: "true"
+      traefik.http.routers.librechat.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat.loadbalancer.server.port: "3080"
+
+  admin-panel:
+    image: libre-admin-panel-dstlab:latest
+    build:
+      context: ../libre-admin-panel
+      dockerfile: Dockerfile
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      traefik.http.routers.librechat-admin.rule: "Host(`librechat-admin.aidstlab.top`)"
+      traefik.http.routers.librechat-admin.entrypoints: "websecure"
+      traefik.http.routers.librechat-admin.tls: "true"
+      traefik.http.routers.librechat-admin.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat-admin.loadbalancer.server.port: "3000"
+
+  billing:
+    image: librechat-billing:latest
+    build:
+      context: ./billing
+    restart: always
+    depends_on:
+      - mongodb
+    environment:
+      - PORT=3000
+      - PUBLIC_URL=${DOMAIN_CLIENT:-https://librechat.aidstlab.top}
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - ALFAPAY_DRIVER=${ALFAPAY_DRIVER:-mock}
+      - ALFAPAY_BASE_URL=${ALFAPAY_BASE_URL:-}
+      - ALFAPAY_API_KEY=${ALFAPAY_API_KEY:-}
+      - ALFAPAY_PROJECT_ID=${ALFAPAY_PROJECT_ID:-}
+    networks:
+      - default
+      - edge
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      # Priority 100 wins over the chat router for the /billing prefix on the same host.
+      traefik.http.routers.librechat-billing.rule: "Host(`librechat.aidstlab.top`) && PathPrefix(`/billing`)"
+      traefik.http.routers.librechat-billing.priority: "100"
+      traefik.http.routers.librechat-billing.entrypoints: "websecure"
+      traefik.http.routers.librechat-billing.tls: "true"
+      traefik.http.routers.librechat-billing.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat-billing.loadbalancer.server.port: "3000"
+
+networks:
+  edge:
+    external: true

@@ -1,0 +1,45 @@
+<%- include('../partials/head', { title: 'Платежи — админ', user, nav: 'admin-orders' }) %>
+<h1>Платежи</h1>
+<% if (msg) { %><div class="notice"><%= msg %></div><% } %>
+
+<section class="stats">
+  <div class="card stat"><div class="muted small">Оплачено</div><div class="stat-value"><%= fmtRub(sums.paid?.total || 0) %></div><div class="muted small"><%= sums.paid?.n || 0 %> платежей</div></div>
+  <div class="card stat"><div class="muted small">Возвраты</div><div class="stat-value"><%= fmtRub(sums.refunded?.total || 0) %></div><div class="muted small"><%= sums.refunded?.n || 0 %> платежей</div></div>
+</section>
+
+<form method="get" action="<%= basePath %>/admin" class="filter">
+  <select name="status" onchange="this.form.submit()">
+    <% ['all','pending','paid','refunded','auth_declined','failed','expired','cancelled'].forEach((s) => { %>
+      <option value="<%= s %>" <%= statusFilter === s ? 'selected' : '' %>><%= s === 'all' ? 'Все статусы' : statusRu(s) %></option>
+    <% }) %>
+  </select>
+</form>
+
+<section class="card">
+  <div class="table-wrap"><table>
+    <thead><tr><th>Дата</th><th>Пользователь</th><th>Пакет</th><th>Сумма</th><th>Кредиты</th><th>Статус</th><th>Заказ</th><th></th></tr></thead>
+    <tbody>
+    <% orders.forEach((o) => { %>
+      <tr>
+        <td><%= fmtDate(o.createdAt) %></td>
+        <td><%= o.userEmail %></td>
+        <td><%= o.tariff.title %></td>
+        <td><%= fmtRub(o.tariff.priceKopecks) %></td>
+        <td><%= fmtCredits(o.tariff.credits) %></td>
+        <td><span class="status st-<%= o.status %>"><%= statusRu(o.status) %></span></td>
+        <td class="muted small"><%= o.orderNumber %></td>
+        <td class="row-actions">
+          <% if (['pending','hold'].includes(o.status)) { %>
+          <form method="post" action="<%= basePath %>/admin/orders/<%= o._id %>/sync"><button class="btn small-btn">Проверить</button></form>
+          <% } %>
+          <% if (o.status === 'paid') { %>
+          <form method="post" action="<%= basePath %>/admin/orders/<%= o._id %>/refund" onsubmit="return confirm('Полный возврат по заказу <%= o.orderNumber %>?')"><button class="btn small-btn danger">Возврат</button></form>
+          <% } %>
+        </td>
+      </tr>
+    <% }) %>
+    <% if (!orders.length) { %><tr><td colspan="8" class="muted">Платежей нет.</td></tr><% } %>
+    </tbody>
+  </table></div>
+</section>
+<%- include('../partials/foot') %>

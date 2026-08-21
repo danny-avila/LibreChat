@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title><%= title %> — DSTLab AI</title>
+<link rel="stylesheet" href="<%= basePath %>/static/billing.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/">← Вернуться в чат</a>
+    <nav class="topnav">
+      <a href="<%= basePath %>" class="<%= nav === 'billing' ? 'active' : '' %>">Оплата</a>
+      <% if (user && user.role === 'ADMIN') { %>
+        <a href="<%= basePath %>/admin" class="<%= nav === 'admin-orders' ? 'active' : '' %>">Платежи</a>
+        <a href="<%= basePath %>/admin/tariffs" class="<%= nav === 'admin-tariffs' ? 'active' : '' %>">Тарифы</a>
+        <a href="<%= basePath %>/admin/users" class="<%= nav === 'admin-users' ? 'active' : '' %>">Пользователи</a>
+      <% } %>
+    </nav>
+    <span class="whoami"><%= user ? (user.email || user.username) : '' %></span>
+  </div>
+</header>
+<main class="page">
