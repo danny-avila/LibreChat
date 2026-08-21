@@ -1122,7 +1122,8 @@ function projectStoredMessageForProvider(
       isUserSubmitted: false,
     }),
   };
-  if (!Array.isArray(message.content)) {
+  const messageContent = message.content;
+  if (!Array.isArray(messageContent)) {
     return providerMessage;
   }
   const projectPart = (
@@ -1143,17 +1144,17 @@ function projectStoredMessageForProvider(
   if (selectedContentPartIndices == null) {
     return {
       ...providerMessage,
-      content: message.content.map(projectPart),
+      content: messageContent.map(projectPart),
     };
   }
 
   const selectedIndices = [...selectedContentPartIndices]
-    .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < message.content.length)
+    .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < messageContent.length)
     .sort((left, right) => left - right);
   const compactIndexBySourceIndex = new Map<number, number>();
-  const content: NonNullable<StoredMessageContentInput['content']> = [];
+  const content: Array<NonNullable<StoredMessageContentInput['content']>[number]> = [];
   for (const sourceIndex of selectedIndices) {
-    const part = message.content[sourceIndex];
+    const part = messageContent[sourceIndex];
     if (part == null) {
       continue;
     }
@@ -1184,12 +1185,13 @@ function projectStoredMessageForProvider(
   const userSubmittedPaths = (message.userSubmittedPaths ?? [])
     .map(remapSelectedPath)
     .filter((path): path is JsonPointer => path != null);
-  const userSubmittedMessageFieldPaths = (message.userSubmittedMessageFieldPaths ?? [])
-    .map((entry) => {
-      const path = remapSelectedPath(entry?.path);
-      return path == null ? undefined : { ...entry, path };
-    })
-    .filter((entry): entry is UserSubmittedMessageFieldPath => entry != null);
+  const userSubmittedMessageFieldPaths: UserSubmittedMessageFieldPath[] = [];
+  for (const entry of message.userSubmittedMessageFieldPaths ?? []) {
+    const path = remapSelectedPath(entry?.path);
+    if (path != null) {
+      userSubmittedMessageFieldPaths.push({ ...entry, path });
+    }
+  }
   return {
     ...providerMessage,
     userSubmittedPaths,
@@ -1709,7 +1711,7 @@ export function createInitialModelBoundAdmissionCallback(
     }
   };
 
-  return Object.freeze({
+  const callback: InitialModelBoundAdmissionCallback = {
     name: 'librechat-initial-model-bound-admission',
     raiseError: true,
     awaitHandlers: true,
@@ -1793,7 +1795,8 @@ export function createInitialModelBoundAdmissionCallback(
         clearAgentNodeRun(runId);
       }
     },
-  });
+  };
+  return Object.freeze(callback);
 }
 
 /**
