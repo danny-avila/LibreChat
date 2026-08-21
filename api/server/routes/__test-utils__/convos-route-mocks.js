@@ -32,6 +32,7 @@ module.exports = {
       });
       return archiveAllHandler;
     }),
+    createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),

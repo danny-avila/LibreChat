@@ -3406,6 +3406,7 @@ describe('Conversation Operations', () => {
           conversationId: parentConversationId,
           user: 'view-user',
           tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
         },
         {
           conversationId,
