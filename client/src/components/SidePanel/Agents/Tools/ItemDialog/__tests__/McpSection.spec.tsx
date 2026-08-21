@@ -282,13 +282,14 @@ describe('McpSection', () => {
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
   });
 
-  test('lets an already-connected request-scoped server attach its runtime tools', () => {
+  test('lets a ready request-scoped server attach its runtime tools', () => {
     const runtimeItem: McpItem = {
       ...item,
       server: {
         ...item.server,
         tools: [],
-        isConnected: true,
+        isConnected: false,
+        isReadyForAgent: true,
         requestScoped: true,
       } as never,
       toolCount: 0,
@@ -320,6 +321,7 @@ describe('McpSection', () => {
         ...item.server,
         tools: [],
         isConnected: true,
+        isReadyForAgent: true,
         requestScoped: true,
       } as never,
       toolCount: 0,
