@@ -41,6 +41,7 @@ jest.mock('~/server/services/Config', () => ({
 jest.mock('~/server/services/MCP', () => ({
   healMcpToolNames: jest.fn(({ tools }) => tools),
   getAssistantToolDefinitions: jest.fn().mockResolvedValue({}),
+  toProviderToolDefinition: jest.fn((tool) => tool),
 }));
 jest.mock('~/app/clients/tools', () => ({
   manifestToolMap: {},

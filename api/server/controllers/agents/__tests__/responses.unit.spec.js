@@ -14,6 +14,24 @@ const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockResolveMemoryAvailability = jest.fn().mockResolvedValue(true);
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
+const mockInspectContent = jest.fn().mockReturnValue(null);
+const mockResolveConversationTitle = jest.fn(({ filters, candidate, fallback = 'New Chat' }) => {
+  const resolveAllowedTitle = (value) => {
+    if (typeof value !== 'string' || value.trim() === '') {
+      return null;
+    }
+    const finding = mockInspectContent(
+      [{ source: 'conversation_title', field: 'title', text: value }],
+      { filters },
+    );
+    return finding == null ? value : null;
+  };
+
+  return (
+    resolveAllowedTitle(candidate) ??
+    (fallback === candidate ? null : resolveAllowedTitle(fallback))
+  );
+});
 const mockHasActivePiiPatterns = (config) =>
   config != null &&
   (config.starterPatterns == null ||
@@ -147,6 +165,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  SAFE_CONVERSATION_TITLE: 'New Chat',
+  resolveConversationTitle: (...args) => mockResolveConversationTitle(...args),
   /** Pass-through: the controller strips UI-only activity-label parts
    *  before SDK formatting; the mock must expose it like any other used
    *  export or the call throws before the assertions run. */
@@ -242,7 +262,7 @@ jest.mock('@librechat/api', () => ({
   buildResponse: jest.fn().mockReturnValue({ id: 'resp_123', output: [] }),
   generateResponseId: jest.fn().mockReturnValue('resp_mock-123'),
   isValidationFailure: jest.fn().mockReturnValue(false),
-  inspectContent: jest.fn().mockReturnValue(null),
+  inspectContent: mockInspectContent,
   extractConversationTitleContent: jest.fn(({ title }) => [
     { source: 'conversation_title', field: 'title', text: title },
   ]),
