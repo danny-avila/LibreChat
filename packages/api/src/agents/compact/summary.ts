@@ -133,9 +133,15 @@ export interface CompactionUsage {
 
 export interface CompactionModel {
   provider: Providers;
-  /** The endpoint the call resolved to, for token-window lookups that key on
-   *  endpoints rather than SDK provider names. */
+  /** The endpoint the call resolved to. */
   endpoint: string;
+  /**
+   * Endpoint key for `getModelMaxTokens`. A NAMED custom endpoint (`Ollama`)
+   * is not a key in the built-in token maps, which index custom models under
+   * `EModelEndpoint.custom`; passing the literal name there silently yields the
+   * fallback window.
+   */
+  tokenLookupEndpoint: EModelEndpoint;
   model?: string;
   clientOptions: ClientOptions;
   endpointTokenConfig?: EndpointTokenConfig;
@@ -154,12 +160,22 @@ export interface CompactionAgent {
   model_parameters?: Partial<AgentModelParameters> & { model?: string };
 }
 
+/** Stored user-key expiry lookup, used to build the freshness marker. */
+export type GetUserKeyExpiryFn = (params: {
+  userId: string;
+  name: string;
+}) => Promise<{ expiresAt: Date | 'never' | null }>;
+
+export type CompactionDbMethods = EndpointDbMethods & {
+  getUserKeyExpiry?: GetUserKeyExpiryFn;
+};
+
 export interface ResolveCompactionModelParams {
   req: ServerRequest;
   agent: CompactionAgent;
   /** Request-scoped ids for header placeholder resolution. */
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
-  db: EndpointDbMethods;
+  db: CompactionDbMethods;
 }
 
 /**
@@ -386,8 +402,34 @@ export async function resolveCompactionModel({
   const runModel = agent.model_parameters?.model ?? agent.model ?? undefined;
   const model = isNonEmptyString(summarization?.model) ? summarization.model : runModel;
 
+  /**
+   * The user-key freshness marker `initializeOpenAI` / `initializeGoogle` read
+   * before loading a stored credential. Resolved HERE, from the stored record
+   * for the endpoint compaction actually runs on, rather than taken from the
+   * request: a cross-endpoint `summarization.provider` means the conversation's
+   * own marker would be for the wrong endpoint (or absent), and the server's
+   * copy is authoritative anyway.
+   */
+  let keyExpiry: string | undefined;
+  if (db.getUserKeyExpiry) {
+    try {
+      const stored = await db.getUserKeyExpiry({ userId: req.user?.id ?? '', name: endpoint });
+      if (stored?.expiresAt != null) {
+        keyExpiry =
+          stored.expiresAt === 'never' ? 'never' : new Date(stored.expiresAt).toISOString();
+      }
+    } catch (error) {
+      logger.debug('[compact] No stored user key expiry for the compaction endpoint', error);
+    }
+  }
+  /** Shallow clone: `getOptions` reads `body.key`, and the caller's request
+   *  must not be mutated for the rest of its lifetime. */
+  const optionsReq = (
+    keyExpiry != null ? { ...req, body: { ...(req.body ?? {}), key: keyExpiry } } : req
+  ) as ServerRequest;
+
   const options = await providerConfig.getOptions({
-    req,
+    req: optionsReq,
     endpoint,
     model_parameters: { ...(agent.model_parameters ?? {}), model },
     db,
@@ -448,6 +490,10 @@ export async function resolveCompactionModel({
   return {
     provider,
     endpoint,
+    /** Named custom endpoints index their models under `custom`. */
+    tokenLookupEndpoint: (providerConfig.customEndpointConfig != null
+      ? EModelEndpoint.custom
+      : endpoint) as EModelEndpoint,
     model,
     clientOptions,
     endpointTokenConfig: options.endpointTokenConfig,
@@ -563,6 +609,17 @@ function extractResponseText(message: BaseMessage | undefined): string {
     .trim();
 }
 
+/**
+ * Output tokens the request will ask for, which count against the provider's
+ * combined context limit alongside the prompt. Reads the same key the client
+ * options carry it under, so an inherited conversation cap is respected.
+ */
+function resolveOutputReserve(clientOptions: ClientOptions, provider: Providers): number {
+  const key = getMaxOutputTokensKey(provider);
+  const configured = (clientOptions as Record<string, unknown>)[key];
+  return typeof configured === 'number' && configured > 0 ? configured : 0;
+}
+
 /** Adds one pass's reported usage into the running total across passes. */
 function mergeUsage(
   running: CompactionUsage | undefined,
@@ -671,7 +728,7 @@ export interface CompactConversationParams {
   /** Branch messages, oldest first. */
   branch: TMessage[];
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
-  db: EndpointDbMethods;
+  db: CompactionDbMethods;
   /** Owner-scoped file lookup for attachment hydration. Omitted in unit tests
    *  and for callers whose branch carries no attachments. */
   getFiles?: GetFilesFn;
@@ -717,11 +774,11 @@ export class TranscriptTooLargeError extends Error {
 }
 
 /**
- * Raised when the provider answered with no usable text. Carries the usage it
- * reported: an empty or content-filtered completion is still a billed call, so
- * the host records it before surfacing the failure.
+ * A compaction failure that nevertheless completed provider calls. The host
+ * bills the carried usage before surfacing it, so a partial multi-pass run is
+ * never silently free.
  */
-export class EmptyCompactionError extends Error {
+export class BilledCompactionError extends Error {
   readonly usage?: CompactionUsage;
   readonly model?: string;
   readonly provider?: string;
@@ -735,14 +792,35 @@ export class EmptyCompactionError extends Error {
     provider?: string;
     endpointTokenConfig?: EndpointTokenConfig;
     estimatedUsage: { input_tokens: number; output_tokens: number };
+    message?: string;
   }) {
-    super('Compaction produced empty output');
-    this.name = 'EmptyCompactionError';
+    super(details.message ?? 'Compaction produced empty output');
+    this.name = 'BilledCompactionError';
     this.usage = details.usage;
     this.model = details.model;
     this.provider = details.provider;
     this.endpointTokenConfig = details.endpointTokenConfig;
     this.estimatedUsage = details.estimatedUsage;
+  }
+}
+
+/** The provider answered a pass with no usable text. */
+export class EmptyCompactionError extends BilledCompactionError {
+  constructor(details: ConstructorParameters<typeof BilledCompactionError>[0]) {
+    super(details);
+    this.name = 'EmptyCompactionError';
+  }
+}
+
+/** A pass threw after earlier passes had already spent. */
+export class PartialCompactionError extends BilledCompactionError {
+  readonly cause: unknown;
+  constructor(
+    details: ConstructorParameters<typeof BilledCompactionError>[0] & { cause: unknown },
+  ) {
+    super(details);
+    this.name = 'PartialCompactionError';
+    this.cause = details.cause;
   }
 }
 
@@ -789,35 +867,49 @@ export async function compactConversation({
     ? summarization.updatePrompt
     : DEFAULT_COMPACTION_UPDATE_PROMPT;
 
-  const { provider, endpoint, model, clientOptions, endpointTokenConfig, sameEndpoint } =
+  const { provider, tokenLookupEndpoint, model, clientOptions, endpointTokenConfig, sameEndpoint } =
     await resolveCompactionModel({ req, agent, ids, db });
 
   const llm = initializeModel({ provider, clientOptions });
 
-  /** The endpoint the call resolved to, not the SDK provider name:
-   *  `providerEndpointMap` covers only four endpoints, so mapping through it
-   *  would send `undefined` for Google and fall back to a tiny window. */
+  /** Resolved endpoint, not the SDK provider name: `providerEndpointMap` covers
+   *  only four endpoints, so mapping through it sends `undefined` for Google
+   *  and falls back to a tiny window. Named custom endpoints resolve to
+   *  `custom`, where their models actually live in the token map. */
   const contextWindow =
-    getModelMaxTokens(model ?? '', endpoint as EModelEndpoint, endpointTokenConfig) ??
+    getModelMaxTokens(model ?? '', tokenLookupEndpoint, endpointTokenConfig) ??
     FALLBACK_CONTEXT_TOKENS;
-  const chunks = await chunkTranscript(
-    messages as BaseMessage[],
-    Math.max(1024, Math.floor(contextWindow * TRANSCRIPT_BUDGET_RATIO)),
+  /** The request asks for output too: a chunk sized against the whole window
+   *  plus an inherited output cap exceeds the provider's combined limit. */
+  const outputReserve = resolveOutputReserve(clientOptions, provider);
+  const instructionReserve = await countTokens(
+    buildCompactionInstruction(promptText, updatePromptText, ''),
   );
+  const chunkBudget = Math.max(
+    1024,
+    Math.floor((contextWindow - outputReserve - instructionReserve) * TRANSCRIPT_BUDGET_RATIO),
+  );
+  const chunks = await chunkTranscript(messages as BaseMessage[], chunkBudget);
   if (chunks.length > MAX_COMPACTION_PASSES) {
     /** Refuse rather than drop: a checkpoint that silently omitted the oldest
      *  turns would still replace them in every later prompt. */
     throw new TranscriptTooLargeError(chunks.length, MAX_COMPACTION_PASSES);
   }
 
-  /** Sum across every pass so the balance gate covers the whole operation, not
-   *  just its first call. */
-  let promptTokens = 0;
+  /** Estimated across every pass so the balance gate covers the whole
+   *  operation, not just its first call. The instruction (and, after the first
+   *  pass, the running checkpoint) rides on each one. */
+  let estimatedPromptTokens = instructionReserve * chunks.length;
   for (const chunk of chunks) {
-    promptTokens += await countPromptTokens(chunk);
+    estimatedPromptTokens += await countPromptTokens(chunk);
   }
   if (beforeInvoke) {
-    await beforeInvoke({ promptTokens, model, provider, endpointTokenConfig });
+    await beforeInvoke({
+      promptTokens: estimatedPromptTokens,
+      model,
+      provider,
+      endpointTokenConfig,
+    });
   }
 
   const timeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS);
@@ -833,41 +925,57 @@ export async function compactConversation({
    */
   let text = '';
   let usage: CompactionUsage | undefined;
+  /** Actual locally counted sizes of what each pass sent and received, so a
+   *  provider that reports no usage is still billed for every call rather than
+   *  the transcript alone. */
+  const counted = { input_tokens: 0, output_tokens: 0 };
+  const billingDetails = () => ({
+    usage,
+    model,
+    provider,
+    endpointTokenConfig,
+    estimatedUsage: { ...counted },
+  });
+
   for (const chunk of chunks) {
     const instruction = buildCompactionInstruction(
       promptText,
       updatePromptText,
       text || priorSummary?.text,
     );
-    const response = await invokeCompactionModel(
-      llm,
-      [...chunk, new HumanMessage(instruction)] as BaseMessage[],
-      {
+    const passMessages = [...chunk, new HumanMessage(instruction)] as BaseMessage[];
+    counted.input_tokens += await countPromptTokens(passMessages);
+
+    let response: AIMessage | undefined;
+    try {
+      response = await invokeCompactionModel(llm, passMessages, {
         signal: abortSignal,
         runName: 'CompactRun',
         configurable: {
           thread_id: ids.conversationId,
           user_id: req.user?.id,
         },
-      },
-    );
+      });
+    } catch (error) {
+      /** Earlier passes already spent; carry their usage out so the host bills
+       *  what actually happened instead of losing it with the exception. */
+      throw new PartialCompactionError({
+        ...billingDetails(),
+        cause: error,
+        message: error instanceof Error ? error.message : 'Compaction pass failed',
+      });
+    }
+
     usage = mergeUsage(usage, extractUsage(response, model, provider));
     const passText = extractResponseText(response);
-    if (passText !== '') {
-      text = passText;
+    /** An empty pass means THIS chunk was never folded in, and a later pass
+     *  would still produce a boundary that discards it. Refuse rather than
+     *  persist a checkpoint that silently omits part of the branch. */
+    if (passText === '') {
+      throw new EmptyCompactionError(billingDetails());
     }
-  }
-
-  if (text === '') {
-    /** Still a billed call: an OpenAI-compatible gateway may report no usage
-     *  at all, so the local estimate travels with the failure. */
-    throw new EmptyCompactionError({
-      usage,
-      model,
-      provider,
-      endpointTokenConfig,
-      estimatedUsage: { input_tokens: promptTokens, output_tokens: 0 },
-    });
+    counted.output_tokens += await countTokens(passText);
+    text = passText;
   }
 
   /**
@@ -896,7 +1004,9 @@ export async function compactConversation({
     endpointTokenConfig,
     provider,
     model,
-    estimatedUsage: { input_tokens: promptTokens, output_tokens: summaryTokens },
+    /** What every pass actually sent and received, locally counted, for the
+     *  host's fallback when the provider reported no usage. */
+    estimatedUsage: { ...counted },
     summary: {
       type: ContentTypes.SUMMARY,
       content: [{ type: ContentTypes.TEXT, text }],

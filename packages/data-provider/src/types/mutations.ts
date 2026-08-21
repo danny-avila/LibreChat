@@ -502,9 +502,6 @@ export type TCompactConversationRequest = Partial<types.TConversation> & {
   /** Leaf of the branch to compact; everything up to it is summarized. */
   parentMessageId?: string | null;
   ephemeralAgent?: types.TEphemeralAgent | null;
-  /** User-key expiry marker the user-provided-credential endpoints read
-   *  before loading a stored key, exactly as a normal submission sends it. */
-  key?: string | null;
   isTemporary?: boolean;
 };
 

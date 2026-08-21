@@ -1,9 +1,8 @@
 import { useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
-import { Constants, EModelEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, isAssistantsEndpoint } from 'librechat-data-provider';
 import { useCompactConversationMutation } from '~/data-provider';
 import { isTemporaryConversation } from '~/utils';
-import useUserKey from '~/hooks/Input/useUserKey';
 import { NotificationSeverity } from '~/common';
 import { useGetEphemeralAgent } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
@@ -42,7 +41,6 @@ export default function useCompactConversation() {
   const { showToast } = useToastContext();
   const getEphemeralAgent = useGetEphemeralAgent();
   const { conversation, latestMessageId, isSubmitting } = useChatContext();
-  const { getExpiry } = useUserKey(conversation?.endpoint ?? '');
   const { mutate, isLoading } = useCompactConversationMutation();
 
   const conversationId = conversation?.conversationId;
@@ -65,13 +63,6 @@ export default function useCompactConversation() {
         conversationId,
         parentMessageId: latestMessageId,
         ephemeralAgent: getEphemeralAgent(conversationId),
-        /** The user-key expiry marker `initializeOpenAI` / `initializeGoogle`
-         *  read before loading a user-provided credential. Endpoint-aware, the
-         *  same way `useChatFunctions` sets it for a normal submission. */
-        key:
-          conversation?.endpoint === EModelEndpoint.agents
-            ? new Date(Date.now() + 60 * 60 * 1000).toISOString()
-            : getExpiry(),
         /** Without this the summary is saved as a permanent message inside a
          *  temporary conversation and outlives every message it replaced. */
         isTemporary: isTemporaryConversation(conversation),
@@ -102,7 +93,6 @@ export default function useCompactConversation() {
     showToast,
     conversation,
     isSubmitting,
-    getExpiry,
     conversationId,
     latestMessageId,
     hasConversation,

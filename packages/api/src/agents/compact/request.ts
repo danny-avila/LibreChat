@@ -8,7 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { Agent, TMessage, TModelsConfig, TResponseUsage } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { CompactionResult, CompactionUsage, GetFilesFn } from './summary';
+import type { CompactionResult, CompactionUsage, GetFilesFn, GetUserKeyExpiryFn } from './summary';
 import type { BulkWriteDeps, PricingFns } from '~/agents/transactions';
 import type { ValidateAgentModelParams } from '~/agents/validation';
 import type { CheckBalanceDeps } from '~/middleware/checkBalance';
@@ -18,7 +18,7 @@ import type { RecordUsageDeps } from '~/agents/usage';
 import {
   compactConversation,
   selectBranchMessages,
-  EmptyCompactionError,
+  BilledCompactionError,
   NothingToCompactError,
   TranscriptTooLargeError,
 } from './summary';
@@ -91,6 +91,9 @@ export interface CompactRequestDeps
   getModelsConfig: (req: ServerRequest) => Promise<TModelsConfig>;
   getJob: (streamId: string) => Promise<{ status?: string } | null | undefined>;
   getFiles: GetFilesFn;
+  /** Stored user-key expiry, so the freshness marker is resolved for the
+   *  endpoint compaction runs on rather than taken from the request. */
+  getUserKeyExpiry?: GetUserKeyExpiryFn;
   /** Widest shape both consumers accept: `checkBalance` types its request as
    *  `unknown` and passes a numeric score, `validateAgentModel` types the
    *  request narrowly and may pass a string one. */
@@ -342,7 +345,11 @@ export async function handleCompactRequest(
         agent,
         branch,
         ids,
-        db: { getUserKey: deps.getUserKey, getUserKeyValues: deps.getUserKeyValues },
+        db: {
+          getUserKey: deps.getUserKey,
+          getUserKeyValues: deps.getUserKeyValues,
+          getUserKeyExpiry: deps.getUserKeyExpiry,
+        },
         getFiles: deps.getFiles,
         signal,
         /** Same gate `BaseClient` applies before a normal turn contacts the
@@ -382,9 +389,9 @@ export async function handleCompactRequest(
         },
       });
     } catch (error) {
-      /** A provider that answered with empty or filtered content still charged
-       *  for the call; bill it before surfacing the failure. */
-      if (error instanceof EmptyCompactionError) {
+      /** Provider calls that completed still cost money, whether the pass came
+       *  back empty or a later pass threw; bill them before surfacing. */
+      if (error instanceof BilledCompactionError) {
         await recordCompactionUsage(deps, {
           userId,
           appConfig,
