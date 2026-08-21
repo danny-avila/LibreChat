@@ -683,7 +683,7 @@ Citations:
 
     it('should copy markdown as html alongside the plain text', () => {
       const { result } = renderHook(() =>
-        useCopyToClipboard({ text: '# Title\n\nSome **bold** text.', richText: true }),
+        useCopyToClipboard({ text: '# Title\n\nSome **bold** text.', richText: 'full' }),
       );
 
       act(() => {
@@ -709,7 +709,7 @@ Citations:
             { type: ContentTypes.TEXT, text: 'Cited \ue202turn0search0' },
           ] as TMessageContentParts[],
           searchResults: mockSearchResults,
-          richText: true,
+          richText: 'full',
         }),
       );
 
@@ -721,6 +721,49 @@ Citations:
       expect(html).toContain('<h2>Findings</h2>');
       expect(html).toContain('Cited [1]');
       expect(html).toContain('https://example.com/1');
+    });
+
+    it('does not let a markdown construct span two content parts', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          content: [
+            { type: ContentTypes.TEXT, text: '```js' },
+            { type: ContentTypes.TEXT, text: 'Prose that renders on its own.' },
+          ] as TMessageContentParts[],
+          richText: 'full',
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const html = getClipboardHtml();
+      expect(html).toContain('<p>Prose that renders on its own.</p>');
+      expect(html).not.toContain('<code>Prose');
+    });
+
+    it('keeps the part boundary out of the plain text', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          content: [
+            { type: ContentTypes.TEXT, text: 'First line' },
+            { type: ContentTypes.TEXT, text: 'Second line' },
+          ] as TMessageContentParts[],
+          searchResults: {
+            '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+          } as { [key: string]: SearchResultData },
+          richText: 'full',
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const [plainText] = mockCopy.mock.calls[0];
+      expect(plainText).toBe('First line\nSecond line');
+      expect(plainText).not.toContain('\ue210');
     });
   });
 });

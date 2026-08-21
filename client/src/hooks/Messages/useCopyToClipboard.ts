@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { MarkdownVariant } from '~/utils/richtext';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -32,8 +33,12 @@ const refTypeMap: Record<string, string> = {
 
 type ClipboardSource = Partial<Pick<TMessage, 'text' | 'content'>> & {
   searchResults?: { [key: string]: SearchResultData };
-  /** Also place the markdown rendered as HTML on the clipboard, for paste targets that ignore Markdown. */
-  richText?: boolean;
+  /**
+   * Also place the markdown rendered as HTML on the clipboard, for paste
+   * targets that ignore Markdown. The variant selects the message renderer to
+   * mirror; omitting it copies plain text only.
+   */
+  richText?: MarkdownVariant;
 };
 
 function getPartText(part: TMessageContentParts): string {
@@ -44,12 +49,19 @@ function getPartText(part: TMessageContentParts): string {
   return typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
 }
 
-export function serializeMessageForClipboard({
-  text,
-  content,
-}: Partial<Pick<TMessage, 'text' | 'content'>>): string {
+/**
+ * Each text part is rendered through its own Markdown instance on screen, so a
+ * construct never spans two of them. This private-use sentinel keeps that
+ * boundary through citation processing, which only ever touches its own
+ * `\ue200`-`\ue206` markers.
+ */
+const PART_BOUNDARY = '\ue210';
+const PART_BOUNDARY_SPLIT = /\n?\ue210\n?/;
+
+function getMessageParts({ text, content }: Partial<Pick<TMessage, 'text' | 'content'>>): string[] {
   if (!Array.isArray(content) || content.length === 0) {
-    return text ?? '';
+    const messageText = text ?? '';
+    return messageText.length > 0 ? [messageText] : [];
   }
 
   const parts: string[] = [];
@@ -60,20 +72,27 @@ export function serializeMessageForClipboard({
     }
   }
 
-  return parts.join('\n');
+  return parts;
 }
 
-function buildClipboardText({ text, content, searchResults }: ClipboardSource): string {
-  const messageText = serializeMessageForClipboard({ text, content });
+export function serializeMessageForClipboard(
+  source: Partial<Pick<TMessage, 'text' | 'content'>>,
+): string {
+  return getMessageParts(source).join('\n');
+}
+
+function buildClipboardSegments({ text, content, searchResults }: ClipboardSource): string[] {
+  const parts = getMessageParts({ text, content });
 
   if (!searchResults || Object.keys(searchResults).length === 0) {
-    return messageText.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
+    return parts.map((part) => part.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, ''));
   }
 
-  const citationManager = processCitations(messageText, searchResults);
+  const citationManager = processCitations(parts.join(`\n${PART_BOUNDARY}\n`), searchResults);
+  const segments = citationManager.formattedText.split(PART_BOUNDARY_SPLIT);
 
   if (citationManager.citations.size === 0) {
-    return citationManager.formattedText;
+    return segments;
   }
 
   const sortedCitations = Array.from(citationManager.citations.entries()).sort(
@@ -83,19 +102,36 @@ function buildClipboardText({ text, content, searchResults }: ClipboardSource): 
     .map(([, citation]) => `[${citation.referenceNumber}] ${citation.link}\n`)
     .join('');
 
-  return `${citationManager.formattedText}\n\nCitations:\n${citationList}`;
+  const last = segments.length - 1;
+  segments[last] = `${segments[last]}\n\nCitations:\n${citationList}`;
+
+  return segments;
+}
+
+function buildClipboardText(source: ClipboardSource): string {
+  return buildClipboardSegments(source).join('\n');
 }
 
 export function hasCopyableText(source: ClipboardSource): boolean {
   return buildClipboardText(source).trim().length > 0;
 }
 
-function buildCopyOptions(clipboardText: string, richText: boolean): Parameters<typeof copy>[1] {
+function buildCopyOptions(
+  segments: readonly string[],
+  richText: MarkdownVariant | undefined,
+): Parameters<typeof copy>[1] {
   if (!richText) {
     return { format: 'text/plain' };
   }
 
-  const html = markdownToHtml(clipboardText);
+  let html = '';
+  for (const segment of segments) {
+    const serialized = markdownToHtml(segment, richText);
+    if (serialized.length > 0) {
+      html += html.length > 0 ? `\n${serialized}` : serialized;
+    }
+  }
+
   if (html.length === 0) {
     return { format: 'text/plain' };
   }
@@ -126,13 +162,14 @@ export default function useCopyToClipboard({
 
   const copyToClipboard = useCallback(
     (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>): boolean => {
-      const clipboardText = buildClipboardText({ text, content, searchResults });
+      const segments = buildClipboardSegments({ text, content, searchResults });
+      const clipboardText = segments.join('\n');
 
       if (clipboardText.trim().length === 0) {
         return false;
       }
 
-      if (!copy(clipboardText, buildCopyOptions(clipboardText, richText === true))) {
+      if (!copy(clipboardText, buildCopyOptions(segments, richText))) {
         return false;
       }
 
@@ -162,12 +199,23 @@ type MessageClipboardSource = ClipboardSource & Partial<Pick<TMessage, 'isCreate
  *
  * A user message is only rendered as markdown when `enableUserMsgMarkdown` is
  * on, so with it off the HTML flavor is skipped: otherwise text that reads as
- * literal on screen would arrive formatted in the paste target.
+ * literal on screen would arrive formatted in the paste target. User turns that
+ * do render go through `MarkdownLite`, hence the lighter variant.
  */
 export function useCopyMessageToClipboard({ isCreatedByUser, ...source }: MessageClipboardSource) {
   const copyRichText = useRecoilValue(store.copyRichText);
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
-  const richText = copyRichText && (isCreatedByUser !== true || enableUserMsgMarkdown);
+
+  const richText = useMemo((): MarkdownVariant | undefined => {
+    if (!copyRichText) {
+      return undefined;
+    }
+    if (isCreatedByUser !== true) {
+      return 'full';
+    }
+    return enableUserMsgMarkdown ? 'lite' : undefined;
+  }, [copyRichText, enableUserMsgMarkdown, isCreatedByUser]);
+
   return useCopyToClipboard({ ...source, richText });
 }
 

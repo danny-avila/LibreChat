@@ -1,3 +1,4 @@
+import supersub from 'remark-supersub';
 import { gfm } from 'micromark-extension-gfm';
 import { math } from 'micromark-extension-math';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
@@ -5,8 +6,33 @@ import { mathFromMarkdown } from 'mdast-util-math';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { directive } from 'micromark-extension-directive';
 import { directiveFromMarkdown } from 'mdast-util-directive';
-import type { AlignType, Definition, RootContent, Table } from 'mdast';
+import type { AlignType, Definition, Root, RootContent, Table } from 'mdast';
+import type { Extension as MicromarkExtension } from 'micromark-util-types';
+import { remarkApproxTilde } from './tilde';
 import { isSafeUrl } from './markdown';
+
+/**
+ * Which message renderer this copy has to match. `Markdown` (assistant turns)
+ * enables directives; `MarkdownLite` (user turns) does not, so a user message
+ * showing literal `:::` markers must keep them.
+ */
+export type MarkdownVariant = 'full' | 'lite';
+
+/**
+ * `remark-supersub` is typed as a unified `Transformer`, which declares a
+ * `file` and a `next` the plugin never reads: it only walks the tree. Narrowing
+ * those to optional arguments lets it be called as the plain mdast transform it
+ * is, so this copy stays on exactly the transform the renderers apply.
+ */
+const applySuperSub = supersub() as (tree: Root, file?: unknown, next?: unknown) => void;
+
+/** `remark-supersub` produces these outside of mdast's own node set. */
+type SuperSubNode = {
+  type: 'superscript' | 'subscript';
+  children: SerializableNode[];
+};
+
+type SerializableNode = RootContent | SuperSubNode;
 
 const MONOSPACE = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
 
@@ -21,7 +47,7 @@ const BORDER = '1px solid #d0d7de';
 const STYLES = {
   inlineCode: `font-family:${MONOSPACE};${CODE_COLORS}border-radius:4px;padding:0.15em 0.35em;`,
   codeBlock: `font-family:${MONOSPACE};${CODE_COLORS}border-radius:6px;padding:12px;white-space:pre-wrap;`,
-  blockquote: `margin:0 0 16px;padding:0 1em;border-left:4px solid #d0d7de;`,
+  blockquote: 'margin:0 0 16px;padding:0 1em;border-left:4px solid #d0d7de;',
   table: 'border-collapse:collapse;',
   headerCell: `border:${BORDER};padding:6px 13px;${CODE_COLORS}`,
   cell: `border:${BORDER};padding:6px 13px;`,
@@ -49,18 +75,40 @@ const taskMarker = (checked: boolean | null | undefined): string => {
   return checked === false ? '☐ ' : '';
 };
 
+/**
+ * A path-relative URL resolves against LibreChat on screen but against the
+ * destination document once pasted, so generated file and image links have to
+ * leave as absolute URLs. Absolute URLs are passed through verbatim rather than
+ * normalized, and a bare `#` fragment is left alone: it is an in-document
+ * anchor either way.
+ */
+function absoluteUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('/') && !trimmed.startsWith('.')) {
+    return url;
+  }
+
+  try {
+    return new URL(trimmed, document.baseURI).href;
+  } catch {
+    return url;
+  }
+}
+
 const anchor = (url: string, children: string): string =>
-  isSafeUrl(url) ? `<a href="${escapeHtml(url)}">${children}</a>` : children;
+  isSafeUrl(url) ? `<a href="${escapeHtml(absoluteUrl(url))}">${children}</a>` : children;
 
 const image = (url: string, alt: string): string =>
-  isSafeUrl(url) ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" />` : escapeHtml(alt);
+  isSafeUrl(url)
+    ? `<img src="${escapeHtml(absoluteUrl(url))}" alt="${escapeHtml(alt)}" />`
+    : escapeHtml(alt);
 
 /**
  * Reference-style links resolve against definitions that may appear anywhere in
  * the message, including after their use, so they are collected before any node
  * is serialized.
  */
-function collectDefinitions(nodes: readonly RootContent[], definitions: Definitions): void {
+function collectDefinitions(nodes: readonly SerializableNode[], definitions: Definitions): void {
   for (const node of nodes) {
     if (node.type === 'definition') {
       definitions.set(node.identifier, node);
@@ -103,7 +151,7 @@ function serializeTable(node: Table, definitions: Definitions): string {
  * `rehype-raw` either: what the user sees is the literal markup, and the
  * clipboard copy must not smuggle live markup into the paste target.
  */
-function serializeNode(node: RootContent, definitions: Definitions): string {
+function serializeNode(node: SerializableNode, definitions: Definitions): string {
   switch (node.type) {
     case 'text':
     case 'html':
@@ -118,6 +166,10 @@ function serializeNode(node: RootContent, definitions: Definitions): string {
       return `<em>${serializeChildren(node.children, definitions)}</em>`;
     case 'delete':
       return `<s>${serializeChildren(node.children, definitions)}</s>`;
+    case 'superscript':
+      return `<sup>${serializeChildren(node.children, definitions)}</sup>`;
+    case 'subscript':
+      return `<sub>${serializeChildren(node.children, definitions)}</sub>`;
     case 'inlineCode':
       return `<code style="${STYLES.inlineCode}">${escapeHtml(node.value)}</code>`;
     case 'code':
@@ -182,7 +234,7 @@ function serializeNode(node: RootContent, definitions: Definitions): string {
   }
 }
 
-function serializeChildren(nodes: readonly RootContent[], definitions: Definitions): string {
+function serializeChildren(nodes: readonly SerializableNode[], definitions: Definitions): string {
   let html = '';
   for (const node of nodes) {
     html += serializeNode(node, definitions);
@@ -195,21 +247,31 @@ function serializeChildren(nodes: readonly RootContent[], definitions: Definitio
  * the clipboard as `text/html`. Paste targets that ignore Markdown (Teams,
  * Outlook, Word) strip stylesheets, so every visual cue has to be inline.
  *
- * The parser options mirror the message renderer's, `singleDollarTextMath`
- * included, so currency such as `$5 to $10` stays currency instead of being
- * read as math.
+ * Parsing mirrors the message renderers: the same micromark extensions,
+ * `singleDollarTextMath` included so currency such as `$5 to $10` stays
+ * currency, followed by the same `remarkApproxTilde` and `remark-supersub`
+ * transforms they apply to the parsed tree.
  */
-export function markdownToHtml(markdown: string): string {
+export function markdownToHtml(markdown: string, variant: MarkdownVariant = 'full'): string {
+  const extensions: MicromarkExtension[] = [gfm(), math({ singleDollarTextMath: false })];
+  if (variant === 'full') {
+    extensions.push(directive());
+  }
+
   const tree = fromMarkdown(markdown, {
-    extensions: [gfm(), directive(), math({ singleDollarTextMath: false })],
+    extensions,
     mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown(), mathFromMarkdown()],
   });
 
+  remarkApproxTilde()(tree);
+  applySuperSub(tree);
+
+  const children = tree.children as SerializableNode[];
   const definitions: Definitions = new Map();
-  collectDefinitions(tree.children, definitions);
+  collectDefinitions(children, definitions);
 
   let html = '';
-  for (const node of tree.children) {
+  for (const node of children) {
     const serialized = serializeNode(node, definitions);
     if (serialized.length > 0) {
       html += html.length > 0 ? `\n${serialized}` : serialized;

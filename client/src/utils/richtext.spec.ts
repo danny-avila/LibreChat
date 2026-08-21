@@ -73,6 +73,28 @@ describe('markdownToHtml', () => {
     expect(markdownToHtml(':::artifact\ncontents\n:::')).toBe('<p>contents</p>');
   });
 
+  it('keeps directive markers literal for the lite renderer, which has no directives', () => {
+    expect(markdownToHtml(':::warning\ntext\n:::', 'lite')).toBe('<p>:::warning\ntext\n:::</p>');
+  });
+
+  it('applies the supersub transform the renderers apply', () => {
+    expect(markdownToHtml('x^2^ is squared')).toBe('<p>x<sup>2</sup> is squared</p>');
+    expect(markdownToHtml('x^2^ is squared', 'lite')).toBe('<p>x<sup>2</sup> is squared</p>');
+  });
+
+  it('leaves an approximate tilde out of the subscript pairing', () => {
+    expect(markdownToHtml('about ~50% of the time')).toBe('<p>about ∼50% of the time</p>');
+  });
+
+  it('absolutizes relative links and images so they survive the paste', () => {
+    expect(markdownToHtml('[file](/api/files/code/download/abc)')).toBe(
+      `<p><a href="${new URL('/api/files/code/download/abc', document.baseURI).href}">file</a></p>`,
+    );
+    expect(markdownToHtml('![chart](/images/chart.png)')).toBe(
+      `<p><img src="${new URL('/images/chart.png', document.baseURI).href}" alt="chart" /></p>`,
+    );
+  });
+
   it('leaves paired currency alone, as the renderer does', () => {
     expect(markdownToHtml('Costs rose from $5 to $10.')).toBe('<p>Costs rose from $5 to $10.</p>');
   });

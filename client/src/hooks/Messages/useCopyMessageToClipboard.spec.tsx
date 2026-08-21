@@ -38,6 +38,13 @@ describe('useCopyMessageToClipboard', () => {
     return options?.onCopy != null;
   };
 
+  const copiedHtml = (): string => {
+    const [, options] = mockCopy.mock.calls[0];
+    const clipboardData = { setData: jest.fn() };
+    options?.onCopy?.(clipboardData);
+    return (clipboardData.setData.mock.calls[0]?.[1] ?? '') as string;
+  };
+
   it('copies an assistant message as html when the preference is on', () => {
     const { result } = renderWithSettings(
       { copyRichText: true, enableUserMsgMarkdown: false },
@@ -75,6 +82,48 @@ describe('useCopyMessageToClipboard', () => {
     });
 
     expect(copiedAsHtml()).toBe(true);
+  });
+
+  it('mirrors MarkdownLite for a user message, which has no directives', () => {
+    const initializeState = ({ set }: MutableSnapshot) => {
+      set(store.copyRichText, true);
+      set(store.enableUserMsgMarkdown, true);
+    };
+    const { result } = renderHook(
+      () => useCopyMessageToClipboard({ text: ':::warning\ntext\n:::', isCreatedByUser: true }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
+        ),
+      },
+    );
+
+    act(() => {
+      result.current(mockSetIsCopied);
+    });
+
+    expect(copiedHtml()).toBe('<p>:::warning\ntext\n:::</p>');
+  });
+
+  it('mirrors Markdown for an assistant message, which unwraps directives', () => {
+    const initializeState = ({ set }: MutableSnapshot) => {
+      set(store.copyRichText, true);
+      set(store.enableUserMsgMarkdown, true);
+    };
+    const { result } = renderHook(
+      () => useCopyMessageToClipboard({ text: ':::warning\ntext\n:::', isCreatedByUser: false }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
+        ),
+      },
+    );
+
+    act(() => {
+      result.current(mockSetIsCopied);
+    });
+
+    expect(copiedHtml()).toBe('<p>text</p>');
   });
 
   it('stays plain for every author when the preference is off', () => {
