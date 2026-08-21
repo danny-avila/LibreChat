@@ -2255,6 +2255,61 @@ describe('assertModelBoundContent', () => {
 });
 
 describe('assertModelBoundProviderContent', () => {
+  it('scopes exact HITL provenance overflow away from unrelated file-only policy', () => {
+    const userSubmittedMessageFieldPaths = Array.from({ length: 257 }, (_, index) => ({
+      path: `/content/0/tool_call/output/${index}`,
+      field: 'decision_response' as const,
+    }));
+    const storedMessages = [
+      {
+        messageId: 'hitl-overflow',
+        isCreatedByUser: false,
+        role: 'assistant',
+        content: [{ type: 'tool_call', tool_call: { output: 'Safe answer' } }],
+        userSubmittedMessageFieldPaths,
+      },
+    ];
+    const providerMessages = [
+      {
+        role: 'assistant',
+        content: 'Safe answer',
+        additional_kwargs: { sourceMessageId: 'hitl-overflow' },
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        storedMessages,
+        providerMessages,
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['decision_response'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        storedMessages,
+        providerMessages,
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
   it('ignores provider-part snapshot overflow for unrelated model-parameter policies', () => {
     const payload = Object.fromEntries(
       Array.from({ length: 4_200 }, (_, index) => [`safe_${index}`, `value_${index}`]),

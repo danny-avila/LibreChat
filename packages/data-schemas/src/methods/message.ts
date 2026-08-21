@@ -106,6 +106,19 @@ function getSetUnionExpression(field: string, values: readonly unknown[]): Recor
   };
 }
 
+function getLiteralPipelineSet(update: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(update).map(([field, value]) => [field, { $literal: value }]),
+  );
+}
+
+function getStrictPipelineUpdate(Message: Model<IMessage>, update: Record<string, unknown>) {
+  const candidate = { ...update };
+  delete candidate._id;
+  delete candidate.tenantId;
+  return Message.castObject(candidate) as unknown as Record<string, unknown>;
+}
+
 /**
  * Builds one Mongo aggregation update that merges and caps both provenance
  * sets. Generic path overflow promotes the message to whole-message user
@@ -134,7 +147,7 @@ function buildAtomicProvenanceMerge(
   return [
     {
       $set: {
-        ...update,
+        ...getLiteralPipelineSet(update),
         [PROVENANCE_PATHS_UNION_FIELD]: pathsUnion,
         [PROVENANCE_FIELD_PATHS_UNION_FIELD]: fieldPathsUnion,
       },
@@ -424,7 +437,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       let messageUpdate: Record<string, unknown> | Record<string, unknown>[] = update;
       if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
         messageUpdate = buildAtomicProvenanceMerge(
-          update,
+          getStrictPipelineUpdate(Message, update),
           userSubmittedPaths,
           userSubmittedMessageFieldPaths,
           stampModelOutputOnInsert,
@@ -793,7 +806,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       delete update.userSubmittedMessageFieldPaths;
       const messageUpdate =
         submittedPaths.length > 0 || submittedMessageFields.length > 0
-          ? buildAtomicProvenanceMerge(update, submittedPaths, submittedMessageFields)
+          ? buildAtomicProvenanceMerge(
+              getStrictPipelineUpdate(Message, update),
+              submittedPaths,
+              submittedMessageFields,
+            )
           : update;
       const updatedMessage = await Message.findOneAndUpdate(
         { messageId, user: userId },

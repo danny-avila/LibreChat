@@ -2576,7 +2576,7 @@ function getCachedStoredProviderState(
     messageSnapshot,
     provenanceOptions,
   );
-  if (explicitSubmittedPathState.overflowed || submittedMessageFieldState.overflowed) {
+  if (explicitSubmittedPathState.overflowed) {
     markProviderProjectionWorkOverflow(budget);
   }
   const state: CachedStoredProviderState = {
@@ -2712,7 +2712,26 @@ function projectModelBoundProviderContent(
     StoredModelBoundMessage,
     Map<string, StoredProviderContributionState>
   >();
+  const reportedExactFieldOverflows = new WeakSet<StoredModelBoundMessage>();
   const legacyFileSourceIds = new Set<string>();
+  const appendExactFieldOverflow = (
+    message: StoredModelBoundMessage,
+    cachedState: CachedStoredProviderState,
+  ): void => {
+    if (
+      !cachedState.submittedMessageFieldState.overflowed ||
+      reportedExactFieldOverflows.has(message)
+    ) {
+      return;
+    }
+    reportedExactFieldOverflows.add(message);
+    deferredTraversalErrors.push(
+      new ContentTraversalLimitError(
+        [],
+        [{ source: 'message', fields: [...HITL_MESSAGE_FILTER_FIELDS] }],
+      ),
+    );
+  };
   const selectLegacyStoredMessage = (
     message: StoredModelBoundMessage,
     cachedState: CachedStoredProviderState,
@@ -2721,6 +2740,7 @@ function projectModelBoundProviderContent(
       return;
     }
     selectedStoredMessages.add(message);
+    appendExactFieldOverflow(message, cachedState);
     selectedMessages.push(
       projectStoredMessageForProvider(
         cachedState.messageSnapshot,
@@ -2817,6 +2837,7 @@ function projectModelBoundProviderContent(
               : undefined;
           const selectionKey = `${exactAttribution ?? 'canonical'}:${contentSelectionKey}`;
           if (markUniqueStoredSelection(exactCanonicalSelections, storedMessage, selectionKey)) {
+            appendExactFieldOverflow(storedMessage, cachedState);
             selectedMessages.push(
               projectStoredMessageForProvider(
                 cachedState.messageSnapshot,

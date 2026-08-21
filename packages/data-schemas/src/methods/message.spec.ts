@@ -242,6 +242,32 @@ describe('Message Operations', () => {
       expect(result?.userSubmittedPaths).toHaveLength(2);
     });
 
+    it('persists dollar-prefixed message values literally while merging provenance', async () => {
+      const created = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: '$PATH',
+        content: [{ type: 'text', text: '$CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(created?.text).toBe('$PATH');
+      expect(created?.content).toEqual([expect.objectContaining({ text: '$CONTENT' })]);
+
+      const updated = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: '$UPDATED_PATH',
+        content: [{ type: 'text', text: '$UPDATED_CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(updated?.text).toBe('$UPDATED_PATH');
+      expect(
+        await Message.findOne({ messageId: 'msg123', user: 'user123' })
+          .lean()
+          .then((message) => message?.content),
+      ).toEqual([expect.objectContaining({ text: '$UPDATED_CONTENT' })]);
+    });
+
     it('should throw an error for unauthenticated user', async () => {
       mockCtx.userId = null as unknown as string;
       await expect(saveMessage(mockCtx, mockMessageData)).rejects.toThrow('User not authenticated');
@@ -1866,7 +1892,13 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       const result = await saveMessage(
         { userId: 'user123' },
-        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+        {
+          messageId,
+          conversationId,
+          text: 'Tenant test',
+          tenantId: 'malicious-tenant',
+          userSubmittedPaths: ['/text'],
+        },
       );
 
       expect(result).not.toBeNull();
@@ -1930,15 +1962,19 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
 
-      await updateMessage('user123', {
+      const updateWithUnknownField = {
         messageId,
         text: 'Updated',
         tenantId: 'malicious-tenant',
-      });
+        unknownPipelineField: 'malicious-value',
+        userSubmittedPaths: ['/text'],
+      };
+      await updateMessage('user123', updateWithUnknownField);
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBeUndefined();
+      expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
     });
   });
   describe('claimSubagentTaskResult', () => {
