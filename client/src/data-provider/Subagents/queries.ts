@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
@@ -24,17 +24,35 @@ export const subagentThreadRefetchInterval = (
   return isTerminal(view.status) ? false : ACTIVE_THREAD_REFRESH_MS;
 };
 
+const responseStatus = (error: unknown): number | undefined => {
+  if (error == null || typeof error !== 'object') return undefined;
+  const candidate = error as { status?: number; response?: { status?: number } };
+  return candidate.response?.status ?? candidate.status;
+};
+
+export const isSubagentReadinessPending = (
+  error: unknown,
+  readinessDeadline: number,
+  now = Date.now(),
+): boolean => responseStatus(error) === 404 && now < readinessDeadline;
+
+export type SubagentThreadQueryResult = QueryObserverResult<SubagentThreadView> & {
+  isReadinessPending: boolean;
+};
+
 export const useSubagentThreadQuery = (
   parentConversationId: string,
   threadId: string,
+  invocationId: string,
   config?: UseQueryOptions<SubagentThreadView>,
-): QueryObserverResult<SubagentThreadView> => {
-  const readinessKey = `${parentConversationId}\u0000${threadId}`;
+): SubagentThreadQueryResult => {
+  const readinessKey = `${parentConversationId}\u0000${threadId}\u0000${invocationId}`;
   const readiness = useMemo(
     () => ({ key: readinessKey, deadline: Date.now() + CHILD_READY_POLL_WINDOW_MS }),
     [readinessKey],
   );
-  return useQuery<SubagentThreadView>(
+  const previousInvocationId = useRef(invocationId);
+  const query = useQuery<SubagentThreadView>(
     [QueryKeys.subagentThread, parentConversationId, threadId],
     () => dataService.getSubagentThread(parentConversationId, threadId),
     {
@@ -45,4 +63,15 @@ export const useSubagentThreadQuery = (
       ...config,
     },
   );
+  const { refetch } = query;
+  useEffect(() => {
+    if (previousInvocationId.current === invocationId) return;
+    previousInvocationId.current = invocationId;
+    void refetch();
+  }, [invocationId, refetch]);
+
+  return {
+    ...query,
+    isReadinessPending: isSubagentReadinessPending(query.error, readiness.deadline),
+  };
 };

@@ -8,6 +8,7 @@ import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
 const mockSpinnerLabel = 'spinner';
+let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
@@ -28,7 +29,7 @@ jest.mock('@librechat/client', () => ({
     <button {...props}>{children}</button>
   ),
   Spinner: () => <span>{mockSpinnerLabel}</span>,
-  useMediaQuery: () => false,
+  useMediaQuery: () => mockIsMobile,
 }));
 
 jest.mock('lucide-react', () => ({
@@ -75,11 +76,16 @@ const completedView: SubagentThreadView = {
 };
 
 describe('SubagentThreadPanel', () => {
+  beforeEach(() => {
+    mockIsMobile = false;
+  });
+
   it('renders a bounded read-only activity timeline and closes its selection', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
       isLoading: false,
       isError: false,
+      isReadinessPending: false,
     });
     let active: ActiveSubagentPanel | null = selection;
     const Observer = () => {
@@ -94,7 +100,11 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith('parent-conversation', 'child-thread');
+    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'tool-call',
+    );
     expect(screen.getByText('Research child')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_status_completed')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
@@ -104,5 +114,41 @@ describe('SubagentThreadPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
     expect(active).toBeNull();
+  });
+
+  it('keeps an expected pre-reservation 404 in the readiness state', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isReadinessPending: true,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText(mockSpinnerLabel)).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_load_error')).not.toBeInTheDocument();
+  });
+
+  it('exposes the focus-trapped mobile overlay as a modal dialog', () => {
+    mockIsMobile = true;
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
   });
 });

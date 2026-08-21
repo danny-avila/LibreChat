@@ -33,9 +33,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const resetSelection = useResetRecoilState(activeSubagentPanel);
-  const { data, isLoading, isError } = useSubagentThreadQuery(
+  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
     selection.parentConversationId,
     selection.threadId,
+    selection.toolCallId,
   );
 
   const close = useCallback(() => {
@@ -62,7 +63,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const StatusIcon = statusIcon(status);
   const title = data?.title ?? selection.subagentType;
   let panelBody: ReactNode;
-  if (isLoading) {
+  if (isLoading || isReadinessPending) {
     panelBody = (
       <div className="flex h-full items-center justify-center" role="status">
         <Spinner className="text-text-secondary" />
@@ -70,7 +71,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     );
   } else if (isError) {
     panelBody = (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-text-primary">
+      <div className="rounded-lg border border-status-error-border bg-status-error-subtle p-3 text-sm text-status-error">
         {localize('com_ui_subagent_thread_load_error')}
       </div>
     );
@@ -94,7 +95,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             <span
               className={cn(
                 'absolute left-0 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full ring-4 ring-surface-primary',
-                message.role === 'user' ? 'bg-blue-500' : 'bg-green-500',
+                message.role === 'user' ? 'bg-status-info' : 'bg-status-success',
               )}
               aria-hidden="true"
             />
@@ -122,6 +123,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   return (
     <aside
       ref={panelRef}
+      role={isMobile ? 'dialog' : 'region'}
+      aria-modal={isMobile || undefined}
       aria-label={localize('com_ui_subagent_thread_panel')}
       className="flex h-full w-full flex-col overflow-hidden bg-surface-primary text-text-primary"
     >
@@ -136,7 +139,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <div
             className={cn(
               'mt-0.5 flex items-center gap-1 text-xs text-text-secondary',
-              status === 'failed' || status === 'interrupted' ? 'text-red-500' : '',
+              status === 'failed' || status === 'interrupted' ? 'text-status-error' : '',
             )}
             aria-live="polite"
           >
