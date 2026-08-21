@@ -3575,6 +3575,48 @@ describe('files whose paths cannot be mirrored', () => {
     );
   });
 
+  it('does not charge a dropped file to a skill that never published', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/broken/SKILL.md': '---\nname: [\n---\nBody',
+          'skills/broken/bad name': 'x',
+          'skills/research/SKILL.md': skillMarkdown,
+        }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        skippedSkillCount: 1,
+        skippedFileCount: 0,
+      }),
+    );
+  });
+
+  it('keeps the recorded sample for skills that published, not skills that were skipped', async () => {
+    const files: Record<string, string> = {
+      'skills/broken/SKILL.md': '---\nname: [\n---\nBody',
+      'skills/research/SKILL.md': skillMarkdown,
+      'skills/research/bad name': 'x',
+    };
+    for (let i = 0; i < 25; i++) {
+      files[`skills/broken/bad name ${i}`] = 'x';
+    }
+    const deps = createDeps({ createAdapter: () => createFakeAdapter(files) });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1][0] as SkillSyncStatusInput;
+    expect(status.skippedFileCount).toBe(1);
+    expect(status.skippedFiles).toEqual([
+      expect.objectContaining({ path: 'skills/research/bad name', skillPath: 'skills/research' }),
+    ]);
+  });
+
   it('keeps counting past the recorded sample so the total stays truthful', async () => {
     const files: Record<string, string> = { 'skills/research/SKILL.md': skillMarkdown };
     for (let i = 0; i < 25; i++) {
@@ -3584,7 +3626,8 @@ describe('files whose paths cannot be mirrored', () => {
 
     await createGitHubSkillSyncRunner(deps).runOnce();
 
-    const status = (deps.upsertStatus as jest.Mock).mock.calls.at(-1)?.[0] as SkillSyncStatusInput;
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1][0] as SkillSyncStatusInput;
     expect(status.skippedFileCount).toBe(25);
     expect(status.skippedFiles).toHaveLength(20);
   });

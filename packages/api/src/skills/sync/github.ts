@@ -1490,28 +1490,6 @@ async function syncSource(params: {
     });
     assertConfiguredPathsExist(treeEntries, source);
     const discoveredSkills = discoverSkills(treeEntries, source);
-    /* Recorded up front, for every discovered skill: a dropped file is a fact
-       about the source whether or not its skill goes on to publish, and the
-       mirrored copy gives no hint that anything is missing. */
-    for (const discovered of discoveredSkills) {
-      for (const unsupportedPath of discovered.unsupportedFiles) {
-        counts.skippedFileCount++;
-        if (skippedFiles.length >= MAX_RECORDED_SKIPPED_FILES) {
-          continue;
-        }
-        skippedFiles.push({
-          path: truncateSkipPath(unsupportedPath),
-          skillPath: truncateSkipPath(discovered.rootPath),
-          errorCode: UNSUPPORTED_FILE_PATH_CODE,
-          errorMessage: UNSUPPORTED_FILE_PATH_MESSAGE,
-        });
-      }
-    }
-    if (counts.skippedFileCount > 0) {
-      logger.warn(
-        `[GitHubSkillSync] Source "${source.id}" could not mirror ${counts.skippedFileCount} file(s) with unsupported paths; see skippedFiles on the sync status`,
-      );
-    }
     const seenUpstreamIds = new Set<string>();
     let existingSyncedSkills: Array<ISkill & { _id: Types.ObjectId }> | null = null;
     const getExistingSyncedSkills = async () => {
@@ -1686,6 +1664,27 @@ async function syncSource(params: {
       discoveredUpstreamIds,
     });
 
+    /**
+     * Only a live skill's dropped files are worth reporting. A skill that was
+     * skipped outright is already accounted for in `skippedSkills`, so charging
+     * its files here would both misdescribe it as published-but-incomplete and
+     * let it crowd genuinely invisible drops out of the recorded sample.
+     */
+    const recordUnsupportedFiles = (discovered: DiscoveredSkill): void => {
+      for (const unsupportedPath of discovered.unsupportedFiles) {
+        counts.skippedFileCount++;
+        if (skippedFiles.length >= MAX_RECORDED_SKIPPED_FILES) {
+          continue;
+        }
+        skippedFiles.push({
+          path: truncateSkipPath(unsupportedPath),
+          skillPath: truncateSkipPath(discovered.rootPath),
+          errorCode: UNSUPPORTED_FILE_PATH_CODE,
+          errorMessage: UNSUPPORTED_FILE_PATH_MESSAGE,
+        });
+      }
+    };
+
     const syncPreparedSkill = async ({
       discovered,
       prepared,
@@ -1810,6 +1809,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
+        recordUnsupportedFiles(discovered);
         return;
       }
 
@@ -1830,6 +1830,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
+        recordUnsupportedFiles(discovered);
       } catch (error) {
         const rolledBack = await deleteSyncedSkill(deps, skill)
           .then(() => true)
