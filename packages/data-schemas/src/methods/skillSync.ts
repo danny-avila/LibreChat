@@ -4,6 +4,7 @@ import type {
   ISkillSyncStatus,
   SkillSyncProvider,
   SkillSyncRunStatus,
+  ISkillSyncSkippedFile,
   ISkillSyncSkippedSkill,
   ISkillSyncStatusDocument,
   ISkillSyncCredential,
@@ -49,6 +50,8 @@ export type SkillSyncStatusInput = {
   deletedFileCount?: number;
   skippedSkillCount?: number;
   skippedSkills?: ISkillSyncSkippedSkill[];
+  skippedFileCount?: number;
+  skippedFiles?: ISkillSyncSkippedFile[];
 };
 
 export type SkillSyncLockInput = {
@@ -238,6 +241,8 @@ export function createSkillSyncMethods(mongoose: typeof import('mongoose')): Ski
       deletedFileCount: input.deletedFileCount ?? 0,
       skippedSkillCount: input.skippedSkillCount ?? 0,
       skippedSkills: input.skippedSkills ?? [],
+      skippedFileCount: input.skippedFileCount ?? 0,
+      skippedFiles: input.skippedFiles ?? [],
       ...(success ? { lastSuccessAt: input.finishedAt ?? now } : {}),
       ...(failure ? { lastFailureAt: input.finishedAt ?? now } : {}),
     };

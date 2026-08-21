@@ -12,6 +12,7 @@ import type {
   ISkill,
   ISkillFile,
   ValidationIssue,
+  ISkillSyncSkippedFile,
   ISkillSyncSkippedSkill,
   CreateSkillInput,
   UpdateSkillInput,
@@ -53,6 +54,11 @@ const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
 /** Keeps a pathological source from writing an unbounded status document. */
 const MAX_RECORDED_SKIPPED_SKILLS = 20;
+/** Same bound for files, which a single malformed source can produce far more of. */
+const MAX_RECORDED_SKIPPED_FILES = 20;
+const UNSUPPORTED_FILE_PATH_CODE = 'SKILL_FILE_PATH_UNSUPPORTED';
+const UNSUPPORTED_FILE_PATH_MESSAGE =
+  'File path uses characters that skill file paths cannot represent';
 /** Shared cap for skipped-skill and successful-skill validation warning logs. */
 const MAX_LOGGED_PER_SKILL_WARNINGS = 20;
 const SKIP_PATH_MAX = 500;
@@ -74,12 +80,20 @@ type SyncCounters = {
   deletedSkillCount: number;
   deletedFileCount: number;
   skippedSkillCount: number;
+  skippedFileCount: number;
 };
 
 type DiscoveredSkill = {
   rootPath: string;
   skillMd: RepoTreeEntry;
   files: RepoTreeEntry[];
+  /**
+   * Repository paths under the skill root that exist upstream but cannot be
+   * mirrored, because their path is not representable as a skill file path.
+   * Dropping them silently would publish a skill that looks complete while
+   * missing files, so they are carried out to the sync status instead.
+   */
+  unsupportedFiles: string[];
 };
 
 type UpsertRemoteSkillResult = {
@@ -676,21 +690,30 @@ function discoverSkills(
       }
       return rootPath ? candidate.startsWith(`${rootPath}/`) : true;
     });
-    const files = tree.filter((entry) => {
+    const files: RepoTreeEntry[] = [];
+    const unsupportedFiles: string[] = [];
+    for (const entry of tree) {
       if (entry.type !== 'blob') {
-        return false;
+        continue;
       }
       const normalized = normalizeRepoPath(entry.path);
       if (!normalized.startsWith(prefix) || normalized === skillMd.path) {
-        return false;
+        continue;
       }
       if (childSkillRoots.some((childRoot) => normalized.startsWith(`${childRoot}/`))) {
-        return false;
+        continue;
       }
       const relativePath = prefix ? normalized.slice(prefix.length) : normalized;
-      return isSafeRelativePath(relativePath) && relativePath.toUpperCase() !== 'SKILL.MD';
-    });
-    return { rootPath, skillMd, files };
+      if (relativePath.toUpperCase() === 'SKILL.MD') {
+        continue;
+      }
+      if (!isSafeRelativePath(relativePath)) {
+        unsupportedFiles.push(normalized);
+        continue;
+      }
+      files.push(entry);
+    }
+    return { rootPath, skillMd, files, unsupportedFiles };
   });
 }
 
@@ -724,6 +747,7 @@ function makeStatusInput(params: {
   errorMessage?: string;
   counts?: Partial<SyncCounters>;
   skippedSkills?: ISkillSyncSkippedSkill[];
+  skippedFiles?: ISkillSyncSkippedFile[];
 }): SkillSyncStatusInput {
   return {
     provider: PROVIDER,
@@ -745,6 +769,8 @@ function makeStatusInput(params: {
     deletedFileCount: params.counts?.deletedFileCount ?? 0,
     skippedSkillCount: params.counts?.skippedSkillCount ?? 0,
     skippedSkills: params.skippedSkills,
+    skippedFileCount: params.counts?.skippedFileCount ?? 0,
+    skippedFiles: params.skippedFiles,
   };
 }
 
@@ -1437,8 +1463,10 @@ async function syncSource(params: {
     deletedSkillCount: 0,
     deletedFileCount: 0,
     skippedSkillCount: 0,
+    skippedFileCount: 0,
   };
   const skippedSkills: ISkillSyncSkippedSkill[] = [];
+  const skippedFiles: ISkillSyncSkippedFile[] = [];
   await deps.upsertStatus(makeStatusInput({ source, status: 'running', startedAt }));
   try {
     assertNotCancelled();
@@ -1636,6 +1664,27 @@ async function syncSource(params: {
       discoveredUpstreamIds,
     });
 
+    /**
+     * Only a live skill's dropped files are worth reporting. A skill that was
+     * skipped outright is already accounted for in `skippedSkills`, so charging
+     * its files here would both misdescribe it as published-but-incomplete and
+     * let it crowd genuinely invisible drops out of the recorded sample.
+     */
+    const recordUnsupportedFiles = (discovered: DiscoveredSkill): void => {
+      for (const unsupportedPath of discovered.unsupportedFiles) {
+        counts.skippedFileCount++;
+        if (skippedFiles.length >= MAX_RECORDED_SKIPPED_FILES) {
+          continue;
+        }
+        skippedFiles.push({
+          path: truncateSkipPath(unsupportedPath),
+          skillPath: truncateSkipPath(discovered.rootPath),
+          errorCode: UNSUPPORTED_FILE_PATH_CODE,
+          errorMessage: UNSUPPORTED_FILE_PATH_MESSAGE,
+        });
+      }
+    };
+
     const syncPreparedSkill = async ({
       discovered,
       prepared,
@@ -1760,6 +1809,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
+        recordUnsupportedFiles(discovered);
         return;
       }
 
@@ -1780,6 +1830,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
+        recordUnsupportedFiles(discovered);
       } catch (error) {
         const rolledBack = await deleteSyncedSkill(deps, skill)
           .then(() => true)
@@ -1852,7 +1903,7 @@ async function syncSource(params: {
       counts.deletedSkillCount++;
     }
 
-    if (counts.skippedSkillCount === 0) {
+    if (counts.skippedSkillCount === 0 && counts.skippedFileCount === 0) {
       logSuppressedPerSkillWarningSummaries();
       return deps.upsertStatus(
         makeStatusInput({
@@ -1867,11 +1918,14 @@ async function syncSource(params: {
     /* Nothing published and something skipped means the source produced no
        usable mirror at all, which is a failure however it is spelled. The
        first skip carries the reason so the status is actionable. */
-    const publishedNothing = counts.syncedSkillCount === 0;
+    /* Only dropped *skills* can make a run a failure. A run that published
+       every skill it found is still a real mirror, even if some file inside
+       one of them could not come along. */
+    const publishedNothing = counts.syncedSkillCount === 0 && counts.skippedSkillCount > 0;
     const firstSkip = skippedSkills[0];
     logSuppressedPerSkillWarningSummaries();
     logger.warn(
-      `[GitHubSkillSync] Source "${source.id}" synced ${counts.syncedSkillCount} skill(s) and skipped ${counts.skippedSkillCount}`,
+      `[GitHubSkillSync] Source "${source.id}" synced ${counts.syncedSkillCount} skill(s), skipped ${counts.skippedSkillCount} skill(s) and ${counts.skippedFileCount} file(s)`,
     );
     return deps.upsertStatus(
       makeStatusInput({
@@ -1881,6 +1935,7 @@ async function syncSource(params: {
         finishedAt: new Date(),
         counts,
         skippedSkills,
+        skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
         errorCode: publishedNothing ? firstSkip?.errorCode : undefined,
         errorMessage: publishedNothing ? firstSkip?.errorMessage : undefined,
       }),
@@ -1900,8 +1955,10 @@ async function syncSource(params: {
           deletedSkillCount: 0,
           deletedFileCount: 0,
           skippedSkillCount: counts.skippedSkillCount,
+          skippedFileCount: counts.skippedFileCount,
         },
         skippedSkills: skippedSkills.length > 0 ? skippedSkills : undefined,
+        skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
         errorCode: sanitized.code,
         errorMessage: sanitized.message,
       }),
@@ -1998,6 +2055,8 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
         deletedFileCount: stored?.deletedFileCount ?? 0,
         skippedSkillCount: stored?.skippedSkillCount ?? 0,
         skippedSkills: stored?.skippedSkills,
+        skippedFileCount: stored?.skippedFileCount ?? 0,
+        skippedFiles: stored?.skippedFiles,
         createdAt: stored?.createdAt,
         updatedAt: stored?.updatedAt,
       } satisfies ISkillSyncStatus & { credentialPresent: boolean };

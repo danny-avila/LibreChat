@@ -237,6 +237,14 @@ export type TGitHubSkillSyncSkippedSkill = {
   errorMessage: string;
 };
 
+/** One upstream file a sync run published a skill without, and why. */
+export type TGitHubSkillSyncSkippedFile = {
+  path: string;
+  skillPath: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
 export type TGitHubSkillSyncSourceStatus = {
   provider: 'github';
   sourceId: string;
@@ -261,6 +269,8 @@ export type TGitHubSkillSyncSourceStatus = {
   deletedFileCount: number;
   skippedSkillCount: number;
   skippedSkills?: TGitHubSkillSyncSkippedSkill[];
+  skippedFileCount: number;
+  skippedFiles?: TGitHubSkillSyncSkippedFile[];
   updatedAt?: string;
   createdAt?: string;
 };
