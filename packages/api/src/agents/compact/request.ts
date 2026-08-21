@@ -396,18 +396,26 @@ export async function handleCompactRequest(
       throw error;
     }
 
-    /** Real spend whether or not the summary lands, so bill before deciding. */
-    const usageRollup = result.usage
-      ? await recordCompactionUsage(deps, {
-          userId,
-          appConfig,
-          conversationId,
-          messageId,
-          usage: result.usage,
-          model: result.summary.model,
-          endpointTokenConfig: result.endpointTokenConfig,
-        })
-      : null;
+    /**
+     * Real spend whether or not the summary lands, so bill before deciding.
+     * A provider that reported no usage at all (some OpenAI-compatible
+     * gateways) is billed from the locally counted prompt and summary sizes,
+     * the same fallback `BaseClient` applies, so the call never goes unrecorded.
+     */
+    const billedUsage: CompactionUsage = result.usage ?? {
+      model: result.model,
+      provider: result.provider,
+      ...result.estimatedUsage,
+    };
+    const usageRollup = await recordCompactionUsage(deps, {
+      userId,
+      appConfig,
+      conversationId,
+      messageId,
+      usage: billedUsage,
+      model: result.summary.model,
+      endpointTokenConfig: result.endpointTokenConfig,
+    });
 
     const tailMoved = async (): Promise<boolean> => {
       const children = await deps.getMessages(
@@ -488,7 +496,10 @@ export async function handleCompactRequest(
       { conversationId, user: userId, parentMessageId: leafId },
       'messageId',
     );
-    if ((siblings?.length ?? 0) > 1) {
+    /** A turn that claimed the conversation during the model call may not have
+     *  written its message yet, so the job is checked here too rather than
+     *  trusting the sibling count alone. */
+    if ((siblings?.length ?? 0) > 1 || (await isGenerating(deps.getJob, conversationId))) {
       await deps.deleteMessages({ conversationId, user: userId, messageId }).catch((error) => {
         logger.error('[compact] Could not roll back a raced compaction message', error);
       });

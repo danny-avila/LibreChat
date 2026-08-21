@@ -380,6 +380,60 @@ describe('compactConversation', () => {
     expect(mockStream).not.toHaveBeenCalled();
   });
 
+  it('keeps total_tokens so hidden reasoning is not undercharged', async () => {
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+    expect(result.usage?.total_tokens).toBe(1240);
+  });
+
+  it('reports a locally counted estimate for a provider that omits usage', async () => {
+    mockStream.mockImplementation(() => chunksOf('## Checkpoint\nDid the thing.'));
+
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    expect(result.usage).toBeUndefined();
+    /** The host bills from this so an OpenAI-compatible gateway that omits
+     *  `usage` still produces a transaction. */
+    expect(result.estimatedUsage.input_tokens).toBeGreaterThan(0);
+    expect(result.estimatedUsage.output_tokens).toBeGreaterThan(0);
+    expect(result.provider).toBe('openAI');
+  });
+
+  it('names media attachments the checkpoint cannot inline', async () => {
+    const withImage = {
+      ...userMessage('i1', Constants.NO_PARENT, 'what is wrong with this chart?'),
+      files: [{ file_id: 'file_img' }],
+    } as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_img', filename: 'chart.png', type: 'image/png', source: 'local' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [withImage],
+      ids,
+      db: dbMethods,
+      getFiles,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent[0].content)).toContain('chart.png');
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),
