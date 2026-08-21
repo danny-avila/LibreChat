@@ -1,6 +1,10 @@
 import { EventEmitter } from 'events';
 
-import { getMCPRequestContext, cleanupMCPRequestContextForReq } from '~/mcp/request';
+import {
+  createMCPRuntimeRequestBody,
+  getMCPRequestContext,
+  cleanupMCPRequestContextForReq,
+} from '~/mcp/request';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -103,5 +107,29 @@ describe('MCP request context', () => {
 
     expect(disposeConnection).toHaveBeenCalledWith('user:server', connection);
     expect(connection.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('MCP runtime request body', () => {
+  it('preserves a supplied parent message id', () => {
+    expect(
+      createMCPRuntimeRequestBody({
+        messageId: 'response-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'parent-1',
+      }),
+    ).toEqual({
+      messageId: 'response-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    });
+  });
+
+  it('uses the root-turn parent sentinel when a protocol omits the parent', () => {
+    expect(
+      createMCPRuntimeRequestBody({ messageId: 'response-1', conversationId: 'conversation-1' }),
+    ).toEqual(
+      expect.objectContaining({ parentMessageId: '00000000-0000-0000-0000-000000000000' }),
+    );
   });
 });

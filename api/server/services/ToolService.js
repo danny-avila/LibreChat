@@ -259,6 +259,7 @@ async function processRequiredActions(client, requiredActions) {
     options: {
       processFileURL,
       req: client.req,
+      res: client.res,
       uploadImageBuffer,
       openAIApiKey: client.apiKey,
       returnMetadata: true,

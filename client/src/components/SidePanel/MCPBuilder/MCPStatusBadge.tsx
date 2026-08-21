@@ -1,5 +1,5 @@
 import { Spinner } from '@librechat/client';
-import { Check, PlugZap } from 'lucide-react';
+import { Check, PlugZap, Zap } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -80,6 +80,14 @@ export default function MCPStatusBadge({
         </div>
       );
     }
+    if (serverStatus.requestScoped) {
+      return (
+        <div role="status" className={cn(badgeBaseClass, 'bg-status-info-subtle text-status-info')}>
+          <Zap className="size-3" aria-hidden="true" />
+          <span>{localize('com_nav_mcp_status_on_demand')}</span>
+        </div>
+      );
+    }
     // Simply disconnected - gray (neutral)
     return (
       <div
@@ -153,8 +161,10 @@ export function getStatusDotColor(
   }
 
   if (connectionState === 'disconnected') {
-    // Needs OAuth = amber, otherwise gray
-    return requiresOAuth ? 'bg-status-warning' : 'bg-status-neutral';
+    if (requiresOAuth) {
+      return 'bg-status-warning';
+    }
+    return serverStatus.requestScoped ? 'bg-status-info' : 'bg-status-neutral';
   }
 
   return 'bg-status-neutral';

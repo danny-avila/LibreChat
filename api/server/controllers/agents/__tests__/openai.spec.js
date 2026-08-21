@@ -125,6 +125,11 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+  }),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
   resolveAgentScopedSkillIds: jest
     .fn()
@@ -681,6 +686,44 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('recursionLimit resolution', () => {
+    it('threads the OpenAI parent message id through both MCP execution bodies', async () => {
+      const { validateRequest, createRun } = require('@librechat/api');
+      validateRequest.mockReturnValueOnce({
+        request: {
+          model: 'agent-123',
+          messages: [],
+          stream: false,
+          conversation_id: 'conversation-123',
+          parent_message_id: 'parent-123',
+        },
+      });
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: {
+            messageId: 'chatcmpl-mock-nanoid-123',
+            conversationId: 'conversation-123',
+            parentMessageId: 'parent-123',
+          },
+        }),
+      );
+      expect(mockProcessStream).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          configurable: expect.objectContaining({
+            requestBody: {
+              messageId: 'chatcmpl-mock-nanoid-123',
+              conversationId: 'conversation-123',
+              parentMessageId: 'parent-123',
+            },
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
     it('should pass resolveRecursionLimit result to processStream config', async () => {
       const { resolveRecursionLimit } = require('@librechat/api');
       resolveRecursionLimit.mockReturnValueOnce(75);

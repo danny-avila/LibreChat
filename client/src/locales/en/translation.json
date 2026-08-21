@@ -610,6 +610,7 @@
   "com_nav_mcp_status_error": "Error",
   "com_nav_mcp_status_initializing": "Initializing",
   "com_nav_mcp_status_needs_auth": "Needs Auth",
+  "com_nav_mcp_status_on_demand": "On-demand",
   "com_nav_mcp_status_unknown": "Unknown",
   "com_nav_mcp_vars_update_error": "Error updating MCP custom user variables",
   "com_nav_mcp_vars_updated": "MCP custom user variables updated successfully.",

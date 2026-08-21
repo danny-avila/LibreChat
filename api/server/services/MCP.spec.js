@@ -546,6 +546,28 @@ describe('tests for the new helper functions used by the MCP connection status e
       });
     });
 
+    it('marks BODY placeholder servers as request-scoped while they are idle', async () => {
+      const result = await getServerConnectionStatus(
+        mockUserId,
+        mockServerName,
+        {
+          ...mockConfig,
+          source: 'yaml',
+          headers: { 'X-Parent-Message': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}' },
+        },
+        new Map(),
+        new Map(),
+        new Set(),
+      );
+
+      expect(result).toEqual({
+        requiresOAuth: false,
+        requestScoped: true,
+        connectionState: 'disconnected',
+        authorizationState: 'not_required',
+      });
+    });
+
     it('should prioritize app connection over user connection', async () => {
       const appConnections = new Map([
         [

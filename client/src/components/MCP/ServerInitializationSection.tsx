@@ -47,7 +47,11 @@ export default function ServerInitializationSection({
   const serverOAuthUrl = getOAuthUrl(serverName);
 
   const shouldShowReinit = isConnected && (requiresOAuth || hasCustomUserVars);
-  const shouldShowInit = !isConnected && !serverOAuthUrl && !hasPendingOAuth;
+  const shouldShowInit =
+    !isConnected &&
+    !serverStatus?.requestScoped &&
+    !serverOAuthUrl &&
+    !hasPendingOAuth;
 
   if (!shouldShowReinit && !shouldShowInit && !serverOAuthUrl) {
     if (!hasPendingOAuth) {

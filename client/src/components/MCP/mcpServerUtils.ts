@@ -110,6 +110,9 @@ export function getStatusColor(
     if (requiresOAuth) {
       return 'bg-status-warning';
     }
+    if (status.requestScoped) {
+      return 'bg-status-info';
+    }
     // Simply disconnected = gray (neutral/inactive)
     return 'bg-status-neutral';
   }
@@ -136,6 +139,10 @@ export function getStatusTextKey(
   // Special case: disconnected but needs OAuth shows different text
   if (connectionState === 'disconnected' && requiresOAuth) {
     return 'com_nav_mcp_status_needs_auth';
+  }
+
+  if (connectionState === 'disconnected' && status.requestScoped) {
+    return 'com_nav_mcp_status_on_demand';
   }
 
   const keyMap: Record<string, string> = {
@@ -183,8 +190,10 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
   if (isInitializing) return false;
 
   if (!serverStatus) return false;
-  const { connectionState, requiresOAuth } = serverStatus;
+  const { connectionState, requiresOAuth, requestScoped } = serverStatus;
 
+  // Request-scoped servers can only be initialized with an active MCP request context.
+  if (connectionState === 'disconnected' && requestScoped) return false;
   // Show for disconnected/error (can reconnect/configure)
   if (connectionState === 'disconnected' || connectionState === 'error') return true;
   // Show a cancel action for pending OAuth connections.

@@ -79,8 +79,11 @@ export default function MCPServerCard({
     if (connectionState === 'connecting') return localize('com_nav_mcp_status_connecting');
     if (connectionState === 'error') return localize('com_nav_mcp_status_error');
     if (connectionState === 'disconnected') {
-      return requiresOAuth
-        ? localize('com_nav_mcp_status_needs_auth')
+      if (requiresOAuth) {
+        return localize('com_nav_mcp_status_needs_auth');
+      }
+      return serverStatus.requestScoped
+        ? localize('com_nav_mcp_status_on_demand')
         : localize('com_nav_mcp_status_disconnected');
     }
     return localize('com_nav_mcp_status_unknown');

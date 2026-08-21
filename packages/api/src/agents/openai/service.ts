@@ -41,6 +41,7 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import { createMCPRuntimeRequestBody } from '~/mcp/request';
 import { createSafeUser } from '~/utils';
 
 /**
@@ -570,6 +571,11 @@ export async function createAgentChatCompletion(
        * correctly leaves MCP gated.
        */
       const safeUser: Record<string, unknown> = { ...createSafeUser(reqUser), id: userId };
+      const mcpRequestBody = createMCPRuntimeRequestBody({
+        messageId: requestId,
+        conversationId,
+        parentMessageId: request.parent_message_id,
+      });
 
       const run = await deps.createRun({
         agents: [initializedAgent],
@@ -577,10 +583,7 @@ export async function createAgentChatCompletion(
         runId: requestId,
         signal: abortController.signal,
         customHandlers: eventHandlers,
-        requestBody: {
-          messageId: requestId,
-          conversationId,
-        },
+        requestBody: mcpRequestBody,
         user: safeUser,
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
         appConfig: deps.appConfig
@@ -600,6 +603,7 @@ export async function createAgentChatCompletion(
               thread_id: conversationId,
               user_id: userId,
               user: safeUser,
+              requestBody: mcpRequestBody,
               /** Same per-agent channel the in-repo controllers thread via
                *  `loadTools`: without it, the executor's PTC path cannot
                *  strip host-injected `intent` params from the schemas the

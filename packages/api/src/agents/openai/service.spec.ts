@@ -15,6 +15,7 @@ type CreateRunArgs = {
   user?: Record<string, unknown>;
   tenantId?: string;
   appConfig?: Record<string, unknown>;
+  requestBody?: Record<string, unknown>;
 };
 type ProcessStreamConfig = { configurable?: Record<string, unknown> };
 
@@ -108,6 +109,22 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     // No role present → the runtime MCP check fails closed.
     expect(streamConfig.configurable?.user).toEqual({ id: 'api-user' });
     expect(streamConfig.configurable?.user).not.toHaveProperty('role');
+  });
+
+  it('threads the parent message id into the run and execution context', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.parent_message_id = 'parent-123';
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs;
+    expect(runArgs.requestBody).toEqual(
+      expect.objectContaining({ parentMessageId: 'parent-123' }),
+    );
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    expect(streamConfig.configurable?.requestBody).toEqual(runArgs.requestBody);
   });
 
   it('forwards appConfig and tenantId to createRun', async () => {

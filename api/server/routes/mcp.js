@@ -987,6 +987,7 @@ router.get('/connection/status/:serverName', requireJwtAuth, async (req, res) =>
       serverName,
       connectionStatus: serverStatus.connectionState,
       requiresOAuth: serverStatus.requiresOAuth,
+      requestScoped: serverStatus.requestScoped,
       authorizationState: serverStatus.authorizationState,
     });
   } catch (error) {

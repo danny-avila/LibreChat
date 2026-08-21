@@ -71,7 +71,7 @@ export default function MCPServerStatusIcon({
     return null;
   }
 
-  const { connectionState } = serverStatus;
+  const { connectionState, requestScoped } = serverStatus;
 
   // Connecting: show spinner, with cancel when an OAuth flow is pending.
   if (connectionState === 'connecting') {
@@ -87,6 +87,11 @@ export default function MCPServerStatusIcon({
     }
 
     return <ConnectingSpinner serverName={serverName} />;
+  }
+
+  // Request-scoped servers can only be connected while serving an MCP request.
+  if (connectionState === 'disconnected' && requestScoped) {
+    return null;
   }
 
   // Disconnected or Error: show connect button (PlugZap icon)
@@ -134,6 +139,8 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
     colorClass = 'bg-status-error';
   } else if (connectionState === 'disconnected' && requiresOAuth) {
     colorClass = 'bg-status-warning';
+  } else if (connectionState === 'disconnected' && serverStatus.requestScoped) {
+    colorClass = 'bg-status-info';
   }
 
   return (

@@ -202,6 +202,11 @@ type PlaceholderValue =
   | readonly PlaceholderValue[]
   | { readonly [key: string]: PlaceholderValue };
 
+export interface MCPRequestScope {
+  requestScoped: boolean;
+  requiredBodyFields: string[];
+}
+
 type UserScopedConnectionConfig = Pick<
   ParsedServerConfig,
   'requiresOAuth' | 'source' | 'dbId' | 'startup'
@@ -335,33 +340,29 @@ export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): b
   return hasRuntimeContextPlaceholder(config.url);
 }
 
-export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): boolean {
+export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPRequestScope {
   if (!canResolveRuntimePlaceholders(config)) {
-    return false;
+    return { requestScoped: false, requiredBodyFields: [] };
   }
 
-  return placeholderBearingFields(config).some((value) =>
-    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
-  );
+  const requiredBodyFields = new Set<string>();
+  for (const value of placeholderBearingFields(config)) {
+    addRuntimeBodyPlaceholderFields(value, requiredBodyFields);
+  }
+
+  const fields = Array.from(requiredBodyFields);
+  return { requestScoped: fields.length > 0, requiredBodyFields: fields };
 }
 
 export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
-  if (!canResolveRuntimePlaceholders(config)) {
-    return [];
-  }
-
-  const fields = new Set<string>();
-  for (const value of placeholderBearingFields(config)) {
-    addRuntimeBodyPlaceholderFields(value, fields);
-  }
-  return Array.from(fields);
+  return getMCPRequestScope(config).requiredBodyFields;
 }
 
 export function getMissingRuntimeBodyPlaceholderFields(
   config: UserScopedConnectionConfig,
   requestBody?: RequestBody,
 ): string[] {
-  return getRuntimeBodyPlaceholderFields(config).filter((field) => {
+  return getMCPRequestScope(config).requiredBodyFields.filter((field) => {
     const value = requestBody?.[field as keyof RequestBody];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
@@ -380,13 +381,7 @@ export function getMissingRuntimeBodyPlaceholderFields(
  * connection without forcing a reconnect for every invocation.
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
-  if (!canResolveRuntimePlaceholders(config)) {
-    return false;
-  }
-
-  return placeholderBearingFields(config).some((value) =>
-    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN),
-  );
+  return getMCPRequestScope(config).requestScoped;
 }
 
 /**

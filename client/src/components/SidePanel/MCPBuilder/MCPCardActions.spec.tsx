@@ -47,4 +47,27 @@ describe('MCPCardActions', () => {
     expect(revokeButton).toHaveClass('hover:text-text-secondary');
     expect(revokeButton.querySelector('svg')).toHaveClass('text-text-destructive');
   });
+
+  test('does not render a Connect action for an on-demand server', () => {
+    render(
+      <MCPCardActions
+        serverName="server"
+        serverStatus={{
+          connectionState: 'disconnected',
+          requiresOAuth: false,
+          requestScoped: true,
+        }}
+        isInitializing={false}
+        canCancel={false}
+        hasCustomUserVars={false}
+        canEdit={false}
+        onEditClick={jest.fn()}
+        onConfigClick={jest.fn()}
+        onInitialize={jest.fn()}
+        onCancel={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'com_nav_mcp_connect' })).not.toBeInTheDocument();
+  });
 });

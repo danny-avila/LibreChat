@@ -1,6 +1,34 @@
 import { logger } from '@librechat/data-schemas';
+import { Constants } from 'librechat-data-provider';
 
 import type { RequestScopedMCPConnectionStore } from './types';
+
+export interface MCPRuntimeRequestBody {
+  messageId: string;
+  conversationId: string;
+  parentMessageId: string;
+}
+
+/**
+ * Builds the complete request context that runtime MCP placeholders may resolve.
+ * External agent protocols do not always supply a parent message identifier, but
+ * the MCP contract must still distinguish a root turn from an omitted field.
+ */
+export function createMCPRuntimeRequestBody({
+  messageId,
+  conversationId,
+  parentMessageId,
+}: {
+  messageId: string;
+  conversationId: string;
+  parentMessageId?: string | null;
+}): MCPRuntimeRequestBody {
+  return {
+    messageId,
+    conversationId,
+    parentMessageId: parentMessageId ?? Constants.NO_PARENT,
+  };
+}
 
 export interface MCPRequestContext extends RequestScopedMCPConnectionStore {
   cleanupStarted: boolean;

@@ -125,7 +125,7 @@ export default function MCPCardActions({
       )}
 
       {/* Connect button - for disconnected or error states */}
-      {(isDisconnected || isError) && (
+      {(isError || (isDisconnected && !serverStatus?.requestScoped)) && (
         <TooltipAnchor
           description={localize('com_nav_mcp_connect')}
           side="top"

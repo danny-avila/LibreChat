@@ -20,6 +20,7 @@ const {
   buildAgentContextAttachmentsByAgentId,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
+  createMCPRuntimeRequestBody,
   loadSkillStates,
   sendFinalChunk,
   createSafeUser,
@@ -255,6 +256,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
     const conversationId = request.conversation_id ?? nanoid();
     const parentMessageId = request.parent_message_id ?? null;
+    const mcpRequestBody = createMCPRuntimeRequestBody({
+      messageId: responseId,
+      conversationId,
+      parentMessageId,
+    });
 
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
     const allowedProviders = new Set(agentsEConfig?.allowedProviders);
@@ -841,10 +847,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       appConfig,
       signal: abortController.signal,
       customHandlers: handlers,
-      requestBody: {
-        messageId: responseId,
-        conversationId,
-      },
+      requestBody: mcpRequestBody,
       user: { id: userId },
       tenantId: principal.tenantId,
       /** Bills subagent child-run model calls (reported outside the
@@ -862,10 +865,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         thread_id: conversationId,
         user_id: userId,
         user: createSafeUser(req.user),
-        requestBody: {
-          messageId: responseId,
-          conversationId,
-        },
+        requestBody: mcpRequestBody,
         ...(userMCPAuthMap != null && { userMCPAuthMap }),
       },
       recursionLimit: resolveRecursionLimit(agentsEConfig, agent),
