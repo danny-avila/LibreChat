@@ -490,8 +490,15 @@ export default function ScheduleDialog({
                     <Controller
                       name="chatProjectId"
                       control={control}
+                      // Only for a schedule this submit leaves ENABLED. The server waives
+                      // the requirement for a disabled row precisely so one auto-disabled
+                      // for `project_required` can still be renamed or tidied up; requiring
+                      // it here made that path unreachable, and an owner with no projects
+                      // at all could not edit the stopped schedule.
                       rules={
-                        requireProject ? { required: localize('com_ui_field_required') } : undefined
+                        requireProject && (schedule == null || schedule.enabled)
+                          ? { required: localize('com_ui_field_required') }
+                          : undefined
                       }
                       render={({ field }) => (
                         <ControlCombobox

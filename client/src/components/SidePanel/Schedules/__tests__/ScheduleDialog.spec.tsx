@@ -313,6 +313,38 @@ describe('ScheduleDialog', () => {
       );
     });
 
+    /** The server waives the requirement for an edit that leaves a schedule DISABLED,
+     *  so a row auto-disabled for `project_required` can still be renamed. Requiring a
+     *  project in the form made that unreachable — and an owner with no projects at all
+     *  could not edit the stopped schedule. */
+    it('lets a disabled unscoped schedule be edited while a project is required', async () => {
+      mockLimits = { maxPerUser: 10, requireProject: true };
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ enabled: false, chatProjectId: undefined }));
+
+      await user.clear(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'));
+      await user.type(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'), 'Renamed');
+      await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: expect.objectContaining({ name: 'Renamed' }) }),
+      );
+    });
+
+    /** An ENABLED schedule still has to satisfy the requirement. */
+    it('still requires a project when the edit leaves the schedule enabled', async () => {
+      mockLimits = { maxPerUser: 10, requireProject: true };
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ enabled: true, chatProjectId: undefined }));
+
+      await user.clear(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'));
+      await user.type(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'), 'Renamed');
+      await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(await screen.findByText('com_ui_field_required')).toBeInTheDocument();
+    });
+
     /** A pin is the server's decision. Offering a picker would only invite a choice
      *  the write handler rejects, so the dialog shows the destination instead — and
      *  sends nothing, leaving the pin authoritative even if it moved since the dialog

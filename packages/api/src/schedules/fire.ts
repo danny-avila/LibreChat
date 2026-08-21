@@ -327,6 +327,20 @@ export async function fireSchedule(
       await advance();
       return { fired: false, skipped: 'project_deleted' as const };
     }
+    // Converge the ROW on the destination this fire resolved — AFTER it has been
+    // validated, so an unusable pin is never written. The pin outranks the stored id
+    // here and the conversation this occurrence creates is filed under the RESOLVED
+    // project, so leaving the row on its old value would make every later
+    // re-validation (notably the resume boundary) check a project the conversation was
+    // never filed under. Best-effort: the envelope already carries the right
+    // destination, so a failed write costs accuracy on a later recheck, never this run.
+    if (chatProjectId !== (schedule.chatProjectId ?? undefined)) {
+      await methods
+        .persistResolvedProject(schedule.id, chatProjectId, claimToken)
+        .catch((err: unknown) =>
+          logger.warn(`[schedules] could not converge stored project for ${schedule.id}`, err),
+        );
+    }
 
     if (await deps.isOutOfBalance(user)) {
       // Revalidate BEFORE writing the skip. Everything above (user, config, permission

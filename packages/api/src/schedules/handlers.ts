@@ -298,6 +298,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     limits: ScheduleLimits,
     requested: string | null | undefined,
     stored?: string,
+    /** Lets a DISABLING edit skip the requirement while still refusing a destination
+     *  that disagrees with a pin — the two rules are independent, and folding them
+     *  together let an explicit clear slip past the pin check entirely. */
+    options?: { enforceRequirement?: boolean },
   ): Promise<string | undefined | false> {
     // A pin is the ONLY destination. An OMITTED field takes it silently (the client has
     // no choice to make), but anything explicit that disagrees is refused rather than
@@ -313,7 +317,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       requested === undefined ? stored : requested,
     );
     if (chatProjectId == null) {
-      if (limits.requireProject) {
+      if (limits.requireProject && options?.enforceRequirement !== false) {
         res.status(400).json({ error: 'Scheduled chats must be assigned to a project' });
         return false;
       }
@@ -773,10 +777,20 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         return;
       }
       chatProjectId = resolved;
-    } else if (parsed.data.chatProjectId != null) {
-      // Still validate an explicit assignment made while disabling, so the row never
-      // stores a project the owner does not have.
-      const resolved = await resolveWriteProject(res, user.id, limits, parsed.data.chatProjectId);
+    } else if (parsed.data.chatProjectId !== undefined) {
+      // `!== undefined`, so an explicit `null` lands here too: a pin disagreement is
+      // refused whether the edit assigns a different project or clears the scope
+      // outright. Only the REQUIREMENT is waived for a disabling edit — without that
+      // distinction a pinned deployment accepted `{enabled: false, chatProjectId: null}`
+      // and unset the row while still reporting the pin back on the wire.
+      const resolved = await resolveWriteProject(
+        res,
+        user.id,
+        limits,
+        parsed.data.chatProjectId,
+        undefined,
+        { enforceRequirement: false },
+      );
       if (resolved === false) {
         return;
       }

@@ -22,6 +22,20 @@ Scheduled chats remain experimental and default-off.
   first: give `ControlCombobox` the `portalElement` prop `Dropdown` already has, portal the
   popovers into the dialog content element, and let the form scroll again.
 
+## Known gaps: project scope
+
+- A project deleted inside the window between the resume controller's
+  `isScheduleLive(..., { policy: true })` check and `claimScheduleResume` is not caught:
+  deletion bumps no revision, so the lease fence cannot see it and the continuation
+  starts against a conversation that was just unscoped. Sub-second, and self-correcting
+  at the next fire (which auto-disables the schedule). Closing it needs the effective
+  project persisted per OCCURRENCE on the run row plus a distinct policy conflict the
+  controller routes through abort-and-settle, rather than the schedule-level check that
+  exists today.
+- The stored project converges on an operator pin only when the schedule actually
+  FIRES. A schedule that has not fired since the pin moved still carries its old id,
+  which the wire projection already papers over but a direct read of the row does not.
+
 ## Runtime scope
 
 - The standard server supports multi-replica scheduling only with a confirmed Redis-backed

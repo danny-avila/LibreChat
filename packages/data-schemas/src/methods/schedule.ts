@@ -222,6 +222,13 @@ export type ScheduleMethods = {
     counterGuard?: Record<string, unknown>,
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
+  /** Converges the schedule row on the destination a fire resolved; claim-token
+   *  fenced, and never bumps configRevision (this is not an owner edit). */
+  persistResolvedProject: (
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ) => Promise<void>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (
@@ -787,6 +794,32 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       $set: { enabled: false, disabledReason: reason },
       $unset: { leaseUntil: 1, leaseBy: 1 },
     });
+  }
+
+  /**
+   * Converges the row on the destination a fire actually RESOLVED, so the stored id
+   * never lies about where this schedule's conversations are going.
+   *
+   * An operator pin outranks the stored id at fire time, and the wire projection
+   * already reports the pin — but the row kept its old value, so a paused occurrence
+   * could only be re-validated against a project its conversation was never filed
+   * under. Claim-token fenced like every other worker-side write, and deliberately
+   * WITHOUT a configRevision bump: this is the server reconciling itself to policy,
+   * not an owner edit, and bumping would fence an in-flight occurrence off its own run.
+   */
+  async function persistResolvedProject(
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
+    }
+    await Schedule().updateOne(
+      filter,
+      chatProjectId == null ? { $unset: { chatProjectId: 1 } } : { $set: { chatProjectId } },
+    );
   }
 
   /**
@@ -2031,6 +2064,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     reserveStartedRun,
     getCapacityOccupancy,
     requestRunAbort,
+    persistResolvedProject,
     getScheduleRunAbortState,
     markRunResumeClaimed,
     releaseRunResumeClaim,

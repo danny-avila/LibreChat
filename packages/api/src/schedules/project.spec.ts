@@ -56,6 +56,7 @@ function makeMethods() {
     getCapacityOccupancy: jest.fn(async () => ({ takenSlots: [] as number[], unslotted: 0 })),
     deleteScheduleRun: jest.fn(async () => undefined),
     setRunFireDetails: jest.fn(async () => undefined),
+    persistResolvedProject: jest.fn(async () => undefined),
     countActiveRuns: jest.fn(async () => 0),
     recordSkippedRun: jest.fn(async () => undefined),
   };
@@ -176,6 +177,73 @@ describe('fire-time project scope', () => {
     expect(result).toMatchObject({ fired: false, skipped: 'project_deleted' });
     expect(disabled).toEqual(['project_deleted']);
     expect(enqueueTrigger).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The row must not keep claiming project A once a pin has been sending this
+   * schedule's conversations to B: every later re-validation — the resume boundary
+   * above all — would then check a project the conversation was never filed under.
+   */
+  it('converges the stored project on the destination it actually resolved', async () => {
+    const { methods } = makeMethods();
+    const pinned = { ...BASE_LIMITS, requireProject: true, projectId: 'proj-pinned' };
+
+    await fireSchedule(
+      makeEngineDeps(methods, { getLimits: async () => pinned }),
+      makeSchedule({ chatProjectId: 'proj-old' }),
+      BASE_LIMITS,
+      dueAt(),
+    );
+
+    // Claim-token fenced like every other worker-side write.
+    expect(methods.persistResolvedProject).toHaveBeenCalledWith('sched-1', 'proj-pinned', 'ct-1');
+  });
+
+  it('leaves the row alone when the resolved destination already matches', async () => {
+    const { methods } = makeMethods();
+
+    await fireSchedule(
+      makeEngineDeps(methods),
+      makeSchedule({ chatProjectId: 'proj-1' }),
+      BASE_LIMITS,
+      dueAt(),
+    );
+
+    expect(methods.persistResolvedProject).not.toHaveBeenCalled();
+  });
+
+  /** An unusable pin is refused, and must never be written to the row on the way out. */
+  it('does not converge a destination that failed validation', async () => {
+    const { methods } = makeMethods();
+
+    await fireSchedule(
+      makeEngineDeps(methods, { projectAccess: async () => 'missing' }),
+      makeSchedule({ chatProjectId: 'proj-gone' }),
+      BASE_LIMITS,
+      dueAt(),
+    );
+
+    expect(methods.persistResolvedProject).not.toHaveBeenCalled();
+  });
+
+  /** A failed convergence costs accuracy on a later recheck, never this run. */
+  it('fires anyway when the convergence write fails', async () => {
+    const { methods } = makeMethods();
+    methods.persistResolvedProject = jest.fn(async () => {
+      throw new Error('mongo down');
+    });
+    const enqueueTrigger = jest.fn(async () => undefined);
+    const pinned = { ...BASE_LIMITS, requireProject: true, projectId: 'proj-pinned' };
+
+    const result = await fireSchedule(
+      makeEngineDeps(methods, { enqueueTrigger, getLimits: async () => pinned }),
+      makeSchedule({ chatProjectId: 'proj-old' }),
+      BASE_LIMITS,
+      dueAt(),
+    );
+
+    expect(result.fired).toBe(true);
+    expect(enqueueTrigger).toHaveBeenCalledTimes(1);
   });
 
   it('never consults project access for an unscoped schedule', async () => {
@@ -469,6 +537,41 @@ describe('write-time project scope', () => {
 
     expect(captured.status).toBeUndefined();
     expect(methods.updateScheduleById).toHaveBeenCalled();
+  });
+
+  /** A pin disagreement is refused whether the edit assigns a different project or
+   *  clears the scope — only the REQUIREMENT is waived for a disabling edit. */
+  it('refuses an explicit clear under a pin even while disabling', async () => {
+    const { deps, methods } = makeHandlerDeps({ projectId: 'proj-pinned' });
+    (methods.getScheduleById as jest.Mock).mockResolvedValue(
+      storedSchedule({ chatProjectId: 'proj-pinned' }),
+    );
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      makeReq({ enabled: false, chatProjectId: null }, { id: 'sched-1' }),
+      res,
+    );
+
+    expect(captured.status).toBe(400);
+    expect(methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  /** The requirement, unlike the pin, IS waived so a stopped row stays tidy-able. */
+  it('allows clearing the scope while disabling when only a requirement is set', async () => {
+    const { deps, methods, updates } = makeHandlerDeps({ requireProject: true });
+    (methods.getScheduleById as jest.Mock).mockResolvedValue(
+      storedSchedule({ chatProjectId: 'proj-1' }),
+    );
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      makeReq({ enabled: false, chatProjectId: null }, { id: 'sched-1' }),
+      res,
+    );
+
+    expect(captured.status).toBeUndefined();
+    expect(updates[0].unset).toMatchObject({ chatProjectId: 1 });
   });
 
   /** Turning a schedule off is not a decision about its destination. */
