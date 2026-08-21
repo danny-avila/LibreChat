@@ -129,6 +129,9 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # Optional disclaimer shown below the chat. Accepts an i18n key (e.g. the
+  # default 'com_ui_ai_disclaimer') or plain text. Leave unset to disable.
+  # aiDisclaimer: 'com_ui_ai_disclaimer'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
