@@ -226,6 +226,9 @@ const createMeiliMongooseModel = ({
      * incrementally indexing only non-temporary documents where `_meiliIndex` is not `true`.
      * */
     static async syncWithMeili(this: SchemaWithMeiliMethods): Promise<void> {
+      if (noIndex) {
+        return;
+      }
       const startTime = Date.now();
       const { batchSize, delayMs } = syncConfig;
 
@@ -305,7 +308,7 @@ const createMeiliMongooseModel = ({
       index: Index<MeiliIndexable>,
       documents: Array<Record<string, unknown>>,
     ): Promise<void> {
-      if (documents.length === 0) {
+      if (noIndex || documents.length === 0) {
         return;
       }
 
@@ -343,6 +346,9 @@ const createMeiliMongooseModel = ({
       batchSize: number,
       delayMs: number,
     ): Promise<void> {
+      if (noIndex) {
+        return;
+      }
       try {
         let offset = 0;
         let moreDocuments = true;
@@ -393,6 +399,9 @@ const createMeiliMongooseModel = ({
      * Updates settings for the MeiliSearch index
      */
     static async setMeiliIndexSettings(settings: Record<string, unknown>): Promise<unknown> {
+      if (noIndex) {
+        return;
+      }
       return await index.updateSettings(settings);
     }
 
