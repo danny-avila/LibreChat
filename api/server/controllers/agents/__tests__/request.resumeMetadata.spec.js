@@ -856,9 +856,14 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       }),
     );
+    // `scheduledFor` identifies the OCCURRENCE, matching the resume path: the run row
+    // is reserved before this loopback request is dispatched, so a pin introduced while
+    // it sat queued must not be validated in place of the destination the envelope was
+    // already built with.
     expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 7, {
       automatic: true,
       policy: true,
+      scheduledFor: '2026-08-17T12:00:00.000Z',
     });
     expect(initializeClient).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(409);

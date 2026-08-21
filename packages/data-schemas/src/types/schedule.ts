@@ -16,6 +16,9 @@ export interface ISchedule {
   cadence: TScheduleCadence;
   timezone: string;
   target: 'new';
+  /** Chat project every run's conversation is filed under. Re-validated at each
+   *  fire; a pinned operator project (interface.schedules.projectId) overrides it. */
+  chatProjectId?: string;
   file_ids?: string[];
   tools?: string[];
   cron?: string;
@@ -88,6 +91,15 @@ export interface IScheduleRun {
    *  state instead of orphan-settling a jobless run that is merely deferred (Retry-After)
    *  or that dead-lettered before a generation ever started. */
   deliveryKey?: string;
+  /** The destination project THIS occurrence actually used, recorded at reservation
+   *  because the schedule-level value can move on (an operator pin redirects later
+   *  fires, and a paused run does not block them), leaving the row describing a project
+   *  this occurrence's conversation was never filed under.
+   *
+   *  ALWAYS written, `null` for a deliberately unscoped occurrence: an absent key means
+   *  "this row predates the field", which is a different thing from "this run had no
+   *  project" and must not be validated as if it were. */
+  chatProjectId?: string | null;
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;

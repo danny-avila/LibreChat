@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { PanelContent, PanelFooter } from '~/components/ui';
+import { useChatProjectNames } from './useScheduleProjects';
 import ScheduleCardSkeleton from './ScheduleCardSkeleton';
 import { useSchedulesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
@@ -20,6 +21,12 @@ export default function SchedulePanel() {
   });
 
   const schedules = data?.schedules ?? [];
+  /** ONE lookup for the whole list. Resolving a name inside each card would re-walk
+   *  every loaded project per card, per render. Skipped entirely until some schedule
+   *  actually has a scope, so an unscoped panel issues no project request at all. */
+  const projectNames = useChatProjectNames(
+    schedules.some((schedule) => schedule.chatProjectId != null),
+  );
   const maxPerUser = data?.limits.maxPerUser;
   const atLimit = maxPerUser !== undefined && schedules.length >= maxPerUser;
   let panelContent: ReactNode;
@@ -46,7 +53,16 @@ export default function SchedulePanel() {
       <div className="space-y-2" role="list" aria-label={localize('com_ui_schedules')}>
         {schedules.map((schedule) => (
           <div key={schedule.id} role="listitem">
-            <ScheduleCard schedule={schedule} />
+            <ScheduleCard
+              schedule={schedule}
+              // The raw id is a poor label but an honest one: it only shows for a
+              // project outside the loaded pages, and beats claiming no scope.
+              projectName={
+                schedule.chatProjectId != null
+                  ? (projectNames.get(schedule.chatProjectId) ?? schedule.chatProjectId)
+                  : null
+              }
+            />
           </div>
         ))}
       </div>

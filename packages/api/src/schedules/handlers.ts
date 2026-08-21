@@ -13,12 +13,16 @@ import type {
 } from './types';
 import type { ServerRequest } from '~/types';
 import { isValidTimezone, cadenceIntervalMinutes, computeNextRunAt } from './cadence';
+import { resolveScheduleProjectId } from './types';
 
 export interface SchedulesHandlersDeps {
   methods: ScheduleMethods;
   getLimits: (user?: ScheduleUserContext) => Promise<ScheduleLimits>;
   /** Agent existence + VIEW access for the requesting user. */
   canViewAgent: (agentId: string, req: ServerRequest) => Promise<boolean>;
+  /** Whether the requesting user owns this chat project. Projects are user-owned,
+   *  so existence and authorization are the same question. */
+  canUseProject: (projectId: string, userId: string) => Promise<boolean>;
   /** Filters to file ids owned by the user. */
   filterOwnedFileIds: (fileIds: string[], userId: string) => Promise<string[]>;
   /** Extends a bounded renewable upload hold on attached files so they survive to the
@@ -116,6 +120,14 @@ export function computeCreateDigest(payload: TCreateSchedule): string {
       daysOfWeek: payload.cadence.daysOfWeek ?? null,
     },
     file_ids: payload.file_ids ?? null,
+    // `!== undefined`, NOT `!= null`: an OMITTED field still digests byte-identically
+    // to a payload from before project scope existed, so an in-flight create retried
+    // across the upgrade matches its own row — but an explicit `null` is a different
+    // INTENT (clear the scope) and must digest differently. Collapsing the two let a
+    // request reuse a pinned create's key with `chatProjectId: null` and receive 201
+    // for the pinned row, i.e. success for the opposite of what it asked. A pre-scope
+    // client never sent the field at all, so nothing legacy can carry an explicit null.
+    ...(payload.chatProjectId !== undefined && { chatProjectId: payload.chatProjectId }),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -143,7 +155,11 @@ function matchesCreatedSchedule(existing: ISchedule, payload: TCreateSchedule): 
     existing.cadence?.hour === payload.cadence.hour &&
     existing.cadence?.minute === payload.cadence.minute &&
     sameList(existing.cadence?.daysOfWeek, payload.cadence.daysOfWeek) &&
-    sameList(existing.file_ids, payload.file_ids)
+    sameList(existing.file_ids, payload.file_ids) &&
+    // Only when the payload names one: an operator pin is written to the row without
+    // the client ever sending it, and a legacy row predates project scope entirely.
+    (payload.chatProjectId === undefined ||
+      (existing.chatProjectId ?? null) === (payload.chatProjectId ?? null))
   );
 }
 
@@ -173,6 +189,7 @@ export type WireSchedule = Pick<
   | 'cadence'
   | 'timezone'
   | 'target'
+  | 'chatProjectId'
   | 'file_ids'
   | 'enabled'
   | 'disabledReason'
@@ -185,7 +202,17 @@ export type WireSchedule = Pick<
   | 'updatedAt'
 >;
 
-export function toWireSchedule(schedule: ISchedule): WireSchedule {
+/**
+ * Public projection. `limits` is optional only for callers that have none to hand;
+ * pass it wherever one is available so the card shows the destination a fire would
+ * ACTUALLY use — an operator pin added after a row was written outranks its stored
+ * id at fire time, and a projection reading the raw field would name the wrong
+ * project until the owner next edits the schedule.
+ */
+export function toWireSchedule(
+  schedule: ISchedule,
+  limits?: Pick<ScheduleLimits, 'projectId'>,
+): WireSchedule {
   return {
     id: schedule.id,
     user: schedule.user,
@@ -195,6 +222,7 @@ export function toWireSchedule(schedule: ISchedule): WireSchedule {
     cadence: schedule.cadence,
     timezone: schedule.timezone,
     target: schedule.target,
+    chatProjectId: resolveScheduleProjectId(limits ?? {}, schedule.chatProjectId),
     file_ids: schedule.file_ids,
     enabled: schedule.enabled,
     disabledReason: schedule.disabledReason,
@@ -256,6 +284,63 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       }
     }
     return true;
+  }
+
+  /**
+   * The destination project a write commits, or `false` when the write was refused
+   * (the response is already sent). `undefined` is a real value: an unscoped create,
+   * or an update that explicitly cleared the scope.
+   *
+   * Deliberately resolved from the SAME {@link resolveScheduleProjectId} the fire path
+   * uses, so a schedule this handler accepts is one the next fire also accepts —
+   * the create/fire precheck symmetry `resolveAgentFireAccess` already establishes
+   * for agents.
+   */
+  async function resolveWriteProject(
+    res: Response,
+    userId: string,
+    limits: ScheduleLimits,
+    requested: string | null | undefined,
+    stored?: string,
+    /** Lets a DISABLING edit skip the requirement while still refusing a destination
+     *  that disagrees with a pin — the two rules are independent, and folding them
+     *  together let an explicit clear slip past the pin check entirely. */
+    options?: { enforceRequirement?: boolean },
+  ): Promise<string | undefined | false> {
+    // A pin is the ONLY destination. An OMITTED field takes it silently (the client has
+    // no choice to make), but anything explicit that disagrees is refused rather than
+    // quietly rewritten — including `null`, which the payload contract defines as
+    // clearing the scope. Answering 201/200 to an explicit clear while filing the
+    // schedule under the pin reports success for the opposite of what was asked.
+    if (limits.projectId != null && requested !== undefined && requested !== limits.projectId) {
+      res.status(400).json({ error: 'Scheduled chats are pinned to a specific project' });
+      return false;
+    }
+    const chatProjectId = resolveScheduleProjectId(
+      limits,
+      requested === undefined ? stored : requested,
+    );
+    if (chatProjectId == null) {
+      if (limits.requireProject && options?.enforceRequirement !== false) {
+        res.status(400).json({ error: 'Scheduled chats must be assigned to a project' });
+        return false;
+      }
+      return undefined;
+    }
+    // Re-checked even when it only came from storage: the hold is bounded by the
+    // project's lifetime, not by whether this request touched the field, and an
+    // edit that leaves a schedule pointing at a deleted project would otherwise
+    // succeed and then be auto-disabled by its very next fire.
+    if (!(await deps.canUseProject(chatProjectId, userId))) {
+      res.status(400).json({
+        error:
+          limits.projectId != null
+            ? 'The configured schedules project was not found'
+            : 'Project not found',
+      });
+      return false;
+    }
+    return chatProjectId;
   }
 
   /**
@@ -323,19 +408,27 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     ]);
     retryDeferredDeletions(requestUser(req).id);
     res.json({
-      schedules: schedules.map(toWireSchedule),
-      limits: { maxPerUser: limits.maxPerUser },
+      schedules: schedules.map((schedule) => toWireSchedule(schedule, limits)),
+      limits: {
+        maxPerUser: limits.maxPerUser,
+        requireProject: limits.requireProject,
+        ...(limits.projectId != null && { projectId: limits.projectId }),
+      },
     });
   }
 
   async function getSchedule(req: ServerRequest, res: Response): Promise<void> {
     const { id } = req.params as { id: string };
-    const schedule = await deps.methods.getScheduleById(id, requestUser(req).id);
+    const user = requestUser(req);
+    const [schedule, limits] = await Promise.all([
+      deps.methods.getScheduleById(id, user.id),
+      deps.getLimits(user),
+    ]);
     if (schedule == null) {
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    res.json(toWireSchedule(schedule));
+    res.json(toWireSchedule(schedule, limits));
   }
 
   async function createSchedule(req: ServerRequest, res: Response): Promise<void> {
@@ -356,6 +449,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
+    // Digested from the CLIENT's payload, never from the policy-resolved destination:
+    // the digest records one create INTENT, and today's policy is not part of that
+    // intent. Resolving first made an operator's pin change (or a deleted project)
+    // re-digest a genuine retry into a mismatch.
     const digest = computeCreateDigest(parsed.data);
 
     /**
@@ -407,7 +504,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         return;
       }
       logger.info(`[schedules] create retry resolved to ${existing.id} for user ${user.id}`);
-      res.status(201).json(toWireSchedule(fresh));
+      res.status(201).json(toWireSchedule(fresh, limits));
     };
 
     // Resolve a retry BEFORE the capacity pre-check: a retry whose first attempt
@@ -420,6 +517,21 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     );
     if (replayed != null) {
       await respondToReplay(replayed);
+      return;
+    }
+    // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
+    // replay lookup above. A committed create whose response was lost must still be
+    // recoverable by an identical retry: applying today's policy first let a raised
+    // requirement, a deleted project, or a moved pin answer 400 for a row that already
+    // exists — pushing the client to rotate its key and create a duplicate schedule,
+    // which is precisely what the idempotency key exists to prevent.
+    const chatProjectId = await resolveWriteProject(
+      res,
+      user.id,
+      limits,
+      parsed.data.chatProjectId,
+    );
+    if (chatProjectId === false) {
       return;
     }
     // Fail fast on an obvious over-limit BEFORE retaining attachments, so the common
@@ -471,6 +583,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     const created = await deps.methods.createScheduleWithSlot(
       {
         ...parsed.data,
+        chatProjectId: chatProjectId ?? undefined,
         id,
         user: user.id as never,
         tenantId: user.tenantId,
@@ -545,7 +658,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         if (rolledBack === 'kept') {
           const current = await deps.methods.getScheduleById(id, user.id);
           if (current != null) {
-            res.status(201).json(toWireSchedule(current));
+            res.status(201).json(toWireSchedule(current, limits));
             return;
           }
         }
@@ -569,11 +682,11 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
         logger.warn(`[schedules] create for ${id} left unarmed after a concurrent edit`);
       }
       logger.info(`[schedules] created ${id} for user ${user.id}`);
-      res.status(201).json(toWireSchedule(current));
+      res.status(201).json(toWireSchedule(current, limits));
       return;
     }
     logger.info(`[schedules] created ${id} for user ${user.id}`);
-    res.status(201).json(toWireSchedule(created));
+    res.status(201).json(toWireSchedule(created, limits));
   }
 
   async function updateSchedule(req: ServerRequest, res: Response): Promise<void> {
@@ -649,6 +762,44 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return;
     }
+    // The destination is re-resolved on every edit that leaves the schedule ENABLED,
+    // against the stored id when this PATCH does not touch the field — the same shape
+    // as the stored-agent and effective-cadence rechecks above, and for the same
+    // reason: an edit that "succeeds" into a state the next fire auto-disables is not
+    // a success. A disabling edit skips the requirement so a schedule stopped by a
+    // project_required/project_deleted auto-disable can still be turned off or renamed.
+    let chatProjectId: string | undefined;
+    if (enabled) {
+      const resolved = await resolveWriteProject(
+        res,
+        user.id,
+        limits,
+        parsed.data.chatProjectId,
+        existing.chatProjectId,
+      );
+      if (resolved === false) {
+        return;
+      }
+      chatProjectId = resolved;
+    } else if (parsed.data.chatProjectId !== undefined) {
+      // `!== undefined`, so an explicit `null` lands here too: a pin disagreement is
+      // refused whether the edit assigns a different project or clears the scope
+      // outright. Only the REQUIREMENT is waived for a disabling edit — without that
+      // distinction a pinned deployment accepted `{enabled: false, chatProjectId: null}`
+      // and unset the row while still reporting the pin back on the wire.
+      const resolved = await resolveWriteProject(
+        res,
+        user.id,
+        limits,
+        parsed.data.chatProjectId,
+        undefined,
+        { enforceRequirement: false },
+      );
+      if (resolved === false) {
+        return;
+      }
+      chatProjectId = resolved;
+    }
     const cadenceChanged =
       parsed.data.cadence != null || parsed.data.timezone != null || parsed.data.enabled != null;
     const reEnabled = parsed.data.enabled === true && existing.enabled === false;
@@ -658,6 +809,17 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     // cadence one, or a name/prompt edit would silently leave it dead.
     const needsArming = existing.nextRunAt == null;
     const update: Partial<ISchedule> = { ...editedFields } as Partial<ISchedule>;
+    // `chatProjectId` is resolved, not copied: an operator pin rewrites it even when
+    // this PATCH never mentioned the field, so the row converges on the policy
+    // instead of drifting until the owner happens to touch the picker.
+    delete (update as { chatProjectId?: unknown }).chatProjectId;
+    // ONLY an explicit `null` clears the scope. A disabling edit resolves nothing and
+    // must leave the stored destination intact, or turning a schedule off would
+    // silently forget where its runs used to land.
+    const clearsProject = parsed.data.chatProjectId === null && chatProjectId == null;
+    if (chatProjectId != null) {
+      update.chatProjectId = chatProjectId;
+    }
     if (enabled && (cadenceChanged || needsArming)) {
       const nextRunAt = computeNextRunAt({ cadence, timezone, scheduleId: existing.id });
       if (nextRunAt == null) {
@@ -670,7 +832,13 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       update.failureCount = 0;
       update.balanceSkipCount = 0;
     }
-    const unset = reEnabled ? { disabledReason: 1 as const } : undefined;
+    const unset =
+      reEnabled || clearsProject
+        ? {
+            ...(reEnabled && { disabledReason: 1 as const }),
+            ...(clearsProject && { chatProjectId: 1 as const }),
+          }
+        : undefined;
     // Retain the new attachments BEFORE committing the edit, so a retention failure
     // leaves the ENTIRE schedule unchanged rather than persisting prompt/cadence/
     // agent/enabled changes while only reverting file_ids. A file whose TTL was
@@ -726,7 +894,7 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(404).json({ error: 'Schedule not found' });
       return;
     }
-    res.json(toWireSchedule(schedule));
+    res.json(toWireSchedule(schedule, limits));
   }
 
   async function deleteSchedule(req: ServerRequest, res: Response): Promise<void> {

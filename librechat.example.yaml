@@ -207,6 +207,14 @@ interface:
   #   minIntervalMinutes: 60
   #   autoDisableAfterFailures: 5
   #   fireConcurrency: 5
+  #   # Require every schedule to be filed under a chat project. Enforced on
+  #   # create/update AND at each fire, so turning it on stops (auto-disables)
+  #   # schedules that predate it rather than letting their runs land loose.
+  #   requireProject: false
+  #   # Pin every scheduled run to ONE chat project, ignoring the user's choice.
+  #   # Implies `requireProject`. Chat projects are user-owned, so a value set here
+  #   # only makes sense as a per-user or per-role config override.
+  #   # projectId: '000000000000000000000000'
   peoplePicker:
     users: true
     groups: true

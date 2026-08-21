@@ -1,6 +1,6 @@
 import { logger, runAsSystem, tenantStorage, isRuntimeDisabled } from '@librechat/data-schemas';
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
+import type { ScheduleMethods, AppConfig, IBalance, IChatProject } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type {
@@ -16,6 +16,7 @@ import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import {
+  resolveScheduleProjectId,
   DEFAULT_SCHEDULE_LIMITS,
   SCHEDULE_FILE_HOLD,
   hasResumeHandoffInFlight,
@@ -161,6 +162,10 @@ export interface SchedulesServiceDeps {
     agentId: string,
     user: ScheduleUserContext,
   ) => Promise<'ok' | 'missing' | 'forbidden'>;
+  /** Loads a chat project scoped to its owner, or null when it does not exist for
+   *  them. Chat projects are user-owned, so this is both the existence check and the
+   *  authorization check. */
+  getChatProject: (userId: string, projectId: string) => Promise<IChatProject | null>;
   /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
   isUserDeleting: (userId: string) => Promise<boolean>;
   /** Shared durable trigger admission from the merged agent-trigger service. */
@@ -234,7 +239,7 @@ export interface SchedulesService {
   isScheduleLive: (
     scheduleId: string,
     expectedConfigRevision?: number,
-    options?: { automatic?: boolean; policy?: boolean },
+    options?: { automatic?: boolean; policy?: boolean; scheduledFor?: string | Date },
   ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<ScheduleDeleteResult>;
@@ -297,6 +302,7 @@ export function createSchedulesService(
     'upsertBalance',
     'initializeNullBalance',
     'resolveAgentFireAccess',
+    'getChatProject',
     'isUserDeleting',
     'enqueueAgentTrigger',
     'getTriggerDelivery',
@@ -354,6 +360,11 @@ export function createSchedulesService(
     if (config === true) {
       return DEFAULT_SCHEDULE_LIMITS;
     }
+    // A pinned project is itself a requirement: leaving `requireProject` to be set
+    // separately would let `projectId` alone resolve to "optional destination that
+    // happens to be forced", and a schedule created before the pin would keep firing
+    // with no project at all rather than being stopped for review.
+    const projectId = config.projectId?.trim() || undefined;
     return {
       enabled: config.use !== false,
       maxPerUser: config.maxPerUser ?? DEFAULT_SCHEDULE_LIMITS.maxPerUser,
@@ -361,6 +372,8 @@ export function createSchedulesService(
       autoDisableAfterFailures:
         config.autoDisableAfterFailures ?? DEFAULT_SCHEDULE_LIMITS.autoDisableAfterFailures,
       fireConcurrency: config.fireConcurrency ?? DEFAULT_SCHEDULE_LIMITS.fireConcurrency,
+      requireProject: config.requireProject === true || projectId != null,
+      ...(projectId != null && { projectId }),
     };
   }
 
@@ -491,6 +504,11 @@ export function createSchedulesService(
     // VIEW with the manage:agents bypass); shared with the create/update precheck
     // so the two never diverge.
     agentAccess: (agentId, user) => deps.resolveAgentFireAccess(agentId, user),
+    // Ownership IS existence for a chat project, so one lookup answers both. Failing
+    // closed here would auto-disable a schedule on a transient Mongo blip, so a read
+    // error propagates instead: the fire fails and is retried like any other error.
+    projectAccess: async (projectId, user) =>
+      (await deps.getChatProject(user.id, projectId)) == null ? 'missing' : 'ok',
     resolveFiles: async (fileIds, user) => {
       // Renew the bounded upload hold at every fire preflight, BEST-EFFORT: the hold
       // only has to bridge upload -> first consumption (a real send clears the TTL
@@ -974,7 +992,7 @@ export function createSchedulesService(
   async function isScheduleLive(
     scheduleId: string,
     expectedConfigRevision?: number,
-    options?: { automatic?: boolean; policy?: boolean },
+    options?: { automatic?: boolean; policy?: boolean; scheduledFor?: string | Date },
   ): Promise<boolean> {
     if (!scheduleId) {
       return false;
@@ -1027,6 +1045,47 @@ export function createSchedulesService(
       if (!(await engineDeps.hasScheduleAccess(owner))) {
         return false;
       }
+      // Project policy belongs HERE rather than in the resume claim: this branch's
+      // refusal is already routed through abort-and-settle by both callers, so a
+      // policy stop settles the occurrence instead of leaving it at `requires_action`
+      // answering 409 to every approval attempt until it expires.
+      //
+      // Deliberately NARROW. It refuses only where there is no valid destination left:
+      // the requirement is on with nothing to satisfy it, or the schedule's own project
+      // is gone (which also unset it on the conversation). It does NOT refuse merely
+      // because an operator's pin moved to a different project — the paused
+      // conversation cannot be rebound (`chatProjectId` is excluded from the resume
+      // context, and the continuation reuses the same conversationId), so refusing
+      // would strand a pending approval over a pin that only governs where the NEXT
+      // run lands, which the fire path already redirects.
+      // Prefer the destination THIS OCCURRENCE recorded over the schedule-level value.
+      // A paused run does not block later occurrences (the single-active index covers
+      // `started` only), so after a pin moves, a subsequent fire rewrites the schedule
+      // row while the paused conversation stays where it was — validating the row would
+      // then check a project that conversation was never filed under.
+      //
+      // An ABSENT record falls back to the schedule: a pre-scope occurrence, or one
+      // whose row is gone, must never be read as evidence to stop a run.
+      const occurrence =
+        options?.scheduledFor != null
+          ? await methods.getScheduleRunProject(scheduleId, options.scheduledFor)
+          : null;
+      // `recorded`, not the id: an occurrence that deliberately ran unscoped recorded a
+      // null, and validating the schedule's CURRENT value for it would admit a
+      // conversation that satisfies no present requirement. Only an unknown record — a
+      // row from before the field, or none at all — falls back.
+      const effectiveProject = occurrence?.recorded
+        ? occurrence.chatProjectId
+        : resolveScheduleProjectId(limits, schedule.chatProjectId);
+      if (limits.requireProject && effectiveProject == null) {
+        return false;
+      }
+      if (
+        effectiveProject != null &&
+        (await engineDeps.projectAccess(effectiveProject, owner)) !== 'ok'
+      ) {
+        return false;
+      }
     }
     return true;
   }
@@ -1064,6 +1123,10 @@ export function createSchedulesService(
       if (!ownerLimits.enabled || globallyDisabled || !hasAccess) {
         return { conflict: 'inactive' };
       }
+      // Project policy is NOT re-checked here. It lives in isScheduleLive's `policy`
+      // branch, which both entry points consult first and whose refusal aborts and
+      // settles the occurrence; a second copy here would answer a bare 409 and strand
+      // the run at `requires_action` instead.
       // FINAL schedule-side admission fence. Everything above is asynchronous and an
       // owner edit/disable can land while it runs. Claim the schedule document under
       // the expected config generation now, carry this lease through the approval CAS,

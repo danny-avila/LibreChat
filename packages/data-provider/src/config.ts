@@ -1573,6 +1573,15 @@ export const interfaceSchema = z
           minIntervalMinutes: z.number().int().min(1).optional(),
           autoDisableAfterFailures: z.number().int().min(1).optional(),
           fireConcurrency: z.number().int().min(1).optional(),
+          /** Refuse schedules that are not filed under a chat project. Enforced on
+           *  create/update AND at every fire, so raising it later stops schedules
+           *  that predate the policy instead of grandfathering them. */
+          requireProject: z.boolean().optional(),
+          /** Pins every scheduled run to ONE chat project, ignoring any client
+           *  choice. Implies `requireProject`. The project must belong to the
+           *  schedule's owner, so a deployment-wide value only makes sense with a
+           *  per-user/per-role config override. */
+          projectId: z.string().trim().min(1).optional(),
         }),
       ])
       .optional(),

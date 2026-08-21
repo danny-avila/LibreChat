@@ -15,7 +15,26 @@ Scheduled chats remain experimental and default-off.
   which is written on pause, skip, or terminal outcomes, so the client's `started` chip is
   unreachable.
 - Add multi-day weekly, timezone, and attachment controls. The API supports these, but the dialog
-  does not.
+  does not. NOTE: the dialog cannot scroll from `md` up (`md:overflow-visible` exists because the
+  Ariakit popovers cannot portal out of the focus-trapping Radix dialog), so its content must fit
+  the viewport — roughly 30px of slack remain at 1280x720. Each of these controls adds a row and
+  will push the footer's Save button out of reach. Adding them needs the height problem solved
+  first: give `ControlCombobox` the `portalElement` prop `Dropdown` already has, portal the
+  popovers into the dialog content element, and let the form scroll again.
+
+## Known gaps: project scope
+
+- A project deleted inside the window between the resume controller's
+  `isScheduleLive(..., { policy: true })` check and `claimScheduleResume` is not caught:
+  deletion bumps no revision, so the lease fence cannot see it and the continuation
+  starts against a conversation that was just unscoped. Sub-second, and self-correcting
+  at the next fire (which auto-disables the schedule). Closing it needs a distinct
+  policy conflict returned from the claim that the controller routes through
+  abort-and-settle, rather than the bare 409 an `inactive` conflict produces today.
+- The stored project converges on an operator pin only when the schedule actually
+  FIRES. A schedule that has not fired since the pin moved still carries its old id,
+  which the wire projection already papers over but a direct read of the row does not.
+  Resume validation is unaffected — it reads the occurrence's own record.
 
 ## Runtime scope
 

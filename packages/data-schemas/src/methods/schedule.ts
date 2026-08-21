@@ -222,6 +222,18 @@ export type ScheduleMethods = {
     counterGuard?: Record<string, unknown>,
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
+  /** Converges the schedule row on the destination a fire resolved; claim-token
+   *  fenced, and never bumps configRevision (this is not an owner edit). */
+  persistResolvedProject: (
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ) => Promise<void>;
+  /** The destination one occurrence used; null when the row is absent. */
+  getScheduleRunProject: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<{ recorded: boolean; chatProjectId?: string } | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (
@@ -787,6 +799,59 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       $set: { enabled: false, disabledReason: reason },
       $unset: { leaseUntil: 1, leaseBy: 1 },
     });
+  }
+
+  /**
+   * Converges the row on the destination a fire actually RESOLVED, so the stored id
+   * never lies about where this schedule's conversations are going.
+   *
+   * An operator pin outranks the stored id at fire time, and the wire projection
+   * already reports the pin — but the row kept its old value, so a paused occurrence
+   * could only be re-validated against a project its conversation was never filed
+   * under. Claim-token fenced like every other worker-side write, and deliberately
+   * WITHOUT a configRevision bump: this is the server reconciling itself to policy,
+   * not an owner edit, and bumping would fence an in-flight occurrence off its own run.
+   */
+  /**
+   * The destination one OCCURRENCE actually used, for re-validating a paused run.
+   *
+   * `recorded` is the load-bearing part. A reservation ALWAYS writes the field (null
+   * when deliberately unscoped), so a row missing the key is one written before this
+   * existed — "unknown", not "no project". Callers fall back to the schedule-level
+   * resolution only for unknown, and treat a recorded null as the genuinely unscoped
+   * occurrence it is. Returns null when there is no row at all.
+   */
+  async function getScheduleRunProject(
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ): Promise<{ recorded: boolean; chatProjectId?: string } | null> {
+    const run = await ScheduleRun()
+      .findOne({ scheduleId, scheduledFor: new Date(scheduledFor) })
+      .select('chatProjectId')
+      .lean<{ chatProjectId?: string | null } | null>();
+    if (run == null) {
+      return null;
+    }
+    // Key PRESENCE, not truthiness: `null` is a recorded decision, absent is not.
+    const recorded = Object.prototype.hasOwnProperty.call(run, 'chatProjectId');
+    return recorded && run.chatProjectId != null
+      ? { recorded, chatProjectId: run.chatProjectId }
+      : { recorded };
+  }
+
+  async function persistResolvedProject(
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
+    }
+    await Schedule().updateOne(
+      filter,
+      chatProjectId == null ? { $unset: { chatProjectId: 1 } } : { $set: { chatProjectId } },
+    );
   }
 
   /**
@@ -2031,6 +2096,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     reserveStartedRun,
     getCapacityOccupancy,
     requestRunAbort,
+    persistResolvedProject,
+    getScheduleRunProject,
     getScheduleRunAbortState,
     markRunResumeClaimed,
     releaseRunResumeClaim,

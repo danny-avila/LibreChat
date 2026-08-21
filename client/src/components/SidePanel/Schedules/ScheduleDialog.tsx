@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
 import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
@@ -25,11 +26,14 @@ import type {
 import type { TranslationKeys } from '~/hooks';
 import type { Meridiem } from './cadence';
 import {
+  useProjectQuery,
   useListAgentsQuery,
+  useSchedulesQuery,
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
 import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
+import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -45,6 +49,8 @@ type ScheduleFormValues = {
   name: string;
   prompt: string;
   agent_id: string;
+  /** `''` means unscoped; the picker has no null option of its own. */
+  chatProjectId: string;
   frequency: ScheduleFrequency;
   hour12: number;
   minute: number;
@@ -69,6 +75,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       name: '',
       prompt: '',
       agent_id: '',
+      chatProjectId: '',
       frequency: 'daily',
       hour12: 9,
       minute: 0,
@@ -81,6 +88,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     name: schedule.name,
     prompt: schedule.prompt,
     agent_id: schedule.agent_id,
+    chatProjectId: schedule.chatProjectId ?? '',
     frequency: schedule.cadence.frequency,
     hour12,
     minute: schedule.cadence.minute,
@@ -154,6 +162,51 @@ export default function ScheduleDialog({
     () => (agents ?? []).map((agent) => ({ label: agent.name || agent.id, value: agent.id })),
     [agents],
   );
+
+  /** Reads the SAME cached list query the panel already holds, so the dialog needs no
+   *  request of its own — and so the form mirrors exactly the policy the write handler
+   *  enforces rather than a second, client-side interpretation of the config. */
+  const { data: schedulesData } = useSchedulesQuery();
+  const pinnedProjectId = schedulesData?.limits.projectId;
+  const requireProject = schedulesData?.limits.requireProject === true;
+  const {
+    items: loadedProjectItems,
+    namesById: projectNames,
+    hasNextPage: hasMoreProjects,
+    fetchNextPage: fetchMoreProjects,
+    isFetchingNextPage: isFetchingMoreProjects,
+  } = useChatProjectPicker(open);
+  const selectedProjectId = watch('chatProjectId');
+
+  /** Clearing the scope needs a real OPTION, not just the placeholder: with only live
+   *  projects in the list, a schedule that has one could never be set back to none, and
+   *  the server's `chatProjectId: null` clearing path would be unreachable from the UI.
+   *  Omitted when a project is mandatory — there is nothing valid to select. */
+  const projectItems = useMemo(
+    () =>
+      requireProject
+        ? loadedProjectItems
+        : [
+            {
+              label: localize('com_ui_schedule_project_none'),
+              value: '',
+              icon: <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />,
+            },
+            ...loadedProjectItems,
+          ],
+    [requireProject, loadedProjectItems, localize],
+  );
+
+  /** The stored (or pinned) project can sit outside the pages loaded so far, and the
+   *  combobox renders its PLACEHOLDER for an unknown name — telling the owner a scoped
+   *  schedule has no project. Read that one project directly instead. */
+  const displayedProjectId = pinnedProjectId ?? (selectedProjectId || undefined);
+  const isProjectPaged = displayedProjectId != null && projectNames.has(displayedProjectId);
+  const { data: fetchedProject } = useProjectQuery(isProjectPaged ? undefined : displayedProjectId);
+  const projectDisplayName = (projectId: string): string =>
+    projectNames.get(projectId) ??
+    (fetchedProject?._id === projectId ? fetchedProject.name : undefined) ??
+    projectId;
 
   const frequencyOptions = useMemo(
     () =>
@@ -272,6 +325,13 @@ export default function ScheduleDialog({
         ...(dirtyFields.name ? { name: values.name.trim() } : {}),
         ...(dirtyFields.prompt ? { prompt: values.prompt.trim() } : {}),
         ...(dirtyFields.agent_id ? { agent_id: values.agent_id } : {}),
+        // Explicit `null` is the only way to CLEAR the scope; omitting the field
+        // leaves the stored project alone. Never sent while pinned — the server owns
+        // the destination there, and echoing it back would only be a chance to
+        // disagree with a pin that changed since the dialog opened.
+        ...(dirtyFields.chatProjectId && pinnedProjectId == null
+          ? { chatProjectId: values.chatProjectId || null }
+          : {}),
         ...(cadenceTouched ? { cadence } : {}),
       };
       // Nothing touched: a field-less PATCH is refused server-side (it would rotate
@@ -299,6 +359,9 @@ export default function ScheduleDialog({
       name: values.name.trim(),
       prompt: values.prompt.trim(),
       agent_id: values.agent_id,
+      ...(pinnedProjectId == null && values.chatProjectId
+        ? { chatProjectId: values.chatProjectId }
+        : {}),
       cadence: buildCadence(values),
       timezone,
       target: 'new' as const,
@@ -336,66 +399,163 @@ export default function ScheduleDialog({
         showCloseButton={false}
         // The agent and time popovers cannot portal out of a focus-trapping dialog
         // (see below), so `overflow-visible` keeps them from being clipped. Only from
-        // `md` up: the two-column layout fits well inside 90vh there, while narrow
+        // `md` up: the identity row fits well inside 90vh there, while narrow
         // viewports keep the template's scrolling so the footer stays reachable.
+        //
+        // THE BUDGET IS A CONTRACT: with scrolling off at `md`, anything that adds a
+        // ROW here pushes the footer's submit button out of a 720px-tall viewport,
+        // where it can never be scrolled back — the e2e edit spec times out clicking
+        // Save. A new field belongs in an existing row (see the identity row below),
+        // not stacked beneath one.
         className="w-11/12 md:max-w-3xl md:overflow-visible"
         main={
           <form id={FORM_ID} onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_name')}
-                </Label>
-                <Input
-                  id="schedule-name"
-                  className="w-full"
-                  placeholder={localize('com_ui_schedule_name_placeholder')}
-                  aria-invalid={errors.name != null}
-                  aria-describedby="schedule-name-message"
-                  {...register('name', { required: localize('com_ui_field_required') })}
-                />
-                <FieldMessage id="schedule-name-message" message={errors.name?.message} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_agent')}
-                </Label>
-                <Controller
-                  name="agent_id"
-                  control={control}
-                  rules={{ required: localize('com_ui_field_required') }}
-                  render={({ field }) => (
-                    <ControlCombobox
-                      selectedValue={field.value}
-                      displayValue={
-                        agentItems.find((item) => item.value === field.value)?.label ?? ''
+            {/* Identity row: what the schedule is, who runs it, where its chats land.
+                Its caption is grouped with it rather than left to the form's own 4-unit
+                rhythm, which would spend more vertical budget on the gap than the
+                caption itself occupies. */}
+            <div className="space-y-1.5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
+                    {localize('com_ui_name')}
+                  </Label>
+                  <Input
+                    id="schedule-name"
+                    className="w-full"
+                    placeholder={localize('com_ui_schedule_name_placeholder')}
+                    aria-invalid={errors.name != null}
+                    aria-describedby="schedule-name-message"
+                    {...register('name', { required: localize('com_ui_field_required') })}
+                  />
+                  <FieldMessage id="schedule-name-message" message={errors.name?.message} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
+                    {localize('com_ui_agent')}
+                  </Label>
+                  <Controller
+                    name="agent_id"
+                    control={control}
+                    rules={{ required: localize('com_ui_field_required') }}
+                    render={({ field }) => (
+                      <ControlCombobox
+                        selectedValue={field.value}
+                        displayValue={
+                          agentItems.find((item) => item.value === field.value)?.label ?? ''
+                        }
+                        selectPlaceholder={localize('com_ui_select_agent')}
+                        searchPlaceholder={localize('com_agents_search_name')}
+                        setValue={field.onChange}
+                        onBlur={field.onBlur}
+                        items={agentItems}
+                        ariaLabel={localize('com_ui_agent')}
+                        ariaInvalid={errors.agent_id != null}
+                        ariaDescribedBy="schedule-agent-message"
+                        selectId="schedule-agent"
+                        isCollapsed={false}
+                        showCarat={true}
+                        placement="bottom-start"
+                        // Radix traps focus inside the dialog, so a popover portaled to
+                        // the body cannot be clicked, tabbed into, or typed in — and the
+                        // trap fighting Ariakit for focus locks the page up.
+                        portal={false}
+                        matchTriggerWidth={true}
+                        variant="field"
+                      />
+                    )}
+                  />
+                  <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="schedule-project"
+                    className="text-sm font-medium text-text-primary"
+                  >
+                    {localize('com_ui_project')}
+                  </Label>
+                  {pinnedProjectId != null ? (
+                    /* Pinned by the operator: there is no choice to offer, so show the
+                     destination rather than a disabled control the user would keep
+                     trying to open. */
+                    <div
+                      id="schedule-project"
+                      data-testid="schedule-project-pinned"
+                      className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 text-sm text-text-secondary"
+                    >
+                      <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{projectDisplayName(pinnedProjectId)}</span>
+                    </div>
+                  ) : (
+                    <Controller
+                      name="chatProjectId"
+                      control={control}
+                      // Only for a schedule this submit leaves ENABLED. The server waives
+                      // the requirement for a disabled row precisely so one auto-disabled
+                      // for `project_required` can still be renamed or tidied up; requiring
+                      // it here made that path unreachable, and an owner with no projects
+                      // at all could not edit the stopped schedule.
+                      rules={
+                        requireProject && (schedule == null || schedule.enabled)
+                          ? { required: localize('com_ui_field_required') }
+                          : undefined
                       }
-                      selectPlaceholder={localize('com_ui_select_agent')}
-                      searchPlaceholder={localize('com_agents_search_name')}
-                      setValue={field.onChange}
-                      onBlur={field.onBlur}
-                      items={agentItems}
-                      ariaLabel={localize('com_ui_agent')}
-                      ariaInvalid={errors.agent_id != null}
-                      ariaDescribedBy="schedule-agent-message"
-                      selectId="schedule-agent"
-                      isCollapsed={false}
-                      showCarat={true}
-                      placement="bottom-start"
-                      // Radix traps focus inside the dialog, so a popover portaled to
-                      // the body cannot be clicked, tabbed into, or typed in — and the
-                      // trap fighting Ariakit for focus locks the page up.
-                      portal={false}
-                      matchTriggerWidth={true}
-                      variant="field"
+                      render={({ field }) => (
+                        <ControlCombobox
+                          selectedValue={field.value}
+                          // Never `''` for a real id: that renders the placeholder,
+                          // which reads as "No project" on a schedule that has one.
+                          displayValue={field.value ? projectDisplayName(field.value) : ''}
+                          selectPlaceholder={localize(
+                            requireProject
+                              ? 'com_ui_select_project'
+                              : 'com_ui_schedule_project_none',
+                          )}
+                          searchPlaceholder={localize('com_ui_search_projects')}
+                          setValue={field.onChange}
+                          onBlur={field.onBlur}
+                          items={projectItems}
+                          SelectIcon={
+                            <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                          }
+                          ariaLabel={localize('com_ui_project')}
+                          ariaInvalid={errors.chatProjectId != null}
+                          ariaDescribedBy="schedule-project-message"
+                          selectId="schedule-project"
+                          isCollapsed={false}
+                          showCarat={true}
+                          placement="bottom-start"
+                          /* Same focus-trap constraint as the agent picker above. */
+                          portal={false}
+                          matchTriggerWidth={true}
+                          variant="field"
+                        />
+                      )}
                     />
                   )}
-                />
-                <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
-                <p className="text-xs text-text-secondary">
-                  {localize('com_ui_schedule_target_new_chat')}
-                </p>
+                  <FieldMessage
+                    id="schedule-project-message"
+                    message={errors.chatProjectId?.message}
+                  />
+                  {pinnedProjectId == null && hasMoreProjects && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto justify-start px-0 text-xs"
+                      onClick={() => fetchMoreProjects()}
+                      disabled={isFetchingMoreProjects}
+                    >
+                      {localize(isFetchingMoreProjects ? 'com_ui_loading' : 'com_ui_load_more')}
+                    </Button>
+                  )}
+                </div>
               </div>
+              {/* Full width, not inside the agent cell: at a third of the dialog this
+                sentence wraps an extra line, and the identity row is the tallest thing
+                competing for the fixed height budget described on the template above. */}
+              <p className="text-xs text-text-secondary">
+                {localize('com_ui_schedule_target_new_chat')}
+              </p>
             </div>
 
             <Controller

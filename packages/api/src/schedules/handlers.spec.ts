@@ -60,6 +60,7 @@ describe('toWireSchedule', () => {
       [
         'agent_id',
         'cadence',
+        'chatProjectId',
         // Public so the edit dialog can fence its PATCH on the revision it opened
         // with (updateSchedulePayloadSchema.expectedConfigRevision).
         'configRevision',
