@@ -11,6 +11,7 @@ const handlers = createProjectHandlers({
   updateChatProject: db.updateChatProject,
   deleteChatProject: db.deleteChatProject,
   assignConversationToProject: db.assignConversationToProject,
+  deleteProjectMemories: db.deleteProjectMemories,
 });
 
 router.use(requireJwtAuth);

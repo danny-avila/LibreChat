@@ -19,11 +19,12 @@ export const useMemoriesQuery = (
   });
 };
 
-export type DeleteMemoryParams = { key: string; agentId?: string };
+export type DeleteMemoryParams = { key: string; agentId?: string; chatProjectId?: string };
 export const useDeleteMemoryMutation = () => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ key, agentId }: DeleteMemoryParams) => dataService.deleteMemory(key, agentId),
+    ({ key, agentId, chatProjectId }: DeleteMemoryParams) =>
+      dataService.deleteMemory(key, agentId, chatProjectId),
     {
       onSuccess: () => {
         queryClient.invalidateQueries([QueryKeys.memories]);
@@ -37,14 +38,15 @@ export type UpdateMemoryParams = {
   value: string;
   originalKey?: string;
   agentId?: string;
+  chatProjectId?: string;
 };
 export const useUpdateMemoryMutation = (
   options?: UseMutationOptions<TUserMemory, Error, UpdateMemoryParams>,
 ) => {
   const queryClient = useQueryClient();
   return useMutation(
-    ({ key, value, originalKey, agentId }: UpdateMemoryParams) =>
-      dataService.updateMemory(key, value, originalKey, agentId),
+    ({ key, value, originalKey, agentId, chatProjectId }: UpdateMemoryParams) =>
+      dataService.updateMemory(key, value, originalKey, agentId, chatProjectId),
     {
       ...options,
       onSuccess: (...params) => {
@@ -83,7 +85,12 @@ export const useUpdateMemoryPreferencesMutation = (
   );
 };
 
-export type CreateMemoryParams = { key: string; value: string; agentId?: string };
+export type CreateMemoryParams = {
+  key: string;
+  value: string;
+  agentId?: string;
+  chatProjectId?: string;
+};
 export type CreateMemoryResponse = { created: boolean; memory: TUserMemory };
 
 export const useCreateMemoryMutation = (
@@ -91,8 +98,8 @@ export const useCreateMemoryMutation = (
 ) => {
   const queryClient = useQueryClient();
   return useMutation<CreateMemoryResponse, Error, CreateMemoryParams>(
-    ({ key, value, agentId }: CreateMemoryParams) =>
-      dataService.createMemory({ key, value, agentId }),
+    ({ key, value, agentId, chatProjectId }: CreateMemoryParams) =>
+      dataService.createMemory({ key, value, agentId, chatProjectId }),
     {
       ...options,
       onSuccess: (data, variables, context) => {
@@ -102,7 +109,8 @@ export const useCreateMemoryMutation = (
           const newMemories = [...oldData.memories, data.memory];
           /** Usage totals track the shared personal pool only */
           const totalTokens = newMemories.reduce(
-            (sum, memory) => sum + (memory.agentId ? 0 : memory.tokenCount || 0),
+            (sum, memory) =>
+              sum + (memory.agentId || memory.chatProjectId ? 0 : memory.tokenCount || 0),
             0,
           );
           const tokenLimit = oldData.tokenLimit;

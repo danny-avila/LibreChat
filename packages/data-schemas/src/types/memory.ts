@@ -1,52 +1,61 @@
 import type { Types, Document } from 'mongoose';
 
+/**
+ * Partition an entry belongs to. Omitting every field addresses the shared
+ * personal pool; the fields are independent, so a project's memories stay
+ * separate from an agent's.
+ */
+export interface MemoryPartition {
+  /** Agent partition; omit for the shared personal pool */
+  agentId?: string;
+  /** Chat project partition; omit for memories not scoped to a project */
+  chatProjectId?: string;
+}
+
 // Base memory interfaces
-export interface IMemoryEntry extends Document {
+export interface IMemoryEntry extends Document, MemoryPartition {
   userId: Types.ObjectId;
   key: string;
   value: string;
-  /** Agent partition; null/absent = shared personal pool */
-  agentId?: string;
   tokenCount?: number;
   updated_at?: Date;
   tenantId?: string;
 }
 
-export interface IMemoryEntryLean {
+export interface IMemoryEntryLean extends MemoryPartition {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
   key: string;
   value: string;
-  agentId?: string;
   tokenCount?: number;
   updated_at?: Date;
   __v?: number;
 }
 
 // Method parameter interfaces
-export interface SetMemoryParams {
+export interface SetMemoryParams extends MemoryPartition {
   userId: string | Types.ObjectId;
   key: string;
   value: string;
   tokenCount?: number;
-  /** Agent partition; omit for the shared personal pool */
-  agentId?: string;
 }
 
-export interface DeleteMemoryParams {
+export interface DeleteMemoryParams extends MemoryPartition {
   userId: string | Types.ObjectId;
   key: string;
-  agentId?: string;
 }
 
-export interface GetUserMemoriesParams {
+export interface GetUserMemoriesParams extends MemoryPartition {
   userId: string | Types.ObjectId;
-  agentId?: string;
 }
 
-export interface GetFormattedMemoriesParams {
+export interface GetFormattedMemoriesParams extends MemoryPartition {
   userId: string | Types.ObjectId;
-  agentId?: string;
+}
+
+export interface DeleteProjectMemoriesParams {
+  userId: string | Types.ObjectId;
+  chatProjectId: string;
 }
 
 // Result interfaces

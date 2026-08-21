@@ -885,6 +885,8 @@ export type MemoryArtifact = {
   type: 'update' | 'delete' | 'error';
   /** Agent partition the write targeted; absent = shared personal pool */
   agentId?: string;
+  /** Chat project partition the write targeted; absent = not project-scoped */
+  chatProjectId?: string;
 };
 
 export type UIResource = {

@@ -112,6 +112,7 @@ export default function MemoryEditDialog({
       key: key.trim(),
       value: value.trim(),
       agentId: memory.agentId,
+      chatProjectId: memory.chatProjectId,
       ...(originalKey !== key.trim() && { originalKey }),
     });
   };

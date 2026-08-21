@@ -164,6 +164,10 @@ export type TUserMemory = {
   agentId?: string;
   /** Display name of the partition's agent, resolved server-side when available */
   agentName?: string;
+  /** Chat project partition this memory belongs to; absent = not project-scoped */
+  chatProjectId?: string;
+  /** Display name of the partition's project, resolved server-side when available */
+  chatProjectName?: string;
 };
 
 export type MemoriesResponse = {

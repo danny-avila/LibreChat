@@ -25,6 +25,11 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: String,
     default: undefined,
   },
+  /** Chat project partition; null/absent = not scoped to a project */
+  chatProjectId: {
+    type: String,
+    default: undefined,
+  },
   tokenCount: {
     type: Number,
     default: 0,
@@ -40,5 +45,6 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
 });
 
 MemoryEntrySchema.index({ userId: 1, agentId: 1, key: 1 });
+MemoryEntrySchema.index({ userId: 1, chatProjectId: 1, key: 1 });
 
 export default MemoryEntrySchema;

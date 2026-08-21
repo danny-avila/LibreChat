@@ -1,6 +1,7 @@
 import { isValidObjectIdString, logger } from '@librechat/data-schemas';
 
 import type {
+  MemoryMethods,
   ChatProjectMethods,
   ChatProjectSortBy,
   ChatProjectSortDirection,
@@ -33,7 +34,8 @@ type ProjectHandlerDependencies = Pick<
   | 'updateChatProject'
   | 'deleteChatProject'
   | 'assignConversationToProject'
->;
+> &
+  Pick<MemoryMethods, 'deleteProjectMemories'>;
 
 const getUserId = (req: ProjectRequest): string => req.user?.id ?? req.user?._id?.toString() ?? '';
 
@@ -208,9 +210,15 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
     }
 
     try {
-      const result = await deps.deleteChatProject(getUserId(req), projectId);
+      const userId = getUserId(req);
+      const result = await deps.deleteChatProject(userId, projectId);
       if (!result.deletedCount) {
         return res.status(404).json({ error: PROJECT_NOT_FOUND });
+      }
+      try {
+        await deps.deleteProjectMemories({ userId, chatProjectId: projectId });
+      } catch (error) {
+        logger.error('[projects] Error deleting project memories', error);
       }
       return res.status(200).json(result);
     } catch (error) {
