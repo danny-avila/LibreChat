@@ -1228,13 +1228,19 @@ const initializeClient = async ({
     req.user.id !== '' &&
     typeof conversationId === 'string' &&
     conversationId !== ''
-      ? buildSubagentThreadTaskConfig(subagentThreadTaskStore, {
-          userId: req.user.id,
-          parentConversationId: conversationId,
-          ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
-            ? { tenantId: req.user.tenantId }
-            : {}),
-        })
+      ? buildSubagentThreadTaskConfig(
+          subagentThreadTaskStore,
+          {
+            userId: req.user.id,
+            parentConversationId: conversationId,
+            ...(typeof req.user.tenantId === 'string' && req.user.tenantId !== ''
+              ? { tenantId: req.user.tenantId }
+              : {}),
+          },
+          {
+            completionWakeups: subagentThreadTaskStore.completionWakeupsEnabled === true,
+          },
+        )
       : undefined;
   let hasExistingSubagentTask = false;
   if (trustedSubagentTasks != null && !(subagentsAvailableForRun && hasSpawnableSubagent)) {

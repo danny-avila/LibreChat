@@ -34,6 +34,7 @@ import {
   SubagentThreadTaskStore,
 } from './subagentThreads';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
 import { createSubagentUsageSink } from './usage';
 
@@ -253,6 +254,16 @@ beforeEach(async () => {
 });
 
 describe('SubagentThreadTaskStore', () => {
+  it('records the host-selected automatic delivery contract only when wakeups are enabled', () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const scope = { userId: 'delivery-user', parentConversationId: randomUUID() };
+
+    expect(buildSubagentThreadTaskConfig(store, scope).completionDelivery).toBeUndefined();
+    expect(
+      buildSubagentThreadTaskConfig(store, scope, { completionWakeups: true }).completionDelivery,
+    ).toBe(SUBAGENT_COMPLETION_DELIVERY);
+  });
+
   it('maps one logical SDK thread to a durable, view-only LibreChat conversation', async () => {
     const userId = 'user-1';
     const parentConversationId = randomUUID();
