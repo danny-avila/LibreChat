@@ -236,7 +236,7 @@ describe('compactConversation', () => {
     expect(result.summary.tokenCount).toBeGreaterThan(33);
     expect(result.summary.tokenCount).toBeLessThan(60);
     expect(result.messagesCompacted).toBe(6);
-    expect(result.usage).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
+    expect(result.usages[0]).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
   });
 
   it('still sizes the summary when the provider reports no output tokens', async () => {
@@ -250,7 +250,7 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usage).toBeUndefined();
+    expect(result.usages).toEqual([]);
     expect(result.summary.tokenCount).toBeGreaterThan(33);
   });
 
@@ -346,7 +346,7 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usage?.provider).toBe('openAI');
+    expect(result.usages[0]?.provider).toBe('openAI');
   });
 
   it('applies admin summarization parameters and the summary output cap', async () => {
@@ -408,7 +408,7 @@ describe('compactConversation', () => {
       ids,
       db: dbMethods,
     });
-    expect(result.usage?.total_tokens).toBe(1240);
+    expect(result.usages[0]?.total_tokens).toBe(1240);
   });
 
   it('reports a locally counted estimate for a provider that omits usage', async () => {
@@ -422,11 +422,12 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usage).toBeUndefined();
-    /** The host bills from this so an OpenAI-compatible gateway that omits
-     *  `usage` still produces a transaction. */
-    expect(result.estimatedUsage.input_tokens).toBeGreaterThan(0);
-    expect(result.estimatedUsage.output_tokens).toBeGreaterThan(0);
+    expect(result.usages).toEqual([]);
+    /** The host bills from these so an OpenAI-compatible gateway that omits
+     *  `usage` still produces one transaction per call. */
+    expect(result.estimatedUsages).toHaveLength(1);
+    expect(result.estimatedUsages[0].input_tokens).toBeGreaterThan(0);
+    expect(result.estimatedUsages[0].output_tokens).toBeGreaterThan(0);
     expect(result.provider).toBe('openAI');
   });
 
@@ -476,7 +477,7 @@ describe('compactConversation', () => {
 
     expect(result.summary.tokenCount).toBeLessThan(100);
     /** Provider output stays available for billing. */
-    expect(result.usage?.output_tokens).toBe(9000);
+    expect(result.usages[0]?.output_tokens).toBe(9000);
   });
 
   it('consolidates an over-window branch across passes instead of dropping turns', async () => {
@@ -604,8 +605,10 @@ describe('compactConversation', () => {
       }),
     ).rejects.toMatchObject({
       name: 'PartialCompactionError',
-      /** Pass one completed and must still be billed. */
-      usage: { input_tokens: 500 },
+      /** Pass one completed and must still be billed; the rejected pass two
+       *  contributes nothing. */
+      usages: [{ input_tokens: 500 }],
+      estimatedUsages: [expect.anything()],
     });
   });
 
@@ -645,7 +648,7 @@ describe('compactConversation', () => {
       compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
     ).rejects.toMatchObject({
       name: 'EmptyCompactionError',
-      usage: { input_tokens: 900, provider: 'openAI' },
+      usages: [{ input_tokens: 900, provider: 'openAI' }],
     });
   });
 
@@ -656,8 +659,8 @@ describe('compactConversation', () => {
       compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
     ).rejects.toMatchObject({
       name: 'EmptyCompactionError',
-      usage: undefined,
-      estimatedUsage: { output_tokens: 0 },
+      usages: [],
+      estimatedUsages: [{ output_tokens: 0 }],
     });
   });
 
