@@ -508,6 +508,11 @@ const buildOptimisticConversation = (
     messages: messageIds.length > 0 ? messageIds : submission.conversation.messages,
     createdAt: submission.conversation.createdAt ?? now,
     updatedAt: now,
+    /** Temporary mode lives on the submission, not on the draft conversation, so
+     * the optimistic record has to carry it forward or every consumer of this
+     * cache entry reads a new temporary chat as an ordinary one. Only stamped
+     * when true, leaving the legacy `expiredAt` inference untouched otherwise. */
+    ...(submission.isTemporary === true ? { isTemporary: true } : {}),
   } as TConversation;
 };
 

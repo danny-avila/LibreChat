@@ -2200,6 +2200,7 @@
   "com_ui_table_error_description": "The table failed to load. Refresh the page or try again.",
   "com_ui_teach_or_explain": "Learning",
   "com_ui_temporary": "Temporary Chat",
+  "com_ui_temporary_description": "This chat won't appear in your history and will be deleted automatically.",
   "com_ui_terms_and_conditions": "Terms and Conditions",
   "com_ui_terms_of_service": "Terms of service",
   "com_ui_text_variables": "Text variables",
