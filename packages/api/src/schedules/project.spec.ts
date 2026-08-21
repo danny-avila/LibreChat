@@ -539,6 +539,37 @@ describe('write-time project scope', () => {
     expect(methods.updateScheduleById).toHaveBeenCalled();
   });
 
+  /** An omitted field and an explicit `null` are different INTENTS, so they must not
+   *  share a digest — otherwise a key reused with a clear is answered 201 describing
+   *  the pinned row it did not ask for. */
+  it('digests an explicit clear differently from an omitted field', () => {
+    const omitted = computeCreateDigest({ ...CREATE_BODY, target: 'new', enabled: true } as never);
+    const cleared = computeCreateDigest({
+      ...CREATE_BODY,
+      target: 'new',
+      enabled: true,
+      chatProjectId: null,
+    } as never);
+    expect(cleared).not.toBe(omitted);
+  });
+
+  /** ...while an omitted field still digests exactly as it did before project scope
+   *  existed, so a create in flight across the upgrade still matches its own row. */
+  it('keeps the omitted-field digest stable against a pre-scope payload', () => {
+    const withKey = computeCreateDigest({
+      ...CREATE_BODY,
+      target: 'new',
+      enabled: true,
+      chatProjectId: undefined,
+    } as never);
+    const withoutKey = computeCreateDigest({
+      ...CREATE_BODY,
+      target: 'new',
+      enabled: true,
+    } as never);
+    expect(withKey).toBe(withoutKey);
+  });
+
   /** A pin disagreement is refused whether the edit assigns a different project or
    *  clears the scope — only the REQUIREMENT is waived for a disabling edit. */
   it('refuses an explicit clear under a pin even while disabling', async () => {

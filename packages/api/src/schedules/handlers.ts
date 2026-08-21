@@ -120,10 +120,14 @@ export function computeCreateDigest(payload: TCreateSchedule): string {
       daysOfWeek: payload.cadence.daysOfWeek ?? null,
     },
     file_ids: payload.file_ids ?? null,
-    // Appended CONDITIONALLY so a payload without a project digests byte-identically
-    // to one computed before project scope existed — an in-flight create retried
-    // across the upgrade still matches its own row instead of answering 409.
-    ...(payload.chatProjectId != null && { chatProjectId: payload.chatProjectId }),
+    // `!== undefined`, NOT `!= null`: an OMITTED field still digests byte-identically
+    // to a payload from before project scope existed, so an in-flight create retried
+    // across the upgrade matches its own row — but an explicit `null` is a different
+    // INTENT (clear the scope) and must digest differently. Collapsing the two let a
+    // request reuse a pinned create's key with `chatProjectId: null` and receive 201
+    // for the pinned row, i.e. success for the opposite of what it asked. A pre-scope
+    // client never sent the field at all, so nothing legacy can carry an explicit null.
+    ...(payload.chatProjectId !== undefined && { chatProjectId: payload.chatProjectId }),
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
