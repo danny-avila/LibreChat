@@ -60,6 +60,9 @@ export interface CompactionSkillDeps {
   ) => Promise<{ body: string; name: string } | null>;
 }
 
+/** Agent lookup by id, for labelling multi-agent history. */
+export type GetAgentFn = (search: { id: string }) => Promise<Agent | null>;
+
 /** Owner-scoped file lookup, injected so this module stays free of the db. */
 export type GetFilesFn = (filter: OwnerFileFilter) => Promise<IMongoFile[] | null>;
 
@@ -283,6 +286,47 @@ function isInlinedTextSource(file: IMongoFile): boolean {
   return file.source === FileSources.text && typeof file.text === 'string' && file.text !== '';
 }
 
+/**
+ * Names of the agents whose parts appear in the branch, so
+ * `createMultiAgentMapper` can label parallel replies instead of flattening
+ * them into anonymous assistant content. The normal run has these from its own
+ * `agentConfigs`; here they come from the ids the stored content already
+ * carries, which the caller demonstrably interacted with.
+ */
+async function resolveHistoryAgents(
+  branch: TMessage[],
+  getAgent?: GetAgentFn,
+): Promise<Map<string, Agent> | undefined> {
+  if (!getAgent) {
+    return undefined;
+  }
+  const agentIds = new Set<string>();
+  for (const message of branch) {
+    if (message.isCreatedByUser || !Array.isArray(message.content)) {
+      continue;
+    }
+    for (const part of message.content) {
+      const agentId = (part as { agentId?: string } | null)?.agentId;
+      if (typeof agentId === 'string' && agentId !== '') {
+        agentIds.add(agentId);
+      }
+    }
+  }
+  if (agentIds.size === 0) {
+    return undefined;
+  }
+  const resolved = await Promise.all(
+    Array.from(agentIds).map((id) => getAgent({ id }).catch(() => null)),
+  );
+  const configs = new Map<string, Agent>();
+  for (const found of resolved) {
+    if (found?.id) {
+      configs.set(found.id, found);
+    }
+  }
+  return configs.size > 0 ? configs : undefined;
+}
+
 /** Bodies of every skill the branch invoked, keyed by name. */
 async function resolveInvokedSkillBodies(
   payload: Array<Partial<TMessage>>,
@@ -341,9 +385,13 @@ async function hydrateAttachments(
   }
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
-  const seen = new Set<string>();
   for (const message of branch) {
     const attachments: IMongoFile[] = [];
+    /** Deduplicated per MESSAGE, not across the branch: a file attached both
+     *  before and after an existing summary boundary must hydrate onto the
+     *  later occurrence too, since `formatAgentMessages` discards the earlier
+     *  one and the checkpoint would otherwise lose what was reattached. */
+    const seen = new Set<string>();
     /** Includes refs carried inside a persisted steer part, which
      *  `collectHistoricalFileIds` already fetched but a `message.files` read
      *  would skip entirely. */
@@ -373,7 +421,12 @@ async function hydrateAttachments(
      * they existed, so they are listed by name and type and the summary records
      * them instead of dropping the turn's attachments silently.
      */
-    const media = attachments.filter((file) => !isInlinedTextSource(file));
+    /** Keyed on what was ACTUALLY inlined: with no `fileTokenLimit` configured
+     *  `extractFileContext` returns nothing, and treating text files as inlined
+     *  anyway left them with neither their text nor a mention. */
+    const media = fileContext
+      ? attachments.filter((file) => !isInlinedTextSource(file))
+      : attachments;
     const manifest =
       media.length > 0
         ? `[Attachments: ${media
@@ -812,8 +865,10 @@ export interface CompactConversationParams {
   /** Owner-scoped file lookup for attachment hydration. Omitted in unit tests
    *  and for callers whose branch carries no attachments. */
   getFiles?: GetFilesFn;
-  /** Handoff / parallel agents of the run, for added-convo content mapping. */
-  agentConfigs?: Map<string, Agent>;
+  /** Resolves the agents whose parts appear in the branch, so parallel replies
+   *  keep their attribution. Omitted and the mapper still strips routing
+   *  metadata, just without labels. */
+  getAgent?: GetAgentFn;
   /** Resolves historical skill bodies; omitted when skills are disabled. */
   skills?: CompactionSkillDeps;
   signal?: AbortSignal;
@@ -827,6 +882,9 @@ export interface CompactConversationParams {
     promptTokens: number;
     model?: string;
     provider: string;
+    /** The endpoint the call resolved to, which may differ from the
+     *  conversation's. Pricing and the support check must both key on it. */
+    endpoint: string;
     endpointTokenConfig?: EndpointTokenConfig;
   }) => Promise<void>;
 }
@@ -936,12 +994,13 @@ export async function compactConversation({
   ids,
   db,
   getFiles,
-  agentConfigs,
+  getAgent,
   skills,
   signal,
   beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
   const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
+  const agentConfigs = await resolveHistoryAgents(branch, getAgent);
   const payload = stripActivityLabelParts(
     toPayload(branch, fileContextByMessageId, createMultiAgentMapper(agent as Agent, agentConfigs)),
   );
@@ -971,8 +1030,15 @@ export async function compactConversation({
     ? summarization.updatePrompt
     : DEFAULT_COMPACTION_UPDATE_PROMPT;
 
-  const { provider, tokenLookupEndpoint, model, clientOptions, endpointTokenConfig, sameEndpoint } =
-    await resolveCompactionModel({ req, agent, ids, db });
+  const {
+    provider,
+    endpoint,
+    tokenLookupEndpoint,
+    model,
+    clientOptions,
+    endpointTokenConfig,
+    sameEndpoint,
+  } = await resolveCompactionModel({ req, agent, ids, db });
 
   const llm = initializeModel({ provider, clientOptions });
 
@@ -1029,6 +1095,7 @@ export async function compactConversation({
       promptTokens: estimatedPromptTokens,
       model,
       provider,
+      endpoint,
       endpointTokenConfig,
     });
   }
