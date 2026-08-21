@@ -1060,6 +1060,31 @@ describe('ResumableAgentController resume metadata', () => {
     expect(requestBody.messageId).not.toBe(req.body.messageId);
   });
 
+  it('preallocates the replacement response as the MCP parent for edited content', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Edited response text.',
+        messageId: 'existing-user-message',
+        responseMessageId: 'existing-response-message',
+        parentMessageId: 'previous-response',
+        overrideParentMessageId: 'existing-user-message',
+        editedContent: { index: 0, type: 'text', text: 'Edited response text.' },
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    expect(requestBody.messageId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requestBody.parentMessageId).toBe(requestBody.messageId);
+    expect(requestBody.messageId).not.toBe('existing-response-message');
+  });
+
   it('stores model spec icon fallbacks and agent ids in early resume metadata', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));

@@ -995,7 +995,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
     conversationId,
-    parentMessageId: preallocatedUserMessageId,
+    parentMessageId:
+      editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });
 
   let client = null;
