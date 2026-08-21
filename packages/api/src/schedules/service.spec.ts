@@ -821,6 +821,75 @@ describe('isScheduleLive policy recheck', () => {
 
     await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(false);
   });
+
+  /**
+   * Project policy rides this branch on purpose: BOTH callers route its refusal through
+   * abort-and-settle, so a policy stop settles the occurrence rather than leaving it at
+   * `requires_action` answering 409 to every approval until it expires.
+   */
+  describe('project policy', () => {
+    function makeProjectService(
+      row: Record<string, unknown>,
+      schedulesConfig: Record<string, unknown>,
+      project: unknown = { _id: 'proj-1' },
+    ) {
+      const service = makeService(
+        jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]),
+        jest.fn(async () => ({
+          interfaceConfig: { schedules: { use: true, ...schedulesConfig } },
+        })) as unknown as SchedulesServiceDeps['getAppConfig'],
+      );
+      const methods = service.engineDeps.methods as unknown as {
+        getScheduleById: jest.Mock;
+        getRoleByName: jest.Mock;
+      };
+      methods.getScheduleById = jest.fn(async () => ({
+        id: 's1',
+        user: 'u1',
+        enabled: true,
+        ...row,
+      }));
+      methods.getRoleByName = jest.fn(async () => ({ permissions: { SCHEDULES: { USE: true } } }));
+      (service.engineDeps as unknown as { getUserContext: jest.Mock }).getUserContext = jest.fn(
+        async () => ({ id: 'u1', tenantId: 't1', role: 'USER' }),
+      );
+      (service.engineDeps as unknown as { projectAccess: jest.Mock }).projectAccess = jest.fn(
+        async () => (project == null ? 'missing' : 'ok'),
+      );
+      return service;
+    }
+
+    it('refuses when the destination project was deleted', async () => {
+      const service = makeProjectService({ chatProjectId: 'proj-gone' }, {}, null);
+      await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(false);
+    });
+
+    it('refuses an unscoped schedule once the owner requires a project', async () => {
+      const service = makeProjectService({}, { requireProject: true });
+      await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(false);
+    });
+
+    /**
+     * A pin governs where the NEXT run lands, and the fire path already redirects those.
+     * The paused conversation cannot be rebound — `chatProjectId` is excluded from the
+     * resume context and the continuation reuses the same conversationId — so refusing
+     * here would strand a pending approval over a destination it can never reach.
+     */
+    it('admits a paused run whose pin moved to a different project', async () => {
+      const service = makeProjectService({ chatProjectId: 'proj-old' }, { projectId: 'proj-new' });
+      await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(true);
+    });
+
+    it('admits a scoped schedule whose project is still owned', async () => {
+      const service = makeProjectService({ chatProjectId: 'proj-1' }, {});
+      await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(true);
+    });
+
+    it('leaves the non-policy recheck untouched', async () => {
+      const service = makeProjectService({ chatProjectId: 'proj-gone' }, {}, null);
+      await expect(service.isScheduleLive('s1')).resolves.toBe(true);
+    });
+  });
 });
 
 describe('quiesceUserSchedules drain wait', () => {
@@ -1256,62 +1325,6 @@ describe('scheduled resume capacity', () => {
     } as unknown as SchedulesServiceDeps);
     return { service, methods };
   }
-
-  /**
-   * A resume starts a fresh BILLED continuation, so it has to clear the boundary the
-   * fire path would apply today — not the one that held when the run paused. These
-   * mirror the fire-time project prechecks in project.spec.ts.
-   */
-  describe('project policy at the resume boundary', () => {
-    it('refuses a paused run whose project was deleted', async () => {
-      const { service, methods } = makeResumeService(
-        { takenSlots: [], unslotted: 0 },
-        { scheduleProjectId: 'proj-gone', project: null },
-      );
-
-      await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
-        conflict: 'inactive',
-      });
-      // Refused BEFORE the lease and the capacity slot, so a policy refusal costs the
-      // deployment nothing and leaves no state to unwind.
-      expect(methods.acquireResumeLease).not.toHaveBeenCalled();
-      expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
-    });
-
-    it('refuses an unscoped paused run once the owner requires a project', async () => {
-      const { service, methods } = makeResumeService(
-        { takenSlots: [], unslotted: 0 },
-        { projectConfig: { requireProject: true } },
-      );
-
-      await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
-        conflict: 'inactive',
-      });
-      expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
-    });
-
-    it('validates the PIN rather than the stored project when one is configured', async () => {
-      const service = makeResumeService(
-        { takenSlots: [], unslotted: 0 },
-        { scheduleProjectId: 'proj-old', projectConfig: { projectId: 'proj-pinned' } },
-      ).service;
-
-      await expect(
-        service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z'),
-      ).resolves.toMatchObject({ capacitySlot: 0 });
-    });
-
-    it('admits a paused run whose project is still owned', async () => {
-      const { service } = makeResumeService(
-        { takenSlots: [], unslotted: 0 },
-        { scheduleProjectId: 'proj-1' },
-      );
-
-      await expect(
-        service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z'),
-      ).resolves.toMatchObject({ capacitySlot: 0 });
-    });
-  });
 
   it('promotes a pause through the global slot allocator and releases by exact slot', async () => {
     const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });

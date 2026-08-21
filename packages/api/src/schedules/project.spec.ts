@@ -4,7 +4,7 @@ import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './
 import type { SchedulesHandlersDeps } from './handlers';
 import type { FireableSchedule } from './types';
 import type { ServerRequest } from '~/types';
-import { createSchedulesHandlers, toWireSchedule } from './handlers';
+import { createSchedulesHandlers, computeCreateDigest, toWireSchedule } from './handlers';
 import { withCapacitySlot } from './capacity';
 import { fireSchedule } from './fire';
 
@@ -303,6 +303,60 @@ describe('write-time project scope', () => {
 
   /** Silently rewriting a named destination would hide a real disagreement about
    *  where the schedule's runs go. */
+  /** `null` is the payload contract's CLEAR, not an omission. Resolving it to the pin
+   *  would answer 201 for the opposite of what was asked. */
+  it('refuses an explicit clear when a project is pinned', async () => {
+    const { deps, methods } = makeHandlerDeps({ projectId: 'proj-pinned' });
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(
+      makeReq({ ...CREATE_BODY, chatProjectId: null }),
+      res,
+    );
+
+    expect(captured.status).toBe(400);
+    expect(methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The idempotency key exists so a create whose response was lost can be recovered by
+   * an identical retry. Policy that changed in between must not turn that recovery into
+   * a 400 — the client would rotate its key and create a DUPLICATE schedule, the exact
+   * failure the key prevents.
+   */
+  it('recovers a committed create by retry even after the policy tightened', async () => {
+    const { deps, methods } = makeHandlerDeps(
+      { requireProject: true, projectId: 'proj-pinned' },
+      { canUseProject: async () => false },
+    );
+    const original = {
+      id: 'sched-1',
+      user: 'user-1',
+      name: CREATE_BODY.name,
+      prompt: CREATE_BODY.prompt,
+      agent_id: CREATE_BODY.agent_id,
+      timezone: CREATE_BODY.timezone,
+      target: 'new',
+      enabled: true,
+      cadence: CREATE_BODY.cadence,
+      configRevision: 0,
+      nextRunAt: new Date('2026-09-01T12:00:00Z'),
+      clientRequestDigest: computeCreateDigest({
+        ...CREATE_BODY,
+        target: 'new',
+        enabled: true,
+      } as never),
+    } as unknown as ISchedule;
+    (methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(original);
+    (methods.getScheduleById as jest.Mock).mockResolvedValue(original);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeReq({ ...CREATE_BODY }), res);
+
+    expect(captured.status).toBe(201);
+    expect(methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
+
   it('refuses a create that names a project other than the pin', async () => {
     const { deps, methods } = makeHandlerDeps({ projectId: 'proj-pinned' });
     const { res, captured } = makeRes();

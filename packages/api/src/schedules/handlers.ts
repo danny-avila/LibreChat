@@ -299,10 +299,12 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     requested: string | null | undefined,
     stored?: string,
   ): Promise<string | undefined | false> {
-    // A pin is the ONLY destination. An omitted field takes it silently (the client
-    // has no choice to make), but an explicit different id is a real disagreement
-    // about where runs land and is refused rather than quietly rewritten.
-    if (limits.projectId != null && requested != null && requested !== limits.projectId) {
+    // A pin is the ONLY destination. An OMITTED field takes it silently (the client has
+    // no choice to make), but anything explicit that disagrees is refused rather than
+    // quietly rewritten — including `null`, which the payload contract defines as
+    // clearing the scope. Answering 201/200 to an explicit clear while filing the
+    // schedule under the pin reports success for the opposite of what was asked.
+    if (limits.projectId != null && requested !== undefined && requested !== limits.projectId) {
       res.status(400).json({ error: 'Scheduled chats are pinned to a specific project' });
       return false;
     }
@@ -439,19 +441,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     if (!(await validatePayload(req, res, parsed.data, limits))) {
       return;
     }
-    const chatProjectId = await resolveWriteProject(
-      res,
-      user.id,
-      limits,
-      parsed.data.chatProjectId,
-    );
-    if (chatProjectId === false) {
-      return;
-    }
-    // The RESOLVED destination is what the row stores and what the digest records, so
-    // a retry under an unchanged pin re-digests identically and resolves to its own
-    // row rather than reading as key reuse.
-    parsed.data.chatProjectId = chatProjectId ?? null;
+    // Digested from the CLIENT's payload, never from the policy-resolved destination:
+    // the digest records one create INTENT, and today's policy is not part of that
+    // intent. Resolving first made an operator's pin change (or a deleted project)
+    // re-digest a genuine retry into a mismatch.
     const digest = computeCreateDigest(parsed.data);
 
     /**
@@ -516,6 +509,21 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
     );
     if (replayed != null) {
       await respondToReplay(replayed);
+      return;
+    }
+    // Project policy applies to a NEW insert only, and is therefore resolved AFTER every
+    // replay lookup above. A committed create whose response was lost must still be
+    // recoverable by an identical retry: applying today's policy first let a raised
+    // requirement, a deleted project, or a moved pin answer 400 for a row that already
+    // exists — pushing the client to rotate its key and create a duplicate schedule,
+    // which is precisely what the idempotency key exists to prevent.
+    const chatProjectId = await resolveWriteProject(
+      res,
+      user.id,
+      limits,
+      parsed.data.chatProjectId,
+    );
+    if (chatProjectId === false) {
       return;
     }
     // Fail fast on an obvious over-limit BEFORE retaining attachments, so the common

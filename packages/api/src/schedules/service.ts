@@ -1045,6 +1045,31 @@ export function createSchedulesService(
       if (!(await engineDeps.hasScheduleAccess(owner))) {
         return false;
       }
+      // Project policy belongs HERE rather than in the resume claim: this branch's
+      // refusal is already routed through abort-and-settle by both callers, so a
+      // policy stop settles the occurrence instead of leaving it at `requires_action`
+      // answering 409 to every approval attempt until it expires.
+      //
+      // Deliberately NARROW. It refuses only where there is no valid destination left:
+      // the requirement is on with nothing to satisfy it, or the schedule's own project
+      // is gone (which also unset it on the conversation). It does NOT refuse merely
+      // because an operator's pin moved to a different project — the paused
+      // conversation cannot be rebound (`chatProjectId` is excluded from the resume
+      // context, and the continuation reuses the same conversationId), so refusing
+      // would strand a pending approval over a pin that only governs where the NEXT
+      // run lands, which the fire path already redirects.
+      if (
+        limits.requireProject &&
+        resolveScheduleProjectId(limits, schedule.chatProjectId) == null
+      ) {
+        return false;
+      }
+      if (
+        schedule.chatProjectId != null &&
+        (await engineDeps.projectAccess(schedule.chatProjectId, owner)) !== 'ok'
+      ) {
+        return false;
+      }
     }
     return true;
   }
@@ -1082,22 +1107,10 @@ export function createSchedulesService(
       if (!ownerLimits.enabled || globallyDisabled || !hasAccess) {
         return { conflict: 'inactive' };
       }
-      // Project policy is re-applied HERE for the same reason the checks above are: a
-      // resume starts a fresh billed continuation, so it must clear the boundary the
-      // fire path would apply today, not the one that held when the run paused. Without
-      // this, approving a run whose project was deleted — or whose owner is now under a
-      // requirement or a pin it no longer satisfies — bills a continuation the very next
-      // scheduled fire would refuse and auto-disable the schedule for.
-      const chatProjectId = resolveScheduleProjectId(ownerLimits, schedule.chatProjectId);
-      if (ownerLimits.requireProject && chatProjectId == null) {
-        return { conflict: 'inactive' };
-      }
-      if (
-        chatProjectId != null &&
-        (await engineDeps.projectAccess(chatProjectId, owner)) !== 'ok'
-      ) {
-        return { conflict: 'inactive' };
-      }
+      // Project policy is NOT re-checked here. It lives in isScheduleLive's `policy`
+      // branch, which both entry points consult first and whose refusal aborts and
+      // settles the occurrence; a second copy here would answer a bare 409 and strand
+      // the run at `requires_action` instead.
       // FINAL schedule-side admission fence. Everything above is asynchronous and an
       // owner edit/disable can land while it runs. Claim the schedule document under
       // the expected config generation now, carry this lease through the approval CAS,
