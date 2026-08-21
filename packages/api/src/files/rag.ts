@@ -10,6 +10,8 @@ interface DeleteRagFileParams {
     file_id: string;
     embedded?: boolean;
   };
+  /** Optional entity ID for agent knowledge-base files. When set, ensures entity-owned chunks are deleted. */
+  entity_id?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ interface DeleteRagFileParams {
  * @param params.file - The file object. Must have `embedded` and `file_id` properties.
  * @returns Returns true if deletion was successful or skipped, false if there was an error.
  */
-export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Promise<boolean> {
+export async function deleteRagFile({ userId, file, entity_id }: DeleteRagFileParams): Promise<boolean> {
   if (!file.embedded || !process.env.RAG_API_URL) {
     return true;
   }
@@ -35,13 +37,17 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
   const jwtToken = generateShortLivedToken(userId);
 
   try {
+    const deleteBody: Record<string, unknown> = { ids: [file.file_id] };
+    if (entity_id) {
+      deleteBody.entity_id = entity_id;
+    }
     await axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
         Authorization: `Bearer ${jwtToken}`,
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
-      data: [file.file_id],
+      data: deleteBody,
     });
     logger.debug(`[deleteRagFile] Successfully deleted document ${file.file_id} from RAG API`);
     return true;
