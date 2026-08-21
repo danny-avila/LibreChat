@@ -472,35 +472,38 @@ const createMeiliMongooseModel = ({
       }
 
       const object = this.preprocessObjectForIndex!();
-      const maxRetries = 3;
-      let retryCount = 0;
-
-      while (retryCount < maxRetries) {
-        try {
-          await index.addDocuments([object], { primaryKey });
-          break;
-        } catch (error) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            logger.error('[addObjectToMeili] Error adding document to Meili after retries:', error);
-            return next();
+      // Fire-and-forget: do not block the Mongoose save middleware with retries/sleeps.
+      // The MeiliSearch write is best-effort; failures are logged and retried in the
+      // background so the save path completes promptly.
+      const doWrite = async () => {
+        const maxRetries = 3;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            await index.addDocuments([object], { primaryKey });
+            break;
+          } catch (error) {
+            if (attempt === maxRetries - 1) {
+              logger.error('[addObjectToMeili] Error adding document to Meili after retries:', error);
+              return;
+            }
+            // Exponential backoff
+            await new Promise((resolve) => setTimeout(resolve, Math.pow(2, attempt + 1) * 1000));
           }
-          // Exponential backoff
-          await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
         }
-      }
 
-      try {
-        // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
-        await this.collection.updateOne(
-          { _id: this._id as Types.ObjectId },
-          { $set: { _meiliIndex: true } },
-        );
-      } catch (error) {
-        logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
-        return next();
-      }
+        try {
+          // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
+          await this.collection.updateOne(
+            { _id: this._id as Types.ObjectId },
+            { $set: { _meiliIndex: true } },
+          );
+        } catch (error) {
+          logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
+        }
+      };
 
+      // Do not await – let the save complete immediately
+      doWrite();
       next();
     }
 
