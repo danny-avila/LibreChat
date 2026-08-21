@@ -347,16 +347,22 @@ class BaseClient {
     const conversationId = requestConvoId ?? crypto.randomUUID();
     const parentMessageId = opts.parentMessageId ?? Constants.NO_PARENT;
     const userMessageId =
-      overrideUserMessageId ?? opts.overrideParentMessageId ?? crypto.randomUUID();
-    let responseMessageId = opts.responseMessageId ?? crypto.randomUUID();
+      opts.preallocatedUserMessageId ??
+      overrideUserMessageId ??
+      opts.overrideParentMessageId ??
+      crypto.randomUUID();
+    let responseMessageId =
+      opts.responseMessageId ?? opts.preallocatedResponseMessageId ?? crypto.randomUUID();
     let head = isEdited ? responseMessageId : parentMessageId;
     this.currentMessages = (await this.loadHistory(conversationId, head)) ?? [];
     this.conversationId = conversationId;
 
     if (isEdited && !isContinued) {
-      responseMessageId = crypto.randomUUID();
+      responseMessageId = opts.preallocatedResponseMessageId ?? crypto.randomUUID();
       head = responseMessageId;
       this.currentMessages[this.currentMessages.length - 1].messageId = head;
+    } else if (opts.preallocatedResponseMessageId != null) {
+      responseMessageId = opts.preallocatedResponseMessageId;
     }
 
     if (opts.isRegenerate && responseMessageId.endsWith('_')) {

@@ -691,6 +691,21 @@ describe('BaseClient', () => {
       );
     });
 
+    it('honors response and user message IDs preallocated before initialization', async () => {
+      TestClient = initializeFakeClient(apiKey, options, messageHistory);
+
+      const result = await TestClient.handleStartMethods('request-scoped MCP', {
+        conversationId,
+        parentMessageId: '3',
+        preallocatedUserMessageId: 'preallocated-user',
+        preallocatedResponseMessageId: 'preallocated-response',
+      });
+
+      expect(result.userMessage.messageId).toBe('preallocated-user');
+      expect(result.responseMessageId).toBe('preallocated-response');
+      expect(TestClient.responseMessageId).toBe('preallocated-response');
+    });
+
     it('applies edited reasoning content from its typed payload before regeneration', async () => {
       const responseMessageId = 'response-with-reasoning';
       const newHistory = [

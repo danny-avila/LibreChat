@@ -28,6 +28,7 @@ const {
   buildRecoveredSteerPayload,
   deleteAgentCheckpoint,
   getAttachmentTitleText,
+  createMCPRuntimeRequestBody,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -94,18 +95,6 @@ async function attachConversationCreatedAt(req, conversationId, conversationAnch
   if (resolved.conversation !== undefined) {
     req.resolvedConversation = resolved.conversation ?? null;
   }
-}
-
-function getPreliminaryResponseMessageId({ messageId, responseMessageId }) {
-  if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
-    return responseMessageId;
-  }
-
-  if (typeof messageId !== 'string' || messageId.length === 0) {
-    return null;
-  }
-
-  return `${messageId.replace(/_+$/, '')}_`;
 }
 
 function getPreliminaryUserMessage(
@@ -985,6 +974,30 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   }
   startupTelemetry?.mark('request_admitted');
 
+  /** Allocate the turn identities before Agent initialization. Request-scoped
+   * MCP transports resolve BODY placeholders while tools are discovered, so
+   * discovery and graph execution must receive the same response-scoped body.
+   * BaseClient otherwise allocates these IDs later in `sendMessage`, after MCP
+   * connections already exist. */
+  const rawOverrideUserMessageId = req.body?.overrideUserMessageId;
+  const overrideUserMessageId = rawOverrideUserMessageId
+    ? rawOverrideUserMessageId.split(Constants.COMMON_DIVIDER)[0]
+    : undefined;
+  const preallocatedUserMessageId =
+    overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
+  let preallocatedResponseMessageId = editedResponseMessageId ?? crypto.randomUUID();
+  if (
+    (editedContent != null && !isContinued) ||
+    (isRegenerate && preallocatedResponseMessageId.endsWith('_'))
+  ) {
+    preallocatedResponseMessageId = crypto.randomUUID();
+  }
+  const mcpRequestBody = createMCPRuntimeRequestBody({
+    messageId: preallocatedResponseMessageId,
+    conversationId,
+    parentMessageId: preallocatedUserMessageId,
+  });
+
   let client = null;
   let jobCreatedAt;
   let providerExecutionId;
@@ -1022,8 +1035,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     const endpointIconURL = getEndpointIconURL(req, endpointOption);
     const responseModel = getAgentResponseModel(req, endpointOption);
-    const preliminaryUserMessage = getPreliminaryUserMessage(req.body, conversationId);
-    const preliminaryResponseMessageId = getPreliminaryResponseMessageId(req.body);
+    const preliminaryUserMessage = getPreliminaryUserMessage(
+      { ...req.body, messageId: preallocatedUserMessageId },
+      conversationId,
+    );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
       ...(recoveredSteerId && { recoveredSteerId }),
@@ -1062,7 +1077,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               ...(req._isManualScheduledFire === true && { scheduleManual: true }),
             }
           : {}),
-        responseMessageId: preliminaryResponseMessageId,
+        responseMessageId: preallocatedResponseMessageId,
         userMessage: preliminaryUserMessage,
       },
     });
@@ -1246,6 +1261,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       signal: job.abortController.signal,
       jobCreatedAt,
       checkpointNamespace: job.metadata?.checkpointNamespace,
+      requestBody: mcpRequestBody,
     });
     startupTelemetry?.mark('client_initialized');
     client = result.client;
@@ -1550,6 +1566,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           beforeResponsePersistence: claimBeforeResponsePersistence,
           userMCPAuthMap: result.userMCPAuthMap,
           responseMessageId: editedResponseMessageId,
+          preallocatedUserMessageId,
+          preallocatedResponseMessageId,
           progressOptions: {
             res: {
               write: () => true,

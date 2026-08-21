@@ -139,6 +139,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
  * @param {Object} params.endpointOption
  * @param {number} [params.jobCreatedAt]
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
+ * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
  */
 const initializeClient = async ({
   req,
@@ -147,6 +148,7 @@ const initializeClient = async ({
   endpointOption,
   jobCreatedAt,
   checkpointNamespace,
+  requestBody,
 }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -156,6 +158,7 @@ const initializeClient = async ({
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
   const conversationId = req.body?.conversationId;
+  const runtimeRequestBody = requestBody ?? req.body;
   let requestConversationPromise = Promise.resolve(null);
   if (Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
     requestConversationPromise = Promise.resolve(req.resolvedConversation);
@@ -336,7 +339,7 @@ const initializeClient = async ({
         signal,
         streamId,
         conversationId,
-        requestBody: req.body,
+        requestBody: runtimeRequestBody,
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
@@ -499,6 +502,7 @@ const initializeClient = async ({
       requestFiles,
       conversationId,
       parentMessageId,
+      requestBody: runtimeRequestBody,
       agent: primaryAgent,
       endpointOption,
       allowedProviders,
@@ -564,6 +568,7 @@ const initializeClient = async ({
       requestFiles,
       conversationId,
       parentMessageId,
+      requestBody: runtimeRequestBody,
       computeAccessibleSkillIds: (agent) =>
         resolveAgentScopedSkillIds({
           agent,
@@ -654,6 +659,7 @@ const initializeClient = async ({
     userMCPAuthMap,
     conversationId,
     parentMessageId,
+    requestBody: runtimeRequestBody,
     allowedProviders,
     primaryAgentId: primaryConfig.id,
     accessibleSkillIds,
@@ -943,6 +949,7 @@ const initializeClient = async ({
           requestFiles,
           conversationId,
           parentMessageId,
+          requestBody: runtimeRequestBody,
           endpointOption: { ...endpointOption, endpoint: EModelEndpoint.agents },
           allowedProviders,
           accessibleSkillIds: scopedSkillIds,
@@ -1420,6 +1427,7 @@ const initializeClient = async ({
     toolInputValidationErrors,
     jobCreatedAt,
     checkpointNamespace,
+    mcpRequestBody: runtimeRequestBody,
   });
 
   if (streamId) {
