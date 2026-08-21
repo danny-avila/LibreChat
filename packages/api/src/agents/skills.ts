@@ -5,7 +5,7 @@ import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from 
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -328,9 +328,18 @@ export interface ResolveAgentScopedSkillIdsParams {
  *    `true` = full accessible catalog, string list = scoped allowlist,
  *    empty list / `false` = no skills. Otherwise the skills badge toggle
  *    controls the full accessible catalog.
- *  - Persisted agent  → the builder's `skills_enabled` master switch.
- *    Enabled + empty allowlist = full catalog; enabled + non-empty
- *    allowlist = narrow to those ids; disabled (or undefined) = no skills.
+ *  - Persisted agent  → two independent axes:
+ *      • Pinned skills (`agent.skills` non-empty): the IDs selected by the
+ *        agent creator are always included — but only when the running user
+ *        already has ACL access to them (intersection with `accessibleSkillIds`).
+ *        This is deliberately "user-authorised": the user must hold the
+ *        permission; the agent cannot grant new access beyond what the user
+ *        already has.
+ *      • `skills_enabled` flag: when `true`, the full accessible catalog is
+ *        also made available (union with pinned). When false/undefined and
+ *        pinned skills exist, only pinned skills are in scope.
+ *      • No pinned skills + `skills_enabled` false/undefined = no skills.
+ *      • No pinned skills + `skills_enabled` true = full accessible catalog.
  *
  * When not activated, returns `[]` so `injectSkillCatalog`,
  * `resolveManualSkills`, and `resolveAlwaysApplySkills` all no-op.
@@ -360,13 +369,37 @@ export function resolveAgentScopedSkillIds(
     }
     return ephemeralSkillsToggle ? scopeSkillIds(accessibleSkillIds, undefined) : [];
   }
+
+  // Build the pinned set intersected with what this user can actually access.
+  // We intentionally do NOT grant access to IDs absent from accessibleSkillIds —
+  // the agent creator can only pin skills the running user already holds permission for.
+  const accessibleSet = new Set(accessibleSkillIds.map((id) => id.toString()));
+  const pinnedSkillObjectIds: Types.ObjectId[] = [];
+  if (Array.isArray(agent.skills) && agent.skills.length > 0) {
+    for (const idStr of agent.skills) {
+      if (typeof idStr === 'string' && Types.ObjectId.isValid(idStr) && accessibleSet.has(idStr)) {
+        pinnedSkillObjectIds.push(new Types.ObjectId(idStr));
+      }
+    }
+  }
+
+  const hasPinnedSkills = pinnedSkillObjectIds.length > 0;
+
+  if (hasPinnedSkills) {
+    if (agent.skills_enabled === true) {
+      // Union: accessible catalog + pinned skills the user can access.
+      // Since pinnedSkillObjectIds is already filtered to accessibleSet,
+      // the union is simply the full accessible catalog (no extra IDs to add).
+      return scopeSkillIds(accessibleSkillIds, undefined);
+    }
+    // skills_enabled false/undefined: expose only the pinned subset.
+    return pinnedSkillObjectIds;
+  }
+
   if (agent.skills_enabled !== true) {
     return [];
   }
-  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
-    return scopeSkillIds(accessibleSkillIds, undefined);
-  }
-  return scopeSkillIds(accessibleSkillIds, agent.skills);
+  return scopeSkillIds(accessibleSkillIds, undefined);
 }
 
 export interface ResolveSkillActiveParams {
@@ -378,29 +411,46 @@ export interface ResolveSkillActiveParams {
   userId?: string;
   /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
   defaultActiveOnShare?: boolean;
+  /** Set of skill IDs pinned to the current agent by the agent creator */
+  pinnedSkillIds?: Set<string>;
 }
 
 /**
  * Resolves whether a skill should be injected into the agent catalog for the
  * current user. Precedence (pinned by unit tests):
  *
- * 1. Explicit override in `skillStates` wins above all.
- * 2. Absent `userId` → fail closed. The caller lost user context, so we do
+ * 1. Explicit override in `skillStates` wins above all — including for pinned
+ *    skills. A user who explicitly deactivates a skill (opt-out) will have
+ *    that choice respected even when the agent creator pinned it.
+ * 2. Deployment skills (system-level) auto-activate regardless of user context.
+ * 3. Absent `userId` → fail closed. The caller lost user context, so we do
  *    not fall back to ownership-based defaults that could leak shared skills.
- * 3. Owned skills (author === userId) default to **active**.
- * 4. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
+ *    Pinned skills are NOT exempt from this gate — auto-activation requires
+ *    a confirmed user identity.
+ * 4. Pinned skills (selected by the agent creator) auto-activate for confirmed
+ *    users who have not explicitly overridden them.
+ * 5. Owned skills (author === userId) default to **active**.
+ * 6. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
  */
 export function resolveSkillActive(params: ResolveSkillActiveParams): boolean {
-  const { skill, skillStates, userId, defaultActiveOnShare = false } = params;
+  const { skill, skillStates, userId, defaultActiveOnShare = false, pinnedSkillIds } = params;
+  // Explicit user override always wins — even for pinned skills.
   const override = skillStates?.[skill._id.toString()];
   if (override !== undefined) {
     return override;
   }
+  // Deployment skills are system-level and activate regardless of user identity.
   if (skill.deployment === true) {
     return true;
   }
+  // Fail closed when user context is absent. Pinned auto-activation is not
+  // exempt: we need a confirmed identity before granting any user-facing access.
   if (!userId) {
     return false;
+  }
+  // Pinned skill with no explicit opt-out → auto-activate for confirmed user.
+  if (pinnedSkillIds && pinnedSkillIds.has(skill._id.toString())) {
+    return true;
   }
   return skill.author.toString() === userId ? true : defaultActiveOnShare;
 }
@@ -501,8 +551,12 @@ export async function injectSkillCatalog(
 
   type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
 
+  const pinnedSkillIds = new Set<string>(
+    Array.isArray(agent.skills) ? agent.skills.map((id) => id.toString()) : [],
+  );
+
   const isActive = (s: SkillSummary): boolean =>
-    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
+    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare, pinnedSkillIds });
 
   const activeSkills: SkillSummary[] = [];
   /**

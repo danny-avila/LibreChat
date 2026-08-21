@@ -420,11 +420,11 @@ describe('resolveAgentScopedSkillIds', () => {
   });
 
   describe('persisted agent', () => {
-    it('returns [] when `skills_enabled` is undefined (default / never toggled)', () => {
+    it('returns [] when `skills_enabled` is undefined and no pinned skills are set', () => {
       const a = makeId();
       expect(
         resolveAgentScopedSkillIds({
-          agent: persistedAgent([a.toString()], undefined),
+          agent: persistedAgent(undefined, undefined),
           accessibleSkillIds: [a],
           skillsCapabilityEnabled: true,
           ephemeralSkillsToggle: false,
@@ -432,16 +432,17 @@ describe('resolveAgentScopedSkillIds', () => {
       ).toEqual([]);
     });
 
-    it('returns [] when `skills_enabled` is false, even if an allowlist is set', () => {
+    it('returns pinned skills when pinned skills are set even if `skills_enabled` is false/undefined', () => {
       const a = makeId();
-      expect(
-        resolveAgentScopedSkillIds({
-          agent: persistedAgent([a.toString()], false),
-          accessibleSkillIds: [a],
-          skillsCapabilityEnabled: true,
-          ephemeralSkillsToggle: false,
-        }),
-      ).toEqual([]);
+      const b = makeId();
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([a.toString()], false),
+        accessibleSkillIds: [a, b],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0].toString()).toBe(a.toString());
     });
 
     it('returns full accessible catalog when `skills_enabled` is true and allowlist is undefined', () => {
@@ -469,25 +470,39 @@ describe('resolveAgentScopedSkillIds', () => {
       expect(scoped).toHaveLength(2);
     });
 
-    it('returns intersection when `skills_enabled` is true and allowlist overlaps accessible set', () => {
+    it('returns union of accessible skills and pinned skills when `skills_enabled` is true', () => {
       const a = makeId();
       const b = makeId();
       const c = makeId();
       const scoped = resolveAgentScopedSkillIds({
         agent: persistedAgent([a.toString(), c.toString()], true),
-        accessibleSkillIds: [a, b, c],
+        accessibleSkillIds: [a, b],
         skillsCapabilityEnabled: true,
         ephemeralSkillsToggle: false,
       });
+      // c is pinned but NOT in accessibleSkillIds — user has no ACL access to it.
+      // The union is therefore just the full accessible catalog [a, b].
       expect(scoped).toHaveLength(2);
-      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), c.toString()].sort());
+      expect(scoped.map((o) => o.toString()).sort()).toEqual([a.toString(), b.toString()].sort());
+    });
+
+    it('does not grant access to a pinned skill the user cannot access', () => {
+      const accessible = makeId();
+      const notAccessible = makeId(); // pinned by creator but user lacks ACL
+      const scoped = resolveAgentScopedSkillIds({
+        agent: persistedAgent([notAccessible.toString()], false),
+        accessibleSkillIds: [accessible],
+        skillsCapabilityEnabled: true,
+        ephemeralSkillsToggle: false,
+      });
+      expect(scoped).toHaveLength(0);
     });
 
     it('is unaffected by the ephemeral toggle — the persisted config is authoritative', () => {
       const a = makeId();
       const b = makeId();
       const scoped = resolveAgentScopedSkillIds({
-        agent: persistedAgent([a.toString()], true),
+        agent: persistedAgent([a.toString()], false),
         accessibleSkillIds: [a, b],
         skillsCapabilityEnabled: true,
         ephemeralSkillsToggle: true,
@@ -496,7 +511,7 @@ describe('resolveAgentScopedSkillIds', () => {
       expect(scoped[0].toString()).toBe(a.toString());
     });
 
-    it('still returns [] when `skills_enabled` is missing even if the ephemeral toggle is on', () => {
+    it('still returns [] when `skills_enabled` is missing and no pinned skills set, even if ephemeral toggle is on', () => {
       const a = makeId();
       expect(
         resolveAgentScopedSkillIds({
@@ -758,6 +773,79 @@ describe('resolveSkillActive', () => {
         defaultActiveOnShare: false,
       }),
     ).toBe(true);
+  });
+
+  it('pinned skill activates for a confirmed user with no explicit override', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    const pinnedSkillIds = new Set([sharedSkill._id.toString()]);
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+        pinnedSkillIds,
+      }),
+    ).toBe(true);
+  });
+
+  it('pinned skill does NOT activate when userId is absent — fail-closed gate applies', () => {
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    const pinnedSkillIds = new Set([sharedSkill._id.toString()]);
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId: undefined,
+        defaultActiveOnShare: false,
+        pinnedSkillIds,
+      }),
+    ).toBe(false);
+  });
+
+  it('explicit skillStates opt-out overrides pinned activation', () => {
+    const userId = new Types.ObjectId().toString();
+    const pinnedSkill = makeSkill(new Types.ObjectId());
+    const pinnedSkillIds = new Set([pinnedSkill._id.toString()]);
+    expect(
+      resolveSkillActive({
+        skill: pinnedSkill,
+        skillStates: { [pinnedSkill._id.toString()]: false },
+        userId,
+        defaultActiveOnShare: true,
+        pinnedSkillIds,
+      }),
+    ).toBe(false);
+  });
+
+  it('explicit skillStates opt-in still works for a pinned skill', () => {
+    const userId = new Types.ObjectId().toString();
+    const pinnedSkill = makeSkill(new Types.ObjectId());
+    const pinnedSkillIds = new Set([pinnedSkill._id.toString()]);
+    expect(
+      resolveSkillActive({
+        skill: pinnedSkill,
+        skillStates: { [pinnedSkill._id.toString()]: true },
+        userId,
+        defaultActiveOnShare: false,
+        pinnedSkillIds,
+      }),
+    ).toBe(true);
+  });
+
+  it('pinned skill does not activate when pinnedSkillIds is undefined', () => {
+    const userId = new Types.ObjectId().toString();
+    const sharedSkill = makeSkill(new Types.ObjectId());
+    expect(
+      resolveSkillActive({
+        skill: sharedSkill,
+        skillStates: {},
+        userId,
+        defaultActiveOnShare: false,
+        pinnedSkillIds: undefined,
+      }),
+    ).toBe(false);
   });
 });
 
