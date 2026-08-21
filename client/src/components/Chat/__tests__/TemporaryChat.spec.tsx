@@ -7,6 +7,7 @@ import { TemporaryChat, TemporaryChatIndicator } from '../TemporaryChat';
 import store from '~/store';
 
 jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
   TooltipAnchor: ({ render: renderProp }: { render: React.ReactNode }) => <>{renderProp}</>,
 }));
 
@@ -78,6 +79,24 @@ describe('TemporaryChatIndicator', () => {
     });
 
     expect(screen.getByText('Temporary Chat')).toBeInTheDocument();
+  });
+
+  it('exposes the cue as a status so the mode change reaches assistive tech', () => {
+    renderChat(<TemporaryChatIndicator />, {
+      isTemporary: true,
+      conversation: { conversationId: 'convo-1' },
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Temporary Chat');
+  });
+
+  it('keeps the label in the accessible name when it is visually hidden', () => {
+    renderChat(<TemporaryChatIndicator />, {
+      isTemporary: true,
+      conversation: { conversationId: 'convo-1' },
+    });
+
+    expect(screen.getByText('Temporary Chat')).toHaveClass('max-md:sr-only');
   });
 
   it('stays hidden on a started conversation that is not temporary', () => {
