@@ -155,10 +155,10 @@ const OboOptionsSchema = z.object({
 });
 
 const BaseOptionsSchema = z.object({
-  /** Display name for the MCP server - only letters, numbers, and spaces allowed */
+  /** Display name for the MCP server - only letters, numbers, spaces, and hyphens allowed */
   title: z
     .string()
-    .regex(/^[a-zA-Z0-9 ]+$/, 'Title can only contain letters, numbers, and spaces')
+    .regex(/^[a-zA-Z0-9 -]+$/, 'Title can only contain letters, numbers, spaces, and hyphens')
     .optional(),
   /** Description of the MCP server */
   description: z.string().optional(),
