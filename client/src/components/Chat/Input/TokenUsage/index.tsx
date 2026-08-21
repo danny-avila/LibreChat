@@ -3,8 +3,8 @@ import * as Ariakit from '@ariakit/react';
 import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { CurrencyConfig } from '~/utils';
+import useCompactConversation, { supportsCompaction } from '~/hooks/Chat/useCompactConversation';
 import { useGetLangfuseSessionLinkQuery, useGetStartupConfig } from '~/data-provider';
-import { supportsCompaction } from '~/hooks/Chat/useCompactConversation';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 import CompactAction from './CompactAction';
 import { formatTokens, cn } from '~/utils';
@@ -39,6 +39,9 @@ function TokenUsageIndicator({
 }) {
   const localize = useLocalize();
   const view = useTokenUsage({ index, conversation, isSubmitting });
+  /** Owned here, not in the popover: `unmountOnHide` would otherwise discard
+   *  the in-flight mutation (and its toast) as soon as the pointer leaves. */
+  const compaction = useCompactConversation();
   const popover = Ariakit.usePopoverStore({ placement: 'top' });
   const popoverOpen = Ariakit.useStoreState(popover, 'open');
   const disclosureRef = useRef<HTMLButtonElement>(null);
@@ -234,7 +237,11 @@ function TokenUsageIndicator({
           {compactionEnabled && supportsCompaction(conversation?.endpoint) && (
             <>
               <div className="border-t border-border-light" role="separator" />
-              <CompactAction />
+              <CompactAction
+                compact={compaction.compact}
+                canCompact={compaction.canCompact}
+                isCompacting={compaction.isCompacting}
+              />
             </>
           )}
         </div>

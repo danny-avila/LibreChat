@@ -120,8 +120,12 @@ describe('handleCompactRequest', () => {
       messagesCompacted: 2,
       provider: 'openAI',
       model: 'gpt-4o-mini',
-      estimatedUsages: [{ input_tokens: 700, output_tokens: 60 }],
-      usages: [{ model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 }],
+      passes: [
+        {
+          usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 },
+          counted: { input_tokens: 700, output_tokens: 60 },
+        },
+      ],
     });
     mockCheckAndIncrement.mockReset();
     mockCheckAndIncrement.mockResolvedValue({ allowed: true, pendingRequests: 1, limit: 2 });
@@ -253,8 +257,7 @@ describe('handleCompactRequest', () => {
       messagesCompacted: 2,
       provider: 'openAI',
       model: 'gpt-4o-mini',
-      estimatedUsages: [{ input_tokens: 700, output_tokens: 60 }],
-      usages: [],
+      passes: [{ counted: { input_tokens: 700, output_tokens: 60 } }],
     });
 
     const deps = makeDeps();
@@ -290,12 +293,19 @@ describe('handleCompactRequest', () => {
     mockCompactConversation.mockRejectedValue(
       new PartialCompactionError({
         cause: new Error('provider exploded'),
-        usages: [
-          { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 500, output_tokens: 20 },
+        passes: [
+          {
+            usage: {
+              model: 'gpt-4o-mini',
+              provider: 'openAI',
+              input_tokens: 500,
+              output_tokens: 20,
+            },
+            counted: { input_tokens: 500, output_tokens: 20 },
+          },
         ],
         model: 'gpt-4o-mini',
         provider: 'openAI',
-        estimatedUsages: [{ input_tokens: 500, output_tokens: 20 }],
       }),
     );
 
@@ -305,6 +315,31 @@ describe('handleCompactRequest', () => {
     expect(result.status).toBe(500);
     /** The completed provider call is still charged. */
     expect(deps.insertMany).toHaveBeenCalled();
+  });
+
+  it('bills each pass from its own record, mixing reported and counted usage', async () => {
+    mockCompactConversation.mockResolvedValue({
+      summary: SUMMARY,
+      messagesCompacted: 6,
+      provider: 'openAI',
+      model: 'gpt-4o-mini',
+      passes: [
+        {
+          usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 },
+          counted: { input_tokens: 800, output_tokens: 70 },
+        },
+        /** Gateway omitted usage for this call only. */
+        { counted: { input_tokens: 640, output_tokens: 55 } },
+      ],
+    });
+
+    const deps = makeDeps();
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result.status).toBe(201);
+    const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1];
+    /** Reported 900/80 plus counted 640/55: neither call goes unbilled. */
+    expect(saved.metadata.usage).toMatchObject({ input: 1540, output: 135 });
   });
 
   it('reports an already-compacted branch as its own code', async () => {
