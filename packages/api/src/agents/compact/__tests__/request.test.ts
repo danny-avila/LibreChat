@@ -365,6 +365,79 @@ describe('handleCompactRequest', () => {
     );
   });
 
+  it('rolls back when a turn started during the compaction, even once it settled', async () => {
+    /** A job is created before its response is saved, so a turn that began and
+     *  finished during the call is visible here rather than only through a
+     *  sibling row that may not be written yet. */
+    let sawInsert = false;
+    const deps = makeDeps({
+      getJob: jest.fn(async () =>
+        sawInsert ? { status: 'complete', createdAt: Date.now() + 1000 } : null,
+      ),
+      saveMessage: jest.fn(async (_ctx, message) => {
+        sawInsert = true;
+        return message as TMessage;
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result).toMatchObject({ status: 409, code: CompactErrorCodes.BRANCH_MOVED });
+    expect(deps.deleteMessages).toHaveBeenCalled();
+  });
+
+  it('ignores a job left behind by an earlier turn', async () => {
+    const deps = makeDeps({
+      getJob: jest.fn(async () => ({ status: 'complete', createdAt: Date.now() - 60_000 })),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result).toMatchObject({ status: 201 });
+  });
+
+  it('prices a multi-pass gate as the sum of each pass at its own tier', async () => {
+    const req = makeReq();
+    (req.config as AppConfig).balance = { enabled: true } as AppConfig['balance'];
+    /** 3 credits per token above 150k, 1 below: the premium pass must not drag
+     *  the cheaper one up with it. */
+    const getMultiplier = jest.fn(({ inputTokenCount }: { inputTokenCount?: number }) =>
+      (inputTokenCount ?? 0) > 150_000 ? 3 : 1,
+    );
+    const deps = makeDeps({
+      getMultiplier,
+      findBalanceByUser: jest.fn().mockResolvedValue({ tokenCredits: 100_000_000 }),
+    });
+
+    await handleCompactRequest({ req, res }, deps);
+    const params = mockCompactConversation.mock.calls[0][0] as {
+      beforeInvoke: (estimate: {
+        promptTokens: number;
+        passPromptTokens: number[];
+        model?: string;
+        provider: string;
+        endpoint: string;
+        balanceEndpoint: string;
+      }) => Promise<void>;
+    };
+    await params.beforeInvoke({
+      promptTokens: 300_000,
+      passPromptTokens: [100_000, 200_000],
+      model: 'gpt-5.4',
+      provider: 'openAI',
+      endpoint: 'openAI',
+      balanceEndpoint: 'openAI',
+    });
+
+    /** 100k at 1 plus 200k at 3, not 300k at either rate. */
+    expect(getMultiplier).toHaveBeenCalledWith(
+      expect.objectContaining({ inputTokenCount: 100_000 }),
+    );
+    expect(getMultiplier).toHaveBeenCalledWith(
+      expect.objectContaining({ inputTokenCount: 200_000 }),
+    );
+  });
+
   it('bills a locally counted estimate when the provider reported no usage', async () => {
     mockCompactConversation.mockResolvedValue({
       summary: SUMMARY,

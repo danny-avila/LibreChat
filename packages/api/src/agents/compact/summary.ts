@@ -769,7 +769,17 @@ export async function resolveCompactionModel({
    *  unrelated override such as `defaultQuery` drop them and send the
    *  compaction to the wrong backend, so it is merged the way the automatic
    *  path's `mergeParameters` merges it. */
-  const { configuration: paramConfiguration, ...topLevelParams } = llmParams;
+  /** `model`/`modelName` are ROUTING, not generation settings: `clientOptions`
+   *  is what `initializeModel` invokes, while sizing, the balance gate, billing,
+   *  headers and the persisted metadata all read the resolved `model`. Letting
+   *  `parameters` set them would run one model and charge for another, so
+   *  `summarization.model` stays the only way to redirect. */
+  const {
+    configuration: paramConfiguration,
+    model: _paramModel,
+    modelName: _paramModelName,
+    ...topLevelParams
+  } = llmParams as Record<string, unknown>;
   Object.assign(clientOptions, topLevelParams);
   if (isPlainObject(paramConfiguration)) {
     clientOptions.configuration = {
@@ -802,7 +812,7 @@ export async function resolveCompactionModel({
     provider,
     endpoint,
     tokenLookupEndpoint: resolveEndpointKey(endpoint, providerConfig.customEndpointConfig != null),
-    usesRunModel: !targetsOtherEndpoint && model === runModel,
+    usesRunModel: !crossEndpoint && model === runModel,
     replaysReasoningContent: shouldReplayReasoningContent({
       provider,
       model,
@@ -812,7 +822,11 @@ export async function resolveCompactionModel({
     model,
     clientOptions,
     endpointTokenConfig: options.endpointTokenConfig,
-    sameEndpoint: !targetsOtherEndpoint,
+    /** Both read the FINAL target, not the configured intent: an unresolvable
+     *  `summarization.provider` falls back to the agent's own endpoint and
+     *  clears the model override, and the call really is the run's own after
+     *  that. */
+    sameEndpoint: !crossEndpoint,
   };
 }
 
