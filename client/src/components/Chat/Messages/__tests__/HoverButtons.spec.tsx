@@ -10,6 +10,7 @@ import {
   type TMessage,
 } from 'librechat-data-provider';
 import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
+import { startupConfigKey } from '~/data-provider/Endpoints/queries';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
 
@@ -34,6 +35,8 @@ function renderHoverButtons({
   isLast = false,
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
+  handleFeedback,
+  feedbackEnabled,
 }: {
   isSubmitting: boolean;
   message?: TMessage;
@@ -41,9 +44,15 @@ function renderHoverButtons({
   isLast?: boolean;
   latestMessageId?: string;
   getCanCopy?: () => boolean;
+  handleFeedback?: () => void;
+  feedbackEnabled?: boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
+  });
+
+  queryClient.setQueryData(startupConfigKey(false), {
+    interface: feedbackEnabled === undefined ? {} : { feedback: feedbackEnabled },
   });
 
   const initializeState = ({ set }: MutableSnapshot) => set(store.textToSpeech, false);
@@ -65,6 +74,7 @@ function renderHoverButtons({
             copyToClipboard={jest.fn()}
             getCanCopy={getCanCopy}
             latestMessageId={latestMessageId}
+            handleFeedback={handleFeedback}
           />
         </MemoryRouter>
       </RecoilRoot>
@@ -210,5 +220,46 @@ describe('HoverButtons edit affordance', () => {
     expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).toBeNull();
     expect(screen.queryByTestId('regenerate-generation-button')).toBeNull();
     expect(screen.queryByTestId('continue-generation-button')).toBeNull();
+  });
+});
+
+describe('HoverButtons feedback affordance', () => {
+  const assistantMessage = {
+    ...userMessage,
+    messageId: 'assistant-1',
+    isCreatedByUser: false,
+    text: 'Here is the answer',
+  } as TMessage;
+
+  const renderSettledResponse = (feedbackEnabled?: boolean) =>
+    renderHoverButtons({
+      isSubmitting: false,
+      message: assistantMessage,
+      isLast: true,
+      latestMessageId: 'assistant-2',
+      handleFeedback: jest.fn(),
+      feedbackEnabled,
+    });
+
+  it('offers feedback when the interface leaves it unconfigured', () => {
+    renderSettledResponse();
+
+    expect(screen.getByTitle('Love this')).toBeInTheDocument();
+    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
+  });
+
+  it('offers feedback when the interface explicitly enables it', () => {
+    renderSettledResponse(true);
+
+    expect(screen.getByTitle('Love this')).toBeInTheDocument();
+    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
+  });
+
+  it('hides feedback when the interface disables it', () => {
+    renderSettledResponse(false);
+
+    expect(screen.queryByTitle('Love this')).toBeNull();
+    expect(screen.queryByTitle('Needs improvement')).toBeNull();
+    expect(screen.getByTestId('copy-response-button')).toBeInTheDocument();
   });
 });

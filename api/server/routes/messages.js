@@ -518,6 +518,10 @@ router.put(
   configMiddleware,
   async (req, res) => {
     try {
+      if (req.config?.interfaceConfig?.feedback === false) {
+        return res.status(403).json({ error: 'Feedback is disabled' });
+      }
+
       const { conversationId, messageId } = req.params;
       const { feedback } = req.body;
       const feedbackResult = feedback == null ? null : feedbackSchema.safeParse(feedback);

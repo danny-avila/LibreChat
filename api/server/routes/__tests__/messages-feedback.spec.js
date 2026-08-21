@@ -65,6 +65,7 @@ jest.mock('~/db/models', () => ({
 
 describe('PUT /:conversationId/:messageId/feedback', () => {
   let app;
+  let interfaceConfig;
   const { sendFeedbackScore } = require('@librechat/api');
   const { updateMessage } = require('~/models');
 
@@ -75,6 +76,7 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
     app.use(express.json());
     app.use((req, res, next) => {
       req.user = { id: 'user-1' };
+      req.config = { interfaceConfig };
       next();
     });
     app.use('/api/messages', messagesRouter);
@@ -82,6 +84,7 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    interfaceConfig = {};
     updateMessage.mockImplementation((userId, { messageId, feedback }) =>
       Promise.resolve({
         messageId,
@@ -143,6 +146,19 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid feedback' });
+    expect(updateMessage).not.toHaveBeenCalled();
+    expect(sendFeedbackScore).not.toHaveBeenCalled();
+  });
+
+  it('rejects feedback when the interface disables it', async () => {
+    interfaceConfig = { feedback: false };
+
+    const response = await request(app)
+      .put('/api/messages/conversation-1/message-1/feedback')
+      .send({ feedback: { rating: 'thumbsUp', tag: 'accurate' } });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'Feedback is disabled' });
     expect(updateMessage).not.toHaveBeenCalled();
     expect(sendFeedbackScore).not.toHaveBeenCalled();
   });
