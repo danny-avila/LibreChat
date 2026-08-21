@@ -986,6 +986,28 @@ describe('isScheduleLive policy recheck', () => {
       ).resolves.toBe(true);
     });
 
+    /**
+     * The INITIAL start runs the same policy branch, and its run row is reserved before
+     * the loopback request is dispatched — so a pin introduced while that request sat
+     * queued must not be validated in place of the destination whose envelope was
+     * already built. Same call shape as the resume path.
+     */
+    it('refuses an initial start whose occurrence was reserved unscoped', async () => {
+      const service = makeProjectService(
+        { chatProjectId: 'proj-pinned' },
+        { projectId: 'proj-pinned' },
+        { _id: 'x' },
+        { run: { recorded: true } },
+      );
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(false);
+    });
+
     it('leaves the non-policy recheck untouched', async () => {
       const service = makeProjectService({ chatProjectId: 'proj-gone' }, {}, null);
       await expect(service.isScheduleLive('s1')).resolves.toBe(true);

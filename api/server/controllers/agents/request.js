@@ -1087,6 +1087,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       !(await isScheduleLive(scheduleId, scheduleConfigRevision, {
         automatic: req._isManualScheduledFire !== true,
         policy: true,
+        // The occurrence's OWN recorded scope, exactly as the resume path passes it.
+        // The run row is reserved before this loopback request is dispatched, so a pin
+        // introduced while the request sat queued must not be validated in place of the
+        // destination this occurrence's envelope was already built with.
+        scheduledFor,
       }))
     ) {
       throw Object.assign(new Error('This scheduled occurrence is no longer active'), {
