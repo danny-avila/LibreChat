@@ -205,6 +205,10 @@ function normalizeEndpointName(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
 }
@@ -381,6 +385,8 @@ export async function resolveCompactionModel({
   let providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
   let endpoint = agentEndpoint;
 
+  /** Cleared when a configured cross-endpoint provider fails to resolve. */
+  let modelOverrideApplies = true;
   const configuredProvider = summarization?.provider;
   const targetsOtherEndpoint =
     isNonEmptyString(configuredProvider) &&
@@ -396,11 +402,16 @@ export async function resolveCompactionModel({
       );
       providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
       endpoint = agentEndpoint;
+      /** The configured model belonged to the endpoint that failed to resolve;
+       *  carrying it to the agent's endpoint would send an unknown model name
+       *  and make the fallback fail just as deterministically. */
+      modelOverrideApplies = false;
     }
   }
 
   const runModel = agent.model_parameters?.model ?? agent.model ?? undefined;
-  const model = isNonEmptyString(summarization?.model) ? summarization.model : runModel;
+  const model =
+    modelOverrideApplies && isNonEmptyString(summarization?.model) ? summarization.model : runModel;
 
   /**
    * The user-key freshness marker `initializeOpenAI` / `initializeGoogle` read
@@ -471,7 +482,19 @@ export async function resolveCompactionModel({
   const { llmParams, maxSummaryTokens } = separateSummarizationParameters(
     summarization?.parameters,
   );
-  Object.assign(clientOptions, llmParams);
+  /** `configuration` carries the endpoint's routing and auth (baseURL,
+   *  defaultHeaders, guarded fetch options). A shallow assign would let an
+   *  unrelated override such as `defaultQuery` drop them and send the
+   *  compaction to the wrong backend, so it is merged the way the automatic
+   *  path's `mergeParameters` merges it. */
+  const { configuration: paramConfiguration, ...topLevelParams } = llmParams;
+  Object.assign(clientOptions, topLevelParams);
+  if (isPlainObject(paramConfiguration)) {
+    clientOptions.configuration = {
+      ...(clientOptions.configuration ?? {}),
+      ...paramConfiguration,
+    } as OpenAIConfiguration;
+  }
   const effectiveMaxSummaryTokens = maxSummaryTokens ?? summarization?.maxSummaryTokens;
   if (effectiveMaxSummaryTokens != null && effectiveMaxSummaryTokens > 0) {
     (clientOptions as Record<string, unknown>)[getMaxOutputTokensKey(provider)] =
@@ -526,6 +549,9 @@ const TRANSCRIPT_BUDGET_RATIO = 0.7;
 
 /** Assumed window when the summarizer's model is unknown to the token map. */
 const FALLBACK_CONTEXT_TOKENS = 32_768;
+
+/** Room kept for the running checkpoint when the model declares no output cap. */
+const DEFAULT_CHECKPOINT_RESERVE = 4096;
 
 /** Guard against a runaway number of model calls on an enormous branch. */
 const MAX_COMPACTION_PASSES = 8;
@@ -620,39 +646,6 @@ function resolveOutputReserve(clientOptions: ClientOptions, provider: Providers)
   return typeof configured === 'number' && configured > 0 ? configured : 0;
 }
 
-/** Adds one pass's reported usage into the running total across passes. */
-function mergeUsage(
-  running: CompactionUsage | undefined,
-  next: CompactionUsage | undefined,
-): CompactionUsage | undefined {
-  if (!next) {
-    return running;
-  }
-  if (!running) {
-    return next;
-  }
-  return {
-    ...running,
-    input_tokens: (running.input_tokens ?? 0) + (next.input_tokens ?? 0),
-    output_tokens: (running.output_tokens ?? 0) + (next.output_tokens ?? 0),
-    total_tokens:
-      running.total_tokens != null || next.total_tokens != null
-        ? (running.total_tokens ?? 0) + (next.total_tokens ?? 0)
-        : undefined,
-    input_token_details:
-      running.input_token_details != null || next.input_token_details != null
-        ? {
-            cache_read:
-              (running.input_token_details?.cache_read ?? 0) +
-              (next.input_token_details?.cache_read ?? 0),
-            cache_creation:
-              (running.input_token_details?.cache_creation ?? 0) +
-              (next.input_token_details?.cache_creation ?? 0),
-          }
-        : undefined,
-  };
-}
-
 function extractUsage(
   message: AIMessage | undefined,
   model: string | undefined,
@@ -708,15 +701,17 @@ export interface CompactionResult {
   summary: SummaryContentPart;
   /** Message count that the summary replaces. */
   messagesCompacted: number;
-  usage?: CompactionUsage;
+  /** One record per pass, never summed: `recordCollectedUsage` derives the
+   *  long-context pricing tier from each record's own input count. */
+  usages: CompactionUsage[];
   /** Rates of the endpoint the call actually ran on, for the transaction. */
   endpointTokenConfig?: EndpointTokenConfig;
   /**
-   * Locally counted prompt and completion sizes. The host bills from these
-   * when the provider reported no usage at all, so an OpenAI-compatible
-   * gateway that omits `usage` still produces a transaction.
+   * Locally counted per-pass prompt and completion sizes. The host bills from
+   * these when the provider reported no usage at all, so an OpenAI-compatible
+   * gateway that omits `usage` still produces a transaction per call.
    */
-  estimatedUsage: { input_tokens: number; output_tokens: number };
+  estimatedUsages: Array<{ input_tokens: number; output_tokens: number }>;
   /** Provider and model the call ran on, for that estimated transaction. */
   provider: string;
   model?: string;
@@ -779,28 +774,30 @@ export class TranscriptTooLargeError extends Error {
  * never silently free.
  */
 export class BilledCompactionError extends Error {
-  readonly usage?: CompactionUsage;
+  /** One record per COMPLETED pass, never summed: pricing tiers are derived
+   *  per record. */
+  readonly usages: CompactionUsage[];
   readonly model?: string;
   readonly provider?: string;
   readonly endpointTokenConfig?: EndpointTokenConfig;
-  /** Local count of what was sent, so the call is billed even when the
-   *  provider reported nothing at all alongside the empty completion. */
-  readonly estimatedUsage: { input_tokens: number; output_tokens: number };
+  /** Local per-pass counts, so completed calls are billed even when the
+   *  provider reported nothing at all. */
+  readonly estimatedUsages: Array<{ input_tokens: number; output_tokens: number }>;
   constructor(details: {
-    usage?: CompactionUsage;
+    usages?: CompactionUsage[];
     model?: string;
     provider?: string;
     endpointTokenConfig?: EndpointTokenConfig;
-    estimatedUsage: { input_tokens: number; output_tokens: number };
+    estimatedUsages?: Array<{ input_tokens: number; output_tokens: number }>;
     message?: string;
   }) {
     super(details.message ?? 'Compaction produced empty output');
     this.name = 'BilledCompactionError';
-    this.usage = details.usage;
+    this.usages = details.usages ?? [];
     this.model = details.model;
     this.provider = details.provider;
     this.endpointTokenConfig = details.endpointTokenConfig;
-    this.estimatedUsage = details.estimatedUsage;
+    this.estimatedUsages = details.estimatedUsages ?? [];
   }
 }
 
@@ -885,9 +882,16 @@ export async function compactConversation({
   const instructionReserve = await countTokens(
     buildCompactionInstruction(promptText, updatePromptText, ''),
   );
+  /** Passes after the first also carry the running checkpoint as input, and a
+   *  checkpoint is at most one full model output. Reserved unconditionally
+   *  because the pass count is only known once the budget has chunked. */
+  const checkpointReserve = outputReserve > 0 ? outputReserve : DEFAULT_CHECKPOINT_RESERVE;
   const chunkBudget = Math.max(
     1024,
-    Math.floor((contextWindow - outputReserve - instructionReserve) * TRANSCRIPT_BUDGET_RATIO),
+    Math.floor(
+      (contextWindow - outputReserve - instructionReserve - checkpointReserve) *
+        TRANSCRIPT_BUDGET_RATIO,
+    ),
   );
   const chunks = await chunkTranscript(messages as BaseMessage[], chunkBudget);
   if (chunks.length > MAX_COMPACTION_PASSES) {
@@ -924,17 +928,22 @@ export async function compactConversation({
    * consolidated rather than truncated.
    */
   let text = '';
-  let usage: CompactionUsage | undefined;
-  /** Actual locally counted sizes of what each pass sent and received, so a
-   *  provider that reports no usage is still billed for every call rather than
-   *  the transcript alone. */
-  const counted = { input_tokens: 0, output_tokens: 0 };
+  /**
+   * One record per completed pass, never summed. `recordCollectedUsage` derives
+   * a model's long-context pricing tier from each record's input count, so
+   * collapsing four small calls into one aggregate can push a cheap pass over a
+   * premium threshold and charge it at the higher rate.
+   */
+  const usages: CompactionUsage[] = [];
+  /** Locally counted sizes of what each COMPLETED pass sent and received, so a
+   *  provider that reports no usage is still billed per call. */
+  const counted: Array<{ input_tokens: number; output_tokens: number }> = [];
   const billingDetails = () => ({
-    usage,
+    usages: [...usages],
     model,
     provider,
     endpointTokenConfig,
-    estimatedUsage: { ...counted },
+    estimatedUsages: [...counted],
   });
 
   for (const chunk of chunks) {
@@ -944,7 +953,7 @@ export async function compactConversation({
       text || priorSummary?.text,
     );
     const passMessages = [...chunk, new HumanMessage(instruction)] as BaseMessage[];
-    counted.input_tokens += await countPromptTokens(passMessages);
+    const passInputTokens = await countPromptTokens(passMessages);
 
     let response: AIMessage | undefined;
     try {
@@ -957,8 +966,9 @@ export async function compactConversation({
         },
       });
     } catch (error) {
-      /** Earlier passes already spent; carry their usage out so the host bills
-       *  what actually happened instead of losing it with the exception. */
+      /** Only what ALREADY completed is billable. A rejected call (bad
+       *  credential, rate limit) produced no provider work, so this pass's
+       *  counted prompt is deliberately not added before rethrowing. */
       throw new PartialCompactionError({
         ...billingDetails(),
         cause: error,
@@ -966,15 +976,21 @@ export async function compactConversation({
       });
     }
 
-    usage = mergeUsage(usage, extractUsage(response, model, provider));
+    const passUsage = extractUsage(response, model, provider);
+    if (passUsage) {
+      usages.push(passUsage);
+    }
     const passText = extractResponseText(response);
+    counted.push({
+      input_tokens: passInputTokens,
+      output_tokens: await countTokens(passText),
+    });
     /** An empty pass means THIS chunk was never folded in, and a later pass
      *  would still produce a boundary that discards it. Refuse rather than
      *  persist a checkpoint that silently omits part of the branch. */
     if (passText === '') {
       throw new EmptyCompactionError(billingDetails());
     }
-    counted.output_tokens += await countTokens(passText);
     text = passText;
   }
 
@@ -1000,13 +1016,13 @@ export async function compactConversation({
 
   return {
     messagesCompacted: messages.length,
-    usage,
+    usages,
     endpointTokenConfig,
     provider,
     model,
     /** What every pass actually sent and received, locally counted, for the
      *  host's fallback when the provider reported no usage. */
-    estimatedUsage: { ...counted },
+    estimatedUsages: counted,
     summary: {
       type: ContentTypes.SUMMARY,
       content: [{ type: ContentTypes.TEXT, text }],

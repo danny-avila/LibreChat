@@ -116,6 +116,25 @@ export interface HandleCompactRequestParams {
   signal?: AbortSignal;
 }
 
+/**
+ * What to bill for one compaction: the provider's own per-call records when it
+ * reported them, otherwise the locally counted size of each completed call, so
+ * a gateway that omits usage still produces one transaction per call.
+ */
+function billableUsages(
+  source: {
+    usages: CompactionUsage[];
+    estimatedUsages: Array<{ input_tokens: number; output_tokens: number }>;
+  },
+  model?: string,
+  provider?: string,
+): CompactionUsage[] {
+  if (source.usages.length > 0) {
+    return source.usages;
+  }
+  return source.estimatedUsages.map((counts) => ({ model, provider, ...counts }));
+}
+
 /** True while another turn owns the conversation's branch tail. */
 async function isGenerating(
   getJob: CompactRequestDeps['getJob'],
@@ -150,7 +169,7 @@ async function recordCompactionUsage(
     appConfig,
     conversationId,
     messageId,
-    usage,
+    usages,
     model,
     endpointTokenConfig,
   }: {
@@ -158,7 +177,9 @@ async function recordCompactionUsage(
     appConfig?: AppConfig;
     conversationId: string;
     messageId: string;
-    usage: CompactionUsage;
+    /** One record per provider call, passed through unsummed so each is priced
+     *  against its own input count rather than the run's total. */
+    usages: CompactionUsage[];
     model?: string;
     endpointTokenConfig?: EndpointTokenConfig;
   },
@@ -178,7 +199,7 @@ async function recordCompactionUsage(
       user: userId,
       conversationId,
       messageId,
-      collectedUsage: [{ ...usage, usage_type: 'summarization' }],
+      collectedUsage: usages.map((usage) => ({ ...usage, usage_type: 'summarization' })),
       model,
       context: 'summarization',
       balance: getBalanceConfig(appConfig),
@@ -189,15 +210,18 @@ async function recordCompactionUsage(
     logger.error('[compact] Error recording usage', error);
   });
 
-  const event: CompactionUsage & { cost?: number } = { ...usage };
-  if (appConfig?.interfaceConfig?.contextCost === true) {
-    try {
-      event.cost = computeUsageCostUSD(usage, pricing, endpointTokenConfig);
-    } catch (error) {
-      logger.warn('[compact] Could not price the compaction call', error);
+  const events: Array<CompactionUsage & { cost?: number }> = usages.map((usage) => {
+    const event: CompactionUsage & { cost?: number } = { ...usage };
+    if (appConfig?.interfaceConfig?.contextCost === true) {
+      try {
+        event.cost = computeUsageCostUSD(usage, pricing, endpointTokenConfig);
+      } catch (error) {
+        logger.warn('[compact] Could not price the compaction call', error);
+      }
     }
-  }
-  return aggregateEmittedUsage([event]);
+    return event;
+  });
+  return aggregateEmittedUsage(events);
 }
 
 /**
@@ -323,6 +347,17 @@ export async function handleCompactRequest(
       };
     }
 
+    /** Already known to be stale: another client advanced the conversation
+     *  before this request arrived, so the summary could only ever land on a
+     *  sibling. Detected from the messages already loaded, before spending. */
+    if (allMessages?.some((message) => message.parentMessageId === leafId)) {
+      return {
+        status: 409,
+        error: 'The conversation moved on during compaction',
+        code: CompactErrorCodes.BRANCH_MOVED,
+      };
+    }
+
     /** Inherit the branch's own assistant identity so the compaction message
      *  carries the same name and avatar as the responses around it, and its
      *  instruction overhead so the persisted baseline matches the automatic
@@ -397,11 +432,7 @@ export async function handleCompactRequest(
           appConfig,
           conversationId,
           messageId,
-          usage: error.usage ?? {
-            model: error.model,
-            provider: error.provider,
-            ...error.estimatedUsage,
-          },
+          usages: billableUsages(error, error.model, error.provider),
           model: error.model,
           endpointTokenConfig: error.endpointTokenConfig,
         });
@@ -415,17 +446,12 @@ export async function handleCompactRequest(
      * gateways) is billed from the locally counted prompt and summary sizes,
      * the same fallback `BaseClient` applies, so the call never goes unrecorded.
      */
-    const billedUsage: CompactionUsage = result.usage ?? {
-      model: result.model,
-      provider: result.provider,
-      ...result.estimatedUsage,
-    };
     const usageRollup = await recordCompactionUsage(deps, {
       userId,
       appConfig,
       conversationId,
       messageId,
-      usage: billedUsage,
+      usages: billableUsages(result, result.model, result.provider),
       model: result.summary.model,
       endpointTokenConfig: result.endpointTokenConfig,
     });
