@@ -271,4 +271,21 @@ describe('mergeErrorMessages', () => {
       }).map(({ messageId }) => messageId),
     ).toEqual(['user-1', 'assistant-1', 'user-2', 'assistant-2', 'assistant-1_']);
   });
+
+  it('replaces an edited response error that intentionally reuses its id', () => {
+    const userMessage = message('user-1', true);
+    const originalResponse = message('assistant-1');
+    const errorMessage = { ...originalResponse, text: 'Regeneration failed', error: true };
+
+    const merged = mergeErrorMessages({
+      messages: [userMessage],
+      regenerateMessages: [userMessage, originalResponse],
+      userMessage,
+      errorMessage,
+      isRegenerate: true,
+    });
+
+    expect(merged.map(({ messageId }) => messageId)).toEqual(['user-1', 'assistant-1']);
+    expect(merged[1]).toEqual(errorMessage);
+  });
 });

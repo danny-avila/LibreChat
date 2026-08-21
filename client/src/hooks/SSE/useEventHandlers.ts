@@ -195,7 +195,20 @@ export const mergeErrorMessages = ({
   errorMessage: TMessage;
 }): TMessage[] => {
   if (isRegenerate) {
-    return [...(regenerateMessages ?? messages), errorMessage];
+    const finalMessages: TMessage[] = [];
+    let replaced = false;
+    for (const message of regenerateMessages ?? messages) {
+      if (message.messageId === errorMessage.messageId) {
+        finalMessages.push(errorMessage);
+        replaced = true;
+      } else {
+        finalMessages.push(message);
+      }
+    }
+    if (!replaced) {
+      finalMessages.push(errorMessage);
+    }
+    return finalMessages;
   }
 
   return [...messages, userMessage, errorMessage];
