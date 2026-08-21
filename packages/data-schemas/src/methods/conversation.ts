@@ -38,6 +38,17 @@ type ConversationUpdateResult = {
   };
 };
 
+export type SubagentThreadReadRecord = Pick<
+  IConversation,
+  | 'conversationId'
+  | 'tenantId'
+  | 'title'
+  | 'agent_id'
+  | 'updatedAt'
+  | 'subagentThread'
+  | 'subagentThreadLease'
+>;
+
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
 const PROJECT_STATS_REFRESH_MAX_PASSES = 2;
@@ -155,7 +166,7 @@ export interface ConversationMethods {
     parentConversationId: string;
     conversationId: string;
     tenantId?: string;
-  }): Promise<IConversation | null>;
+  }): Promise<SubagentThreadReadRecord | null>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -198,7 +209,7 @@ export interface ConversationMethods {
   getConvoOwnership(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'user' | 'subagentThread'> | null>;
+  ): Promise<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'> | null>;
   getConvoRetention(
     user: string,
     conversationId: string,
@@ -266,7 +277,7 @@ export function createConversationMethods(
     parentConversationId: string;
     conversationId: string;
     tenantId?: string;
-  }): Promise<IConversation | null> {
+  }): Promise<SubagentThreadReadRecord | null> {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       return await Conversation.findOne({
@@ -275,8 +286,10 @@ export function createConversationMethods(
         'subagentThread.parentConversationId': input.parentConversationId,
         ...subagentLeaseTenantFilter(input.tenantId),
       })
-        .select('+subagentThreadLease')
-        .lean<IConversation>();
+        .select(
+          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease',
+        )
+        .lean<SubagentThreadReadRecord>();
     } catch (error) {
       logger.error('[getSubagentThreadForParent] Error getting child conversation', error);
       throw new Error('Error getting child conversation');
@@ -468,9 +481,10 @@ export function createConversationMethods(
   async function getConvoOwnership(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }, 'user subagentThread').lean<
-        Pick<IConversation, 'user' | 'subagentThread'>
-      >();
+      return await Conversation.findOne(
+        { user, conversationId },
+        'user tenantId subagentThread',
+      ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
     } catch (error) {
       logger.error('[getConvoOwnership] Error checking conversation ownership', error);
       throw new Error('Error checking conversation ownership');

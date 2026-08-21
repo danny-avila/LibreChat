@@ -78,9 +78,7 @@ const createRequest = (params: Record<string, string> = {}): ServerRequest =>
 
 describe('subagent thread parent-scoped view', () => {
   it('returns a bounded public child projection through the owning parent', async () => {
-    const getConvo = jest.fn((_: string, conversationId: string) =>
-      Promise.resolve(conversationId === parentConversationId ? parent : child),
-    );
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const oversized = '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes);
     const newest = { ...message('task-1:assistant', 'completed'), text: oversized } as IMessage;
     const getMessages = jest
@@ -88,7 +86,7 @@ describe('subagent thread parent-scoped view', () => {
       .mockResolvedValue([newest, message('task-1:user', 'running', true)]);
     const getSubagentThreadForParent = jest.fn().mockResolvedValue(child);
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent,
       getMessages,
     });
@@ -97,7 +95,7 @@ describe('subagent thread parent-scoped view', () => {
     await handler(createRequest(), response);
 
     expect(getMessages).toHaveBeenCalledWith(
-      { conversationId: threadId, user: 'user-1' },
+      { conversationId: threadId, user: 'user-1', tenantId: 'tenant-1' },
       expect.stringContaining('+subagentTask'),
       {
         limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
@@ -135,7 +133,7 @@ describe('subagent thread parent-scoped view', () => {
   });
 
   it('bounds the complete UTF-8 response while retaining the newest history', async () => {
-    const getConvo = jest.fn().mockResolvedValue(parent);
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const messages = Array.from(
       { length: SUBAGENT_THREAD_VIEW_LIMITS.messages },
       (_, index) =>
@@ -145,7 +143,7 @@ describe('subagent thread parent-scoped view', () => {
         }) as IMessage,
     );
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
       getMessages: jest.fn().mockResolvedValue(messages),
     });
@@ -161,14 +159,39 @@ describe('subagent thread parent-scoped view', () => {
     expect(view.messages.at(-1).messageId).toBe('task-0:assistant');
   });
 
+  it('requires tenantless messages when the authenticated request has no tenant', async () => {
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue({ ...parent, tenantId: undefined }),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, tenantId: undefined, subagentThreadLease: undefined }),
+      getMessages,
+    });
+    const { response } = createResponse();
+
+    await handler(
+      { ...createRequest(), user: { id: 'user-1', tenantId: undefined } } as ServerRequest,
+      response,
+    );
+
+    expect(getMessages).toHaveBeenCalledWith(
+      {
+        conversationId: threadId,
+        user: 'user-1',
+        tenantId: { $exists: false },
+      },
+      expect.any(String),
+      expect.any(Object),
+    );
+  });
+
   it.each([
     ['running', 'running'],
     ['error', 'failed'],
     ['cancelled', 'cancelled'],
   ] as const)('normalizes durable %s tasks as %s', async (durableStatus, publicStatus) => {
-    const getConvo = jest.fn((_: string, conversationId: string) =>
-      Promise.resolve(conversationId === parentConversationId ? parent : child),
-    );
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const getMessages = jest
       .fn()
       .mockResolvedValue([
@@ -179,7 +202,7 @@ describe('subagent thread parent-scoped view', () => {
         ),
       ]);
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
       getMessages,
     });
@@ -191,11 +214,9 @@ describe('subagent thread parent-scoped view', () => {
   });
 
   it('reports a reserved child with no durable task messages as dispatched', async () => {
-    const getConvo = jest.fn((_: string, conversationId: string) =>
-      Promise.resolve(conversationId === parentConversationId ? parent : child),
-    );
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest
         .fn()
         .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
@@ -212,7 +233,7 @@ describe('subagent thread parent-scoped view', () => {
 
   it('reports a child with an active preparation lease as running before its seed exists', async () => {
     const handler = createSubagentThreadViewHandler({
-      getConvo: jest.fn().mockResolvedValue(parent),
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
       getMessages: jest.fn().mockResolvedValue([]),
     });
@@ -231,7 +252,7 @@ describe('subagent thread parent-scoped view', () => {
       subagentThreadLease: { ...child.subagentThreadLease!, taskId: 'task-2' },
     } as IConversation;
     const handler = createSubagentThreadViewHandler({
-      getConvo: jest.fn().mockResolvedValue(parent),
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
       getSubagentThreadForParent: jest.fn().mockResolvedValue(activeChild),
       getMessages: jest.fn().mockResolvedValue([message('task-1:assistant', 'completed')]),
     });
@@ -243,14 +264,12 @@ describe('subagent thread parent-scoped view', () => {
   });
 
   it('keeps the newest bounded tail and marks older history as truncated', async () => {
-    const getConvo = jest.fn((_: string, conversationId: string) =>
-      Promise.resolve(conversationId === parentConversationId ? parent : child),
-    );
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const messages = Array.from({ length: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1 }, (_, index) =>
       message(`task-${index}:assistant`, 'completed'),
     );
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
       getMessages: jest.fn().mockResolvedValue(messages),
     });
@@ -282,10 +301,10 @@ describe('subagent thread parent-scoped view', () => {
     ['parent tenant mismatch', { ...parent, tenantId: 'tenant-2' }, child, 'tenant-1'],
     ['child tenant mismatch', parent, { ...child, tenantId: 'tenant-2' }, 'tenant-1'],
   ])('returns the same 404 for %s', async (_, parentRecord, childRecord, tenantId) => {
-    const getConvo = jest.fn().mockResolvedValue(parentRecord);
+    const getConvoOwnership = jest.fn().mockResolvedValue(parentRecord);
     const getMessages = jest.fn().mockResolvedValue([message('task-1:assistant', 'completed')]);
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(childRecord),
       getMessages,
     });
@@ -305,11 +324,11 @@ describe('subagent thread parent-scoped view', () => {
   });
 
   it('rejects a child id used as its own parent before reading storage', async () => {
-    const getConvo = jest.fn();
+    const getConvoOwnership = jest.fn();
     const getSubagentThreadForParent = jest.fn();
     const getMessages = jest.fn();
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent,
       getMessages,
     });
@@ -318,17 +337,17 @@ describe('subagent thread parent-scoped view', () => {
     await handler(createRequest({ parentConversationId: threadId }), response);
 
     expect(status).toHaveBeenCalledWith(404);
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvoOwnership).not.toHaveBeenCalled();
     expect(getSubagentThreadForParent).not.toHaveBeenCalled();
     expect(getMessages).not.toHaveBeenCalled();
   });
 
   it('rejects oversized route identifiers before reading storage', async () => {
-    const getConvo = jest.fn();
+    const getConvoOwnership = jest.fn();
     const getSubagentThreadForParent = jest.fn();
     const getMessages = jest.fn();
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent,
       getMessages,
     });
@@ -337,15 +356,15 @@ describe('subagent thread parent-scoped view', () => {
     await handler(createRequest({ threadId: 'x'.repeat(257) }), response);
 
     expect(status).toHaveBeenCalledWith(404);
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvoOwnership).not.toHaveBeenCalled();
     expect(getSubagentThreadForParent).not.toHaveBeenCalled();
     expect(getMessages).not.toHaveBeenCalled();
   });
 
   it('marks an unleased running seed as interrupted', async () => {
-    const getConvo = jest.fn().mockResolvedValue(parent);
+    const getConvoOwnership = jest.fn().mockResolvedValue(parent);
     const handler = createSubagentThreadViewHandler({
-      getConvo,
+      getConvoOwnership,
       getSubagentThreadForParent: jest
         .fn()
         .mockResolvedValue({ ...child, subagentThreadLease: undefined }),

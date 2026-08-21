@@ -18,7 +18,7 @@ const SUBAGENT_TASK_SELECT = `${CLIENT_MESSAGE_SELECT} +subagentTask`;
 
 type SubagentThreadViewDependencies = Pick<
   ConversationMethods,
-  'getConvo' | 'getSubagentThreadForParent'
+  'getConvoOwnership' | 'getSubagentThreadForParent'
 > &
   Pick<MessageMethods, 'getMessages'>;
 
@@ -145,7 +145,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
     try {
       const now = new Date();
       const [parent, child] = await Promise.all([
-        deps.getConvo(userId, parentConversationId),
+        deps.getConvoOwnership(userId, parentConversationId),
         deps.getSubagentThreadForParent({
           user: userId,
           parentConversationId,
@@ -167,7 +167,11 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
       }
 
       const messages = await deps.getMessages(
-        { conversationId: threadId, user: userId },
+        {
+          conversationId: threadId,
+          user: userId,
+          ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+        },
         SUBAGENT_TASK_SELECT,
         { limit: MAX_THREAD_MESSAGES + 1, sort: { createdAt: -1, _id: -1 } },
       );
@@ -220,9 +224,14 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
   };
 }
 
-export const SUBAGENT_THREAD_VIEW_LIMITS = {
+export const SUBAGENT_THREAD_VIEW_LIMITS: Readonly<{
+  messages: number;
+  messageTextBytes: number;
+  responseTextBytes: number;
+  responseBytes: number;
+}> = {
   messages: MAX_THREAD_MESSAGES,
   messageTextBytes: MAX_MESSAGE_TEXT_BYTES,
   responseTextBytes: MAX_RESPONSE_TEXT_BYTES,
   responseBytes: MAX_RESPONSE_BYTES,
-} as const;
+};

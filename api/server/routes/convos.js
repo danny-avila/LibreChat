@@ -35,7 +35,7 @@ const assistantClients = {
 const router = express.Router();
 const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
 const subagentThreadViewHandler = createSubagentThreadViewHandler({
-  getConvo: db.getConvo,
+  getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
   getMessages: db.getMessages,
 });
