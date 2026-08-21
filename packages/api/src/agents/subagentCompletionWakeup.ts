@@ -25,6 +25,7 @@ const ORCHESTRATION_TASK_SELECT =
   'messageId conversationId sender isCreatedByUser createdAt updatedAt +subagentTask';
 const MAX_ORCHESTRATION_TASKS = 16;
 const MAX_ORCHESTRATION_CANDIDATES = MAX_ORCHESTRATION_TASKS * 2 + 1;
+const MAX_ORCHESTRATION_ACTIVE_LEASES = 200;
 const MAX_ORCHESTRATION_SNAPSHOT_CHARS = 8 * 1_024;
 
 export type EnqueueAgentTrigger = (
@@ -33,6 +34,7 @@ export type EnqueueAgentTrigger = (
 ) => Promise<unknown>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
+  Pick<ConversationMethods, 'listActiveSubagentThreadLeases'> &
   Pick<
     MessageMethods,
     'claimSubagentTaskResult' | 'getMessages' | 'releaseSubagentTaskResultClaim'
@@ -49,6 +51,7 @@ interface GenerationState {
 type SubagentTaskStatus = NonNullable<IMessage['subagentTask']>['status'];
 
 interface OrchestrationTaskCandidate {
+  attemptKey: string;
   taskId: string;
   threadId: string;
   status: SubagentTaskStatus;
@@ -174,11 +177,15 @@ function candidateFromMessage(message: IMessage): OrchestrationTaskCandidate | u
   const taskId = taskIdFromMessage(message);
   const threadId = message.conversationId;
   const status = message.subagentTask?.status;
+  const attemptKey = message.subagentTask?.attemptKey;
   if (
     taskId == null ||
     typeof threadId !== 'string' ||
     threadId.length === 0 ||
     threadId.length > 256 ||
+    typeof attemptKey !== 'string' ||
+    attemptKey.length === 0 ||
+    attemptKey.length > 256 ||
     status == null
   ) {
     return;
@@ -191,6 +198,7 @@ function candidateFromMessage(message: IMessage): OrchestrationTaskCandidate | u
     return;
   }
   return {
+    attemptKey,
     taskId,
     threadId,
     status,
@@ -244,18 +252,52 @@ async function resolveOrchestrationSnapshot(
     };
   }
 
-  let messages: IMessage[];
-  try {
-    messages = await methods.getMessages(
+  const [terminalResult, leaseResult] = await Promise.allSettled([
+    methods.getMessages(
       {
         user: input.userId,
         'subagentTask.parentRunId': input.parentMessageId,
-        'subagentTask.status': { $in: ['running', 'completed', 'error', 'cancelled'] },
+        'subagentTask.status': { $in: ['completed', 'error', 'cancelled'] },
       },
       ORCHESTRATION_TASK_SELECT,
       { sort: { updatedAt: -1, _id: -1 }, limit: MAX_ORCHESTRATION_CANDIDATES },
-    );
-  } catch {
+    ),
+    methods.listActiveSubagentThreadLeases({
+      user: input.userId,
+      now: new Date(),
+      ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+    }),
+  ]);
+  const readUncertain = terminalResult.status === 'rejected' || leaseResult.status === 'rejected';
+  const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
+  const activeLeases =
+    leaseResult.status === 'fulfilled'
+      ? leaseResult.value.filter(
+          (lease) => lease.parentConversationId === input.parentConversationId,
+        )
+      : [];
+  const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
+  let activeMessages: IMessage[] = [];
+  let activeReadUncertain = false;
+  if (boundedActiveLeases.length > 0) {
+    try {
+      activeMessages = await methods.getMessages(
+        {
+          user: input.userId,
+          messageId: {
+            $in: boundedActiveLeases.map(({ taskId }) => `${taskId}:user`),
+          },
+          'subagentTask.parentRunId': input.parentMessageId,
+          'subagentTask.status': 'running',
+        },
+        ORCHESTRATION_TASK_SELECT,
+        { sort: false, limit: MAX_ORCHESTRATION_TASKS + 1 },
+      );
+    } catch {
+      activeReadUncertain = true;
+    }
+  }
+  if (terminalMessages.length === 0 && activeMessages.length === 0 && readUncertain) {
     const lineage = input.currentThread.subagentThread;
     if (lineage == null) {
       return {
@@ -282,21 +324,30 @@ async function resolveOrchestrationSnapshot(
     };
   }
 
-  const byTaskId = new Map<string, OrchestrationTaskCandidate>();
-  for (const message of messages) {
+  const byAttemptKey = new Map<string, OrchestrationTaskCandidate>();
+  for (const message of [...activeMessages, ...terminalMessages]) {
     const candidate = candidateFromMessage(message);
     if (candidate == null) {
       continue;
     }
-    byTaskId.set(candidate.taskId, preferCandidate(byTaskId.get(candidate.taskId), candidate));
+    byAttemptKey.set(
+      candidate.attemptKey,
+      preferCandidate(byAttemptKey.get(candidate.attemptKey), candidate),
+    );
   }
-  byTaskId.set(input.currentTaskId, currentCandidate);
+  byAttemptKey.set(currentCandidate.attemptKey, currentCandidate);
 
-  const candidates = [...byTaskId.values()].sort((left, right) => {
+  const candidates = [...byAttemptKey.values()].sort((left, right) => {
     if (left.taskId === input.currentTaskId) {
       return -1;
     }
     if (right.taskId === input.currentTaskId) {
+      return 1;
+    }
+    if (left.status === 'running' && right.status !== 'running') {
+      return -1;
+    }
+    if (right.status === 'running' && left.status !== 'running') {
       return 1;
     }
     const time = right.updatedAt - left.updatedAt;
@@ -353,10 +404,12 @@ async function resolveOrchestrationSnapshot(
   return {
     tasks,
     candidateLimitReached:
-      messages.length === MAX_ORCHESTRATION_CANDIDATES ||
+      terminalMessages.length === MAX_ORCHESTRATION_CANDIDATES ||
+      activeLeases.length > MAX_ORCHESTRATION_ACTIVE_LEASES ||
+      activeMessages.length === MAX_ORCHESTRATION_TASKS + 1 ||
       candidates.length > MAX_ORCHESTRATION_TASKS,
     lineageUncertain,
-    readUncertain: false,
+    readUncertain: readUncertain || activeReadUncertain,
   };
 }
 
@@ -388,7 +441,11 @@ function renderOrchestrationSnapshot(
       completeness: completeness(),
       known_children: knownChildren,
       omitted_known_children: omitted,
-      additional_children_may_exist: resolution.candidateLimitReached || resolution.readUncertain,
+      additional_children_may_exist:
+        resolution.candidateLimitReached ||
+        resolution.readUncertain ||
+        resolution.lineageUncertain ||
+        omitted > 0,
       note: note(),
     });
   let rendered = serialize();

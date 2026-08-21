@@ -16,9 +16,11 @@ const NOW = 1_775_000_000_000;
 
 interface TestMessageFilter {
   conversationId?: string;
+  messageId?: { $in: string[] };
   user?: string;
   'subagentTask.parentRunId'?: string;
   'subagentTask.attemptKey'?: string;
+  'subagentTask.status'?: string | { $in: string[] };
 }
 
 function enqueueMock(): jest.MockedFunction<EnqueueAgentTrigger> {
@@ -213,6 +215,11 @@ function resolverMethods() {
             },
             terminal,
           ],
+    ),
+    listActiveSubagentThreadLeases: jest.fn(
+      async (): Promise<
+        Array<{ conversationId: string; parentConversationId: string; taskId: string }>
+      > => [],
     ),
     claimSubagentTaskResult: jest.fn(async () => ({ status: 'acquired', message: terminal })),
     releaseSubagentTaskResultClaim: jest.fn(async () => true),
@@ -427,7 +434,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
         ];
       }
       if (filter['subagentTask.parentRunId'] === 'response-1') {
-        return siblingMessages.slice(0, 33);
+        return siblingMessages.slice(0, 12);
       }
       return [
         {
@@ -464,9 +471,122 @@ describe('createSubagentCompletionWakeupResolver', () => {
     );
 
     expect(snapshot.value.known_children.length).toBeLessThanOrEqual(16);
+    expect(snapshot.value.known_children.length).toBeLessThan(13);
     expect(snapshot.rendered.length).toBeLessThanOrEqual(8 * 1_024);
     expect(snapshot.value.completeness).toBe('bounded');
     expect(snapshot.value.additional_children_may_exist).toBe(true);
+  });
+
+  it('keeps an older actively leased child ahead of newer settled siblings', async () => {
+    const { methods, terminal } = resolverMethods();
+    const settled = Array.from({ length: 20 }, (_, index) => ({
+      ...terminal,
+      messageId: `settled-${index}:assistant`,
+      conversationId: `thread-settled-${index}`,
+      sender: `settled-agent-${index}`,
+      createdAt: new Date(NOW - index),
+      updatedAt: new Date(NOW - index),
+      subagentTask: {
+        attemptKey: `settled-attempt-${index}`,
+        parentRunId: 'response-1',
+        status: 'completed' as const,
+      },
+    }));
+    const running = {
+      ...terminal,
+      messageId: 'running-task:user',
+      conversationId: 'thread-running',
+      sender: 'User',
+      createdAt: new Date(NOW - 10_000),
+      updatedAt: new Date(NOW - 10_000),
+      subagentTask: {
+        attemptKey: 'running-attempt',
+        parentRunId: 'response-1',
+        status: 'running' as const,
+      },
+    };
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-running',
+        parentConversationId: 'conversation-1',
+        taskId: 'running-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [running];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal, ...settled];
+      }
+      return [
+        {
+          messageId: 'task-1:user',
+          conversationId: 'thread-1',
+          isCreatedByUser: true,
+        },
+        terminal,
+      ];
+    });
+    methods.getConvo.mockImplementation(async (_userId: string, conversationId: string) => {
+      if (conversationId === 'conversation-1') {
+        return { conversationId, tenantId: 'tenant-1' };
+      }
+      const settledIndex = /^thread-settled-(\d+)$/.exec(conversationId)?.[1];
+      let subagentType = 'researcher';
+      if (conversationId === 'thread-running') {
+        subagentType = 'running-agent';
+      } else if (settledIndex != null) {
+        subagentType = `settled-agent-${settledIndex}`;
+      }
+      return {
+        conversationId,
+        tenantId: 'tenant-1',
+        subagentThread: {
+          parentConversationId: 'conversation-1',
+          parentMessageId: 'response-1',
+          parentAgentId: 'agent_parent_1',
+          subagentType,
+        },
+      };
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children.slice(0, 2)).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+      expect.objectContaining({
+        background_task_id: 'running-task',
+        status: 'running',
+        result_state: 'pending',
+      }),
+    ]);
   });
 
   it('omits sibling task records outside the authorized parent lineage', async () => {
@@ -582,6 +702,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
       snapshot.value.known_children.map(({ background_task_id }) => background_task_id),
     ).toEqual(['task-1', 'valid']);
     expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
     expect(snapshot.value.note).toContain('Do not infer that no other children ran');
     expect(snapshot.rendered).not.toContain('wrong-tenant');
     expect(snapshot.rendered).not.toContain('wrong-parent');
@@ -731,6 +852,11 @@ describe('createSubagentCompletionWakeupResolver', () => {
       status: 'ready',
       input: expect.stringContaining('"background_task_id":"task-2"'),
     });
+    expect(
+      orchestrationSnapshot(prepared).value.known_children.map(
+        ({ background_task_id }) => background_task_id,
+      ),
+    ).toEqual(['task-2']);
     expect(methods.claimSubagentTaskResult).toHaveBeenCalledWith({
       userId: 'user-1',
       conversationId: 'thread-1',
