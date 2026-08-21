@@ -9,10 +9,10 @@ const {
   handleFilesUsageRequest,
   shouldUseUploadSse,
   startUploadSseStream,
+  sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
-  isContentFilterError,
   inspectContent,
   extractFileContent,
   isBinaryBuffer,
@@ -835,18 +835,12 @@ router.post('/', async (req, res) => {
     openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
-    if (isContentFilterError(error)) {
-      if (sseStream) {
-        sseStream.sendError({
-          ...error.body,
-          code: error.statusCode,
-          temp_file_id: metadata.temp_file_id,
-          tool_resource: metadata.tool_resource,
-          display_to_user: true,
-        });
-      } else {
-        res.status(error.statusCode).json(error.body);
-      }
+    if (
+      sendUploadPolicyError(res, sseStream, error, {
+        tempFileId: metadata.temp_file_id,
+        toolResource: metadata.tool_resource,
+      })
+    ) {
       return;
     }
     const contentProtectionActive =

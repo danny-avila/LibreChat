@@ -35,6 +35,7 @@ jest.mock('fs', () => {
 
 const fs = require('fs');
 const { processAgentFileUpload, processImageFile } = require('~/server/services/Files/process');
+const { UninspectableFileError } = require('@librechat/api');
 
 const router = require('~/server/routes/files/images');
 
@@ -238,6 +239,50 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
 
     expect(response.status).toBe(200);
     expect(processAgentFileUpload).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a deferred extracted-text policy error from image processing', async () => {
+    await createAgent({
+      id: agentCustomId,
+      name: 'Test Agent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: authorId,
+    });
+    processAgentFileUpload.mockRejectedValueOnce(new UninspectableFileError('extracted_text'));
+    const app = createAppWithUser(authorId, SystemRoles.USER, {
+      filters: {
+        files: {
+          pii: {
+            fields: ['extracted_text'],
+            starterPatterns: [],
+            customPatterns: [],
+            uninspectable: 'block',
+          },
+        },
+      },
+      fileConfig: {
+        ocr: { supportedMimeTypes: ['image/png'] },
+      },
+      ocr: {},
+    });
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'content_filter_uninspectable',
+      message: 'Submitted file content could not be inspected before processing.',
+      source: 'file',
+      field: 'extracted_text',
+    });
+    expect(fs.promises.unlink).toHaveBeenCalledWith(`/tmp/images/${authorId.toString()}/test.png`);
+    expect(fs.promises.unlink).toHaveBeenCalledWith('/tmp/t.png');
   });
 
   it('blocks extracted-text fail-close when configured OCR does not support the image MIME type', async () => {

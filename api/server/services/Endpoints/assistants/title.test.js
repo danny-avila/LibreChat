@@ -3,23 +3,15 @@ const mockCache = {
 };
 const mockSaveConvo = jest.fn();
 const mockInitializeClient = jest.fn();
-const mockInspectContent = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: (value) => value === true || value === 'true',
   sanitizeTitle: (title) => title,
-  extractConversationTitleContent: ({ title }) => [
-    { source: 'conversation_title', field: 'title', text: title },
-  ],
-  inspectContent: (...args) => mockInspectContent(...args),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
 }));
 
 jest.mock('~/cache/getLogStores', () => jest.fn(() => mockCache));
@@ -38,7 +30,6 @@ const addTitle = require('./title');
 describe('assistants addTitle content policy', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockInspectContent.mockReturnValue(null);
   });
 
   it('replaces a blocked generated title before caching or saving it', async () => {
@@ -48,9 +39,6 @@ describe('assistants addTitle content policy', () => {
     mockInitializeClient.mockResolvedValue({
       openai: { chat: { completions: { create } } },
     });
-    mockInspectContent.mockImplementation((fragments) =>
-      fragments[0]?.text === 'BLOCKED-GENERATED-TITLE' ? { detectorId: 'pii-pattern' } : null,
-    );
     const req = {
       user: { id: 'user-1' },
       body: {},
@@ -88,9 +76,6 @@ describe('assistants addTitle content policy', () => {
     mockInitializeClient.mockResolvedValue({
       openai: { chat: { completions: { create } } },
     });
-    mockInspectContent.mockImplementation((fragments) =>
-      fragments[0]?.text === 'BLOCKED-SUBMISSION' ? { detectorId: 'pii-pattern' } : null,
-    );
     const req = {
       user: { id: 'user-1' },
       body: {},

@@ -7,23 +7,15 @@ const mockCache = {
   delete: jest.fn((key) => mockCacheStore.delete(key)),
 };
 const mockSaveConvo = jest.fn();
-const mockInspectContent = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  ...jest.requireActual('@librechat/api'),
   isEnabled: (val) => val === true || val === 'true',
   sanitizeTitle: (title) => title,
-  extractConversationTitleContent: ({ title }) => [
-    { source: 'conversation_title', field: 'title', text: title },
-  ],
-  inspectContent: (...args) => mockInspectContent(...args),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
-}));
-
-jest.mock('librechat-data-provider', () => ({
-  CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
 }));
 
 jest.mock('~/cache/getLogStores', () => jest.fn(() => mockCache));
@@ -47,7 +39,6 @@ describe('agents addTitle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCacheStore.clear();
-    mockInspectContent.mockReturnValue(null);
   });
 
   it('uses the explicit conversationId for the cache key and saveConvo (immediate mode)', async () => {
@@ -199,10 +190,6 @@ describe('agents addTitle', () => {
       },
     };
     const onTitleGenerated = jest.fn();
-    mockInspectContent.mockImplementation((fragments) =>
-      fragments[0]?.text === 'BLOCKED-TITLE' ? { detectorId: 'pii-pattern' } : null,
-    );
-
     await addTitle(req, {
       text: 'hello',
       client,

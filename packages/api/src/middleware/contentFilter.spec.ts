@@ -5,6 +5,7 @@ import {
   contentFilterBlockResponse,
   contentFilterModelBoundBlockResponse,
   createContentFilter,
+  getContentFilterError,
   isContentFilterError,
 } from './contentFilter';
 import {
@@ -401,6 +402,9 @@ describe('contentFilter middleware', () => {
   it('classifies the raw-free opaque error for existing import error handling', () => {
     expect(isContentFilterError(new UninspectableFileError('content'))).toBe(true);
     expect(isContentFilterError(new ContentTraversalLimitError())).toBe(true);
+    const policyError = new UninspectableFileError('transcript');
+    const wrapped = new Error('wrapped', { cause: policyError });
+    expect(getContentFilterError(wrapped)).toBe(policyError);
     const fragment: TextContentFragment = {
       id: 'secret',
       path: '/secret',

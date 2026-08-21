@@ -6,6 +6,7 @@ const {
   getSafeErrorMetadata,
   shouldUseUploadSse,
   startUploadSseStream,
+  sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   inspectContent,
@@ -96,15 +97,6 @@ router.post('/', async (req, res) => {
     // TODO: delete remote file if it exists
     logger.error('[/files/images] Error processing file:', getSafeErrorMetadata(error));
 
-    const contentProtectionActive =
-      hasActiveFilePolicy(req.config?.filters) ||
-      hasActivePiiPatterns(req.config?.messageFilter?.pii);
-    const message = resolveUploadErrorMessage(
-      error,
-      'Error processing file',
-      contentProtectionActive,
-    );
-
     try {
       const filepath = path.join(
         appConfig.paths.imageOutput,
@@ -115,6 +107,22 @@ router.post('/', async (req, res) => {
     } catch (cleanupError) {
       logger.error('[/files/images] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
+    if (
+      sendUploadPolicyError(res, sseStream, error, {
+        tempFileId: metadata.temp_file_id,
+        toolResource: metadata.tool_resource,
+      })
+    ) {
+      return;
+    }
+    const contentProtectionActive =
+      hasActiveFilePolicy(req.config?.filters) ||
+      hasActivePiiPatterns(req.config?.messageFilter?.pii);
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
     if (sseStream) {
       sseStream.sendError({
         message,
