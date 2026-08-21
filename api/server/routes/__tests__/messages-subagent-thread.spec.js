@@ -13,6 +13,7 @@ jest.mock('@librechat/api', () => ({
   mergeQuotedTextForCount: jest.fn((text) => text),
   CHILD_THREAD_READ_ONLY_ERROR: 'This subagent thread is view-only.',
   isSubagentThreadWriteBlocked: (...args) => mockIsSubagentThreadWriteBlocked(...args),
+  requireFeedbackEnabled: (req, res, next) => next(),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
