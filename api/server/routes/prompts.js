@@ -9,8 +9,10 @@ const {
   safeValidatePromptGroupUpdate,
   createEmptyPromptGroupsResponse,
   filterAccessibleIdsBySharedLogic,
-  inspectContent,
-  extractPromptContent,
+  inspectPromptContent,
+  projectStoredPrompts,
+  projectStoredPromptGroup,
+  projectStoredPromptGroups,
   contentFilterBlockResponse,
 } = require('@librechat/api');
 const {
@@ -54,70 +56,13 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 
 const router = express.Router();
 
-const getFilteredPromptContent = (req, promptData) => {
-  if (req.config?.filters == null) {
-    return null;
-  }
-  return inspectContent(extractPromptContent(promptData), {
-    filters: req.config.filters,
-  });
-};
-
 const blockFilteredPromptContent = (req, res, promptData) => {
-  const finding = getFilteredPromptContent(req, promptData);
+  const finding = inspectPromptContent(promptData, req.config?.filters);
   if (finding == null) {
     return false;
   }
   res.status(400).json(contentFilterBlockResponse(finding));
   return true;
-};
-
-/**
- * Removes user-authored prompt fields from an older stored record that no
- * longer satisfies the active prompt policy. Structural fields remain so an
- * editor can select the version and replace it with a compliant one.
- */
-const redactFilteredStoredPrompt = (req, prompt) => {
-  if (prompt == null || getFilteredPromptContent(req, { prompt }) == null) {
-    return prompt;
-  }
-
-  const {
-    name: _name,
-    description: _description,
-    oneliner: _oneliner,
-    category: _category,
-    command: _command,
-    prompt: _prompt,
-    ...metadata
-  } = prompt;
-  return {
-    ...metadata,
-    prompt: '',
-    contentFilterBlocked: true,
-  };
-};
-
-/**
- * Prompt group metadata is required to identify a group, so groups whose
- * metadata is blocked are omitted from collection responses. A blocked
- * production prompt can be redacted in management responses, while the reuse
- * response omits the group entirely.
- */
-const prepareStoredPromptGroup = (req, group, { forReuse = false } = {}) => {
-  if (group == null || getFilteredPromptContent(req, { group }) != null) {
-    return null;
-  }
-
-  const productionPrompt = redactFilteredStoredPrompt(req, group.productionPrompt);
-  if (forReuse && productionPrompt?.contentFilterBlocked === true) {
-    return null;
-  }
-
-  return {
-    ...group,
-    productionPrompt,
-  };
 };
 
 const checkPromptAccess = generateCheckAccess({
@@ -164,7 +109,7 @@ router.get(
         return;
       }
 
-      res.status(200).send(prepareStoredPromptGroup(req, group));
+      res.status(200).send(projectStoredPromptGroup(group, req.config?.filters));
     } catch (error) {
       logger.error('Error getting prompt group', error);
       res.status(500).send({ message: 'Error getting prompt group' });
@@ -221,9 +166,9 @@ router.get('/all', configMiddleware, async (req, res) => {
       return res.status(200).send([]);
     }
 
-    const readablePromptGroups = promptGroups
-      .map((group) => prepareStoredPromptGroup(req, group, { forReuse: true }))
-      .filter(Boolean);
+    const readablePromptGroups = projectStoredPromptGroups(promptGroups, req.config?.filters, {
+      forReuse: true,
+    });
     const groupsWithPublicFlag = markPublicPromptGroups(
       readablePromptGroups,
       publiclyAccessibleIds,
@@ -303,9 +248,7 @@ router.get('/groups', configMiddleware, async (req, res) => {
     }
 
     const { data: promptGroups = [], has_more = false, after = null } = result;
-    const readablePromptGroups = promptGroups
-      .map((group) => prepareStoredPromptGroup(req, group))
-      .filter(Boolean);
+    const readablePromptGroups = projectStoredPromptGroups(promptGroups, req.config?.filters);
     const groupsWithPublicFlag = markPublicPromptGroups(
       readablePromptGroups,
       publiclyAccessibleIds,
@@ -584,7 +527,7 @@ router.get('/', configMiddleware, async (req, res) => {
       // If user has access, fetch all prompts in the group (not just their own)
       const prompts = await getPrompts({ groupId: new ObjectId(groupId) });
       const readablePrompts = Array.isArray(prompts)
-        ? prompts.map((prompt) => redactFilteredStoredPrompt(req, prompt))
+        ? projectStoredPrompts(prompts, req.config?.filters)
         : prompts;
       return res.status(200).send(readablePrompts);
     }
@@ -603,7 +546,7 @@ router.get('/', configMiddleware, async (req, res) => {
     }
     const prompts = await getPrompts(query);
     const readablePrompts = Array.isArray(prompts)
-      ? prompts.map((prompt) => redactFilteredStoredPrompt(req, prompt))
+      ? projectStoredPrompts(prompts, req.config?.filters)
       : prompts;
     res.status(200).send(readablePrompts);
   } catch (error) {

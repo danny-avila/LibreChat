@@ -31,6 +31,7 @@ interface SupportContactInput {
 export interface ModelParameterContentInput {
   readonly stop?: unknown;
   readonly additionalModelRequestFields?: unknown;
+  readonly additional_model_request_fields?: unknown;
   readonly response_format?: unknown;
   readonly responseFormat?: unknown;
   readonly metadata?: unknown;
@@ -92,7 +93,7 @@ export interface AssistantActionContentInput {
   readonly metadata?: ActionMetadataContentInput | null;
 }
 
-interface PromptRecordInput {
+export interface PromptRecordInput {
   readonly prompt?: string;
   readonly name?: string;
   readonly description?: string;
@@ -560,27 +561,6 @@ export function extractModelParameterContent(
   return fragments;
 }
 
-function appendTraversalAwareContent(
-  fragments: TextContentFragment[],
-  extract: () => readonly TextContentFragment[],
-): void {
-  try {
-    fragments.push(...extract());
-  } catch (error) {
-    if (error instanceof ContentTraversalLimitError) {
-      prependContentTraversalFragments(error, fragments);
-    }
-    throw error;
-  }
-}
-
-function appendModelParameterContent(
-  fragments: TextContentFragment[],
-  input: ModelParameterContentInput | null | undefined,
-): void {
-  appendTraversalAwareContent(fragments, () => extractModelParameterContent(input));
-}
-
 export function visitBoundedSubmittedArray<Value>(
   candidate: unknown,
   budget: VisitNestedStringsBudget,
@@ -1020,12 +1000,24 @@ function appendPresetDefinitionContent(
   }
 }
 
-export function extractPresetContent(
+export function extractPresetPromptContent(
   input: PresetContentInput | null | undefined,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   appendPresetDefinitionContent(fragments, input);
-  appendModelParameterContent(fragments, input);
+  return fragments;
+}
+
+export function extractPresetContent(
+  input: PresetContentInput | null | undefined,
+): readonly TextContentFragment[] {
+  const fragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  collectTraversalAwareContent(fragments, traversalErrors, () => extractPresetPromptContent(input));
+  collectTraversalAwareContent(fragments, traversalErrors, () =>
+    extractModelParameterContent(input),
+  );
+  throwCollectedTraversalErrors(fragments, traversalErrors);
   return fragments;
 }
 

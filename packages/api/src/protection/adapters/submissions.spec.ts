@@ -1867,6 +1867,38 @@ describe('submitted content adapters', () => {
     ).toBe(true);
   });
 
+  it('continues preset model-parameter extraction after prompt traversal overflow', () => {
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extractPresetContent({
+        examples: Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES + 1 }, () => ({
+          input: 'Safe input',
+          output: 'Safe output',
+        })),
+        options: { routing: 'PRIVATE-MODEL-PARAMETER' },
+      });
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      traversalError = error;
+    }
+
+    expect(getContentTraversalScopes(traversalError as ContentTraversalLimitError)).toContainEqual({
+      source: 'prompt',
+      fields: ['example_input', 'example_output'],
+    });
+    expect(
+      getContentTraversalFragments(traversalError as ContentTraversalLimitError),
+    ).toContainEqual(
+      expect.objectContaining({
+        source: 'model_parameter',
+        field: 'request_fields',
+        text: 'PRIVATE-MODEL-PARAMETER',
+      }),
+    );
+  });
+
   it('bounds normal acyclic tool serialization before reading deeper values', () => {
     interface NestedArguments {
       nested?: NestedArguments;

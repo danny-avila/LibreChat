@@ -1,4 +1,9 @@
-import { visitNestedStrings } from './nested';
+import type { FiltersConfig } from 'librechat-data-provider';
+import {
+  ContentTraversalLimitError,
+  isContentTraversalProtected,
+  visitNestedStrings,
+} from './nested';
 
 describe('visitNestedStrings', () => {
   it.each([Number.NaN, -1])(
@@ -41,5 +46,46 @@ describe('visitNestedStrings', () => {
     expect(visitNestedStrings(value, '/value', (text) => values.push(text))).toBe(true);
     expect(values).toEqual(['retained']);
     expect(lengthReads).toBe(1);
+  });
+});
+
+describe('isContentTraversalProtected', () => {
+  it.each([
+    {
+      source: 'prompt' as const,
+      error: new ContentTraversalLimitError([], [{ source: 'prompt', fields: ['example_input'] }]),
+      filters: {
+        prompts: { pii: { fields: ['example_input'], starterPatterns: ['sk_prefix'] } },
+      } satisfies FiltersConfig,
+    },
+    {
+      source: 'conversation_starter' as const,
+      error: new ContentTraversalLimitError(
+        [],
+        [{ source: 'conversation_starter', fields: ['text'] }],
+      ),
+      filters: {
+        conversationStarters: { pii: { fields: ['text'], starterPatterns: ['sk_prefix'] } },
+      } satisfies FiltersConfig,
+    },
+    {
+      source: 'conversation_title' as const,
+      error: new ContentTraversalLimitError(
+        [],
+        [{ source: 'conversation_title', fields: ['title'] }],
+      ),
+      filters: {
+        conversationTitles: { pii: { fields: ['title'], starterPatterns: ['sk_prefix'] } },
+      } satisfies FiltersConfig,
+    },
+    {
+      source: 'feedback' as const,
+      error: new ContentTraversalLimitError([], [{ source: 'feedback', fields: ['text'] }]),
+      filters: {
+        feedback: { pii: { fields: ['text'], starterPatterns: ['sk_prefix'] } },
+      } satisfies FiltersConfig,
+    },
+  ])('fails closed for bounded $source traversal selected by policy', ({ error, filters }) => {
+    expect(isContentTraversalProtected({ error, filters })).toBe(true);
   });
 });

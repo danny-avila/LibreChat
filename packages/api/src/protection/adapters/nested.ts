@@ -292,6 +292,7 @@ export function isContentTraversalProtected(params: {
     isScopedTraversalProtected(scopes, 'tool_argument', params.filters?.toolArguments?.pii) ||
     isScopedTraversalProtected(scopes, 'message', params.filters?.messages?.pii) ||
     isScopedTraversalProtected(scopes, 'assembled_context', params.filters?.messages?.pii) ||
+    isScopedTraversalProtected(scopes, 'prompt', params.filters?.prompts?.pii) ||
     isScopedTraversalProtected(scopes, 'memory', params.filters?.memories?.pii) ||
     isScopedFileTraversalProtected(scopes, params.filters?.files?.pii) ||
     isScopedTraversalProtected(
@@ -299,6 +300,17 @@ export function isContentTraversalProtected(params: {
       'agent_instruction',
       params.filters?.agentInstructions?.pii,
     ) ||
+    isScopedTraversalProtected(
+      scopes,
+      'conversation_starter',
+      params.filters?.conversationStarters?.pii,
+    ) ||
+    isScopedTraversalProtected(
+      scopes,
+      'conversation_title',
+      params.filters?.conversationTitles?.pii,
+    ) ||
+    isScopedTraversalProtected(scopes, 'feedback', params.filters?.feedback?.pii) ||
     isScopedTraversalProtected(scopes, 'skill', params.filters?.skills?.pii) ||
     isScopedTraversalProtected(scopes, 'action_metadata', params.filters?.actionMetadata?.pii)
   ) {

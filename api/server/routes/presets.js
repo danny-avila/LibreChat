@@ -4,10 +4,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   createContentFilter,
   extractPresetContent,
-  getContentTraversalFragments,
-  inspectContent,
-  isContentTraversalLimitError,
-  isContentTraversalProtected,
+  projectStoredPresets,
 } = require('@librechat/api');
 const { getPresets, savePreset, deletePresets } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
@@ -18,83 +15,10 @@ const filterPresetContent = createContentFilter({
   extract: (req) => extractPresetContent(req.body),
 });
 
-const isPresetContentFiltered = (req, preset) => {
-  if (req.config?.filters == null) {
-    return false;
-  }
-  let fragments;
-  let traversalError;
-  try {
-    fragments = extractPresetContent(preset);
-  } catch (error) {
-    if (!isContentTraversalLimitError(error)) {
-      throw error;
-    }
-    fragments = getContentTraversalFragments(error);
-    traversalError = error;
-  }
-  const finding = inspectContent(fragments, {
-    filters: req.config.filters,
-  });
-  return (
-    finding != null ||
-    (traversalError != null &&
-      isContentTraversalProtected({
-        error: traversalError,
-        filters: req.config.filters,
-      }))
-  );
-};
-
-/**
- * Removes policy-covered fields from an older stored preset that no longer
- * satisfies the active policy. Structural fields remain so the preset can
- * still be selected for replacement or deletion.
- */
-const redactFilteredStoredPreset = (req, preset) => {
-  if (preset == null || !isPresetContentFiltered(req, preset)) {
-    return preset;
-  }
-
-  const {
-    name: _name,
-    description: _description,
-    oneliner: _oneliner,
-    category: _category,
-    command: _command,
-    prompt: _prompt,
-    title: _title,
-    promptPrefix: _promptPrefix,
-    system: _system,
-    context: _context,
-    instructions: _instructions,
-    additional_instructions: _additionalInstructions,
-    greeting: _greeting,
-    examples: _examples,
-    stop: _stop,
-    additionalModelRequestFields: _additionalModelRequestFields,
-    additional_model_request_fields: _additionalModelRequestFieldsSnakeCase,
-    response_format: _responseFormat,
-    responseFormat: _responseFormatCamelCase,
-    metadata: _metadata,
-    model_parameters: _modelParameters,
-    options: _options,
-    ...structuralFields
-  } = preset;
-
-  return {
-    ...structuralFields,
-    title: '',
-    contentFilterBlocked: true,
-  };
-};
-
 router.use(requireJwtAuth);
 
 router.get('/', configMiddleware, async (req, res) => {
-  const presets = (await getPresets(req.user.id)).map((preset) =>
-    redactFilteredStoredPreset(req, preset),
-  );
+  const presets = projectStoredPresets(await getPresets(req.user.id), req.config?.filters);
   res.status(200).json(presets);
 });
 

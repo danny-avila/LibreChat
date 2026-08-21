@@ -703,7 +703,7 @@ describe('message route conversation ownership filters', () => {
     });
   });
 
-  it('filters indexed edits after recombining all persisted content parts', async () => {
+  it('filters the finalized indexed edit without rescanning persisted siblings', async () => {
     const finding = {
       detectorId: 'pii-pattern',
       ruleId: 'assembled-secret',
@@ -737,10 +737,7 @@ describe('message route conversation ownership filters', () => {
 
     expect(response.status).toBe(400);
     expect(extractStoredMessageContent).toHaveBeenLastCalledWith({
-      content: [
-        { type: 'text', text: 'api-key:' },
-        { type: 'text', text: 'secret' },
-      ],
+      content: [{ type: 'text', text: 'secret' }],
     });
     expect(updateMessage).not.toHaveBeenCalled();
   });

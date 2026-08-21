@@ -137,6 +137,38 @@ describe('preset content filtering', () => {
     expect(JSON.stringify(response.body)).not.toContain('PRIVATE-ROUTE');
   });
 
+  it('fails closed when selected stored preset fields exceed bounded traversal', async () => {
+    mockGetPresets.mockResolvedValue([
+      {
+        presetId: 'oversized-examples',
+        title: 'Safe title',
+        endpoint: 'openAI',
+        examples: Array.from({ length: 4_097 }, () => ({
+          input: 'Safe input',
+          output: 'Safe output',
+        })),
+      },
+    ]);
+    mockAppConfig = {
+      filters: {
+        prompts: {
+          pii: { ...privatePattern, fields: ['example_input'] },
+        },
+      },
+    };
+
+    const response = await request(app).get('/api/presets').expect(200);
+
+    expect(response.body).toEqual([
+      {
+        presetId: 'oversized-examples',
+        title: '',
+        endpoint: 'openAI',
+        contentFilterBlocked: true,
+      },
+    ]);
+  });
+
   it('does not apply a message-only policy to stored preset content', async () => {
     const storedPreset = {
       presetId: 'preset-1',

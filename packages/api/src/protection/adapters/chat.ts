@@ -1,15 +1,15 @@
 import type { ContentFieldMap, ContentSource, TextContentFragment } from '../types';
 import type { ModelParameterContentInput } from './submissions';
 import {
-  ContentTraversalLimitError,
-  getContentTraversalFragments,
-  getContentTraversalScopes,
-} from './nested';
-import {
   extractModelParameterContent,
   extractToolArgumentContent,
   visitBoundedSubmittedArray,
 } from './submissions';
+import {
+  ContentTraversalLimitError,
+  getContentTraversalFragments,
+  getContentTraversalScopes,
+} from './nested';
 import { getReferencedQuoteEntries, mergeQuotedText } from '../../utils/quotes';
 
 export interface ChatSubmissionDecision {
