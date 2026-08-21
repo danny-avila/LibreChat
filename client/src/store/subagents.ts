@@ -1,4 +1,4 @@
-import { atomFamily } from 'recoil';
+import { atom, atomFamily } from 'recoil';
 import type { SubagentUpdatePhase } from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
@@ -39,6 +39,20 @@ export interface SubagentProgress {
   /** Convenience: last event's `label` for quick ticker display. */
   latestLabel?: string;
 }
+
+/** One parent-owned durable child selected for the read-only activity panel. */
+export type ActiveSubagentPanel = {
+  parentConversationId: string;
+  threadId: string;
+  taskId: string;
+  toolCallId: string;
+  subagentType: string;
+};
+
+export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
+  key: 'activeSubagentPanel',
+  default: null,
+});
 
 /** Progress state keyed by parent tool_call_id. */
 export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
