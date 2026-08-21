@@ -11,7 +11,6 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -136,8 +135,6 @@ const HoverButtons = ({
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
-  const { data: startupConfig } = useGetStartupConfig();
-  const feedbackEnabled = startupConfig?.interface?.feedback !== false;
 
   const endpoint = useMemo(() => {
     if (!conversation) {
@@ -255,13 +252,9 @@ const HoverButtons = ({
       )}
 
       {/* Feedback Buttons */}
-      {feedbackEnabled &&
-        !error &&
-        !isActiveStreamingMessage &&
-        !isCreatedByUser &&
-        handleFeedback != null && (
-          <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
-        )}
+      {!error && !isActiveStreamingMessage && !isCreatedByUser && handleFeedback != null && (
+        <Feedback handleFeedback={handleFeedback} feedback={message.feedback} isLast={isLast} />
+      )}
 
       {/* Regenerate Button */}
       {!isSubagentThreadReadOnly && regenerateEnabled && (

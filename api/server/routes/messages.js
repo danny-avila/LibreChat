@@ -13,6 +13,7 @@ const {
   sendFeedbackScore,
   traceIdForMessage,
   mergeQuotedTextForCount,
+  requireFeedbackEnabled,
   CHILD_THREAD_READ_ONLY_ERROR,
   isSubagentThreadWriteBlocked,
 } = require('@librechat/api');
@@ -516,12 +517,9 @@ router.put(
   '/:conversationId/:messageId/feedback',
   validateMessageReq,
   configMiddleware,
+  requireFeedbackEnabled,
   async (req, res) => {
     try {
-      if (req.config?.interfaceConfig?.feedback === false) {
-        return res.status(403).json({ error: 'Feedback is disabled' });
-      }
-
       const { conversationId, messageId } = req.params;
       const { feedback } = req.body;
       const feedbackResult = feedback == null ? null : feedbackSchema.safeParse(feedback);

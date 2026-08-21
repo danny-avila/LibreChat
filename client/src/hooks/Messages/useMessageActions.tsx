@@ -47,6 +47,7 @@ export default function useMessageActions(props: TMessageActions) {
     latestMessageId,
     latestMessageDepth,
     handleContinue,
+    feedbackEnabled,
     // NOTE: isSubmitting is intentionally NOT destructured here.
     // chatContext.isSubmitting is a getter backed by a ref — destructuring
     // would capture a one-time snapshot. Always access via chatContext.isSubmitting.
@@ -183,7 +184,9 @@ export default function useMessageActions(props: TMessageActions) {
     enterEdit,
     conversation,
     messageLabel,
-    handleFeedback,
+    /** Withholding the handler removes the controls: `HoverButtons` renders feedback
+     *  only when it has somewhere to send it. */
+    handleFeedback: feedbackEnabled ? handleFeedback : undefined,
     handleContinue,
     copyToClipboard,
     latestMessageId,

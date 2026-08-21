@@ -10,7 +10,6 @@ import {
   type TMessage,
 } from 'librechat-data-provider';
 import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
-import { startupConfigKey } from '~/data-provider/Endpoints/queries';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
 
@@ -36,7 +35,6 @@ function renderHoverButtons({
   latestMessageId = 'assistant-1',
   getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
   handleFeedback,
-  feedbackEnabled,
 }: {
   isSubmitting: boolean;
   message?: TMessage;
@@ -45,14 +43,9 @@ function renderHoverButtons({
   latestMessageId?: string;
   getCanCopy?: () => boolean;
   handleFeedback?: () => void;
-  feedbackEnabled?: boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  });
-
-  queryClient.setQueryData(startupConfigKey(false), {
-    interface: feedbackEnabled === undefined ? {} : { feedback: feedbackEnabled },
   });
 
   const initializeState = ({ set }: MutableSnapshot) => set(store.textToSpeech, false);
@@ -231,32 +224,26 @@ describe('HoverButtons feedback affordance', () => {
     text: 'Here is the answer',
   } as TMessage;
 
-  const renderSettledResponse = (feedbackEnabled?: boolean) =>
+  const renderSettledResponse = (handleFeedback?: () => void) =>
     renderHoverButtons({
       isSubmitting: false,
       message: assistantMessage,
       isLast: true,
       latestMessageId: 'assistant-2',
-      handleFeedback: jest.fn(),
-      feedbackEnabled,
+      handleFeedback,
     });
 
-  it('offers feedback when the interface leaves it unconfigured', () => {
+  it('offers feedback on a settled response when a handler is supplied', () => {
+    renderSettledResponse(jest.fn());
+
+    expect(screen.getByTitle('Love this')).toBeInTheDocument();
+    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
+  });
+
+  /** `useMessageActions` withholds the handler when `interface.feedback` is false, so
+   *  this is how a deployment that disabled feedback reaches the action row. */
+  it('hides feedback when no handler is supplied', () => {
     renderSettledResponse();
-
-    expect(screen.getByTitle('Love this')).toBeInTheDocument();
-    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
-  });
-
-  it('offers feedback when the interface explicitly enables it', () => {
-    renderSettledResponse(true);
-
-    expect(screen.getByTitle('Love this')).toBeInTheDocument();
-    expect(screen.getByTitle('Needs improvement')).toBeInTheDocument();
-  });
-
-  it('hides feedback when the interface disables it', () => {
-    renderSettledResponse(false);
 
     expect(screen.queryByTitle('Love this')).toBeNull();
     expect(screen.queryByTitle('Needs improvement')).toBeNull();

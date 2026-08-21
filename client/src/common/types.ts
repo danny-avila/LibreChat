@@ -409,6 +409,8 @@ export type TMessageChatContext = {
   latestMessageId: string | undefined;
   latestMessageDepth: number | undefined;
   handleContinue: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  /** Resolved once per chat from `interface.feedback`; false until the config loads */
+  feedbackEnabled: boolean;
   /** Should be a getter backed by a ref — reads current value without triggering re-renders */
   readonly isSubmitting: boolean;
 };
