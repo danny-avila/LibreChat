@@ -9,6 +9,8 @@ import path from 'path';
 
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY;
 const DASHSCOPE_BASE_URL = process.env.DASHSCOPE_BASE_URL || 'https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation';
+const DASHSCOPE_EDIT_API_KEY = process.env.DASHSCOPE_EDIT_API_KEY || DASHSCOPE_API_KEY;
+const DASHSCOPE_EDIT_BASE_URL = process.env.DASHSCOPE_EDIT_BASE_URL || DASHSCOPE_BASE_URL;
 const IMAGE_MODEL = process.env.IMAGE_MODEL || 'qwen-image-2.0-pro';
 const IMAGE_EDIT_MODEL = process.env.IMAGE_EDIT_MODEL || 'qwen-image-edit-max';
 const IMAGES_PATH = process.env.IMAGES_PATH || '/app/generated_files/';
@@ -110,7 +112,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-async function callDashScopeAPI(model, prompt, negativePrompt, size, imageUrl) {
+async function callDashScopeAPI(model, prompt, negativePrompt, size, imageUrl, apiKey = DASHSCOPE_API_KEY, baseUrl = DASHSCOPE_BASE_URL) {
   const messages = [];
 
   if (imageUrl) {
@@ -144,10 +146,10 @@ async function callDashScopeAPI(model, prompt, negativePrompt, size, imageUrl) {
     requestBody.parameters.negative_prompt = negativePrompt;
   }
 
-  const response = await fetch(DASHSCOPE_BASE_URL, {
+  const response = await fetch(baseUrl, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${DASHSCOPE_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
@@ -236,7 +238,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      const imageUrl = await callDashScopeAPI(IMAGE_EDIT_MODEL, prompt, null, size, image_url);
+      const imageUrl = await callDashScopeAPI(IMAGE_EDIT_MODEL, prompt, null, size, image_url, DASHSCOPE_EDIT_API_KEY, DASHSCOPE_EDIT_BASE_URL);
       const { base64, contentType } = await downloadImageAsBase64(imageUrl);
 
       // Save to disk
