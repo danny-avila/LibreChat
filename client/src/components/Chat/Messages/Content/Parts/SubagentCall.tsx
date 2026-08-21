@@ -172,6 +172,7 @@ export default function SubagentCall({
     [output, args],
   );
   const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
+  const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
   const canOpenDurablePanel = backgroundHandle != null && parentConversationId !== '';
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
@@ -271,6 +272,7 @@ export default function SubagentCall({
   const panelSelection = useMemo(
     () => ({
       parentConversationId,
+      parentMessageId,
       toolCallId,
       subagentType,
       ...(prompt == null ? {} : { prompt }),
@@ -295,6 +297,7 @@ export default function SubagentCall({
       isSubmitting,
       output,
       parentConversationId,
+      parentMessageId,
       persistedContent,
       prompt,
       runStepStatus,
@@ -305,9 +308,11 @@ export default function SubagentCall({
 
   useEffect(() => {
     setSelectedSubagent((current) =>
-      current?.toolCallId === toolCallId ? panelSelection : current,
+      current?.parentMessageId === parentMessageId && current.toolCallId === toolCallId
+        ? panelSelection
+        : current,
     );
-  }, [panelSelection, setSelectedSubagent, toolCallId]);
+  }, [panelSelection, parentMessageId, setSelectedSubagent, toolCallId]);
 
   const openDetails = useCallback(() => {
     resetCurrentArtifactId();
@@ -324,6 +329,7 @@ export default function SubagentCall({
           canOpenDurablePanel ? backgroundHandle?.subagent_thread_id : undefined
         }
         data-subagent-tool-call={toolCallId}
+        data-subagent-parent-message={parentMessageId}
         className={cn(
           'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
           running && !detachedStatusUnknown && 'animate-pulse-slow',

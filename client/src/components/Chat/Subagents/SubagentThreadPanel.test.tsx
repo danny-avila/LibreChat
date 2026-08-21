@@ -61,6 +61,7 @@ jest.mock('lucide-react', () => ({
 
 const selection: ActiveSubagentPanel = {
   parentConversationId: 'parent-conversation',
+  parentMessageId: 'parent-message',
   toolCallId: 'tool-call',
   subagentType: 'researcher',
   initialProgress: 1,
@@ -117,7 +118,11 @@ describe('SubagentThreadPanel', () => {
 
     const { container } = render(
       <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
-        <button type="button" data-subagent-tool-call="tool-call" />
+        <button
+          type="button"
+          data-subagent-tool-call="tool-call"
+          data-subagent-parent-message="parent-message"
+        />
         <Observer />
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,
@@ -136,7 +141,11 @@ describe('SubagentThreadPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
     expect(active).toBeNull();
     await waitFor(() =>
-      expect(container.querySelector('[data-subagent-tool-call="tool-call"]')).toHaveFocus(),
+      expect(
+        container.querySelector(
+          '[data-subagent-tool-call="tool-call"][data-subagent-parent-message="parent-message"]',
+        ),
+      ).toHaveFocus(),
     );
   });
 
@@ -149,6 +158,7 @@ describe('SubagentThreadPanel', () => {
     });
     const foreground: ActiveSubagentPanel = {
       parentConversationId: 'parent-conversation',
+      parentMessageId: 'parent-message',
       toolCallId: 'foreground-call',
       subagentType: 'researcher',
       prompt: 'Review this change.',

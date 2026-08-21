@@ -127,15 +127,27 @@ function ActivityPart({
       runStepStatus={item.status === 'running' ? undefined : item.status}
     />
   );
+  const truncationNotice =
+    item.inputTruncated === true || item.outputTruncated === true ? (
+      <div className="mb-2 text-xs italic text-text-secondary">
+        {localize('com_ui_subagent_thread_message_truncated')}
+      </div>
+    ) : null;
   if (item.approval != null && item.output == null) {
     return (
       <>
         {toolCall}
+        {truncationNotice}
         <ToolApproval approval={item.approval} toolCallId={item.toolCallId} args={item.input} />
       </>
     );
   }
-  return toolCall;
+  return (
+    <>
+      {toolCall}
+      {truncationNotice}
+    </>
+  );
 }
 
 function SubagentPrompt({ prompt }: { prompt: string }) {

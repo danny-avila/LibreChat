@@ -137,6 +137,29 @@ describe('SubagentActivity', () => {
     },
   );
 
+  it('marks bounded tool details as shortened without expanding them', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          items: [
+            {
+              type: 'tool',
+              toolCallId: 'tool',
+              name: 'search',
+              input: 'bounded input',
+              status: 'completed',
+              inputTruncated: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_subagent_thread_message_truncated')).toBeInTheDocument();
+  });
+
   it('renders writing, reasoning, grouped tools, and collapsed details', () => {
     render(<SubagentActivity activity={base} />);
 

@@ -47,6 +47,7 @@ export interface SubagentProgress {
 /** One child invocation selected for the shared read-only activity panel. */
 export type ActiveSubagentPanel = {
   parentConversationId: string;
+  parentMessageId: string;
   toolCallId: string;
   subagentType: string;
   prompt?: string;

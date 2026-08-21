@@ -94,6 +94,7 @@ const OpenSubagentPanel = () => {
     setConversation({ conversationId: 'parent-conversation' } as TConversation);
     setSelection({
       parentConversationId: 'parent-conversation',
+      parentMessageId: 'parent-message',
       toolCallId: 'tool-call',
       subagentType: 'researcher',
       initialProgress: 1,
