@@ -142,9 +142,24 @@ function Conversation({
     }
   }, [hasInteracted]);
 
+  /* The row unmounts once the pinned refetch lands, so hand focus to a
+   * neighbouring row before it goes. The row element is a plain div with no
+   * tabindex, so focus has to land on the link inside it, and the row being
+   * unpinned has to be skipped: it is still mounted when this runs. */
+  const focusNeighbouringRow = useCallback(() => {
+    const row = containerRef.current;
+    const scope = row?.closest('[role="region"]') ?? row?.closest('ul');
+    if (!row || !scope) {
+      return;
+    }
+    const rows = Array.from(scope.querySelectorAll<HTMLElement>('[data-testid="convo-item"]'));
+    const current = rows.indexOf(row);
+    const neighbour = rows[current + 1] ?? rows[current - 1];
+    neighbour?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+  }, []);
+
   /* Matches the favorites' row-level unpin: one click on the pin badge, no
-   * menu digging. The row unmounts once the pinned refetch lands, so move
-   * focus to a surviving row in the same section rather than dropping it. */
+   * menu digging. */
   const unpinConvo = useCallback(() => {
     if (!conversationId) {
       return;
@@ -153,11 +168,7 @@ function Conversation({
       { conversationId, pinned: false },
       {
         onSuccess: () => {
-          requestAnimationFrame(() => {
-            const section = containerRef.current?.closest('[aria-label]');
-            const nextRow = section?.querySelector<HTMLElement>('[data-testid="convo-item"]');
-            nextRow?.focus();
-          });
+          requestAnimationFrame(focusNeighbouringRow);
         },
         onError: () => {
           showToast({
@@ -168,7 +179,7 @@ function Conversation({
         },
       },
     );
-  }, [conversationId, unpinMutation, showToast, localize]);
+  }, [conversationId, unpinMutation, focusNeighbouringRow, showToast, localize]);
 
   const handleMouseLeave = useCallback(() => {
     if (!isPopoverActive) {
