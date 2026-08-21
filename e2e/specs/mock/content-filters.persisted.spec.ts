@@ -2728,7 +2728,11 @@ test.describe('persisted source-aware content filters', () => {
     const assembledParts = [`E2E-ASSEMBLED-A-${suffix}`, `E2E-ASSEMBLED-B-${suffix}`] as const;
     const semanticPath = '/content/0/tool_call/output';
     const createdConversationIds = new Set<string>();
-    const attemptedRuntimeMessageIds: string[] = [];
+    const attemptedRuntimeMessages: Array<{
+      parentMessageId: string;
+      responseMessageId: string;
+      text: string;
+    }> = [];
     let sourceConversationId: string | undefined;
     let filtersAttempted = false;
     let filtersActive = false;
@@ -2879,13 +2883,17 @@ test.describe('persisted source-aware content filters', () => {
     const startContinuation = (parentMessageId: string, label: string): Promise<RequestResult> => {
       const messageId = randomUUID();
       const responseMessageId = randomUUID();
-      attemptedRuntimeMessageIds.push(messageId, responseMessageId);
+      const text = `Safe persisted ${label} continuation ${suffix}`;
+      /** The resumable controller does not use the request's `messageId` as
+       * BaseClient's persisted user ID. Track that row by its unique content
+       * and parent, while the response ID remains stable. */
+      attemptedRuntimeMessages.push({ parentMessageId, responseMessageId, text });
       return requestResult(request, {
         path: `/api/agents/chat/${encodeURIComponent(MOCK_ENDPOINTS[0].label)}`,
         token,
         method: 'POST',
         data: {
-          text: `Safe persisted ${label} continuation ${suffix}`,
+          text,
           sender: 'User',
           clientTimestamp: new Date().toISOString(),
           isCreatedByUser: true,
@@ -3109,7 +3117,17 @@ test.describe('persisted source-aware content filters', () => {
       await withMongo(async (db) => {
         expect(
           await db.collection('messages').countDocuments({
-            messageId: { $in: attemptedRuntimeMessageIds },
+            $or: attemptedRuntimeMessages.flatMap(
+              ({ parentMessageId, responseMessageId, text }) => [
+                {
+                  conversationId: sourceConversationId,
+                  parentMessageId,
+                  isCreatedByUser: true,
+                  text,
+                },
+                { messageId: responseMessageId },
+              ],
+            ),
           }),
         ).toBe(0);
       });

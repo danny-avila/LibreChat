@@ -1,12 +1,15 @@
 const { Constants, ContentTypes } = require('librechat-data-provider');
+const { ContentFilterError } = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
   let resolve;
-  const promise = new Promise((resolvePromise) => {
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 jest.mock('~/db/connect');
@@ -712,6 +715,107 @@ describe('BaseClient', () => {
       expect(TestClient.assertStoredModelBoundContent).toHaveBeenCalledTimes(1);
       expect(TestClient.buildMessages).not.toHaveBeenCalled();
       expect(TestClient.sendCompletion).not.toHaveBeenCalled();
+    });
+
+    test('cancels a deferred user-message write when the model boundary rejects content', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      const policyError = new ContentFilterError({ source: 'message', field: 'text' });
+      const getReqData = jest.fn();
+      const abortController = new AbortController();
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockRejectedValue(policyError);
+
+      await expect(
+        TestClient.sendMessage('Safe new message', { abortController, getReqData }),
+      ).rejects.toBe(policyError);
+
+      /** Policy cancellation removes the Stop listener and remains final. */
+      abortController.abort();
+
+      expect(saveMessage).not.toHaveBeenCalled();
+      expect(saveConvo).not.toHaveBeenCalled();
+      const persistenceCall = getReqData.mock.calls.find(([data]) => data.userMessagePromise);
+      await expect(persistenceCall[0].userMessagePromise).resolves.toEqual({});
+    });
+
+    test('starts a deferred user-message write after a safe no-model completion', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockImplementation(async () => {
+        expect(saveMessage).not.toHaveBeenCalled();
+        return { completion: 'Safe response', metadata: undefined };
+      });
+
+      await TestClient.sendMessage('Safe new message');
+
+      expect(saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true)).toBe(
+        true,
+      );
+    });
+
+    test('preserves eager user-message persistence for non-policy provider failures', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      const providerError = new Error('Provider unavailable');
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockRejectedValue(providerError);
+
+      await expect(TestClient.sendMessage('Safe new message')).rejects.toBe(providerError);
+
+      expect(saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true)).toBe(
+        true,
+      );
+    });
+
+    test('starts a deferred user-message write when Stop aborts an in-flight completion', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      const completionStarted = deferred();
+      const completionResult = deferred();
+      const abortController = new AbortController();
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockImplementation(() => {
+        completionStarted.resolve();
+        return completionResult.promise;
+      });
+
+      const sendPromise = TestClient.sendMessage('Safe new message', { abortController });
+      await completionStarted.promise;
+      expect(saveMessage).not.toHaveBeenCalled();
+
+      abortController.abort();
+      expect(saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true)).toBe(
+        true,
+      );
+
+      completionResult.resolve({ completion: 'Partial response', metadata: undefined });
+      await sendPromise;
+    });
+
+    test('keeps an abort-started write when a late policy error loses the settlement race', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      const completionStarted = deferred();
+      const completionResult = deferred();
+      const policyError = new ContentFilterError({ source: 'message', field: 'text' });
+      const abortController = new AbortController();
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockImplementation(() => {
+        completionStarted.resolve();
+        return completionResult.promise;
+      });
+
+      const sendPromise = TestClient.sendMessage('Safe new message', { abortController });
+      await completionStarted.promise;
+      abortController.abort();
+      completionResult.reject(policyError);
+
+      await expect(sendPromise).rejects.toBe(policyError);
+      expect(saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true)).toBe(
+        true,
+      );
     });
 
     test('blocks persisted user text selected by the built model payload', async () => {

@@ -269,6 +269,45 @@ export interface ModelBoundChatModelCallback {
   ) => void;
 }
 
+export interface InitialModelBoundAdmissionCallback {
+  readonly name: 'librechat-initial-model-bound-admission';
+  readonly raiseError: true;
+  readonly awaitHandlers: true;
+  readonly handleChatModelStart: (
+    llm: object | undefined,
+    messageBatches: readonly (readonly ModelBoundProviderMessage[])[],
+    runId: string,
+    parentRunId?: string,
+    extraParams?: Record<string, unknown>,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+  ) => void;
+  readonly handleChainStart: (
+    chain: object | undefined,
+    inputs: unknown,
+    runId: string,
+    /** CallbackManager dispatches parentRunId here at runtime even though
+     * BaseCallbackHandlerMethodsClass's published declaration labels this
+     * position runType. Keep this signature aligned with manager dispatch. */
+    parentRunId?: string,
+    tags?: string[],
+    metadata?: Record<string, unknown>,
+    runType?: string,
+    runName?: string,
+    extra?: Record<string, unknown>,
+  ) => void;
+  readonly handleLLMEnd: (output: unknown, runId: string) => void;
+  readonly handleLLMError: (error: unknown, runId: string) => void;
+  readonly handleChainEnd: (outputs: unknown, runId: string) => void;
+  readonly handleChainError: (error: unknown, runId: string) => void;
+}
+
+export interface InitialModelBoundAdmission {
+  readonly agentIds: readonly string[];
+  readonly isActive: () => boolean;
+  readonly onAllowed: () => void;
+}
+
 export interface ModelBoundContentInput {
   readonly filters?: FiltersConfig;
   readonly legacyPii?: MessageFilterPiiConfig;
@@ -863,6 +902,7 @@ export function assertModelBoundProviderContent(input: ModelBoundProviderContent
 /** Creates a run-stable callback shared by root, summary, and subagent model clients. */
 export function createModelBoundChatModelCallback(
   input: Omit<ModelBoundProviderContentInput, 'providerMessages'>,
+  options: { readonly onContentRejected?: (error: unknown) => void } = {},
 ): ModelBoundChatModelCallback {
   const storedMessages = [...(input.storedMessages ?? [])];
   const resolvedFiles = [...(input.resolvedFiles ?? [])];
@@ -901,12 +941,153 @@ export function createModelBoundChatModelCallback(
           if (!isContentFilterError(error) || error instanceof FatalModelBoundPolicyError) {
             throw error;
           }
+          options.onContentRejected?.(error);
           throw new FatalModelBoundPolicyError(error);
         }
       }
     },
   });
   return callback;
+}
+
+/**
+ * Holds a deferred parent write until every top-level starting agent clears
+ * its first exact provider boundary and the corresponding model-node chain
+ * completes. This callback belongs on the root RunnableConfig only: intrinsic
+ * model callbacks intentionally propagate into subagents, whose reused agent
+ * IDs must never satisfy a parent graph's admission barrier.
+ */
+export function createInitialModelBoundAdmissionCallback(
+  admission: InitialModelBoundAdmission,
+): InitialModelBoundAdmissionCallback {
+  const pendingAgentIds = new Set(
+    admission.agentIds
+      .filter((agentId): agentId is string => typeof agentId === 'string')
+      .map((agentId) => agentId.trim())
+      .filter((agentId) => agentId.length > 0),
+  );
+  const chainParents = new Map<string, string>();
+  const agentNodeRuns = new Map<string, string>();
+  const modelRuns = new Map<string, string>();
+  const successfulAgentNodeRuns = new Set<string>();
+  let allowed = false;
+  const isEligibleRootModel = (
+    metadata: Record<string, unknown> | undefined,
+  ): metadata is Record<string, unknown> & { agentId: string } => {
+    if (metadata?.summarization === true || typeof metadata?.agentId !== 'string') {
+      return false;
+    }
+    const agentId = metadata.agentId.trim();
+    return pendingAgentIds.has(agentId) && metadata.langgraph_node === `agent=${agentId}`;
+  };
+  const findAgentNodeRun = (parentRunId: string, agentId: string): string | undefined => {
+    const visited = new Set<string>();
+    let currentRunId: string | undefined = parentRunId;
+    while (currentRunId != null && !visited.has(currentRunId)) {
+      visited.add(currentRunId);
+      if (agentNodeRuns.get(currentRunId) === agentId) {
+        return currentRunId;
+      }
+      currentRunId = chainParents.get(currentRunId);
+    }
+    return undefined;
+  };
+  const clearAgentNodeRun = (agentNodeRunId: string): void => {
+    agentNodeRuns.delete(agentNodeRunId);
+    successfulAgentNodeRuns.delete(agentNodeRunId);
+    chainParents.delete(agentNodeRunId);
+    for (const [modelRunId, nodeRunId] of modelRuns) {
+      if (nodeRunId === agentNodeRunId) {
+        modelRuns.delete(modelRunId);
+      }
+    }
+  };
+
+  return Object.freeze({
+    name: 'librechat-initial-model-bound-admission',
+    raiseError: true,
+    awaitHandlers: true,
+    handleChainStart: (_chain, _inputs, runId, parentRunId, _tags, metadata, _runType, runName) => {
+      if (typeof parentRunId === 'string') {
+        chainParents.set(runId, parentRunId);
+      }
+      const nodeName = metadata?.langgraph_node;
+      if (typeof nodeName !== 'string' || !nodeName.startsWith('agent=') || runName !== nodeName) {
+        return;
+      }
+      const agentId = nodeName.slice('agent='.length).trim();
+      if (pendingAgentIds.has(agentId)) {
+        agentNodeRuns.set(runId, agentId);
+      }
+    },
+    handleChatModelStart: (
+      _llm,
+      _messageBatches,
+      runId,
+      parentRunId,
+      _extraParams,
+      _tags,
+      metadata,
+    ) => {
+      if (allowed || !admission.isActive() || !isEligibleRootModel(metadata)) {
+        return;
+      }
+      if (typeof runId !== 'string' || typeof parentRunId !== 'string') {
+        return;
+      }
+      const agentNodeRunId = findAgentNodeRun(parentRunId, metadata.agentId.trim());
+      if (agentNodeRunId != null) {
+        modelRuns.set(runId, agentNodeRunId);
+      }
+    },
+    handleLLMEnd: (_output, runId) => {
+      const agentNodeRunId = modelRuns.get(runId);
+      if (agentNodeRunId == null) {
+        return;
+      }
+      modelRuns.delete(runId);
+      successfulAgentNodeRuns.add(agentNodeRunId);
+    },
+    handleLLMError: (_error, runId) => {
+      modelRuns.delete(runId);
+    },
+    handleChainEnd: (outputs, runId) => {
+      chainParents.delete(runId);
+      const agentId = agentNodeRuns.get(runId);
+      const modelNodeOutput =
+        outputs != null && typeof outputs === 'object'
+          ? (outputs as { messages?: unknown; summarizationRequest?: unknown })
+          : undefined;
+      const hasCompletedModelResult =
+        Array.isArray(modelNodeOutput?.messages) &&
+        modelNodeOutput.messages.length > 0 &&
+        modelNodeOutput.summarizationRequest == null;
+      const hasSuccessfulAttempt = successfulAgentNodeRuns.has(runId);
+      if (agentId != null) {
+        clearAgentNodeRun(runId);
+      }
+      if (
+        agentId == null ||
+        !hasSuccessfulAttempt ||
+        !hasCompletedModelResult ||
+        allowed ||
+        !admission.isActive() ||
+        !pendingAgentIds.delete(agentId)
+      ) {
+        return;
+      }
+      if (pendingAgentIds.size === 0) {
+        allowed = true;
+        admission.onAllowed();
+      }
+    },
+    handleChainError: (_error, runId) => {
+      chainParents.delete(runId);
+      if (agentNodeRuns.has(runId)) {
+        clearAgentNodeRun(runId);
+      }
+    },
+  });
 }
 
 /**

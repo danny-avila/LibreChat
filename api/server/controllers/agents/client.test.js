@@ -303,6 +303,28 @@ describe('AgentClient - detached subagent usage', () => {
 });
 
 describe('AgentClient - subagent parent persistence', () => {
+  it('matches the graph starting wave for parallel roots and cyclic fallback', () => {
+    expect(
+      AgentClient.getStartingAgentIds([
+        { id: 'agent-a', edges: [{ from: 'agent-a', to: 'agent-c' }] },
+        { id: 'agent-b' },
+        { id: 'agent-c' },
+      ]),
+    ).toEqual(['agent-a', 'agent-b']);
+    expect(
+      AgentClient.getStartingAgentIds([
+        {
+          id: 'agent-a',
+          edges: [
+            { from: 'agent-a', to: 'agent-b' },
+            { from: 'agent-b', to: 'agent-a' },
+          ],
+        },
+        { id: 'agent-b' },
+      ]),
+    ).toEqual(['agent-a']);
+  });
+
   it('registers the parent user-message write before detached child dispatch can proceed', async () => {
     const userMessagePromise = Promise.resolve({
       message: { messageId: 'parent-user-message', conversationId: 'parent-conversation' },

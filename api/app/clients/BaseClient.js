@@ -14,6 +14,7 @@ const {
   getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceMessageFields,
+  isContentFilterError,
   assertModelBoundProviderContent,
   collectModelBoundHistoricalFileIds,
   projectModelBoundSourceFiles,
@@ -267,6 +268,18 @@ class BaseClient {
   /** Optional pre-build guard for policies that cover restored history
    * independently of the final provider selection. */
   assertStoredModelBoundContent() {}
+
+  /** Agent runs can defer the parent write until their first exact model
+   * boundary is admitted. Generic clients preserve the historical eager
+   * persistence behavior. */
+  shouldDeferUserMessagePersistence() {
+    return false;
+  }
+
+  /** Returns the request-scoped deferred parent-write controller, when any. */
+  getModelBoundUserMessagePersistence() {
+    return this.modelBoundUserMessagePersistence;
+  }
 
   /**
    * Generic clients return their selected model payload from `buildMessages`.
@@ -647,6 +660,9 @@ class BaseClient {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
     let userMessagePromise;
+    /** @type {{ promise: Promise<unknown>, isPending: () => boolean, start: () => Promise<unknown>, cancel: () => Promise<unknown> } | undefined} */
+    let userMessagePersistence;
+    this.modelBoundUserMessagePersistence = undefined;
     const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
       await this.handleStartMethods(message, opts);
 
@@ -795,13 +811,74 @@ class BaseClient {
           userMessage.alwaysAppliedSkills = names;
         }
       }
-      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
-        (err) => {
+      const startUserMessagePersistence = () => {
+        this.savedMessageIds.add(userMessage.messageId);
+        return this.saveMessageToDatabase(userMessage, saveOptions, user).catch((err) => {
           logger.error('[BaseClient] Failed to save user message:', err);
           return {};
-        },
-      );
-      this.savedMessageIds.add(userMessage.messageId);
+        });
+      };
+      if (this.shouldDeferUserMessagePersistence()) {
+        let state = 'pending';
+        let startPersistence = startUserMessagePersistence;
+        let resolvePersistence;
+        let removeAbortListener = () => {};
+        const persistencePromise = new Promise((resolve) => {
+          resolvePersistence = resolve;
+        });
+        const start = () => {
+          if (state !== 'pending') {
+            return persistencePromise;
+          }
+          state = 'started';
+          removeAbortListener();
+          const startDeferredPersistence = startPersistence;
+          startPersistence = undefined;
+          try {
+            Promise.resolve(startDeferredPersistence?.()).then(resolvePersistence, () =>
+              resolvePersistence({}),
+            );
+          } catch (error) {
+            logger.error('[BaseClient] Failed to start deferred user-message persistence:', error);
+            resolvePersistence({});
+          }
+          return persistencePromise;
+        };
+        const cancel = () => {
+          if (state !== 'pending') {
+            return persistencePromise;
+          }
+          state = 'cancelled';
+          removeAbortListener();
+          startPersistence = undefined;
+          /** Resolve with a non-persisted sentinel. The subagent task store
+           * validates the result and fails child creation closed, while the
+           * request's policy error remains the only surfaced rejection. */
+          resolvePersistence({});
+          return persistencePromise;
+        };
+        userMessagePersistence = Object.freeze({
+          promise: persistencePromise,
+          isPending: () => state === 'pending',
+          start,
+          cancel,
+        });
+        const requestAbortSignal = this.abortController?.signal;
+        if (requestAbortSignal?.aborted) {
+          /** Preserve the historical durability contract for Stop: abort
+           * persistence may publish the partial assistant response before the
+           * provider unwinds, so its parent write must already be underway. */
+          start();
+        } else if (requestAbortSignal != null) {
+          const startOnAbort = () => start();
+          requestAbortSignal.addEventListener('abort', startOnAbort, { once: true });
+          removeAbortListener = () => requestAbortSignal.removeEventListener('abort', startOnAbort);
+        }
+        this.modelBoundUserMessagePersistence = userMessagePersistence;
+        userMessagePromise = persistencePromise;
+      } else {
+        userMessagePromise = startUserMessagePersistence();
+      }
       if (typeof opts?.getReqData === 'function') {
         opts.getReqData({
           userMessagePromise,
@@ -811,35 +888,51 @@ class BaseClient {
 
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
-    if (
-      balanceConfig?.enabled &&
-      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
-    ) {
-      await checkBalance(
-        {
-          req: this.options.req,
-          res: this.options.res,
-          txData: {
-            user: this.user,
-            tokenType: 'prompt',
-            amount: promptTokens,
-            endpoint: this.options.endpoint,
-            model: this.modelOptions?.model ?? this.model,
-            endpointTokenConfig: this.options.endpointTokenConfig,
+    let completionResult;
+    try {
+      if (
+        balanceConfig?.enabled &&
+        supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+      ) {
+        await checkBalance(
+          {
+            req: this.options.req,
+            res: this.options.res,
+            txData: {
+              user: this.user,
+              tokenType: 'prompt',
+              amount: promptTokens,
+              endpoint: this.options.endpoint,
+              model: this.modelOptions?.model ?? this.model,
+              endpointTokenConfig: this.options.endpointTokenConfig,
+            },
           },
-        },
-        {
-          logViolation,
-          getMultiplier: db.getMultiplier,
-          findBalanceByUser: db.findBalanceByUser,
-          createAutoRefillTransaction: db.createAutoRefillTransaction,
-          balanceConfig,
-          upsertBalanceFields: db.upsertBalanceFields,
-        },
-      );
-    }
+          {
+            logViolation,
+            getMultiplier: db.getMultiplier,
+            findBalanceByUser: db.findBalanceByUser,
+            createAutoRefillTransaction: db.createAutoRefillTransaction,
+            balanceConfig,
+            upsertBalanceFields: db.upsertBalanceFields,
+          },
+        );
+      }
 
-    const { completion, metadata } = await this.sendCompletion(payload, opts);
+      completionResult = await this.sendCompletion(payload, opts);
+    } catch (error) {
+      if (userMessagePersistence?.isPending()) {
+        if (isContentFilterError(error)) {
+          userMessagePersistence.cancel();
+        } else {
+          userMessagePersistence.start();
+        }
+      }
+      throw error;
+    }
+    /** A safe no-model completion (or a runtime that cannot expose the
+     * admission callback) must not leave the parent-write gate pending. */
+    userMessagePersistence?.start();
+    const { completion, metadata } = completionResult;
     if (this.abortController) {
       this.abortController.requestCompleted = true;
     }

@@ -107,6 +107,7 @@ const {
   maybePrewarmCodeSandbox,
   assertModelBoundContent,
   createModelBoundChatModelCallback: createModelBoundContentCallback,
+  createInitialModelBoundAdmissionCallback,
   hasModelBoundContentProtection,
   assertResumeRuntimeContentAllowed,
   collectReachableAgents,
@@ -165,6 +166,30 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
 }
 
 class AgentClient extends BaseClient {
+  /** Mirrors the SDK's `MultiAgentGraph.analyzeGraph`: every loaded agent
+   * without an incoming edge starts in the first graph wave, falling back to
+   * the first agent for a cycle. */
+  static getStartingAgentIds(agents) {
+    const agentIds = [
+      ...new Set(
+        (agents ?? [])
+          .map((agent) => agent?.id)
+          .filter((agentId) => typeof agentId === 'string' && agentId.length > 0),
+      ),
+    ];
+    const incomingAgentIds = new Set();
+    for (const edge of agents?.[0]?.edges ?? []) {
+      const destinations = Array.isArray(edge?.to) ? edge.to : [edge?.to];
+      for (const destination of destinations) {
+        if (typeof destination === 'string' && destination.length > 0) {
+          incomingAgentIds.add(destination);
+        }
+      }
+    }
+    const startingAgentIds = agentIds.filter((agentId) => !incomingAgentIds.has(agentId));
+    return startingAgentIds.length > 0 ? startingAgentIds : agentIds.slice(0, 1);
+  }
+
   constructor(options = {}) {
     super(null, options);
     /** The current client class
@@ -1433,6 +1458,13 @@ class AgentClient extends BaseClient {
     return {};
   }
 
+  shouldDeferUserMessagePersistence() {
+    return hasModelBoundContentProtection(
+      this.options.req?.config?.filters,
+      this.options.req?.config?.messageFilter?.pii,
+    );
+  }
+
   /** Legacy `messageFilter.pii` historically covered the restored branch
    * before model-input construction and persistence. Retain that contract
    * without scanning new source-aware filters before SDK pruning. */
@@ -1455,12 +1487,30 @@ class AgentClient extends BaseClient {
 
   createModelBoundChatModelCallback() {
     const fileProjection = BaseClient.prototype.getModelBoundFileProjection.call(this);
-    return createModelBoundContentCallback({
-      filters: this.options.req?.config?.filters,
-      legacyPii: this.options.req?.config?.messageFilter?.pii,
-      storedMessages: this.modelBoundStoredMessages,
-      fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
-      resolvedFiles: fileProjection.resolvedFiles,
+    const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
+    return createModelBoundContentCallback(
+      {
+        filters: this.options.req?.config?.filters,
+        legacyPii: this.options.req?.config?.messageFilter?.pii,
+        storedMessages: this.modelBoundStoredMessages,
+        fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
+        resolvedFiles: fileProjection.resolvedFiles,
+      },
+      {
+        onContentRejected: persistence?.cancel,
+      },
+    );
+  }
+
+  createInitialModelBoundAdmissionCallback(startingAgentIds) {
+    const persistence = BaseClient.prototype.getModelBoundUserMessagePersistence.call(this);
+    if (persistence == null || !persistence.isPending() || startingAgentIds.length === 0) {
+      return undefined;
+    }
+    return createInitialModelBoundAdmissionCallback({
+      agentIds: startingAgentIds,
+      isActive: persistence.isPending,
+      onAllowed: persistence.start,
     });
   }
 
@@ -3156,7 +3206,6 @@ class AgentClient extends BaseClient {
 
       /** @type {AppConfig['endpoints']['agents']} */
       const agentsEConfig = appConfig.endpoints?.[EModelEndpoint.agents];
-      const modelBoundCallback = AgentClient.prototype.createModelBoundChatModelCallback.call(this);
 
       config = {
         runName: 'AgentRun',
@@ -3343,6 +3392,16 @@ class AgentClient extends BaseClient {
         // - Agents without incoming edges become start nodes and run in parallel automatically
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
+        }
+        const modelBoundCallback =
+          AgentClient.prototype.createModelBoundChatModelCallback.call(this);
+        const initialModelBoundAdmission =
+          AgentClient.prototype.createInitialModelBoundAdmissionCallback.call(
+            this,
+            AgentClient.getStartingAgentIds(agents),
+          );
+        if (initialModelBoundAdmission != null) {
+          config.callbacks = [initialModelBoundAdmission];
         }
 
         // TODO: needs to be added as part of AgentContext initialization

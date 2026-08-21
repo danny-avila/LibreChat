@@ -5,6 +5,7 @@ import {
   assertModelBoundProviderContent,
   collectModelBoundHistoricalFileIds,
   createModelBoundChatModelCallback,
+  createInitialModelBoundAdmissionCallback,
   hasModelBoundContentProtection,
   projectModelBoundSourceFiles,
 } from './modelBoundContent';
@@ -2662,7 +2663,8 @@ describe('assertModelBoundProviderContent', () => {
   });
 
   it('marks callback policy failures fatal across SDK recovery paths', () => {
-    const callback = createModelBoundChatModelCallback({ filters });
+    const onContentRejected = jest.fn();
+    const callback = createModelBoundChatModelCallback({ filters }, { onContentRejected });
     let thrown: unknown;
 
     try {
@@ -2673,11 +2675,207 @@ describe('assertModelBoundProviderContent', () => {
 
     expect(thrown).toBeInstanceOf(StreamLimitExceededError);
     expect(isContentFilterError(thrown)).toBe(true);
+    expect(onContentRejected).toHaveBeenCalledTimes(1);
     expect(thrown).toMatchObject({
       code: 'content_filter_block',
       statusCode: 400,
       message: 'Submitted content contains a private value. Remove it and try again.',
       cause: expect.objectContaining({ code: 'content_filter_block' }),
     });
+  });
+
+  const startRootModelAttempt = (
+    callback: ReturnType<typeof createInitialModelBoundAdmissionCallback>,
+    agentId: string,
+    prefix: string,
+  ) => {
+    const agentNodeRunId = `${prefix}-agent-node`;
+    const modelChainRunId = `${prefix}-model-chain`;
+    const modelRunId = `${prefix}-llm`;
+    const metadata = { agentId, langgraph_node: `agent=${agentId}` };
+
+    callback.handleChainStart(
+      undefined,
+      {},
+      agentNodeRunId,
+      `${prefix}-graph`,
+      undefined,
+      { langgraph_node: `agent=${agentId}` },
+      undefined,
+      `agent=${agentId}`,
+    );
+    callback.handleChainStart(
+      undefined,
+      {},
+      modelChainRunId,
+      agentNodeRunId,
+      undefined,
+      metadata,
+      undefined,
+      'AgentModelCall',
+    );
+    callback.handleChatModelStart(
+      undefined,
+      [[{ role: 'human', content: `Safe ${agentId} input` }]],
+      modelRunId,
+      modelChainRunId,
+      undefined,
+      undefined,
+      metadata,
+    );
+
+    return { agentNodeRunId, modelChainRunId, modelRunId };
+  };
+
+  it('admits persistence only after the safe starting-agent node completes', () => {
+    const onAllowed = jest.fn();
+    const callback = createInitialModelBoundAdmissionCallback({
+      agentIds: ['agent-root'],
+      isActive: () => true,
+      onAllowed,
+    });
+
+    const runs = startRootModelAttempt(callback, 'agent-root', 'root');
+    callback.handleLLMEnd({}, runs.modelRunId);
+    expect(onAllowed).not.toHaveBeenCalled();
+
+    /** AgentModelCall ends before post-stream validation and fallback selection. */
+    callback.handleChainEnd({}, runs.modelChainRunId);
+    expect(onAllowed).not.toHaveBeenCalled();
+
+    callback.handleChainEnd({ messages: [{}] }, runs.agentNodeRunId);
+    expect(onAllowed).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for every parallel starting agent and cannot revive after a policy rejection', () => {
+    let active = true;
+    const onAllowed = jest.fn();
+    const callback = createInitialModelBoundAdmissionCallback({
+      agentIds: ['agent-a', 'agent-b'],
+      isActive: () => active,
+      onAllowed,
+    });
+
+    const runsA = startRootModelAttempt(callback, 'agent-a', 'a');
+    callback.handleLLMEnd({}, runsA.modelRunId);
+    callback.handleChainEnd({}, runsA.modelChainRunId);
+    callback.handleChainEnd({ messages: [{}] }, runsA.agentNodeRunId);
+    expect(onAllowed).not.toHaveBeenCalled();
+
+    /** The intrinsic content callback cancels the persistence controller
+     * synchronously when the sibling root is rejected. */
+    active = false;
+
+    const runsB = startRootModelAttempt(callback, 'agent-b', 'b-late');
+    callback.handleLLMEnd({}, runsB.modelRunId);
+    callback.handleChainEnd({}, runsB.modelChainRunId);
+    callback.handleChainEnd({ messages: [{}] }, runsB.agentNodeRunId);
+    expect(onAllowed).not.toHaveBeenCalled();
+  });
+
+  it('does not let summarization or a downstream node satisfy root admission', () => {
+    const onAllowed = jest.fn();
+    const callback = createInitialModelBoundAdmissionCallback({
+      agentIds: ['agent-root'],
+      isActive: () => true,
+      onAllowed,
+    });
+
+    callback.handleChainStart(
+      undefined,
+      {},
+      'summary-node',
+      'graph',
+      undefined,
+      { langgraph_node: 'summarize=agent-root', summarization: true },
+      undefined,
+      'summarize=agent-root',
+    );
+    callback.handleChatModelStart(
+      undefined,
+      [[{ role: 'human', content: 'Safe summary' }]],
+      'summary-llm',
+      'summary-node',
+      undefined,
+      undefined,
+      {
+        agentId: 'agent-root',
+        langgraph_node: 'summarize=agent-root',
+        summarization: true,
+      },
+    );
+    callback.handleLLMEnd({}, 'summary-llm');
+    callback.handleChainEnd({ messages: [{}] }, 'summary-node');
+    callback.handleChainStart(
+      undefined,
+      {},
+      'downstream-node',
+      'graph',
+      undefined,
+      { langgraph_node: 'agent=agent-child' },
+      undefined,
+      'agent=agent-child',
+    );
+    callback.handleChatModelStart(
+      undefined,
+      [[{ role: 'human', content: 'Safe downstream input' }]],
+      'downstream-llm',
+      'downstream-node',
+      undefined,
+      undefined,
+      { agentId: 'agent-child', langgraph_node: 'agent=agent-child' },
+    );
+    callback.handleLLMEnd({}, 'downstream-llm');
+    callback.handleChainEnd({ messages: [{}] }, 'downstream-node');
+
+    expect(onAllowed).not.toHaveBeenCalled();
+  });
+
+  it('keeps the root pending across a summarization detour after a completed model attempt', () => {
+    const onAllowed = jest.fn();
+    const callback = createInitialModelBoundAdmissionCallback({
+      agentIds: ['agent-root'],
+      isActive: () => true,
+      onAllowed,
+    });
+
+    const beforeSummary = startRootModelAttempt(callback, 'agent-root', 'before-summary');
+    callback.handleLLMEnd({}, beforeSummary.modelRunId);
+    callback.handleChainEnd({}, beforeSummary.modelChainRunId);
+    callback.handleChainEnd(
+      { messages: [{}], summarizationRequest: { reason: 'overflow' } },
+      beforeSummary.agentNodeRunId,
+    );
+    expect(onAllowed).not.toHaveBeenCalled();
+
+    const afterSummary = startRootModelAttempt(callback, 'agent-root', 'after-summary');
+    callback.handleLLMEnd({}, afterSummary.modelRunId);
+    callback.handleChainEnd({}, afterSummary.modelChainRunId);
+    callback.handleChainEnd({ messages: [{}] }, afterSummary.agentNodeRunId);
+    expect(onAllowed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not admit after a safe primary attempt when its fallback is policy-blocked', () => {
+    let active = true;
+    const onAllowed = jest.fn();
+    const callback = createInitialModelBoundAdmissionCallback({
+      agentIds: ['agent-root'],
+      isActive: () => active,
+      onAllowed,
+    });
+
+    const runs = startRootModelAttempt(callback, 'agent-root', 'fallback');
+    callback.handleLLMEnd({}, runs.modelRunId);
+    callback.handleChainError(
+      new Error('Primary response failed validation'),
+      runs.modelChainRunId,
+    );
+    expect(onAllowed).not.toHaveBeenCalled();
+
+    /** The intrinsic model callback cancels persistence when the fallback's
+     * exact payload is rejected before it can complete the agent node. */
+    active = false;
+    callback.handleChainError(new Error('Blocked fallback'), runs.agentNodeRunId);
+    expect(onAllowed).not.toHaveBeenCalled();
   });
 });
