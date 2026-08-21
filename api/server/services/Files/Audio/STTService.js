@@ -392,6 +392,13 @@ class STTService {
         }
         throw error;
       }
+      if (
+        (typeof text !== 'string' || text.trim().length === 0) &&
+        getBlockedUninspectableFileField(req.config?.filters, ['transcript']) != null
+      ) {
+        res.status(400).json(contentFilterUninspectableResponse('transcript'));
+        return;
+      }
       if (hasActiveFileFieldPolicy(req.config?.filters, ['transcript'])) {
         const finding = inspectContent(extractFileContent({ transcript: text }), {
           filters: req.config.filters,

@@ -4,6 +4,7 @@ export * from './title';
 export * from './legacy';
 export * from './provenance';
 export * from './files';
+export * from './messageMutations';
 export * from './adapters/chat';
 export * from './adapters/nested';
 export * from './adapters/messages';

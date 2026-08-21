@@ -3,6 +3,7 @@ import type { FiltersConfig } from 'librechat-data-provider';
 import {
   canInspectUploadExtractedTextAfterProcessing,
   canInspectUploadTranscriptAfterProcessing,
+  getBlockedUploadTranscriptField,
   isFileFilterFieldEnabled,
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
@@ -141,6 +142,7 @@ describe('file content inspection policy', () => {
       canInspectUploadTranscriptAfterProcessing({
         endpoint: 'agents',
         toolResource: EToolResources.context,
+        mimeType: 'audio/webm',
         sttSupported: true,
       }),
     ).toBe(true);
@@ -148,6 +150,7 @@ describe('file content inspection policy', () => {
       canInspectUploadTranscriptAfterProcessing({
         endpoint: 'assistants',
         toolResource: EToolResources.context,
+        mimeType: 'audio/webm',
         sttSupported: true,
       }),
     ).toBe(false);
@@ -155,6 +158,7 @@ describe('file content inspection policy', () => {
       canInspectUploadTranscriptAfterProcessing({
         endpoint: 'agents',
         toolResource: EToolResources.file_search,
+        mimeType: 'audio/webm',
         sttSupported: true,
       }),
     ).toBe(false);
@@ -162,9 +166,58 @@ describe('file content inspection policy', () => {
       canInspectUploadTranscriptAfterProcessing({
         endpoint: 'agents',
         toolResource: EToolResources.context,
+        mimeType: 'audio/webm',
         sttSupported: false,
       }),
     ).toBe(false);
+    expect(
+      canInspectUploadTranscriptAfterProcessing({
+        endpoint: 'agents',
+        toolResource: EToolResources.context,
+        mimeType: 'text/plain',
+        sttSupported: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects applicable audio when no downstream transcript inspection is available', () => {
+    const filters = {
+      files: { pii: { fields: ['transcript'], uninspectable: 'block' } },
+    } as FiltersConfig;
+    const baseInput = {
+      filters,
+      endpoint: 'agents',
+      toolResource: EToolResources.context,
+    };
+
+    expect(
+      getBlockedUploadTranscriptField({
+        ...baseInput,
+        mimeType: 'audio/x-unsupported',
+        sttSupported: false,
+      }),
+    ).toBe('transcript');
+    expect(
+      getBlockedUploadTranscriptField({
+        ...baseInput,
+        mimeType: 'application/ogg',
+        sttSupported: false,
+      }),
+    ).toBe('transcript');
+    expect(
+      getBlockedUploadTranscriptField({
+        ...baseInput,
+        mimeType: 'audio/webm',
+        sttSupported: true,
+      }),
+    ).toBeNull();
+    expect(
+      getBlockedUploadTranscriptField({
+        ...baseInput,
+        mimeType: 'text/plain',
+        sttSupported: false,
+      }),
+    ).toBeNull();
   });
 
   it('activates canonical file work only for patterns or selected fail-close content', () => {
@@ -1534,6 +1587,37 @@ describe('file content inspection policy', () => {
         source: 'file',
         field: 'transcript',
       },
+    });
+  });
+
+  it('treats application/ogg text provenance as an inspectable audio transcript', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { files: [{ file_id: 'ogg-audio-file' }] },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'ogg-audio-file',
+            filename: 'recording.ogg',
+            type: 'application/ogg',
+            source: 'text',
+            text: 'safe transcript',
+          },
+        ]),
+      }),
+    ).resolves.toMatchObject({
+      hydratedFiles: [expect.objectContaining({ text: 'safe transcript' })],
     });
   });
 

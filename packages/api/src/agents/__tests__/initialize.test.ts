@@ -413,6 +413,86 @@ describe('initializeAgent — current content policy preflight', () => {
     expect(mockGetProviderConfig).not.toHaveBeenCalled();
   });
 
+  it('does not traverse resolved skill metadata when skill policy is inactive', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const broadFrontmatter = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+    );
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: broadFrontmatter,
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        messages: { pii: { starterPatterns: ['sk_prefix'] } },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('fails closed on traversal only when the affected skill field is selected', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'broad-skill',
+      body: 'Safe instructions',
+      frontmatter: Object.fromEntries(
+        Array.from({ length: 4_200 }, (_, index) => [`field-${index}`, `value-${index}`]),
+      ),
+      author: { toString: () => req.user?.id } as unknown as import('mongoose').Types.ObjectId,
+    });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            fields: ['frontmatter'],
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['broad-skill'],
+        },
+        { ...db, getSkillByName },
+      ),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+  });
+
   it('rejects blocked active skill-catalog metadata before resource or provider side effects', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     const { primeResources } = jest.requireMock('../resources') as {

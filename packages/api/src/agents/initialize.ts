@@ -11,6 +11,7 @@ import {
   AgentCapabilities,
   resolveAllowedStatefulCodeEnvironments,
   hasActivePiiFields,
+  hasActivePiiPatterns,
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
@@ -43,6 +44,7 @@ import type {
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
+import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { TextContentFragment } from '../protection/types';
 import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -86,12 +88,12 @@ import {
   isFatalAgentInitializationError,
 } from './errors';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
+import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { applyBackgroundToolCalls } from './background';
-import { inspectContent } from '../protection/runtime';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
@@ -113,6 +115,64 @@ const googleToolCombinationTextModels = [
 ];
 const googleToolCombinationExcludedModalityRegex =
   /(?:^|-)image(?:-|$)|(?:^|-)live(?:-|$)|(?:^|-)tts(?:-|$)/;
+
+function assertResolvedSkillContentAllowed(
+  skills: readonly SkillContentInput[],
+  filters: NonNullable<ServerRequest['config']>['filters'] | undefined,
+): void {
+  const pii = filters?.skills?.pii;
+  if (!hasActivePiiPatterns(pii) || skills.length === 0) {
+    return;
+  }
+
+  const inspectionSession = createConfiguredContentInspector({ filters })?.createSession();
+  if (inspectionSession == null) {
+    return;
+  }
+  const selectedFields = pii.fields == null ? null : new Set<string>(pii.fields);
+  const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  for (const skill of skills) {
+    const projected: SkillContentInput = {
+      ...(selected('name') && { name: skill.name }),
+      ...(selected('display_title') && { displayTitle: skill.displayTitle }),
+      ...(selected('description') && { description: skill.description }),
+      ...(selected('category') && { category: skill.category }),
+      ...(selected('instructions') && {
+        body: skill.body,
+        instructions: skill.instructions,
+      }),
+      ...(selected('imported_text') && { importedText: skill.importedText }),
+      ...(selected('frontmatter') && { frontmatter: skill.frontmatter }),
+      ...((selected('file_name') || selected('file_text')) && {
+        files: skill.files?.map((file) => ({
+          ...(selected('file_name') && { name: file?.name, filename: file?.filename }),
+          ...(selected('file_text') && { text: file?.text, content: file?.content }),
+        })),
+      }),
+    };
+    let fragments: readonly TextContentFragment[];
+    try {
+      fragments = extractSkillContent(projected);
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments = getContentTraversalFragments(error);
+      traversalErrors.push(error);
+    }
+    const finding = inspectionSession.inspect(fragments);
+    if (finding != null) {
+      throw new ContentFilterError(finding);
+    }
+  }
+  const protectedTraversal = traversalErrors.find((error) =>
+    isContentTraversalProtected({ error, filters }),
+  );
+  if (protectedTraversal != null) {
+    throw protectedTraversal;
+  }
+}
 
 function hasTemporalSpecialVars(text: string): boolean {
   return temporalSpecialVarRegex.test(text);
@@ -810,19 +870,16 @@ export async function initializeAgent(
     alwaysApplySkillPrimes = alwaysApplyPrimesResult;
     resolvedSkillCatalog = catalogResult;
 
-    const skillFinding = inspectContent(
+    assertResolvedSkillContentAllowed(
       [
         ...(manualSkillPrimes ?? []),
         ...(alwaysApplySkillPrimes ?? []),
         ...(resolvedSkillCatalog?.activeSkills.filter(
           (skill) => skill.disableModelInvocation !== true,
         ) ?? []),
-      ].flatMap((skill) => extractSkillContent(skill)),
-      { filters: req.config?.filters },
+      ],
+      req.config?.filters,
     );
-    if (skillFinding != null) {
-      throw new ContentFilterError(skillFinding);
-    }
   }
 
   let currentFiles: IMongoFile[] | undefined;

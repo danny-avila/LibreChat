@@ -428,6 +428,36 @@ describe('STT transcript content filtering', () => {
     expect(res.sendStatus).not.toHaveBeenCalled();
   });
 
+  it('fails closed when the speech provider returns a blank transcript', async () => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          uninspectable: 'block',
+        },
+      },
+    };
+    getBlockedUninspectableFileField.mockImplementation((_filters, fields) =>
+      fields.includes('transcript') ? 'transcript' : null,
+    );
+    const service = createService('   ');
+    const res = createResponse();
+
+    await service.processSpeechToText(createRequest({ filters }), res);
+
+    expect(contentFilterUninspectableResponse).toHaveBeenCalledWith('transcript');
+    expect(inspectContent).not.toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ transcript: expect.anything() })]),
+      expect.anything(),
+    );
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'content_filter_uninspectable',
+      source: 'file',
+      field: 'transcript',
+    });
+  });
+
   it('preserves the default-off transcript response path', async () => {
     const service = createService('submitted transcript');
     const res = createResponse();

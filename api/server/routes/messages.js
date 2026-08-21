@@ -6,7 +6,6 @@ const {
   feedbackSchema,
   isAssistantsEndpoint,
   stripReasoningLabelMetadata,
-  HITL_MESSAGE_FILTER_FIELDS,
 } = require('librechat-data-provider');
 const {
   unescapeLaTeX,
@@ -17,19 +16,15 @@ const {
   requireFeedbackEnabled,
   CHILD_THREAD_READ_ONLY_ERROR,
   isSubagentThreadWriteBlocked,
-  inspectContent,
   createContentFilter,
-  extractChatContent,
   extractFeedbackContent,
   extractStoredMessageContent,
-  contentFilterBlockResponse,
-  assertModelBoundContent,
-  hasActiveFilePolicy,
-  getContentTraversalFragments,
-  isContentTraversalLimitError,
-  isContentTraversalProtected,
+  assertStoredMessageMutationAllowed,
+  assertChatMutationAllowed,
+  assertStoredMessageBranchAllowed,
+  mergeUserSubmittedPaths,
+  mergeUserSubmittedMessageFieldPaths,
   isContentFilterError,
-  resolveCanonicalFileReferences,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
@@ -61,92 +56,6 @@ const storedMessageMutationMiddleware = [
   configMiddleware,
   filterStoredMessageContent,
 ];
-
-const blockFilteredMessageContent = (req, res, messageData) => {
-  const filters = req.config?.filters;
-  if (filters == null) {
-    return false;
-  }
-  let fragments;
-  let traversalError;
-  try {
-    fragments = extractStoredMessageContent(messageData);
-  } catch (error) {
-    if (!isContentTraversalLimitError(error)) {
-      throw error;
-    }
-    fragments = getContentTraversalFragments(error);
-    traversalError = error;
-  }
-  const finding = inspectContent(fragments, { filters });
-  if (finding != null) {
-    res.status(400).json(contentFilterBlockResponse(finding));
-    return true;
-  }
-  if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
-    res.status(traversalError.statusCode).json(traversalError.body);
-    return true;
-  }
-  return false;
-};
-
-const blockFilteredChatContent = (req, res, chatData) => {
-  const filters = req.config?.filters;
-  if (filters == null) {
-    return false;
-  }
-  let fragments;
-  let traversalError;
-  try {
-    fragments = extractChatContent(chatData);
-  } catch (error) {
-    if (!isContentTraversalLimitError(error)) {
-      throw error;
-    }
-    fragments = getContentTraversalFragments(error);
-    traversalError = error;
-  }
-  const finding = inspectContent(fragments, { filters });
-  if (finding != null) {
-    res.status(400).json(contentFilterBlockResponse(finding));
-    return true;
-  }
-  if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
-    res.status(traversalError.statusCode).json(traversalError.body);
-    return true;
-  }
-  return false;
-};
-
-const mergeUserSubmittedPaths = (...pathLists) => [
-  ...new Set(
-    pathLists
-      .flat()
-      .filter((path) => typeof path === 'string' && path.startsWith('/') && path.length <= 2048),
-  ),
-];
-const hitlMessageFilterFields = new Set(HITL_MESSAGE_FILTER_FIELDS);
-const mergeUserSubmittedMessageFieldPaths = (...entryLists) => {
-  const entries = [];
-  const seen = new Set();
-  for (const entry of entryLists.flat()) {
-    if (
-      entry == null ||
-      typeof entry.path !== 'string' ||
-      !entry.path.startsWith('/') ||
-      entry.path.length > 2048 ||
-      !hitlMessageFilterFields.has(entry.field)
-    ) {
-      continue;
-    }
-    const key = `${entry.field}:${entry.path}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      entries.push(entry);
-    }
-  }
-  return entries;
-};
 
 router.use(requireJwtAuth);
 
@@ -398,24 +307,15 @@ router.post('/branch', configMiddleware, async (req, res) => {
       user: userId,
     };
 
-    let storedMessageForInspection = newMessage;
-    let resolvedFiles = [];
-    if (hasActiveFilePolicy(req.config?.filters)) {
-      const fileInspection = await resolveCanonicalFileReferences({
-        filters: req.config.filters,
-        input: newMessage,
+    await assertStoredMessageBranchAllowed(
+      {
+        filters: req.config?.filters,
+        legacyPii: req.config?.messageFilter?.pii,
+        message: newMessage,
         user: req.user,
-        getFiles: db.getFiles,
-      });
-      storedMessageForInspection = fileInspection.sanitizedInput;
-      resolvedFiles = fileInspection.hydratedFiles;
-    }
-    assertModelBoundContent({
-      filters: req.config?.filters,
-      legacyPii: req.config?.messageFilter?.pii,
-      storedMessages: [storedMessageForInspection],
-      resolvedFiles,
-    });
+      },
+      { getFiles: db.getFiles },
+    );
 
     const savedMessage = await db.saveMessage(
       {
@@ -450,9 +350,7 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Invalid request parameters' });
     }
 
-    if (blockFilteredMessageContent(req, res, { original, updated })) {
-      return;
-    }
+    assertStoredMessageMutationAllowed(req.config?.filters, { original, updated });
 
     const message = await db.getMessage({ user: req.user.id, messageId });
     if (!message) {
@@ -507,9 +405,7 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
       targetArtifact.source === 'content'
         ? { content: [{ text: updatedText }] }
         : { text: updatedText };
-    if (blockFilteredMessageContent(req, res, filteredArtifact)) {
-      return;
-    }
+    assertStoredMessageMutationAllowed(req.config?.filters, filteredArtifact);
 
     const savedMessage = await db.saveMessage(
       {
@@ -539,6 +435,9 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
       text: savedMessage.text,
     });
   } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error editing artifact:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -652,9 +551,7 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     }
 
     if (index === undefined) {
-      if (blockFilteredMessageContent(req, res, { text })) {
-        return;
-      }
+      assertStoredMessageMutationAllowed(req.config?.filters, { text });
 
       /** A user turn's persisted `quotes` are re-prepended into the prompt on
        *  every send, but this edit only changes `text`. Count the merged
@@ -665,14 +562,10 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
         message.quotes,
         message.isCreatedByUser === true,
       );
-      if (
-        blockFilteredChatContent(req, res, {
-          text,
-          quotes: message.isCreatedByUser === true ? message.quotes : undefined,
-        })
-      ) {
-        return;
-      }
+      assertChatMutationAllowed(req.config?.filters, {
+        text,
+        quotes: message.isCreatedByUser === true ? message.quotes : undefined,
+      });
       const tokenCount = await countTokens(textToCount, model);
       const result = await db.updateMessage(req?.user?.id, {
         messageId,
@@ -698,13 +591,9 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
       return res.status(400).json({ error: 'Cannot update non-text content' });
     }
 
-    if (
-      blockFilteredMessageContent(req, res, {
-        content: [{ [currentPartType]: text }],
-      })
-    ) {
-      return;
-    }
+    assertStoredMessageMutationAllowed(req.config?.filters, {
+      content: [{ [currentPartType]: text }],
+    });
 
     /** A text part is `string | { value, annotations }`. The Assistants thread sync
      *  persists the structured form with its file citations intact, and the editor
@@ -721,9 +610,7 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     };
     updatedContent[index] =
       currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
-    if (blockFilteredMessageContent(req, res, { content: updatedContent })) {
-      return;
-    }
+    assertStoredMessageMutationAllowed(req.config?.filters, { content: updatedContent });
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {
@@ -743,6 +630,9 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     });
     return res.status(200).json(result);
   } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
     logger.error('Error updating message:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

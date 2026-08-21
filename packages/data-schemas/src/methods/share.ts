@@ -792,6 +792,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     expiredAt?: Date | null,
     snapshotFiles?: boolean,
     preflight?: SharedLinkContentPreflight,
+    beforePublish?: () => void | Promise<void>,
   ) => Promise<t.UpdateShareResult>;
   deleteSharedLink: (user: string, shareId: string) => Promise<t.DeleteShareResult | null>;
   getSharedMessages: (
@@ -1269,6 +1270,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     expiredAt?: Date | null,
     snapshotFiles: boolean = true,
     preflight?: SharedLinkContentPreflight,
+    beforePublish?: () => void | Promise<void>,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -1343,6 +1345,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         },
         ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
       };
+
+      await beforePublish?.();
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
         new: true,

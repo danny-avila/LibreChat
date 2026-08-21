@@ -722,13 +722,6 @@ router.patch(
         return res.status(404).end();
       }
 
-      // Re-scope the grants before re-publishing. The shareId survives an update, so a
-      // failed ACL write after the write-through would leave the new messages and file
-      // snapshot readable at the same URL while the owner is told the update failed.
-      if (existing?._id && expiredAt !== undefined) {
-        await updateSharedLinkPermissionsExpiration(existing._id, expiredAt);
-      }
-
       const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
         snapshotFiles,
@@ -737,13 +730,18 @@ router.patch(
         sharedFileMetadataFiles: false,
         legacyPii: req.config?.messageFilter?.pii,
       });
+      const beforePublish =
+        existing?._id && expiredAt !== undefined
+          ? () => updateSharedLinkPermissionsExpiration(existing._id, expiredAt)
+          : undefined;
       const updatedShare = await updateSharedLink(
         req.user.id,
         req.params.shareId,
         targetMessageId,
         expiredAt,
         snapshotFiles,
-        ...(contentPreflight == null ? [] : [contentPreflight]),
+        contentPreflight,
+        beforePublish,
       );
       if (!updatedShare) {
         return res.status(404).end();

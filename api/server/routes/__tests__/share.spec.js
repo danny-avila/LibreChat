@@ -207,6 +207,14 @@ const mockSharedMessagesResult = (result) => {
   });
 };
 
+const mockUpdatedShare = (result) => {
+  updateSharedLink.mockImplementationOnce(async (...args) => {
+    await args[5]?.({ title: 'Safe share', messages: [] });
+    await args[6]?.();
+    return result;
+  });
+};
+
 const useResolvedSharedLinkConfig = () => {
   mockSharedLinkConfigMiddleware.mockImplementationOnce(async (req, _res, next) => {
     const tenantId = req.shareTenantId;
@@ -860,7 +868,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     await request(buildApp()).patch('/api/share/share-123').send({ snapshotFiles: false });
 
@@ -870,6 +878,8 @@ describe('share routes', () => {
       undefined,
       expect.anything(),
       false,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -885,13 +895,16 @@ describe('share routes', () => {
       },
     });
     const messages = [{ files: [{ file_id: 'file_PRIVATE-SENTINEL' }] }];
-    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mongoose.models.SharedLink.findOne.mockReturnValue(
+      lean({ _id: 'link-456', conversationId: 'convo-123' }),
+    );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     mockAssertConversationContentAllowed.mockImplementationOnce(() => {
       throw error;
     });
     updateSharedLink.mockImplementationOnce(async (...args) => {
       await args[5]({ title: 'Protected Share', messages });
+      await args[6]?.();
       return { _id: 'link-456', shareId: 'share-456' };
     });
 
@@ -946,7 +959,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -973,6 +986,8 @@ describe('share routes', () => {
       undefined,
       new Date('2030-01-01T00:00:00.000Z'),
       true,
+      undefined,
+      expect.any(Function),
     );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith(
       'link-456',
@@ -986,13 +1001,14 @@ describe('share routes', () => {
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     mockUpdateSharedLinkPermissionsExpiration.mockRejectedValueOnce(new Error('acl down'));
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(500);
     // The shareId is stable, so publishing first would expose the update behind
     // the existing grants while the owner is told the update failed.
-    expect(updateSharedLink).not.toHaveBeenCalled();
+    expect(updateSharedLink).toHaveBeenCalledTimes(1);
   });
 
   it('rejects updated shares when the retained conversation expired', async () => {
@@ -1032,12 +1048,20 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(null);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      null,
+      true,
+      undefined,
+      expect.any(Function),
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
     expect(mockSharedLinksAccess).toHaveBeenCalled();
   });
@@ -1058,7 +1082,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(undefined);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+    mockUpdatedShare({ shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -1069,6 +1093,8 @@ describe('share routes', () => {
       undefined,
       undefined,
       true,
+      undefined,
+      undefined,
     );
     expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
@@ -1082,7 +1108,7 @@ describe('share routes', () => {
       dependencies.logger.error('[getSharedLinkExpiration] Error creating expiration date:', error);
       return null;
     });
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -1091,7 +1117,15 @@ describe('share routes', () => {
       '[getSharedLinkExpiration] Error creating expiration date:',
       error,
     );
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      null,
+      true,
+      undefined,
+      expect.any(Function),
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
   });
 
@@ -1100,7 +1134,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456', targetMessageId: 'msg-456' });
+    mockUpdatedShare({ shareId: 'share-456', targetMessageId: 'msg-456' });
 
     const response = await request(buildApp())
       .patch('/api/share/share-123')
@@ -1113,6 +1147,8 @@ describe('share routes', () => {
       'msg-456',
       new Date('2030-01-01T00:00:00.000Z'),
       true,
+      undefined,
+      expect.any(Function),
     );
   });
 

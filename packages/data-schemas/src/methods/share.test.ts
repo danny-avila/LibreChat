@@ -2061,15 +2061,64 @@ describe('Share Methods', () => {
         expect(snapshot.messages[0]?.text).toBe('PRIVATE-SENTINEL');
         throw rejection;
       });
+      const beforePublish = jest.fn();
 
       await expect(
-        shareMethods.updateSharedLink(userId, shareId, undefined, undefined, true, preflight),
+        shareMethods.updateSharedLink(
+          userId,
+          shareId,
+          undefined,
+          undefined,
+          true,
+          preflight,
+          beforePublish,
+        ),
       ).rejects.toBe(rejection);
 
       expect(preflight).toHaveBeenCalledTimes(1);
+      expect(beforePublish).not.toHaveBeenCalled();
       expect(await SharedLink.countDocuments({ conversationId })).toBe(1);
       const untouched = await SharedLink.findOne({ shareId }).lean();
       expect(untouched?.messages).toHaveLength(0);
+    });
+
+    test('runs content preflight before the before-publish mutation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Protected Share',
+        user: userId,
+        messages: [],
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Safe message',
+        isCreatedByUser: true,
+      });
+      const order: string[] = [];
+      const preflight = jest.fn(async () => {
+        order.push('preflight');
+      });
+      const beforePublish = jest.fn(async () => {
+        order.push('beforePublish');
+      });
+
+      await shareMethods.updateSharedLink(
+        userId,
+        shareId,
+        undefined,
+        undefined,
+        true,
+        preflight,
+        beforePublish,
+      );
+
+      expect(order).toEqual(['preflight', 'beforePublish']);
     });
 
     test('preflights only messages selected by the stored branch target', async () => {

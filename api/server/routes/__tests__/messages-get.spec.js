@@ -6,38 +6,117 @@ jest.mock('@librechat/agents', () => ({
   sleep: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
-  createContentFilter: jest.fn(() => (req, res, next) => next()),
-  inspectContent: jest.fn(() => null),
-  extractChatContent: jest.fn(() => []),
-  extractFeedbackContent: jest.fn(() => []),
-  extractStoredMessageContent: jest.fn(() => []),
-  contentFilterBlockResponse: jest.fn(),
-  getContentTraversalFragments: jest.fn((error) => error.fragments ?? []),
-  isContentTraversalLimitError: jest.fn((error) => error?.code === 'content_filter_uninspectable'),
-  isContentTraversalProtected: jest.fn(() => false),
-  assertModelBoundContent: jest.fn(),
-  hasActiveFilePolicy: jest.fn(
+jest.mock('@librechat/api', () => {
+  const inspectContent = jest.fn(() => null);
+  const extractChatContent = jest.fn(() => []);
+  const extractStoredMessageContent = jest.fn(() => []);
+  const contentFilterBlockResponse = jest.fn();
+  const getContentTraversalFragments = jest.fn((error) => error.fragments ?? []);
+  const isContentTraversalLimitError = jest.fn(
+    (error) => error?.code === 'content_filter_uninspectable',
+  );
+  const isContentTraversalProtected = jest.fn(() => false);
+  const assertModelBoundContent = jest.fn();
+  const hasActiveFilePolicy = jest.fn(
     (filters) => filters?.files?.pii != null && filters.files.pii.starterPatterns?.length !== 0,
-  ),
-  isContentFilterError: jest.fn(
-    (error) =>
-      error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
-  ),
-  resolveCanonicalFileReferences: jest.fn(async ({ input, filters }) => ({
+  );
+  const resolveCanonicalFileReferences = jest.fn(async ({ input, filters }) => ({
     sanitizedInput: input,
     hydratedFiles: [],
     hydratedFilters: filters,
-  })),
-  unescapeLaTeX: jest.fn((x) => x),
-  countTokens: jest.fn().mockResolvedValue(10),
-  mergeQuotedTextForCount: jest.fn((text) => text),
-  sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
-  traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
-  CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
-  isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
-  requireFeedbackEnabled: (req, res, next) => next(),
-}));
+  }));
+  const assertMutationAllowed = (extract, filters, input) => {
+    let fragments;
+    let traversalError;
+    try {
+      fragments = extract(input);
+    } catch (error) {
+      if (!isContentTraversalLimitError(error)) {
+        throw error;
+      }
+      fragments = getContentTraversalFragments(error);
+      traversalError = error;
+    }
+    const finding = inspectContent(fragments, { filters });
+    if (finding != null) {
+      throw Object.assign(new Error('blocked'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: contentFilterBlockResponse(finding),
+      });
+    }
+    if (traversalError != null && isContentTraversalProtected({ error: traversalError, filters })) {
+      throw traversalError;
+    }
+  };
+
+  return {
+    createContentFilter: jest.fn(() => (req, res, next) => next()),
+    inspectContent,
+    extractChatContent,
+    extractFeedbackContent: jest.fn(() => []),
+    extractStoredMessageContent,
+    contentFilterBlockResponse,
+    getContentTraversalFragments,
+    isContentTraversalLimitError,
+    isContentTraversalProtected,
+    assertModelBoundContent,
+    hasActiveFilePolicy,
+    isContentFilterError: jest.fn(
+      (error) =>
+        error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
+    ),
+    resolveCanonicalFileReferences,
+    assertStoredMessageBranchAllowed: jest.fn(async (input) => {
+      let storedMessage = input.message;
+      let resolvedFiles = [];
+      if (hasActiveFilePolicy(input.filters)) {
+        const inspection = await resolveCanonicalFileReferences({
+          filters: input.filters,
+          input: input.message,
+          user: input.user,
+        });
+        storedMessage = inspection.sanitizedInput;
+        resolvedFiles = inspection.hydratedFiles;
+      }
+      assertModelBoundContent({
+        filters: input.filters,
+        legacyPii: input.legacyPii,
+        storedMessages: [storedMessage],
+        resolvedFiles,
+      });
+    }),
+    assertStoredMessageMutationAllowed: jest.fn((filters, input) =>
+      assertMutationAllowed(extractStoredMessageContent, filters, input),
+    ),
+    assertChatMutationAllowed: jest.fn((filters, input) =>
+      assertMutationAllowed(extractChatContent, filters, input),
+    ),
+    mergeUserSubmittedPaths: (...lists) => [...new Set(lists.flat().filter(Boolean))],
+    mergeUserSubmittedMessageFieldPaths: (...lists) => {
+      const seen = new Set();
+      return lists.flat().filter((entry) => {
+        if (entry == null) {
+          return false;
+        }
+        const key = `${entry.field}:${entry.path}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+    },
+    unescapeLaTeX: jest.fn((x) => x),
+    countTokens: jest.fn().mockResolvedValue(10),
+    mergeQuotedTextForCount: jest.fn((text) => text),
+    sendFeedbackScore: jest.fn().mockResolvedValue(undefined),
+    traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
+    CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
+    isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
+    requireFeedbackEnabled: (req, res, next) => next(),
+  };
+});
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
 

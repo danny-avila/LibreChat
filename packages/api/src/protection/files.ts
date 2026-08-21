@@ -111,6 +111,27 @@ const TEXTUAL_APPLICATION_MIME_TYPES = new Set([
   'application/x-yaml',
   'application/yaml',
 ]);
+const AUDIO_APPLICATION_MIME_TYPES = new Set(['application/ogg']);
+
+function normalizeMimeType(mimeType: unknown): string {
+  return typeof mimeType === 'string' ? mimeType.split(';', 1)[0].trim().toLowerCase() : '';
+}
+
+/**
+ * Classifies whether a MIME type can carry audio that requires transcript
+ * inspection. `null` preserves fail-close behavior for missing or malformed
+ * MIME metadata instead of treating an unknown file as safely non-audio.
+ */
+function getNormalizedTranscriptApplicability(normalized: string): boolean | null {
+  if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(normalized)) {
+    return null;
+  }
+  return normalized.startsWith('audio/') || AUDIO_APPLICATION_MIME_TYPES.has(normalized);
+}
+
+export function getTranscriptApplicability(mimeType: unknown): boolean | null {
+  return getNormalizedTranscriptApplicability(normalizeMimeType(mimeType));
+}
 
 function captureOpaqueArrayLength(value: readonly unknown[]): number {
   const length = value.length;
@@ -222,9 +243,35 @@ function isAgentContextUpload(input: {
 export function canInspectUploadTranscriptAfterProcessing(input: {
   readonly endpoint?: string;
   readonly toolResource?: string;
+  readonly mimeType?: string;
   readonly sttSupported: boolean;
 }): boolean {
-  return input.sttSupported && isAgentContextUpload(input);
+  return (
+    getTranscriptApplicability(input.mimeType) === true &&
+    input.sttSupported &&
+    isAgentContextUpload(input)
+  );
+}
+
+/** Resolves upload-time transcript fail-close after accounting for downstream STT. */
+export function getBlockedUploadTranscriptField(input: {
+  readonly filters?: FiltersConfig;
+  readonly endpoint?: string;
+  readonly toolResource?: string;
+  readonly mimeType?: string;
+  readonly sttSupported: boolean;
+}): FileFilterField | null {
+  if (!hasActiveFileFieldPolicy(input.filters, ['transcript'])) {
+    return null;
+  }
+  const transcriptApplicable = getTranscriptApplicability(input.mimeType);
+  if (transcriptApplicable === false) {
+    return null;
+  }
+  if (transcriptApplicable === true && input.sttSupported && isAgentContextUpload(input)) {
+    return null;
+  }
+  return getBlockedUninspectableFileField(input.filters, ['transcript']);
 }
 
 export const UPLOAD_EXTRACTED_TEXT_PLANS = {
@@ -863,19 +910,15 @@ function getRequiredOpaqueFileField(
 }
 
 function getNormalizedMimeType(file: CanonicalFileInspectionFile): string {
-  if (typeof file.type !== 'string') {
-    return '';
-  }
-  return file.type.split(';', 1)[0].trim().toLowerCase();
+  return normalizeMimeType(file.type);
 }
 
 export function getCanonicalFileInspectionCoverage(
   file: CanonicalFileInspectionFile,
 ): CanonicalFileInspectionCoverage {
   const mimeType = getNormalizedMimeType(file);
-  const isAudio = mimeType.startsWith('audio/');
-  const hasValidMimeShape = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(mimeType);
-  const transcriptApplicable = hasValidMimeShape ? isAudio : null;
+  const transcriptApplicable = getNormalizedTranscriptApplicability(mimeType);
+  const isAudio = transcriptApplicable === true;
   const isTextual = mimeType.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(mimeType);
   const hasExtractedTextProvenance =
     typeof file.source === 'string' && file.source.toLowerCase() === 'text';

@@ -21,8 +21,8 @@ const {
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
+  getBlockedUploadTranscriptField,
   canInspectUploadExtractedTextAfterProcessing,
-  canInspectUploadTranscriptAfterProcessing,
 } = require('@librechat/api');
 const {
   Time,
@@ -749,16 +749,15 @@ router.post('/', async (req, res) => {
         req.file.mimetype,
         fileConfig.stt?.supportedMimeTypes || [],
       );
-      const canInspectAfterProcessing = canInspectUploadTranscriptAfterProcessing({
+      const blockedTranscriptField = getBlockedUploadTranscriptField({
+        filters,
         endpoint: metadata.endpoint,
         toolResource: metadata.tool_resource,
+        mimeType: req.file.mimetype,
         sttSupported: shouldTranscribe,
       });
-      if (shouldTranscribe && !canInspectAfterProcessing) {
-        const uninspectableField = getBlockedUninspectableFileField(filters, ['transcript']);
-        if (uninspectableField != null) {
-          return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
-        }
+      if (blockedTranscriptField != null) {
+        return res.status(400).json(contentFilterUninspectableResponse(blockedTranscriptField));
       }
     }
     if ((inspectRawContent || inspectExtractedText) && typeof req.file?.path === 'string') {
