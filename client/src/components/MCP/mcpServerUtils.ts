@@ -224,7 +224,7 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
   if ((connectionState === 'disconnected' || connectionState === 'error') && requestScoped) {
     return false;
   }
-  if (connectionState === 'connected' && requestScoped) return hasCustomUserVars;
+  if (connectionState === 'connected' && requestScoped) return hasCustomUserVars === true;
   // Show for disconnected/error (can reconnect/configure)
   if (connectionState === 'disconnected' || connectionState === 'error') return true;
   // Show a cancel action for pending OAuth connections.
