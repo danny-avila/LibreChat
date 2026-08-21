@@ -661,6 +661,29 @@ Citations:
     });
   });
 
+  describe('File citations', () => {
+    it('resolves a file citation against the references collection', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          text: 'From the handbook \ue202turn0file0.',
+          searchResults: {
+            '0': {
+              references: [{ link: 'https://example.com/handbook.pdf', title: 'Handbook' }],
+            },
+          } as unknown as { [key: string]: SearchResultData },
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const [plainText] = mockCopy.mock.calls[0];
+      expect(plainText).toContain('From the handbook [1].');
+      expect(plainText).toContain('[1] https://example.com/handbook.pdf');
+    });
+  });
+
   describe('Rich text', () => {
     const getClipboardHtml = (): string => {
       const [, options] = mockCopy.mock.calls[0];

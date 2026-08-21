@@ -27,6 +27,8 @@ const refTypeMap: Record<string, string> = {
   search: 'organic',
   ref: 'references',
   news: 'topStories',
+  /** File-search sources share the `references` collection, as `useCitation` reads them. */
+  file: 'references',
   image: 'images',
   video: 'videos',
 };
