@@ -782,6 +782,56 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
   });
 
   describe('expireApproval notification', () => {
+    test('delivers the exact expired generation to the host lifecycle hook', async () => {
+      const streamId = 'stream-expire-host-hook';
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, {
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          status: 'requires_action',
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      );
+    });
+
+    test('expires a durable paused job even when no process-local runtime survived', async () => {
+      const streamId = 'stream-expire-ownerless-host-hook';
+      const job = await jobStore.createJob(streamId, 'user-1', streamId, undefined, {
+        scheduleId: 'schedule-ownerless',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      const lifecycle = new ApprovalLifecycle(jobStore);
+      await lifecycle.pause(streamId, buildAction(streamId, { expiresAt: Date.now() - 1 }));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      await (
+        manager as unknown as { expireStaleApprovals: () => Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          scheduleId: 'schedule-ownerless',
+          status: 'requires_action',
+        }),
+      );
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+    });
+
     test('does not expire a replacement paused on the same action id', async () => {
       const streamId = 'stream-expire-epoch-fence';
       const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
@@ -928,6 +978,154 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     });
   });
 
+  describe('durable approval-expiry host action', () => {
+    const sweep = (m: GenerationJobManagerClass) =>
+      (m as unknown as { expireStaleApprovals: () => Promise<void> }).expireStaleApprovals();
+
+    async function pauseScheduled(streamId: string) {
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, {
+        scheduleId: 's1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      return job;
+    }
+
+    test('retains the marker on hook failure and retries it on a later cleanup pass', async () => {
+      const streamId = 'stream-host-retry';
+      await pauseScheduled(streamId);
+      const handler = jest
+        .fn<Promise<void>, [string, { scheduleId?: string }]>()
+        .mockRejectedValueOnce(new Error('mongo down'))
+        .mockResolvedValue(undefined);
+      manager.setApprovalExpiredHandler(handler);
+
+      // First expiry wins its CAS, but the host hook FAILS: the durable marker is retained.
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(1);
+
+      // A later cleanup pass re-enumerates the aborted job and retries; it now succeeds
+      // and clears the marker.
+      await sweep(manager);
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+    });
+
+    test('a fresh manager (restart / other replica) retries the pending host action', async () => {
+      const streamId = 'stream-host-restart';
+      const job = await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // Another replica / a restarted process: a fresh manager over the SAME durable store,
+      // with NO local runtime for this stream.
+      const other = new GenerationJobManagerClass();
+      other.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      other.initialize();
+      const succeeding = jest.fn().mockResolvedValue(undefined);
+      other.setApprovalExpiredHandler(succeeding);
+
+      await sweep(other);
+
+      expect(succeeding).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ createdAt: job.createdAt, scheduleId: 's1' }),
+      );
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      await other.destroy();
+    });
+
+    test('a successful acknowledgement prevents duplicate work on later sweeps', async () => {
+      const streamId = 'stream-host-ack';
+      await pauseScheduled(streamId);
+      const handler = jest.fn().mockResolvedValue(undefined);
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+
+      await sweep(manager);
+      expect(handler).toHaveBeenCalledTimes(1); // no duplicate invocation
+    });
+
+    test('clearTerminalHostAction is identity-fenced against a replacement generation', async () => {
+      const streamId = 'stream-host-fence';
+      const job = await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+      await manager.expireApproval(streamId);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // A clear fenced to a DIFFERENT generation must not clear this one's action.
+      await jobStore.clearTerminalHostAction(streamId, job.createdAt + 1);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // The exact generation clears it.
+      await jobStore.clearTerminalHostAction(streamId, job.createdAt);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+    });
+
+    test('terminalizes and delivers the terminal state even when the first hook fails', async () => {
+      const streamId = 'stream-host-notify';
+      await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+
+      // The CAS + terminal notification proceed regardless of the host hook outcome.
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+    });
+
+    test('retention is refreshed on each retry so a long host outage keeps the evidence', async () => {
+      const streamId = 'stream-host-refresh';
+      await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('mongo down')));
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      const before = (await jobStore.getJob(streamId))?.terminalHostActionRefreshedAt;
+
+      // A later cleanup pass re-enumerates it for retry; the hook still fails.
+      await sweep(manager);
+
+      const after = await jobStore.getJob(streamId);
+      // Still pending, and its retention basis moved forward — so the bounded retention
+      // window measures from the LAST retry, not from when the approval expired.
+      expect(after?.terminalHostActionPending).toBe(true);
+      expect(after?.terminalHostActionRefreshedAt).toEqual(expect.any(Number));
+      if (before != null) {
+        expect(after!.terminalHostActionRefreshedAt!).toBeGreaterThanOrEqual(before);
+      }
+    });
+
+    test('a non-scheduled job with a no-op host hook accumulates no marker', async () => {
+      const streamId = 'stream-host-nonsched';
+      await manager.createJob(streamId, 'user-1'); // no schedule metadata
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      // The schedule adapter is installed but owns no action for a non-scheduled job.
+      manager.setApprovalExpiredHandler(
+        jest.fn(async (_streamId: string, job: { scheduleId?: string }) => {
+          if (!job.scheduleId) {
+            return;
+          }
+        }),
+      );
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      // Marked atomically then cleared on the no-op success — nothing lingers.
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+    });
+  });
+
   describe('facade integration', () => {
     test('requires_action drops the running count but keeps the user-active set', async () => {
       const streamId = 'stream-counts';
@@ -997,9 +1195,9 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     expect((await store.getJob('epoch-guard'))?.status).toBe('error');
   });
 
-  test('cleanup() finalizes and reclaims a past-expiry pending-approval job', async () => {
+  test('cleanup() finalizes a past-expiry approval, retaining it for host-hook retry', async () => {
     const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
-    await store.createJob('s1', 'u1');
+    const job = await store.createJob('s1', 'u1');
 
     const action = buildPendingAction(
       buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
@@ -1011,7 +1209,17 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
       patch: { pendingAction: action, pendingActionId: action.actionId },
     });
 
-    // A past-expiry approval must be finalized + reclaimed, not left resident.
+    // A past-expiry approval is finalized (aborted) but RETAINED with a pending host-action
+    // marker so the manager relay can still run its lifecycle hook (the store cannot know
+    // whether one is owed); it is enumerable for that retry.
+    await store.cleanup();
+    const aborted = await store.getJob('s1');
+    expect(aborted?.status).toBe('aborted');
+    expect(aborted?.terminalHostActionPending).toBe(true);
+    expect(await store.getTerminalHostActionJobs()).toHaveLength(1);
+
+    // Once the host action acknowledges, the marker clears and the next cleanup reclaims it.
+    await store.clearTerminalHostAction('s1', job.createdAt);
     await store.cleanup();
     expect(await store.getJob('s1')).toBeNull();
   });

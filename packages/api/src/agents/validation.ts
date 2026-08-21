@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
   MemoryScope,
-  MAX_SUBAGENTS,
+  getMaxSubagents,
   ViolationTypes,
   ErrorTypes,
   MAX_SUBAGENT_GRAPH_NODES,
@@ -181,10 +181,12 @@ export const agentToolOptionsSchema: z.ZodOptional<
 > = z.record(z.string(), toolOptionsSchema).optional();
 
 /**
- * Subagent spawning configuration for an agent. `agent_ids` is capped at
- * `Constants.MAX_SUBAGENTS` so a crafted API request cannot trigger hundreds
- * of `processAgent` calls (DB lookup + permission check + tool loading).
- * The UI enforces the same cap, so legitimate payloads never hit the bound.
+ * Subagent spawning configuration for an agent. `agent_ids` and `graphs` are
+ * capped at the effective subagents limit (10 by default, configurable via
+ * `endpoints.agents.maxSubagents`) so a crafted API request cannot trigger
+ * hundreds of `processAgent` calls (DB lookup + permission check + tool
+ * loading). The UI enforces the same cap, so legitimate payloads never hit
+ * the bound.
  */
 const graphSubagentEdgeSchema = z
   .object({
@@ -346,10 +348,25 @@ export const agentSubagentsSchema: z.ZodOptional<z.ZodType<AgentSubagentsConfig>
   .object({
     enabled: z.boolean().optional(),
     allowSelf: z.boolean().optional(),
-    agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
-    graphs: z.array(graphSubagentSchema).max(MAX_SUBAGENTS).optional(),
+    agent_ids: z.array(z.string()).optional(),
+    graphs: z.array(graphSubagentSchema).optional(),
   })
   .superRefine((subagents, ctx) => {
+    const maxSubagents = getMaxSubagents();
+    if ((subagents.agent_ids?.length ?? 0) > maxSubagents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agent_ids'],
+        message: `agent_ids must contain at most ${maxSubagents} item(s)`,
+      });
+    }
+    if ((subagents.graphs?.length ?? 0) > maxSubagents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['graphs'],
+        message: `graphs must contain at most ${maxSubagents} item(s)`,
+      });
+    }
     const reservedTypes = new Set(subagents.agent_ids ?? []);
     const configuredAgentIds = new Set(subagents.agent_ids ?? []);
     if (subagents.allowSelf !== false) {

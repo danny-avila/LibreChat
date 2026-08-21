@@ -98,6 +98,7 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
@@ -196,6 +197,7 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  ScheduleMethods &
   AgentMethods &
   ConfigMethods &
   MCPAuthorityMethods &
@@ -334,6 +336,7 @@ export function createMethods(
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
     ...createAgentTriggerDeliveryMethods(mongoose),
+    ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -395,6 +398,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  ScheduleMethods,
   AgentMethods,
   ConfigMethods,
   MCPAuthorityMethods,

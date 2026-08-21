@@ -12,6 +12,12 @@ const createFireEnvelope = () =>
     receivedAt: 20,
     principal: { id: 'user-1', role: 'member', tenantId: 'tenant-1' },
     target: { agentId: 'agent-1' },
+    run: {
+      conversationId: 'scheduled-conversation-1',
+      timezone: 'Europe/Paris',
+      files: [{ file_id: 'file-1' }],
+      metadata: { manual: false },
+    },
     event: {
       id: 'event-1',
       type: 'resource.ready',
@@ -154,7 +160,20 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
       isRegenerate: false,
       clientRequestId: idempotencyKey,
       generationProtocolVersion: 2,
-      timezone: 'America/New_York',
+      agentTrigger: {
+        version: envelope.version,
+        deliveryId: envelope.deliveryId,
+        event: {
+          id: envelope.event.id,
+          type: envelope.event.type,
+          occurredAt: envelope.event.occurredAt,
+          source: envelope.event.source,
+        },
+        metadata: { manual: false },
+      },
+      newConversationId: 'scheduled-conversation-1',
+      files: [{ file_id: 'file-1' }],
+      timezone: 'Europe/Paris',
     });
     expect(mintToken).toHaveBeenCalledWith(envelope.principal, envelope);
   });

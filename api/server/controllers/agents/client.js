@@ -2884,7 +2884,9 @@ class AgentClient extends BaseClient {
     // the flag; if it fails here, the teardown still releases (it checks the flag).
     if (!this.pendingRequestReleased) {
       try {
-        await decrementPendingRequest(this.options.req?.user?.id);
+        if (this.options.req?._scheduleConcurrencyExempt !== true) {
+          await decrementPendingRequest(this.options.req?.user?.id);
+        }
         this.pendingRequestReleased = true;
       } catch (err) {
         logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);

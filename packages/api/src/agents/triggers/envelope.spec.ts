@@ -19,6 +19,12 @@ describe('createAgentTriggerEnvelope', () => {
       tenantId: 'tenant-1',
     },
     target: { agentId: 'agent-1' },
+    run: {
+      conversationId: 'conversation-1',
+      timezone: 'America/New_York',
+      files: [{ file_id: 'file-1' }],
+      metadata: { adapter: 'test' },
+    },
     event: {
       id: 'event-1',
       type: 'work.ready',
@@ -49,6 +55,12 @@ describe('createAgentTriggerEnvelope', () => {
       receivedAt: 1_725_000_000_010,
       principal: { userId: 'user-1', role: 'USER', tenantId: 'tenant-1' },
       target: { agentId: 'agent-1' },
+      run: {
+        conversationId: 'conversation-1',
+        timezone: 'America/New_York',
+        files: [{ file_id: 'file-1' }],
+        metadata: { adapter: 'test' },
+      },
       event: {
         id: 'event-1',
         type: 'work.ready',
@@ -206,6 +218,33 @@ describe('createAgentTriggerEnvelope', () => {
         target: undefined,
       } as unknown as CreateAgentTriggerEnvelopeInput),
     ).toThrow('target.agentId must be a non-empty string');
+  });
+
+  it('validates and detaches trusted fire run context', () => {
+    const input = createFireInput();
+    const envelope = createAgentTriggerEnvelope(input);
+    const files = input.mode === 'fire' ? input.run?.files : undefined;
+    if (files != null) {
+      (files[0] as { file_id: string }).file_id = 'changed';
+    }
+
+    expect(envelope.mode).toBe('fire');
+    if (envelope.mode === 'fire') {
+      expect(envelope.run?.files).toEqual([{ file_id: 'file-1' }]);
+    }
+
+    expect(() =>
+      createAgentTriggerEnvelope({
+        ...createFireInput(),
+        run: { files: 'not-an-array' },
+      } as unknown as CreateAgentTriggerEnvelopeInput),
+    ).toThrow('run.files must be an array');
+    expect(() =>
+      createAgentTriggerEnvelope({
+        ...createFireInput(),
+        run: { metadata: { callback: () => undefined } },
+      } as unknown as CreateAgentTriggerEnvelopeInput),
+    ).toThrow('run.metadata.callback contains a non-JSON function value');
   });
 
   it('rejects non-JSON and circular event payloads', () => {

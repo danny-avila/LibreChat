@@ -89,6 +89,13 @@ const MIN_SKILL_CATALOG_LIMIT = 1;
 const MAX_CATALOG_PAGES = 10;
 /** Page size used when paginating to fill the active-skill quota. */
 const CATALOG_PAGE_SIZE = 100;
+/**
+ * Per-entry description cap applied by `formatSkillCatalog` before the
+ * catalog is injected into agent context. `@librechat/agents` truncates
+ * silently, so this mirrors the default so we can warn when authors' skill
+ * descriptions will not reach the model verbatim.
+ */
+const SKILL_CATALOG_MAX_ENTRY_CHARS = 250;
 /** Hard ceiling on skill names a model spec can request by config. */
 const MAX_MODEL_SPEC_SKILLS = SKILL_CATALOG_LIMIT;
 /**
@@ -620,9 +627,19 @@ export async function injectSkillCatalog(
    * and those reads would otherwise be impossible.
    */
   if (catalogVisibleSkills.length > 0) {
+    for (const s of catalogVisibleSkills) {
+      if (s.description.length > SKILL_CATALOG_MAX_ENTRY_CHARS) {
+        logger.warn(
+          `[injectSkillCatalog] skill "${s.name}" description truncated to ${SKILL_CATALOG_MAX_ENTRY_CHARS} chars for the model catalog (was ${s.description.length})`,
+        );
+      }
+    }
     const catalog = formatSkillCatalog(
       catalogVisibleSkills.map((s) => ({ name: s.name, description: s.description })),
-      { contextWindowTokens: contextWindowTokens || 200_000 },
+      {
+        contextWindowTokens: contextWindowTokens || 200_000,
+        maxEntryChars: SKILL_CATALOG_MAX_ENTRY_CHARS,
+      },
     );
     if (catalog) {
       agent.additional_instructions = agent.additional_instructions

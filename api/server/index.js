@@ -57,6 +57,7 @@ const { capabilityContextMiddleware } = require('./middleware/roles/capabilities
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { initializeScheduleEngine, recordExpiredScheduleApproval } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
@@ -85,9 +86,12 @@ const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default 
 
 const app = express();
 let serverReady = false;
+let schedulesReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
+const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
+const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
@@ -101,12 +105,24 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   });
 };
 
+const rejectScheduleWritesUntilReady = (req, res, next) => {
+  if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
+    return next();
+  }
+  res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
+  return res.status(503).json({
+    code: SCHEDULES_NOT_READY_CODE,
+    error: 'Scheduler is still starting. Please retry shortly.',
+  });
+};
+
 const configureGenerationStreams = () => {
   const streamServices = createStreamServices();
   GenerationJobManager.configure({
     ...streamServices,
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
   GenerationJobManager.initialize();
   // Stop active generations and close their SSE streams while the HTTP server drains.
   registerShutdownTask(
@@ -345,6 +361,7 @@ const startServer = async () => {
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
   app.use('/api/memories', routes.memories);
+  app.use('/api/schedules', rejectScheduleWritesUntilReady, routes.schedules);
   app.use('/api/permissions', routes.accessPermissions);
 
   app.use('/api/tags', routes.tags);
@@ -402,6 +419,10 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       await initializeAgentTriggerService({ address: server.address() });
+      schedulesReady = (await initializeScheduleEngine()) != null;
+      if (!schedulesReady) {
+        logger.warn('[schedules] write routes remain unavailable because the engine did not arm.');
+      }
       serverReady = true;
       logger.info('Server readiness checks passing.');
     } catch (initErr) {

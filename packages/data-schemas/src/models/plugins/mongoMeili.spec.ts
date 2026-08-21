@@ -114,6 +114,22 @@ describe('Meilisearch Mongoose plugin', () => {
     process.env = OLD_ENV;
   });
 
+  test('settles query updates and deletes when no document hook is available', async () => {
+    const modelName = `QueryMiddlewareResult${Date.now()}`;
+    const Model = createDynamicMeiliModel(modelName);
+    try {
+      await Model.create({ docId: 'query-result', user: 'user', title: 'Before' });
+      await expect(
+        Model.updateOne({ docId: 'query-result' }, { $set: { title: 'After' } }),
+      ).resolves.toMatchObject({ matchedCount: 1, modifiedCount: 1 });
+      await expect(Model.deleteOne({ docId: 'query-result' })).resolves.toMatchObject({
+        deletedCount: 1,
+      });
+    } finally {
+      mongoose.deleteModel(modelName);
+    }
+  });
+
   test('saving conversation indexes w/ meilisearch', async () => {
     await createConversationModel(mongoose).create({
       conversationId: new mongoose.Types.ObjectId(),

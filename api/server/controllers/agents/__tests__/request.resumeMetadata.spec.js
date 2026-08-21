@@ -64,6 +64,10 @@ const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
+const mockIsScheduleFireRequest = jest.fn();
+const mockExemptFromConcurrencyLimiter = jest.fn();
+const mockRecordScheduleOutcome = jest.fn();
+const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
@@ -132,6 +136,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
+  exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
   /** Recorded onto the job so the steer route can honour the OWNING replica's
    *  seal capability rather than its own probe. */
@@ -214,6 +220,11 @@ jest.mock('~/models', () => ({
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
 }));
 
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
+}));
+
 const AgentController = require('../request');
 const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
@@ -250,6 +261,12 @@ describe('ResumableAgentController resume metadata', () => {
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
     mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
+    mockIsScheduleFireRequest.mockImplementation((req) => req?._isScheduledFire === true);
+    mockExemptFromConcurrencyLimiter.mockImplementation(
+      (req) => req?._isScheduledFire === true && req?._isManualScheduledFire !== true,
+    );
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
       metadata: {
@@ -286,7 +303,7 @@ describe('ResumableAgentController resume metadata', () => {
       }),
     );
     mockGenerationJobManager.finishTerminalJob.mockResolvedValue(undefined);
-    mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.completeJob.mockResolvedValue(true);
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
@@ -795,6 +812,73 @@ describe('ResumableAgentController resume metadata', () => {
       DEFAULT_OWNED_CLAIM,
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
+  it('rejects a superseded automatic occurrence after durable job creation and preserves its outcome', async () => {
+    const conversationId = 'scheduled-conversation-123';
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: conversationId, conversationId }),
+    );
+    mockIsScheduleLive.mockResolvedValue(false);
+    const req = {
+      _isScheduledFire: true,
+      _isManualScheduledFire: false,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run the scheduled digest.',
+        messageId: 'scheduled-user-message',
+        clientRequestId: 'sched:schedule-1:2026-08-17T12:00:00-000Z',
+        conversationId: 'new',
+        newConversationId: conversationId,
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        scheduleConfigRevision: 7,
+        endpointOption: { endpoint: 'agents', agent_id: 'agent-1' },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+          scheduleConfigRevision: 7,
+          preserveForScheduleReconcile: true,
+        }),
+      }),
+    );
+    expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 7, {
+      automatic: true,
+      policy: true,
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: 'SCHEDULE_NO_LONGER_ACTIVE',
+      error: 'This scheduled occurrence is no longer active',
+      generationProtocolVersion: 1,
+    });
+    expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      streamId: conversationId,
+      jobCreatedAt: 1000,
+      status: 'interrupted',
+      conversationId,
+      clearConversationId: false,
+      error: 'This scheduled occurrence is no longer active',
+    });
+    expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
   });
 
   it('does not start a provider when account deletion or replacement wins the startup CAS', async () => {
