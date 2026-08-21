@@ -8,6 +8,7 @@ import {
   splitMCPToolKey,
   normalizeServerName,
   buildServerNameAliases,
+  stripServerNamePrefix,
 } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
@@ -136,7 +137,7 @@ export default function McpSection({ item }: Props) {
    * runtime heal keeps them active, and per-tool updates could never replace
    * the legacy entry. Tokens and other servers' entries pass through.
    */
-  const toCurrentToolId = useCallback(
+  const toNormalizedToolId = useCallback(
     (entry: string): string => {
       const normalizedName = normalizeServerName(serverName);
       if (
@@ -170,6 +171,44 @@ export default function McpSection({ item }: Props) {
       return `${entry.slice(0, entry.length - serverName.length)}${normalizedName}`;
     },
     [serverName, serverToken, serverAllToken, mcpServersMap],
+  );
+
+  /**
+   * Second migration stage: catalog keys drop a redundant leading server-name
+   * prefix, so a pre-strip persisted id would show its tool unchecked and a
+   * per-tool toggle could silently drop it from the selection. The rewrite is
+   * identity-verified — it only lands when the stripped catalog entry records
+   * this exact raw name as its upstream tool — so a stale id for a removed
+   * tool can never migrate onto a different sibling.
+   */
+  /** Constant-time lookups for the migration below — the form heal calls it
+   *  per persisted key, so linear catalog scans go O(options × tools). */
+  const toolsById = useMemo(() => new Map(tools.map((tool) => [tool.tool_id, tool])), [tools]);
+
+  const toStrippedToolId = useCallback(
+    (entry: string): string => {
+      if (entry === serverToken || entry === serverAllToken || toolsById.has(entry)) {
+        return entry;
+      }
+      const normalizedName = normalizeServerName(serverName);
+      const [toolPart, parsed] = splitMCPToolKey(entry, [normalizedName]);
+      if (parsed !== normalizedName) {
+        return entry;
+      }
+      const strippedPart = stripServerNamePrefix(toolPart, normalizedName);
+      if (strippedPart === toolPart) {
+        return entry;
+      }
+      const strippedId = `${strippedPart}${Constants.mcp_delimiter}${normalizedName}`;
+      const target = toolsById.get(strippedId);
+      return target?.metadata.serverToolName === toolPart ? strippedId : entry;
+    },
+    [serverName, serverToken, serverAllToken, toolsById],
+  );
+
+  const toCurrentToolId = useCallback(
+    (entry: string): string => toStrippedToolId(toNormalizedToolId(entry)),
+    [toNormalizedToolId, toStrippedToolId],
   );
 
   const isServerSelection = useCallback(

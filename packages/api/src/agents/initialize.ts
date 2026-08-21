@@ -40,6 +40,7 @@ import type {
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { TFilterFilesByAgentAccess } from './resources';
+import type { MCPToolAlias } from '~/tools/classification';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -279,6 +280,8 @@ export type InitializedAgent = Agent & {
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
+  /** Both-direction identity aliases for MCP tools whose key spelling changed */
+  mcpToolAliases?: MCPToolAlias[];
   /** Precomputed flag indicating if any tools have defer_loading enabled (for efficient runtime checks) */
   hasDeferredTools?: boolean;
   /**
@@ -444,6 +447,7 @@ export interface InitializeAgentParams {
     /** Serializable tool definitions for event-driven mode */
     toolDefinitions?: LCTool[];
     hasDeferredTools?: boolean;
+    mcpToolAliases?: MCPToolAlias[];
     actionsEnabled?: boolean;
     /**
      * Pre-uploaded code-env file refs for the agent's
@@ -1106,6 +1110,7 @@ export async function initializeAgent(
     mcpAvailableTools,
     requestScopedConnections,
     hasDeferredTools,
+    mcpToolAliases,
     actionsEnabled,
     tools: structuredTools,
     primedCodeFiles,
@@ -1119,6 +1124,7 @@ export async function initializeAgent(
     requestScopedConnections: undefined,
     toolDefinitions: [],
     hasDeferredTools: false,
+    mcpToolAliases: [],
     actionsEnabled: undefined,
     primedCodeFiles: undefined,
   };
@@ -1557,6 +1563,7 @@ export async function initializeAgent(
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    mcpToolAliases,
     backgroundToolNames,
     intentToolNames,
     actionsEnabled,

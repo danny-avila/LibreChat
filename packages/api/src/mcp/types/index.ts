@@ -49,6 +49,9 @@ export interface MCPResource {
 export interface LCFunctionTool {
   type: 'function';
   ['function']: LCTool;
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — tool calls must send THIS name to the server. */
+  serverToolName?: string;
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;

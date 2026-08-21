@@ -12,6 +12,7 @@ import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { MAX_SUBAGENTS, MAX_SUBAGENTS_CEILING } from './limits';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { isActionTool } from './types/assistants';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
@@ -3175,6 +3176,120 @@ export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly st
     return toolKey;
   }
   return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
+}
+
+/**
+ * Strips a redundant leading server-name prefix from a raw upstream tool name
+ * before it is embedded into a model-facing key, so the key doesn't carry the
+ * server twice (`acme_trace_..._mcp_acme`) and push long tool names
+ * past provider function-name limits (64 chars). The match is case-insensitive
+ * because display-cased server names ("Acme") conventionally prefix their
+ * tools in lowercase. Ingestion that strips must record the original name
+ * (`serverToolName` on the cached definition) — tool calls send THAT name back
+ * to the server, never the stripped one. Catalog producers must not call this
+ * directly: only {@link stripServerNamePrefixes} sees the whole sibling set and
+ * can keep colliding results apart.
+ */
+export function stripServerNamePrefix(toolName: string, normalizedServerName: string): string {
+  const prefixLength = normalizedServerName.length + 1;
+  if (toolName.length <= prefixLength) {
+    return toolName;
+  }
+  const prefix = toolName.slice(0, prefixLength).toLowerCase();
+  if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
+    return toolName;
+  }
+  const stripped = toolName.slice(prefixLength);
+  if (isReservedMCPToolName(stripped)) {
+    return toolName;
+  }
+  /** `isActionTool` classifies keys by the RELATIVE position of `_action_`
+   *  and `_mcp_`; stripping moves the first `_mcp_` earlier, so a server
+   *  whose normalized name contains `_action_` could see a real MCP tool
+   *  reclassified as an OpenAPI action (bypassing MCP authorization). Never
+   *  produce a key whose classification differs from the raw key's. */
+  const keySuffix = `${Constants.mcp_delimiter}${normalizedServerName}`;
+  if (isActionTool(`${stripped}${keySuffix}`) !== isActionTool(`${toolName}${keySuffix}`)) {
+    return toolName;
+  }
+  return stripped;
+}
+
+/**
+ * Synthetic markers consumed by prefix (`isMCPAllPlaceholder`, the server-pin
+ * skip, the client's OAuth stream classification), so each reserves BOTH its
+ * exact name and its `${marker}${mcp_delimiter}` namespace: a stripped
+ * remainder inside any of them would turn a real upstream tool into the
+ * server-wide wildcard, the UI pin placeholder, or a synthetic OAuth call.
+ */
+const RESERVED_MCP_TOOL_MARKERS: readonly string[] = [
+  `${Constants.mcp_all}`,
+  `${Constants.mcp_server}`,
+  'oauth',
+];
+
+function isReservedMCPToolName(toolName: string): boolean {
+  /** `mcp_` opens the server-scoped pluginKey namespace (`mcp_${serverName}`),
+   *  and `lc_transfer_to_` opens the agent-handoff namespace (the client
+   *  renders such calls as handoffs; the background and intent passes exclude
+   *  them) — pre-strip tool keys could never enter either, since they always
+   *  began with the server name itself. */
+  if (
+    toolName.startsWith(`${Constants.mcp_prefix}`) ||
+    toolName.startsWith(`${Constants.LC_TRANSFER_TO_}`)
+  ) {
+    return true;
+  }
+  return RESERVED_MCP_TOOL_MARKERS.some(
+    (marker) => toolName === marker || toolName.startsWith(`${marker}${Constants.mcp_delimiter}`),
+  );
+}
+
+/**
+ * Maps every raw tool name in a server's catalog to its model-facing name,
+ * stripping redundant server-name prefixes collision-free: when two names
+ * yield the same result — a bare `foo` next to `<server>_foo`, or the
+ * case-variant pair `<server>_Foo` / `<Server>_Foo` under the case-insensitive
+ * prefix match — every collider keeps its raw name, so two distinct upstream
+ * tools can never collapse onto one key. Unprefixed names count against the
+ * result set through their identity mapping, which is what makes the bare-name
+ * case fall out of the same counter.
+ */
+export function stripServerNamePrefixes(
+  toolNames: readonly string[],
+  normalizedServerName: string,
+): Map<string, string> {
+  const rawNames = new Set(toolNames);
+  const finalNames = new Map<string, string>(
+    toolNames.map((name) => {
+      const stripped = stripServerNamePrefix(name, normalizedServerName);
+      /** Every sibling's RAW name is reserved even when that sibling itself
+       *  strips away: keys persisted BEFORE stripping embed raw names, so a
+       *  stripped result landing on another sibling's raw name would route
+       *  that sibling's legacy references to the wrong upstream tool. */
+      return [name, stripped !== name && rawNames.has(stripped) ? name : stripped];
+    }),
+  );
+  /** Reverting a collider to its raw name can itself collide with ANOTHER
+   *  sibling's stripped result (`foo` / `acme_foo` / `acme_acme_foo`), so the
+   *  guard iterates to a fixpoint. Each pass converts at least one stripped
+   *  result back to its unique raw name, so it terminates within the catalog
+   *  size. */
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const counts = new Map<string, number>();
+    finalNames.forEach((result) => {
+      counts.set(result, (counts.get(result) ?? 0) + 1);
+    });
+    finalNames.forEach((result, raw) => {
+      if (result !== raw && (counts.get(result) ?? 0) > 1) {
+        finalNames.set(raw, raw);
+        changed = true;
+      }
+    });
+  }
+  return finalNames;
 }
 
 export function splitMCPToolKey(

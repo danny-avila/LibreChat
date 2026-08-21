@@ -1021,7 +1021,7 @@ async function loadToolDefinitionsWrapper({
     return definitions;
   };
 
-  let { toolDefinitions, toolRegistry, hasDeferredTools, mcpResolution } =
+  let { toolDefinitions, toolRegistry, hasDeferredTools, mcpToolAliases, mcpResolution } =
     await loadToolDefinitions(
       {
         userId: req.user.id,
@@ -1134,6 +1134,7 @@ async function loadToolDefinitionsWrapper({
       toolDefinitions = reloadResult.toolDefinitions;
       toolRegistry = reloadResult.toolRegistry;
       hasDeferredTools = reloadResult.hasDeferredTools;
+      mcpToolAliases = reloadResult.mcpToolAliases;
       mcpResolution = reloadResult.mcpResolution;
     }
   }
@@ -1242,6 +1243,7 @@ async function loadToolDefinitionsWrapper({
     dynamicToolContextMap,
     toolDefinitions,
     hasDeferredTools,
+    mcpToolAliases,
     actionsEnabled,
     primedCodeFiles,
   };
@@ -1434,7 +1436,7 @@ async function loadAgentTools({
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
-  const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
+  const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools, mcpToolAliases } =
     await buildToolClassification({
       loadedTools,
       userId: req.user.id,
@@ -1504,6 +1506,7 @@ async function loadAgentTools({
       dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      mcpToolAliases,
       actionsEnabled,
       tools: agentTools,
       primedCodeFiles,
@@ -1523,6 +1526,7 @@ async function loadAgentTools({
       dynamicToolContextMap,
       toolDefinitions,
       hasDeferredTools,
+      mcpToolAliases,
       actionsEnabled,
       tools: agentTools,
       primedCodeFiles,
@@ -1653,6 +1657,7 @@ async function loadAgentTools({
     userMCPAuthMap,
     toolDefinitions,
     hasDeferredTools,
+    mcpToolAliases,
     actionsEnabled,
     tools: agentTools,
     primedCodeFiles,
