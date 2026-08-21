@@ -31,6 +31,7 @@ interface MeiliIndexable {
   [key: string]: unknown;
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
+  _meiliCleanupVersion?: number;
 }
 
 interface SyncProgress {
@@ -44,6 +45,7 @@ interface SyncProgress {
 interface _DocumentWithMeiliIndex extends Document {
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
+  _meiliCleanupVersion?: number;
   isTemporary?: boolean;
   expiredAt?: Date | null;
   preprocessObjectForIndex?: () => Record<string, unknown>;
@@ -103,6 +105,7 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
   Object.prototype.hasOwnProperty.call(schema.obj, path);
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
+const meiliCleanupVersion = 1;
 
 const buildRetentionIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   if (hasSchemaPath(schema, 'isTemporary')) {
@@ -136,7 +139,11 @@ const buildExcludedIndexedQuery = (excludeFromIndexPath?: string): FilterQuery<u
 
   return {
     [excludeFromIndexPath]: { $exists: true },
-    $or: [{ _meiliIndex: true }, { _meiliIndexAttempted: true }],
+    $or: [
+      { _meiliIndex: true },
+      { _meiliIndexAttempted: true },
+      { _meiliIndex: false, _meiliCleanupVersion: { $exists: false } },
+    ],
   };
 };
 
@@ -374,7 +381,7 @@ const createMeiliMongooseModel = ({
         // original conversation/message timestamps (fixes sidebar chronological sort).
         await this.updateMany(
           { _id: { $in: docsIds } },
-          { $set: { _meiliIndex: true } },
+          { $set: { _meiliIndex: true, _meiliCleanupVersion: meiliCleanupVersion } },
           { timestamps: false },
         );
       } catch (error) {
@@ -419,7 +426,10 @@ const createMeiliMongooseModel = ({
         }
         await this.updateMany(
           { ...excludedIndexedQuery, [primaryKey]: { $in: pendingIds } },
-          { $unset: { _meiliIndex: '', _meiliIndexAttempted: '' } },
+          {
+            $set: { _meiliCleanupVersion: meiliCleanupVersion },
+            $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+          },
           { timestamps: false },
         );
 
@@ -482,7 +492,10 @@ const createMeiliMongooseModel = ({
             }
             await this.updateMany(
               { [primaryKey]: { $in: toDelete } },
-              { $unset: { _meiliIndex: '', _meiliIndexAttempted: '' } },
+              {
+                $set: { _meiliCleanupVersion: meiliCleanupVersion },
+                $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+              },
               { timestamps: false },
             );
             logger.debug(`[cleanupMeiliIndex] Deleted ${toDelete.length} orphaned documents`);
@@ -631,7 +644,7 @@ const createMeiliMongooseModel = ({
         // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
         await this.collection.updateOne(
           { _id: this._id as Types.ObjectId },
-          { $set: { _meiliIndex: true } },
+          { $set: { _meiliIndex: true, _meiliCleanupVersion: meiliCleanupVersion } },
         );
       } catch (error) {
         logger.error('[addObjectToMeili] Error updating _meiliIndex field:', error);
@@ -665,7 +678,10 @@ const createMeiliMongooseModel = ({
           const model = this.constructor as Model<DocumentWithMeiliIndex>;
           await model.updateOne(
             { _id: this._id as Types.ObjectId },
-            { $unset: { _meiliIndex: '', _meiliIndexAttempted: '' } },
+            {
+              $set: { _meiliCleanupVersion: meiliCleanupVersion },
+              $unset: { _meiliIndex: '', _meiliIndexAttempted: '' },
+            },
           );
           return next();
         }
@@ -786,6 +802,12 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       required: false,
       select: false,
     },
+    _meiliCleanupVersion: {
+      type: Number,
+      required: false,
+      select: false,
+      default: meiliCleanupVersion,
+    },
   });
 
   if (options.excludeFromIndexPath != null) {
@@ -806,6 +828,17 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         partialFilterExpression: {
           [options.excludeFromIndexPath]: { $exists: true },
           _meiliIndexAttempted: { $eq: true },
+        },
+      },
+    );
+    schema.index(
+      { _meiliIndex: 1, _meiliCleanupVersion: 1, [options.primaryKey]: 1 },
+      {
+        name: 'meili_excluded_legacy_cleanup_v3',
+        partialFilterExpression: {
+          [options.excludeFromIndexPath]: { $exists: true },
+          _meiliIndex: { $eq: false },
+          _meiliCleanupVersion: { $exists: false },
         },
       },
     );
