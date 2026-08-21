@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
+import { useRecoilValue } from 'recoil';
 import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import {
@@ -9,6 +10,8 @@ import {
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
 } from '~/utils/citations';
+import { markdownToHtml } from '~/utils/richtext';
+import store from '~/store';
 
 type Source = {
   link: string;
@@ -29,6 +32,8 @@ const refTypeMap: Record<string, string> = {
 
 type ClipboardSource = Partial<Pick<TMessage, 'text' | 'content'>> & {
   searchResults?: { [key: string]: SearchResultData };
+  /** Also place the markdown rendered as HTML on the clipboard, for paste targets that ignore Markdown. */
+  richText?: boolean;
 };
 
 function getPartText(part: TMessageContentParts): string {
@@ -85,7 +90,30 @@ export function hasCopyableText(source: ClipboardSource): boolean {
   return buildClipboardText(source).trim().length > 0;
 }
 
-export default function useCopyToClipboard({ text, content, searchResults }: ClipboardSource) {
+function buildCopyOptions(clipboardText: string, richText: boolean): Parameters<typeof copy>[1] {
+  if (!richText) {
+    return { format: 'text/plain' };
+  }
+
+  const html = markdownToHtml(clipboardText);
+  if (html.length === 0) {
+    return { format: 'text/plain' };
+  }
+
+  return {
+    format: 'text/plain',
+    onCopy: (clipboardData) => {
+      (clipboardData as DataTransfer | null)?.setData('text/html', html);
+    },
+  };
+}
+
+export default function useCopyToClipboard({
+  text,
+  content,
+  searchResults,
+  richText,
+}: ClipboardSource) {
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -104,7 +132,7 @@ export default function useCopyToClipboard({ text, content, searchResults }: Cli
         return false;
       }
 
-      if (!copy(clipboardText, { format: 'text/plain' })) {
+      if (!copy(clipboardText, buildCopyOptions(clipboardText, richText === true))) {
         return false;
       }
 
@@ -119,10 +147,20 @@ export default function useCopyToClipboard({ text, content, searchResults }: Cli
 
       return true;
     },
-    [text, content, searchResults],
+    [text, content, searchResults, richText],
   );
 
   return copyToClipboard;
+}
+
+/**
+ * Copies a message honoring the user's rich text preference. Kept apart from
+ * `useCopyToClipboard` so the plain copies (share links, API keys, callback
+ * URLs) never get wrapped in markup.
+ */
+export function useCopyMessageToClipboard(source: ClipboardSource) {
+  const richText = useRecoilValue(store.copyRichText);
+  return useCopyToClipboard({ ...source, richText });
 }
 
 /**

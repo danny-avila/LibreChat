@@ -660,4 +660,67 @@ Citations:
       expect(mockCopy).toHaveBeenCalledWith(expectedText, { format: 'text/plain' });
     });
   });
+
+  describe('Rich text', () => {
+    const getClipboardHtml = (): string => {
+      const [, options] = mockCopy.mock.calls[0];
+      const clipboardData = { setData: jest.fn() };
+      options?.onCopy?.(clipboardData);
+      const [format, html] = clipboardData.setData.mock.calls[0] ?? [];
+      expect(format).toBe('text/html');
+      return html as string;
+    };
+
+    it('should not add an html flavor when rich text is off', () => {
+      const { result } = renderHook(() => useCopyToClipboard({ text: '# Title' }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith('# Title', { format: 'text/plain' });
+    });
+
+    it('should copy markdown as html alongside the plain text', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({ text: '# Title\n\nSome **bold** text.', richText: true }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const [plainText, options] = mockCopy.mock.calls[0];
+      expect(plainText).toBe('# Title\n\nSome **bold** text.');
+      expect(options?.format).toBe('text/plain');
+      expect(getClipboardHtml()).toBe('<h1>Title</h1>\n<p>Some <strong>bold</strong> text.</p>');
+      expect(mockSetIsCopied).toHaveBeenCalledWith(true);
+    });
+
+    it('should convert content parts and citations to html', () => {
+      const mockSearchResults: { [key: string]: SearchResultData } = {
+        '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+      };
+
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          content: [
+            { type: ContentTypes.TEXT, text: '## Findings' },
+            { type: ContentTypes.TEXT, text: 'Cited \ue202turn0search0' },
+          ] as TMessageContentParts[],
+          searchResults: mockSearchResults,
+          richText: true,
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const html = getClipboardHtml();
+      expect(html).toContain('<h2>Findings</h2>');
+      expect(html).toContain('Cited [1]');
+      expect(html).toContain('https://example.com/1');
+    });
+  });
 });

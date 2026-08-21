@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
-import { useLocalize, useCopyToClipboard, hasCopyableText } from '~/hooks';
+import { useLocalize, useCopyMessageToClipboard, hasCopyableText } from '~/hooks';
 import { revealOnRowHoverClasses } from './styles';
 import { cn } from '~/utils';
 
@@ -13,7 +13,7 @@ type THoverButtons = {
 export default function MinimalHoverButtons({ message, searchResults }: THoverButtons) {
   const localize = useLocalize();
   const [isCopied, setIsCopied] = useState(false);
-  const copyToClipboard = useCopyToClipboard({
+  const copyToClipboard = useCopyMessageToClipboard({
     text: message.text,
     content: message.content,
     searchResults,
