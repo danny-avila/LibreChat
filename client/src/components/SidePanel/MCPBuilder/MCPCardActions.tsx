@@ -125,7 +125,7 @@ export default function MCPCardActions({
       )}
 
       {/* Connect button - for disconnected or error states */}
-      {(isError || (isDisconnected && !serverStatus?.requestScoped)) && (
+      {(isDisconnected || isError) && !serverStatus?.requestScoped && (
         <TooltipAnchor
           description={localize('com_nav_mcp_connect')}
           side="top"
@@ -153,7 +153,7 @@ export default function MCPCardActions({
       )}
 
       {/* Refresh button - for connected servers (allows reconnection) */}
-      {isConnected && (
+      {isConnected && !serverStatus?.requestScoped && (
         <TooltipAnchor
           description={localize('com_nav_mcp_reconnect')}
           side="top"

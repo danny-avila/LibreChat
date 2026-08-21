@@ -687,7 +687,7 @@ describe('OpenAIChatCompletionController', () => {
 
   describe('recursionLimit resolution', () => {
     it('threads the OpenAI parent message id through both MCP execution bodies', async () => {
-      const { validateRequest, createRun } = require('@librechat/api');
+      const { validateRequest, createRun, initializeAgent } = require('@librechat/api');
       validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -700,6 +700,16 @@ describe('OpenAIChatCompletionController', () => {
 
       await OpenAIChatCompletionController(req, res);
 
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: {
+            messageId: 'chatcmpl-mock-nanoid-123',
+            conversationId: 'conversation-123',
+            parentMessageId: 'parent-123',
+          },
+        }),
+        expect.anything(),
+      );
       expect(createRun).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody: {

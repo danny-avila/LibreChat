@@ -566,6 +566,7 @@ const isBuiltInTool = (toolName) =>
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} [params.res] - The response object for SSE events
  * @param {Object} params.agent - The agent configuration
+ * @param {import('@librechat/api').RequestBody} [params.requestBody] - Normalized MCP body
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
@@ -581,6 +582,7 @@ async function loadToolDefinitionsWrapper({
   req,
   res,
   agent,
+  requestBody,
   agentResourceType,
   streamId = null,
   jobCreatedAt,
@@ -600,6 +602,7 @@ async function loadToolDefinitionsWrapper({
   }
 
   const appConfig = req.config;
+  const runtimeRequestBody = requestBody ?? req.body;
   const hasExpectedMCPTools = agent.tools.some(isExpectedMCPTool);
   const enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent.id);
 
@@ -621,7 +624,7 @@ async function loadToolDefinitionsWrapper({
       environment: agent.stateful_code_environment,
       userId: req.user.id,
       agentId: agent.id,
-      conversationId: req.body?.conversationId,
+      conversationId: runtimeRequestBody?.conversationId,
     });
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
@@ -928,7 +931,7 @@ async function loadToolDefinitionsWrapper({
       serverName,
       configServers,
       userMCPAuthMap,
-      requestBody: req.body,
+      requestBody: runtimeRequestBody,
       requestScopedConnections,
     });
 
@@ -955,7 +958,7 @@ async function loadToolDefinitionsWrapper({
       serverName,
       configServers,
       userMCPAuthMap,
-      requestBody: req.body,
+      requestBody: runtimeRequestBody,
       requestScopedConnections,
     });
 
@@ -1083,7 +1086,7 @@ async function loadToolDefinitionsWrapper({
           configServers,
           userMCPAuthMap,
           flowManager,
-          requestBody: req.body,
+          requestBody: runtimeRequestBody,
           returnOnOAuth: false,
           oauthStart,
           oauthEnd: createOAuthEndEmitter(serverName),
@@ -1256,6 +1259,7 @@ async function loadToolDefinitionsWrapper({
  * @param {ServerRequest} params.req - The request object
  * @param {ServerResponse} params.res - The response object
  * @param {Object} params.agent - The agent configuration
+ * @param {import('@librechat/api').RequestBody} [params.requestBody] - Normalized MCP body
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {AbortSignal} [params.signal] - Abort signal
  * @param {Object} [params.tool_resources] - Tool resources
@@ -1270,6 +1274,7 @@ async function loadAgentTools({
   req,
   res,
   agent,
+  requestBody,
   agentResourceType,
   signal,
   tool_resources,
@@ -1286,6 +1291,7 @@ async function loadAgentTools({
         req,
         res,
         agent,
+        requestBody,
         agentResourceType,
         streamId,
         jobCreatedAt,
@@ -1403,7 +1409,7 @@ async function loadAgentTools({
       environment: agent.stateful_code_environment,
       userId: req.user.id,
       agentId: agent.id,
-      conversationId: req.body?.conversationId,
+      conversationId: requestBody?.conversationId ?? req.body?.conversationId,
     });
 
   const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
@@ -1416,6 +1422,7 @@ async function loadAgentTools({
     options: {
       req,
       res,
+      requestBody,
       agentResourceType,
       mcpServerContext,
       jobCreatedAt,

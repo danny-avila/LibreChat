@@ -204,7 +204,7 @@ type PlaceholderValue =
 
 export interface MCPRequestScope {
   requestScoped: boolean;
-  requiredBodyFields: string[];
+  requiredBodyFields: Array<keyof RequestBody>;
 }
 
 type UserScopedConnectionConfig = Pick<
@@ -286,7 +286,10 @@ function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
   return Object.values(value).some((item) => hasPlaceholder(item, pattern));
 }
 
-function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<string>): void {
+function addRuntimeBodyPlaceholderFields(
+  value: PlaceholderValue,
+  fields: Set<keyof RequestBody>,
+): void {
   if (typeof value === 'string') {
     for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
       const placeholderKey = match[1];
@@ -345,7 +348,7 @@ export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPReque
     return { requestScoped: false, requiredBodyFields: [] };
   }
 
-  const requiredBodyFields = new Set<string>();
+  const requiredBodyFields = new Set<keyof RequestBody>();
   for (const value of placeholderBearingFields(config)) {
     addRuntimeBodyPlaceholderFields(value, requiredBodyFields);
   }
@@ -354,7 +357,9 @@ export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPReque
   return { requestScoped: fields.length > 0, requiredBodyFields: fields };
 }
 
-export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
+export function getRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+): Array<keyof RequestBody> {
   return getMCPRequestScope(config).requiredBodyFields;
 }
 
@@ -363,7 +368,7 @@ export function getMissingRuntimeBodyPlaceholderFields(
   requestBody?: RequestBody,
 ): string[] {
   return getMCPRequestScope(config).requiredBodyFields.filter((field) => {
-    const value = requestBody?.[field as keyof RequestBody];
+    const value = requestBody?.[field];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
 }

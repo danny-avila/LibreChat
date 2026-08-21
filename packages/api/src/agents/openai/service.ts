@@ -32,6 +32,7 @@ import type {
   ToolCall,
 } from './types';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
 import {
   createOpenAIContentAggregator,
@@ -136,6 +137,7 @@ interface InitializeAgentParams {
   agent: Agent;
   conversationId?: string | null;
   parentMessageId?: string | null;
+  requestBody?: MCPRuntimeRequestBody;
   requestFiles?: unknown[];
   loadTools?: LoadToolsFn;
   endpointOption?: Record<string, unknown>;
@@ -192,6 +194,7 @@ type LoadToolsFn = (params: {
   model: string | null;
   tool_options: unknown;
   tool_resources: unknown;
+  requestBody?: MCPRuntimeRequestBody;
 }) => Promise<{
   tools: unknown[];
   toolContextMap: Record<string, unknown>;
@@ -436,6 +439,11 @@ export async function createAgentChatCompletion(
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
+  const mcpRequestBody = createMCPRuntimeRequestBody({
+    messageId: requestId,
+    conversationId,
+    parentMessageId: request.parent_message_id,
+  });
   const created = Math.floor(Date.now() / 1000);
 
   // Build response context
@@ -503,6 +511,7 @@ export async function createAgentChatCompletion(
       agent,
       conversationId,
       parentMessageId: request.parent_message_id,
+      requestBody: mcpRequestBody,
       loadTools: deps.loadAgentTools,
       endpointOption: {
         endpoint: agent.provider,
@@ -571,12 +580,6 @@ export async function createAgentChatCompletion(
        * correctly leaves MCP gated.
        */
       const safeUser: Record<string, unknown> = { ...createSafeUser(reqUser), id: userId };
-      const mcpRequestBody = createMCPRuntimeRequestBody({
-        messageId: requestId,
-        conversationId,
-        parentMessageId: request.parent_message_id,
-      });
-
       const run = await deps.createRun({
         agents: [initializedAgent],
         messages,

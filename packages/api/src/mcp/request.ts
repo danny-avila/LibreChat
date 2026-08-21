@@ -2,12 +2,11 @@ import { logger } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
 
 import type { RequestScopedMCPConnectionStore } from './types';
+import type { RequestBody } from '~/types';
 
-export interface MCPRuntimeRequestBody {
-  messageId: string;
-  conversationId: string;
-  parentMessageId: string;
-}
+export type MCPRuntimeRequestBody = Required<
+  Pick<RequestBody, 'messageId' | 'conversationId' | 'parentMessageId'>
+>;
 
 /**
  * Builds the complete request context that runtime MCP placeholders may resolve.

@@ -98,6 +98,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    requestBody,
     codeExecutionContext,
     accessibleMcpServerNames,
   }) {
@@ -108,6 +109,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         res,
         agent,
         signal,
+        requestBody,
         tool_resources,
         codeExecutionContext,
         agentResourceType: ResourceType.REMOTE_AGENT,
@@ -353,6 +355,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         requestFiles: [],
         conversationId,
         parentMessageId,
+        requestBody: mcpRequestBody,
         agent,
         endpointOption,
         allowedProviders,
@@ -420,6 +423,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         requestFiles: [],
         conversationId,
         parentMessageId,
+        requestBody: mcpRequestBody,
         resourceType: ResourceType.REMOTE_AGENT,
         computeAccessibleSkillIds: (handoffAgent) =>
           resolveAgentScopedSkillIds({

@@ -102,6 +102,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
     provider,
     tool_options,
     tool_resources,
+    requestBody,
     codeExecutionContext,
     accessibleMcpServerNames,
   }) {
@@ -114,6 +115,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         signal,
         streamId,
         jobCreatedAt,
+        requestBody,
         tool_resources,
         codeExecutionContext,
         definitionsOnly,

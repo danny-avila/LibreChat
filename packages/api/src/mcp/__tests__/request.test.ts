@@ -128,8 +128,6 @@ describe('MCP runtime request body', () => {
   it('uses the root-turn parent sentinel when a protocol omits the parent', () => {
     expect(
       createMCPRuntimeRequestBody({ messageId: 'response-1', conversationId: 'conversation-1' }),
-    ).toEqual(
-      expect.objectContaining({ parentMessageId: '00000000-0000-0000-0000-000000000000' }),
-    );
+    ).toEqual(expect.objectContaining({ parentMessageId: '00000000-0000-0000-0000-000000000000' }));
   });
 });

@@ -119,10 +119,13 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
 
     await createAgentChatCompletion(req as never, createMockRes(), deps);
 
-    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs;
-    expect(runArgs.requestBody).toEqual(
-      expect.objectContaining({ parentMessageId: 'parent-123' }),
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({ parentMessageId: 'parent-123' }),
+      }),
     );
+    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs;
+    expect(runArgs.requestBody).toEqual(expect.objectContaining({ parentMessageId: 'parent-123' }));
     const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
     expect(streamConfig.configurable?.requestBody).toEqual(runArgs.requestBody);
   });

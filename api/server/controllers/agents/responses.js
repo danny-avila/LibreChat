@@ -16,6 +16,7 @@ const {
   buildToolSet,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
+  createMCPRuntimeRequestBody,
   buildAgentScopedContext,
   buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
@@ -107,6 +108,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    requestBody,
     codeExecutionContext,
     accessibleMcpServerNames,
   }) {
@@ -117,6 +119,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         res,
         agent,
         signal,
+        requestBody,
         tool_resources,
         codeExecutionContext,
         agentResourceType: ResourceType.REMOTE_AGENT,
@@ -389,6 +392,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
     const conversationId = request.previous_response_id ?? uuidv4();
     const parentMessageId = null;
+    const mcpRequestBody = createMCPRuntimeRequestBody({ messageId: responseId, conversationId });
     const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
 
     // Build allowed providers set
@@ -482,6 +486,7 @@ const executeResponse = async (envelope, { req, res }) => {
         requestFiles: [],
         conversationId,
         parentMessageId,
+        requestBody: mcpRequestBody,
         agent,
         endpointOption,
         allowedProviders,
@@ -549,6 +554,7 @@ const executeResponse = async (envelope, { req, res }) => {
         requestFiles: [],
         conversationId,
         parentMessageId,
+        requestBody: mcpRequestBody,
         resourceType: ResourceType.REMOTE_AGENT,
         computeAccessibleSkillIds: (handoffAgent) =>
           resolveAgentScopedSkillIds({
@@ -867,10 +873,7 @@ const executeResponse = async (envelope, { req, res }) => {
         signal: abortController.signal,
         customHandlers: handlers,
         initialSessions,
-        requestBody: {
-          messageId: responseId,
-          conversationId,
-        },
+        requestBody: mcpRequestBody,
         user: { id: userId },
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
@@ -893,10 +896,7 @@ const executeResponse = async (envelope, { req, res }) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
-          requestBody: {
-            messageId: responseId,
-            conversationId,
-          },
+          requestBody: mcpRequestBody,
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,
@@ -1057,10 +1057,7 @@ const executeResponse = async (envelope, { req, res }) => {
         signal: abortController.signal,
         customHandlers: handlers,
         initialSessions,
-        requestBody: {
-          messageId: responseId,
-          conversationId,
-        },
+        requestBody: mcpRequestBody,
         user: { id: userId },
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
@@ -1082,10 +1079,7 @@ const executeResponse = async (envelope, { req, res }) => {
           thread_id: conversationId,
           user_id: userId,
           user: createSafeUser(req.user),
-          requestBody: {
-            messageId: responseId,
-            conversationId,
-          },
+          requestBody: mcpRequestBody,
           ...(userMCPAuthMap != null && { userMCPAuthMap }),
         },
         signal: abortController.signal,

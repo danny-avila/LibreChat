@@ -893,6 +893,7 @@ describe('tests for the new helper functions used by the MCP connection status e
 
       expect(result).toEqual({
         requiresOAuth: true,
+        requestScoped: true,
         connectionState: 'connecting',
         authorizationState: 'authorizing',
       });

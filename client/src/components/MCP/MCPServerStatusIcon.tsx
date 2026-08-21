@@ -90,7 +90,7 @@ export default function MCPServerStatusIcon({
   }
 
   // Request-scoped servers can only be connected while serving an MCP request.
-  if (connectionState === 'disconnected' && requestScoped) {
+  if ((connectionState === 'disconnected' || connectionState === 'error') && requestScoped) {
     return null;
   }
 
@@ -131,16 +131,16 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
   const { connectionState, requiresOAuth } = serverStatus;
 
   let colorClass = 'bg-status-neutral';
-  if (connectionState === 'connected') {
-    colorClass = 'bg-status-success';
-  } else if (connectionState === 'connecting') {
+  if (connectionState === 'connecting') {
     colorClass = 'bg-status-info';
+  } else if (serverStatus.requestScoped) {
+    colorClass = 'bg-status-info';
+  } else if (connectionState === 'connected') {
+    colorClass = 'bg-status-success';
   } else if (connectionState === 'error') {
     colorClass = 'bg-status-error';
   } else if (connectionState === 'disconnected' && requiresOAuth) {
     colorClass = 'bg-status-warning';
-  } else if (connectionState === 'disconnected' && serverStatus.requestScoped) {
-    colorClass = 'bg-status-info';
   }
 
   return (
