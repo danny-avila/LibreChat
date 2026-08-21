@@ -25,6 +25,7 @@ const CompactController = async (req, res) => {
       deleteMessages: db.deleteMessages,
       getUserKey: db.getUserKey,
       getUserKeyValues: db.getUserKeyValues,
+      getUserKeyExpiry: db.getUserKeyExpiry,
       getJob: (streamId) => GenerationJobManager.getJob(streamId),
       getMultiplier: db.getMultiplier,
       getCacheMultiplier: db.getCacheMultiplier,

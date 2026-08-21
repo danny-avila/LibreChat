@@ -550,6 +550,65 @@ describe('compactConversation', () => {
     expect(mockStream).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses when any pass comes back empty rather than dropping that chunk', async () => {
+    const long: TMessage[] = [];
+    for (let i = 0; i < 12; i++) {
+      const parent = i === 0 ? Constants.NO_PARENT : `m${i - 1}`;
+      long.push({ ...userMessage(`m${i}`, parent, bulk(`e${i}`, 1200)) } as TMessage);
+    }
+    let pass = 0;
+    /** Second pass is filtered; its chunk would otherwise never be folded in
+     *  while a later pass still produced a persisted boundary. */
+    mockStream.mockImplementation(() => {
+      pass += 1;
+      return chunksOf(pass === 2 ? '   ' : `checkpoint ${pass}`);
+    });
+
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent: smallWindowAgent,
+        branch: long,
+        ids,
+        db: dbMethods,
+      }),
+    ).rejects.toMatchObject({ name: 'EmptyCompactionError' });
+  });
+
+  it('carries what earlier passes spent when a later pass throws', async () => {
+    const long: TMessage[] = [];
+    for (let i = 0; i < 12; i++) {
+      const parent = i === 0 ? Constants.NO_PARENT : `m${i - 1}`;
+      long.push({ ...userMessage(`m${i}`, parent, bulk(`p${i}`, 1200)) } as TMessage);
+    }
+    let pass = 0;
+    mockStream.mockImplementation(() => {
+      pass += 1;
+      if (pass === 2) {
+        throw new Error('provider exploded');
+      }
+      return chunksOf(`checkpoint ${pass}`, {
+        input_tokens: 500,
+        output_tokens: 20,
+        total_tokens: 520,
+      });
+    });
+
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent: smallWindowAgent,
+        branch: long,
+        ids,
+        db: dbMethods,
+      }),
+    ).rejects.toMatchObject({
+      name: 'PartialCompactionError',
+      /** Pass one completed and must still be billed. */
+      usage: { input_tokens: 500 },
+    });
+  });
+
   it('refuses a branch needing more passes than the cap rather than truncating it', async () => {
     const huge: TMessage[] = [];
     for (let i = 0; i < 40; i++) {
