@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
-import { isEnabled } from '~/utils';
 import { getContentFilterError } from '~/middleware/contentFilter';
+import { isEnabled } from '~/utils';
 
 const HEARTBEAT_INTERVAL_MS = 1000;
 const EVENT_STREAM_MEDIA_TYPE = 'text/event-stream';

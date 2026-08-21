@@ -1,12 +1,12 @@
 import { EventEmitter } from 'events';
 import type { Request, Response } from 'express';
-import { UninspectableFileError } from '~/protection/files';
 import {
   sendUploadPolicyError,
   sendUploadSuccess,
   shouldUseUploadSse,
   startUploadSseStream,
 } from './sse';
+import { UninspectableFileError } from '~/protection/files';
 
 describe('sse', () => {
   const createMockReq = (accept?: string): Request =>
