@@ -232,6 +232,21 @@ const startServer = async () => {
     }
   }
 
+  /** Point the icon links, web app manifest, and login page logo at the custom app icon */
+  let webManifest;
+  if (process.env.APP_ICON_URL) {
+    const appIcon = process.env.APP_ICON_URL.replace(/"/g, '&quot;');
+    indexHTML = indexHTML
+      .replace(/<link rel="(icon|apple-touch-icon)"[^>]*>/g, `<link rel="$1" href="${appIcon}" />`)
+      .replace('</head>', `  <meta name="app-icon" content="${appIcon}" />\n  </head>`);
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(appConfig.paths.dist, 'manifest.webmanifest'), 'utf8'),
+    );
+    manifest.icons = manifest.icons.map((icon) => ({ ...icon, src: process.env.APP_ICON_URL }));
+    webManifest = JSON.stringify(manifest);
+  }
+
   const sendIndexHtml = (req, res) => {
     res.set({
       'Cache-Control': process.env.INDEX_CACHE_CONTROL || 'no-cache, no-store, must-revalidate',
@@ -291,6 +306,11 @@ const startServer = async () => {
   }
 
   app.get('/index.html', sendIndexHtml);
+  if (webManifest) {
+    app.get('/manifest.webmanifest', (_req, res) =>
+      res.set('Cache-Control', 'no-store').type('application/manifest+json').send(webManifest),
+    );
+  }
   app.use(staticCache(appConfig.paths.dist));
   app.use(staticCache(appConfig.paths.fonts));
   app.use(staticCache(appConfig.paths.assets));

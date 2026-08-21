@@ -1471,6 +1471,8 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    loginLogoHeight: z.number().positive().optional(),
+    showLoginTitle: z.boolean().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),
@@ -1723,6 +1725,7 @@ export type TStartupConfig = {
   /** Admin panel link, only present for users with admin access */
   adminPanelURL?: string;
   customFooter?: string;
+  customLoginFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;
