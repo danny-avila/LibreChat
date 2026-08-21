@@ -15,6 +15,7 @@ export const codeEnvRefSchema: Schema = new Schema(
       type: String,
       enum: ['default', 'stateful'],
     },
+    provisionedAt: { type: Number },
   },
   { _id: false },
 );

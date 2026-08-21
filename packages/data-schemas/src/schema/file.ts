@@ -136,6 +136,10 @@ const file: Schema<IMongoFile> = new Schema(
         default: undefined,
       },
     },
+    llmDeliveryPath: {
+      type: String,
+      enum: ['provider', 'text', 'none'],
+    },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from
        * retention-scoped `expiredAt`, which is swept by application code
