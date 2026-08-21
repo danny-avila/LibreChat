@@ -794,6 +794,72 @@ describe('createSubagentCompletionWakeupResolver', () => {
     expect(snapshot.value.additional_children_may_exist).toBe(false);
   });
 
+  it('excludes a captured lease whose same-task terminal belongs to another parent run', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-other-run',
+        parentConversationId: 'conversation-1',
+        taskId: 'other-retry',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null) {
+        return [
+          {
+            messageId: 'other-retry:assistant',
+            conversationId: 'thread-other-run',
+            sender: 'other-agent',
+            isCreatedByUser: false,
+            subagentTask: {
+              attemptKey: 'other-attempt',
+              parentRunId: 'response-other',
+              status: 'error' as const,
+            },
+          },
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === 'response-1') {
+        return [terminal];
+      }
+      return [];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('complete');
+    expect(snapshot.value.additional_children_may_exist).toBe(false);
+  });
+
   it('treats a visible same-task terminal as resolving its still-held lease', async () => {
     const { methods, terminal } = resolverMethods();
     const retryTerminal = {
@@ -838,7 +904,7 @@ describe('createSubagentCompletionWakeupResolver', () => {
         ];
       }
       if (filter.messageId != null) {
-        return [];
+        return [retryTerminal];
       }
       if (filter['subagentTask.parentRunId'] === 'response-1') {
         return [terminal, retryTerminal];

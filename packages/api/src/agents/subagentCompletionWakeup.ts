@@ -268,21 +268,24 @@ async function resolveOrchestrationSnapshot(
     readUncertain = true;
   }
   const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
-  const activeSeedRead =
+  const leaseEvidenceRead =
     boundedActiveLeases.length === 0
       ? Promise.resolve([])
       : methods.getMessages(
           {
             user: input.userId,
             messageId: {
-              $in: boundedActiveLeases.map(({ taskId }) => `${taskId}:user`),
+              $in: boundedActiveLeases.flatMap(({ taskId }) => [
+                `${taskId}:user`,
+                `${taskId}:assistant`,
+              ]),
             },
-            'subagentTask.status': 'running',
+            'subagentTask.status': { $in: ['running', 'completed', 'error', 'cancelled'] },
           },
           ORCHESTRATION_TASK_SELECT,
-          { sort: false, limit: MAX_ORCHESTRATION_ACTIVE_LEASES },
+          { sort: false, limit: MAX_ORCHESTRATION_ACTIVE_LEASES * 2 },
         );
-  const [terminalResult, activeSeedResult] = await Promise.allSettled([
+  const [terminalResult, leaseEvidenceResult] = await Promise.allSettled([
     methods.getMessages(
       {
         user: input.userId,
@@ -292,28 +295,30 @@ async function resolveOrchestrationSnapshot(
       ORCHESTRATION_TASK_SELECT,
       { sort: { updatedAt: -1, _id: -1 }, limit: MAX_ORCHESTRATION_CANDIDATES },
     ),
-    activeSeedRead,
+    leaseEvidenceRead,
   ]);
-  readUncertain ||= terminalResult.status === 'rejected' || activeSeedResult.status === 'rejected';
+  readUncertain ||=
+    terminalResult.status === 'rejected' || leaseEvidenceResult.status === 'rejected';
   const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
-  const activeSeedMessages = activeSeedResult.status === 'fulfilled' ? activeSeedResult.value : [];
-  const validActiveSeeds = activeSeedMessages.flatMap((message) => {
+  const leaseEvidenceMessages =
+    leaseEvidenceResult.status === 'fulfilled' ? leaseEvidenceResult.value : [];
+  const validLeaseEvidence = leaseEvidenceMessages.flatMap((message) => {
     const candidate = candidateFromMessage(message);
-    return candidate?.status === 'running' ? [{ message, candidate }] : [];
+    return candidate == null ? [] : [{ message, candidate }];
   });
-  const activeMessages = validActiveSeeds
-    .filter(({ message }) => message.subagentTask?.parentRunId === input.parentMessageId)
+  const activeMessages = validLeaseEvidence
+    .filter(
+      ({ message, candidate }) =>
+        candidate.status === 'running' &&
+        message.subagentTask?.parentRunId === input.parentMessageId,
+    )
     .map(({ message }) => message);
-  if (activeSeedResult.status === 'fulfilled' && terminalResult.status === 'fulfilled') {
-    const resolvedLeaseTaskIds = new Set([
-      ...validActiveSeeds
+  if (leaseEvidenceResult.status === 'fulfilled') {
+    const resolvedLeaseTaskIds = new Set(
+      validLeaseEvidence
         .filter(({ message }) => typeof message.subagentTask?.parentRunId === 'string')
         .map(({ candidate }) => candidate.taskId),
-      ...terminalMessages.flatMap((message) => {
-        const candidate = candidateFromMessage(message);
-        return candidate == null ? [] : [candidate.taskId];
-      }),
-    ]);
+    );
     /** A retry can acquire a replacement task lease before persisting its terminal
      * assistant row, while retaining only the abandoned attempt's seed. A valid
      * seed from another parent run excludes that lease from this branch, and a
