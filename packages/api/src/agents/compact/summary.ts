@@ -482,6 +482,24 @@ function toPayload(
 }
 
 /**
+ * Endpoint key the built-in maps index this call under, which is not always the
+ * endpoint it runs on. A NAMED custom endpoint (`Ollama`) has its models under
+ * `custom`, and Vertex AI, which differs from Google only in how it
+ * authenticates, has no key of its own. Both `getModelMaxTokens` and
+ * `supportsBalanceCheck` are keyed this way, so a literal name there silently
+ * yields the fallback window and skips the funds check.
+ */
+function resolveEndpointKey(endpoint: string, isCustomEndpoint: boolean): EModelEndpoint {
+  if (isCustomEndpoint) {
+    return EModelEndpoint.custom;
+  }
+  if (normalizeEndpointName(endpoint) === Providers.VERTEXAI) {
+    return EModelEndpoint.google;
+  }
+  return endpoint as EModelEndpoint;
+}
+
+/**
  * Resolves the provider and client options for a manual compaction call.
  *
  * Precedence mirrors the automatic detour: `summarization.provider` /
@@ -636,10 +654,7 @@ export async function resolveCompactionModel({
   return {
     provider,
     endpoint,
-    /** Named custom endpoints index their models under `custom`. */
-    tokenLookupEndpoint: (providerConfig.customEndpointConfig != null
-      ? EModelEndpoint.custom
-      : endpoint) as EModelEndpoint,
+    tokenLookupEndpoint: resolveEndpointKey(endpoint, providerConfig.customEndpointConfig != null),
     model,
     clientOptions,
     endpointTokenConfig: options.endpointTokenConfig,
@@ -839,6 +854,13 @@ async function invokeCompactionModel(
       aggregate = aggregate == null ? next : aggregate.concat(next);
     }
   } catch (error) {
+    /** A client that defers a 401, a rate limit, or a refused connection until
+     *  the iterator's first `next()` surfaces it here having produced nothing.
+     *  Only an aggregate proves the provider did work, so the wrapper (which is
+     *  what makes the caller bill the pass) is raised only once one exists. */
+    if (aggregate == null) {
+      throw error;
+    }
     /** Chunks that already arrived are provider work the user must be charged
      *  for; a gateway interruption partway through is not a free call. The
      *  partial aggregate rides out with the failure so the caller can bill it. */
@@ -907,11 +929,13 @@ export class NothingToCompactError extends Error {
   }
 }
 
-/** A stream that produced output before failing. Carries what arrived. */
+/** A stream that produced output before failing. Carries what arrived, and is
+ *  raised ONLY when something did: its presence is the caller's evidence that
+ *  the failed pass is billable. */
 class StreamInterruptedError extends Error {
   readonly cause: unknown;
-  readonly partial?: AIMessageChunk;
-  constructor(cause: unknown, partial?: AIMessageChunk) {
+  readonly partial: AIMessageChunk;
+  constructor(cause: unknown, partial: AIMessageChunk) {
     super(cause instanceof Error ? cause.message : 'Compaction stream interrupted');
     this.name = 'StreamInterruptedError';
     this.cause = cause;
@@ -1085,9 +1109,15 @@ export async function compactConversation({
    *  checkpoint is at most one full model output. Reserved unconditionally
    *  because the pass count is only known once the budget has chunked. */
   const checkpointReserve = outputReserve > 0 ? outputReserve : DEFAULT_CHECKPOINT_RESERVE;
+  const priorSummaryTokens = priorSummary?.text ? await countTokens(priorSummary.text) : 0;
+  /** The FIRST pass carries the existing checkpoint instead, and that one was
+   *  written by whatever summarizer ran last: an administrator who lowered
+   *  `maxSummaryTokens` or moved to a smaller model leaves a prior checkpoint
+   *  larger than the current output cap, and sizing to the cap alone would
+   *  overflow the window on a pass the budget had judged valid. */
+  const carriedReserve = Math.max(checkpointReserve, priorSummaryTokens);
   const chunkBudget = Math.floor(
-    (contextWindow - outputReserve - instructionReserve - checkpointReserve) *
-      TRANSCRIPT_BUDGET_RATIO,
+    (contextWindow - outputReserve - instructionReserve - carriedReserve) * TRANSCRIPT_BUDGET_RATIO,
   );
   /** A floor here would hand the provider a request that cannot fit however
    *  small the chunk is: the output cap and carried checkpoint alone already
@@ -1113,9 +1143,7 @@ export async function compactConversation({
    *  instruction, and pass one embeds any prior summary being consolidated;
    *  the blank-instruction reserve alone understates the real prompt. */
   estimatedPromptTokens += checkpointReserve * Math.max(0, chunks.length - 1);
-  if (priorSummary?.text) {
-    estimatedPromptTokens += await countTokens(priorSummary.text);
-  }
+  estimatedPromptTokens += priorSummaryTokens;
   if (beforeInvoke) {
     await beforeInvoke({
       promptTokens: estimatedPromptTokens,
@@ -1172,11 +1200,12 @@ export async function compactConversation({
       });
     } catch (error) {
       /** A rejected call (bad credential, rate limit) produced no provider
-       *  work, so its prompt is not counted. A stream that failed AFTER
+       *  work, so its prompt is not counted, whether it was refused outright or
+       *  deferred to the stream's first read. A stream that failed AFTER
        *  emitting is real spend and is recorded before rethrowing. */
       if (error instanceof StreamInterruptedError) {
         passes.push({
-          usage: extractUsage(error.partial as AIMessage | undefined, model, provider),
+          usage: extractUsage(error.partial as AIMessage, model, provider),
           counted: {
             input_tokens: passInputTokens,
             output_tokens: await countTokens(extractResponseText(error.partial)),

@@ -795,6 +795,71 @@ describe('compactConversation', () => {
     });
   });
 
+  it('does not bill a stream that failed before emitting anything', async () => {
+    /** A client that defers a 401 or a rate limit to the iterator's first read
+     *  produced no provider work, so nothing may be charged for it. */
+    mockStream.mockImplementation(() => ({
+      [Symbol.asyncIterator]: () => ({
+        next: () => Promise.reject(new Error('401 Unauthorized')),
+      }),
+    }));
+
+    await expect(
+      compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
+    ).rejects.toMatchObject({ name: 'PartialCompactionError', passes: [] });
+  });
+
+  it('gates a Vertex AI summarizer under the Google balance key', async () => {
+    /** `supportsBalanceCheck` and the token maps have no `vertexai` key, so the
+     *  literal name would skip the funds check on calls that are still billed. */
+    const seen: string[] = [];
+    await compactConversation({
+      req: makeReq({ provider: 'vertexai' }),
+      agent: { provider: 'google', endpoint: 'google', model: 'gemini-2.0-flash' },
+      branch,
+      ids,
+      db: dbMethods,
+      beforeInvoke: async ({ balanceEndpoint, endpoint }) => {
+        seen.push(balanceEndpoint, endpoint);
+      },
+    });
+
+    expect(seen).toEqual(['google', 'vertexai']);
+  });
+
+  it('reserves for a prior checkpoint larger than the current output cap', async () => {
+    /** An administrator who lowers `maxSummaryTokens` leaves behind a checkpoint
+     *  bigger than the new cap; pass one still carries the whole thing. */
+    const priorText = bulk('prior', 4000);
+    const withLargePriorSummary: TMessage[] = [
+      ...branch,
+      assistantMessage('m5', 'm4', [
+        { type: ContentTypes.SUMMARY, content: [{ type: ContentTypes.TEXT, text: priorText }] },
+      ] as TMessage['content']),
+      userMessage('m6', 'm5', bulk('tailA', 1300)),
+      userMessage('m7', 'm6', bulk('tailB', 1300)),
+      userMessage('m8', 'm7', bulk('tailC', 1300)),
+      userMessage('m9', 'm8', bulk('tailD', 1300)),
+    ];
+
+    await expect(
+      compactConversation({
+        req: makeReq({ maxSummaryTokens: 256 }),
+        agent: smallWindowAgent,
+        branch: withLargePriorSummary,
+        ids: { ...ids, parentMessageId: 'm9' },
+        db: dbMethods,
+      }),
+    ).resolves.toBeDefined();
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const instruction = sent[sent.length - 1].content as string;
+    expect(instruction).toContain('prior');
+    /** The prior checkpoint is reserved for, so the transcript riding with it
+     *  is split rather than sized as if only the 256-token cap were carried. */
+    expect(mockStream.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it('reserves for the longer of the initial and update prompts', async () => {
     /** A long update prompt is what later passes actually send; sizing from the
      *  initial one alone lets a later pass overflow after billing. */
