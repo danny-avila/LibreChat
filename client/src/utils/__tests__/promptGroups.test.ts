@@ -378,8 +378,12 @@ describe('addGroupToAll', () => {
     const queryClient = new QueryClient();
     const queryKey = [QueryKeys.allPromptGroups];
     const newList = [makeGroup({ _id: 'group-new' })];
-    const deferreds: Array<{ resolve: (value: TPromptGroup[]) => void }> = [];
-    const queryFn = () => new Promise<TPromptGroup[]>((resolve) => deferreds.push({ resolve }));
+    const deferreds: Array<{
+      resolve: (value: TPromptGroup[]) => void;
+      reject: (reason: Error) => void;
+    }> = [];
+    const queryFn = () =>
+      new Promise<TPromptGroup[]>((resolve, reject) => deferreds.push({ resolve, reject }));
     const observer = new QueryObserver<TPromptGroup[]>(queryClient, {
       queryKey,
       queryFn,
@@ -387,7 +391,7 @@ describe('addGroupToAll', () => {
     });
     const unsubscribe = observer.subscribe(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    deferreds[0].resolve(Promise.reject(new Error('boom')) as unknown as Promise<TPromptGroup[]>);
+    deferreds[0].reject(new Error('boom'));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(queryClient.getQueryState(queryKey)?.status).toBe('error');
 
