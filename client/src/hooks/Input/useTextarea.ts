@@ -30,7 +30,7 @@ import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
 import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
-import { useUploadModalContext } from '~/Providers';
+import { useChatFormContext, useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -62,6 +62,7 @@ export default function useTextarea({
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
+  const { setValue } = useChatFormContext();
   const isComposing = useRef(false);
   const agentsMap = useAgentsMapContext();
   const { showToast } = useToastContext();
@@ -108,12 +109,19 @@ export default function useTextarea({
 
   useEffect(() => {
     const prompt = activePrompt ?? '';
-    if (prompt && textAreaRef.current) {
-      insertTextAtCursor(textAreaRef.current, prompt);
-      forceResize(textAreaRef.current);
-      setActivePrompt(undefined);
+    const textarea = textAreaRef.current;
+    if (!prompt || !textarea) {
+      return;
     }
-  }, [activePrompt, setActivePrompt, textAreaRef]);
+
+    const { value, selectionStart, selectionEnd } = textarea;
+    const nextValue = `${value.slice(0, selectionStart)}${prompt}${value.slice(selectionEnd)}`;
+    const nextCursor = selectionStart + prompt.length;
+    setValue('text', nextValue, { shouldDirty: true, shouldValidate: true });
+    textarea.setSelectionRange(nextCursor, nextCursor);
+    forceResize(textarea);
+    setActivePrompt(undefined);
+  }, [activePrompt, setActivePrompt, setValue, textAreaRef]);
 
   useEffect(() => {
     const currentValue = textAreaRef.current?.value ?? '';
