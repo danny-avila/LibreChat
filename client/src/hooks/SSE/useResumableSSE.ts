@@ -1992,7 +1992,6 @@ export default function useResumableSSE(
             if (data.resumeState?.aggregatedContent && userMessage?.messageId) {
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
-              const serverResponseId = data.resumeState.responseMessageId;
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
               const responseId = resumeSubmission.initialResponse.messageId;
               const messageIndexes = getResumeMessageIndexes(
@@ -2009,7 +2008,7 @@ export default function useResumableSSE(
 
               logger.log('ResumableSSE', 'SYNC update', {
                 userMsgId,
-                serverResponseId,
+                responseId,
                 responseIdx,
                 foundMessageId: responseIdx >= 0 ? messages[responseIdx]?.messageId : null,
                 messagesCount: messages.length,

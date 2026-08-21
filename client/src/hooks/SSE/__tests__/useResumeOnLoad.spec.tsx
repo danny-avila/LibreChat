@@ -290,6 +290,81 @@ describe('useResumeOnLoad', () => {
       expect(attached?.resumeGenerationCreatedAt).toBe(4242);
     });
 
+    it('restores an externally started regeneration after history refreshes', async () => {
+      const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+      const olderResponse = {
+        messageId: 'older-response',
+        parentMessageId: rootUser.messageId,
+        conversationId: CONVERSATION_ID,
+        text: 'Older response',
+        isCreatedByUser: false,
+      } as TMessage;
+      const newerResponse = {
+        messageId: 'newer-response',
+        parentMessageId: rootUser.messageId,
+        conversationId: CONVERSATION_ID,
+        text: 'Newer response',
+        isCreatedByUser: false,
+      } as TMessage;
+      const observedSubmissions: Array<TSubmission | null> = [];
+      let messages = [rootUser];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender, queryClient } = renderUseResumeOnLoad({
+        getMessages: () => messages,
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      const invalidate = jest.spyOn(queryClient, 'invalidateQueries').mockResolvedValue(undefined);
+      messages = [rootUser, newerResponse, olderResponse];
+      mockUseActiveJobs.mockReturnValue({
+        data: { activeJobIds: [CONVERSATION_ID] },
+        dataUpdatedAt: 2,
+      });
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: true,
+          status: 'running',
+          createdAt: 4242,
+          streamId: CONVERSATION_ID,
+          resumeState: {
+            aggregatedContent: [{ type: ContentTypes.TEXT, text: 'regenerating' }],
+            responseMessageId: `${olderResponse.messageId}_`,
+            userMessage: {
+              messageId: rootUser.messageId,
+              conversationId: CONVERSATION_ID,
+            },
+          },
+        },
+      });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: [QueryKeys.messages, CONVERSATION_ID],
+      });
+      const attached = observedSubmissions[observedSubmissions.length - 1];
+      expect(attached?.isRegenerate).toBe(true);
+      expect(attached?.initialResponse?.messageId).toBe(`${olderResponse.messageId}_`);
+      expect(attached?.messages?.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        newerResponse.messageId,
+        olderResponse.messageId,
+      ]);
+      expect(attached?.regenerateMessages?.map((message) => message.messageId)).toEqual([
+        rootUser.messageId,
+        newerResponse.messageId,
+        olderResponse.messageId,
+      ]);
+    });
+
     it('re-arms once per run rather than on every poll of the active list', async () => {
       mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
       const { rerender } = renderUseResumeOnLoad({ messages: [] });
