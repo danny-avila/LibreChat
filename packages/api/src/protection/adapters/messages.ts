@@ -790,6 +790,9 @@ export function* extractMessageContent(
   const traversalBudget = sharedTraversalBudget ?? prepared?.traversalBudget ?? { visitedNodes: 0 };
   let traversalComplete = prepared?.traversalError == null;
   let deferredPreparationError = prepared?.traversalError ?? null;
+  let hasUnscopedTraversalIncomplete = false;
+  const aggregateTraversalScopes: ContentTraversalScope[] = [];
+  const aggregateTraversalScopeKeys = new Set<string>();
   let haltAfterCurrentMessage = false;
   let stopAfterCurrentMessage = false;
   let visitedArrayItems = 0;
@@ -799,11 +802,18 @@ export function* extractMessageContent(
   const pendingFragments: TextContentFragment[] = [];
   const markTraversalIncomplete = (): void => {
     traversalComplete = false;
+    hasUnscopedTraversalIncomplete = true;
     haltAfterCurrentMessage = true;
   };
   const markAssembledContextIncomplete = (scopes: readonly ContentTraversalScope[]): void => {
     traversalComplete = false;
-    deferredPreparationError ??= new ContentTraversalLimitError([], scopes);
+    for (const scope of scopes) {
+      const key = `${scope.source}:${scope.fields.join(',')}`;
+      if (!aggregateTraversalScopeKeys.has(key)) {
+        aggregateTraversalScopeKeys.add(key);
+        aggregateTraversalScopes.push(scope);
+      }
+    }
   };
   const appendFragment = (fragment: TextContentFragment): boolean => {
     if (emittedFragments >= MAX_EXTERNAL_MESSAGE_FRAGMENTS) {
@@ -850,6 +860,7 @@ export function* extractMessageContent(
   const boundedMessageLength = Math.min(messageLength, MAX_EXTERNAL_MESSAGES);
   if (boundedMessageLength < messageLength) {
     traversalComplete = false;
+    hasUnscopedTraversalIncomplete = true;
   }
   if (prepared == null) {
     try {
@@ -995,6 +1006,7 @@ export function* extractMessageContent(
       const contentOverflowed = boundedContentLength < contentLength;
       if (contentOverflowed) {
         traversalComplete = false;
+        hasUnscopedTraversalIncomplete = true;
       }
       for (let partIndex = 0; partIndex < boundedContentLength; partIndex++) {
         if (traversalBudget.visitedNodes >= traversalMaxNodes) {
@@ -1373,6 +1385,7 @@ export function* extractMessageContent(
     const toolCallsOverflowed = boundedToolCallLength < toolCallLength;
     if (toolCallsOverflowed) {
       traversalComplete = false;
+      hasUnscopedTraversalIncomplete = true;
     }
     for (let callIndex = 0; callIndex < boundedToolCallLength; callIndex++) {
       visitedArrayItems++;
@@ -1446,9 +1459,13 @@ export function* extractMessageContent(
     }
   }
   if (!traversalComplete) {
-    throw (
-      deferredPreparationError ??
-      new ContentTraversalLimitError([], EXTERNAL_MESSAGE_TRAVERSAL_SCOPES)
-    );
+    let traversalError = deferredPreparationError;
+    if (traversalError == null && hasUnscopedTraversalIncomplete) {
+      traversalError = new ContentTraversalLimitError([], EXTERNAL_MESSAGE_TRAVERSAL_SCOPES);
+    }
+    if (traversalError == null && aggregateTraversalScopes.length > 0) {
+      traversalError = new ContentTraversalLimitError([], aggregateTraversalScopes);
+    }
+    throw traversalError ?? new ContentTraversalLimitError([], EXTERNAL_MESSAGE_TRAVERSAL_SCOPES);
   }
 }

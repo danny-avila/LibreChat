@@ -1847,6 +1847,40 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
+  it('accumulates later tool-output scope after an earlier aggregate overflow', () => {
+    const part = 'safe'.repeat(250_000);
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        submittedMessages: [
+          ...Array.from({ length: 5 }, () => ({
+            role: 'user',
+            content: [
+              { type: 'text', text: part },
+              { type: 'text', text: part },
+            ],
+          })),
+          {
+            role: 'tool',
+            content: [
+              { type: 'text', text: part },
+              { type: 'text', text: part },
+            ],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
   it('bounds a second mixed-row aggregate while preserving a later direct finding', () => {
     const traversalBudget = {
       visitedNodes: 0,
