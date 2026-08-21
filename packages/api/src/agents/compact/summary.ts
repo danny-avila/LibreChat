@@ -407,12 +407,22 @@ async function hydrateAttachments(
   }
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
+  /**
+   * Deduplicated across the RETAINED segment, as the normal history path
+   * deduplicates across a branch: a document reattached to several turns would
+   * otherwise be inlined in full each time, inflating the prompt into passes
+   * the user pays for. Reset at a summary boundary, because
+   * `formatAgentMessages` discards everything before it and a file attached on
+   * both sides must still hydrate onto the occurrence that survives.
+   */
+  const seen = new Set<string>();
   for (const message of branch) {
-    /** Deduplicated per MESSAGE, not across the branch: a file attached both
-     *  before and after an existing summary boundary must hydrate onto the
-     *  later occurrence too, since `formatAgentMessages` discards the earlier
-     *  one and the checkpoint would otherwise lose what was reattached. */
-    const seen = new Set<string>();
+    if (
+      Array.isArray(message.content) &&
+      message.content.some((part) => part?.type === ContentTypes.SUMMARY)
+    ) {
+      seen.clear();
+    }
     const resolve = (refs: Array<{ file_id?: string }>): IMongoFile[] => {
       const attachments: IMongoFile[] = [];
       for (const ref of refs) {
