@@ -5,6 +5,7 @@ import { useRecoilValue, useResetRecoilState } from 'recoil';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
+import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useSubagentThreadQuery } from '~/data-provider';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import SubagentActivity from './SubagentActivity';
@@ -127,7 +128,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         </Button>
       </header>
 
-      <SubagentActivity activity={activity} state={panelState} />
+      {/* Keep the foreground panel's existing nested-tool approval controls
+          coordinated within this invocation. Detached activity projections
+          never include approval payloads. */}
+      <ApprovalProvider>
+        <SubagentActivity activity={activity} state={panelState} />
+      </ApprovalProvider>
     </aside>
   );
 }
