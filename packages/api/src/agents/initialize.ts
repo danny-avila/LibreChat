@@ -129,7 +129,7 @@ function assertResolvedSkillContentAllowed(
   if (inspectionSession == null) {
     return;
   }
-  const selectedFields = pii.fields == null ? null : new Set<string>(pii.fields);
+  const selectedFields = pii?.fields == null ? null : new Set<string>(pii.fields);
   const selected = (field: string): boolean => selectedFields == null || selectedFields.has(field);
   const traversalErrors: ContentTraversalLimitError[] = [];
   for (const skill of skills) {
