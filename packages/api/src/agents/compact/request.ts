@@ -106,10 +106,16 @@ export interface CompactRequestDeps
     messageId: string;
   }) => Promise<unknown>;
   getModelsConfig: (req: ServerRequest) => Promise<TModelsConfig>;
-  getJob: (
-    streamId: string,
-  ) => Promise<
-    { status?: string; metadata?: { terminalPersistencePending?: boolean } } | null | undefined
+  getJob: (streamId: string) => Promise<
+    | {
+        status?: string;
+        /** Start of the generation this job belongs to. A job newer than the
+         *  compaction means a turn began while it was running. */
+        createdAt?: number;
+        metadata?: { terminalPersistencePending?: boolean };
+      }
+    | null
+    | undefined
   >;
   getFiles: GetFilesFn;
   /** Resolves the agents named in multi-agent history, for attribution. */
@@ -163,16 +169,28 @@ function billableUsages(
  * that window the leaf this request would compact is still the OLD one. Same
  * three states `isParentActive` fences a subagent wakeup on, and `getJob`
  * already expires a pending flag left behind by a crash.
+ *
+ * `since` additionally rejects a job that STARTED after the compaction did,
+ * whatever state it has reached: a job is created before its response is
+ * saved, so a turn that began and even finished during the call is visible
+ * here rather than only through a sibling row that may not be written yet.
  */
 async function isGenerating(
   getJob: CompactRequestDeps['getJob'],
   conversationId: string,
+  since?: number,
 ): Promise<boolean> {
   const job = await getJob(conversationId);
+  if (job == null) {
+    return false;
+  }
+  if (since != null && typeof job.createdAt === 'number' && job.createdAt >= since) {
+    return true;
+  }
   return (
-    job?.status === 'running' ||
-    job?.status === 'requires_action' ||
-    job?.metadata?.terminalPersistencePending === true
+    job.status === 'running' ||
+    job.status === 'requires_action' ||
+    job.metadata?.terminalPersistencePending === true
   );
 }
 
@@ -266,6 +284,9 @@ export async function handleCompactRequest(
   deps: CompactRequestDeps,
 ): Promise<CompactRequestResult> {
   const body = req.body as Record<string, unknown>;
+  /** Anything that claims this conversation from here on raced the compaction,
+   *  whether or not it is still running when the tail is verified. */
+  const startedAt = Date.now();
   const conversationId = typeof body.conversationId === 'string' ? body.conversationId : '';
   const endpoint = typeof body.endpoint === 'string' ? body.endpoint : '';
   const userId = req.user?.id ?? '';
@@ -471,6 +492,25 @@ export async function handleCompactRequest(
           ) {
             return;
           }
+          /**
+           * Each pass is billed as its OWN call, at the tier its own input
+           * selects, so the gate prices them the same way `recordCollectedUsage`
+           * will. One `amount` at one rate cannot express that: the standard
+           * rate approves a call that is then charged at the premium one, and
+           * the premium rate rejects a user who can afford the real charge.
+           */
+          const tokenCost = passPromptTokens.reduce(
+            (total, pass) =>
+              total +
+              pass *
+                deps.getMultiplier({
+                  model,
+                  tokenType: 'prompt',
+                  inputTokenCount: pass,
+                  endpointTokenConfig,
+                }),
+            0,
+          );
           await checkBalance(
             {
               req,
@@ -480,14 +520,7 @@ export async function handleCompactRequest(
                 user: userId,
                 tokenType: 'prompt',
                 amount: promptTokens,
-                /** Premium long-context rates are keyed off ONE call's input,
-                 *  and this is a single gate: the largest pass is the one that
-                 *  can cross the threshold, so it picks the tier. Omitting it
-                 *  priced every compaction at the standard rate and approved
-                 *  calls `recordCollectedUsage` then charged at the premium
-                 *  one. */
-                inputTokenCount:
-                  passPromptTokens.length > 0 ? Math.max(...passPromptTokens) : promptTokens,
+                ...(passPromptTokens.length > 0 && { tokenCost }),
                 endpoint: summarizerEndpoint,
                 endpointTokenConfig,
               },
@@ -546,7 +579,7 @@ export async function handleCompactRequest(
      * the two reads and neither observes it.
      */
     const tailMoved = async (): Promise<boolean> => {
-      if (await isGenerating(deps.getJob, conversationId)) {
+      if (await isGenerating(deps.getJob, conversationId, startedAt)) {
         return true;
       }
       const children = await deps.getMessages(
@@ -625,7 +658,7 @@ export async function handleCompactRequest(
      *  compensating delete is what makes the outcome atomic for the reader.
      *  Ordered as in `tailMoved`: the job read has to come first, or a turn
      *  that saves and settles between the two reads is seen by neither. */
-    const racingTurn = await isGenerating(deps.getJob, conversationId);
+    const racingTurn = await isGenerating(deps.getJob, conversationId, startedAt);
     const siblings = racingTurn
       ? undefined
       : await deps.getMessages(
