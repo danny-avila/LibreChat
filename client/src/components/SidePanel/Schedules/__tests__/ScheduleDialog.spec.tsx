@@ -3,6 +3,7 @@ import { ToastProvider } from '@librechat/client';
 import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { TSchedule } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import ScheduleDialog from '../ScheduleDialog';
 
@@ -25,7 +26,13 @@ let mockLimits: { maxPerUser: number; requireProject: boolean; projectId?: strin
   requireProject: false,
 };
 
+/** A project the paged list has NOT loaded, resolved by its own by-id read. */
+let mockFetchedProject: { _id: string; name: string } | undefined;
+
 jest.mock('~/data-provider', () => ({
+  useProjectQuery: (projectId?: string | null) => ({
+    data: projectId != null && projectId !== '' ? mockFetchedProject : undefined,
+  }),
   useListAgentsQuery: () => ({
     data: [
       { id: 'agent-1', name: 'Research Agent' },
@@ -53,7 +60,7 @@ jest.mock('~/data-provider', () => ({
   useUpdateScheduleMutation: () => ({ mutate: mockMutate, isLoading: false }),
 }));
 
-const renderDialog = () => {
+const renderDialog = (schedule?: Partial<TSchedule>) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -64,8 +71,30 @@ const renderDialog = () => {
       createElement(ToastProvider, null, children),
     );
   }
-  return render(<ScheduleDialog open={true} onOpenChange={jest.fn()} />, { wrapper: Wrapper });
+  return render(
+    <ScheduleDialog
+      open={true}
+      onOpenChange={jest.fn()}
+      schedule={schedule as TSchedule | undefined}
+    />,
+    { wrapper: Wrapper },
+  );
 };
+
+const storedSchedule = (over: Partial<TSchedule> = {}): Partial<TSchedule> => ({
+  id: 'sched-1',
+  name: 'Digest',
+  prompt: 'Summarize',
+  agent_id: 'agent-1',
+  cadence: { frequency: 'daily', hour: 8, minute: 0 },
+  timezone: 'America/New_York',
+  target: 'new',
+  enabled: true,
+  configRevision: 3,
+  runCount: 0,
+  failureCount: 0,
+  ...over,
+});
 
 /** Fills the two required text fields plus the agent, so a submit exercises the
  *  project rules rather than unrelated validation. */
@@ -81,6 +110,7 @@ describe('ScheduleDialog', () => {
   afterEach(() => {
     jest.clearAllMocks();
     mockLimits = { maxPerUser: 10, requireProject: false };
+    mockFetchedProject = undefined;
   });
 
   /**
@@ -192,6 +222,12 @@ describe('ScheduleDialog', () => {
       await fillRequiredFields(user);
 
       await user.click(screen.getByRole('combobox', { name: 'com_ui_project' }));
+      // Narrowed through the search field rather than picked from the open list: the
+      // popover renders its options through a VIRTUALIZED renderer, which sizes its
+      // window from a scroll height jsdom always reports as 0 and so materializes only
+      // a couple of rows. Filtering to one match keeps the assertion about the dialog's
+      // behaviour instead of the test environment's layout.
+      await user.type(screen.getByPlaceholderText('com_ui_search_projects'), 'Weekly');
       await user.click(await screen.findByRole('option', { name: /Weekly Ops/ }));
       await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
 
@@ -223,6 +259,58 @@ describe('ScheduleDialog', () => {
 
       expect(mockMutate).not.toHaveBeenCalled();
       expect(await screen.findByText('com_ui_field_required')).toBeInTheDocument();
+    });
+
+    /** The server accepts `chatProjectId: null` to clear a scope, but that path is only
+     *  reachable if the picker offers something to select — a placeholder cannot be
+     *  chosen, so without a real option a scoped schedule could never be unscoped. */
+    it('can clear a stored project through a selectable No project option', async () => {
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ chatProjectId: 'proj-1' }));
+
+      expect(screen.getByRole('combobox', { name: 'com_ui_project' })).toHaveTextContent(
+        'Weekly Ops',
+      );
+      await user.click(screen.getByRole('combobox', { name: 'com_ui_project' }));
+      await user.click(await screen.findByRole('option', { name: /com_ui_schedule_project_none/ }));
+      await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: expect.objectContaining({ chatProjectId: null }) }),
+      );
+    });
+
+    /** There is no "no project" to offer when one is mandatory. */
+    it('offers no clearing option when a project is required', async () => {
+      mockLimits = { maxPerUser: 10, requireProject: true };
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ chatProjectId: 'proj-1' }));
+
+      await user.click(screen.getByRole('combobox', { name: 'com_ui_project' }));
+
+      expect(
+        screen.queryByRole('option', { name: /com_ui_schedule_project_none/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    /** A stored project outside the loaded page would otherwise render the placeholder —
+     *  telling the owner a scoped schedule has no project. */
+    it('names a stored project the paged list has not loaded', async () => {
+      mockFetchedProject = { _id: 'proj-999', name: 'Archived Ops' };
+      renderDialog(storedSchedule({ chatProjectId: 'proj-999' }));
+
+      const picker = screen.getByRole('combobox', { name: 'com_ui_project' });
+      expect(picker).toHaveTextContent('Archived Ops');
+      expect(picker).not.toHaveTextContent('com_ui_schedule_project_none');
+    });
+
+    /** Even with no name available, the id beats claiming the schedule is unscoped. */
+    it('falls back to the stored id rather than showing the empty placeholder', async () => {
+      renderDialog(storedSchedule({ chatProjectId: 'proj-999' }));
+
+      expect(screen.getByRole('combobox', { name: 'com_ui_project' })).toHaveTextContent(
+        'proj-999',
+      );
     });
 
     /** A pin is the server's decision. Offering a picker would only invite a choice

@@ -22,7 +22,6 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
-import useScheduleProjects from './useScheduleProjects';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
@@ -31,6 +30,9 @@ import { describeCadence } from './cadence';
 
 interface ScheduleCardProps {
   schedule: TSchedule;
+  /** Resolved by the panel, which holds ONE project-name lookup for the whole list —
+   *  deriving it per card is O(schedules x projects) on every project-list refresh. */
+  projectName?: string | null;
 }
 
 type StatusTone = 'neutral' | 'success' | 'warning' | 'error';
@@ -55,7 +57,7 @@ const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = 
   project_required: 'com_ui_schedule_disabled_project_required',
 };
 
-export default function ScheduleCard({ schedule }: ScheduleCardProps) {
+export default function ScheduleCard({ schedule, projectName }: ScheduleCardProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { i18n } = useTranslation();
@@ -80,13 +82,6 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
     enabled: agentsMap !== undefined && mappedAgent == null,
   });
   const agentName = mappedAgent?.name || fetchedAgent?.name || schedule.agent_id;
-  /** Only the schedules that HAVE a scope pay for the lookup; the query itself is
-   *  shared and cached, so a panel of scoped cards still makes one request. */
-  const { namesById: projectNames } = useScheduleProjects(schedule.chatProjectId != null);
-  const projectName =
-    schedule.chatProjectId != null
-      ? (projectNames.get(schedule.chatProjectId) ?? schedule.chatProjectId)
-      : null;
 
   const updateSchedule = useUpdateScheduleMutation({
     /** Re-enabling re-validates the schedule's EFFECTIVE state — its stored agent, its
@@ -231,7 +226,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
       <p className="mt-0.5 truncate text-xs text-text-secondary" title={agentName}>
         {agentName}
       </p>
-      {projectName != null && (
+      {projectName != null && projectName !== '' && (
         <p
           className="mt-0.5 flex items-center gap-1 truncate text-xs text-text-secondary"
           title={projectName}

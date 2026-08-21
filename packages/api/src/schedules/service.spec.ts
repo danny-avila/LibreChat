@@ -1200,13 +1200,21 @@ describe('global kill switch', () => {
 });
 
 describe('scheduled resume capacity', () => {
-  function makeResumeService(occupancy: { takenSlots: number[]; unslotted: number }) {
+  function makeResumeService(
+    occupancy: { takenSlots: number[]; unslotted: number },
+    over: {
+      scheduleProjectId?: string;
+      projectConfig?: Record<string, unknown>;
+      project?: unknown;
+    } = {},
+  ) {
     const methods = {
       getScheduleById: jest.fn(async () => ({
         id: 's1',
         user: 'user-1',
         enabled: true,
         configRevision: 3,
+        ...(over.scheduleProjectId != null && { chatProjectId: over.scheduleProjectId }),
       })),
       getRoleByName: jest.fn(async () => ({ permissions: { SCHEDULES: { USE: true } } })),
       getCapacityOccupancy: jest.fn(async () => occupancy),
@@ -1232,6 +1240,7 @@ describe('scheduled resume capacity', () => {
             minIntervalMinutes: 60,
             autoDisableAfterFailures: 5,
             fireConcurrency: 1,
+            ...(over.projectConfig ?? {}),
           },
         },
       })),
@@ -1240,13 +1249,69 @@ describe('scheduled resume capacity', () => {
       upsertBalance: jest.fn(async () => null),
       initializeNullBalance: jest.fn(async () => null),
       resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
-      getChatProject: jest.fn(async () => ({ _id: 'proj-1' })),
+      getChatProject: jest.fn(async () => ('project' in over ? over.project : { _id: 'proj-1' })),
       isUserDeleting: jest.fn(async () => false),
       enqueueAgentTrigger: jest.fn(async () => undefined),
       getTriggerDelivery: jest.fn(async () => null),
     } as unknown as SchedulesServiceDeps);
     return { service, methods };
   }
+
+  /**
+   * A resume starts a fresh BILLED continuation, so it has to clear the boundary the
+   * fire path would apply today — not the one that held when the run paused. These
+   * mirror the fire-time project prechecks in project.spec.ts.
+   */
+  describe('project policy at the resume boundary', () => {
+    it('refuses a paused run whose project was deleted', async () => {
+      const { service, methods } = makeResumeService(
+        { takenSlots: [], unslotted: 0 },
+        { scheduleProjectId: 'proj-gone', project: null },
+      );
+
+      await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
+        conflict: 'inactive',
+      });
+      // Refused BEFORE the lease and the capacity slot, so a policy refusal costs the
+      // deployment nothing and leaves no state to unwind.
+      expect(methods.acquireResumeLease).not.toHaveBeenCalled();
+      expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unscoped paused run once the owner requires a project', async () => {
+      const { service, methods } = makeResumeService(
+        { takenSlots: [], unslotted: 0 },
+        { projectConfig: { requireProject: true } },
+      );
+
+      await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
+        conflict: 'inactive',
+      });
+      expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
+    });
+
+    it('validates the PIN rather than the stored project when one is configured', async () => {
+      const service = makeResumeService(
+        { takenSlots: [], unslotted: 0 },
+        { scheduleProjectId: 'proj-old', projectConfig: { projectId: 'proj-pinned' } },
+      ).service;
+
+      await expect(
+        service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z'),
+      ).resolves.toMatchObject({ capacitySlot: 0 });
+    });
+
+    it('admits a paused run whose project is still owned', async () => {
+      const { service } = makeResumeService(
+        { takenSlots: [], unslotted: 0 },
+        { scheduleProjectId: 'proj-1' },
+      );
+
+      await expect(
+        service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z'),
+      ).resolves.toMatchObject({ capacitySlot: 0 });
+    });
+  });
 
   it('promotes a pause through the global slot allocator and releases by exact slot', async () => {
     const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });

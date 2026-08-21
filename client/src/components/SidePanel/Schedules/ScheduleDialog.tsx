@@ -26,14 +26,15 @@ import type {
 import type { TranslationKeys } from '~/hooks';
 import type { Meridiem } from './cadence';
 import {
+  useProjectQuery,
   useListAgentsQuery,
   useSchedulesQuery,
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
 import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
+import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
-import useScheduleProjects from './useScheduleProjects';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -169,12 +170,43 @@ export default function ScheduleDialog({
   const pinnedProjectId = schedulesData?.limits.projectId;
   const requireProject = schedulesData?.limits.requireProject === true;
   const {
-    items: projectItems,
+    items: loadedProjectItems,
     namesById: projectNames,
     hasNextPage: hasMoreProjects,
     fetchNextPage: fetchMoreProjects,
     isFetchingNextPage: isFetchingMoreProjects,
-  } = useScheduleProjects(open);
+  } = useChatProjectPicker(open);
+  const selectedProjectId = watch('chatProjectId');
+
+  /** Clearing the scope needs a real OPTION, not just the placeholder: with only live
+   *  projects in the list, a schedule that has one could never be set back to none, and
+   *  the server's `chatProjectId: null` clearing path would be unreachable from the UI.
+   *  Omitted when a project is mandatory — there is nothing valid to select. */
+  const projectItems = useMemo(
+    () =>
+      requireProject
+        ? loadedProjectItems
+        : [
+            {
+              label: localize('com_ui_schedule_project_none'),
+              value: '',
+              icon: <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />,
+            },
+            ...loadedProjectItems,
+          ],
+    [requireProject, loadedProjectItems, localize],
+  );
+
+  /** The stored (or pinned) project can sit outside the pages loaded so far, and the
+   *  combobox renders its PLACEHOLDER for an unknown name — telling the owner a scoped
+   *  schedule has no project. Read that one project directly instead. */
+  const displayedProjectId = pinnedProjectId ?? (selectedProjectId || undefined);
+  const isProjectPaged = displayedProjectId != null && projectNames.has(displayedProjectId);
+  const { data: fetchedProject } = useProjectQuery(isProjectPaged ? undefined : displayedProjectId);
+  const projectDisplayName = (projectId: string): string =>
+    projectNames.get(projectId) ??
+    (fetchedProject?._id === projectId ? fetchedProject.name : undefined) ??
+    projectId;
 
   const frequencyOptions = useMemo(
     () =>
@@ -452,9 +484,7 @@ export default function ScheduleDialog({
                       className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 text-sm text-text-secondary"
                     >
                       <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      <span className="truncate">
-                        {projectNames.get(pinnedProjectId) ?? pinnedProjectId}
-                      </span>
+                      <span className="truncate">{projectDisplayName(pinnedProjectId)}</span>
                     </div>
                   ) : (
                     <Controller
@@ -466,7 +496,9 @@ export default function ScheduleDialog({
                       render={({ field }) => (
                         <ControlCombobox
                           selectedValue={field.value}
-                          displayValue={projectNames.get(field.value) ?? ''}
+                          // Never `''` for a real id: that renders the placeholder,
+                          // which reads as "No project" on a schedule that has one.
+                          displayValue={field.value ? projectDisplayName(field.value) : ''}
                           selectPlaceholder={localize(
                             requireProject
                               ? 'com_ui_select_project'

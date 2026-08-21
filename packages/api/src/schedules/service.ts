@@ -16,6 +16,7 @@ import type { SerializableJobData } from '../stream/interfaces/IJobStore';
 import type { BalanceUpdateFields } from '../types/balance';
 import type { GetAppConfigOptions } from '../app/service';
 import {
+  resolveScheduleProjectId,
   DEFAULT_SCHEDULE_LIMITS,
   SCHEDULE_FILE_HOLD,
   hasResumeHandoffInFlight,
@@ -1079,6 +1080,22 @@ export function createSchedulesService(
         engineDeps.hasScheduleAccess(owner),
       ]);
       if (!ownerLimits.enabled || globallyDisabled || !hasAccess) {
+        return { conflict: 'inactive' };
+      }
+      // Project policy is re-applied HERE for the same reason the checks above are: a
+      // resume starts a fresh billed continuation, so it must clear the boundary the
+      // fire path would apply today, not the one that held when the run paused. Without
+      // this, approving a run whose project was deleted — or whose owner is now under a
+      // requirement or a pin it no longer satisfies — bills a continuation the very next
+      // scheduled fire would refuse and auto-disable the schedule for.
+      const chatProjectId = resolveScheduleProjectId(ownerLimits, schedule.chatProjectId);
+      if (ownerLimits.requireProject && chatProjectId == null) {
+        return { conflict: 'inactive' };
+      }
+      if (
+        chatProjectId != null &&
+        (await engineDeps.projectAccess(chatProjectId, owner)) !== 'ok'
+      ) {
         return { conflict: 'inactive' };
       }
       // FINAL schedule-side admission fence. Everything above is asynchronous and an

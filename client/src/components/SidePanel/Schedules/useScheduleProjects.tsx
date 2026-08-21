@@ -12,33 +12,55 @@ const PROJECT_LIST_PARAMS = {
   limit: 100,
 } as const;
 
-export interface ScheduleProjects {
-  projects: TChatProject[];
-  /** Name lookup for rendering a stored id the picker may not have paged in yet. */
-  namesById: Map<string, string>;
+function useLoadedProjects(enabled: boolean) {
+  const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery(
+    PROJECT_LIST_PARAMS,
+    { enabled },
+  );
+  const projects = useMemo<TChatProject[]>(
+    () => data?.pages.flatMap((page) => page.projects) ?? [],
+    [data?.pages],
+  );
+  const hasNextPage = data?.pages[data.pages.length - 1]?.nextCursor != null;
+  return { projects, hasNextPage, fetchNextPage, isFetchingNextPage, isLoading };
+}
+
+/**
+ * Name lookup ONLY, deliberately built without the picker's option list.
+ *
+ * Call this ONCE for a whole list of schedules, not per row: React Query shares the
+ * request, but every hook instance still walks all loaded projects, and the picker
+ * shape additionally allocates an icon element per project. Per-card that is
+ * O(schedules x projects) of work — and a fresh React element per project per card —
+ * on every render and every project-list refresh.
+ */
+export function useChatProjectNames(enabled = true): Map<string, string> {
+  const { projects } = useLoadedProjects(enabled);
+  return useMemo(() => {
+    const names = new Map<string, string>();
+    for (const project of projects) {
+      names.set(project._id, project.name);
+    }
+    return names;
+  }, [projects]);
+}
+
+export interface ChatProjectPicker {
   items: OptionWithIcon[];
+  /** Names of the projects paged in so far; a stored id outside them needs its own read. */
+  namesById: Map<string, string>;
   hasNextPage: boolean;
   fetchNextPage: () => void;
   isFetchingNextPage: boolean;
   isLoading: boolean;
 }
 
-/** Chat projects a schedule can be filed under, in the shape both the picker and the
- *  card need. */
-export default function useScheduleProjects(enabled = true): ScheduleProjects {
-  const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery(
-    PROJECT_LIST_PARAMS,
-    { enabled },
-  );
+/** Picker-shaped projects for the schedule dialog's single combobox. */
+export function useChatProjectPicker(enabled = true): ChatProjectPicker {
+  const { projects, hasNextPage, fetchNextPage, isFetchingNextPage, isLoading } =
+    useLoadedProjects(enabled);
 
-  const projects = useMemo<TChatProject[]>(
-    () => data?.pages.flatMap((page) => page.projects) ?? [],
-    [data?.pages],
-  );
-
-  /** One pass builds both the option list and the name lookup: the panel renders a
-   *  card per schedule and the dialog renders the same set, so re-walking the list
-   *  for each consumer adds up on an account with many projects. */
+  /** One pass builds both the option list and the name lookup the display value reads. */
   const { items, namesById } = useMemo(() => {
     const options: OptionWithIcon[] = [];
     const names = new Map<string, string>();
@@ -53,13 +75,5 @@ export default function useScheduleProjects(enabled = true): ScheduleProjects {
     return { items: options, namesById: names };
   }, [projects]);
 
-  return {
-    projects,
-    namesById,
-    items,
-    hasNextPage: data?.pages[data.pages.length - 1]?.nextCursor != null,
-    fetchNextPage,
-    isFetchingNextPage,
-    isLoading,
-  };
+  return { items, namesById, hasNextPage, fetchNextPage, isFetchingNextPage, isLoading };
 }
