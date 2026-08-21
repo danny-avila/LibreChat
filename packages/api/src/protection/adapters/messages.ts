@@ -128,6 +128,20 @@ const ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE: readonly ContentTraversalScope[] = [
   { source: 'assembled_context', fields: ['assembled_context'] },
 ];
 
+function getAssembledContextTraversalScopes(
+  role: string | undefined,
+  isInstruction: boolean,
+): ContentTraversalScope[] {
+  const scopes: ContentTraversalScope[] = [...ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE];
+  if (isInstruction) {
+    scopes.push({ source: 'agent_instruction', fields: ['instructions'] });
+  }
+  if (role === 'tool') {
+    scopes.push({ source: 'tool_argument', fields: ['output'] });
+  }
+  return scopes;
+}
+
 const PART_SNAPSHOT_KEYS = [
   'type',
   'text',
@@ -787,13 +801,9 @@ export function* extractMessageContent(
     traversalComplete = false;
     haltAfterCurrentMessage = true;
   };
-  const markAssembledContextIncomplete = (): void => {
+  const markAssembledContextIncomplete = (scopes: readonly ContentTraversalScope[]): void => {
     traversalComplete = false;
-    haltAfterCurrentMessage = true;
-    deferredPreparationError ??= new ContentTraversalLimitError(
-      [],
-      ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE,
-    );
+    deferredPreparationError ??= new ContentTraversalLimitError([], scopes);
   };
   const appendFragment = (fragment: TextContentFragment): boolean => {
     if (emittedFragments >= MAX_EXTERNAL_MESSAGE_FRAGMENTS) {
@@ -893,10 +903,16 @@ export function* extractMessageContent(
     }
     const role = typeof message.role === 'string' ? message.role : undefined;
     const name = typeof message.name === 'string' ? message.name : undefined;
+    const isInstruction = role === 'system' || role === 'developer';
+    const assembledContextScopes = getAssembledContextTraversalScopes(role, isInstruction);
     const assembledText: string[] = [];
     let assembledCharacters = 0;
     let assembledBudgetReserved = false;
+    let assembledContextOverflowed = false;
     const appendAssembledText = (text: string): void => {
+      if (assembledContextOverflowed) {
+        return;
+      }
       if (assembledText.length === 0) {
         assembledText.push(text);
         assembledCharacters = text.length;
@@ -909,9 +925,11 @@ export function* extractMessageContent(
         assembledText.length >= MAX_ASSEMBLED_CONTEXT_PARTS ||
         !reserveContentMaterialization(traversalBudget, requestedCharacters)
       ) {
-        // Individual content parts have already been emitted. Only their
-        // aggregate cannot be materialized, so preserve that narrower scope.
-        markAssembledContextIncomplete();
+        // Individual content parts remain inspectable. Stop only aggregate
+        // construction so later direct fragments cannot be hidden by a
+        // scoped aggregate overflow.
+        assembledContextOverflowed = true;
+        markAssembledContextIncomplete(assembledContextScopes);
         return;
       }
       assembledBudgetReserved = true;
@@ -930,7 +948,6 @@ export function* extractMessageContent(
       );
     }
     const content = message.content;
-    const isInstruction = role === 'system' || role === 'developer';
     if (typeof content === 'string') {
       appendAssembledText(content);
       appendFragment(

@@ -1770,7 +1770,7 @@ describe('assertModelBoundContent', () => {
   });
 
   it('allows submitted content-part inspection after only its aggregate overflows', () => {
-    const part = 'safe'.repeat(125_000);
+    const part = 'safe'.repeat(250_000);
 
     expect(() =>
       assertModelBoundContent({
@@ -1792,6 +1792,59 @@ describe('assertModelBoundContent', () => {
         })),
       }),
     ).not.toThrow();
+  });
+
+  it('continues direct submitted-part inspection after aggregate materialization overflows', () => {
+    const part = 'safe'.repeat(250_000);
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-LATE' }],
+            },
+          },
+        },
+        submittedMessages: [
+          ...Array.from({ length: 5 }, () => ({
+            role: 'user',
+            content: [
+              { type: 'text', text: part },
+              { type: 'text', text: part },
+            ],
+          })),
+          { role: 'user', content: [{ type: 'text', text: 'PRIVATE-LATE' }] },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('fails closed for a tool-output aggregate that cannot be materialized', () => {
+    const part = 'safe'.repeat(250_000);
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        submittedMessages: Array.from({ length: 5 }, () => ({
+          role: 'tool',
+          content: [
+            { type: 'text', text: part },
+            { type: 'text', text: part },
+          ],
+        })),
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
   it('bounds a second mixed-row aggregate while preserving a later direct finding', () => {
@@ -2185,6 +2238,29 @@ describe('assertModelBoundProviderContent', () => {
           },
         },
         providerMessages: [{ role: 'human', content: [{ type: 'vendor_content', payload }] }],
+      }),
+    ).not.toThrow();
+  });
+
+  it('ignores provider-part snapshot overflow for a fully captured envelope name', () => {
+    const payload = Object.fromEntries(
+      Array.from({ length: 4_200 }, (_, index) => [`safe_${index}`, `value_${index}`]),
+    );
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+            },
+          },
+        },
+        providerMessages: [
+          { role: 'human', name: 'safe-name', content: [{ type: 'vendor_content', payload }] },
+        ],
       }),
     ).not.toThrow();
   });

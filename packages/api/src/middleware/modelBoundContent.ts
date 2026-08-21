@@ -151,7 +151,7 @@ function getProviderPartSnapshotTraversalScopes(
   providerRoles: readonly (string | undefined)[],
 ): ContentTraversalScope[] {
   const scopes: ContentTraversalScope[] = [
-    { source: 'message', fields: ['name', 'text', 'content_part', 'attachment_reference'] },
+    { source: 'message', fields: ['content_part', 'attachment_reference'] },
     { source: 'assembled_context', fields: ['assembled_context'] },
     { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text'] },
     { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
@@ -3461,18 +3461,21 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     );
     assertInspectableFileInput(input.filters, preparedSubmittedMessages.messages);
     const appendSubmittedTraversalError = (error: ContentTraversalLimitError): void => {
+      const hasExplicitScopes = getContentTraversalScopes(error).length > 0;
+      const isProtected = isContentTraversalProtected({
+        error,
+        filters: input.filters,
+        legacyPii: input.legacyPii,
+        roles: preparedSubmittedMessages.roles,
+      });
       if (
-        isContentTraversalProtected({
-          error,
-          filters: input.filters,
-          legacyPii: input.legacyPii,
-          roles: preparedSubmittedMessages.roles,
-        }) ||
-        isNestedMessageTraversalProtected({
-          filters: input.filters,
-          legacyPii: input.legacyPii,
-          roles: preparedSubmittedMessages.roles,
-        })
+        isProtected &&
+        (hasExplicitScopes ||
+          isNestedMessageTraversalProtected({
+            filters: input.filters,
+            legacyPii: input.legacyPii,
+            roles: preparedSubmittedMessages.roles,
+          }))
       ) {
         traversalErrors.push(error);
       }
