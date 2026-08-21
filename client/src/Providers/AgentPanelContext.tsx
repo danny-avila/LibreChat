@@ -5,12 +5,12 @@ import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
 import {
-  useLocalize,
-  activateCatalog,
-  useGetAgentsConfig,
-  useCatalogReady,
   useMCPConnectionStatus,
   useMCPServerManager,
+  useGetAgentsConfig,
+  activateCatalog,
+  useCatalogReady,
+  useLocalize,
 } from '~/hooks';
 import {
   useAvailableToolsQuery,
