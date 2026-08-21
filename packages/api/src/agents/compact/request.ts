@@ -9,6 +9,7 @@ import {
 import type { Agent, TMessage, TModelsConfig, TResponseUsage } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
+  GetAgentFn,
   CompactionPass,
   CompactionResult,
   CompactionSkillDeps,
@@ -100,6 +101,8 @@ export interface CompactRequestDeps
   getModelsConfig: (req: ServerRequest) => Promise<TModelsConfig>;
   getJob: (streamId: string) => Promise<{ status?: string } | null | undefined>;
   getFiles: GetFilesFn;
+  /** Resolves the agents named in multi-agent history, for attribution. */
+  getAgent?: GetAgentFn;
   /** Resolves historical skill bodies so the checkpoint records a manually
    *  invoked skill's constraints. Omitted when skills are disabled. */
   skills?: CompactionSkillDeps;
@@ -392,14 +395,27 @@ export async function handleCompactRequest(
           getUserKeyExpiry: deps.getUserKeyExpiry,
         },
         getFiles: deps.getFiles,
+        getAgent: deps.getAgent,
         skills: deps.skills,
         signal,
         /** Same gate `BaseClient` applies before a normal turn contacts the
          *  provider, so a spent-out user cannot compact repeatedly for free.
          *  Keyed on `endpointType ?? endpoint` exactly as `BaseClient` does:
          *  a custom endpoint's name is not a key in `supportsBalanceCheck`. */
-        beforeInvoke: async ({ promptTokens, model, endpointTokenConfig }) => {
-          const balanceKey = (body.endpointType as string | undefined) ?? endpoint;
+        beforeInvoke: async ({
+          promptTokens,
+          model,
+          endpoint: summarizerEndpoint,
+          endpointTokenConfig,
+        }) => {
+          /** The endpoint the call resolved to, which a cross-endpoint
+           *  `summarization.provider` makes different from the conversation's.
+           *  Both the support check and the multiplier must key on it, or the
+           *  gate approves at the wrong provider's rate. */
+          const balanceKey =
+            summarizerEndpoint === endpoint
+              ? ((body.endpointType as string | undefined) ?? endpoint)
+              : summarizerEndpoint;
           if (
             balanceConfig?.enabled !== true ||
             supportsBalanceCheck[balanceKey as keyof typeof supportsBalanceCheck] !== true
@@ -415,7 +431,7 @@ export async function handleCompactRequest(
                 user: userId,
                 tokenType: 'prompt',
                 amount: promptTokens,
-                endpoint,
+                endpoint: summarizerEndpoint,
                 endpointTokenConfig,
               },
             },
