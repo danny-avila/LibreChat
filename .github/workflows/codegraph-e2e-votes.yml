@@ -172,11 +172,37 @@ jobs:
         run: google-chrome --version
 
       # ffmpeg for retry video — see the note in playwright-mock.yml.
-      - name: Install Playwright ffmpeg (best effort)
+      - name: Resolve Playwright version
+        id: playwright-version
         if: steps.tiers.outputs.count != '0'
+        run: |
+          version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright ffmpeg cache
+        id: cache-ffmpeg
+        if: steps.tiers.outputs.count != '0'
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright ffmpeg (best effort)
+        id: install-ffmpeg
+        if: steps.tiers.outputs.count != '0' && steps.cache-ffmpeg.outputs.cache-hit != 'true'
         timeout-minutes: 3
         continue-on-error: true
-        run: timeout -k 10 90 npx playwright install ffmpeg
+        run: |
+          timeout -k 10 60 npx playwright install ffmpeg
+          .github/scripts/verify-playwright-ffmpeg.sh
+
+      - name: Save Playwright ffmpeg cache
+        if: steps.tiers.outputs.count != '0' && steps.install-ffmpeg.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       # Optional fonts only — see the note in playwright-mock.yml.
       - name: Install optional Playwright font dependencies (best effort)
