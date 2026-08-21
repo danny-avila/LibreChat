@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useAssignConversationToProjectMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 
 export const CONVERSATION_DRAG_TYPE = 'conversation-item';
 

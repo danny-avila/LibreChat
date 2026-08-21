@@ -1,17 +1,17 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
+import { useDrop } from 'react-dnd';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { useDrop } from 'react-dnd';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { ConversationDragItem } from './dnd';
+import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
-import type { ConversationDragItem } from './dnd';
 import Convo from './Convo';
 import store from '~/store';
 

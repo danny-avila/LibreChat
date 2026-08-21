@@ -1,27 +1,27 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { Skeleton, useMediaQuery, useToastContext } from '@librechat/client';
 import { useDrag, useDragLayer, useDrop } from 'react-dnd';
+import { Skeleton, useMediaQuery, useToastContext } from '@librechat/client';
 import type { TConversation, TEndpointsConfig } from 'librechat-data-provider';
-import { useLocalize, useLocalStorage } from '~/hooks';
+import type {
+  SelectEndpointHandler,
+  SelectSpecHandler,
+} from '~/components/Nav/Favorites/useFavoritesData';
+import type { ConversationDragItem } from './dnd';
+import type { Favorite } from '~/store/favorites';
 import {
   useActiveJobs,
   useGetPinnedOrderQuery,
   usePinConversationMutation,
   useUpdatePinnedOrderMutation,
 } from '~/data-provider';
-import { Collapse } from '~/components/ui';
+import useFavoritesData from '~/components/Nav/Favorites/useFavoritesData';
+import FavoriteItem from '~/components/Nav/Favorites/FavoriteItem';
+import { useLocalize, useLocalStorage } from '~/hooks';
 import { getSpecAgentAvatarURL, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import useFavoritesData from '~/components/Nav/Favorites/useFavoritesData';
-import type {
-  SelectEndpointHandler,
-  SelectSpecHandler,
-} from '~/components/Nav/Favorites/useFavoritesData';
-import FavoriteItem from '~/components/Nav/Favorites/FavoriteItem';
 import { CONVERSATION_DRAG_TYPE } from './dnd';
-import type { ConversationDragItem } from './dnd';
-import type { Favorite } from '~/store/favorites';
+import { Collapse } from '~/components/ui';
 import Convo from './Convo';
 
 const FAVORITE_ROW_DRAG_TYPE = 'favorite-item';
