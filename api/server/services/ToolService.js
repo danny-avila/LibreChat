@@ -1870,9 +1870,13 @@ async function loadToolsForExecution({
 
   let ptcOrchestratedToolNames = [];
   if (isPTC && toolRegistry) {
-    ptcOrchestratedToolNames = Array.from(toolRegistry.keys()).filter(
-      (name) => !specialToolNames.has(name),
-    );
+    ptcOrchestratedToolNames = Array.from(toolRegistry.values())
+      .filter(
+        (toolDef) =>
+          !specialToolNames.has(toolDef.name) &&
+          (toolDef.allowed_callers ?? ['direct']).includes('code_execution'),
+      )
+      .map((toolDef) => toolDef.name);
   }
 
   const requestedNonSpecialToolNames = toolNames.filter((name) => !specialToolNames.has(name));
@@ -1964,7 +1968,8 @@ async function loadToolsForExecution({
       if (
         tool.name &&
         tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
-        tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING
+        tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+        (toolRegistry.get(tool.name)?.allowed_callers ?? ['direct']).includes('code_execution')
       ) {
         ptcToolMap.set(tool.name, tool);
       }

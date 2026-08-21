@@ -1668,7 +1668,9 @@ describe('ToolService - Action Capability Gating', () => {
           },
         },
       };
-      const toolRegistry = new Map([[mcpTool, { name: mcpTool }]]);
+      const toolRegistry = new Map([
+        [mcpTool, { name: mcpTool, allowed_callers: ['code_execution'] }],
+      ]);
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       await loadToolsForExecution({
@@ -1689,6 +1691,45 @@ describe('ToolService - Action Capability Gating', () => {
           }),
         }),
       );
+    });
+
+    it('loads only code_execution tools into the PTC execution map', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const programmaticTool = {
+        name: 'programmatic_tool',
+        invoke: jest.fn(),
+      };
+      const toolRegistry = new Map([
+        [
+          programmaticTool.name,
+          { name: programmaticTool.name, allowed_callers: ['code_execution'] },
+        ],
+        ['direct_tool', { name: 'direct_tool', allowed_callers: ['direct'] }],
+      ]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [programmaticTool],
+        toolContextMap: {},
+      });
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: ['programmatic_tool'] }),
+      );
+      expect([...result.configurable.ptcToolMap.keys()]).toEqual(['programmatic_tool']);
     });
 
     it('does not load PTC when programmatic tools capability is disabled', async () => {

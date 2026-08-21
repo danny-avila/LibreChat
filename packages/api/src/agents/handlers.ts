@@ -4418,16 +4418,26 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       if (toolRegistry) {
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                          (t) =>
-                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.TOOL_SEARCH &&
-                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
-                             * shortcut, not callable from PTC-generated code. */
-                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
-                            !fileAuthoringToolNames.has(t.name),
-                        );
+                        const eligibleToolDefs: LCTool[] = [];
+                        const disallowedToolDefs: LCTool[] = [];
+                        for (const toolDef of toolRegistry.values()) {
+                          const isInnerTool =
+                            toolDef.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.TOOL_SEARCH &&
+                            toolDef.name !== CHECK_BACKGROUND_TASK_NAME &&
+                            !fileAuthoringToolNames.has(toolDef.name);
+                          if (!isInnerTool) {
+                            continue;
+                          }
+                          if ((toolDef.allowed_callers ?? ['direct']).includes('code_execution')) {
+                            eligibleToolDefs.push(toolDef);
+                          } else {
+                            disallowedToolDefs.push({
+                              name: toolDef.name,
+                            });
+                          }
+                        }
                         /* PTC-generated calls don't go through the host background
                          * interceptor, so strip the injected `run_in_background`
                          * param from target schemas (the registry entries were
@@ -4438,12 +4448,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * bridge must not advertise them. */
                         const toolDefs = stripIntentLabelsFromToolDefinitions(
                           stripBackgroundFromToolDefinitions(
-                            filteredToolDefs,
+                            eligibleToolDefs,
                             mergedConfigurable?.backgroundToolNames as string[] | undefined,
                           ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
-                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                        toolCallConfig.disallowedToolDefs = disallowedToolDefs;
+                        const eligibleNames = new Set(toolDefs.map((toolDef) => toolDef.name));
+                        toolCallConfig.toolMap = new Map(
+                          [...(ptcToolMap ?? toolMap)].filter(([name]) => eligibleNames.has(name)),
+                        );
                       }
                     }
 

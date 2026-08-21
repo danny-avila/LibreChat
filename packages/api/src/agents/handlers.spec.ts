@@ -356,7 +356,8 @@ describe('createToolExecuteHandler', () => {
       const capturedConfigs: Record<string, unknown>[] = [];
       const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
       const toolRegistry = new Map([
-        ['custom_tool', { name: 'custom_tool' }],
+        ['custom_tool', { name: 'custom_tool', allowed_callers: ['code_execution'] }],
+        ['direct_tool', { name: 'direct_tool', allowed_callers: ['direct'] }],
         ['create_file', { name: 'create_file' }],
         [Constants.PROGRAMMATIC_TOOL_CALLING, { name: Constants.PROGRAMMATIC_TOOL_CALLING }],
         [
@@ -365,7 +366,11 @@ describe('createToolExecuteHandler', () => {
         ],
         [Constants.TOOL_SEARCH, { name: Constants.TOOL_SEARCH }],
       ]);
-      const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
+      const customTool = createMockTool('custom_tool', []);
+      const ptcToolMap = new Map([
+        ['custom_tool', customTool],
+        ['direct_tool', createMockTool('direct_tool', [])],
+      ]);
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [legacyPtcTool] as never[],
         configurable: {
@@ -385,8 +390,11 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(capturedConfigs).toHaveLength(1);
-      expect(capturedConfigs[0].toolDefs).toEqual([{ name: 'custom_tool' }]);
-      expect(capturedConfigs[0].toolMap).toBe(ptcToolMap);
+      expect(capturedConfigs[0].toolDefs).toEqual([
+        { name: 'custom_tool', allowed_callers: ['code_execution'] },
+      ]);
+      expect(capturedConfigs[0].disallowedToolDefs).toEqual([{ name: 'direct_tool' }]);
+      expect(capturedConfigs[0].toolMap).toEqual(new Map([['custom_tool', customTool]]));
     });
   });
 
