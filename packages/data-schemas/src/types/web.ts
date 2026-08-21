@@ -12,7 +12,10 @@ export type TWebSearchKeys =
   | 'tavilyExtractUrl'
   | 'jinaApiKey'
   | 'jinaApiUrl'
-  | 'cohereApiKey';
+  | 'cohereApiKey'
+  | 'voyageApiKey'
+  | 'voyageApiUrl'
+  | 'voyageModel';
 
 export type TWebSearchCategories =
   | SearchCategories.PROVIDERS

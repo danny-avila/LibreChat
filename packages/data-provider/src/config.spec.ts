@@ -602,6 +602,18 @@ describe('allowedAddressesSchema', () => {
 });
 
 describe('webSearchSchema', () => {
+  it('accepts Voyage as a reranker', () => {
+    const result = webSearchSchema.parse({
+      rerankerType: 'voyage',
+      voyageApiKey: '${VOYAGE_API_KEY}',
+      voyageApiUrl: '${VOYAGE_API_URL}',
+      voyageModel: 'rerank-2.5',
+    });
+
+    expect(result.rerankerType).toBe('voyage');
+    expect(result.voyageModel).toBe('rerank-2.5');
+  });
+
   it('accepts Tavily string modes for answer and raw content options', () => {
     const result = webSearchSchema.parse({
       tavilySearchOptions: {

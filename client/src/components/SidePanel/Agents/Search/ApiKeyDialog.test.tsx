@@ -1,8 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import ApiKeyDialog from './ApiKeyDialog';
 import { AuthType, SearchCategories, RerankerTypes } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import ApiKeyDialog from './ApiKeyDialog';
 
 // Mock useLocalize to just return the key
 jest.mock('~/hooks', () => ({
@@ -60,6 +60,10 @@ describe('ApiKeyDialog', () => {
     // Switch to Cohere
     fireEvent.click(screen.getByText('com_ui_web_search_reranker_cohere'));
     expect(screen.getByPlaceholderText('com_ui_web_search_cohere_key')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('com_ui_web_search_reranker_voyage'));
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_key')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_url')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_model')).toBeInTheDocument();
   });
 
   it('shows static text for provider and only provider input if provider is set', () => {
@@ -86,6 +90,18 @@ describe('ApiKeyDialog', () => {
     render(<ApiKeyDialog {...defaultProps} />);
     expect(screen.getByPlaceholderText('com_ui_web_search_cohere_key')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
+  });
+
+  it('shows only Voyage reranker fields if rerankerType is set to voyage', () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      data: { webSearch: { rerankerType: RerankerTypes.VOYAGE } },
+    });
+    render(<ApiKeyDialog {...defaultProps} />);
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_key')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_url')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_voyage_model')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('com_ui_web_search_jina_key')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('com_ui_web_search_cohere_key')).not.toBeInTheDocument();
   });
 
   it('shows documentation link for the visible reranker', () => {

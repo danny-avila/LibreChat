@@ -981,6 +981,10 @@ endpoints:
 #   # Jina Reranking Configuration
 #   jinaApiKey: '${JINA_API_KEY}'  # Your Jina API key
 #   jinaApiUrl: '${JINA_API_URL}'  # Custom Jina API URL (optional, defaults to https://api.jina.ai/v1/rerank)
+#   # Voyage AI Reranking Configuration
+#   voyageApiKey: '${VOYAGE_API_KEY}'  # Your Voyage AI API key
+#   voyageApiUrl: '${VOYAGE_API_URL}'  # Optional, defaults to https://api.voyageai.com/v1/rerank
+#   voyageModel: rerank-2.5             # Optional model override
 #   # Other rerankers
 #   cohereApiKey: '${COHERE_API_KEY}'
 #   # Search providers

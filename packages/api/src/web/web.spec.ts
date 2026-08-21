@@ -832,6 +832,8 @@ describe('web.ts', () => {
       expect(webSearchAuth.rerankers.jina).toHaveProperty('jinaApiKey', 1);
       expect(webSearchAuth.rerankers).toHaveProperty('cohere');
       expect(webSearchAuth.rerankers.cohere).toHaveProperty('cohereApiKey', 1);
+      expect(webSearchAuth.rerankers).toHaveProperty('voyage');
+      expect(webSearchAuth.rerankers.voyage).toHaveProperty('voyageApiKey', 1);
     });
 
     it('should mark required keys with value 1', () => {
@@ -840,11 +842,14 @@ describe('web.ts', () => {
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiKey).toBe(1);
       expect(webSearchAuth.rerankers.jina.jinaApiKey).toBe(1);
       expect(webSearchAuth.rerankers.cohere.cohereApiKey).toBe(1);
+      expect(webSearchAuth.rerankers.voyage.voyageApiKey).toBe(1);
     });
 
     it('should mark optional keys with value 0', () => {
       // Keys with value 0 are optional
       expect(webSearchAuth.scrapers.firecrawl.firecrawlApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.voyage.voyageApiUrl).toBe(0);
+      expect(webSearchAuth.rerankers.voyage.voyageModel).toBe(0);
     });
   });
   describe('loadWebSearchAuth with specific services', () => {
@@ -1735,6 +1740,37 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.jinaApiUrl).toBeUndefined();
+      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
+    });
+
+    it('should block user-provided voyageApiUrl targeting localhost', async () => {
+      mockIsSSRFTarget.mockImplementation((hostname: string) => hostname === 'localhost');
+
+      const webSearchConfig: TCustomConfig['webSearch'] = {
+        serperApiKey: '${SERPER_API_KEY}',
+        firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+        voyageApiKey: '${VOYAGE_API_KEY}',
+        voyageApiUrl: '${VOYAGE_API_URL}',
+        safeSearch: SafeSearchTypes.MODERATE,
+        rerankerType: 'voyage' as RerankerTypes,
+      };
+
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          result[field] =
+            field === 'VOYAGE_API_URL' ? 'http://localhost:8080/rerank' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.voyageApiUrl).toBeUndefined();
       expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
     });
 

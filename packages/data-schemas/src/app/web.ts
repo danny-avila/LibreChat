@@ -1,4 +1,4 @@
-import { RerankerTypes, SafeSearchTypes } from 'librechat-data-provider';
+import { SafeSearchTypes } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { TWebSearchKeys, TWebSearchCategories } from '~/types/web';
 
@@ -39,6 +39,11 @@ export const webSearchAuth = {
       jinaApiUrl: 0 as const,
     },
     cohere: { cohereApiKey: 1 as const },
+    voyage: {
+      voyageApiKey: 1 as const,
+      voyageApiUrl: 0 as const,
+      voyageModel: 0 as const,
+    },
   },
 };
 
@@ -83,6 +88,9 @@ export function loadWebSearchConfig(
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
+  const voyageApiKey = config?.voyageApiKey ?? '${VOYAGE_API_KEY}';
+  const voyageApiUrl = config?.voyageApiUrl ?? '${VOYAGE_API_URL}';
+  const voyageModel = config?.voyageModel ?? 'rerank-2.5';
   const safeSearch = config?.safeSearch ?? SafeSearchTypes.MODERATE;
   const rerankerType = config?.rerankerType;
 
@@ -92,6 +100,9 @@ export function loadWebSearchConfig(
     jinaApiKey,
     jinaApiUrl,
     cohereApiKey,
+    voyageApiKey,
+    voyageApiUrl,
+    voyageModel,
     serperApiKey,
     searxngApiKey,
     tavilyApiKey,

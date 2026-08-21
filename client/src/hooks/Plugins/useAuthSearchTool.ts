@@ -18,6 +18,9 @@ export type SearchApiKeyFormData = {
   jinaApiKey: string;
   jinaApiUrl: string;
   cohereApiKey: string;
+  voyageApiKey: string;
+  voyageApiUrl: string;
+  voyageModel: string;
 };
 
 const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
@@ -59,6 +62,9 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         jinaApiKey: data.jinaApiKey,
         jinaApiUrl: data.jinaApiUrl,
         cohereApiKey: data.cohereApiKey,
+        voyageApiKey: data.voyageApiKey,
+        voyageApiUrl: data.voyageApiUrl,
+        voyageModel: data.voyageModel,
       }).reduce(
         (acc, [key, value]) => {
           if (value) {

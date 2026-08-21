@@ -131,6 +131,28 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: RerankerTypes.VOYAGE,
+      label: localize('com_ui_web_search_reranker_voyage'),
+      inputs: {
+        voyageApiKey: {
+          placeholder: localize('com_ui_web_search_voyage_key'),
+          type: 'password' as const,
+          link: {
+            url: 'https://dashboard.voyageai.com/api-keys',
+            text: localize('com_ui_web_search_reranker_voyage_key'),
+          },
+        },
+        voyageApiUrl: {
+          placeholder: localize('com_ui_web_search_voyage_url'),
+          type: 'text' as const,
+        },
+        voyageModel: {
+          placeholder: localize('com_ui_web_search_voyage_model'),
+          type: 'text' as const,
+        },
+      },
+    },
   ];
 
   const scraperOptions: DropdownOption[] = [

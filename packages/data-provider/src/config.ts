@@ -1824,6 +1824,7 @@ export enum ScraperProviders {
 export enum RerankerTypes {
   JINA = 'jina',
   COHERE = 'cohere',
+  VOYAGE = 'voyage',
   NONE = 'none',
 }
 
@@ -1853,6 +1854,10 @@ export const webSearchSchema = z.object({
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
   cohereApiKey: z.string().optional().default('${COHERE_API_KEY}'),
   cohereApiKeyPreview: apiKeyPreviewSchema,
+  voyageApiKey: z.string().optional().default('${VOYAGE_API_KEY}'),
+  voyageApiKeyPreview: apiKeyPreviewSchema,
+  voyageApiUrl: z.string().optional().default('${VOYAGE_API_URL}'),
+  voyageModel: z.string().optional().default('rerank-2.5'),
   searchProvider: z.nativeEnum(SearchProviders).optional(),
   scraperProvider: z.nativeEnum(ScraperProviders).optional(),
   rerankerType: z.nativeEnum(RerankerTypes).optional(),

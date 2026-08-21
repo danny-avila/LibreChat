@@ -55,6 +55,9 @@ describe('loadWebSearchConfig', () => {
         jinaApiKey: '${JINA_API_KEY}',
         jinaApiUrl: '${JINA_API_URL}',
         cohereApiKey: '${COHERE_API_KEY}',
+        voyageApiKey: '${VOYAGE_API_KEY}',
+        voyageApiUrl: '${VOYAGE_API_URL}',
+        voyageModel: 'rerank-2.5',
         safeSearch: SafeSearchTypes.MODERATE,
         rerankerType: undefined,
         tavilyApiKey: '${TAVILY_API_KEY}',
@@ -134,6 +137,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.firecrawlApiKey).toBe('${FIRECRAWL_API_KEY}');
       expect(result?.jinaApiKey).toBe('${JINA_API_KEY}');
       expect(result?.cohereApiKey).toBe('${COHERE_API_KEY}');
+      expect(result?.voyageApiKey).toBe('${VOYAGE_API_KEY}');
     });
 
     it('should preserve custom API keys', () => {
@@ -141,6 +145,7 @@ describe('loadWebSearchConfig', () => {
         serperApiKey: 'actual-serper-key',
         jinaApiKey: 'actual-jina-key',
         cohereApiKey: 'actual-cohere-key',
+        voyageApiKey: 'actual-voyage-key',
       };
 
       const result = loadWebSearchConfig(config);
@@ -148,6 +153,7 @@ describe('loadWebSearchConfig', () => {
       expect(result?.serperApiKey).toBe('actual-serper-key');
       expect(result?.jinaApiKey).toBe('actual-jina-key');
       expect(result?.cohereApiKey).toBe('actual-cohere-key');
+      expect(result?.voyageApiKey).toBe('actual-voyage-key');
     });
   });
 
