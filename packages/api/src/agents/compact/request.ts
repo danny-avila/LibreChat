@@ -8,7 +8,13 @@ import {
 } from 'librechat-data-provider';
 import type { Agent, TMessage, TModelsConfig, TResponseUsage } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { CompactionResult, CompactionUsage, GetFilesFn, GetUserKeyExpiryFn } from './summary';
+import type {
+  CompactionResult,
+  CompactionSkillDeps,
+  CompactionUsage,
+  GetFilesFn,
+  GetUserKeyExpiryFn,
+} from './summary';
 import type { BulkWriteDeps, PricingFns } from '~/agents/transactions';
 import type { ValidateAgentModelParams } from '~/agents/validation';
 import type { CheckBalanceDeps } from '~/middleware/checkBalance';
@@ -91,6 +97,9 @@ export interface CompactRequestDeps
   getModelsConfig: (req: ServerRequest) => Promise<TModelsConfig>;
   getJob: (streamId: string) => Promise<{ status?: string } | null | undefined>;
   getFiles: GetFilesFn;
+  /** Resolves historical skill bodies so the checkpoint records a manually
+   *  invoked skill's constraints. Omitted when skills are disabled. */
+  skills?: CompactionSkillDeps;
   /** Stored user-key expiry, so the freshness marker is resolved for the
    *  endpoint compaction runs on rather than taken from the request. */
   getUserKeyExpiry?: GetUserKeyExpiryFn;
@@ -386,6 +395,7 @@ export async function handleCompactRequest(
           getUserKeyExpiry: deps.getUserKeyExpiry,
         },
         getFiles: deps.getFiles,
+        skills: deps.skills,
         signal,
         /** Same gate `BaseClient` applies before a normal turn contacts the
          *  provider, so a spent-out user cannot compact repeatedly for free.
