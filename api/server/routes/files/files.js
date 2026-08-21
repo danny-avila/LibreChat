@@ -574,7 +574,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     if (file.source === FileSources.text) {
       /** `getFiles` excludes `text` by default, so the authorized record is re-fetched by `_id` */
       const [textFile] = (await db.getFiles({ _id: file._id }, null, { text: 1 })) ?? [];
-      if (!textFile?.text) {
+      if (textFile?.text == null) {
         logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
         return res.status(404).send('No file content found');
       }

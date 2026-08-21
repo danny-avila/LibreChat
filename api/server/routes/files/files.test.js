@@ -1014,6 +1014,30 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(getDownloadStream).not.toHaveBeenCalled();
     });
 
+    it('serves a valid empty stored-text result', async () => {
+      const userFileId = uuidv4();
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'empty.txt',
+        filepath: '/uploads/empty.txt',
+        bytes: 0,
+        type: 'text/plain',
+        source: FileSources.text,
+        text: '',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.text).toBe('');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
     it('responds with 500 when the download stream errors before data is sent', async () => {
       const userFileId = uuidv4();
       const erroringStream = new Readable({

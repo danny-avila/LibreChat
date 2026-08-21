@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import { getDownloadFilename, getFileExtension, getPreviewKind } from './preview';
 import { useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -20,67 +21,8 @@ interface FilePreviewDialogProps {
   pages?: number[];
   pageRelevance?: Record<number, number>;
   fileType?: string;
+  fileSource?: string;
   fileSize?: number;
-}
-
-function getFileExtension(filename: string): string {
-  const dot = filename.lastIndexOf('.');
-  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
-}
-
-function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
-  if (!mime) {
-    return false;
-  }
-  if (mime.includes('pdf')) {
-    return 'pdf';
-  }
-  if (
-    mime.startsWith('text/') ||
-    mime.includes('json') ||
-    mime.includes('xml') ||
-    mime.includes('javascript') ||
-    mime.includes('typescript') ||
-    mime.includes('yaml') ||
-    mime.includes('csv')
-  ) {
-    return 'text';
-  }
-  return false;
-}
-
-function canPreviewByExt(filename: string): 'pdf' | 'text' | false {
-  const ext = getFileExtension(filename);
-  if (ext === 'pdf') {
-    return 'pdf';
-  }
-  const textExts = new Set([
-    'txt',
-    'md',
-    'csv',
-    'json',
-    'xml',
-    'yaml',
-    'yml',
-    'html',
-    'css',
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'py',
-    'rb',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'go',
-    'rs',
-    'sh',
-    'sql',
-    'log',
-  ]);
-  return textExts.has(ext) ? 'text' : false;
 }
 
 /** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
@@ -135,6 +77,7 @@ export default function FilePreviewDialog({
   pages,
   pageRelevance,
   fileType,
+  fileSource,
   fileSize,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
@@ -154,7 +97,8 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
+  const previewKind = getPreviewKind(fileName, fileType, fileSource);
+  const downloadFilename = getDownloadFilename(fileName, fileId, fileSource);
 
   const cancelledRef = useRef(false);
 
@@ -210,11 +154,11 @@ export default function FilePreviewDialog({
       if (!result.data) {
         return;
       }
-      triggerDownload(result.data, fileName);
+      triggerDownload(result.data, downloadFilename);
     } catch (err) {
       logger.error('[FilePreviewDialog] Download failed:', err);
     }
-  }, [downloadFile, fileId, fileName]);
+  }, [downloadFile, downloadFilename, fileId]);
 
   useEffect(() => {
     if (open && previewKind && !fileContent && !fileBlobUrl) {
