@@ -32,6 +32,9 @@ interface ConversationProps {
   /** Sidebar rows double as drag sources for filing the chat into a project;
    *  other surfaces leave this off. */
   draggable?: boolean;
+  /** Lets a wrapper that owns its own drag source release it while the title is
+   *  being edited, the way this row releases its own. */
+  onRenamingChange?: (renaming: boolean) => void;
 }
 
 function Conversation({
@@ -40,6 +43,7 @@ function Conversation({
   toggleNav,
   isGenerating = false,
   draggable = false,
+  onRenamingChange,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -59,7 +63,7 @@ function Conversation({
   const { conversationId, title = '' } = conversation;
 
   const [titleInput, setTitleInput] = useState(title || '');
-  const [renaming, setRenaming] = useState(false);
+  const [renaming, setRenamingState] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -67,10 +71,19 @@ function Conversation({
   const previousTitle = useRef(title);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const setRenaming = useCallback(
+    (next: boolean) => {
+      setRenamingState(next);
+      onRenamingChange?.(next);
+    },
+    [onRenamingChange],
+  );
+
   /* HTML5 drag needs a hover-capable pointer: connecting the source on touch
    * stamps `draggable="true"` on the row, and iOS Safari then hands taps to the
    * drag recognizer instead of synthesizing a click, so the row would only
-   * select on the second tap. */
+   * select on the second tap. A `draggable` ancestor also swallows drag-select
+   * inside the rename input, so the source is released while renaming. */
   const canHoverPointer = useMediaQuery('(hover: hover)');
   const [, dragConnector] = useDrag<ConversationDragItem, unknown, unknown>({
     type: CONVERSATION_DRAG_TYPE,
@@ -80,7 +93,7 @@ function Conversation({
       pinned: conversation.pinned === true,
     }),
   });
-  dragConnector(draggable && canHoverPointer ? containerRef : null);
+  dragConnector(draggable && canHoverPointer && !renaming ? containerRef : null);
 
   useEffect(() => {
     if (title !== previousTitle.current) {
