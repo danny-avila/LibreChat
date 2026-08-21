@@ -2368,8 +2368,7 @@ function getStoredProviderContributionState(
   const hasSubmittedCanonicalProvenance =
     hasSelectedSubmittedPath ||
     hasSelectedSubmittedField ||
-    (hasSelectedMaterial &&
-      (submittedPathState.overflowed || cachedState.submittedMessageFieldState.overflowed));
+    (hasSelectedMaterial && submittedPathState.overflowed);
   const storedRole = normalizeRole(cachedState.messageSnapshot);
   const isStoredUserSource =
     hasSelectedMaterial &&
@@ -2804,6 +2803,7 @@ function projectModelBoundProviderContent(
           storedStateBudget,
           partSnapshotBudget,
         );
+        appendExactFieldOverflow(storedMessage, cachedState);
         let contributionState = exactContributionStates
           .get(storedMessage)
           ?.get(contentSelectionKey);
@@ -2837,7 +2837,6 @@ function projectModelBoundProviderContent(
               : undefined;
           const selectionKey = `${exactAttribution ?? 'canonical'}:${contentSelectionKey}`;
           if (markUniqueStoredSelection(exactCanonicalSelections, storedMessage, selectionKey)) {
-            appendExactFieldOverflow(storedMessage, cachedState);
             selectedMessages.push(
               projectStoredMessageForProvider(
                 cachedState.messageSnapshot,
@@ -2889,6 +2888,7 @@ function projectModelBoundProviderContent(
           storedStateBudget,
           partSnapshotBudget,
         );
+        appendExactFieldOverflow(storedMessage, cachedState);
         const submittedPathState = getStoredSubmittedPathState(
           undefined,
           cachedState,
@@ -2904,7 +2904,6 @@ function projectModelBoundProviderContent(
         );
         const hasStoredSubmittedProvenance =
           submittedPathState.overflowed ||
-          cachedState.submittedMessageFieldState.overflowed ||
           submittedPathState.paths.some(
             (path) =>
               getExplicitStoredSubmittedPaths(cachedState).has(path) &&
