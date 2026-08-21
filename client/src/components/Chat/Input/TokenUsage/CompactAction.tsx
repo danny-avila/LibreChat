@@ -1,16 +1,26 @@
 import { memo } from 'react';
 import { ScrollText } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
-import { useCompactConversation, useLocalize } from '~/hooks';
+import { useLocalize } from '~/hooks';
+
+interface CompactActionProps {
+  compact: () => void;
+  canCompact: boolean;
+  isCompacting: boolean;
+}
 
 /**
  * Manual context compaction, surfaced where the context usage is already read.
  * Summarizes the active branch and persists the summary as the boundary every
  * later turn starts from: the same contract automatic summarization writes.
+ *
+ * Presentational on purpose. The popover unmounts on hide, so the mutation it
+ * drives lives in the always-mounted indicator above; owning it here would
+ * drop the in-flight observer (and its toast) the moment the pointer leaves,
+ * and re-render an enabled button over a compaction that is still running.
  */
-function CompactAction() {
+function CompactAction({ compact, canCompact, isCompacting }: CompactActionProps) {
   const localize = useLocalize();
-  const { compact, canCompact, isCompacting } = useCompactConversation();
 
   return (
     <div className="space-y-1.5">
