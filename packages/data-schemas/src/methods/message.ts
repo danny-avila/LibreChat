@@ -11,6 +11,7 @@ import logger from '~/config/winston';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_STORED_USER_SUBMITTED_PATHS = 256;
 const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
+const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATHS;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
 const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
 const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
@@ -85,7 +86,7 @@ function capNormalizedProvenance(
     userSubmittedPaths: userSubmittedPaths.slice(0, MAX_STORED_USER_SUBMITTED_PATHS),
     userSubmittedMessageFieldPaths: userSubmittedMessageFieldPaths.slice(
       0,
-      MAX_STORED_USER_SUBMITTED_PATHS,
+      MAX_STORED_USER_SUBMITTED_FIELD_PATHS,
     ),
     overflowed:
       userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS ||
@@ -107,10 +108,10 @@ function getSetUnionExpression(field: string, values: readonly unknown[]): Recor
 
 /**
  * Builds one Mongo aggregation update that merges and caps both provenance
- * sets. If detailed provenance no longer fits, the message is promoted to
- * whole-message user provenance before excess paths are discarded. That
- * keeps repeated concurrent edits bounded without turning truncation into a
- * source-aware inspection bypass.
+ * sets. Generic path overflow promotes the message to whole-message user
+ * provenance before excess paths are discarded. Exact HITL field provenance
+ * retains one bounded overflow sentinel (257 entries) so field-specific
+ * policies still fail closed instead of forgetting a dropped field identity.
  */
 function buildAtomicProvenanceMerge(
   update: Record<string, unknown>,
@@ -144,7 +145,7 @@ function buildAtomicProvenanceMerge(
           $slice: [`$${PROVENANCE_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
         },
         userSubmittedMessageFieldPaths: {
-          $slice: [`$${PROVENANCE_FIELD_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
+          $slice: [`$${PROVENANCE_FIELD_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_FIELD_PATHS],
         },
         isUserSubmitted: {
           $cond: [

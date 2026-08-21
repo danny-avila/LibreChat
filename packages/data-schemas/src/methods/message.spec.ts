@@ -451,7 +451,7 @@ describe('Message Operations', () => {
 
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
       expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
-      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(256);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
       expect(updatedMessage?.isUserSubmitted).toBe(true);
     });
 
