@@ -55,6 +55,10 @@ router.use(requireJwtAuth);
 const getAgentIdParam = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 
+/** Mirrors the MemoryEntry schema's key validator so invalid keys are
+ *  rejected with a 400 instead of surfacing as a Mongoose validation 500 */
+const MEMORY_KEY_REGEX = /^[a-z_]+$/;
+
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,
  *  so an unrestricted lookup would leak private agents' names. */
@@ -139,6 +143,12 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
 
   if (typeof value !== 'string' || value.trim() === '') {
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
+  }
+
+  if (!MEMORY_KEY_REGEX.test(key.trim())) {
+    return res.status(400).json({
+      error: 'Key must only contain lowercase letters and underscores.',
+    });
   }
 
   const appConfig = req.config;
@@ -248,7 +258,19 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     return res.status(400).json({ error: 'Value is required and must be a non-empty string.' });
   }
 
-  const newKey = bodyKey || urlKey;
+  if (bodyKey !== undefined && typeof bodyKey !== 'string') {
+    return res.status(400).json({ error: 'Key must be a string.' });
+  }
+
+  /** Trim to match POST's key normalization; blank/whitespace-only falls back to urlKey */
+  const newKey = typeof bodyKey === 'string' && bodyKey.trim() !== '' ? bodyKey.trim() : urlKey;
+
+  if (newKey !== urlKey && !MEMORY_KEY_REGEX.test(newKey)) {
+    return res.status(400).json({
+      error: 'Key must only contain lowercase letters and underscores.',
+    });
+  }
+
   const appConfig = req.config;
   const memoryConfig = appConfig?.memory;
   const charLimit = memoryConfig?.charLimit || 10000;
