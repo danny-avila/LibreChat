@@ -524,6 +524,13 @@ const getDownloadFileMetadata = (file) => {
   }, {});
 };
 
+/** Drops attachment headers so an error body isn't saved as the requested file. */
+const clearDownloadHeaders = (res) => {
+  res.removeHeader('Content-Disposition');
+  res.removeHeader('Content-Type');
+  res.removeHeader('X-File-Metadata');
+};
+
 router.get('/download-url/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
@@ -570,6 +577,26 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     // Access already validated by fileAccess middleware
     const file = req.fileAccess.file;
 
+    const setHeaders = () => {
+      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader(
+        'X-File-Metadata',
+        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
+      );
+    };
+
+    if (file.source === FileSources.text) {
+      const textFile = await db.findFileById(file_id);
+      if (!textFile || typeof textFile.text !== 'string') {
+        logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
+        return res.status(404).send('File content not found');
+      }
+
+      setHeaders();
+      return res.send(textFile.text);
+    }
+
     if (checkOpenAIStorage(file.source) && !file.model) {
       logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
@@ -582,15 +609,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       );
       return res.status(501).send('Not Implemented');
     }
-
-    const setHeaders = () => {
-      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader(
-        'X-File-Metadata',
-        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
-      );
-    };
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
@@ -640,8 +658,18 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
-      fileStream.on('error', (streamError) => {
+      fileStream.once('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+        if (res.headersSent || res.writableEnded) {
+          return res.destroy(streamError);
+        }
+
+        clearDownloadHeaders(res);
+        if (streamError.code === 'ENOENT') {
+          return res.status(404).send('File not found');
+        }
+
+        return res.status(500).send('Error downloading file');
       });
 
       setHeaders();
