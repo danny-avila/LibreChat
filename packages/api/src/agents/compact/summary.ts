@@ -30,10 +30,10 @@ import {
   collectHistoricalFileIds,
   collectHistoricalFileRefs,
 } from '~/files/history';
+import { extractInvokedSkillsFromPayload, shouldReplayReasoningContent } from '~/agents/run';
 import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/agents/client';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
 import { getProviderConfig } from '~/endpoints/config/providers';
-import { extractInvokedSkillsFromPayload } from '~/agents/run';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
 import { extractLibreChatParams } from '~/utils/llm';
@@ -174,6 +174,9 @@ export interface CompactionModel {
   tokenLookupEndpoint: EModelEndpoint;
   model?: string;
   clientOptions: ClientOptions;
+  /** True when the target replays `reasoning_content` across turns, which
+   *  decides whether the branch must be formatted with it reconstructed. */
+  replaysReasoningContent: boolean;
   endpointTokenConfig?: EndpointTokenConfig;
   /** True when compaction resolved to the agent's OWN endpoint, which decides
    *  whether `endpointTokenConfig` is authoritative for pricing. */
@@ -508,6 +511,15 @@ export function resolveAgentModelParameters(
 }
 
 /**
+ * Sentinel expiry for a cross-endpoint credential this request could not
+ * verify. `checkUserKeyExpiry` refuses anything already past, so a target that
+ * authenticates with a USER key fails closed instead of running on a
+ * credential whose expiry went unread, while one on a server key ignores the
+ * marker entirely and is unaffected.
+ */
+const UNVERIFIABLE_KEY_EXPIRY = new Date(0).toISOString();
+
+/**
  * Endpoint key the built-in maps index this call under, which is not always the
  * endpoint it runs on. A NAMED custom endpoint (`Ollama`) has its models under
  * `custom`, and Vertex AI, which differs from Google only in how it
@@ -582,6 +594,7 @@ export async function resolveCompactionModel({
    * copy is authoritative anyway.
    */
   let keyExpiry: string | undefined;
+  let expiryLookupFailed = false;
   if (db.getUserKeyExpiry) {
     try {
       const stored = await db.getUserKeyExpiry({ userId: req.user?.id ?? '', name: endpoint });
@@ -590,13 +603,30 @@ export async function resolveCompactionModel({
           stored.expiresAt === 'never' ? 'never' : new Date(stored.expiresAt).toISOString();
       }
     } catch (error) {
+      expiryLookupFailed = true;
       logger.debug('[compact] No stored user key expiry for the compaction endpoint', error);
     }
   }
-  /** Shallow clone: `getOptions` reads `body.key`, and the caller's request
-   *  must not be mutated for the rest of its lifetime. */
+  /** Whether the call really left the conversation's endpoint: an unresolvable
+   *  `summarization.provider` falls back to it, and the request's own marker is
+   *  then the right one after all. */
+  const crossEndpoint = normalizeEndpointName(endpoint) !== normalizeEndpointName(agentEndpoint);
+  /**
+   * Shallow clone: `getOptions` reads `body.key`, and the caller's request must
+   * not be mutated for the rest of its lifetime.
+   *
+   * On a cross-endpoint summarizer the marker is replaced unconditionally, and
+   * CLEARED when the lookup failed or found nothing. Falling through to the
+   * conversation's own marker would have the initializer validate the target's
+   * stored credential against an unrelated endpoint's expiry: a marker of
+   * `never` would let an expired target key through.
+   */
+  const keyMarker =
+    crossEndpoint && expiryLookupFailed ? UNVERIFIABLE_KEY_EXPIRY : (keyExpiry ?? undefined);
   const optionsReq = (
-    keyExpiry != null ? { ...req, body: { ...(req.body ?? {}), key: keyExpiry } } : req
+    crossEndpoint || keyExpiry != null
+      ? { ...req, body: { ...(req.body ?? {}), key: keyMarker } }
+      : req
   ) as ServerRequest;
 
   const options = await providerConfig.getOptions({
@@ -681,6 +711,12 @@ export async function resolveCompactionModel({
     provider,
     endpoint,
     tokenLookupEndpoint: resolveEndpointKey(endpoint, providerConfig.customEndpointConfig != null),
+    replaysReasoningContent: shouldReplayReasoningContent({
+      provider,
+      model,
+      includeReasoningHistory:
+        providerConfig.customEndpointConfig?.customParams?.includeReasoningHistory,
+    }),
     model,
     clientOptions,
     endpointTokenConfig: options.endpointTokenConfig,
@@ -756,18 +792,26 @@ interface MeasuredTranscript {
   total: number;
 }
 
-function chunkTranscript({ messages, counts, total }: MeasuredTranscript, budget: number) {
-  if (messages.length === 0) {
+function chunkTranscript(
+  { messages, counts, total }: MeasuredTranscript,
+  budget: number,
+  startIndex = 0,
+): BaseMessage[][] {
+  if (startIndex >= messages.length) {
     return [];
   }
-  if (total <= budget) {
-    return [messages];
+  let remaining = total;
+  for (let i = 0; i < startIndex; i++) {
+    remaining -= counts[i];
+  }
+  if (remaining <= budget) {
+    return [messages.slice(startIndex)];
   }
 
   const chunks: BaseMessage[][] = [];
-  let start = 0;
+  let start = startIndex;
   let running = 0;
-  for (let i = 0; i < messages.length; i++) {
+  for (let i = startIndex; i < messages.length; i++) {
     const wouldExceed = running + counts[i] > budget;
     /** Only break at a turn boundary, and never emit an empty chunk. */
     if (wouldExceed && i > start && messages[i].getType() === 'human') {
@@ -972,6 +1016,9 @@ export interface CompactConversationParams {
    */
   beforeInvoke?: (estimate: {
     promptTokens: number;
+    /** Estimated input of each pass, in order. The premium long-context tiers
+     *  are keyed off ONE call's input, which the total cannot express. */
+    passPromptTokens: number[];
     model?: string;
     provider: string;
     /** The endpoint the call resolved to, which may differ from the
@@ -1108,6 +1155,19 @@ export async function compactConversation({
   signal,
   beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
+  /** Resolved BEFORE the branch is formatted: whether the target replays
+   *  `reasoning_content` decides how the history has to be reconstructed. */
+  const {
+    provider,
+    endpoint,
+    tokenLookupEndpoint,
+    model,
+    clientOptions,
+    endpointTokenConfig,
+    sameEndpoint,
+    replaysReasoningContent,
+  } = await resolveCompactionModel({ req, agent, ids, db });
+
   const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
   const agentConfigs = await resolveHistoryAgents(branch, getAgent);
   const payload = stripActivityLabelParts(
@@ -1125,6 +1185,10 @@ export async function compactConversation({
     undefined,
     undefined,
     skillBodies,
+    /** A DeepSeek reasoning model, or a custom endpoint that opted in, REQUIRES
+     *  the hidden `reasoning_content` reconstructed onto historical tool-call
+     *  messages, exactly as the normal run does before sending them. */
+    replaysReasoningContent ? { preserveReasoningContent: true } : undefined,
   );
   if (messages.length === 0) {
     throw new NothingToCompactError();
@@ -1138,16 +1202,6 @@ export async function compactConversation({
   const updatePromptText = isNonEmptyString(summarization?.updatePrompt)
     ? summarization.updatePrompt
     : DEFAULT_COMPACTION_UPDATE_PROMPT;
-
-  const {
-    provider,
-    endpoint,
-    tokenLookupEndpoint,
-    model,
-    clientOptions,
-    endpointTokenConfig,
-    sameEndpoint,
-  } = await resolveCompactionModel({ req, agent, ids, db });
 
   const llm = initializeModel({ provider, clientOptions });
 
@@ -1203,10 +1257,14 @@ export async function compactConversation({
   let chunks = chunkTranscript(measured, singlePassBudget);
   if (chunks.length > 1) {
     /** It does not fit in one pass after all, so every pass but the first has
-     *  to carry the running checkpoint as well. */
+     *  to carry the running checkpoint as well. Only the REMAINDER is
+     *  re-chunked: the first pass still carries no generated checkpoint, and
+     *  shrinking it too would spend an extra provider call, or refuse a branch
+     *  that fits, once the pass count approaches its cap. */
     const multiPassBudget = budgetFor(Math.max(checkpointReserve, priorSummaryTokens));
     refuseIfUnworkable(multiPassBudget);
-    chunks = chunkTranscript(measured, multiPassBudget);
+    const [firstChunk] = chunks;
+    chunks = [firstChunk, ...chunkTranscript(measured, multiPassBudget, firstChunk.length)];
   }
   if (chunks.length > MAX_COMPACTION_PASSES) {
     /** Refuse rather than drop: a checkpoint that silently omitted the oldest
@@ -1214,21 +1272,24 @@ export async function compactConversation({
     throw new TranscriptTooLargeError(chunks.length, MAX_COMPACTION_PASSES);
   }
 
-  /** Estimated across every pass so the balance gate covers the whole
-   *  operation, not just its first call. The instruction (and, after the first
-   *  pass, the running checkpoint) rides on each one. */
-  let estimatedPromptTokens = instructionReserve * chunks.length;
-  for (const chunk of chunks) {
-    estimatedPromptTokens += await countPromptTokens(chunk);
+  /**
+   * Estimated PER PASS, so the balance gate covers the whole operation rather
+   * than its first call and can still price one call at its own rate: premium
+   * long-context tiers are keyed off a single request's input, so a summed
+   * figure alone tells the gate nothing about which tier applies. The
+   * instruction rides on every pass; pass one carries any prior checkpoint
+   * being consolidated, and every pass after it the running one.
+   */
+  const passPromptTokens: number[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const carried = i === 0 ? priorSummaryTokens : checkpointReserve;
+    passPromptTokens.push(instructionReserve + carried + (await countPromptTokens(chunks[i])));
   }
-  /** Every pass after the first embeds the running checkpoint in its
-   *  instruction, and pass one embeds any prior summary being consolidated;
-   *  the blank-instruction reserve alone understates the real prompt. */
-  estimatedPromptTokens += checkpointReserve * Math.max(0, chunks.length - 1);
-  estimatedPromptTokens += priorSummaryTokens;
+  const estimatedPromptTokens = passPromptTokens.reduce((total, pass) => total + pass, 0);
   if (beforeInvoke) {
     await beforeInvoke({
       promptTokens: estimatedPromptTokens,
+      passPromptTokens,
       model,
       provider,
       endpoint,
