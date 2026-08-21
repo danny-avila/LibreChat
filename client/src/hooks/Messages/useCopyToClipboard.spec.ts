@@ -767,6 +767,32 @@ Citations:
       expect(html).toContain('https://example.com/1');
     });
 
+    it('scopes reserved citation labels to the part that generated them', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          content: [
+            { type: ContentTypes.TEXT, text: 'Cited \ue202turn0search0.' },
+            {
+              type: ContentTypes.TEXT,
+              text: 'See [manual][1].\n\n[1]: https://manual.example',
+            },
+          ] as TMessageContentParts[],
+          searchResults: {
+            '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+          } as { [key: string]: SearchResultData },
+          richText: { variant: 'full', latex: false },
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const html = getClipboardHtml();
+      expect(html).toContain('<p>Cited [1].</p>');
+      expect(html).toContain('<a href="https://manual.example">manual</a>');
+    });
+
     it('keeps the citation footer out of an unfinished construct', () => {
       const { result } = renderHook(() =>
         useCopyToClipboard({

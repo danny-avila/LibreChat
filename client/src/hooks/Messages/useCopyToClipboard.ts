@@ -72,12 +72,19 @@ export function serializeMessageForClipboard(
   return getMessageParts(source).join('\n');
 }
 
-type ClipboardContent = {
-  /** One entry per rendered text part. */
-  segments: string[];
-  /** Generated citation markers, which must not resolve as markdown references. */
+type CitationSegment = {
+  text: string;
+  /**
+   * Generated citation markers in this segment, which must not resolve as
+   * markdown references. Scoped per segment: each is its own document, so a
+   * legitimate `[1]` reference in one part is unaffected by a citation numbered
+   * `1` in another.
+   */
   reserved: ReadonlySet<string>;
 };
+
+/** One entry per rendered text part, plus the citation footer when there is one. */
+type ClipboardContent = CitationSegment[];
 
 function buildClipboardContent({
   text,
@@ -87,19 +94,17 @@ function buildClipboardContent({
   const parts = getMessageParts({ text, content });
 
   if (!searchResults || Object.keys(searchResults).length === 0) {
-    return {
-      segments: parts.map((part) =>
-        part.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, ''),
-      ),
+    return parts.map((part) => ({
+      text: part.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, ''),
       reserved: EMPTY_RESERVED,
-    };
+    }));
   }
 
   const processor = createCitationProcessor(searchResults);
   const segments = parts.map((part) => processor.process(part));
 
   if (processor.citations.size === 0) {
-    return { segments, reserved: EMPTY_RESERVED };
+    return segments;
   }
 
   const sortedCitations = Array.from(processor.citations.entries()).sort(
@@ -114,16 +119,18 @@ function buildClipboardContent({
    * segment ending in an unclosed construct, an interrupted code fence most of
    * all, would otherwise swallow the sources into it.
    */
-  segments.push(`\nCitations:\n${citationList}`);
-
-  return {
-    segments,
+  segments.push({
+    text: `\nCitations:\n${citationList}`,
     reserved: new Set(sortedCitations.map(([, citation]) => `${citation.referenceNumber}`)),
-  };
+  });
+
+  return segments;
 }
 
 function buildClipboardText(source: ClipboardSource): string {
-  return buildClipboardContent(source).segments.join('\n');
+  return buildClipboardContent(source)
+    .map((segment) => segment.text)
+    .join('\n');
 }
 
 export function hasCopyableText(source: ClipboardSource): boolean {
@@ -133,18 +140,16 @@ export function hasCopyableText(source: ClipboardSource): boolean {
 const EMPTY_RESERVED: ReadonlySet<string> = new Set();
 
 function buildCopyOptions(
-  { segments, reserved }: ClipboardContent,
+  segments: ClipboardContent,
   richText: RichTextMode | undefined,
 ): Parameters<typeof copy>[1] {
   if (!richText) {
     return { format: 'text/plain' };
   }
 
-  const mode: RichTextMode = { ...richText, reserved };
-
   let html = '';
   for (const segment of segments) {
-    const serialized = markdownToHtml(segment, mode);
+    const serialized = markdownToHtml(segment.text, { ...richText, reserved: segment.reserved });
     if (serialized.length > 0) {
       html += html.length > 0 ? `\n${serialized}` : serialized;
     }
@@ -181,7 +186,7 @@ export default function useCopyToClipboard({
   const copyToClipboard = useCallback(
     (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>): boolean => {
       const clipboardContent = buildClipboardContent({ text, content, searchResults });
-      const clipboardText = clipboardContent.segments.join('\n');
+      const clipboardText = clipboardContent.map((segment) => segment.text).join('\n');
 
       if (clipboardText.trim().length === 0) {
         return false;
@@ -209,7 +214,7 @@ export default function useCopyToClipboard({
 }
 
 type MessageClipboardSource = ClipboardSource &
-  Partial<Pick<TMessage, 'isCreatedByUser'>> & {
+  Partial<Pick<TMessage, 'isCreatedByUser' | 'error'>> & {
     /** Set by callers that render through a fixed renderer rather than the authorship default. */
     variant?: MarkdownVariant;
   };
@@ -227,25 +232,36 @@ type MessageClipboardSource = ClipboardSource &
  */
 export function useCopyMessageToClipboard({
   isCreatedByUser,
+  error,
   variant,
   ...source
 }: MessageClipboardSource) {
   const copyRichText = useRecoilValue(store.copyRichText);
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const latexParsing = useRecoilValue(store.LaTeXParsing);
+  const user = useRecoilValue(store.user);
 
   const richText = useMemo((): RichTextMode | undefined => {
-    if (!copyRichText) {
+    /** An errored row is rendered by `ErrorMessage`, not as markdown at all. */
+    if (!copyRichText || error === true) {
       return undefined;
     }
     if (variant === 'lite') {
-      return { variant: 'lite', latex: false };
+      return { variant: 'lite', latex: false, userId: user?.id };
     }
     if (variant === 'full' || isCreatedByUser !== true) {
-      return { variant: 'full', latex: latexParsing };
+      return { variant: 'full', latex: latexParsing, userId: user?.id };
     }
-    return enableUserMsgMarkdown ? { variant: 'lite', latex: false } : undefined;
-  }, [copyRichText, enableUserMsgMarkdown, isCreatedByUser, latexParsing, variant]);
+    return enableUserMsgMarkdown ? { variant: 'lite', latex: false, userId: user?.id } : undefined;
+  }, [
+    copyRichText,
+    enableUserMsgMarkdown,
+    error,
+    isCreatedByUser,
+    latexParsing,
+    user?.id,
+    variant,
+  ]);
 
   return useCopyToClipboard({ ...source, richText });
 }
@@ -275,7 +291,9 @@ function createCitationProcessor(searchResults: { [key: string]: SearchResultDat
 
   let nextReferenceNumber = 1;
 
-  const process = (text: string): string => {
+  const process = (text: string): CitationSegment => {
+    /** Markers emitted into this text, which must not resolve as references. */
+    const reserved = new Set<string>();
     let formattedText = text;
 
     // Step 1: Process highlighted text first (simplify by just making it bold in markdown)
@@ -453,6 +471,9 @@ function createCitationProcessor(searchResults: { [key: string]: SearchResultDat
             const uniqueSortedCitations = [...new Set(compositeCitations)].sort((a, b) => a - b);
 
             // Create combined reference numbers for all citations in this composite
+            for (const num of uniqueSortedCitations) {
+              reserved.add(`${num}`);
+            }
             referenceText =
               uniqueSortedCitations.length > 0
                 ? uniqueSortedCitations.map((num) => `[${num}]`).join('')
@@ -467,6 +488,7 @@ function createCitationProcessor(searchResults: { [key: string]: SearchResultDat
           continue;
         } else {
           // Single citation
+          reserved.add(`${existingCitation.referenceNumber}`);
           referenceText = `[${existingCitation.referenceNumber}]`;
           replacements.push([fullMatch, referenceText]);
         }
@@ -487,7 +509,7 @@ function createCitationProcessor(searchResults: { [key: string]: SearchResultDat
     formattedText = formattedText.replace(INVALID_CITATION_REGEX, '');
     formattedText = formattedText.replace(CLEANUP_REGEX, '');
 
-    return formattedText;
+    return { text: formattedText, reserved };
   };
 
   return { process, citations };

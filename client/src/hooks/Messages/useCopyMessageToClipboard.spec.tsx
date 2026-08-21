@@ -23,6 +23,7 @@ describe('useCopyMessageToClipboard', () => {
     settings: { copyRichText: boolean; enableUserMsgMarkdown: boolean; latexParsing?: boolean },
     isCreatedByUser: boolean,
     variant?: MarkdownVariant,
+    error?: boolean,
   ) => {
     const initializeState = ({ set }: MutableSnapshot) => {
       set(store.copyRichText, settings.copyRichText);
@@ -30,11 +31,14 @@ describe('useCopyMessageToClipboard', () => {
       set(store.LaTeXParsing, settings.latexParsing ?? true);
     };
 
-    return renderHook(() => useCopyMessageToClipboard({ text: TEXT, isCreatedByUser, variant }), {
-      wrapper: ({ children }: { children: ReactNode }) => (
-        <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
-      ),
-    });
+    return renderHook(
+      () => useCopyMessageToClipboard({ text: TEXT, isCreatedByUser, variant, error }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <RecoilRoot initializeState={initializeState}>{children}</RecoilRoot>
+        ),
+      },
+    );
   };
 
   const copiedAsHtml = (): boolean => {
@@ -170,6 +174,21 @@ describe('useCopyMessageToClipboard', () => {
 
     expect(copiedAsHtml()).toBe(true);
     expect(copiedHtml()).toBe('<p>$E=mc^2$</p>');
+  });
+
+  it('stays plain for an errored row, which ErrorMessage renders instead', () => {
+    const { result } = renderWithSettings(
+      { copyRichText: true, enableUserMsgMarkdown: true },
+      false,
+      undefined,
+      true,
+    );
+
+    act(() => {
+      result.current(mockSetIsCopied);
+    });
+
+    expect(copiedAsHtml()).toBe(false);
   });
 
   it('stays plain for every author when the preference is off', () => {

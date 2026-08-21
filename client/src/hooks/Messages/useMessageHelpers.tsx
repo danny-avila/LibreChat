@@ -90,6 +90,7 @@ export default function useMessageHelpers(
     content,
     searchResults,
     isCreatedByUser,
+    error: message?.error,
   });
 
   const getCanCopy = useCallback(

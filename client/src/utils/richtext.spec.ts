@@ -188,6 +188,31 @@ describe('markdownToHtml', () => {
     );
   });
 
+  it('keeps the first of two definitions sharing a label', () => {
+    expect(
+      markdownToHtml(
+        '[docs][guide]\n\n[guide]: https://first.example\n[guide]: https://second.example',
+      ),
+    ).toBe('<p><a href="https://first.example">docs</a></p>');
+  });
+
+  it('routes a generated file link through the app, as the renderer does', () => {
+    const url = 'https://provider.example/files/user-1/file-1/report.csv';
+    const mode = { variant: 'full' as const, latex: false, userId: 'user-1' };
+
+    expect(markdownToHtml(`[report](${url})`, mode)).toBe(
+      `<p><a href="${new URL(`${apiBaseUrl()}/api/files/user-1/file-1/report.csv`, document.baseURI).href}">report</a></p>`,
+    );
+  });
+
+  it("leaves another user's file link untouched", () => {
+    const url = 'https://provider.example/files/user-2/file-1/report.csv';
+
+    expect(
+      markdownToHtml(`[report](${url})`, { variant: 'full', latex: false, userId: 'user-1' }),
+    ).toBe(`<p><a href="${url}">report</a></p>`);
+  });
+
   it('leaves paired currency alone, as the renderer does', () => {
     expect(markdownToHtml('Costs rose from $5 to $10.')).toBe('<p>Costs rose from $5 to $10.</p>');
   });

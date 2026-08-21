@@ -31,6 +31,8 @@ export type MarkdownVariant = 'full' | 'lite';
 
 export type RichTextMode = {
   variant: MarkdownVariant;
+  /** The signed-in user, whose id identifies their own generated-file links. */
+  userId?: string;
   /** Whether `Markdown`'s LaTeX preprocessing is on, mirroring `LaTeXParsing`. */
   latex: boolean;
   /**
@@ -100,6 +102,7 @@ const HTML_ESCAPES: Record<string, string> = {
 };
 
 type SerializeContext = {
+  userId?: string;
   definitions: Map<string, Definition>;
   /** Footnote label to its displayed number, in the order references appear. */
   footnotes: Map<string, number>;
@@ -158,8 +161,35 @@ function resolveUrl(url: string): string {
 const artifactTitle = (attributes: Record<string, string | null | undefined> | null | undefined) =>
   `<p>${escapeText(attributes?.title || ARTIFACT_DEFAULT_TITLE)}</p>`;
 
-const anchor = (url: string, children: string): string => {
-  const resolved = resolveUrl(url);
+/**
+ * The renderer routes a user's own generated files through LibreChat's file
+ * endpoint rather than the provider URL the markdown carries, so the pasted
+ * link has to be the one the conversation actually points at.
+ */
+function generatedFileUrl(url: string, userId: string | undefined): string {
+  if (userId == null || userId.length === 0) {
+    return url;
+  }
+
+  const match = url.match(new RegExp(`(?:files|outputs)/${userId}/([^\\s]+)`));
+  const filepath = match?.[0] ?? '';
+  if (filepath.length === 0) {
+    return url;
+  }
+
+  const parts = filepath.split('/');
+  const filename = parts.pop() ?? '';
+  const fileId = parts.pop() ?? '';
+  if (fileId.length === 0 || filename.length === 0) {
+    return url;
+  }
+
+  const base = `${apiBaseUrl()}/api`;
+  return filepath.startsWith('files/') ? `${base}/${filepath}` : `${base}/files/${filepath}`;
+}
+
+const anchor = (url: string, children: string, userId: string | undefined): string => {
+  const resolved = resolveUrl(generatedFileUrl(url, userId));
   return resolved.length > 0 ? `<a href="${escapeHtml(resolved)}">${children}</a>` : children;
 };
 
@@ -186,7 +216,10 @@ const image = (url: string, alt: string): string => {
 function collectContext(nodes: readonly SerializableNode[], context: SerializeContext): void {
   for (const node of nodes) {
     if (node.type === 'definition') {
-      context.definitions.set(node.identifier, node);
+      /** CommonMark gives precedence to the first definition of a label. */
+      if (!context.definitions.has(node.identifier)) {
+        context.definitions.set(node.identifier, node);
+      }
       continue;
     }
     if (node.type === 'footnoteReference' && !context.footnotes.has(node.identifier)) {
@@ -294,13 +327,15 @@ function serializeNode(node: SerializableNode, context: SerializeContext): strin
     case 'table':
       return serializeTable(node, context);
     case 'link':
-      return anchor(node.url, serializeChildren(node.children, context));
+      return anchor(node.url, serializeChildren(node.children, context), context.userId);
     case 'image':
       return image(node.url, node.alt ?? '');
     case 'linkReference': {
       const children = serializeChildren(node.children, context);
       const definition = resolveReference(node, context);
-      return definition ? anchor(definition.url, children) : revertReference(node, children, '');
+      return definition
+        ? anchor(definition.url, children, context.userId)
+        : revertReference(node, children, '');
     }
     case 'imageReference': {
       const alt = node.alt ?? '';
@@ -398,6 +433,7 @@ export function markdownToHtml(
 
   const children = tree.children as SerializableNode[];
   const context: SerializeContext = {
+    userId: mode.userId,
     definitions: new Map(),
     footnotes: new Map(),
     reserved: mode.reserved ?? EMPTY_RESERVED,

@@ -21,6 +21,7 @@ export default function MinimalHoverButtons({ message, searchResults, variant }:
     content: message.content,
     searchResults,
     isCreatedByUser: message.isCreatedByUser,
+    error: message.error,
     variant,
   });
   const canCopy = useMemo(

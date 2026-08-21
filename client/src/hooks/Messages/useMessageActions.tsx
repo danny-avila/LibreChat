@@ -127,6 +127,7 @@ export default function useMessageActions(props: TMessageActions) {
     content,
     searchResults,
     isCreatedByUser,
+    error: message?.error,
   });
 
   const getCanCopy = useCallback(
