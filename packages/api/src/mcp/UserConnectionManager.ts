@@ -25,6 +25,7 @@ import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
+import { isEnabled } from '~/utils';
 
 type PendingConnection = {
   promise: Promise<MCPConnection>;
@@ -733,7 +734,8 @@ export abstract class UserConnectionManager {
         this.userConnections.get(userId)?.set(serverName, connection);
       }
 
-      logger.info(`[MCP][User: ${userId}] Connection successfully established`);
+      logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
+      await this.backfillResolvedInstructions(serverName, config, connection, userId);
       if (!ephemeralConnection) {
         await this.updateUserLastActivity(userId);
         await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
@@ -752,6 +754,46 @@ export abstract class UserConnectionManager {
         this.removeUserConnection(userId, serverName);
       }
       throw error; // Re-throw the error to the caller
+    }
+  }
+
+  /**
+   * Startup inspection defers servers that need user/runtime context, including
+   * OAuth/OBO, custom variables, user API keys, and runtime placeholders. An
+   * enabled `serverInstructions` declaration therefore has no fetched text to
+   * resolve until the first live user connection. Persist the instructions from
+   * that connection so subsequent context builds include them. Best-effort: a
+   * failure here must never break connection creation.
+   */
+  protected async backfillResolvedInstructions(
+    serverName: string,
+    config: t.ParsedServerConfig | undefined,
+    connection: MCPConnection,
+    userId: string,
+  ): Promise<void> {
+    try {
+      if (!config || !isEnabled(config.serverInstructions) || config.resolvedInstructions != null) {
+        return;
+      }
+      const instructions = connection.client.getInstructions();
+      if (!instructions) {
+        return;
+      }
+      const updated = await MCPServersRegistry.getInstance().setResolvedInstructions(
+        serverName,
+        instructions,
+        userId,
+      );
+      if (updated) {
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] Stored server instructions from live connection`,
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        `[MCP][User: ${userId}][${serverName}] Failed to store server instructions from live connection`,
+        error,
+      );
     }
   }
 
