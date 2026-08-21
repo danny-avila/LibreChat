@@ -69,6 +69,9 @@ interface DraggablePinnedRowProps {
   moveEntry: (dragKey: string, hoverKey: string) => void;
   moveEntryBy: (key: string, delta: number) => void;
   onDrop: () => void;
+  /** Released while the row's title is being edited, so a drag-select inside
+   *  the rename input is not swallowed by the drag source. */
+  canDrag?: boolean;
   children: React.ReactNode;
 }
 
@@ -83,10 +86,11 @@ const DraggablePinnedRow = ({
   moveEntry,
   moveEntryBy,
   onDrop,
+  canDrag = true,
   children,
 }: DraggablePinnedRowProps) => {
   const ref = useRef<HTMLDivElement>(null);
-  const canDrag = useMediaQuery('(hover: hover)');
+  const hasHoverPointer = useMediaQuery('(hover: hover)');
   const [{ handlerId }, drop] = useDrop<PinnedRowDragItem, unknown, { handlerId: unknown }>({
     accept: PINNED_ROW_ACCEPTS,
     collect(monitor) {
@@ -133,7 +137,7 @@ const DraggablePinnedRow = ({
   });
 
   drop(ref);
-  drag(canDrag ? ref : null);
+  drag(hasHoverPointer && canDrag ? ref : null);
 
   /* Keyboard equivalent of the drag: the shortcut is caught as it bubbles from
    * whichever element inside the row holds focus, so the row keeps that focus
@@ -304,24 +308,36 @@ const PinnedSection = ({
     (monitor) => monitor.isDragging() && monitor.getItemType() === CONVERSATION_DRAG_TYPE,
   );
 
-  /** Natural order: favorites in their stored order, then pinned chats. */
-  const naturalEntries = useMemo<PinnedEntry[]>(
-    () => [
-      ...favoritesData.favorites.map((favorite) => ({
-        key: favoriteEntryKey(favorite),
-        kind: 'favorite' as const,
-        favorite,
-      })),
-      ...conversations
-        .filter((convo) => convo.conversationId)
-        .map((convo) => ({
-          key: convoEntryKey(convo.conversationId as string),
-          kind: 'convo' as const,
-          conversationId: convo.conversationId as string,
-        })),
-    ],
-    [favoritesData.favorites, conversations],
-  );
+  /** Natural order: favorites in their stored order, then pinned chats. Keys
+   *  identify a row everywhere here, so a repeat has to be dropped rather than
+   *  rendered: the `/favorites` payload validator accepts a duplicate entry,
+   *  and one would give two rows the same React key, point every drag at the
+   *  first copy, and make the order endpoint reject the write outright. */
+  const naturalEntries = useMemo<PinnedEntry[]>(() => {
+    const entries: PinnedEntry[] = [];
+    const seen = new Set<string>();
+    for (const favorite of favoritesData.favorites) {
+      const key = favoriteEntryKey(favorite);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      entries.push({ key, kind: 'favorite', favorite });
+    }
+    for (const convo of conversations) {
+      const conversationId = convo.conversationId;
+      if (!conversationId) {
+        continue;
+      }
+      const key = convoEntryKey(conversationId);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      entries.push({ key, kind: 'convo', conversationId });
+    }
+    return entries;
+  }, [favoritesData.favorites, conversations]);
 
   /** Stored keys order the entries they still resolve to; the rest append in
    *  natural order, so a stale order never hides an item. */
@@ -352,6 +368,9 @@ const PinnedSection = ({
   const dragEntriesRef = useRef<PinnedEntry[]>(orderedEntries);
   const [liveEntries, setLiveEntries] = useState<PinnedEntry[] | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  /** Only one row renames at a time, so its key is enough to release that row's
+   *  drag source. */
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
 
   if (orderedEntries !== dragEntriesRef.current && liveEntries === null) {
     dragEntriesRef.current = orderedEntries;
@@ -579,12 +598,14 @@ const PinnedSection = ({
                       moveEntry={moveEntry}
                       moveEntryBy={moveEntryBy}
                       onDrop={commitOrder}
+                      canDrag={renamingKey !== entry.key}
                     >
                       <Convo
                         conversation={convo}
                         retainView={noop}
                         toggleNav={toggleNav}
                         isGenerating={activeJobIds.has(convo.conversationId ?? '')}
+                        onRenamingChange={(renaming) => setRenamingKey(renaming ? entry.key : null)}
                       />
                     </DraggablePinnedRow>
                   </li>

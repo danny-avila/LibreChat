@@ -54,9 +54,22 @@ jest.mock('~/components/Nav/Favorites/useFavoritesData', () => ({
 
 jest.mock('../Convo', () => ({
   __esModule: true,
-  default: ({ conversation }: { conversation: { title: string } }) => (
+  default: ({
+    conversation,
+    onRenamingChange,
+  }: {
+    conversation: { title: string };
+    onRenamingChange?: (renaming: boolean) => void;
+  }) => (
     <div data-testid="pinned-convo">
       <button type="button">{conversation.title}</button>
+      {/* No text content: `itemLabels` reads the row's text to assert order. */}
+      <button
+        type="button"
+        aria-label="rename"
+        data-testid={`rename-${conversation.title}`}
+        onClick={() => onRenamingChange?.(true)}
+      />
     </div>
   ),
 }));
@@ -242,5 +255,30 @@ describe('PinnedSection unified list', () => {
         expect.anything(),
       );
     });
+  });
+
+  it('renders one row per favorite even when the stored list repeats one', () => {
+    /* The `/favorites` payload validator accepts a duplicate entry. Two rows
+     * keyed the same would collide in React and make every reorder POST fail
+     * the endpoint's uniqueness check. */
+    mockFavoritesData.favorites = [
+      { model: 'gpt-4o', endpoint: 'openAI' },
+      { model: 'gpt-4o', endpoint: 'openAI' },
+    ];
+    renderSection([]);
+
+    expect(screen.getAllByTestId('favorite-item')).toHaveLength(1);
+  });
+
+  it('releases the drag source while a row title is being edited', () => {
+    renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+    const row = screen.getByTestId('pinned-convo').parentElement as HTMLElement;
+    expect(row).toHaveAttribute('draggable', 'true');
+
+    fireEvent.click(screen.getByTestId('rename-Pinned Chat'));
+
+    /* A `draggable` ancestor swallows drag-select inside the rename input. */
+    expect(row).not.toHaveAttribute('draggable', 'true');
   });
 });
