@@ -583,18 +583,109 @@ const buildResumeEventSubmission = (
   } as EventSubmission;
 };
 
+type ResumeMessageIndexes = {
+  userIndex: number;
+  responseIndex: number;
+  preliminaryUserIndex: number;
+  preliminaryResponseIndex: number;
+};
+
+const getResumeMessageIndexes = (
+  messages: TMessage[],
+  userMessageId: string,
+  responseMessageId: string,
+  preliminaryUserMessageId?: string,
+  preliminaryResponseMessageId?: string,
+): ResumeMessageIndexes => {
+  let userIndex = -1;
+  let responseIndex = -1;
+  let preliminaryUserIndex = -1;
+  let preliminaryResponseIndex = -1;
+  const hasPreliminaryResponse = preliminaryResponseMessageId?.endsWith('_') === true;
+  const eligiblePreliminaryUserId =
+    hasPreliminaryResponse && preliminaryUserMessageId && preliminaryUserMessageId !== userMessageId
+      ? preliminaryUserMessageId
+      : undefined;
+  const eligiblePreliminaryResponseId =
+    hasPreliminaryResponse && preliminaryResponseMessageId !== responseMessageId
+      ? preliminaryResponseMessageId
+      : undefined;
+
+  for (let index = 0; index < messages.length; index++) {
+    const messageId = messages[index]?.messageId;
+    if (userIndex < 0 && messageId === userMessageId) {
+      userIndex = index;
+    }
+    if (responseIndex < 0 && messageId === responseMessageId) {
+      responseIndex = index;
+    }
+    if (
+      preliminaryUserIndex < 0 &&
+      eligiblePreliminaryUserId &&
+      messageId === eligiblePreliminaryUserId
+    ) {
+      preliminaryUserIndex = index;
+    }
+    if (
+      preliminaryResponseIndex < 0 &&
+      eligiblePreliminaryResponseId &&
+      messageId === eligiblePreliminaryResponseId
+    ) {
+      preliminaryResponseIndex = index;
+    }
+  }
+
+  return { userIndex, responseIndex, preliminaryUserIndex, preliminaryResponseIndex };
+};
+
 const mergeResumeMessages = (
   messages: TMessage[],
   userMessage: TMessage,
   responseMessage: TMessage,
+  indexes: ResumeMessageIndexes,
 ): TMessage[] => {
   const nextMessages = [...messages];
-  const userIndex = nextMessages.findIndex(
-    (message) => message.messageId === userMessage.messageId,
-  );
-  const responseIndex = nextMessages.findIndex(
-    (message) => message.messageId === responseMessage.messageId,
-  );
+  let { userIndex, responseIndex, preliminaryResponseIndex } = indexes;
+  const { preliminaryUserIndex } = indexes;
+
+  if (preliminaryUserIndex >= 0) {
+    if (userIndex >= 0) {
+      nextMessages.splice(preliminaryUserIndex, 1);
+      if (userIndex > preliminaryUserIndex) {
+        userIndex -= 1;
+      }
+      if (responseIndex > preliminaryUserIndex) {
+        responseIndex -= 1;
+      }
+      if (preliminaryResponseIndex > preliminaryUserIndex) {
+        preliminaryResponseIndex -= 1;
+      }
+    } else {
+      nextMessages[preliminaryUserIndex] = {
+        ...nextMessages[preliminaryUserIndex],
+        ...userMessage,
+      };
+      userIndex = preliminaryUserIndex;
+    }
+  }
+
+  if (preliminaryResponseIndex >= 0) {
+    if (responseIndex >= 0) {
+      nextMessages.splice(preliminaryResponseIndex, 1);
+      if (userIndex > preliminaryResponseIndex) {
+        userIndex -= 1;
+      }
+      if (responseIndex > preliminaryResponseIndex) {
+        responseIndex -= 1;
+      }
+    } else {
+      nextMessages[preliminaryResponseIndex] = {
+        ...nextMessages[preliminaryResponseIndex],
+        ...responseMessage,
+      };
+      responseIndex = preliminaryResponseIndex;
+    }
+  }
 
   if (userIndex >= 0) {
     nextMessages[userIndex] = { ...nextMessages[userIndex], ...userMessage };
@@ -609,9 +700,7 @@ const mergeResumeMessages = (
   }
 
   if (userIndex >= 0) {
-    const insertAt = userIndex + 1;
-    nextMessages.splice(insertAt, 0, responseMessage);
-    return nextMessages;
+    return [...nextMessages, responseMessage];
   }
 
   if (responseIndex >= 0) {
@@ -1848,6 +1937,16 @@ export default function useResumableSSE(
 
             const runId = v4();
             setActiveRunId(runId);
+            /** Keep the current run's preliminary id long enough to replace that optimistic
+             *  row in place if this snapshot assigns its durable response id. */
+            const preliminaryResponseMessageId = currentSubmission.initialResponse?.messageId;
+            const currentUserMessageId = currentSubmission.userMessage?.messageId;
+            const preliminaryUserMessageId =
+              currentUserMessageId &&
+              (currentSubmission.initialResponse?.parentMessageId === currentUserMessageId ||
+                preliminaryResponseMessageId === `${currentUserMessageId}_`)
+                ? currentUserMessageId
+                : undefined;
             const resumeSubmission = buildResumeEventSubmission(
               currentSubmission,
               userMessage,
@@ -1893,28 +1992,23 @@ export default function useResumableSSE(
             if (data.resumeState?.aggregatedContent && userMessage?.messageId) {
               const messages = getMessages() ?? [];
               const userMsgId = userMessage.messageId;
-              const serverResponseId = data.resumeState.responseMessageId;
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
-
-              let responseIdx = -1;
-              /** Only an id match proves the row belongs to THIS generation; the parent-based
-               *  fallback below can land on a prior sibling (e.g. the answer being regenerated). */
-              let matchedByResponseId = false;
-              if (serverResponseId) {
-                responseIdx = messages.findIndex((m) => m.messageId === serverResponseId);
-                matchedByResponseId = responseIdx >= 0;
-              }
-              if (responseIdx < 0) {
-                responseIdx = messages.findIndex(
-                  (m) =>
-                    !m.isCreatedByUser &&
-                    (m.messageId === `${userMsgId}_` || m.parentMessageId === userMsgId),
-                );
-              }
+              const responseId = resumeSubmission.initialResponse.messageId;
+              const messageIndexes = getResumeMessageIndexes(
+                messages,
+                userMsgId,
+                responseId,
+                preliminaryUserMessageId,
+                preliminaryResponseMessageId,
+              );
+              const responseIdx =
+                messageIndexes.responseIndex >= 0
+                  ? messageIndexes.responseIndex
+                  : messageIndexes.preliminaryResponseIndex;
 
               logger.log('ResumableSSE', 'SYNC update', {
                 userMsgId,
-                serverResponseId,
+                responseId,
                 responseIdx,
                 foundMessageId: responseIdx >= 0 ? messages[responseIdx]?.messageId : null,
                 messagesCount: messages.length,
@@ -1924,15 +2018,11 @@ export default function useResumableSSE(
               if (responseIdx >= 0) {
                 const oldContent = messages[responseIdx]?.content;
                 /** An EMPTY resume snapshot is not authoritative over content we already loaded
-                 *  for the SAME response: assigning it would erase that content and leave a bare
-                 *  cursor. Restricted to an id match — preserving a fallback-matched row would
-                 *  make a regenerated run append to the answer it is replacing — and to a row
-                 *  that actually HAS parts, so the array is never swapped for `undefined`. */
+                 *  for the SAME generation-owned response: assigning it would erase that content
+                 *  and leave a bare cursor. Require an existing content array so it is never
+                 *  swapped for `undefined`. */
                 const preserveLoadedContent =
-                  !hasResumedContent &&
-                  matchedByResponseId &&
-                  Array.isArray(oldContent) &&
-                  oldContent.length > 0;
+                  !hasResumedContent && Array.isArray(oldContent) && oldContent.length > 0;
                 /**
                  * Replacing the response with `aggregatedContent` drops the
                  * prefix an edited resubmission had retained: the snapshot is
@@ -1947,21 +2037,32 @@ export default function useResumableSSE(
                   editPrefixClearedRef.current = true;
                 }
                 const responseMessage = {
+                  ...resumeSubmission.initialResponse,
                   ...messages[responseIdx],
+                  messageId: responseId,
+                  parentMessageId: userMsgId,
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
+                  sender: messages[responseIdx]?.sender ?? resumeSubmission.initialResponse.sender,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
-                    data.resumeState.iconURL,
+                    resumeSubmission.initialResponse.iconURL ?? data.resumeState.iconURL,
                   ),
-                  model: preferDefinedString(messages[responseIdx]?.model, data.resumeState.model),
+                  model: preferDefinedString(
+                    messages[responseIdx]?.model,
+                    resumeSubmission.initialResponse.model ?? data.resumeState.model,
+                  ),
                 } as TMessage;
-                const updated = mergeResumeMessages(messages, userMessage, responseMessage);
+                const updated = mergeResumeMessages(
+                  messages,
+                  userMessage,
+                  responseMessage,
+                  messageIndexes,
+                );
                 logger.log('ResumableSSE', 'SYNC updating message', {
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
                   newContentLength: data.resumeState.aggregatedContent?.length,
                   preservedExistingContent: preserveLoadedContent,
-                  matchedByResponseId,
                 });
                 setMessages(updated);
                 resetContentHandler();
@@ -1975,18 +2076,14 @@ export default function useResumableSSE(
                  *  only in the matched branch left this path adding an offset
                  *  to indices that were already absolute. */
                 editPrefixClearedRef.current = true;
-                const responseId = serverResponseId ?? `${userMsgId}_`;
                 const newMessage = {
+                  ...resumeSubmission.initialResponse,
                   messageId: responseId,
                   parentMessageId: userMsgId,
-                  conversationId: currentSubmission.conversation?.conversationId ?? '',
-                  text: '',
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
-                  iconURL: data.resumeState.iconURL,
-                  model: data.resumeState.model,
                 } as TMessage;
-                setMessages(mergeResumeMessages(messages, userMessage, newMessage));
+                setMessages(mergeResumeMessages(messages, userMessage, newMessage, messageIndexes));
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }

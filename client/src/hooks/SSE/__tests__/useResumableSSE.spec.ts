@@ -2964,14 +2964,19 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
-    /**
-     * Regenerate: the new run's response id is not in the loaded history yet, so the
-     * parent-based fallback lands on the answer being REPLACED. Preserving that row's
-     * content would make the regenerated run's deltas append to the stale answer, so an
-     * empty snapshot must still clear a row we only matched heuristically.
-     */
-    it('does not preserve content on a row matched only by the parent fallback', async () => {
-      const submission = buildSubmission();
+    it('does not reuse an older response that only shares the user parent', async () => {
+      const submission = buildSubmission({
+        initialResponse: {
+          messageId: 'resp-1',
+          conversationId: CONV_ID,
+          text: '',
+          isCreatedByUser: false,
+          sender: 'Custom Assistant',
+          endpoint: 'azureOpenAI',
+          iconURL: 'https://example.com/assistant.png',
+          model: 'gpt-4.1',
+        },
+      });
       const chatHelpers = buildChatHelpers();
       chatHelpers.getMessages.mockReturnValue([
         {
@@ -3009,12 +3014,27 @@ describe('useResumableSSE', () => {
         });
       });
 
-      const synced = chatHelpers.setMessages.mock.calls
+      const syncedMessages = chatHelpers.setMessages.mock.calls
         .map(([messages]) => messages as TMessage[])
         .reverse()
-        .find((messages) => messages?.some((m) => m.messageId === 'resp-previous'))
-        ?.find((m) => m.messageId === 'resp-previous');
-      expect(synced?.content).toEqual([]);
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-regenerated'));
+      expect(syncedMessages?.find((m) => m.messageId === 'resp-previous')?.content).toEqual([
+        { type: 'text', text: 'the answer being regenerated' },
+      ]);
+      expect(syncedMessages?.map((message) => message.messageId)).toEqual([
+        'msg-1',
+        'resp-previous',
+        'resp-regenerated',
+      ]);
+      expect(syncedMessages?.find((m) => m.messageId === 'resp-regenerated')).toEqual(
+        expect.objectContaining({
+          content: [],
+          sender: 'Custom Assistant',
+          endpoint: 'azureOpenAI',
+          iconURL: 'https://example.com/assistant.png',
+          model: 'gpt-4.1',
+        }),
+      );
       unmount();
     });
 
@@ -4125,6 +4145,253 @@ describe('useResumableSSE', () => {
         }),
       }),
     );
+    unmount();
+  });
+});
+
+describe('useResumableSSE - sync response identity', () => {
+  beforeEach(() => {
+    mockSSEInstances.length = 0;
+    mockSetIsSubmitting.mockClear();
+  });
+
+  const emitSync = async (
+    sse: MockSSEInstance,
+    aggregatedContent: TMessage['content'],
+    responseMessageId?: string,
+    sender?: string,
+    userMessage?: Partial<TMessage>,
+  ) => {
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: { aggregatedContent, responseMessageId, sender, userMessage },
+        }),
+      });
+    });
+  };
+
+  it('updates the submission-owned response when sync omits the response ID', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const activeResponse = {
+      messageId: 'server-response-id',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, activeResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const aggregatedContent: TMessage['content'] = [
+      { type: ContentTypes.TEXT, text: { value: 'Recovered answer' } },
+    ];
+    await emitSync(getLastSSE(), aggregatedContent);
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages).toHaveLength(2);
+    expect(updatedMessages.find((message) => message.messageId === 'server-response-id')).toEqual({
+      ...activeResponse,
+      content: aggregatedContent,
+    });
+    expect(
+      updatedMessages.find((message) => message.messageId === 'server-user-id_'),
+    ).toBeUndefined();
+    unmount();
+  });
+
+  it('adds resumed sender metadata to an exact persisted response', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const activeResponse = {
+      messageId: 'server-response-id',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, activeResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await emitSync(getLastSSE(), [], activeResponse.messageId, 'Restored Assistant');
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages[1]).toEqual({
+      ...activeResponse,
+      sender: 'Restored Assistant',
+    });
+    unmount();
+  });
+
+  it('appends a missing submission-owned response after older regeneration siblings', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const olderResponse = {
+      messageId: 'older-response-id',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Earlier answer',
+      content: [{ type: 'text', text: { value: 'Earlier answer' } }],
+      isCreatedByUser: false,
+    } as TMessage;
+    const activeResponse = {
+      messageId: 'active-response-id',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      isRegenerate: true,
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, olderResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const aggregatedContent: TMessage['content'] = [
+      { type: ContentTypes.TEXT, text: { value: 'Regenerated answer' } },
+    ];
+    await emitSync(getLastSSE(), aggregatedContent);
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages.find((message) => message.messageId === 'older-response-id')).toEqual(
+      olderResponse,
+    );
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'server-user-id',
+      'older-response-id',
+      'active-response-id',
+    ]);
+    expect(updatedMessages.find((message) => message.messageId === 'active-response-id')).toEqual({
+      ...activeResponse,
+      content: aggregatedContent,
+    });
+    unmount();
+  });
+
+  it('replaces the current-run placeholder without erasing its loaded content', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const preliminaryResponse = {
+      messageId: 'server-user-id_',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [{ type: ContentTypes.TEXT, text: { value: 'Already streaming' } }],
+      sender: 'Assistant',
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: preliminaryResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, preliminaryResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await emitSync(getLastSSE(), [], 'assigned-response-id');
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'server-user-id',
+      'assigned-response-id',
+    ]);
+    expect(updatedMessages[1]).toEqual({
+      ...preliminaryResponse,
+      messageId: 'assigned-response-id',
+    });
+    unmount();
+  });
+
+  it('replaces the current-run user when sync assigns both durable IDs', async () => {
+    const preliminaryUser = {
+      messageId: 'client-user-id',
+      parentMessageId: 'previous-response-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const preliminaryResponse = {
+      messageId: 'client-user-id_',
+      parentMessageId: preliminaryUser.messageId,
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage: preliminaryUser, initialResponse: preliminaryResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([preliminaryUser, preliminaryResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const assignedUser = {
+      ...preliminaryUser,
+      messageId: 'assigned-user-id',
+    };
+    await emitSync(getLastSSE(), [], 'assigned-response-id', undefined, assignedUser);
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'assigned-user-id',
+      'assigned-response-id',
+    ]);
+    expect(updatedMessages[1]?.parentMessageId).toBe('assigned-user-id');
     unmount();
   });
 });

@@ -6,6 +6,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.responseMessageId) {
     patch.responseMessageId = metadata.responseMessageId;
   }
+  if (metadata.isRegenerate !== undefined) {
+    patch.isRegenerate = metadata.isRegenerate;
+  }
   if (metadata.sender) {
     patch.sender = metadata.sender;
   }

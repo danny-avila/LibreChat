@@ -75,6 +75,9 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
+
   /**
    * Whether this run has activity labels enabled (per-endpoint
    * `activityLabel: true`). Set once at run start so the resume path can
@@ -294,6 +297,7 @@ export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,
     | 'responseMessageId'
+    | 'isRegenerate'
     | 'sender'
     | 'conversationId'
     | 'userMessage'

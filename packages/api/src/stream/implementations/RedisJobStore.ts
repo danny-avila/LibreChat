@@ -4547,6 +4547,7 @@ export class RedisJobStore implements IJobStoreV2 {
       recoveredSteerId: data.recoveredSteerId || undefined,
       userMessage: data.userMessage ? JSON.parse(data.userMessage) : undefined,
       responseMessageId: data.responseMessageId || undefined,
+      isRegenerate: data.isRegenerate != null ? data.isRegenerate === '1' : undefined,
       createdEventEmitted: data.createdEventEmitted === '1',
       sender: data.sender || undefined,
       syncSent: data.syncSent === '1',

@@ -128,15 +128,27 @@ function buildSubmissionFromResumeState(
     (m) => m.isCreatedByUser && m.messageId === userMessageData?.messageId,
   );
 
-  // Try to find existing response message in the messages array (from database).
-  // Regeneration can expose the in-flight placeholder id with trailing underscores
-  // while the persisted sibling uses the unpadded id. Prefer both exact identities
-  // before falling back to the shared parent, where several branch siblings can match.
+  // A trailing underscore distinguishes an in-flight regeneration from the persisted
+  // response it replaces. Only the exact response id proves generation ownership.
+  const existingResponseMessage = messages.find(
+    (m) => !m.isCreatedByUser && m.messageId === responseMessageId,
+  );
+  // The persisted row may seed display metadata, but never identity or deduplication.
   const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  const existingResponseMessage =
-    messages.find((m) => !m.isCreatedByUser && m.messageId === responseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId) ??
-    messages.find((m) => !m.isCreatedByUser && m.parentMessageId === userMessageData?.messageId);
+  const persistedRegenerationResponse =
+    unpaddedResponseMessageId !== responseMessageId
+      ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
+      : undefined;
+  const responseMetadataMessage = existingResponseMessage ?? persistedRegenerationResponse;
+  const isRegenerateResume =
+    resumeState.isRegenerate === true || persistedRegenerationResponse != null;
+  let regenerateMessages: TMessage[] | undefined;
+  if (isRegenerateResume) {
+    regenerateMessages =
+      unpaddedResponseMessageId === responseMessageId
+        ? [...messages]
+        : messages.filter((message) => message.messageId !== responseMessageId);
+  }
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -169,9 +181,9 @@ function buildSubmissionFromResumeState(
     content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
     isCreatedByUser: false,
     role: 'assistant',
-    sender: existingResponseMessage?.sender ?? resumeState.sender,
-    model: preferDefinedString(existingResponseMessage?.model, resumeState.model),
-    iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
+    sender: responseMetadataMessage?.sender ?? resumeState.sender,
+    model: preferDefinedString(responseMetadataMessage?.model, resumeState.model),
+    iconURL: preferDefinedString(responseMetadataMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
   // Re-paused turn: seed the approval / ask-user controls straight onto the
@@ -186,17 +198,13 @@ function buildSubmissionFromResumeState(
     endpoint: null,
   } as TConversation;
 
-  // On reload, `messages` is the full DB array, which already holds the paused user
-  // row and the partial (unfinished) assistant row under the same ids that
-  // `userMessage` / `initialResponse` (and the resume final event's request/response
-  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
-  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
-  const pausedResponseIdUnpadded = initialResponse.messageId.replace(/_+$/, '');
+  // Non-regenerate resumes strip the persisted request/response pair before handlers
+  // re-supply it. A regeneration keeps the original branch for early-abort rollback;
+  // explicit resume metadata covers edited regenerations that reuse the exact response id.
   const dedupedMessages = messages.filter(
     (m) =>
-      m.messageId !== userMessage.messageId &&
       m.messageId !== initialResponse.messageId &&
-      m.messageId !== pausedResponseIdUnpadded,
+      (isRegenerateResume || m.messageId !== userMessage.messageId),
   );
 
   return {
@@ -204,7 +212,8 @@ function buildSubmissionFromResumeState(
     userMessage,
     initialResponse,
     conversation,
-    isRegenerate: false,
+    isRegenerate: isRegenerateResume,
+    ...(regenerateMessages && { regenerateMessages }),
     isTemporary: false,
     endpointOption: {},
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new
