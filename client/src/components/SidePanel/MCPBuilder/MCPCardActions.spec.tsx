@@ -77,4 +77,29 @@ describe('MCPCardActions', () => {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     },
   );
+
+  test('keeps custom-variable configuration available while an on-demand server is idle', () => {
+    render(
+      <MCPCardActions
+        serverName="server"
+        serverStatus={{
+          connectionState: 'disconnected',
+          requiresOAuth: false,
+          requestScoped: true,
+          configurationState: 'needs_configuration',
+        }}
+        isInitializing={false}
+        canCancel={false}
+        hasCustomUserVars={true}
+        canEdit={false}
+        onEditClick={jest.fn()}
+        onConfigClick={jest.fn()}
+        onInitialize={jest.fn()}
+        onCancel={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'com_ui_configure' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_nav_mcp_connect' })).not.toBeInTheDocument();
+  });
 });

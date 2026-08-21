@@ -51,7 +51,16 @@ export default function ServerInitializationSection({
     serverStatus?.requestScoped === true ||
     availableMCPServersMap?.[serverName]?.requestScoped === true;
   const shouldShowReinit = isConnected && !requestScoped && (requiresOAuth || hasCustomUserVars);
-  const shouldShowInit = !isConnected && !requestScoped && !serverOAuthUrl && !hasPendingOAuth;
+  /** Saving custom variables makes an on-demand server ready, but it still
+   * needs one explicit initialization attempt so callers waiting to attach the
+   * runtime wildcard observe `connectionDeferred`. */
+  const canDeferRequestScopedConnection =
+    requestScoped && hasCustomUserVars && serverStatus?.configurationState === 'configured';
+  const shouldShowInit =
+    !isConnected &&
+    (!requestScoped || canDeferRequestScopedConnection) &&
+    !serverOAuthUrl &&
+    !hasPendingOAuth;
   const shouldShowRevoke = requiresOAuth && revokeOAuthForServer != null;
 
   if (!shouldShowReinit && !shouldShowInit && !shouldShowRevoke && !serverOAuthUrl) {

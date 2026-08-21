@@ -138,8 +138,9 @@ export default function MCPCardActions({
         </TooltipAnchor>
       )}
 
-      {/* Configure button - for connected servers with custom vars */}
-      {isConnected && hasCustomUserVars && (
+      {/* On-demand servers stay idle between requests, so their user variables
+          must remain configurable without a live transport connection. */}
+      {(isConnected || serverStatus?.requestScoped) && hasCustomUserVars && (
         <TooltipAnchor
           description={localize('com_ui_configure')}
           side="top"
