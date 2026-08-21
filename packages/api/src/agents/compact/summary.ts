@@ -789,7 +789,7 @@ export async function resolveCompactionModel({
   }
   const effectiveMaxSummaryTokens = maxSummaryTokens ?? summarization?.maxSummaryTokens;
   if (effectiveMaxSummaryTokens != null && effectiveMaxSummaryTokens > 0) {
-    applyOutputCap(clientOptions, provider, effectiveMaxSummaryTokens);
+    applyOutputCap(clientOptions, provider, effectiveMaxSummaryTokens, model ?? '');
   }
 
   /** The whole request body, not just the generated ids: a custom endpoint
@@ -1010,9 +1010,16 @@ const RELOCATED_CAP_MODEL_PATTERN = /\bgpt-[5-9](?:\.\d+)?\b/i;
  * models reject, and would leave the stale nested value governing the request.
  * Same decision the label and memory paths make for the same reason.
  */
-function applyOutputCap(clientOptions: ClientOptions, provider: Providers, cap: number): void {
+function applyOutputCap(
+  clientOptions: ClientOptions,
+  provider: Providers,
+  cap: number,
+  /** The RESOLVED model, not `clientOptions.model`: Azure overwrites that with
+   *  the deployment name after the relocation has already happened, so reading
+   *  it back misses a GPT-5 deployment whose name does not say so. */
+  model: string,
+): void {
   const options = clientOptions as Record<string, unknown>;
-  const model = typeof options.model === 'string' ? options.model : '';
   if (!RELOCATED_CAP_MODEL_PATTERN.test(model)) {
     options[getMaxOutputTokensKey(provider)] = cap;
     return;

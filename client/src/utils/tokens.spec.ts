@@ -867,3 +867,37 @@ describe('per-message usage index (branch + total)', () => {
     expect(EMPTY_BRANCH.usage).toEqual(EMPTY_USAGE);
   });
 });
+
+describe('summary baselines that exclude overhead', () => {
+  afterEach(() => {
+    clearIndex(CONVO);
+  });
+
+  it('flags a compaction whose baseline could not include instruction overhead', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      {
+        ...msg('a1', 'u1', false, 0),
+        metadata: { summaryUsedTokens: 300, summaryExcludesOverhead: true },
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.summaryBaseline).toBe(300);
+    expect(totals.summaryExcludesOverhead).toBe(true);
+  });
+
+  it('leaves the flag off for a baseline that carries overhead', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      {
+        ...msg('a1', 'u1', false, 0),
+        metadata: { summaryUsedTokens: 300 },
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.summaryBaseline).toBe(300);
+    expect(totals.summaryExcludesOverhead).toBe(false);
+  });
+});

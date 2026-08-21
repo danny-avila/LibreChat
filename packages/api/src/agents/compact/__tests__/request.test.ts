@@ -438,6 +438,40 @@ describe('handleCompactRequest', () => {
     );
   });
 
+  it('marks a baseline that could not include instruction overhead', async () => {
+    /** A branch whose responses carry no context snapshot leaves the overhead
+     *  unknown here, and the client suppresses its own cached value whenever a
+     *  baseline exists. */
+    const snapshotless = [userMessage('m1', Constants.NO_PARENT), assistantMessage('m2', 'm1')];
+    const deps = makeDeps({
+      getMessages: jest.fn(async (filter) =>
+        filter.parentMessageId == null ? (snapshotless as TMessage[]) : [],
+      ),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result).toMatchObject({ status: 201 });
+    expect(deps.saveMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        metadata: expect.objectContaining({ summaryExcludesOverhead: true }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('omits the flag when a snapshot supplied the overhead', async () => {
+    const deps = makeDeps();
+
+    await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1] as Partial<TMessage>;
+    expect(saved.metadata).not.toHaveProperty('summaryExcludesOverhead');
+    /** 120 summary tokens plus the snapshot's 400 of instruction overhead. */
+    expect(saved.metadata?.summaryUsedTokens).toBe(520);
+  });
+
   it('bills a locally counted estimate when the provider reported no usage', async () => {
     mockCompactConversation.mockResolvedValue({
       summary: SUMMARY,
