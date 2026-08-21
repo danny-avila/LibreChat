@@ -40,6 +40,9 @@ export interface TokenEntry {
    *  response whose turn summarized. Caps the estimate so it stops re-summing
    *  the now-discarded pre-summary history. */
   summaryUsedTokens?: number;
+  /** Set when that baseline could NOT include the instruction and tool-schema
+   *  overhead, so the estimate keeps its own cached value instead. */
+  summaryExcludesOverhead?: boolean;
 }
 
 export interface BranchTotals {
@@ -68,6 +71,8 @@ export interface BranchTotals {
    *  only the post-summary messages; the estimate adds this to avoid counting
    *  the discarded pre-summary history. */
   summaryBaseline: number;
+  /** True when `summaryBaseline` carries no instruction/tool-schema overhead. */
+  summaryExcludesOverhead: boolean;
 }
 
 export const EMPTY_BRANCH: BranchTotals = {
@@ -81,6 +86,7 @@ export const EMPTY_BRANCH: BranchTotals = {
   containsAnchor: false,
   usage: EMPTY_USAGE,
   summaryBaseline: 0,
+  summaryExcludesOverhead: false,
 };
 
 /** Module-level token index: conversationId → messageId → entry. Not render state. */
@@ -227,6 +233,7 @@ function quoteChars(message: Partial<TMessage>): number {
 
 function toEntry(message: Partial<TMessage>): TokenEntry {
   const summaryUsedTokens = message.metadata?.summaryUsedTokens;
+  const summaryExcludesOverhead = message.metadata?.summaryExcludesOverhead === true;
   const tokenCount = typeof message.tokenCount === 'number' ? message.tokenCount : 0;
   const isCreatedByUser = message.isCreatedByUser === true;
   const quoted = isCreatedByUser && Array.isArray(message.quotes) && message.quotes.length > 0;
@@ -252,6 +259,7 @@ function toEntry(message: Partial<TMessage>): TokenEntry {
       typeof summaryUsedTokens === 'number' && summaryUsedTokens > 0
         ? summaryUsedTokens
         : undefined,
+    ...(summaryExcludesOverhead && { summaryExcludesOverhead }),
   };
 }
 
@@ -341,6 +349,7 @@ export function sumBranch(
   const tailEstTokens = index.get(tailId)?.estTokens ?? 0;
   const usage: BranchUsage = { ...EMPTY_USAGE };
   let summaryBaseline = 0;
+  let summaryExcludesOverhead = false;
   /** Once a summary marker is crossed, older turns are out of the CONTEXT WINDOW
    *  (subsumed by the baseline) — but their provider spend still happened, so the
    *  usage/cost walk continues to the root while context counting stops. */
@@ -379,12 +388,13 @@ export function sumBranch(
      *  tokens for older (summarized-away) turns, but keep walking for cost. */
     if (!contextCapped && entry.summaryUsedTokens != null) {
       summaryBaseline = entry.summaryUsedTokens;
+      summaryExcludesOverhead = entry.summaryExcludesOverhead === true;
       contextCapped = true;
     }
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailEstTokens, tailId, usage, summaryBaseline };
+  return { ...totals, tailEstTokens, tailId, usage, summaryBaseline, summaryExcludesOverhead };
 }
 
 /**
