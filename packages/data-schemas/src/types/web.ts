@@ -12,7 +12,10 @@ export type TWebSearchKeys =
   | 'tavilyExtractUrl'
   | 'jinaApiKey'
   | 'jinaApiUrl'
-  | 'cohereApiKey';
+  | 'cohereApiKey'
+  | 'customRerankerApiUrl'
+  | 'customRerankerApiKey'
+  | 'customRerankerModel';
 
 export type TWebSearchCategories =
   | SearchCategories.PROVIDERS
