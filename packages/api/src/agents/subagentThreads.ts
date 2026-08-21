@@ -9,7 +9,6 @@ import {
 import type {
   InMemorySubagentTaskStoreOptions,
   SubagentTaskClaim,
-  SubagentTaskConfig,
   SubagentTaskControlCommand,
   SubagentTaskControlResult,
   SubagentTaskRuntime,
@@ -29,6 +28,7 @@ import type {
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import type { HostSubagentTaskConfig } from './subagentDelivery';
 import {
   boundedClaim,
   boundedTaskList,
@@ -37,6 +37,7 @@ import {
 } from './subagentTaskRouting';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { aggregateEmittedUsage } from './usage';
 
@@ -2174,9 +2175,13 @@ export function createSubagentThreadTaskStore(
 export function buildSubagentThreadTaskConfig(
   store: SubagentThreadTaskStore,
   scope: Omit<SubagentThreadScope, 'version'>,
-): SubagentTaskConfig {
+  options: { completionWakeups?: boolean } = {},
+): HostSubagentTaskConfig {
   return {
     store,
     scopeId: serializeScope(scope),
+    ...(options.completionWakeups === true
+      ? { completionDelivery: SUBAGENT_COMPLETION_DELIVERY }
+      : {}),
   };
 }
