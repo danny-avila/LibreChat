@@ -1282,6 +1282,70 @@ describe('compactConversation', () => {
     expect(result.summary.model).toBe('gpt-4o');
   });
 
+  it('inlines a repeatedly attached document once per retained segment', async () => {
+    const attach = (id: string, parent: string) =>
+      ({
+        ...userMessage(id, parent, 'look again'),
+        files: [{ file_id: 'file_dup' }],
+      }) as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_dup', filename: 'spec.md', source: 'text', text: 'RFC-9110 defines GET.' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [attach('d1', Constants.NO_PARENT), attach('d2', 'd1'), attach('d3', 'd2')],
+      ids: { ...ids, parentMessageId: 'd3' },
+      db: dbMethods,
+      getFiles,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const occurrences = JSON.stringify(sent.map((message) => message.content)).split(
+      'RFC-9110 defines GET.',
+    ).length;
+    expect(occurrences - 1).toBe(1);
+  });
+
+  it('re-inlines a document reattached after a summary boundary', async () => {
+    const attach = (id: string, parent: string) =>
+      ({
+        ...userMessage(id, parent, 'look again'),
+        files: [{ file_id: 'file_dup' }],
+      }) as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_dup', filename: 'spec.md', source: 'text', text: 'RFC-9110 defines GET.' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [
+        attach('d1', Constants.NO_PARENT),
+        assistantMessage('d2', 'd1', [
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'earlier checkpoint' }],
+          },
+        ] as TMessage['content']),
+        attach('d3', 'd2'),
+      ],
+      ids: { ...ids, parentMessageId: 'd3' },
+      db: dbMethods,
+      getFiles,
+    });
+
+    /** The pre-boundary copy is discarded, so the retained one must still
+     *  carry the text. */
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent[0].content)).toContain('RFC-9110 defines GET.');
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so
