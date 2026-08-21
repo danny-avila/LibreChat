@@ -36,6 +36,7 @@ const {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
+  getTransactionsConfig,
 } = require('@librechat/api');
 const {
   Time,
@@ -208,6 +209,7 @@ const processVisionRequest = async (client, currentAction) => {
       user: client.req.user.id,
       model: client.req.body.model,
       conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
+      transactions: getTransactionsConfig(client.req.config),
       ...completion.usage,
     });
   }
