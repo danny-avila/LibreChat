@@ -16,14 +16,19 @@ import type {
 } from 'librechat-data-provider';
 import type { BaseMessage, AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { Runnable, RunnableConfig } from '@langchain/core/runnables';
+import type { IMongoFile } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ClientOptions } from '@librechat/agents';
 import type { EndpointDbMethods, OpenAIConfiguration, ServerRequest } from '~/types';
 import type { FormattedMessageWithContent } from '~/agents/client';
+import type { EndpointTokenConfig } from '~/types/tokens';
+import type { OwnerFileFilter } from '~/files/history';
+import { buildOwnerFileFilter, collectHistoricalFileIds } from '~/files/history';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
+import { prependFileContext, prependQuotes } from '~/agents/client';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
-import { prependQuotes } from '~/agents/client';
+import { extractFileContext } from '~/files/context';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
 
@@ -33,6 +38,9 @@ import { createSafeUser } from '~/utils/env';
  * to include that wrapper or every later budget read undercounts it.
  */
 const SUMMARY_WRAPPER_OVERHEAD_TOKENS = 33;
+
+/** Owner-scoped file lookup, injected so this module stays free of the db. */
+export type GetFilesFn = (filter: OwnerFileFilter) => Promise<IMongoFile[] | null>;
 
 /** Upper bound for a manual compaction call, mirroring the run-level detour. */
 const COMPACTION_TIMEOUT_MS = 120_000;
@@ -119,7 +127,7 @@ export interface CompactionModel {
   provider: Providers;
   model?: string;
   clientOptions: ClientOptions;
-  endpointTokenConfig?: unknown;
+  endpointTokenConfig?: EndpointTokenConfig;
   /** True when compaction resolved to the agent's OWN endpoint, which decides
    *  whether `endpointTokenConfig` is authoritative for pricing. */
   sameEndpoint: boolean;
@@ -214,6 +222,58 @@ export function selectBranchMessages(
 }
 
 /**
+ * Rebuilds the document text an attachment-bearing turn contributed, the way
+ * `BaseClient.addPreviousAttachments` does before a normal turn.
+ *
+ * Without it these raw database rows carry only file references, so a branch
+ * built around an uploaded document would be replaced by a summary that never
+ * saw the document. The lookup is owner-scoped through `buildOwnerFileFilter`,
+ * so a forged reference cannot pull another user's file into the transcript.
+ */
+async function hydrateAttachments(
+  branch: TMessage[],
+  req: ServerRequest,
+  getFiles?: GetFilesFn,
+): Promise<Map<string, string>> {
+  const contextByMessageId = new Map<string, string>();
+  if (!getFiles) {
+    return contextByMessageId;
+  }
+  const filter = buildOwnerFileFilter(collectHistoricalFileIds(branch), req.user);
+  if (!filter) {
+    return contextByMessageId;
+  }
+  const files = (await getFiles(filter)) ?? [];
+  const byId = new Map(files.map((file) => [file.file_id, file]));
+  const seen = new Set<string>();
+  for (const message of branch) {
+    const attachments: IMongoFile[] = [];
+    for (const ref of message.files ?? []) {
+      if (!ref?.file_id || seen.has(ref.file_id)) {
+        continue;
+      }
+      const file = byId.get(ref.file_id);
+      if (file) {
+        attachments.push(file);
+        seen.add(ref.file_id);
+      }
+    }
+    if (attachments.length === 0) {
+      continue;
+    }
+    const fileContext = await extractFileContext({
+      attachments,
+      req,
+      tokenCountFn: (text: string) => countTokens(text),
+    });
+    if (fileContext) {
+      contextByMessageId.set(message.messageId, fileContext);
+    }
+  }
+  return contextByMessageId;
+}
+
+/**
  * Shapes stored messages into the `{ role, content }` payload
  * `formatAgentMessages` expects, mirroring what `AgentClient#buildMessages`
  * hands it on a normal turn. Without the explicit role the formatter falls
@@ -225,11 +285,18 @@ export function selectBranchMessages(
  * built without them drops the referenced material permanently once it becomes
  * the context boundary.
  */
-function toPayload(branch: TMessage[]): Array<Partial<TMessage>> {
+function toPayload(
+  branch: TMessage[],
+  fileContextByMessageId: Map<string, string>,
+): Array<Partial<TMessage>> {
   return branch.map((message) => {
     const formatted = formatMessage({
       message: { ...message, role: message.isCreatedByUser ? 'user' : 'assistant' },
     }) as FormattedMessageWithContent;
+    const fileContext = fileContextByMessageId.get(message.messageId);
+    if (fileContext) {
+      prependFileContext(formatted, fileContext);
+    }
     if (Array.isArray(message.quotes) && message.quotes.length > 0) {
       prependQuotes(formatted, message.quotes);
     }
@@ -443,7 +510,7 @@ export interface CompactionResult {
   messagesCompacted: number;
   usage?: CompactionUsage;
   /** Rates of the endpoint the call actually ran on, for the transaction. */
-  endpointTokenConfig?: unknown;
+  endpointTokenConfig?: EndpointTokenConfig;
 }
 
 export interface CompactConversationParams {
@@ -453,6 +520,9 @@ export interface CompactConversationParams {
   branch: TMessage[];
   ids: { messageId?: string; conversationId?: string; parentMessageId?: string };
   db: EndpointDbMethods;
+  /** Owner-scoped file lookup for attachment hydration. Omitted in unit tests
+   *  and for callers whose branch carries no attachments. */
+  getFiles?: GetFilesFn;
   signal?: AbortSignal;
   /**
    * Runs after the prompt is assembled and the model resolved, but BEFORE the
@@ -464,7 +534,7 @@ export interface CompactConversationParams {
     promptTokens: number;
     model?: string;
     provider: string;
-    endpointTokenConfig?: unknown;
+    endpointTokenConfig?: EndpointTokenConfig;
   }) => Promise<void>;
 }
 
@@ -473,6 +543,28 @@ export class NothingToCompactError extends Error {
   constructor() {
     super('No messages to compact');
     this.name = 'NothingToCompactError';
+  }
+}
+
+/**
+ * Raised when the provider answered with no usable text. Carries the usage it
+ * reported: an empty or content-filtered completion is still a billed call, so
+ * the host records it before surfacing the failure.
+ */
+export class EmptyCompactionError extends Error {
+  readonly usage?: CompactionUsage;
+  readonly model?: string;
+  readonly endpointTokenConfig?: EndpointTokenConfig;
+  constructor(details: {
+    usage?: CompactionUsage;
+    model?: string;
+    endpointTokenConfig?: EndpointTokenConfig;
+  }) {
+    super('Compaction produced empty output');
+    this.name = 'EmptyCompactionError';
+    this.usage = details.usage;
+    this.model = details.model;
+    this.endpointTokenConfig = details.endpointTokenConfig;
   }
 }
 
@@ -491,11 +583,13 @@ export async function compactConversation({
   branch,
   ids,
   db,
+  getFiles,
   signal,
   beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
+  const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
   const { messages, summary: priorSummary } = formatAgentMessages(
-    stripActivityLabelParts(toPayload(branch)),
+    stripActivityLabelParts(toPayload(branch, fileContextByMessageId)),
   );
   if (messages.length === 0) {
     throw new NothingToCompactError();
@@ -542,11 +636,11 @@ export async function compactConversation({
   });
 
   const text = extractResponseText(response);
+  const usage = extractUsage(response, model, provider);
   if (text === '') {
-    throw new Error('Compaction produced empty output');
+    throw new EmptyCompactionError({ usage, model, endpointTokenConfig });
   }
 
-  const usage = extractUsage(response, model, provider);
   const providerOutputTokens = usage?.output_tokens ?? 0;
   const tokenCount =
     (providerOutputTokens > 0 ? providerOutputTokens : await countTokens(text)) +
