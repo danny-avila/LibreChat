@@ -381,8 +381,6 @@ const STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES = new Set([
   '/tool_call/code_interpreter/input',
   '/tool_call/code_interpreter/outputs',
 ]);
-const STORED_MESSAGE_NESTED_TEXT_SUFFIX = /^\/content\/(0|[1-9]\d*)\/text$/;
-
 function getModelParameterWrapperFields(
   value: object,
 ): readonly ContentFieldMap['model_parameter'][] {
@@ -581,9 +579,59 @@ function appendModelParameterContent(
   appendTraversalAwareContent(fragments, () => extractModelParameterContent(input));
 }
 
+function visitBoundedSubmittedArray<Value>(
+  candidate: unknown,
+  budget: VisitNestedStringsBudget,
+  visit: (value: Value | null | undefined, index: number) => void,
+): boolean {
+  if (candidate == null) {
+    return true;
+  }
+  let isArray: boolean;
+  let length: number;
+  try {
+    isArray = Array.isArray(candidate);
+    if (!isArray) {
+      return false;
+    }
+    length = (candidate as readonly unknown[]).length;
+  } catch {
+    return false;
+  }
+  if (!Number.isSafeInteger(length) || length < 0) {
+    return false;
+  }
+  const maxNodes = budget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
+  if (
+    !Number.isSafeInteger(maxNodes) ||
+    maxNodes < 0 ||
+    !Number.isSafeInteger(budget.visitedNodes) ||
+    budget.visitedNodes < 0
+  ) {
+    return false;
+  }
+  const values = candidate as readonly (Value | null | undefined)[];
+  let index = 0;
+  for (; index < length; index++) {
+    if (budget.visitedNodes >= maxNodes) {
+      break;
+    }
+    budget.visitedNodes++;
+    let value: Value | null | undefined;
+    try {
+      value = values[index];
+    } catch {
+      return false;
+    }
+    visit(value, index);
+  }
+  return index === length;
+}
+
 function appendAgentDefinitionContent(
   fragments: TextContentFragment[],
   input: AgentContentInput | null | undefined,
+  traversalBudget: VisitNestedStringsBudget,
 ): void {
   const add = (value: unknown, field: ContentFieldMap['agent_instruction'], path: JsonPointer) =>
     pushString(fragments, value, {
@@ -602,20 +650,35 @@ function appendAgentDefinitionContent(
   add(input?.support_contact?.name, 'support_contact_name', '/support_contact/name');
   add(input?.support_contact?.email, 'support_contact_email', '/support_contact/email');
 
-  for (let index = 0; index < (input?.conversation_starters?.length ?? 0); index++) {
-    pushString(fragments, input?.conversation_starters?.[index], {
-      id: `agent.conversation-starter.${index}`,
-      path: `/conversation_starters/${index}`,
-      source: 'conversation_starter',
-      field: 'text',
-    });
-  }
-
-  for (let index = 0; index < (input?.edges?.length ?? 0); index++) {
-    const edge = input?.edges?.[index];
-    add(edge?.description, 'edge_description', `/edges/${index}/description`);
-    add(edge?.prompt, 'edge_prompt', `/edges/${index}/prompt`);
-    add(edge?.promptKey, 'edge_prompt_key', `/edges/${index}/promptKey`);
+  const startersComplete = visitBoundedSubmittedArray<string>(
+    input?.conversation_starters,
+    traversalBudget,
+    (starter, index) => {
+      pushString(fragments, starter, {
+        id: `agent.conversation-starter.${index}`,
+        path: `/conversation_starters/${index}`,
+        source: 'conversation_starter',
+        field: 'text',
+      });
+    },
+  );
+  const edgesComplete = visitBoundedSubmittedArray<AgentEdgeInput>(
+    input?.edges,
+    traversalBudget,
+    (edge, index) => {
+      add(edge?.description, 'edge_description', `/edges/${index}/description`);
+      add(edge?.prompt, 'edge_prompt', `/edges/${index}/prompt`);
+      add(edge?.promptKey, 'edge_prompt_key', `/edges/${index}/promptKey`);
+    },
+  );
+  if (!startersComplete || !edgesComplete) {
+    throw new ContentTraversalLimitError(fragments, [
+      { source: 'conversation_starter', fields: ['text'] },
+      {
+        source: 'agent_instruction',
+        fields: ['edge_description', 'edge_prompt', 'edge_prompt_key'],
+      },
+    ]);
   }
 }
 
@@ -624,12 +687,14 @@ export function extractAgentContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const traversalErrors: ContentTraversalLimitError[] = [];
-  appendAgentDefinitionContent(fragments, input);
+  const traversalBudget: VisitNestedStringsBudget = { visitedNodes: 0 };
+  appendAgentDefinitionContent(fragments, input, traversalBudget);
   appendFunctionToolsContent(
     fragments,
     input?.toolDefinitions,
     '/toolDefinitions',
     traversalErrors,
+    traversalBudget,
   );
   collectTraversalAwareContent(fragments, traversalErrors, () =>
     extractModelParameterContent(input),
@@ -642,6 +707,7 @@ function extractFunctionToolContent(
   fragments: TextContentFragment[],
   tool: FunctionToolContentInput | null | undefined,
   path: JsonPointer,
+  traversalBudget: VisitNestedStringsBudget,
 ): void {
   const definition = tool?.function ?? tool;
   if (definition == null) {
@@ -684,6 +750,7 @@ function extractFunctionToolContent(
         ),
       ],
       [{ source: 'tool_argument', fields: ['arguments'] }],
+      traversalBudget,
     ),
   );
 }
@@ -709,21 +776,38 @@ function appendFunctionToolsContent(
   tools: readonly (string | FunctionToolContentInput | null | undefined)[] | undefined,
   path: JsonPointer,
   traversalErrors: ContentTraversalLimitError[],
+  traversalBudget: VisitNestedStringsBudget,
 ): void {
-  for (let index = 0; index < (tools?.length ?? 0); index++) {
-    const tool = tools?.[index];
-    if (typeof tool === 'string') {
-      continue;
-    }
-    try {
-      extractFunctionToolContent(fragments, tool, `${path}/${index}` as JsonPointer);
-    } catch (error) {
-      if (!(error instanceof ContentTraversalLimitError)) {
-        throw error;
+  const complete = visitBoundedSubmittedArray<string | FunctionToolContentInput>(
+    tools,
+    traversalBudget,
+    (tool, index) => {
+      if (typeof tool === 'string') {
+        return;
       }
-      fragments.push(...getContentTraversalFragments(error));
-      traversalErrors.push(error);
-    }
+      try {
+        extractFunctionToolContent(
+          fragments,
+          tool,
+          `${path}/${index}` as JsonPointer,
+          traversalBudget,
+        );
+      } catch (error) {
+        if (!(error instanceof ContentTraversalLimitError)) {
+          throw error;
+        }
+        fragments.push(...getContentTraversalFragments(error));
+        traversalErrors.push(error);
+      }
+    },
+  );
+  if (!complete) {
+    traversalErrors.push(
+      new ContentTraversalLimitError(fragments, [
+        { source: 'agent_instruction', fields: ['name', 'description'] },
+        { source: 'tool_argument', fields: ['name', 'arguments'] },
+      ]),
+    );
   }
 }
 
@@ -745,14 +829,16 @@ export function extractAssistantContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const traversalErrors: ContentTraversalLimitError[] = [];
-  appendAgentDefinitionContent(fragments, input);
+  const traversalBudget: VisitNestedStringsBudget = { visitedNodes: 0 };
+  appendAgentDefinitionContent(fragments, input, traversalBudget);
   appendFunctionToolsContent(
     fragments,
     input?.toolDefinitions,
     '/toolDefinitions',
     traversalErrors,
+    traversalBudget,
   );
-  appendFunctionToolsContent(fragments, input?.tools, '/tools', traversalErrors);
+  appendFunctionToolsContent(fragments, input?.tools, '/tools', traversalErrors, traversalBudget);
   collectTraversalAwareContent(fragments, traversalErrors, () =>
     extractModelParameterContent(input),
   );
@@ -765,7 +851,14 @@ export function extractAssistantActionContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const traversalErrors: ContentTraversalLimitError[] = [];
-  appendFunctionToolsContent(fragments, input?.functions, '/functions', traversalErrors);
+  const traversalBudget: VisitNestedStringsBudget = { visitedNodes: 0 };
+  appendFunctionToolsContent(
+    fragments,
+    input?.functions,
+    '/functions',
+    traversalErrors,
+    traversalBudget,
+  );
   collectTraversalAwareContent(fragments, traversalErrors, () =>
     extractSubmittedValueContent(
       input?.metadata?.raw_spec,
@@ -894,26 +987,34 @@ function appendPresetDefinitionContent(
   add(input?.instructions, 'instructions', '/instructions');
   add(input?.additional_instructions, 'additional_instructions', '/additional_instructions');
   add(input?.greeting, 'greeting', '/greeting');
-  for (let index = 0; index < (input?.examples?.length ?? 0); index++) {
-    const example = input?.examples?.[index];
-    const exampleInput =
-      typeof example?.input === 'string' ? example.input : example?.input?.content;
-    const exampleOutput =
-      typeof example?.output === 'string' ? example.output : example?.output?.content;
-    add(
-      exampleInput,
-      'example_input',
-      typeof example?.input === 'string'
-        ? `/examples/${index}/input`
-        : `/examples/${index}/input/content`,
-    );
-    add(
-      exampleOutput,
-      'example_output',
-      typeof example?.output === 'string'
-        ? `/examples/${index}/output`
-        : `/examples/${index}/output/content`,
-    );
+  const examplesComplete = visitBoundedSubmittedArray<PresetExampleInput>(
+    input?.examples,
+    { visitedNodes: 0 },
+    (example, index) => {
+      const exampleInput =
+        typeof example?.input === 'string' ? example.input : example?.input?.content;
+      const exampleOutput =
+        typeof example?.output === 'string' ? example.output : example?.output?.content;
+      add(
+        exampleInput,
+        'example_input',
+        typeof example?.input === 'string'
+          ? `/examples/${index}/input`
+          : `/examples/${index}/input/content`,
+      );
+      add(
+        exampleOutput,
+        'example_output',
+        typeof example?.output === 'string'
+          ? `/examples/${index}/output`
+          : `/examples/${index}/output/content`,
+      );
+    },
+  );
+  if (!examplesComplete) {
+    throw new ContentTraversalLimitError(fragments, [
+      { source: 'prompt', fields: ['example_input', 'example_output'] },
+    ]);
   }
 }
 
@@ -951,22 +1052,32 @@ export function extractSkillContent(
   add(input?.instructions, 'instructions', '/instructions');
   add(input?.importedText, 'imported_text', '/importedText', 'inspect_only');
 
-  const frontmatterComplete = visitNestedStrings(
-    input?.frontmatter,
-    '/frontmatter',
-    (value, path) => add(value, 'frontmatter', path),
-    { includeKeys: true },
+  const traversalBudget: VisitNestedStringsBudget = { visitedNodes: 0 };
+  const frontmatterComplete =
+    input?.frontmatter == null ||
+    visitNestedStrings(
+      input.frontmatter,
+      '/frontmatter',
+      (value, path) => add(value, 'frontmatter', path),
+      { includeKeys: true, budget: traversalBudget },
+    );
+  const filesComplete = visitBoundedSubmittedArray<SkillFileContentInput>(
+    input?.files,
+    traversalBudget,
+    (file, index) => {
+      add(file?.name, 'file_name', `/files/${index}/name`);
+      add(file?.filename, 'file_name', `/files/${index}/filename`);
+      add(file?.text, 'file_text', `/files/${index}/text`, 'inspect_only');
+      add(file?.content, 'file_text', `/files/${index}/content`, 'inspect_only');
+    },
   );
-
-  for (let index = 0; index < (input?.files?.length ?? 0); index++) {
-    const file = input?.files?.[index];
-    add(file?.name, 'file_name', `/files/${index}/name`);
-    add(file?.filename, 'file_name', `/files/${index}/filename`);
-    add(file?.text, 'file_text', `/files/${index}/text`, 'inspect_only');
-    add(file?.content, 'file_text', `/files/${index}/content`, 'inspect_only');
-  }
-  if (!frontmatterComplete) {
-    throw new ContentTraversalLimitError(fragments, [{ source: 'skill', fields: ['frontmatter'] }]);
+  if (!frontmatterComplete || !filesComplete) {
+    throw new ContentTraversalLimitError(fragments, [
+      ...(!frontmatterComplete ? ([{ source: 'skill', fields: ['frontmatter'] }] as const) : []),
+      ...(!filesComplete
+        ? ([{ source: 'skill', fields: ['file_name', 'file_text'] }] as const)
+        : []),
+    ]);
   }
   return fragments;
 }
@@ -1075,6 +1186,27 @@ export function extractConversationTitleContent(
   return fragments;
 }
 
+const STORED_MESSAGE_CONTENT_ARRAY_SCOPES: readonly ContentTraversalScope[] = [
+  { source: 'message', fields: ['content_part', 'summary', 'attachment_reference'] },
+  { source: 'assembled_context', fields: ['assembled_context'] },
+  { source: 'file', fields: ['name', 'uri'] },
+  { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
+];
+const STORED_MESSAGE_NESTED_CONTENT_SCOPES: readonly ContentTraversalScope[] = [
+  { source: 'message', fields: ['content_part'] },
+  { source: 'assembled_context', fields: ['assembled_context'] },
+];
+const STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES: readonly ContentTraversalScope[] = [
+  { source: 'message', fields: ['attachment_reference'] },
+  { source: 'file', fields: ['name', 'uri'] },
+];
+const STORED_MESSAGE_TOOL_CALL_ARRAY_SCOPES: readonly ContentTraversalScope[] = [
+  { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
+];
+const STORED_MESSAGE_QUOTE_ARRAY_SCOPES: readonly ContentTraversalScope[] = [
+  { source: 'message', fields: ['quote'] },
+];
+
 function extractStoredMessageContentWithBudget(
   input: StoredMessageContentInput | null | undefined,
   traversalBudget: VisitNestedStringsBudget,
@@ -1083,6 +1215,100 @@ function extractStoredMessageContentWithBudget(
   const assembledText: string[] = [];
   const traversalScopes: ContentTraversalScope[] = [];
   let traversalComplete = true;
+  const traversalMaxNodes = traversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
+  let reservedTraversalWork = 0;
+  const markTraversalIncomplete = (scopes: readonly ContentTraversalScope[]): void => {
+    traversalComplete = false;
+    traversalScopes.push(...scopes);
+  };
+  const consumeTraversalWork = (scopes: readonly ContentTraversalScope[]): boolean => {
+    if (
+      !Number.isSafeInteger(traversalMaxNodes) ||
+      traversalMaxNodes < 0 ||
+      !Number.isSafeInteger(traversalBudget.visitedNodes) ||
+      traversalBudget.visitedNodes < 0 ||
+      traversalBudget.visitedNodes >= traversalMaxNodes - reservedTraversalWork
+    ) {
+      markTraversalIncomplete(scopes);
+      return false;
+    }
+    traversalBudget.visitedNodes++;
+    return true;
+  };
+  interface BoundedArraySnapshot<Value> {
+    readonly length: number;
+    readonly values: readonly (Value | null | undefined)[];
+  }
+  const captureBoundedArray = <Value>(
+    candidate: unknown,
+    scopes: readonly ContentTraversalScope[],
+  ): BoundedArraySnapshot<Value> | null => {
+    let isArray: boolean;
+    let length: number;
+    try {
+      isArray = Array.isArray(candidate);
+      if (!isArray) {
+        if (candidate != null) {
+          markTraversalIncomplete(scopes);
+        }
+        return null;
+      }
+      length = (candidate as readonly unknown[]).length;
+    } catch {
+      markTraversalIncomplete(scopes);
+      return null;
+    }
+    if (!Number.isSafeInteger(length) || length < 0) {
+      markTraversalIncomplete(scopes);
+      return null;
+    }
+    return {
+      length,
+      values: candidate as readonly (Value | null | undefined)[],
+    };
+  };
+  const visitBoundedArray = <Value>(
+    snapshot: BoundedArraySnapshot<Value> | null,
+    scopes: readonly ContentTraversalScope[],
+    visit: (value: Value | null | undefined, index: number) => void,
+  ): void => {
+    if (snapshot == null) {
+      return;
+    }
+    for (let index = 0; index < snapshot.length; index++) {
+      if (!consumeTraversalWork(scopes)) {
+        break;
+      }
+      let value: Value | null | undefined;
+      try {
+        value = snapshot.values[index];
+      } catch {
+        markTraversalIncomplete(scopes);
+        break;
+      }
+      visit(value, index);
+    }
+  };
+  const withReservedTraversalWork = (reserve: number, visit: () => void): void => {
+    const previousReserve = reservedTraversalWork;
+    reservedTraversalWork += reserve;
+    try {
+      visit();
+    } finally {
+      reservedTraversalWork = previousReserve;
+    }
+  };
+  const activeTraversalBudget: VisitNestedStringsBudget = {
+    get visitedNodes() {
+      return traversalBudget.visitedNodes;
+    },
+    set visitedNodes(value: number) {
+      traversalBudget.visitedNodes = value;
+    },
+    get maxNodes() {
+      return traversalMaxNodes - reservedTraversalWork;
+    },
+  };
   const isInstruction = input?.role === 'system' || input?.role === 'developer';
   const isToolOutput = input?.role === 'tool';
   const addMessagePart = (value: unknown, id: string, path: JsonPointer) => {
@@ -1120,7 +1346,7 @@ function extractStoredMessageContentWithBudget(
     path: JsonPointer,
   ) => {
     try {
-      fragments.push(...extractToolArgumentValue(value, field, id, path, traversalBudget));
+      fragments.push(...extractToolArgumentValue(value, field, id, path, activeTraversalBudget));
     } catch (error) {
       if (!(error instanceof ContentTraversalLimitError)) {
         throw error;
@@ -1242,235 +1468,334 @@ function extractStoredMessageContentWithBudget(
     source: 'message',
     field: 'summary',
   });
-  for (let index = 0; index < (input?.quotes?.length ?? 0); index++) {
-    const quote = input?.quotes?.[index];
-    pushString(fragments, typeof quote === 'string' ? quote : quote?.text, {
-      id: `stored-message.quote.${index}`,
-      path: `/quotes/${index}`,
-      source: 'message',
-      field: 'quote',
-    });
-  }
-  for (let index = 0; index < (input?.content?.length ?? 0); index++) {
-    const part = input?.content?.[index];
-    const text = typeof part?.text === 'string' ? part.text : part?.text?.value;
-    addMessagePart(text, `stored-message.content.${index}.text`, `/content/${index}/text`);
-    if (part?.type === 'summary') {
-      pushString(fragments, text, {
-        id: `stored-message.content.${index}.summary`,
-        path: `/content/${index}/text`,
-        source: 'message',
-        field: 'summary',
-      });
-    }
-    const think = typeof part?.think === 'string' ? part.think : part?.think?.value;
-    addMessagePart(think, `stored-message.content.${index}.think`, `/content/${index}/think`);
-    for (const key of ['original', 'updated', 'steer', 'error'] as const) {
-      addMessagePart(
-        part?.[key],
-        `stored-message.content.${index}.${key}`,
-        `/content/${index}/${key}`,
-      );
-    }
-    for (let nestedIndex = 0; nestedIndex < (part?.content?.length ?? 0); nestedIndex++) {
-      const value = part?.content?.[nestedIndex]?.text;
-      addMessagePart(
-        typeof value === 'string' ? value : value?.value,
-        `stored-message.content.${index}.content.${nestedIndex}.text`,
-        `/content/${index}/content/${nestedIndex}/text`,
-      );
-    }
-
-    const imageUrl = typeof part?.image_url === 'string' ? part.image_url : part?.image_url?.url;
-    const videoUrl = part?.video_url?.url;
-    for (const [key, mediaUri] of [
-      ['image_url', imageUrl],
-      ['video_url', videoUrl],
-    ] as const) {
-      if (typeof mediaUri === 'string' && mediaUri.length > 0 && !isDataUri(mediaUri)) {
-        pushString(fragments, mediaUri, {
-          id: `stored-message.content.${index}.attachment.${key}`,
-          path: `/content/${index}/${key}`,
-          source: 'message',
-          field: 'attachment_reference',
-          format: 'uri',
-          treatment: 'inspect_only',
-        });
-        pushString(fragments, mediaUri, {
-          id: `stored-message.content.${index}.file.${key}`,
-          path: `/content/${index}/${key}`,
-          source: 'file',
-          field: 'uri',
-          format: 'uri',
-          treatment: 'inspect_only',
-        });
-      }
-    }
-    addAttachment(
-      part?.image_file,
-      `stored-message.content.${index}.image-file`,
-      `/content/${index}/image_file`,
-    );
-    for (let fileIndex = 0; fileIndex < (part?.files?.length ?? 0); fileIndex++) {
-      addAttachment(
-        part?.files?.[fileIndex],
-        `stored-message.content.${index}.file.${fileIndex}`,
-        `/content/${index}/files/${fileIndex}`,
-      );
-    }
-
-    const toolCall = part?.tool_call;
-    addToolValue(
-      toolCall?.name,
-      'name',
-      `stored-message.content.${index}.tool-call.name`,
-      `/content/${index}/tool_call/name`,
-    );
-    addToolValue(
-      toolCall?.args,
-      'arguments',
-      `stored-message.content.${index}.tool-call.args`,
-      `/content/${index}/tool_call/args`,
-    );
-    addToolValue(
-      toolCall?.arguments,
-      'arguments',
-      `stored-message.content.${index}.tool-call.arguments`,
-      `/content/${index}/tool_call/arguments`,
-    );
-    addToolValue(
-      toolCall?.function?.name,
-      'name',
-      `stored-message.content.${index}.tool-call.function.name`,
-      `/content/${index}/tool_call/function/name`,
-    );
-    addToolValue(
-      toolCall?.function?.arguments,
-      'arguments',
-      `stored-message.content.${index}.tool-call.function.arguments`,
-      `/content/${index}/tool_call/function/arguments`,
-    );
-    addToolValue(
-      toolCall?.function?.output,
-      'output',
-      `stored-message.content.${index}.tool-call.function.output`,
-      `/content/${index}/tool_call/function/output`,
-    );
-    addToolValue(
-      toolCall?.code_interpreter?.input,
-      'arguments',
-      `stored-message.content.${index}.tool-call.code-interpreter.input`,
-      `/content/${index}/tool_call/code_interpreter/input`,
-    );
-    addToolValue(
-      toolCall?.code_interpreter?.outputs,
-      'output',
-      `stored-message.content.${index}.tool-call.code-interpreter.outputs`,
-      `/content/${index}/tool_call/code_interpreter/outputs`,
-    );
-    addToolValue(
-      toolCall?.output,
-      'output',
-      `stored-message.content.${index}.tool-call.output`,
-      `/content/${index}/tool_call/output`,
-    );
-
-    if (part != null) {
-      const basePath = `/content/${index}` as JsonPointer;
-      const nestedContentLength = Array.isArray(part.content) ? part.content.length : 0;
-      const isHandledPath = (path: JsonPointer): boolean => {
-        const suffix = path.slice(basePath.length);
-        if (STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES.has(suffix)) {
-          return true;
-        }
-        const nestedTextMatch = STORED_MESSAGE_NESTED_TEXT_SUFFIX.exec(suffix);
-        return nestedTextMatch != null && Number(nestedTextMatch[1]) < nestedContentLength;
-      };
-      let fallbackIndex = 0;
-      const complete = visitNestedStrings(
-        part,
-        basePath,
-        (nestedText, nestedPath) => {
-          addMessagePart(
-            nestedText,
-            `stored-message.content.${index}.nested.${fallbackIndex}`,
-            nestedPath,
+  const quotes = captureBoundedArray<string | { readonly text?: string }>(
+    input?.quotes,
+    STORED_MESSAGE_QUOTE_ARRAY_SCOPES,
+  );
+  const content = captureBoundedArray<StoredMessagePartInput>(
+    input?.content,
+    STORED_MESSAGE_CONTENT_ARRAY_SCOPES,
+  );
+  const toolCalls = captureBoundedArray<StoredTopLevelToolCallInput>(
+    input?.tool_calls,
+    STORED_MESSAGE_TOOL_CALL_ARRAY_SCOPES,
+  );
+  const files = captureBoundedArray<StoredFileReferenceInput>(
+    input?.files,
+    STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
+  );
+  const attachments = captureBoundedArray<StoredFileReferenceInput>(
+    input?.attachments,
+    STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
+  );
+  const hasArrayValues = (snapshot: BoundedArraySnapshot<unknown> | null): number =>
+    snapshot != null && snapshot.length > 0 ? 1 : 0;
+  withReservedTraversalWork(
+    hasArrayValues(content) +
+      hasArrayValues(toolCalls) +
+      hasArrayValues(files) +
+      hasArrayValues(attachments),
+    () =>
+      visitBoundedArray<string | { readonly text?: string }>(
+        quotes,
+        STORED_MESSAGE_QUOTE_ARRAY_SCOPES,
+        (quote, index) => {
+          pushString(fragments, typeof quote === 'string' ? quote : quote?.text, {
+            id: `stored-message.quote.${index}`,
+            path: `/quotes/${index}`,
+            source: 'message',
+            field: 'quote',
+          });
+        },
+      ),
+  );
+  withReservedTraversalWork(
+    hasArrayValues(toolCalls) + hasArrayValues(files) + hasArrayValues(attachments),
+    () =>
+      visitBoundedArray<StoredMessagePartInput>(
+        content,
+        STORED_MESSAGE_CONTENT_ARRAY_SCOPES,
+        (part, index) => {
+          const text = typeof part?.text === 'string' ? part.text : part?.text?.value;
+          addMessagePart(text, `stored-message.content.${index}.text`, `/content/${index}/text`);
+          if (part?.type === 'summary') {
+            pushString(fragments, text, {
+              id: `stored-message.content.${index}.summary`,
+              path: `/content/${index}/text`,
+              source: 'message',
+              field: 'summary',
+            });
+          }
+          const think = typeof part?.think === 'string' ? part.think : part?.think?.value;
+          addMessagePart(think, `stored-message.content.${index}.think`, `/content/${index}/think`);
+          for (const key of ['original', 'updated', 'steer', 'error'] as const) {
+            addMessagePart(
+              part?.[key],
+              `stored-message.content.${index}.${key}`,
+              `/content/${index}/${key}`,
+            );
+          }
+          const nestedContent = captureBoundedArray<{
+            readonly text?: string | { readonly value?: string };
+          }>(part?.content, STORED_MESSAGE_NESTED_CONTENT_SCOPES);
+          const partFiles = captureBoundedArray<StoredFileReferenceInput>(
+            part?.files,
+            STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
           );
-          fallbackIndex++;
+          const toolCall = part?.tool_call;
+          withReservedTraversalWork(hasArrayValues(partFiles) + (toolCall != null ? 1 : 0), () =>
+            visitBoundedArray<{
+              readonly text?: string | { readonly value?: string };
+            }>(nestedContent, STORED_MESSAGE_NESTED_CONTENT_SCOPES, (nestedPart, nestedIndex) => {
+              const value = nestedPart?.text;
+              const nestedPath = `/content/${index}/content/${nestedIndex}` as JsonPointer;
+              addMessagePart(
+                typeof value === 'string' ? value : value?.value,
+                `stored-message.content.${index}.content.${nestedIndex}.text`,
+                `${nestedPath}/text`,
+              );
+              if (nestedPart == null) {
+                return;
+              }
+              let fallbackIndex = 0;
+              // Replace the numeric array-read reservation with the generic child-root charge.
+              traversalBudget.visitedNodes--;
+              const complete = visitNestedStrings(
+                nestedPart,
+                nestedPath,
+                (nestedText, path) => {
+                  addMessagePart(
+                    nestedText,
+                    `stored-message.content.${index}.content.${nestedIndex}.nested.${fallbackIndex}`,
+                    path,
+                  );
+                  fallbackIndex++;
+                },
+                {
+                  includeKeys: true,
+                  budget: activeTraversalBudget,
+                  shouldVisit: ({ path }) => path !== `${nestedPath}/text`,
+                  shouldInclude: shouldIncludeNestedSubmittedText,
+                },
+              );
+              if (!complete) {
+                traversalComplete = false;
+              }
+            }),
+          );
+          const imageUrl =
+            typeof part?.image_url === 'string' ? part.image_url : part?.image_url?.url;
+          const videoUrl = part?.video_url?.url;
+          for (const [key, mediaUri] of [
+            ['image_url', imageUrl],
+            ['video_url', videoUrl],
+          ] as const) {
+            if (typeof mediaUri === 'string' && mediaUri.length > 0 && !isDataUri(mediaUri)) {
+              pushString(fragments, mediaUri, {
+                id: `stored-message.content.${index}.attachment.${key}`,
+                path: `/content/${index}/${key}`,
+                source: 'message',
+                field: 'attachment_reference',
+                format: 'uri',
+                treatment: 'inspect_only',
+              });
+              pushString(fragments, mediaUri, {
+                id: `stored-message.content.${index}.file.${key}`,
+                path: `/content/${index}/${key}`,
+                source: 'file',
+                field: 'uri',
+                format: 'uri',
+                treatment: 'inspect_only',
+              });
+            }
+          }
+          addAttachment(
+            part?.image_file,
+            `stored-message.content.${index}.image-file`,
+            `/content/${index}/image_file`,
+          );
+          withReservedTraversalWork(toolCall != null ? 1 : 0, () =>
+            visitBoundedArray<StoredFileReferenceInput>(
+              partFiles,
+              STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
+              (file, fileIndex) => {
+                addAttachment(
+                  file,
+                  `stored-message.content.${index}.file.${fileIndex}`,
+                  `/content/${index}/files/${fileIndex}`,
+                );
+              },
+            ),
+          );
+
+          addToolValue(
+            toolCall?.name,
+            'name',
+            `stored-message.content.${index}.tool-call.name`,
+            `/content/${index}/tool_call/name`,
+          );
+          addToolValue(
+            toolCall?.args,
+            'arguments',
+            `stored-message.content.${index}.tool-call.args`,
+            `/content/${index}/tool_call/args`,
+          );
+          addToolValue(
+            toolCall?.arguments,
+            'arguments',
+            `stored-message.content.${index}.tool-call.arguments`,
+            `/content/${index}/tool_call/arguments`,
+          );
+          addToolValue(
+            toolCall?.function?.name,
+            'name',
+            `stored-message.content.${index}.tool-call.function.name`,
+            `/content/${index}/tool_call/function/name`,
+          );
+          addToolValue(
+            toolCall?.function?.arguments,
+            'arguments',
+            `stored-message.content.${index}.tool-call.function.arguments`,
+            `/content/${index}/tool_call/function/arguments`,
+          );
+          addToolValue(
+            toolCall?.function?.output,
+            'output',
+            `stored-message.content.${index}.tool-call.function.output`,
+            `/content/${index}/tool_call/function/output`,
+          );
+          addToolValue(
+            toolCall?.code_interpreter?.input,
+            'arguments',
+            `stored-message.content.${index}.tool-call.code-interpreter.input`,
+            `/content/${index}/tool_call/code_interpreter/input`,
+          );
+          addToolValue(
+            toolCall?.code_interpreter?.outputs,
+            'output',
+            `stored-message.content.${index}.tool-call.code-interpreter.outputs`,
+            `/content/${index}/tool_call/code_interpreter/outputs`,
+          );
+          addToolValue(
+            toolCall?.output,
+            'output',
+            `stored-message.content.${index}.tool-call.output`,
+            `/content/${index}/tool_call/output`,
+          );
+
+          if (part != null) {
+            const basePath = `/content/${index}` as JsonPointer;
+            const isHandledPath = (path: JsonPointer): boolean => {
+              const suffix = path.slice(basePath.length);
+              if (suffix === '/content' && nestedContent != null) {
+                return true;
+              }
+              if (STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES.has(suffix)) {
+                return true;
+              }
+              return false;
+            };
+            let fallbackIndex = 0;
+            // The bounded content loop already reserved one unit for this part. Let the
+            // generic visitor replace that reservation with its root-node charge.
+            traversalBudget.visitedNodes--;
+            const complete = visitNestedStrings(
+              part,
+              basePath,
+              (nestedText, nestedPath) => {
+                addMessagePart(
+                  nestedText,
+                  `stored-message.content.${index}.nested.${fallbackIndex}`,
+                  nestedPath,
+                );
+                fallbackIndex++;
+              },
+              {
+                includeKeys: true,
+                budget: activeTraversalBudget,
+                shouldVisit: ({ path }) => !isHandledPath(path),
+                shouldInclude: shouldIncludeNestedSubmittedText,
+              },
+            );
+            if (!complete) {
+              traversalComplete = false;
+            }
+          }
         },
-        {
-          includeKeys: true,
-          budget: traversalBudget,
-          shouldVisit: ({ path }) => !isHandledPath(path),
-          shouldInclude: shouldIncludeNestedSubmittedText,
-        },
-      );
-      if (!complete) {
-        traversalComplete = false;
-      }
-    }
-  }
-  for (let index = 0; index < (input?.tool_calls?.length ?? 0); index++) {
-    const toolCall = input?.tool_calls?.[index];
-    addToolValue(
-      toolCall?.name,
-      'name',
-      `stored-message.tool-call.${index}.name`,
-      `/tool_calls/${index}/name`,
-    );
-    addToolValue(
-      toolCall?.arguments,
-      'arguments',
-      `stored-message.tool-call.${index}.arguments`,
-      `/tool_calls/${index}/arguments`,
-    );
-    addToolValue(
-      toolCall?.function?.name,
-      'name',
-      `stored-message.tool-call.${index}.function.name`,
-      `/tool_calls/${index}/function/name`,
-    );
-    addToolValue(
-      toolCall?.function?.arguments,
-      'arguments',
-      `stored-message.tool-call.${index}.function.arguments`,
-      `/tool_calls/${index}/function/arguments`,
-    );
-    addToolValue(
-      toolCall?.function?.output,
-      'output',
-      `stored-message.tool-call.${index}.function.output`,
-      `/tool_calls/${index}/function/output`,
-    );
-    addToolValue(
-      toolCall?.code_interpreter?.input,
-      'arguments',
-      `stored-message.tool-call.${index}.code-interpreter.input`,
-      `/tool_calls/${index}/code_interpreter/input`,
-    );
-    addToolValue(
-      toolCall?.code_interpreter?.outputs,
-      'output',
-      `stored-message.tool-call.${index}.code-interpreter.outputs`,
-      `/tool_calls/${index}/code_interpreter/outputs`,
-    );
-    addToolValue(
-      toolCall?.output,
-      'output',
-      `stored-message.tool-call.${index}.output`,
-      `/tool_calls/${index}/output`,
-    );
-  }
-  for (let index = 0; index < (input?.files?.length ?? 0); index++) {
-    addAttachment(input?.files?.[index], `stored-message.file.${index}`, `/files/${index}`);
-  }
-  for (let index = 0; index < (input?.attachments?.length ?? 0); index++) {
-    addAttachment(
-      input?.attachments?.[index],
-      `stored-message.attachment.${index}`,
-      `/attachments/${index}`,
-    );
-  }
+      ),
+  );
+  withReservedTraversalWork(hasArrayValues(files) + hasArrayValues(attachments), () =>
+    visitBoundedArray<StoredTopLevelToolCallInput>(
+      toolCalls,
+      STORED_MESSAGE_TOOL_CALL_ARRAY_SCOPES,
+      (toolCall, index) => {
+        addToolValue(
+          toolCall?.name,
+          'name',
+          `stored-message.tool-call.${index}.name`,
+          `/tool_calls/${index}/name`,
+        );
+        addToolValue(
+          toolCall?.arguments,
+          'arguments',
+          `stored-message.tool-call.${index}.arguments`,
+          `/tool_calls/${index}/arguments`,
+        );
+        addToolValue(
+          toolCall?.function?.name,
+          'name',
+          `stored-message.tool-call.${index}.function.name`,
+          `/tool_calls/${index}/function/name`,
+        );
+        addToolValue(
+          toolCall?.function?.arguments,
+          'arguments',
+          `stored-message.tool-call.${index}.function.arguments`,
+          `/tool_calls/${index}/function/arguments`,
+        );
+        addToolValue(
+          toolCall?.function?.output,
+          'output',
+          `stored-message.tool-call.${index}.function.output`,
+          `/tool_calls/${index}/function/output`,
+        );
+        addToolValue(
+          toolCall?.code_interpreter?.input,
+          'arguments',
+          `stored-message.tool-call.${index}.code-interpreter.input`,
+          `/tool_calls/${index}/code_interpreter/input`,
+        );
+        addToolValue(
+          toolCall?.code_interpreter?.outputs,
+          'output',
+          `stored-message.tool-call.${index}.code-interpreter.outputs`,
+          `/tool_calls/${index}/code_interpreter/outputs`,
+        );
+        addToolValue(
+          toolCall?.output,
+          'output',
+          `stored-message.tool-call.${index}.output`,
+          `/tool_calls/${index}/output`,
+        );
+      },
+    ),
+  );
+  withReservedTraversalWork(hasArrayValues(attachments), () =>
+    visitBoundedArray<StoredFileReferenceInput>(
+      files,
+      STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
+      (file, index) => {
+        addAttachment(file, `stored-message.file.${index}`, `/files/${index}`);
+      },
+    ),
+  );
+  visitBoundedArray<StoredFileReferenceInput>(
+    attachments,
+    STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
+    (attachment, index) => {
+      addAttachment(attachment, `stored-message.attachment.${index}`, `/attachments/${index}`);
+    },
+  );
   pushString(fragments, input?.original, {
     id: 'stored-message.original',
     path: '/original',
@@ -1591,11 +1916,15 @@ export function* extractConversationImportContent(
       greeting: conversation.greeting,
       examples: conversation.examples,
     });
-    appendAgentDefinitionContent(fragments, {
-      instructions: conversation.instructions,
-      additional_instructions: conversation.additional_instructions,
-      artifacts: conversation.artifacts,
-    });
+    appendAgentDefinitionContent(
+      fragments,
+      {
+        instructions: conversation.instructions,
+        additional_instructions: conversation.additional_instructions,
+        artifacts: conversation.artifacts,
+      },
+      { visitedNodes: 0 },
+    );
     appendPresetDefinitionContent(fragments, conversation.presetOverride);
   }
   for (const message of input.messages) {

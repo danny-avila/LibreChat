@@ -1483,6 +1483,52 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
+  it('preserves a concrete finding before bounded manual nested-content overflow', () => {
+    let lengthReads = 0;
+    let numericReads = 0;
+    let iteratorReads = 0;
+    const target = new Array<{ text: string } | undefined>(10_000_000);
+    target[0] = { text: 'PRIVATE-MANUAL-PREFIX' };
+    const nestedContent = new Proxy(target, {
+      get(array, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+        } else if (property === Symbol.iterator) {
+          iteratorReads++;
+        } else if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(array, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-MANUAL-PREFIX' },
+              ],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            isCreatedByUser: true,
+            role: 'user',
+            content: [{ content: nestedContent }],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(lengthReads).toBe(1);
+    expect(numericReads).toBeLessThanOrEqual(4_097);
+    expect(iteratorReads).toBe(0);
+  });
+
   it('still inspects structured tool arguments after overflowing model-only content', () => {
     expect(() =>
       assertModelBoundContent({

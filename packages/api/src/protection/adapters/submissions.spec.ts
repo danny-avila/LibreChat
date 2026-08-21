@@ -1660,6 +1660,195 @@ describe('submitted content adapters', () => {
     );
   });
 
+  it.each([
+    {
+      label: 'quotes',
+      first: 'VISIBLE-STORED-PREFIX',
+      build: (values: readonly unknown[]) => ({ quotes: values }),
+    },
+    {
+      label: 'top-level content',
+      first: { text: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ content: values }),
+    },
+    {
+      label: 'nested part content',
+      first: { text: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ content: [{ content: values }] }),
+    },
+    {
+      label: 'part files',
+      first: { filename: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ content: [{ files: values }] }),
+    },
+    {
+      label: 'top-level tool calls',
+      first: { arguments: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ tool_calls: values }),
+    },
+    {
+      label: 'top-level files',
+      first: { filename: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ files: values }),
+    },
+    {
+      label: 'top-level attachments',
+      first: { filename: 'VISIBLE-STORED-PREFIX' },
+      build: (values: readonly unknown[]) => ({ attachments: values }),
+    },
+  ])(
+    'bounds $label without iterator dispatch and preserves prefix fragments',
+    ({ first, build }) => {
+      let lengthReads = 0;
+      let numericReads = 0;
+      let iteratorReads = 0;
+      const target = new Array<unknown>(10_000_000);
+      target[0] = first;
+      const values = new Proxy(target, {
+        get(array, property, receiver) {
+          if (property === 'length') {
+            lengthReads++;
+          } else if (property === Symbol.iterator) {
+            iteratorReads++;
+          } else if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+            numericReads++;
+          }
+          return Reflect.get(array, property, receiver);
+        },
+      });
+
+      let traversalError: ContentTraversalLimitError | null = null;
+      try {
+        extractStoredMessageContent(
+          build(values) as NonNullable<Parameters<typeof extractStoredMessageContent>[0]>,
+        );
+      } catch (error) {
+        if (!(error instanceof ContentTraversalLimitError)) {
+          throw error;
+        }
+        traversalError = error;
+      }
+
+      expect(traversalError).toBeInstanceOf(ContentTraversalLimitError);
+      expect(lengthReads).toBe(1);
+      expect(numericReads).toBeLessThanOrEqual(CONTENT_TRAVERSAL_MAX_NODES);
+      expect(iteratorReads).toBe(0);
+      expect(
+        getContentTraversalFragments(traversalError as ContentTraversalLimitError).some(
+          ({ text }) => text === 'VISIBLE-STORED-PREFIX',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    (value: unknown) => ({ quotes: value }),
+    (value: unknown) => ({ content: value }),
+    (value: unknown) => ({ content: [{ content: value }] }),
+    (value: unknown) => ({ content: [{ files: value }] }),
+    (value: unknown) => ({ tool_calls: value }),
+    (value: unknown) => ({ files: value }),
+    (value: unknown) => ({ attachments: value }),
+  ])('fails closed for malformed non-array stored-message carriers', (build) => {
+    expect(() =>
+      extractStoredMessageContent(
+        build({ 0: 'uninspectable', length: 1 }) as NonNullable<
+          Parameters<typeof extractStoredMessageContent>[0]
+        >,
+      ),
+    ).toThrow(ContentTraversalLimitError);
+  });
+
+  it('preserves the 4,096 nested content-child boundary without duplicate accounting', () => {
+    const createMessage = (length: number) => ({
+      content: [
+        {
+          content: Array.from({ length }, (_, index) => ({ text: `safe-child-${index}` })),
+        },
+      ],
+    });
+
+    expect(() =>
+      extractStoredMessageContent(createMessage(CONTENT_TRAVERSAL_MAX_NODES), {
+        visitedNodes: 0,
+        maxNodes: CONTENT_TRAVERSAL_MAX_NODES + 2,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      extractStoredMessageContent(createMessage(CONTENT_TRAVERSAL_MAX_NODES + 1), {
+        visitedNodes: 0,
+        maxNodes: CONTENT_TRAVERSAL_MAX_NODES + 2,
+      }),
+    ).toThrow(ContentTraversalLimitError);
+  });
+
+  it.each([
+    {
+      label: 'agent conversation starters',
+      first: 'VISIBLE-CRUD-PREFIX',
+      extract: (values: readonly unknown[]) =>
+        extractAgentContent({ conversation_starters: values }),
+    },
+    {
+      label: 'agent edges',
+      first: { prompt: 'VISIBLE-CRUD-PREFIX' },
+      extract: (values: readonly unknown[]) => extractAgentContent({ edges: values }),
+    },
+    {
+      label: 'agent tool definitions',
+      first: { name: 'VISIBLE-CRUD-PREFIX' },
+      extract: (values: readonly unknown[]) => extractAgentContent({ toolDefinitions: values }),
+    },
+    {
+      label: 'preset examples',
+      first: { input: 'VISIBLE-CRUD-PREFIX' },
+      extract: (values: readonly unknown[]) => extractPresetContent({ examples: values }),
+    },
+    {
+      label: 'skill files',
+      first: { text: 'VISIBLE-CRUD-PREFIX' },
+      extract: (values: readonly unknown[]) => extractSkillContent({ files: values }),
+    },
+  ])('bounds sparse $label arrays', ({ first, extract }) => {
+    let lengthReads = 0;
+    let numericReads = 0;
+    let iteratorReads = 0;
+    const target = new Array<unknown>(10_000_000);
+    target[0] = first;
+    const values = new Proxy(target, {
+      get(array, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+        } else if (property === Symbol.iterator) {
+          iteratorReads++;
+        } else if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(array, property, receiver);
+      },
+    });
+
+    let traversalError: ContentTraversalLimitError | null = null;
+    try {
+      extract(values);
+    } catch (error) {
+      if (!(error instanceof ContentTraversalLimitError)) {
+        throw error;
+      }
+      traversalError = error;
+    }
+
+    expect(traversalError).toBeInstanceOf(ContentTraversalLimitError);
+    expect(lengthReads).toBe(1);
+    expect(numericReads).toBeLessThanOrEqual(CONTENT_TRAVERSAL_MAX_NODES);
+    expect(iteratorReads).toBe(0);
+    expect(
+      getContentTraversalFragments(traversalError as ContentTraversalLimitError).some(
+        ({ text }) => text === 'VISIBLE-CRUD-PREFIX',
+      ),
+    ).toBe(true);
+  });
+
   it('bounds normal acyclic tool serialization before reading deeper values', () => {
     interface NestedArguments {
       nested?: NestedArguments;
