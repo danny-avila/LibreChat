@@ -120,8 +120,8 @@ describe('handleCompactRequest', () => {
       messagesCompacted: 2,
       provider: 'openAI',
       model: 'gpt-4o-mini',
-      estimatedUsage: { input_tokens: 700, output_tokens: 60 },
-      usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 },
+      estimatedUsages: [{ input_tokens: 700, output_tokens: 60 }],
+      usages: [{ model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 }],
     });
     mockCheckAndIncrement.mockReset();
     mockCheckAndIncrement.mockResolvedValue({ allowed: true, pendingRequests: 1, limit: 2 });
@@ -193,6 +193,20 @@ describe('handleCompactRequest', () => {
     expect(mockDecrement).not.toHaveBeenCalled();
   });
 
+  it('rejects a leaf that already has a child without spending', async () => {
+    const deps = makeDeps({
+      getMessages: jest.fn(async () => [
+        ...(BRANCH as TMessage[]),
+        /** Another client already advanced past the requested leaf. */
+        { messageId: 'm3', parentMessageId: 'm2' } as TMessage,
+      ]),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 409, code: CompactErrorCodes.BRANCH_MOVED });
+    expect(mockCompactConversation).not.toHaveBeenCalled();
+  });
+
   it('does not write when a turn claimed the tail during the model call', async () => {
     const deps = makeDeps({
       getMessages: jest.fn(async (filter) =>
@@ -239,8 +253,8 @@ describe('handleCompactRequest', () => {
       messagesCompacted: 2,
       provider: 'openAI',
       model: 'gpt-4o-mini',
-      estimatedUsage: { input_tokens: 700, output_tokens: 60 },
-      usage: undefined,
+      estimatedUsages: [{ input_tokens: 700, output_tokens: 60 }],
+      usages: [],
     });
 
     const deps = makeDeps();
@@ -276,10 +290,12 @@ describe('handleCompactRequest', () => {
     mockCompactConversation.mockRejectedValue(
       new PartialCompactionError({
         cause: new Error('provider exploded'),
-        usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 500, output_tokens: 20 },
+        usages: [
+          { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 500, output_tokens: 20 },
+        ],
         model: 'gpt-4o-mini',
         provider: 'openAI',
-        estimatedUsage: { input_tokens: 500, output_tokens: 20 },
+        estimatedUsages: [{ input_tokens: 500, output_tokens: 20 }],
       }),
     );
 
