@@ -29,14 +29,21 @@ import { startupConfigKey } from '~/data-provider';
 import store from '~/store';
 
 /**
- * The conversation the newest click is heading to. Every sidebar row mounts
- * its own `useNavigateToConvo`, so a ref would be scoped to one row and could
- * not tell that a click on a DIFFERENT row superseded this one — the case
- * where a slow response for B lands after the user has already moved to C.
- * Deliberately plain module state: it is written and read synchronously and
- * nothing renders from it, so an atom would only add subscriptions.
+ * The route the browser is actually showing, as the browser reports it.
+ *
+ * Every async step below captures this before its request and re-reads it
+ * before writing, so work started for one route is abandoned once the user has
+ * gone anywhere else. The browser's own location is the only thing that sees
+ * EVERY way that can happen — a different sidebar row, "New chat", a link, a
+ * redirect, or the back button — where any bookkeeping this hook maintained
+ * itself would only cover the navigations that happen to route through it.
+ *
+ * Read directly rather than through `useLocation` because each sidebar row
+ * mounts its own `useNavigateToConvo`: subscribing would re-render every row on
+ * every navigation, which is the cost this hook exists to avoid. Comparing a
+ * pathname against a pathname also makes the router basename cancel out.
  */
-let latestNavigationId: string | null = null;
+const currentRoute = () => window.location.pathname;
 
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -83,13 +90,16 @@ const useNavigateToConvo = (index = 0) => {
    * trip with the DEPARTING conversation still on screen.
    */
   const reconcileConversation = async (conversationId: string) => {
+    /** The route this refresh belongs to — already this conversation, since
+     * the caller navigated synchronously before starting it. */
+    const routeAtStart = currentRoute();
     try {
       const data = await fetchConversationRecord(conversationId);
-      /** A later click may have moved on while this was in flight. Writing
-       * here anyway would restore THIS conversation into state while the route
-       * and transcript show the newer one, and sends read from state — so the
-       * user could submit into a conversation they are no longer looking at. */
-      if (latestNavigationId !== conversationId) {
+      /** The user may have gone elsewhere while this was in flight. Writing
+       * anyway would restore THIS conversation into state while the route and
+       * transcript show another one, and sends read from state — so the user
+       * could submit into a conversation they are no longer looking at. */
+      if (currentRoute() !== routeAtStart) {
         logger.log('conversation', 'Discarding superseded reconciliation', conversationId);
         return;
       }
@@ -102,7 +112,7 @@ const useNavigateToConvo = (index = 0) => {
        * cache on a transient failure would cancel an in-flight history fetch
        * (or discard one that already succeeded) with no route change left to
        * remount it, blanking a transcript that was fine. */
-      if (latestNavigationId === conversationId && isNotFoundError(error)) {
+      if (currentRoute() === routeAtStart && isNotFoundError(error)) {
         queryClient.removeQueries([QueryKeys.messages, conversationId]);
       }
     }
@@ -122,6 +132,11 @@ const useNavigateToConvo = (index = 0) => {
     if (!conversationId) {
       return;
     }
+    /** The route the user was on when they asked for this one. The route has
+     * NOT moved yet on this path, so "still here" is what makes finishing the
+     * navigation legitimate — leaving it would mean pulling the user back to a
+     * conversation they already navigated away from. */
+    const routeAtStart = currentRoute();
     let record = conversation;
     try {
       record = await fetchConversationRecord(conversationId);
@@ -133,7 +148,7 @@ const useNavigateToConvo = (index = 0) => {
        * query rather than rendering contents that may no longer exist. */
       queryClient.removeQueries([QueryKeys.messages, conversationId]);
     }
-    if (latestNavigationId !== conversationId) {
+    if (currentRoute() !== routeAtStart) {
       logger.log('conversation', 'Discarding superseded navigation', conversationId);
       return;
     }
@@ -154,9 +169,6 @@ const useNavigateToConvo = (index = 0) => {
     const { currentConvoId } = options || {};
     logger.log('conversation', 'Navigating to conversation', conversation);
     hasSetConversation.current = true;
-    /** Claim the newest navigation before any await, so a response still in
-     * flight for the conversation being left cannot write over this one. */
-    latestNavigationId = conversation.conversationId ?? null;
     setSubmission(null);
 
     let convo = { ...conversation };
