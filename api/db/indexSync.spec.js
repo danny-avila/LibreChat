@@ -594,7 +594,7 @@ describe('performSync() - syncThreshold logic', () => {
     });
 
     const indexSync = require('./indexSync');
-    await indexSync();
+    await expect(indexSync()).rejects.toThrow(cleanupError);
 
     expect(Message.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
     expect(Conversation.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
@@ -602,6 +602,5 @@ describe('performSync() - syncThreshold logic', () => {
       '[indexSync] Message reconciliation failed; continuing with conversations:',
       cleanupError,
     );
-    expect(mockLogger.error).toHaveBeenCalledWith('[indexSync] error', cleanupError);
   });
 });
