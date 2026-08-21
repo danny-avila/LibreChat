@@ -25,7 +25,7 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
+  const { deleteToolCalls, deleteConvos, getConvo, saveConvo } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
@@ -50,6 +50,35 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('GET /:conversationId', () => {
+    it('returns an ordinary owned conversation', async () => {
+      getConvo.mockResolvedValue({ conversationId: 'ordinary', title: 'Ordinary' });
+
+      const response = await request(app).get('/api/convos/ordinary');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ conversationId: 'ordinary', title: 'Ordinary' });
+      expect(getConvo).toHaveBeenCalledWith('test-user-123', 'ordinary');
+    });
+
+    it('returns the same not-found response for an owned child thread', async () => {
+      getConvo.mockResolvedValue({
+        conversationId: 'child',
+        subagentThread: { parentConversationId: 'parent' },
+      });
+
+      const childResponse = await request(app).get('/api/convos/child');
+      getConvo.mockResolvedValue(null);
+      const missingResponse = await request(app).get('/api/convos/missing');
+
+      expect(childResponse.status).toBe(404);
+      expect(childResponse.text).toBe('');
+      expect(childResponse.status).toBe(missingResponse.status);
+      expect(childResponse.text).toBe(missingResponse.text);
+      expect(getConvo).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
+    });
   });
 
   describe('DELETE /all', () => {

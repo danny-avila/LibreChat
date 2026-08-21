@@ -25,6 +25,7 @@ const createMockModel = (collectionName) => ({
   collection: { name: collectionName },
   getSyncProgress: jest.fn(),
   syncWithMeili: jest.fn(),
+  cleanupExcludedMeiliIndex: jest.fn(),
   countDocuments: jest.fn(),
 });
 
@@ -528,7 +529,7 @@ describe('performSync() - syncThreshold logic', () => {
     );
   });
 
-  test('forces sync when search contains documents that are now excluded', async () => {
+  test('runs bounded cleanup when search contains documents that are now excluded', async () => {
     Message.getSyncProgress.mockResolvedValue({
       totalProcessed: 100,
       totalDocuments: 100,
@@ -545,10 +546,61 @@ describe('performSync() - syncThreshold logic', () => {
     const indexSync = require('./indexSync');
     await indexSync();
 
-    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Message.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(
-      '[indexSync] Starting message sync (0 unindexed, 1 pending cleanup)',
+      '[indexSync] Cleaning 1 excluded messages from search',
+    );
+  });
+
+  test('does not start cleanup for excluded documents that were never indexed', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      pendingCleanup: 0,
+      isComplete: true,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingCleanup: 0,
+      isComplete: true,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.syncWithMeili).not.toHaveBeenCalled();
+    expect(Message.cleanupExcludedMeiliIndex).not.toHaveBeenCalled();
+    expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
+    expect(Conversation.cleanupExcludedMeiliIndex).not.toHaveBeenCalled();
+  });
+
+  test('continues conversation cleanup when message cleanup fails transiently', async () => {
+    const cleanupError = new Error('message cleanup timed out');
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      pendingCleanup: 1,
+      isComplete: false,
+    });
+    Message.cleanupExcludedMeiliIndex.mockRejectedValue(cleanupError);
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingCleanup: 1,
+      isComplete: false,
+    });
+
+    const indexSync = require('./indexSync');
+    await expect(indexSync()).rejects.toThrow(cleanupError);
+
+    expect(Message.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
+    expect(Conversation.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[indexSync] Message reconciliation failed; continuing with conversations:',
+      cleanupError,
     );
   });
 });

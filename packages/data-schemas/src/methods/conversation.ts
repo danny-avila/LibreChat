@@ -192,7 +192,7 @@ export interface ConversationMethods {
   getConvoOwnership(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'user'> | null>;
+  ): Promise<Pick<IConversation, 'user' | 'subagentThread'> | null>;
   getConvoRetention(
     user: string,
     conversationId: string,
@@ -432,15 +432,15 @@ export function createConversationMethods(
   }
 
   /**
-   * Ownership probe for request validation: resolves only the owning user id
-   * instead of materializing the full conversation document (preset spread +
+   * Public-read probe: resolves ownership plus the child-thread discriminator
+   * without materializing the full conversation document (preset spread +
    * message ObjectId array).
    */
   async function getConvoOwnership(user: string, conversationId: string) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }, 'user').lean<
-        Pick<IConversation, 'user'>
+      return await Conversation.findOne({ user, conversationId }, 'user subagentThread').lean<
+        Pick<IConversation, 'user' | 'subagentThread'>
       >();
     } catch (error) {
       logger.error('[getConvoOwnership] Error checking conversation ownership', error);

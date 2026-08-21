@@ -83,7 +83,7 @@ router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await db.getConvo(req.user.id, conversationId);
 
-  if (convo) {
+  if (convo && convo.subagentThread == null) {
     res.status(200).json(convo);
   } else {
     res.status(404).end();
