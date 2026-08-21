@@ -118,6 +118,9 @@ describe('handleCompactRequest', () => {
     mockCompactConversation.mockResolvedValue({
       summary: SUMMARY,
       messagesCompacted: 2,
+      provider: 'openAI',
+      model: 'gpt-4o-mini',
+      estimatedUsage: { input_tokens: 700, output_tokens: 60 },
       usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 900, output_tokens: 80 },
     });
     mockCheckAndIncrement.mockReset();
@@ -228,6 +231,44 @@ describe('handleCompactRequest', () => {
     expect(deps.deleteMessages).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'convo_1', user: 'user_1' }),
     );
+  });
+
+  it('bills a locally counted estimate when the provider reported no usage', async () => {
+    mockCompactConversation.mockResolvedValue({
+      summary: SUMMARY,
+      messagesCompacted: 2,
+      provider: 'openAI',
+      model: 'gpt-4o-mini',
+      estimatedUsage: { input_tokens: 700, output_tokens: 60 },
+      usage: undefined,
+    });
+
+    const deps = makeDeps();
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result.status).toBe(201);
+    /** The summary was persisted, so the call must not go unrecorded. With
+     *  pricing and bulk deps present, `recordCollectedUsage` writes through the
+     *  batched transaction path rather than `spendTokens`. */
+    expect(deps.insertMany).toHaveBeenCalled();
+    const saved = (deps.saveMessage as jest.Mock).mock.calls[0][1];
+    expect(saved.metadata.usage).toMatchObject({ input: 700, output: 60 });
+  });
+
+  it('rolls back when a turn claimed the conversation but has not written yet', async () => {
+    let sawInsert = false;
+    const deps = makeDeps({
+      /** No sibling lands, but the job is running by the time we verify. */
+      getJob: jest.fn(async () => (sawInsert ? { status: 'running' } : null)),
+      saveMessage: jest.fn(async (_ctx, message) => {
+        sawInsert = true;
+        return message as TMessage;
+      }),
+    });
+
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+    expect(result).toMatchObject({ status: 409, code: CompactErrorCodes.BRANCH_MOVED });
+    expect(deps.deleteMessages).toHaveBeenCalled();
   });
 
   it('reports an already-compacted branch as its own code', async () => {

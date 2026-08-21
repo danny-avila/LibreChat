@@ -8,6 +8,9 @@ import { cacheConfig, instrumentIORedisClient, ioredisClient } from '~/cache';
 const RELEASE_IF_OWNER =
   'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0';
 
+/** Conversations this process is compacting right now. */
+const inFlight = new Set<string>();
+
 export interface CompactionLock {
   /** Call once the guarded work is done, in a `finally`. */
   release: () => Promise<void>;
@@ -21,24 +24,34 @@ export interface CompactionLock {
  * semantics, so two compactions arriving together would both see an empty key
  * and both proceed. Returns `null` when another holder has the conversation.
  *
- * Without Redis there is nothing to serialize against beyond this process, and
- * a single-process deployment cannot run two of these concurrently through the
- * route's own `await` points; the claim degrades to a no-op lease rather than
- * failing the request, matching how the concurrency limiter treats its
- * in-memory fallback.
+ * Without Redis the claim falls back to a process-local set. Node interleaves
+ * async handlers at every `await`, so two requests for the same conversation
+ * really can run concurrently in one process; a no-op lease there would let
+ * both spend on a provider call and race to save.
  */
 export async function acquireCompactionLock(
   conversationId: string,
   ttlMs: number,
 ): Promise<CompactionLock | null> {
+  /** Checked first on every path: it also guards the window where Redis is
+   *  configured but unreachable and the claim below fails open. */
+  if (inFlight.has(conversationId)) {
+    return null;
+  }
+  inFlight.add(conversationId);
+  const releaseLocal = () => {
+    inFlight.delete(conversationId);
+  };
+
   if (!cacheConfig.USE_REDIS || !ioredisClient) {
-    return { release: async () => {} };
+    return { release: async () => releaseLocal() };
   }
   const key = `${CacheKeys.PENDING_REQ}:compact:${conversationId}`;
   const token = randomUUID();
   const redis = instrumentIORedisClient(ioredisClient, CacheKeys.PENDING_REQ);
   try {
     if ((await redis.set(key, token, 'PX', ttlMs, 'NX')) !== 'OK') {
+      releaseLocal();
       return null;
     }
   } catch (error) {
@@ -46,10 +59,11 @@ export async function acquireCompactionLock(
      *  make compaction unavailable, and the post-call tail check still keeps a
      *  raced summary from being persisted. */
     logger.error('[compact] Could not claim the compaction lock', error);
-    return { release: async () => {} };
+    return { release: async () => releaseLocal() };
   }
   return {
     release: async () => {
+      releaseLocal();
       try {
         await redis.eval(RELEASE_IF_OWNER, 1, key, token);
       } catch (error) {

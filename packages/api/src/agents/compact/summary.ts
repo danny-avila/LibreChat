@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, ContentTypes, EModelEndpoint } from 'librechat-data-provider';
+import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-data-provider';
 import {
   Providers,
   HumanMessage,
@@ -9,6 +9,7 @@ import {
   getMaxOutputTokensKey,
 } from '@librechat/agents';
 import type {
+  Agent,
   TMessage,
   AgentModelParameters,
   SummarizationConfig,
@@ -19,13 +20,13 @@ import type { Runnable, RunnableConfig } from '@langchain/core/runnables';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ClientOptions } from '@librechat/agents';
-import type { EndpointDbMethods, OpenAIConfiguration, ServerRequest } from '~/types';
+import type { EndpointDbMethods, OpenAIConfiguration, RequestBody, ServerRequest } from '~/types';
 import type { FormattedMessageWithContent } from '~/agents/client';
 import type { EndpointTokenConfig } from '~/types/tokens';
 import type { OwnerFileFilter } from '~/files/history';
+import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/agents/client';
 import { buildOwnerFileFilter, collectHistoricalFileIds } from '~/files/history';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
-import { prependFileContext, prependQuotes } from '~/agents/client';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
@@ -120,6 +121,12 @@ export interface CompactionUsage {
   provider?: string;
   input_tokens?: number;
   output_tokens?: number;
+  /**
+   * Kept because `resolveCompletionTokens` repairs providers (Vertex among
+   * them) that report hidden reasoning only in the total; without it those
+   * compactions are billed for visible output alone.
+   */
+  total_tokens?: number;
   input_token_details?: { cache_read?: number; cache_creation?: number };
 }
 
@@ -221,6 +228,11 @@ export function selectBranchMessages(
   return branch.reverse();
 }
 
+/** Text sources are the ones `extractFileContext` inlines verbatim. */
+function isInlinedTextSource(file: IMongoFile): boolean {
+  return file.source === FileSources.text && typeof file.text === 'string' && file.text !== '';
+}
+
 /**
  * Rebuilds the document text an attachment-bearing turn contributed, the way
  * `BaseClient.addPreviousAttachments` does before a normal turn.
@@ -266,8 +278,24 @@ async function hydrateAttachments(
       req,
       tokenCountFn: (text: string) => countTokens(text),
     });
-    if (fileContext) {
-      contextByMessageId.set(message.messageId, fileContext);
+    /**
+     * `extractFileContext` only inlines text sources. Images, audio, video and
+     * provider-native documents are deliberately NOT re-encoded here: the
+     * summarizer may be a cheap text model on another endpoint, and a
+     * checkpoint cannot carry pixels anyway. What it CAN carry is the fact that
+     * they existed, so they are listed by name and type and the summary records
+     * them instead of dropping the turn's attachments silently.
+     */
+    const media = attachments.filter((file) => !isInlinedTextSource(file));
+    const manifest =
+      media.length > 0
+        ? `[Attachments: ${media
+            .map((file) => `${file.filename ?? 'file'} (${file.type ?? 'unknown type'})`)
+            .join(', ')}]`
+        : '';
+    const combined = [fileContext, manifest].filter(Boolean).join('\n\n');
+    if (combined) {
+      contextByMessageId.set(message.messageId, combined);
     }
   }
   return contextByMessageId;
@@ -288,8 +316,17 @@ async function hydrateAttachments(
 function toPayload(
   branch: TMessage[],
   fileContextByMessageId: Map<string, string>,
+  mapMultiAgent: (message: TMessage) => TMessage,
 ): Array<Partial<TMessage>> {
-  return branch.map((message) => {
+  return branch.map((source) => {
+    /** Added-convo responses carry per-agent groups and routing metadata; the
+     *  normal send path maps them to each group's primary output before the
+     *  model sees them, so a checkpoint built from the raw content would
+     *  summarize duplicate or conflicting answers. */
+    const message =
+      (source as TMessage & { addedConvo?: boolean }).addedConvo === true
+        ? mapMultiAgent(source)
+        : source;
     const formatted = formatMessage({
       message: { ...message, role: message.isCreatedByUser ? 'user' : 'assistant' },
     }) as FormattedMessageWithContent;
@@ -395,10 +432,13 @@ export async function resolveCompactionModel({
       effectiveMaxSummaryTokens;
   }
 
+  /** The whole request body, not just the generated ids: a custom endpoint
+   *  header may template any request field (`{{LIBRECHAT_BODY_MODEL}}`, `spec`,
+   *  an endpoint parameter), and resolving against the ids alone strips it. */
   resolveConfigHeaders({
     llmConfig: clientOptions,
     user: createSafeUser(req.user),
-    body: ids,
+    body: { ...((req.body as Record<string, unknown>) ?? {}), ...ids } as RequestBody,
   });
 
   return {
@@ -468,6 +508,7 @@ function extractUsage(
     provider,
     input_tokens: usage.input_tokens,
     output_tokens: usage.output_tokens,
+    total_tokens: usage.total_tokens,
     ...(usage.input_token_details != null
       ? {
           input_token_details: {
@@ -511,6 +552,15 @@ export interface CompactionResult {
   usage?: CompactionUsage;
   /** Rates of the endpoint the call actually ran on, for the transaction. */
   endpointTokenConfig?: EndpointTokenConfig;
+  /**
+   * Locally counted prompt and completion sizes. The host bills from these
+   * when the provider reported no usage at all, so an OpenAI-compatible
+   * gateway that omits `usage` still produces a transaction.
+   */
+  estimatedUsage: { input_tokens: number; output_tokens: number };
+  /** Provider and model the call ran on, for that estimated transaction. */
+  provider: string;
+  model?: string;
 }
 
 export interface CompactConversationParams {
@@ -523,6 +573,8 @@ export interface CompactConversationParams {
   /** Owner-scoped file lookup for attachment hydration. Omitted in unit tests
    *  and for callers whose branch carries no attachments. */
   getFiles?: GetFilesFn;
+  /** Handoff / parallel agents of the run, for added-convo content mapping. */
+  agentConfigs?: Map<string, Agent>;
   signal?: AbortSignal;
   /**
    * Runs after the prompt is assembled and the model resolved, but BEFORE the
@@ -584,12 +636,19 @@ export async function compactConversation({
   ids,
   db,
   getFiles,
+  agentConfigs,
   signal,
   beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
   const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
   const { messages, summary: priorSummary } = formatAgentMessages(
-    stripActivityLabelParts(toPayload(branch, fileContextByMessageId)),
+    stripActivityLabelParts(
+      toPayload(
+        branch,
+        fileContextByMessageId,
+        createMultiAgentMapper(agent as Agent, agentConfigs),
+      ),
+    ),
   );
   if (messages.length === 0) {
     throw new NothingToCompactError();
@@ -611,13 +670,9 @@ export async function compactConversation({
   const llm = initializeModel({ provider, clientOptions });
 
   const promptMessages = [...messages, new HumanMessage(instruction)] as BaseMessage[];
+  const promptTokens = await countPromptTokens(promptMessages);
   if (beforeInvoke) {
-    await beforeInvoke({
-      promptTokens: await countPromptTokens(promptMessages),
-      model,
-      provider,
-      endpointTokenConfig,
-    });
+    await beforeInvoke({ promptTokens, model, provider, endpointTokenConfig });
   }
 
   const timeout = AbortSignal.timeout(COMPACTION_TIMEOUT_MS);
@@ -660,6 +715,9 @@ export async function compactConversation({
     messagesCompacted: messages.length,
     usage,
     endpointTokenConfig,
+    provider,
+    model,
+    estimatedUsage: { input_tokens: promptTokens, output_tokens: await countTokens(text) },
     summary: {
       type: ContentTypes.SUMMARY,
       content: [{ type: ContentTypes.TEXT, text }],
