@@ -84,6 +84,13 @@ const searchEnabled = process.env.SEARCH != null && process.env.SEARCH.toLowerCa
  */
 const meiliEnabled =
   process.env.MEILI_HOST != null && process.env.MEILI_MASTER_KEY != null && searchEnabled;
+/**
+ * Flag to indicate if writing to MeiliSearch index should be skipped.
+ * When true, search still works but documents are not added/updated/deleted in the index.
+ * Useful for read-only replicas or when index writes cause performance issues.
+ */
+const noIndex =
+  process.env.MEILI_NO_INDEX != null && process.env.MEILI_NO_INDEX.toLowerCase() === 'true';
 
 /**
  * Get sync configuration from environment variables
@@ -556,6 +563,9 @@ const createMeiliMongooseModel = ({
      * otherwise, it adds the document to the index.
      */
     postSaveHook(this: DocumentWithMeiliIndex, next: CallbackWithoutResultAndOptionalError): void {
+      if (noIndex) {
+        return next();
+      }
       if (this._meiliIndex) {
         this.updateObjectToMeili!(next);
       } else {
@@ -573,6 +583,9 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): void {
+      if (noIndex) {
+        return next();
+      }
       if (this._meiliIndex) {
         this.updateObjectToMeili!(next);
       } else {
@@ -590,6 +603,9 @@ const createMeiliMongooseModel = ({
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
     ): void {
+      if (noIndex) {
+        return next();
+      }
       if (this._meiliIndex) {
         this.deleteObjectFromMeili!(next);
       } else {
@@ -745,7 +761,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
   schema.pre('deleteMany', async function (next) {
-    if (!meiliEnabled) {
+    if (!meiliEnabled || noIndex) {
       return next();
     }
 
@@ -805,7 +821,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       res: DocumentWithMeiliIndex | { value: DocumentWithMeiliIndex | null } | null,
       next: CallbackWithoutResultAndOptionalError,
     ) {
-      if (!meiliEnabled) {
+      if (!meiliEnabled || noIndex) {
         return next();
       }
 
