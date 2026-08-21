@@ -90,11 +90,13 @@ export function triggerDownload(target: string, filename: string): void {
   const link = document.createElement('a');
   link.href = target;
   link.setAttribute('download', blobDownloadFilenames.get(target) ?? filename);
-  blobDownloadFilenames.delete(target);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   if (isBlob) {
-    setTimeout(() => URL.revokeObjectURL(target), 1000);
+    setTimeout(() => {
+      unregisterDownloadFilename(target);
+      URL.revokeObjectURL(target);
+    }, 1000);
   }
 }

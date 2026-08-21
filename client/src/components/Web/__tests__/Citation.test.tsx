@@ -47,17 +47,13 @@ jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
     ) : null,
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    Button: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button onClick={onClick} {...props}>
-        {children}
-      </button>
-    ),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  Button: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button onClick={onClick} {...props}>
+      {children}
+    </button>
+  ),
+}));
 
 function renderWithProviders(
   children: React.ReactNode,

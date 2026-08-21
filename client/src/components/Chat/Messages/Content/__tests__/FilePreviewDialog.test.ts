@@ -1,5 +1,5 @@
 import { FileSources } from 'librechat-data-provider';
-import { getDownloadFilename } from '../../../../../utils/downloadFile';
+import { getDownloadFilename } from '~/utils/downloadFile';
 import { getPreviewKind } from '../preview';
 
 describe('FilePreviewDialog text-source behavior', () => {

@@ -4,14 +4,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
 import RetrievalCall from '../RetrievalCall';
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    TooltipAnchor: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  }),
-  { virtual: true },
-);
-
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {

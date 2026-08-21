@@ -110,11 +110,11 @@ export const useFileDownload = (
           return downloadURL;
         }
 
-        addFileToCache(queryClient, metadata);
         registerDownloadFilename(
           downloadURL,
           getDownloadFilename(metadata.filename, metadata.file_id, metadata.source),
         );
+        addFileToCache(queryClient, metadata);
       } catch (e) {
         console.error('Error parsing file metadata, skipped updating file query cache', e);
       }

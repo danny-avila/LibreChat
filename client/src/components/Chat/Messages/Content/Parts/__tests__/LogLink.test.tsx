@@ -9,13 +9,9 @@ const mockDownloadFromUrl = jest.fn();
 const mockTriggerDownload = jest.fn();
 let mockShareContext: { shareId?: string } = {};
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    useToastContext: () => ({ showToast: mockShowToast }),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 jest.mock('~/data-provider', () => ({
   useFileDownload: () => ({ refetch: mockDownloadFromApi }),

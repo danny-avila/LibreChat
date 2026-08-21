@@ -86,6 +86,17 @@ describe('downloadFile utilities', () => {
     expect(appendedLink?.download).toBe('report.pdf.txt');
   });
 
+  it('keeps registered names available for concurrent blob downloads', () => {
+    const target = 'blob:https://app.example.com/concurrent-download';
+    registerDownloadFilename(target, 'report.pdf.txt');
+
+    triggerDownload(target, 'report.pdf');
+    expect(appendedLink?.download).toBe('report.pdf.txt');
+
+    triggerDownload(target, 'report.pdf');
+    expect(appendedLink?.download).toBe('report.pdf.txt');
+  });
+
   it('clears registered names when blob URLs are released', () => {
     const target = 'blob:https://app.example.com/released-download';
     registerDownloadFilename(target, 'report.pdf.txt');

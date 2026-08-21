@@ -4,7 +4,7 @@ import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
 import { getFileExtension, getPreviewKind } from './preview';
-import { useFileDownload, useSharedFileDownload } from '~/data-provider';
+import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext } from '~/Providers';
@@ -113,15 +113,24 @@ export default function FilePreviewDialog({
 
     try {
       const result = await downloadFile();
-      if (cancelledRef.current || !result.data) {
+      if (!result.data) {
         if (!cancelledRef.current) {
           setPreviewError(true);
         }
         return;
       }
+      if (cancelledRef.current) {
+        revokeDownloadURL(result.data);
+        return;
+      }
 
-      const resp = await fetch(result.data);
-      const blob = await resp.blob();
+      let blob: Blob;
+      try {
+        const resp = await fetch(result.data);
+        blob = await resp.blob();
+      } finally {
+        revokeDownloadURL(result.data);
+      }
 
       if (cancelledRef.current) {
         return;
