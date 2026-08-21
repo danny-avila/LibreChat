@@ -599,6 +599,7 @@ export async function handleCompactRequest(
       };
     }
 
+    const instructionTokens = priorInstructionTokens(priorResponse);
     const savedMessage = await deps.saveMessage(
       {
         userId,
@@ -634,8 +635,14 @@ export async function handleCompactRequest(
            *  stops adding its own cached instruction overhead once this marker
            *  exists, so the marker has to carry that overhead the way
            *  `computeSummaryUsedTokens` does. */
-          summaryUsedTokens:
-            (result.summary.tokenCount ?? 0) + priorInstructionTokens(priorResponse),
+          summaryUsedTokens: (result.summary.tokenCount ?? 0) + instructionTokens,
+          /** A conversation whose prior responses carry no context snapshot
+           *  (the `BaseClient` path writes none) leaves the instruction and
+           *  tool-schema overhead unknown here. The client suppresses its own
+           *  cached overhead whenever a baseline exists, so it has to be told
+           *  when this one does NOT carry it, or the gauge understates a large
+           *  system prompt for the rest of the conversation. */
+          ...(instructionTokens === 0 && { summaryExcludesOverhead: true }),
           /** The context-usage UI rebuilds branch and session totals from each
            *  response message's `metadata.usage`, so a compaction the user was
            *  charged for is invisible in them without it. */
