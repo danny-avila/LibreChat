@@ -24,10 +24,22 @@ import type {
   SkillSyncStatusInput,
 } from '@librechat/data-schemas';
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
+import type {
+  RepoCommit,
+  RepoTreeEntry,
+  GitRepoAdapter,
+  AssertNotCancelled,
+} from './adapters/types';
+import type { GitHubRepoAdapterConfig } from './adapters/github';
+import {
+  GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION,
+  createGitHubRepoAdapter,
+} from './adapters/github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
+import { normalizeRepoPath } from './path';
+import { SkillSyncError } from './errors';
 
-const GITHUB_API_BASE = 'https://api.github.com';
 const SYSTEM_AUTHOR_NAME = 'GitHub Sync';
 
 let systemAuthorId: Types.ObjectId | undefined;
@@ -51,41 +63,10 @@ const VALIDATION_ISSUE_FIELD_MAX = 100;
 const VALIDATION_ISSUE_CODE_MAX = 64;
 const VALIDATION_ISSUE_MESSAGE_MAX = 250;
 
-export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
-  'Use a GitHub fine-grained personal access token scoped to the selected repository with read-only Contents and Metadata permissions.';
+export { GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION };
+export type { GitHubRepoAdapterConfig };
 
 type FetchFn = typeof fetch;
-
-type GitHubTreeEntry = {
-  path: string;
-  mode: string;
-  type: 'blob' | 'tree' | 'commit';
-  sha: string;
-  size?: number;
-  url: string;
-};
-
-type GitHubTreeResponse = {
-  sha: string;
-  tree: GitHubTreeEntry[];
-  truncated: boolean;
-};
-
-type GitHubBlobResponse = {
-  sha: string;
-  content: string;
-  encoding: string;
-  size: number;
-};
-
-type GitHubCommitResponse = {
-  sha: string;
-  commit: {
-    tree: {
-      sha: string;
-    };
-  };
-};
 
 type SyncCounters = {
   syncedSkillCount: number;
@@ -95,12 +76,10 @@ type SyncCounters = {
   skippedSkillCount: number;
 };
 
-type AssertNotCancelled = () => void;
-
 type DiscoveredSkill = {
   rootPath: string;
-  skillMd: GitHubTreeEntry;
-  files: GitHubTreeEntry[];
+  skillMd: RepoTreeEntry;
+  files: RepoTreeEntry[];
 };
 
 type UpsertRemoteSkillResult = {
@@ -239,6 +218,12 @@ export type GitHubSkillSyncDeps = {
     grantedBy: string | Types.ObjectId;
   }) => Promise<unknown>;
   fetchFn?: FetchFn;
+  /**
+   * Builds the repository client a source is synced through. Defaults to the
+   * GitHub adapter; overridable so the orchestration can be exercised against a
+   * fake repository without standing up provider HTTP responses.
+   */
+  createAdapter?: (config: GitHubRepoAdapterConfig) => GitRepoAdapter;
   lockOwner?: string;
   allowServerCredentials?: boolean;
 };
@@ -262,21 +247,6 @@ export type GitHubSkillSyncRunner = {
   getStatus: () => Promise<GitHubSkillSyncStatus>;
   runOnce: () => Promise<GitHubSkillSyncRunResult>;
 };
-
-class SkillSyncError extends Error {
-  code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = 'SkillSyncError';
-    this.code = code;
-  }
-}
-
-function normalizeRepoPath(value: string): string {
-  const trimmed = value.trim().replace(/^\/+|\/+$/g, '');
-  return trimmed === '.' ? '' : trimmed;
-}
 
 function isSafeRelativePath(value: string): boolean {
   if (!value || value.startsWith('/') || value.startsWith('\\')) {
@@ -382,7 +352,7 @@ function getLimitMegabytes(bytes: number): number {
   return Math.round(bytes / 1024 / 1024);
 }
 
-function assertGitHubBlobSize(entry: GitHubTreeEntry, relativePath: string): number {
+function assertGitHubBlobSize(entry: RepoTreeEntry, relativePath: string): number {
   if (typeof entry.size !== 'number' || !Number.isFinite(entry.size) || entry.size < 0) {
     throw new SkillSyncError(
       'GITHUB_BLOB_SIZE_UNKNOWN',
@@ -439,7 +409,7 @@ function getSkillMdPath(discovered: DiscoveredSkill): string {
   return discovered.rootPath ? `${discovered.rootPath}/SKILL.md` : 'SKILL.md';
 }
 
-function getDiscoveredRelativePath(discovered: DiscoveredSkill, entry: GitHubTreeEntry): string {
+function getDiscoveredRelativePath(discovered: DiscoveredSkill, entry: RepoTreeEntry): string {
   const prefix = discovered.rootPath ? `${discovered.rootPath}/` : '';
   const normalized = normalizeRepoPath(entry.path);
   return prefix ? normalized.slice(prefix.length) : normalized;
@@ -630,215 +600,29 @@ function truncateSkipName(name: string | undefined): string | undefined {
   return sanitized.length > SKIP_NAME_MAX ? `${sanitized.slice(0, SKIP_NAME_MAX - 1)}…` : sanitized;
 }
 
-function buildGitHubHeaders(token: string): HeadersInit {
-  return {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'LibreChat-Skill-Sync',
-  };
-}
-
-function buildGitHubUrl(pathname: string): string {
-  return `${GITHUB_API_BASE}${pathname}`;
-}
-
-function encodeGitHubPath(value: string): string {
-  return value.split('/').map(encodeURIComponent).join('/');
-}
-
-async function readGitHubErrorMessage(response: Response): Promise<string | undefined> {
-  try {
-    const body = (await response.json()) as { message?: unknown };
-    return typeof body.message === 'string' ? body.message : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function isGitHubRateLimitResponse(params: {
-  status: number;
-  remaining: string | null;
-  retryAfter: string | null;
-  message?: string;
-}): boolean {
-  if (params.status === 429 || params.remaining === '0' || params.retryAfter) {
-    return true;
-  }
-  const message = params.message?.toLowerCase() ?? '';
-  return message.includes('rate limit') || message.includes('abuse detection');
-}
-
-async function githubJson<T>(params: {
-  fetchFn: FetchFn;
-  token: string;
-  pathname: string;
-}): Promise<T> {
-  let response: Response;
-  try {
-    response = await params.fetchFn(buildGitHubUrl(params.pathname), {
-      headers: buildGitHubHeaders(params.token),
-    });
-  } catch {
-    throw new SkillSyncError(
-      'GITHUB_REQUEST_FAILED',
-      'GitHub request failed before receiving a response',
-    );
-  }
-  if (response.ok) {
-    return (await response.json()) as T;
-  }
-  const remaining = response.headers.get('x-ratelimit-remaining');
-  const retryAfter = response.headers.get('retry-after');
-  const message = await readGitHubErrorMessage(response);
-  if (response.status === 401 || response.status === 403 || response.status === 429) {
-    const code = isGitHubRateLimitResponse({
-      status: response.status,
-      remaining,
-      retryAfter,
-      message,
-    })
-      ? 'GITHUB_RATE_LIMITED'
-      : 'GITHUB_AUTH_FAILED';
-    throw new SkillSyncError(code, `GitHub request failed with HTTP ${response.status}`);
-  }
-  if (response.status === 404) {
-    throw new SkillSyncError('GITHUB_NOT_FOUND', 'GitHub repository, ref, or path was not found');
-  }
-  throw new SkillSyncError(
-    'GITHUB_REQUEST_FAILED',
-    `GitHub request failed with HTTP ${response.status}`,
-  );
-}
-
-async function fetchCommit(params: {
-  fetchFn: FetchFn;
-  token: string;
-  source: SkillSyncGitHubSourceConfig;
-}): Promise<GitHubCommitResponse> {
-  const owner = encodeURIComponent(params.source.owner);
-  const repo = encodeURIComponent(params.source.repo);
-  const ref = encodeGitHubPath(params.source.ref);
-  return githubJson<GitHubCommitResponse>({
-    fetchFn: params.fetchFn,
-    token: params.token,
-    pathname: `/repos/${owner}/${repo}/commits/${ref}`,
-  });
-}
-
-async function fetchTree(params: {
-  fetchFn: FetchFn;
-  token: string;
-  source: SkillSyncGitHubSourceConfig;
-  treeSha: string;
-  recursive?: boolean;
-}): Promise<GitHubTreeResponse> {
-  const owner = encodeURIComponent(params.source.owner);
-  const repo = encodeURIComponent(params.source.repo);
-  const treeSha = encodeURIComponent(params.treeSha);
-  const recursive = params.recursive ?? true;
-  return githubJson<GitHubTreeResponse>({
-    fetchFn: params.fetchFn,
-    token: params.token,
-    pathname: `/repos/${owner}/${repo}/git/trees/${treeSha}${recursive ? '?recursive=1' : ''}`,
-  });
-}
-
-async function fetchTreeAtPath(params: {
-  fetchFn: FetchFn;
-  token: string;
-  source: SkillSyncGitHubSourceConfig;
-  rootTreeSha: string;
-  repoPath: string;
-  assertNotCancelled: AssertNotCancelled;
-}): Promise<GitHubTreeEntry[]> {
-  const normalizedPath = normalizeRepoPath(params.repoPath);
-  let treeSha = params.rootTreeSha;
-  if (normalizedPath) {
-    for (const segment of normalizedPath.split('/')) {
-      params.assertNotCancelled();
-      const tree = await fetchTree({
-        fetchFn: params.fetchFn,
-        token: params.token,
-        source: params.source,
-        treeSha,
-        recursive: false,
-      });
-      params.assertNotCancelled();
-      if (tree.truncated) {
-        throw new SkillSyncError('GITHUB_TREE_TRUNCATED', 'GitHub tree response was truncated');
-      }
-      const next = tree.tree.find((entry) => entry.type === 'tree' && entry.path === segment);
-      if (!next) {
-        throw new SkillSyncError(
-          'GITHUB_PATH_NOT_FOUND',
-          `Configured GitHub skill path "${normalizedPath}" was not found`,
-        );
-      }
-      treeSha = next.sha;
-    }
-  }
-
-  params.assertNotCancelled();
-  const tree = await fetchTree({
-    fetchFn: params.fetchFn,
-    token: params.token,
-    source: params.source,
-    treeSha,
-    recursive: true,
-  });
-  params.assertNotCancelled();
-  if (tree.truncated) {
-    throw new SkillSyncError('GITHUB_TREE_TRUNCATED', 'GitHub tree response was truncated');
-  }
-  if (!normalizedPath) {
-    return tree.tree;
-  }
-  return tree.tree.map((entry) => ({
-    ...entry,
-    path: `${normalizedPath}/${normalizeRepoPath(entry.path)}`,
-  }));
-}
-
+/**
+ * Merges the recursive listings of every configured path into one entry set.
+ * Configured paths may nest, so entries are deduplicated on their normalized
+ * repository path rather than concatenated.
+ */
 async function fetchConfiguredTreeEntries(params: {
-  fetchFn: FetchFn;
-  token: string;
+  adapter: GitRepoAdapter;
+  commit: RepoCommit;
   source: SkillSyncGitHubSourceConfig;
-  rootTreeSha: string;
   assertNotCancelled: AssertNotCancelled;
-}): Promise<GitHubTreeEntry[]> {
-  const entriesByPath = new Map<string, GitHubTreeEntry>();
+}): Promise<RepoTreeEntry[]> {
+  const entriesByPath = new Map<string, RepoTreeEntry>();
   for (const repoPath of params.source.paths) {
-    const entries = await fetchTreeAtPath({ ...params, repoPath });
+    const entries = await params.adapter.fetchTreeEntries(params.commit, {
+      pathPrefix: repoPath,
+      assertNotCancelled: params.assertNotCancelled,
+    });
     for (const entry of entries) {
       const normalizedPath = normalizeRepoPath(entry.path);
       entriesByPath.set(normalizedPath, { ...entry, path: normalizedPath });
     }
   }
   return [...entriesByPath.values()];
-}
-
-async function fetchBlob(params: {
-  fetchFn: FetchFn;
-  token: string;
-  source: SkillSyncGitHubSourceConfig;
-  sha: string;
-}): Promise<Buffer> {
-  const owner = encodeURIComponent(params.source.owner);
-  const repo = encodeURIComponent(params.source.repo);
-  const sha = encodeURIComponent(params.sha);
-  const blob = await githubJson<GitHubBlobResponse>({
-    fetchFn: params.fetchFn,
-    token: params.token,
-    pathname: `/repos/${owner}/${repo}/git/blobs/${sha}`,
-  });
-  if (blob.encoding !== 'base64') {
-    throw new SkillSyncError(
-      'GITHUB_UNSUPPORTED_BLOB',
-      `Unsupported GitHub blob encoding "${blob.encoding}"`,
-    );
-  }
-  return Buffer.from(blob.content.replace(/\s/g, ''), 'base64');
 }
 
 function isSkillRootWithinDiscoveryDepth(
@@ -860,12 +644,12 @@ function isSkillRootWithinDiscoveryDepth(
 }
 
 function discoverSkills(
-  tree: GitHubTreeEntry[],
+  tree: RepoTreeEntry[],
   source: SkillSyncGitHubSourceConfig,
 ): DiscoveredSkill[] {
   const basePaths = source.paths.map(normalizeRepoPath);
   const skillDiscoveryDepth = source.skillDiscoveryDepth ?? SKILL_SYNC_DEFAULT_DISCOVERY_DEPTH;
-  const skillMdByRoot = new Map<string, GitHubTreeEntry>();
+  const skillMdByRoot = new Map<string, RepoTreeEntry>();
   for (const entry of tree) {
     if (entry.type !== 'blob') {
       continue;
@@ -911,7 +695,7 @@ function discoverSkills(
 }
 
 function assertConfiguredPathsExist(
-  tree: GitHubTreeEntry[],
+  tree: RepoTreeEntry[],
   source: SkillSyncGitHubSourceConfig,
 ): void {
   for (const configuredPath of source.paths.map(normalizeRepoPath)) {
@@ -1015,7 +799,7 @@ async function prepareRemoteSkill(params: {
     ref: source.ref,
     skillPath: discovered.rootPath,
     commitSha,
-    skillBlobSha: discovered.skillMd.sha,
+    skillBlobSha: discovered.skillMd.id,
     syncedAt: serializeDate(syncedAt),
     syncStatus: 'synced',
   };
@@ -1485,16 +1269,15 @@ async function deleteNameConflictingStaleSkill(params: {
 
 async function syncSkillFiles(params: {
   deps: GitHubSkillSyncDeps;
-  token: string;
+  adapter: GitRepoAdapter;
+  commit: RepoCommit;
   source: SkillSyncGitHubSourceConfig;
   skill: ISkill & { _id: Types.ObjectId };
   discovered: DiscoveredSkill;
-  commitSha: string;
-  fetchFn: FetchFn;
   assertNotCancelled: AssertNotCancelled;
   journal?: SyncSkillFilesJournal;
 }): Promise<SyncSkillFilesResult> {
-  const { deps, token, source, skill, discovered, commitSha, fetchFn, assertNotCancelled } = params;
+  const { deps, adapter, commit, source, skill, discovered, assertNotCancelled } = params;
   const journal = params.journal ?? { staleFiles: [], savedFiles: [] };
   const remotePaths = new Set<string>();
   let syncedFileCount = 0;
@@ -1511,10 +1294,10 @@ async function syncSkillFiles(params: {
     assertCumulativeGitHubFileSize(totalFileBytes);
     remotePaths.add(relativePath);
     const existing = await deps.getSkillFileByPath(skill._id, relativePath);
-    if (existing && getSourceMetadataString(existing, 'blobSha') === entry.sha) {
+    if (existing && getSourceMetadataString(existing, 'blobSha') === entry.id) {
       continue;
     }
-    const buffer = await fetchBlob({ fetchFn, token, source, sha: entry.sha });
+    const buffer = await adapter.fetchFileContent(commit, entry);
     assertNotCancelled();
     assertGitHubBufferSize(buffer, relativePath);
     const fileId = crypto.randomUUID();
@@ -1543,8 +1326,8 @@ async function syncSkillFiles(params: {
           provider: PROVIDER,
           sourceId: source.id,
           upstreamId: makeUpstreamId(source, discovered.rootPath),
-          commitSha,
-          blobSha: entry.sha,
+          commitSha: commit.id,
+          blobSha: entry.id,
           path: entry.path,
         },
         mimeType,
@@ -1646,6 +1429,7 @@ async function syncSource(params: {
   assertNotCancelled: AssertNotCancelled;
 }): Promise<ISkillSyncStatus> {
   const { deps, source, fetchFn, assertNotCancelled } = params;
+  const createAdapter = deps.createAdapter ?? createGitHubRepoAdapter;
   const startedAt = new Date();
   const counts: SyncCounters = {
     syncedSkillCount: 0,
@@ -1667,13 +1451,13 @@ async function syncSource(params: {
         getMissingCredentialMessage(source, allowServerCredentials),
       );
     }
-    const commit = await fetchCommit({ fetchFn, token, source });
+    const adapter = createAdapter({ source, token, fetchFn });
+    const commit = await adapter.resolveCommit();
     assertNotCancelled();
     const treeEntries = await fetchConfiguredTreeEntries({
-      fetchFn,
-      token,
+      adapter,
+      commit,
       source,
-      rootTreeSha: commit.commit.tree.sha,
       assertNotCancelled,
     });
     assertConfiguredPathsExist(treeEntries, source);
@@ -1777,12 +1561,7 @@ async function syncSource(params: {
       try {
         assertGitHubSkillPackageManifest(discovered);
         const skillMdPath = getSkillMdPath(discovered);
-        const skillMdBuffer = await fetchBlob({
-          fetchFn,
-          token,
-          source,
-          sha: discovered.skillMd.sha,
-        });
+        const skillMdBuffer = await adapter.fetchFileContent(commit, discovered.skillMd);
         assertNotCancelled();
         assertGitHubBufferSize(skillMdBuffer, skillMdPath);
         const prepared = await prepareRemoteSkill({
@@ -1790,7 +1569,7 @@ async function syncSource(params: {
           source,
           discovered,
           skillMdContent: skillMdBuffer.toString('utf-8'),
-          commitSha: commit.sha,
+          commitSha: commit.id,
           syncedAt,
         });
         preparedSkills.push({ discovered, prepared });
@@ -1907,12 +1686,11 @@ async function syncSource(params: {
         try {
           fileCounts = await syncSkillFiles({
             deps,
-            token,
+            adapter,
+            commit,
             source,
             skill: effectivePrepared.existing,
             discovered,
-            commitSha: commit.sha,
-            fetchFn,
             assertNotCancelled,
             journal,
           });
@@ -1990,12 +1768,11 @@ async function syncSource(params: {
       try {
         const fileCounts = await syncSkillFiles({
           deps,
-          token,
+          adapter,
+          commit,
           source,
           skill,
           discovered,
-          commitSha: commit.sha,
-          fetchFn,
           assertNotCancelled,
         });
         await ensurePublicViewer(deps, skill._id);
