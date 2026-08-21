@@ -367,136 +367,156 @@ export default function ScheduleDialog({
         showCloseButton={false}
         // The agent and time popovers cannot portal out of a focus-trapping dialog
         // (see below), so `overflow-visible` keeps them from being clipped. Only from
-        // `md` up: the two-column layout fits well inside 90vh there, while narrow
+        // `md` up: the identity row fits well inside 90vh there, while narrow
         // viewports keep the template's scrolling so the footer stays reachable.
+        //
+        // THE BUDGET IS A CONTRACT: with scrolling off at `md`, anything that adds a
+        // ROW here pushes the footer's submit button out of a 720px-tall viewport,
+        // where it can never be scrolled back — the e2e edit spec times out clicking
+        // Save. A new field belongs in an existing row (see the identity row below),
+        // not stacked beneath one.
         className="w-11/12 md:max-w-3xl md:overflow-visible"
         main={
           <form id={FORM_ID} onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_name')}
-                </Label>
-                <Input
-                  id="schedule-name"
-                  className="w-full"
-                  placeholder={localize('com_ui_schedule_name_placeholder')}
-                  aria-invalid={errors.name != null}
-                  aria-describedby="schedule-name-message"
-                  {...register('name', { required: localize('com_ui_field_required') })}
-                />
-                <FieldMessage id="schedule-name-message" message={errors.name?.message} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_agent')}
-                </Label>
-                <Controller
-                  name="agent_id"
-                  control={control}
-                  rules={{ required: localize('com_ui_field_required') }}
-                  render={({ field }) => (
-                    <ControlCombobox
-                      selectedValue={field.value}
-                      displayValue={
-                        agentItems.find((item) => item.value === field.value)?.label ?? ''
-                      }
-                      selectPlaceholder={localize('com_ui_select_agent')}
-                      searchPlaceholder={localize('com_agents_search_name')}
-                      setValue={field.onChange}
-                      onBlur={field.onBlur}
-                      items={agentItems}
-                      ariaLabel={localize('com_ui_agent')}
-                      ariaInvalid={errors.agent_id != null}
-                      ariaDescribedBy="schedule-agent-message"
-                      selectId="schedule-agent"
-                      isCollapsed={false}
-                      showCarat={true}
-                      placement="bottom-start"
-                      // Radix traps focus inside the dialog, so a popover portaled to
-                      // the body cannot be clicked, tabbed into, or typed in — and the
-                      // trap fighting Ariakit for focus locks the page up.
-                      portal={false}
-                      matchTriggerWidth={true}
-                      variant="field"
-                    />
-                  )}
-                />
-                <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
-                <p className="text-xs text-text-secondary">
-                  {localize('com_ui_schedule_target_new_chat')}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="schedule-project" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_project')}
-                </Label>
-                {pinnedProjectId != null ? (
-                  /* Pinned by the operator: there is no choice to offer, so show the
-                     destination rather than a disabled control the user would keep
-                     trying to open. */
-                  <div
-                    id="schedule-project"
-                    data-testid="schedule-project-pinned"
-                    className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 text-sm text-text-secondary"
-                  >
-                    <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span className="truncate">
-                      {projectNames.get(pinnedProjectId) ?? pinnedProjectId}
-                    </span>
-                  </div>
-                ) : (
+            {/* Identity row: what the schedule is, who runs it, where its chats land.
+                Its caption is grouped with it rather than left to the form's own 4-unit
+                rhythm, which would spend more vertical budget on the gap than the
+                caption itself occupies. */}
+            <div className="space-y-1.5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
+                    {localize('com_ui_name')}
+                  </Label>
+                  <Input
+                    id="schedule-name"
+                    className="w-full"
+                    placeholder={localize('com_ui_schedule_name_placeholder')}
+                    aria-invalid={errors.name != null}
+                    aria-describedby="schedule-name-message"
+                    {...register('name', { required: localize('com_ui_field_required') })}
+                  />
+                  <FieldMessage id="schedule-name-message" message={errors.name?.message} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
+                    {localize('com_ui_agent')}
+                  </Label>
                   <Controller
-                    name="chatProjectId"
+                    name="agent_id"
                     control={control}
-                    rules={
-                      requireProject ? { required: localize('com_ui_field_required') } : undefined
-                    }
+                    rules={{ required: localize('com_ui_field_required') }}
                     render={({ field }) => (
                       <ControlCombobox
                         selectedValue={field.value}
-                        displayValue={projectNames.get(field.value) ?? ''}
-                        selectPlaceholder={localize(
-                          requireProject ? 'com_ui_select_project' : 'com_ui_schedule_project_none',
-                        )}
-                        searchPlaceholder={localize('com_ui_search_projects')}
+                        displayValue={
+                          agentItems.find((item) => item.value === field.value)?.label ?? ''
+                        }
+                        selectPlaceholder={localize('com_ui_select_agent')}
+                        searchPlaceholder={localize('com_agents_search_name')}
                         setValue={field.onChange}
                         onBlur={field.onBlur}
-                        items={projectItems}
-                        SelectIcon={
-                          <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-                        }
-                        ariaLabel={localize('com_ui_project')}
-                        ariaInvalid={errors.chatProjectId != null}
-                        ariaDescribedBy="schedule-project-message"
-                        selectId="schedule-project"
+                        items={agentItems}
+                        ariaLabel={localize('com_ui_agent')}
+                        ariaInvalid={errors.agent_id != null}
+                        ariaDescribedBy="schedule-agent-message"
+                        selectId="schedule-agent"
                         isCollapsed={false}
                         showCarat={true}
                         placement="bottom-start"
-                        /* Same focus-trap constraint as the agent picker above. */
+                        // Radix traps focus inside the dialog, so a popover portaled to
+                        // the body cannot be clicked, tabbed into, or typed in — and the
+                        // trap fighting Ariakit for focus locks the page up.
                         portal={false}
                         matchTriggerWidth={true}
                         variant="field"
                       />
                     )}
                   />
-                )}
-                <FieldMessage
-                  id="schedule-project-message"
-                  message={errors.chatProjectId?.message}
-                />
-                {pinnedProjectId == null && hasMoreProjects && (
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="h-auto justify-start px-0 text-xs"
-                    onClick={() => fetchMoreProjects()}
-                    disabled={isFetchingMoreProjects}
+                  <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="schedule-project"
+                    className="text-sm font-medium text-text-primary"
                   >
-                    {localize(isFetchingMoreProjects ? 'com_ui_loading' : 'com_ui_load_more')}
-                  </Button>
-                )}
+                    {localize('com_ui_project')}
+                  </Label>
+                  {pinnedProjectId != null ? (
+                    /* Pinned by the operator: there is no choice to offer, so show the
+                     destination rather than a disabled control the user would keep
+                     trying to open. */
+                    <div
+                      id="schedule-project"
+                      data-testid="schedule-project-pinned"
+                      className="flex h-10 w-full items-center gap-2 rounded-xl border border-border-light bg-surface-secondary px-3 text-sm text-text-secondary"
+                    >
+                      <Folder className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="truncate">
+                        {projectNames.get(pinnedProjectId) ?? pinnedProjectId}
+                      </span>
+                    </div>
+                  ) : (
+                    <Controller
+                      name="chatProjectId"
+                      control={control}
+                      rules={
+                        requireProject ? { required: localize('com_ui_field_required') } : undefined
+                      }
+                      render={({ field }) => (
+                        <ControlCombobox
+                          selectedValue={field.value}
+                          displayValue={projectNames.get(field.value) ?? ''}
+                          selectPlaceholder={localize(
+                            requireProject
+                              ? 'com_ui_select_project'
+                              : 'com_ui_schedule_project_none',
+                          )}
+                          searchPlaceholder={localize('com_ui_search_projects')}
+                          setValue={field.onChange}
+                          onBlur={field.onBlur}
+                          items={projectItems}
+                          SelectIcon={
+                            <Folder className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+                          }
+                          ariaLabel={localize('com_ui_project')}
+                          ariaInvalid={errors.chatProjectId != null}
+                          ariaDescribedBy="schedule-project-message"
+                          selectId="schedule-project"
+                          isCollapsed={false}
+                          showCarat={true}
+                          placement="bottom-start"
+                          /* Same focus-trap constraint as the agent picker above. */
+                          portal={false}
+                          matchTriggerWidth={true}
+                          variant="field"
+                        />
+                      )}
+                    />
+                  )}
+                  <FieldMessage
+                    id="schedule-project-message"
+                    message={errors.chatProjectId?.message}
+                  />
+                  {pinnedProjectId == null && hasMoreProjects && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto justify-start px-0 text-xs"
+                      onClick={() => fetchMoreProjects()}
+                      disabled={isFetchingMoreProjects}
+                    >
+                      {localize(isFetchingMoreProjects ? 'com_ui_loading' : 'com_ui_load_more')}
+                    </Button>
+                  )}
+                </div>
               </div>
+              {/* Full width, not inside the agent cell: at a third of the dialog this
+                sentence wraps an extra line, and the identity row is the tallest thing
+                competing for the fixed height budget described on the template above. */}
+              <p className="text-xs text-text-secondary">
+                {localize('com_ui_schedule_target_new_chat')}
+              </p>
             </div>
 
             <Controller

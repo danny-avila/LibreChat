@@ -15,7 +15,12 @@ Scheduled chats remain experimental and default-off.
   which is written on pause, skip, or terminal outcomes, so the client's `started` chip is
   unreachable.
 - Add multi-day weekly, timezone, and attachment controls. The API supports these, but the dialog
-  does not.
+  does not. NOTE: the dialog cannot scroll from `md` up (`md:overflow-visible` exists because the
+  Ariakit popovers cannot portal out of the focus-trapping Radix dialog), so its content must fit
+  the viewport — roughly 30px of slack remain at 1280x720. Each of these controls adds a row and
+  will push the footer's Save button out of reach. Adding them needs the height problem solved
+  first: give `ControlCombobox` the `portalElement` prop `Dropdown` already has, portal the
+  popovers into the dialog content element, and let the form scroll again.
 
 ## Runtime scope
 
