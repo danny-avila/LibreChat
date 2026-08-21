@@ -9,6 +9,7 @@ import {
 import type { Agent, TMessage, TModelsConfig, TResponseUsage } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
+  CompactionPass,
   CompactionResult,
   CompactionSkillDeps,
   CompactionUsage,
@@ -27,6 +28,7 @@ import {
   BilledCompactionError,
   NothingToCompactError,
   TranscriptTooLargeError,
+  UnworkableContextError,
 } from './summary';
 import {
   checkAndIncrementPendingRequest,
@@ -52,6 +54,7 @@ export const CompactErrorCodes = {
   GENERATING: 'GENERATING',
   BRANCH_MOVED: 'BRANCH_MOVED',
   TRANSCRIPT_TOO_LARGE: 'TRANSCRIPT_TOO_LARGE',
+  UNWORKABLE_CONTEXT: 'UNWORKABLE_CONTEXT',
   CONCURRENT_LIMIT: 'CONCURRENT_LIMIT',
   AGENT_NOT_FOUND: 'AGENT_NOT_FOUND',
   ILLEGAL_MODEL: 'ILLEGAL_MODEL',
@@ -126,22 +129,16 @@ export interface HandleCompactRequestParams {
 }
 
 /**
- * What to bill for one compaction: the provider's own per-call records when it
- * reported them, otherwise the locally counted size of each completed call, so
- * a gateway that omits usage still produces one transaction per call.
+ * What to bill for one compaction, decided per call rather than all-or-nothing:
+ * a gateway that reports usage for some passes and omits it for others would
+ * otherwise leave the omitted ones unbilled.
  */
 function billableUsages(
-  source: {
-    usages: CompactionUsage[];
-    estimatedUsages: Array<{ input_tokens: number; output_tokens: number }>;
-  },
+  passes: CompactionPass[],
   model?: string,
   provider?: string,
 ): CompactionUsage[] {
-  if (source.usages.length > 0) {
-    return source.usages;
-  }
-  return source.estimatedUsages.map((counts) => ({ model, provider, ...counts }));
+  return passes.map((pass) => pass.usage ?? { model, provider, ...pass.counted });
 }
 
 /** True while another turn owns the conversation's branch tail. */
@@ -442,7 +439,7 @@ export async function handleCompactRequest(
           appConfig,
           conversationId,
           messageId,
-          usages: billableUsages(error, error.model, error.provider),
+          usages: billableUsages(error.passes, error.model, error.provider),
           model: error.model,
           endpointTokenConfig: error.endpointTokenConfig,
         });
@@ -461,7 +458,7 @@ export async function handleCompactRequest(
       appConfig,
       conversationId,
       messageId,
-      usages: billableUsages(result, result.model, result.provider),
+      usages: billableUsages(result.passes, result.model, result.provider),
       model: result.summary.model,
       endpointTokenConfig: result.endpointTokenConfig,
     });
@@ -569,6 +566,14 @@ export async function handleCompactRequest(
         status: 400,
         error: 'No messages to compact',
         code: CompactErrorCodes.NOTHING_TO_COMPACT,
+      };
+    }
+    /** The summarizer's own window cannot fit a request at all. */
+    if (error instanceof UnworkableContextError) {
+      return {
+        status: 422,
+        error: 'The summarization model cannot fit a compaction request',
+        code: CompactErrorCodes.UNWORKABLE_CONTEXT,
       };
     }
     /** Refused rather than silently summarizing part of the branch. */

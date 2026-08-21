@@ -236,7 +236,7 @@ describe('compactConversation', () => {
     expect(result.summary.tokenCount).toBeGreaterThan(33);
     expect(result.summary.tokenCount).toBeLessThan(60);
     expect(result.messagesCompacted).toBe(6);
-    expect(result.usages[0]).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
+    expect(result.passes[0]?.usage).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
   });
 
   it('still sizes the summary when the provider reports no output tokens', async () => {
@@ -250,7 +250,7 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usages).toEqual([]);
+    expect(result.passes[0]?.usage).toBeUndefined();
     expect(result.summary.tokenCount).toBeGreaterThan(33);
   });
 
@@ -346,7 +346,7 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usages[0]?.provider).toBe('openAI');
+    expect(result.passes[0]?.usage?.provider).toBe('openAI');
   });
 
   it('applies admin summarization parameters and the summary output cap', async () => {
@@ -408,7 +408,7 @@ describe('compactConversation', () => {
       ids,
       db: dbMethods,
     });
-    expect(result.usages[0]?.total_tokens).toBe(1240);
+    expect(result.passes[0]?.usage?.total_tokens).toBe(1240);
   });
 
   it('reports a locally counted estimate for a provider that omits usage', async () => {
@@ -422,12 +422,12 @@ describe('compactConversation', () => {
       db: dbMethods,
     });
 
-    expect(result.usages).toEqual([]);
-    /** The host bills from these so an OpenAI-compatible gateway that omits
-     *  `usage` still produces one transaction per call. */
-    expect(result.estimatedUsages).toHaveLength(1);
-    expect(result.estimatedUsages[0].input_tokens).toBeGreaterThan(0);
-    expect(result.estimatedUsages[0].output_tokens).toBeGreaterThan(0);
+    /** The host bills from the local count so an OpenAI-compatible gateway
+     *  that omits `usage` still produces one transaction per call. */
+    expect(result.passes).toHaveLength(1);
+    expect(result.passes[0].usage).toBeUndefined();
+    expect(result.passes[0].counted.input_tokens).toBeGreaterThan(0);
+    expect(result.passes[0].counted.output_tokens).toBeGreaterThan(0);
     expect(result.provider).toBe('openAI');
   });
 
@@ -477,7 +477,7 @@ describe('compactConversation', () => {
 
     expect(result.summary.tokenCount).toBeLessThan(100);
     /** Provider output stays available for billing. */
-    expect(result.usages[0]?.output_tokens).toBe(9000);
+    expect(result.passes[0]?.usage?.output_tokens).toBe(9000);
   });
 
   it('consolidates an over-window branch across passes instead of dropping turns', async () => {
@@ -606,9 +606,8 @@ describe('compactConversation', () => {
     ).rejects.toMatchObject({
       name: 'PartialCompactionError',
       /** Pass one completed and must still be billed; the rejected pass two
-       *  contributes nothing. */
-      usages: [{ input_tokens: 500 }],
-      estimatedUsages: [expect.anything()],
+       *  contributes no entry at all. */
+      passes: [{ usage: { input_tokens: 500 } }],
     });
   });
 
@@ -666,6 +665,58 @@ describe('compactConversation', () => {
     );
   });
 
+  it('counts tool calls when sizing a pass, not just message content', async () => {
+    /** `formatAgentMessages` stores tool name and arguments outside `content`;
+     *  counting content alone let a tool-heavy branch look almost free. */
+    const toolHeavy = assistantMessage('t1', Constants.NO_PARENT, [
+      { type: ContentTypes.TEXT, text: 'ran it' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call_big',
+          name: 'bash_tool',
+          args: JSON.stringify({ cmd: bulk('args', 800) }),
+          output: 'ok',
+        },
+      },
+    ] as TMessage['content']);
+
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [
+        userMessage('t0', Constants.NO_PARENT, 'go'),
+        { ...toolHeavy, parentMessageId: 't0' } as TMessage,
+      ],
+      ids,
+      db: dbMethods,
+    });
+
+    /** The arguments dominate the prompt, so the counted input must reflect
+     *  them rather than the short text part alone. */
+    expect(result.passes[0].counted.input_tokens).toBeGreaterThan(500);
+  });
+
+  it('refuses a model whose window cannot fit any compaction request', async () => {
+    const tinyWindowAgent = {
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'test-small-window',
+      model_parameters: { model: 'test-small-window', maxTokens: 31000 },
+    };
+
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent: tinyWindowAgent,
+        branch,
+        ids,
+        db: dbMethods,
+      }),
+    ).rejects.toMatchObject({ name: 'UnworkableContextError' });
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),
@@ -684,7 +735,7 @@ describe('compactConversation', () => {
       compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
     ).rejects.toMatchObject({
       name: 'EmptyCompactionError',
-      usages: [{ input_tokens: 900, provider: 'openAI' }],
+      passes: [{ usage: { input_tokens: 900, provider: 'openAI' } }],
     });
   });
 
@@ -695,8 +746,7 @@ describe('compactConversation', () => {
       compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
     ).rejects.toMatchObject({
       name: 'EmptyCompactionError',
-      usages: [],
-      estimatedUsages: [{ output_tokens: 0 }],
+      passes: [{ usage: undefined, counted: { output_tokens: 0 } }],
     });
   });
 

@@ -25,6 +25,10 @@ const TOAST_BY_CODE = {
     key: 'com_ui_context_compact_too_large',
     severity: NotificationSeverity.WARNING,
   },
+  UNWORKABLE_CONTEXT: {
+    key: 'com_ui_context_compact_unsupported_model',
+    severity: NotificationSeverity.WARNING,
+  },
 } as const;
 
 /**
