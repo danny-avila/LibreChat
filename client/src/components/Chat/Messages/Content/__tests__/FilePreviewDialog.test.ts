@@ -1,6 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
-import { getDownloadFilename } from '~/utils/downloadFile';
 import { getPreviewKind, shouldUseSharedFileDownload } from '../preview';
+import { getDownloadFilename } from '~/utils/downloadFile';
 
 describe('FilePreviewDialog text-source behavior', () => {
   it('previews extracted PDF content as text', () => {
