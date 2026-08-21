@@ -1,7 +1,13 @@
-import { ResourceType, SystemCategories } from 'librechat-data-provider';
+import {
+  CacheKeys,
+  PermissionBits,
+  ResourceType,
+  SystemCategories,
+  Time,
+} from 'librechat-data-provider';
 import type { Model, Types } from 'mongoose';
-import type { IAclEntry, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
-import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import type { IAclEntry, CacheStore, IPrompt, IPromptGroup, IPromptGroupDocument } from '~/types';
+import { getTenantId, scopedCacheKey, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
@@ -14,6 +20,64 @@ export interface PromptDeps {
     userObjectId: Types.ObjectId,
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
+  /** Returns a cache store for the given key. Injected from getLogStores. */
+  getCache?: (key: string) => CacheStore | undefined;
+  /** Resolves ACL principals for a user. From createUserGroupMethods. */
+  getUserPrincipals: (params: {
+    userId: string | Types.ObjectId;
+    role?: string | null;
+  }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
+  /** Finds resource IDs accessible to a set of principals. From createAclEntryMethods. */
+  findAccessibleResources: (
+    principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    resourceType: string,
+    requiredPermBit: number,
+    readPrimary?: boolean,
+  ) => Promise<Types.ObjectId[]>;
+  /** Finds publicly accessible resource IDs. From createAclEntryMethods. */
+  findPublicResourceIds: (
+    resourceType: string,
+    requiredPermissions: number,
+    readPrimary?: boolean,
+  ) => Promise<Types.ObjectId[]>;
+}
+
+/** In-flight access ID builds, so concurrent same-process misses share one resolution. */
+const pendingAccessLookups = new Map<
+  string,
+  { promise: Promise<string[]>; markStale: () => void }
+>();
+
+const ACCESS_GENERATION_KEY = 'access:generation';
+
+function isCachedIdArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((id) => typeof id === 'string' && isValidObjectIdString(id))
+  );
+}
+
+/**
+ * Reads the tenant's invalidation generation. Cached entries are keyed by it, so a
+ * bump orphans every previous entry for this tenant without touching other tenants.
+ * A missing marker (fresh tenant, or evicted under a Redis eviction policy) is
+ * reinitialized to a fresh never-before-used value rather than falling back to
+ * zero, where an evicted era's orphaned entry could still be read. Resolves
+ * undefined when the marker cannot be read: guessing a generation then could
+ * serve an orphaned entry, so callers must bypass the cache.
+ */
+async function readAccessGeneration(cache: CacheStore): Promise<number | undefined> {
+  const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
+  try {
+    const value = await cache.get(generationKey);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    const initialized = Math.max(Date.now(), 1);
+    await cache.set(generationKey, initialized, Time.ONE_DAY);
+    return initialized;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface PromptMethods {
@@ -68,7 +132,13 @@ export interface PromptMethods {
     filter: Record<string, unknown>,
   ): Promise<Record<string, unknown> | null | { message: string }>;
   getPromptGroup(filter: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-  getOwnedPromptGroupIds(author: string): Promise<Types.ObjectId[]>;
+  getOwnedPromptGroupIds(author: string, readPrimary?: boolean): Promise<Types.ObjectId[]>;
+  getPromptGroupAccessContext(params: { userId: string; role?: string }): Promise<{
+    accessibleIds: Types.ObjectId[];
+    publiclyAccessibleIds: Types.ObjectId[];
+    ownedPromptGroupIds: Types.ObjectId[];
+  }>;
+  invalidatePromptGroupAccessContext(): Promise<void>;
   deletePrompt(params: {
     promptId: string | Types.ObjectId;
     groupId: string | Types.ObjectId;
@@ -274,6 +344,8 @@ export function createPromptMethods(
       logger.error('Error removing promptGroup permissions:', error);
     }
 
+    await invalidatePromptGroupAccessContext();
+
     return { message: 'Prompt group deleted successfully' };
   }
 
@@ -465,6 +537,8 @@ export function createPromptMethods(
         .select('-__v')
         .exec())!;
 
+      await invalidatePromptGroupAccessContext();
+
       return {
         prompt: newPrompt,
         group: {
@@ -647,18 +721,201 @@ export function createPromptMethods(
    * Used by the "Shared Prompts" and "My Prompts" filters to distinguish
    * owned prompts from prompts shared with the user.
    */
-  async function getOwnedPromptGroupIds(author: string) {
+  async function getOwnedPromptGroupIds(author: string, readPrimary = false) {
     try {
       const PromptGroup = mongoose.models.PromptGroup as Model<IPromptGroupDocument>;
       if (!author || !ObjectId.isValid(author)) {
         logger.warn('getOwnedPromptGroupIds called with invalid author', { author });
         return [];
       }
-      const groups = await PromptGroup.find({ author: new ObjectId(author) }, { _id: 1 }).lean();
+      const groupsQuery = PromptGroup.find({ author: new ObjectId(author) }, { _id: 1 });
+      if (readPrimary) {
+        /**
+         * Cache builds must not capture a lagging secondary's pre-mutation state
+         * for the full TTL (`secondaryPreferred` deployments).
+         */
+        groupsQuery.read('primary');
+      }
+      const groups = await groupsQuery.lean();
       return groups.map((g) => g._id);
     } catch (error) {
       logger.error('Error getting owned prompt group IDs', error);
-      return [];
+      /** A failed lookup must not be cached as an empty ownership set */
+      throw error;
+    }
+  }
+
+  /**
+   * Resolves one prompt group ID set from the PROMPT_GROUPS_ACCESS cache, building
+   * it on miss. Entries are stored as hex strings and revived to ObjectIds on read;
+   * concurrent same-process misses share a single build, which invalidation marks
+   * stale so a pre-mutation build never writes its IDs back into the cache.
+   */
+  async function resolveCachedIds(
+    cacheKey: string,
+    build: () => Promise<Types.ObjectId[]>,
+  ): Promise<Types.ObjectId[]> {
+    const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
+    if (!cache) {
+      return build();
+    }
+
+    try {
+      const cached = await cache.get(cacheKey);
+      if (isCachedIdArray(cached)) {
+        return cached.map((id) => new ObjectId(id));
+      }
+    } catch {
+      /** Cache failures must not block access resolution. */
+    }
+
+    const pending = pendingAccessLookups.get(cacheKey);
+    if (pending) {
+      const ids = await pending.promise;
+      return ids.map((id) => new ObjectId(id));
+    }
+
+    let stale = false;
+    const lookup = (async () => {
+      const ids = await build();
+      if (!stale) {
+        try {
+          await cache.set(
+            cacheKey,
+            ids.map((id) => id.toString()),
+          );
+        } catch {
+          /** Cache write failures only cost a rebuild on the next request. */
+        }
+      }
+      return ids.map((id) => id.toString());
+    })();
+
+    pendingAccessLookups.set(cacheKey, {
+      promise: lookup,
+      markStale: () => {
+        stale = true;
+      },
+    });
+    try {
+      const ids = await lookup;
+      return ids.map((id) => new ObjectId(id));
+    } finally {
+      if (pendingAccessLookups.get(cacheKey)?.promise === lookup) {
+        pendingAccessLookups.delete(cacheKey);
+      }
+    }
+  }
+
+  /**
+   * Resolves the prompt group access ID sets shared by the list endpoints:
+   * user-accessible, publicly accessible, and user-owned group IDs.
+   *
+   * The public set is identical for every user of a tenant and the per-user sets
+   * only change on prompt or permission mutations, so all three are cached briefly
+   * (PROMPT_GROUPS_ACCESS namespace, TTL-bounded) to spare overlapping requests
+   * (startup, filter changes, reloads, multiple tabs) the repeated ACL queries.
+   */
+  async function getPromptGroupAccessContext({
+    userId,
+    role,
+  }: {
+    userId: string;
+    role?: string;
+  }): Promise<{
+    accessibleIds: Types.ObjectId[];
+    publiclyAccessibleIds: Types.ObjectId[];
+    ownedPromptGroupIds: Types.ObjectId[];
+  }> {
+    const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
+    /**
+     * Keys carry the tenant's invalidation generation, so a bump orphans every
+     * cached set for this tenant, including late writes from in-flight builds,
+     * without clearing other tenants' entries in the shared namespace. Builds
+     * read the primary so a lagging secondary cannot pin pre-mutation IDs for
+     * the full TTL.
+     */
+    const generation = cache ? await readAccessGeneration(cache) : 0;
+    const buildAccessible = async (): Promise<Types.ObjectId[]> => {
+      const principalsList = await deps.getUserPrincipals({ userId, role });
+      if (principalsList.length === 0) {
+        return [];
+      }
+      return deps.findAccessibleResources(
+        principalsList,
+        ResourceType.PROMPTGROUP,
+        PermissionBits.VIEW,
+        true,
+      );
+    };
+    const buildPublic = () =>
+      deps.findPublicResourceIds(ResourceType.PROMPTGROUP, PermissionBits.VIEW, true);
+    const buildOwned = () => getOwnedPromptGroupIds(userId, true);
+
+    if (generation === undefined) {
+      /** The marker could not be read; guessing a generation could serve an orphaned entry */
+      const [accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+        buildAccessible(),
+        buildPublic(),
+        buildOwned(),
+      ]);
+      return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };
+    }
+
+    const scopedKey = (key: string) => scopedCacheKey(`access:${generation}:${key}`);
+
+    const accessibleIds = await resolveCachedIds(
+      scopedKey(`user:${userId}:${role ?? ''}`),
+      buildAccessible,
+    );
+
+    const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
+      resolveCachedIds(scopedKey('public'), buildPublic),
+      resolveCachedIds(scopedKey(`owned:${userId}`), buildOwned),
+    ]);
+
+    return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };
+  }
+
+  /**
+   * Invalidates all cached prompt group access ID sets for the active tenant after
+   * a mutation that can change them (group create/delete, permission grants/revokes,
+   * membership changes). Bumping the generation orphans cached entries and any
+   * writes still in flight from pre-mutation builds, including in other processes
+   * sharing the store, while other tenants' entries stay intact. In-flight builds
+   * in this process are additionally marked stale so they skip their cache write.
+   * Failures are non-fatal; the cache TTL bounds any residual staleness.
+   */
+  async function invalidatePromptGroupAccessContext(): Promise<void> {
+    for (const pending of pendingAccessLookups.values()) {
+      pending.markStale();
+    }
+    pendingAccessLookups.clear();
+    const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
+    if (!cache) {
+      return;
+    }
+    try {
+      const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
+      const current = await cache.get(generationKey);
+      /**
+       * Strictly increasing and never repeating, even when the marker itself
+       * expired out of the TTL cache: a repeated value could resurrect a
+       * pre-mutation entry that is still alive under that generation.
+       */
+      const next = Math.max(
+        Date.now(),
+        (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
+      );
+      /**
+       * The marker must outlive every derived entry and in-flight build: with the
+       * namespace default it could expire first, and a reader would fall back to
+       * generation 0 while a late cross-process write from that era is still
+       * alive, briefly re-exposing revoked IDs.
+       */
+      await cache.set(generationKey, next, Time.ONE_DAY);
+    } catch (error) {
+      logger.warn('Failed to invalidate prompt group access cache', error);
     }
   }
 
@@ -701,6 +958,8 @@ export function createPromptMethods(
       }
 
       await PromptGroup.deleteOne({ _id: groupId });
+
+      await invalidatePromptGroupAccessContext();
 
       return {
         prompt: 'Prompt deleted successfully',
@@ -772,6 +1031,7 @@ export function createPromptMethods(
 
       await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
       await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
+      await invalidatePromptGroupAccessContext();
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
     }
@@ -866,6 +1126,8 @@ export function createPromptMethods(
     getPromptGroupsWithPrompts,
     getPromptGroup,
     getOwnedPromptGroupIds,
+    getPromptGroupAccessContext,
+    invalidatePromptGroupAccessContext,
     deletePrompt,
     deleteUserPrompts,
     updatePromptGroup,

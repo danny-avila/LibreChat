@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, ReactNode, useCallback, useMemo, useState } from 'react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { TPromptGroup } from 'librechat-data-provider';
 import type { PromptOption } from '~/common';
@@ -21,6 +21,8 @@ type PromptGroupsContextType =
         isLoading: boolean;
       };
       hasAccess: boolean;
+      /** Opts the full prompt list query in; it stays idle until first requested. */
+      requestAllPromptGroups: () => void;
     })
   | null;
 
@@ -33,8 +35,16 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
   });
 
   const promptGroupsNav = usePromptGroupsNav(hasAccess);
+
+  /**
+   * The full prompt list only serves the `/` command popover, so its query stays
+   * idle until requested instead of racing the paginated sidebar query on startup.
+   */
+  const [allPromptsActive, setAllPromptsActive] = useState(false);
+  const requestAllPromptGroups = useCallback(() => setAllPromptsActive(true), []);
+
   const { data: allGroupsData, isLoading: isLoadingAll } = useGetAllPromptGroups(undefined, {
-    enabled: hasAccess,
+    enabled: hasAccess && allPromptsActive,
     select: (data) => {
       const mappedArray: PromptOption[] = data.map((group) => ({
         id: group._id ?? '',
@@ -64,11 +74,20 @@ export const PromptGroupsProvider = ({ children }: { children: ReactNode }) => {
       ...promptGroupsNav,
       allPromptGroups: {
         data: hasAccess ? allGroupsData : undefined,
-        isLoading: hasAccess ? isLoadingAll : false,
+        /** A never-fetched disabled query reports `isLoading` in React Query v4 */
+        isLoading: hasAccess && allPromptsActive ? isLoadingAll : false,
       },
       hasAccess,
+      requestAllPromptGroups,
     }),
-    [promptGroupsNav, allGroupsData, isLoadingAll, hasAccess],
+    [
+      promptGroupsNav,
+      allGroupsData,
+      isLoadingAll,
+      hasAccess,
+      allPromptsActive,
+      requestAllPromptGroups,
+    ],
   );
 
   return (

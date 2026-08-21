@@ -138,6 +138,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     requiredPermBit: number,
+    readPrimary?: boolean,
   ) => Promise<Types.ObjectId[]>;
   deleteAclEntries: (
     filter: Record<string, unknown>,
@@ -150,6 +151,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   findPublicResourceIds: (
     resourceType: string,
     requiredPermissions: number,
+    readPrimary?: boolean,
   ) => Promise<Types.ObjectId[]>;
   aggregateAclEntries: (pipeline: PipelineStage[]) => Promise<unknown[]>;
   getSoleOwnedResourceIds: (
@@ -492,6 +494,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     requiredPermBit: number,
+    readPrimary = false,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
@@ -499,11 +502,16 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
-    return await AclEntry.find({
+    const query = AclEntry.find({
       $or: principalsQuery,
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermBit) },
-    }).distinct('resourceId');
+    });
+    if (readPrimary) {
+      /** Cache builds must not capture a lagging secondary's pre-mutation state */
+      query.read('primary');
+    }
+    return await query.distinct('resourceId');
   }
 
   /**
@@ -541,13 +549,19 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   async function findPublicResourceIds(
     resourceType: string,
     requiredPermissions: number,
+    readPrimary = false,
   ): Promise<Types.ObjectId[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    return await AclEntry.find({
+    const query = AclEntry.find({
       principalType: PrincipalType.PUBLIC,
       resourceType,
       permBits: { $in: permissionBitSupersets(requiredPermissions) },
-    }).distinct('resourceId');
+    });
+    if (readPrimary) {
+      /** Cache builds must not capture a lagging secondary's pre-mutation state */
+      query.read('primary');
+    }
+    return await query.distinct('resourceId');
   }
 
   /**

@@ -11,6 +11,11 @@ import { escapeRegExp } from '~/utils/string';
 export interface UserGroupDeps {
   /** Returns the USER_PRINCIPALS cache store when principal caching is enabled. From getLogStores. */
   getCache?: (key: string) => CacheStore | undefined;
+  /**
+   * Notified after membership caches are invalidated so access caches derived from
+   * memberships (e.g. prompt group access IDs) drop their stale entries too.
+   */
+  onMemberGroupsInvalidated?: () => void | Promise<void>;
 }
 
 type PendingGroupLookup = { promise: Promise<Types.ObjectId[]>; markStale: () => void };
@@ -42,7 +47,7 @@ const sessionInvalidations = new WeakMap<ClientSession, DeferredInvalidation[]>(
  * state with no later correction; deferring keeps the existing entry serving the
  * still-committed old memberships until the transaction commits or aborts.
  */
-function runAfterTransaction(
+export function runAfterTransaction(
   session: ClientSession | undefined,
   invalidate: () => Promise<void>,
 ): Promise<void> {
@@ -437,11 +442,26 @@ export function createUserGroupMethods(
    * non-fatal; the cache TTL bounds any residual staleness (e.g. mutations
    * running under a different tenant context than the member's reads).
    */
+  /**
+   * Notifies dependent access caches after memberships have been evicted, never
+   * before: a dependent rebuild that runs first would read the stale membership
+   * and cache its derived IDs under the freshly bumped generation, surviving
+   * the membership eviction that should have prevented them.
+   */
+  const notifyMemberGroupsInvalidated = async (): Promise<void> => {
+    try {
+      await deps.onMemberGroupsInvalidated?.();
+    } catch {
+      /** Dependent cache invalidation must not block membership updates. */
+    }
+  };
+
   async function invalidateMemberGroupsCache(
     memberIds: Array<string | Types.ObjectId | undefined | null>,
   ): Promise<void> {
     const cache = getPrincipalsCache();
     if (!cache?.delete) {
+      await notifyMemberGroupsInvalidated();
       return;
     }
     const cacheKeys = new Set<string>();
@@ -459,14 +479,19 @@ export function createUserGroupMethods(
     if (cacheKeys.size > INVALIDATION_CLEAR_THRESHOLD && cache.clear) {
       return clearMemberGroupsCache();
     }
-    await dropMemberKeys(cache, cacheKeys);
-    scheduleSecondInvalidation(cache, () => dropMemberKeys(cache, cacheKeys));
+    const evict = async (): Promise<void> => {
+      await dropMemberKeys(cache, cacheKeys);
+      await notifyMemberGroupsInvalidated();
+    };
+    await evict();
+    scheduleSecondInvalidation(cache, evict);
   }
 
   /** Clears the whole membership cache when affected members cannot be enumerated. */
   async function clearMemberGroupsCache(): Promise<void> {
     const cache = getPrincipalsCache();
     if (!cache?.clear) {
+      await notifyMemberGroupsInvalidated();
       return;
     }
     const clearAll = async (): Promise<void> => {
@@ -479,6 +504,7 @@ export function createUserGroupMethods(
       } catch {
         /** Cache failures must not block membership updates. */
       }
+      await notifyMemberGroupsInvalidated();
     };
     await clearAll();
     scheduleSecondInvalidation(cache, clearAll);

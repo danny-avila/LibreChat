@@ -1,10 +1,10 @@
 import { InfiniteCollections, QueryKeys } from 'librechat-data-provider';
-import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import type {
   PromptGroupListResponse,
   PromptGroupListData,
   TPromptGroup,
 } from 'librechat-data-provider';
+import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import {
   addData,
   deleteData,
@@ -93,8 +93,25 @@ export const findPromptGroup = (
   );
 };
 
-export const addGroupToAll = (queryClient: QueryClient, newGroup: TPromptGroup) => {
-  addToCacheList<TPromptGroup>(queryClient, [QueryKeys.allPromptGroups], newGroup);
+export const addGroupToAll = async (queryClient: QueryClient, newGroup: TPromptGroup) => {
+  const queryKey = [QueryKeys.allPromptGroups];
+  const state = queryClient.getQueryState(queryKey);
+  /**
+   * An idle, never-fetched list must not be seeded partial; its first fetch
+   * includes the group. A first fetch already in flight may have read the
+   * database before this creation and settle without it (invalidating alone
+   * does not cancel a data-less fetch in React Query v4), and an errored fetch
+   * never retries on its own (retry and refetch triggers are off), so cancel
+   * and invalidate both to settle with the created group.
+   */
+  if (!state || state.data === undefined) {
+    if (state && (state.fetchStatus === 'fetching' || state.status === 'error')) {
+      await queryClient.cancelQueries(queryKey);
+      queryClient.invalidateQueries(queryKey);
+    }
+    return;
+  }
+  addToCacheList<TPromptGroup>(queryClient, queryKey, newGroup);
 };
 
 export const updateGroupInAll = (
