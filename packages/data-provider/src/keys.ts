@@ -93,6 +93,7 @@ export enum QueryKeys {
   /* Scheduled chats */
   schedules = 'schedules',
   schedule = 'schedule',
+  subagentThread = 'subagentThread',
 }
 
 // Dynamic query keys that require parameters

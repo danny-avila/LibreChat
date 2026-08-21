@@ -34,6 +34,7 @@ export * from './types/runs';
 export * from './types/web';
 export * from './types/graph';
 export * from './types/insights';
+export * from './types/subagents';
 /* access permissions */
 export * from './accessPermissions';
 /* query/mutation keys */

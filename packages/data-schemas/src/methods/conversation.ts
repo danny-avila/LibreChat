@@ -150,6 +150,12 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IConversation | null>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -251,6 +257,29 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /** Resolves a child only through its owning parent and includes its private live lease. */
+  async function getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<IConversation | null> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({
+        user: input.user,
+        conversationId: input.conversationId,
+        'subagentThread.parentConversationId': input.parentConversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+      })
+        .select('+subagentThreadLease')
+        .lean<IConversation>();
+    } catch (error) {
+      logger.error('[getSubagentThreadForParent] Error getting child conversation', error);
+      throw new Error('Error getting child conversation');
     }
   }
 
@@ -1566,6 +1595,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getSubagentThreadForParent,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

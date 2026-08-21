@@ -1,0 +1,360 @@
+import type { IConversation, IMessage } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
+import { createSubagentThreadViewHandler, SUBAGENT_THREAD_VIEW_LIMITS } from './view';
+
+jest.mock('@librechat/data-schemas', () => ({
+  CLIENT_MESSAGE_SELECT: '-_id -user',
+  logger: { error: jest.fn() },
+}));
+
+const parentConversationId = 'parent-conversation';
+const threadId = 'child-thread';
+
+const parent = {
+  conversationId: parentConversationId,
+  user: 'user-1',
+  tenantId: 'tenant-1',
+} as IConversation;
+
+const child = {
+  conversationId: threadId,
+  user: 'user-1',
+  tenantId: 'tenant-1',
+  title: 'Research child',
+  agent_id: 'agent-1',
+  updatedAt: new Date('2026-08-21T12:00:00.000Z'),
+  subagentThreadLease: {
+    token: 'lease-token',
+    taskId: 'task-1',
+    expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+  },
+  subagentThread: {
+    rootConversationId: parentConversationId,
+    parentConversationId,
+    parentMessageId: 'parent-message',
+    parentToolCallId: 'parent-tool-call',
+    subagentType: 'researcher',
+    subagentKind: 'agent',
+    depth: 1,
+  },
+} as IConversation;
+
+const message = (
+  messageId: string,
+  status: NonNullable<IMessage['subagentTask']>['status'],
+  isCreatedByUser = false,
+): IMessage =>
+  ({
+    messageId,
+    conversationId: threadId,
+    user: 'user-1',
+    parentMessageId: isCreatedByUser ? '00000000-0000-0000-0000-000000000000' : 'task-1:user',
+    sender: isCreatedByUser ? 'User' : 'researcher',
+    text: isCreatedByUser ? 'Investigate this.' : 'Finished the research.',
+    isCreatedByUser,
+    createdAt: new Date(isCreatedByUser ? '2026-08-21T11:00:00.000Z' : '2026-08-21T11:01:00.000Z'),
+    subagentTask: {
+      attemptKey: 'attempt-1',
+      status,
+    },
+  }) as IMessage;
+
+const createResponse = () => {
+  const json = jest.fn();
+  const status = jest.fn(() => ({ json }));
+  return {
+    response: { status } as Partial<Response> as Response,
+    status,
+    json,
+  };
+};
+
+const createRequest = (params: Record<string, string> = {}): ServerRequest =>
+  ({
+    params: { parentConversationId, threadId, ...params },
+    user: { id: 'user-1', tenantId: 'tenant-1' },
+  }) as ServerRequest;
+
+describe('subagent thread parent-scoped view', () => {
+  it('returns a bounded public child projection through the owning parent', async () => {
+    const getConvo = jest.fn((_: string, conversationId: string) =>
+      Promise.resolve(conversationId === parentConversationId ? parent : child),
+    );
+    const oversized = '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes);
+    const newest = { ...message('task-1:assistant', 'completed'), text: oversized } as IMessage;
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([newest, message('task-1:user', 'running', true)]);
+    const getSubagentThreadForParent = jest.fn().mockResolvedValue(child);
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent,
+      getMessages,
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(getMessages).toHaveBeenCalledWith(
+      { conversationId: threadId, user: 'user-1' },
+      expect.stringContaining('+subagentTask'),
+      {
+        limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
+        sort: { createdAt: -1, _id: -1 },
+      },
+    );
+    expect(json).toHaveBeenCalledWith({
+      threadId,
+      parentConversationId,
+      parentMessageId: 'parent-message',
+      parentToolCallId: 'parent-tool-call',
+      subagentType: 'researcher',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Research child',
+      status: 'completed',
+      messages: [
+        expect.objectContaining({ messageId: 'task-1:user', role: 'user' }),
+        expect.objectContaining({
+          messageId: 'task-1:assistant',
+          role: 'assistant',
+          textTruncated: true,
+        }),
+      ],
+      historyTruncated: false,
+      updatedAt: '2026-08-21T12:00:00.000Z',
+    });
+    expect(Buffer.byteLength(json.mock.calls[0][0].messages[1].text, 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes,
+    );
+    expect(Buffer.byteLength(JSON.stringify(json.mock.calls[0][0]), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
+    );
+    expect(json.mock.calls[0][0].messages[1]).not.toHaveProperty('subagentTask');
+  });
+
+  it('bounds the complete UTF-8 response while retaining the newest history', async () => {
+    const getConvo = jest.fn().mockResolvedValue(parent);
+    const messages = Array.from(
+      { length: SUBAGENT_THREAD_VIEW_LIMITS.messages },
+      (_, index) =>
+        ({
+          ...message(`task-${index}:assistant`, 'completed'),
+          text: '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes),
+        }) as IMessage,
+    );
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessages: jest.fn().mockResolvedValue(messages),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    const view = json.mock.calls[0][0];
+    expect(Buffer.byteLength(JSON.stringify(view), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_THREAD_VIEW_LIMITS.responseBytes,
+    );
+    expect(view.historyTruncated).toBe(true);
+    expect(view.messages.at(-1).messageId).toBe('task-0:assistant');
+  });
+
+  it.each([
+    ['running', 'running'],
+    ['error', 'failed'],
+    ['cancelled', 'cancelled'],
+  ] as const)('normalizes durable %s tasks as %s', async (durableStatus, publicStatus) => {
+    const getConvo = jest.fn((_: string, conversationId: string) =>
+      Promise.resolve(conversationId === parentConversationId ? parent : child),
+    );
+    const getMessages = jest
+      .fn()
+      .mockResolvedValue([
+        message(
+          durableStatus === 'running' ? 'task-1:user' : 'task-1:assistant',
+          durableStatus,
+          durableStatus === 'running',
+        ),
+      ]);
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessages,
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({ status: publicStatus }));
+  });
+
+  it('reports a reserved child with no durable task messages as dispatched', async () => {
+    const getConvo = jest.fn((_: string, conversationId: string) =>
+      Promise.resolve(conversationId === parentConversationId ? parent : child),
+    );
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessages: jest.fn().mockResolvedValue([]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'dispatched', messages: [] }),
+    );
+  });
+
+  it('reports a child with an active preparation lease as running before its seed exists', async () => {
+    const handler = createSubagentThreadViewHandler({
+      getConvo: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessages: jest.fn().mockResolvedValue([]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ status: 'running', messages: [] }),
+    );
+  });
+
+  it('does not mistake an older completed turn for the active leased turn', async () => {
+    const activeChild = {
+      ...child,
+      subagentThreadLease: { ...child.subagentThreadLease!, taskId: 'task-2' },
+    } as IConversation;
+    const handler = createSubagentThreadViewHandler({
+      getConvo: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(activeChild),
+      getMessages: jest.fn().mockResolvedValue([message('task-1:assistant', 'completed')]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'running' }));
+  });
+
+  it('keeps the newest bounded tail and marks older history as truncated', async () => {
+    const getConvo = jest.fn((_: string, conversationId: string) =>
+      Promise.resolve(conversationId === parentConversationId ? parent : child),
+    );
+    const messages = Array.from({ length: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1 }, (_, index) =>
+      message(`task-${index}:assistant`, 'completed'),
+    );
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+      getMessages: jest.fn().mockResolvedValue(messages),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view.historyTruncated).toBe(true);
+    expect(view.messages).toHaveLength(SUBAGENT_THREAD_VIEW_LIMITS.messages);
+    expect(view.messages[0].messageId).toBe(
+      `task-${SUBAGENT_THREAD_VIEW_LIMITS.messages - 1}:assistant`,
+    );
+    expect(view.messages.at(-1).messageId).toBe('task-0:assistant');
+  });
+
+  it.each([
+    ['missing parent', null, child, 'tenant-1'],
+    ['missing child', parent, null, 'tenant-1'],
+    [
+      'unrelated child',
+      parent,
+      {
+        ...child,
+        subagentThread: { ...child.subagentThread, parentConversationId: 'another-parent' },
+      },
+      'tenant-1',
+    ],
+    ['parent tenant mismatch', { ...parent, tenantId: 'tenant-2' }, child, 'tenant-1'],
+    ['child tenant mismatch', parent, { ...child, tenantId: 'tenant-2' }, 'tenant-1'],
+  ])('returns the same 404 for %s', async (_, parentRecord, childRecord, tenantId) => {
+    const getConvo = jest.fn().mockResolvedValue(parentRecord);
+    const getMessages = jest.fn().mockResolvedValue([message('task-1:assistant', 'completed')]);
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(childRecord),
+      getMessages,
+    });
+    const { response, status, json } = createResponse();
+
+    await handler(
+      {
+        ...createRequest(),
+        user: { id: 'user-1', tenantId },
+      } as ServerRequest,
+      response,
+    );
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  it('rejects a child id used as its own parent before reading storage', async () => {
+    const getConvo = jest.fn();
+    const getSubagentThreadForParent = jest.fn();
+    const getMessages = jest.fn();
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent,
+      getMessages,
+    });
+    const { response, status } = createResponse();
+
+    await handler(createRequest({ parentConversationId: threadId }), response);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(getConvo).not.toHaveBeenCalled();
+    expect(getSubagentThreadForParent).not.toHaveBeenCalled();
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized route identifiers before reading storage', async () => {
+    const getConvo = jest.fn();
+    const getSubagentThreadForParent = jest.fn();
+    const getMessages = jest.fn();
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent,
+      getMessages,
+    });
+    const { response, status } = createResponse();
+
+    await handler(createRequest({ threadId: 'x'.repeat(257) }), response);
+
+    expect(status).toHaveBeenCalledWith(404);
+    expect(getConvo).not.toHaveBeenCalled();
+    expect(getSubagentThreadForParent).not.toHaveBeenCalled();
+    expect(getMessages).not.toHaveBeenCalled();
+  });
+
+  it('marks an unleased running seed as interrupted', async () => {
+    const getConvo = jest.fn().mockResolvedValue(parent);
+    const handler = createSubagentThreadViewHandler({
+      getConvo,
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessages: jest.fn().mockResolvedValue([message('task-1:user', 'running', true)]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'interrupted' }));
+  });
+});
