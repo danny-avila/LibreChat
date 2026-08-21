@@ -109,8 +109,12 @@ function buildClipboardContent({
     .map(([, citation]) => `[${citation.referenceNumber}] ${citation.link}\n`)
     .join('');
 
-  const last = segments.length - 1;
-  segments[last] = `${segments[last]}\n\nCitations:\n${citationList}`;
+  /**
+   * The footer is its own segment rather than an addition to the last one: a
+   * segment ending in an unclosed construct, an interrupted code fence most of
+   * all, would otherwise swallow the sources into it.
+   */
+  segments.push(`\nCitations:\n${citationList}`);
 
   return {
     segments,

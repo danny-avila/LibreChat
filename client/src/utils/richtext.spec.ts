@@ -1,3 +1,4 @@
+import { apiBaseUrl } from 'librechat-data-provider';
 import { markdownToHtml } from './richtext';
 
 describe('markdownToHtml', () => {
@@ -70,7 +71,7 @@ describe('markdownToHtml', () => {
 
   it('renders math as its LaTeX source and unwraps directives', () => {
     expect(markdownToHtml('$$E = mc^2$$')).toBe('<p>E = mc^2</p>');
-    expect(markdownToHtml(':::artifact\ncontents\n:::')).toBe('<p>contents</p>');
+    expect(markdownToHtml(':::note\ncontents\n:::')).toBe('<p>contents</p>');
   });
 
   it('keeps directive markers literal for the lite renderer, which has no directives', () => {
@@ -129,14 +130,6 @@ describe('markdownToHtml', () => {
     expect(markdownToHtml('a :foo[bar] b')).toBe('<p>a :foo b</p>');
   });
 
-  it('numbers footnotes by the order their references appear', () => {
-    const html = markdownToHtml('Second[^b] then first[^a].\n\n[^a]: alpha\n\n[^b]: beta');
-
-    expect(html).toContain('Second<sup>1</sup> then first<sup>2</sup>.');
-    expect(html).toContain('<div><sup>1</sup><p>beta</p></div>');
-    expect(html).toContain('<div><sup>2</sup><p>alpha</p></div>');
-  });
-
   it('omits a footnote definition nothing references, as the renderer does', () => {
     expect(markdownToHtml('Plain text.\n\n[^unused]: never cited')).toBe('<p>Plain text.</p>');
   });
@@ -148,6 +141,36 @@ describe('markdownToHtml', () => {
     expect(
       markdownToHtml(markdown, { variant: 'full', latex: false, reserved: new Set(['1']) }),
     ).toBe('<p>Cited [1].</p>');
+  });
+
+  it('keeps a loose list wrapped in paragraphs, as the renderer does', () => {
+    expect(markdownToHtml('- one\n\n- two')).toBe(
+      '<ul><li><p>one</p></li><li><p>two</p></li></ul>',
+    );
+    expect(markdownToHtml('- one\n- two')).toBe('<ul><li>one</li><li>two</li></ul>');
+  });
+
+  it('shows an artifact by its title, which is what the button displays', () => {
+    expect(markdownToHtml(':::artifact{title="Chart component"}\ncode here\n:::')).toBe(
+      '<p>Chart component</p>',
+    );
+  });
+
+  it('routes rooted image sources through the deployment base', () => {
+    const html = markdownToHtml('![chart](/images/chart.png)');
+    expect(html).toBe(
+      `<p><img src="${new URL(`${apiBaseUrl()}/images/chart.png`, document.baseURI).href}" alt="chart" /></p>`,
+    );
+  });
+
+  it('gathers footnote definitions into a footer in reference order', () => {
+    const html = markdownToHtml('Second[^b] then first[^a].\n\n[^a]: alpha\n\n[^b]: beta');
+
+    expect(html).toBe(
+      '<p>Second<sup>1</sup> then first<sup>2</sup>.</p>\n' +
+        '<div><sup>1</sup><p>beta</p></div>\n' +
+        '<div><sup>2</sup><p>alpha</p></div>',
+    );
   });
 
   it('leaves paired currency alone, as the renderer does', () => {

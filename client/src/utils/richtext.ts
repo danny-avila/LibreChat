@@ -4,10 +4,19 @@ import { math } from 'micromark-extension-math';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { mathFromMarkdown } from 'mdast-util-math';
 import { defaultUrlTransform } from 'react-markdown';
+import { apiBaseUrl } from 'librechat-data-provider';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { directive } from 'micromark-extension-directive';
 import { directiveFromMarkdown } from 'mdast-util-directive';
-import type { AlignType, Definition, Root, RootContent, Table } from 'mdast';
+import type {
+  AlignType,
+  Definition,
+  FootnoteDefinition,
+  ListItem,
+  Root,
+  RootContent,
+  Table,
+} from 'mdast';
 import type { Extension as MicromarkExtension } from 'micromark-util-types';
 import { remarkApproxTilde } from './tilde';
 import { preprocessLaTeX } from './latex';
@@ -67,6 +76,12 @@ const STYLES = {
 } as const;
 
 const EMPTY_RESERVED: ReadonlySet<string> = new Set();
+
+/**
+ * `artifactPlugin` swaps this directive for a button showing the artifact's
+ * title, so the implementation inside it is never on screen to be copied.
+ */
+const ARTIFACT_DIRECTIVE = 'artifact';
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -131,13 +146,27 @@ function resolveUrl(url: string): string {
   }
 }
 
+const artifactTitle = (
+  attributes: Record<string, string | null | undefined> | null | undefined,
+) => {
+  const title = attributes?.title ?? '';
+  return title.length > 0 ? `<p>${escapeText(title)}</p>` : '';
+};
+
 const anchor = (url: string, children: string): string => {
   const resolved = resolveUrl(url);
   return resolved.length > 0 ? `<a href="${escapeHtml(resolved)}">${children}</a>` : children;
 };
 
+/**
+ * The renderer prepends the deployment base to rooted `/images/` sources, which
+ * a leading slash would otherwise discard on a subdirectory install.
+ */
+const IMAGE_ROOT = '/images/';
+
 const image = (url: string, alt: string): string => {
-  const resolved = resolveUrl(url);
+  const rooted = url.startsWith(IMAGE_ROOT) ? `${apiBaseUrl()}${url}` : url;
+  const resolved = resolveUrl(rooted);
   return resolved.length > 0
     ? `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(alt)}" />`
     : escapeHtml(alt);
@@ -249,20 +278,14 @@ function serializeNode(node: SerializableNode, context: SerializeContext): strin
     case 'list': {
       const tag = node.ordered === true ? 'ol' : 'ul';
       const start = node.ordered === true && node.start != null && node.start !== 1;
-      return `<${tag}${start ? ` start="${node.start}"` : ''}>${serializeChildren(
-        node.children,
-        context,
-      )}</${tag}>`;
+      let items = '';
+      for (const item of node.children) {
+        items += serializeListItem(item, context, node.spread === true);
+      }
+      return `<${tag}${start ? ` start="${node.start}"` : ''}>${items}</${tag}>`;
     }
-    case 'listItem': {
-      const [firstChild] = node.children;
-      const tight = node.spread !== true && firstChild?.type === 'paragraph';
-      const children = tight
-        ? serializeChildren(firstChild.children, context) +
-          serializeChildren(node.children.slice(1), context)
-        : serializeChildren(node.children, context);
-      return `<li>${taskMarker(node.checked)}${children}</li>`;
-    }
+    case 'listItem':
+      return serializeListItem(node, context, false);
     case 'table':
       return serializeTable(node, context);
     case 'link':
@@ -298,11 +321,30 @@ function serializeNode(node: SerializableNode, context: SerializeContext): strin
     }
     case 'textDirective':
       return escapeText(`:${node.name}`);
+    case 'containerDirective':
+    case 'leafDirective':
+      return node.name === ARTIFACT_DIRECTIVE
+        ? artifactTitle(node.attributes)
+        : serializeChildren(node.children, context);
     case 'definition':
       return '';
     default:
       return 'children' in node ? serializeChildren(node.children, context) : '';
   }
+}
+
+/**
+ * A loose list keeps each item's paragraph wrapper, and mdast records that
+ * looseness on the list rather than on every item, so the parent decides.
+ */
+function serializeListItem(node: ListItem, context: SerializeContext, loose: boolean): string {
+  const [firstChild] = node.children;
+  const tight = !loose && node.spread !== true && firstChild?.type === 'paragraph';
+  const children = tight
+    ? serializeChildren(firstChild.children, context) +
+      serializeChildren(node.children.slice(1), context)
+    : serializeChildren(node.children, context);
+  return `<li>${taskMarker(node.checked)}${children}</li>`;
 }
 
 function serializeChildren(nodes: readonly SerializableNode[], context: SerializeContext): string {
@@ -350,13 +392,26 @@ export function markdownToHtml(
   };
   collectContext(children, context);
 
-  let html = '';
+  const blocks: string[] = [];
+  const notes: SerializableNode[] = [];
+
   for (const node of children) {
-    const serialized = serializeNode(node, context);
-    if (serialized.length > 0) {
-      html += html.length > 0 ? `\n${serialized}` : serialized;
+    if (node.type === 'footnoteDefinition') {
+      notes.push(node);
+      continue;
     }
+    blocks.push(serializeNode(node, context));
   }
 
-  return html;
+  /** The renderer gathers footnotes into a footer ordered by first reference. */
+  notes.sort(
+    (a, b) =>
+      (context.footnotes.get((a as FootnoteDefinition).identifier) ?? 0) -
+      (context.footnotes.get((b as FootnoteDefinition).identifier) ?? 0),
+  );
+  for (const note of notes) {
+    blocks.push(serializeNode(note, context));
+  }
+
+  return blocks.filter((block) => block.length > 0).join('\n');
 }

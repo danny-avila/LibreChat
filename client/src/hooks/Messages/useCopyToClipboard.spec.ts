@@ -767,6 +767,29 @@ Citations:
       expect(html).toContain('https://example.com/1');
     });
 
+    it('keeps the citation footer out of an unfinished construct', () => {
+      const { result } = renderHook(() =>
+        useCopyToClipboard({
+          text: 'Cited \ue202turn0search0.\n\n```js\nconst a = 1;',
+          searchResults: {
+            '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+          } as { [key: string]: SearchResultData },
+          richText: { variant: 'full', latex: false },
+        }),
+      );
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const html = getClipboardHtml();
+      expect(html).toContain(
+        '<p>Citations:<br />[1] <a href="https://example.com/1">https://example.com/1</a></p>',
+      );
+      expect(html).toContain('<code>const a = 1;</code></pre>');
+      expect(html).not.toContain('Citations:</code>');
+    });
+
     it('keeps the part boundary out of the plain text', () => {
       const { result } = renderHook(() =>
         useCopyToClipboard({
