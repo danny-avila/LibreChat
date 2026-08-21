@@ -110,6 +110,27 @@ describe('validateMessageReq', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('returns not found for a HEAD request to a child thread', async () => {
+    const req = {
+      method: 'HEAD',
+      params: { conversationId: 'child-convo' },
+      body: {},
+      user: { id: userId },
+    };
+    const res = createResponse();
+    const next = jest.fn();
+    getConvoOwnership.mockResolvedValue({
+      user: userId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+
+    await validateMessageReq(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('should allow message reads for an owned active generation job before the conversation is saved', async () => {
     const req = {
       method: 'GET',

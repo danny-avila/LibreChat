@@ -183,4 +183,16 @@ describe('GET /api/messages/:conversationId with real validation middleware', ()
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: 'Conversation not found' });
   });
+
+  it('does not expose a directly addressed child thread through HEAD', async () => {
+    getConvoOwnership.mockResolvedValue({
+      conversationId: 'child-convo',
+      user: authenticatedUserId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+
+    const response = await request(app).head('/api/messages/child-convo');
+
+    expect(response.status).toBe(404);
+  });
 });

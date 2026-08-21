@@ -91,6 +91,10 @@ function hasTenantMismatch(job: GenerationJobRecord, user: MessageValidationUser
   return job?.metadata?.tenantId != null && job.metadata.tenantId !== user.tenantId;
 }
 
+function isPublicReadMethod(method?: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
 export function createMessageRequestMiddleware(
   deps: MessageValidationDeps,
 ): MessageRequestMiddleware {
@@ -98,7 +102,7 @@ export function createMessageRequestMiddleware(
     req: MessageValidationRequest,
     conversationId?: string,
   ): Promise<boolean> {
-    if (req.method !== 'GET' || req.params?.messageId) {
+    if (!isPublicReadMethod(req.method) || req.params?.messageId) {
       return false;
     }
 
@@ -157,7 +161,7 @@ export function createMessageRequestMiddleware(
     // Child threads are internal execution records, not standalone public
     // conversations. Keep the same response as a missing conversation so the
     // read boundary does not disclose whether a supplied child id exists.
-    if (req.method === 'GET' && conversation.subagentThread != null) {
+    if (isPublicReadMethod(req.method) && conversation.subagentThread != null) {
       return { ok: false, status: 404, body: { error: 'Conversation not found' } };
     }
 
