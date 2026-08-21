@@ -125,6 +125,7 @@ jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
     TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
+    Spinner: ({ className }: { className?: string }) => React.createElement('span', { className }),
     Button: ({
       children,
       variant: _variant,
