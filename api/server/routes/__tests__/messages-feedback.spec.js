@@ -12,6 +12,7 @@ jest.mock('@librechat/api', () => ({
   traceIdForMessage: jest.fn((messageId) => `trace-${messageId}`),
   CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
   isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
+  requireFeedbackEnabled: jest.fn((req, res, next) => next()),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
@@ -65,7 +66,7 @@ jest.mock('~/db/models', () => ({
 
 describe('PUT /:conversationId/:messageId/feedback', () => {
   let app;
-  const { sendFeedbackScore } = require('@librechat/api');
+  const { sendFeedbackScore, requireFeedbackEnabled } = require('@librechat/api');
   const { updateMessage } = require('~/models');
 
   beforeAll(() => {
@@ -82,6 +83,7 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    requireFeedbackEnabled.mockImplementation((req, res, next) => next());
     updateMessage.mockImplementation((userId, { messageId, feedback }) =>
       Promise.resolve({
         messageId,
@@ -143,6 +145,21 @@ describe('PUT /:conversationId/:messageId/feedback', () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: 'Invalid feedback' });
+    expect(updateMessage).not.toHaveBeenCalled();
+    expect(sendFeedbackScore).not.toHaveBeenCalled();
+  });
+
+  it('gates the route on the shared feedback-enabled middleware', async () => {
+    requireFeedbackEnabled.mockImplementationOnce((req, res) =>
+      res.status(403).json({ error: 'Feedback is disabled' }),
+    );
+
+    const response = await request(app)
+      .put('/api/messages/conversation-1/message-1/feedback')
+      .send({ feedback: { rating: 'thumbsUp', tag: 'accurate_reliable' } });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: 'Feedback is disabled' });
     expect(updateMessage).not.toHaveBeenCalled();
     expect(sendFeedbackScore).not.toHaveBeenCalled();
   });

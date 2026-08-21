@@ -1509,6 +1509,7 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     contextUsage: z.boolean().optional(),
     contextCost: z.boolean().optional(),
+    feedback: z.boolean().optional(),
     currency: z
       .object({
         code: z.string(),
@@ -1611,6 +1612,7 @@ export const interfaceSchema = z
     webSearch: true,
     contextUsage: true,
     contextCost: false,
+    feedback: true,
     peoplePicker: {
       users: true,
       groups: true,
