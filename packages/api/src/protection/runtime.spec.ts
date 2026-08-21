@@ -465,6 +465,72 @@ describe('configured content inspection', () => {
     expect(callCount).toBe(2);
   });
 
+  it('shares dedupe state across one bounded inspection session only', () => {
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const inspector = createConfiguredContentInspector({ filters });
+    const session = inspector?.createSession();
+    const patternTest = jest.spyOn(RE2JS.prototype, 'test');
+
+    try {
+      expect(
+        session?.inspectFragment(fragment('message', 'text', 'repeated safe text')),
+      ).toBeNull();
+      expect(
+        session?.inspect([fragment('message', 'content_part', 'repeated safe text')]),
+      ).toBeNull();
+      expect(patternTest).toHaveBeenCalledTimes(1);
+
+      expect(
+        inspector?.createSession().inspect([fragment('message', 'text', 'repeated safe text')]),
+      ).toBeNull();
+      expect(patternTest).toHaveBeenCalledTimes(2);
+    } finally {
+      patternTest.mockRestore();
+    }
+  });
+
+  it('bounds cross-batch dedupe memory without skipping inspection', () => {
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    };
+    const session = createConfiguredContentInspector({ filters })?.createSession();
+    const patternTest = jest.spyOn(RE2JS.prototype, 'test');
+
+    try {
+      expect(
+        session?.inspect(
+          Array.from({ length: 4_097 }, (_, index) =>
+            fragment('message', 'text', `safe unique text ${index}`),
+          ),
+        ),
+      ).toBeNull();
+      expect(patternTest).toHaveBeenCalledTimes(4_097);
+
+      expect(
+        session?.inspectFragment(fragment('message', 'text', 'safe unique text 0')),
+      ).toBeNull();
+      expect(patternTest).toHaveBeenCalledTimes(4_097);
+      expect(
+        session?.inspectFragment(fragment('message', 'text', 'safe unique text 4096')),
+      ).toBeNull();
+      expect(patternTest).toHaveBeenCalledTimes(4_098);
+    } finally {
+      patternTest.mockRestore();
+    }
+  });
+
   it('evaluates ambiguous custom patterns with the linear-time engine', () => {
     const filters: FiltersConfig = {
       messages: {
@@ -478,5 +544,24 @@ describe('configured content inspection', () => {
     expect(
       inspectContent([fragment('message', 'text', `${'a'.repeat(100_000)}!`)], { filters }),
     ).toBeNull();
+  });
+
+  it('fails closed when typed callers bypass the compiled-program schema budget', () => {
+    const filters: FiltersConfig = {
+      messages: {
+        pii: {
+          starterPatterns: [],
+          customPatterns: Array.from({ length: 9 }, (_, index) => ({
+            id: `expanded-${index}`,
+            label: `Expanded ${index}`,
+            regex: `a{1000}Q${index}`,
+          })),
+        },
+      },
+    };
+
+    expect(() => createConfiguredContentInspector({ filters })).toThrow(
+      'custom patterns exceed 8192 compiled instructions',
+    );
   });
 });

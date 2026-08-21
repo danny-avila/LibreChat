@@ -96,6 +96,48 @@ describe('filtersConfigSchema', () => {
     ).toBe(false);
   });
 
+  it('rejects resource-amplifying pattern configurations', () => {
+    const parses = (customPatterns: Array<{ id: string; label: string; regex: string }>) =>
+      filtersConfigSchema.safeParse({ messages: { pii: { customPatterns } } }).success;
+
+    expect(
+      parses(
+        Array.from({ length: 9 }, (_, index) => ({
+          id: `expanded-${index}`,
+          label: `Expanded ${index}`,
+          regex: `a{1000}Q${index}`,
+        })),
+      ),
+    ).toBe(false);
+    expect(
+      parses(
+        Array.from({ length: 17 }, (_, index) => ({
+          id: `large-${index}`,
+          label: `Large ${index}`,
+          regex: 'a'.repeat(512),
+        })),
+      ),
+    ).toBe(false);
+    expect(
+      parses(
+        Array.from({ length: 257 }, (_, index) => ({
+          id: `pattern-${index}`,
+          label: `Pattern ${index}`,
+          regex: `VALUE-${index}`,
+        })),
+      ),
+    ).toBe(false);
+    expect(
+      parses(
+        Array.from({ length: 256 }, (_, index) => ({
+          id: `bounded-${index}`,
+          label: `Bounded ${index}`,
+          regex: `a{15}Q${index}`,
+        })),
+      ),
+    ).toBe(true);
+  });
+
   it('keeps default patterns, custom patterns, and explicit file fail-close active', () => {
     expect(hasActivePiiPatterns({})).toBe(true);
     expect(
@@ -282,6 +324,25 @@ describe('filtersConfigSchema', () => {
     expect(
       messageFilterPiiSchema.safeParse({
         customPatterns: [{ id: 'legacy-broken', label: 'Broken', regex: '(' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      messageFilterPiiSchema.safeParse({
+        customPatterns: [{ id: 'legacy-long', label: 'Too long', regex: 'a'.repeat(513) }],
+      }).success,
+    ).toBe(false);
+    expect(
+      messageFilterPiiSchema.safeParse({
+        customPatterns: Array.from({ length: 17 }, (_, index) => ({
+          id: `legacy-large-${index}`,
+          label: `Legacy large ${index}`,
+          regex: 'a'.repeat(512),
+        })),
+      }).success,
+    ).toBe(false);
+    expect(
+      messageFilterPiiSchema.safeParse({
+        starterPatterns: Array.from({ length: 257 }, () => 'sk_prefix'),
       }).success,
     ).toBe(false);
     expect(

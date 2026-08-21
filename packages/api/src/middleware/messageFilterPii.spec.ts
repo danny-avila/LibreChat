@@ -829,6 +829,15 @@ describe('configureMessageFilterRegexValidator (RE2 config-load validation)', ()
     expect(reject('token-\\cA+')).toBe(false);
     // a normal RE2-compatible pattern still passes
     expect(reject('\\bORG-[A-Z0-9]{6,}')).toBe(true);
+    expect(
+      messageFilterPiiSchema.safeParse({
+        customPatterns: Array.from({ length: 9 }, (_, index) => ({
+          id: `expanded-${index}`,
+          label: `Expanded ${index}`,
+          regex: `a{1000}Q${index}`,
+        })),
+      }).success,
+    ).toBe(false);
   });
 
   it('fails closed with 400 when every configured pattern fails to compile', () => {
@@ -839,6 +848,25 @@ describe('configureMessageFilterRegexValidator (RE2 config-load validation)', ()
       },
       { text: 'anything at all' },
     );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
+  it('fails closed when a typed legacy config bypasses the compiled-program schema budget', () => {
+    configureMessageFilterRegexValidator();
+    const { capturedRes, nextCalls } = runMiddleware(
+      {
+        starterPatterns: [],
+        customPatterns: Array.from({ length: 9 }, (_, index) => ({
+          id: `expanded-${index}`,
+          label: `Expanded ${index}`,
+          regex: `a{1000}Q${index}`,
+        })),
+      },
+      { text: 'safe' },
+    );
+
     expect(nextCalls).toBe(0);
     expect(capturedRes.status).toBe(400);
     expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });

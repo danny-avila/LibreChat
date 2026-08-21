@@ -358,6 +358,31 @@ const ALL_MODEL_PARAMETER_FIELDS = [
   'metadata',
 ] as const satisfies readonly ContentFieldMap['model_parameter'][];
 
+const STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES = new Set([
+  '/type',
+  '/text',
+  '/think',
+  '/original',
+  '/updated',
+  '/steer',
+  '/error',
+  '/image_url',
+  '/video_url',
+  '/input_audio',
+  '/image_file',
+  '/files',
+  '/tool_call/args',
+  '/tool_call/name',
+  '/tool_call/arguments',
+  '/tool_call/output',
+  '/tool_call/function/name',
+  '/tool_call/function/arguments',
+  '/tool_call/function/output',
+  '/tool_call/code_interpreter/input',
+  '/tool_call/code_interpreter/outputs',
+]);
+const STORED_MESSAGE_NESTED_TEXT_SUFFIX = /^\/content\/(0|[1-9]\d*)\/text$/;
+
 function getModelParameterWrapperFields(
   value: object,
 ): readonly ContentFieldMap['model_parameter'][] {
@@ -1351,32 +1376,15 @@ export function extractStoredMessageContent(
 
     if (part != null) {
       const basePath = `/content/${index}` as JsonPointer;
-      const handledPaths = new Set<string>([
-        `${basePath}/type`,
-        `${basePath}/text`,
-        `${basePath}/think`,
-        `${basePath}/original`,
-        `${basePath}/updated`,
-        `${basePath}/steer`,
-        `${basePath}/error`,
-        `${basePath}/image_url`,
-        `${basePath}/video_url`,
-        `${basePath}/input_audio`,
-        `${basePath}/image_file`,
-        `${basePath}/files`,
-        `${basePath}/tool_call/args`,
-        `${basePath}/tool_call/name`,
-        `${basePath}/tool_call/arguments`,
-        `${basePath}/tool_call/output`,
-        `${basePath}/tool_call/function/name`,
-        `${basePath}/tool_call/function/arguments`,
-        `${basePath}/tool_call/function/output`,
-        `${basePath}/tool_call/code_interpreter/input`,
-        `${basePath}/tool_call/code_interpreter/outputs`,
-      ]);
-      for (let nestedIndex = 0; nestedIndex < (part.content?.length ?? 0); nestedIndex++) {
-        handledPaths.add(`${basePath}/content/${nestedIndex}/text`);
-      }
+      const nestedContentLength = Array.isArray(part.content) ? part.content.length : 0;
+      const isHandledPath = (path: JsonPointer): boolean => {
+        const suffix = path.slice(basePath.length);
+        if (STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES.has(suffix)) {
+          return true;
+        }
+        const nestedTextMatch = STORED_MESSAGE_NESTED_TEXT_SUFFIX.exec(suffix);
+        return nestedTextMatch != null && Number(nestedTextMatch[1]) < nestedContentLength;
+      };
       let fallbackIndex = 0;
       const complete = visitNestedStrings(
         part,
@@ -1391,7 +1399,7 @@ export function extractStoredMessageContent(
         },
         {
           includeKeys: true,
-          shouldVisit: ({ path }) => !handledPaths.has(path),
+          shouldVisit: ({ path }) => !isHandledPath(path),
           shouldInclude: shouldIncludeNestedSubmittedText,
         },
       );

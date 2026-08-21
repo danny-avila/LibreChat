@@ -1,5 +1,13 @@
 import { RE2JS } from 're2js';
-import { setMessageFilterRegexValidator } from 'librechat-data-provider';
+import {
+  MAX_PII_CUSTOM_REGEX_CHARACTERS,
+  MAX_PII_CUSTOM_REGEX_INSTRUCTIONS,
+  MAX_PII_PATTERN_ID_LENGTH,
+  MAX_PII_PATTERN_LABEL_LENGTH,
+  MAX_PII_PATTERNS_PER_SOURCE,
+  MAX_PII_PATTERN_LENGTH,
+  setMessageFilterRegexValidator,
+} from 'librechat-data-provider';
 import type {
   NextFunction,
   RequestHandler,
@@ -34,12 +42,18 @@ import { extractChatContent } from '../protection/adapters/chat';
 import { contentFilterBlockResponse } from './contentFilter';
 import { inspectContent } from '../protection/runtime';
 
-function isSupportedMessageFilterRegex(pattern: string): boolean {
+function validateMessageFilterRegex(pattern: string): {
+  readonly supported: boolean;
+  readonly programSize?: number;
+} {
+  let compiled: RE2JS | undefined;
   try {
-    RE2JS.compile(pattern);
-    return true;
+    compiled = RE2JS.compile(pattern);
+    return { supported: true, programSize: compiled.programSize() };
   } catch {
-    return false;
+    return { supported: false };
+  } finally {
+    compiled?.reset();
   }
 }
 
@@ -49,7 +63,7 @@ function isSupportedMessageFilterRegex(pattern: string): boolean {
  * by RE2 from being silently omitted when the filter is created.
  */
 export function configureMessageFilterRegexValidator(): void {
-  setMessageFilterRegexValidator(isSupportedMessageFilterRegex);
+  setMessageFilterRegexValidator(validateMessageFilterRegex);
 }
 
 const LEGACY_CONFIG_VALIDITY = new WeakMap<object, boolean>();
@@ -59,9 +73,39 @@ function isLegacyPiiConfigValid(config: MessageFilterPiiConfig): boolean {
   if (cached != null) {
     return cached;
   }
-  const valid = (config.customPatterns ?? []).every((pattern) =>
-    isSupportedMessageFilterRegex(pattern.regex),
-  );
+  const starterPatterns = config.starterPatterns ?? [];
+  const customPatterns = config.customPatterns ?? [];
+  let regexCharacters = 0;
+  let regexInstructions = 0;
+  const valid =
+    starterPatterns.length <= MAX_PII_PATTERNS_PER_SOURCE &&
+    starterPatterns.every(
+      (pattern) => typeof pattern === 'string' && pattern.length <= MAX_PII_PATTERN_ID_LENGTH,
+    ) &&
+    customPatterns.length <= MAX_PII_PATTERNS_PER_SOURCE &&
+    customPatterns.every((pattern) => {
+      if (
+        typeof pattern?.id !== 'string' ||
+        pattern.id.length === 0 ||
+        pattern.id.length > MAX_PII_PATTERN_ID_LENGTH ||
+        typeof pattern.label !== 'string' ||
+        pattern.label.length === 0 ||
+        pattern.label.length > MAX_PII_PATTERN_LABEL_LENGTH ||
+        typeof pattern.regex !== 'string' ||
+        pattern.regex.length === 0 ||
+        pattern.regex.length > MAX_PII_PATTERN_LENGTH
+      ) {
+        return false;
+      }
+      regexCharacters += pattern.regex.length;
+      const validation = validateMessageFilterRegex(pattern.regex);
+      regexInstructions += validation.programSize ?? 0;
+      return (
+        validation.supported &&
+        regexCharacters <= MAX_PII_CUSTOM_REGEX_CHARACTERS &&
+        regexInstructions <= MAX_PII_CUSTOM_REGEX_INSTRUCTIONS
+      );
+    });
   LEGACY_CONFIG_VALIDITY.set(config, valid);
   return valid;
 }

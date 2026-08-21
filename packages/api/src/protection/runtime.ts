@@ -1,23 +1,21 @@
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
+import type { PatternContentInspector, PatternContentInspectorConfig } from './detectors/pattern';
 import type { ContentSource, ProtectionFinding, TextContentFragment } from './types';
-import type { PatternContentInspectorConfig } from './detectors/pattern';
 import type { ContentTraversalLimitError } from './adapters/nested';
 import {
   getContentTraversalFragments,
   isContentTraversalLimitError,
   isContentTraversalProtected,
 } from './adapters/nested';
-import { createLegacyPiiInspector, isLegacyPiiFragment } from './legacy';
 import { createPatternContentInspector } from './detectors/pattern';
+import { isLegacyPiiFragment } from './legacy';
 
 interface CompiledFilter {
   readonly detectorId: string;
   readonly sources: ReadonlySet<ContentSource>;
   readonly fields: ReadonlySet<string> | null;
   readonly applies?: (fragment: TextContentFragment) => boolean;
-  readonly inspector: {
-    inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
-  };
+  readonly inspector: PatternContentInspector;
 }
 
 export interface ContentInspectionConfig {
@@ -26,6 +24,12 @@ export interface ContentInspectionConfig {
 }
 
 export interface ConfiguredContentInspector {
+  createSession(): ConfiguredContentInspectionSession;
+  inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
+}
+
+export interface ConfiguredContentInspectionSession {
+  inspectFragment(fragment: TextContentFragment): ProtectionFinding | null;
   inspect(fragments: Iterable<TextContentFragment>): ProtectionFinding | null;
 }
 
@@ -43,6 +47,7 @@ const LEGACY_CACHE = new WeakMap<object, CompiledFilter | null>();
 const FILTER_INSPECTOR_CACHE = new WeakMap<object, ConfiguredContentInspector>();
 const LEGACY_INSPECTOR_CACHE = new WeakMap<object, ConfiguredContentInspector>();
 const COMBINED_INSPECTOR_CACHE = new WeakMap<object, WeakMap<object, ConfiguredContentInspector>>();
+const MAX_INSPECTION_DEDUPE_ENTRIES_PER_RULE = 4_096;
 
 function compileFilter(
   config: PatternContentInspectorConfig & { readonly fields?: readonly string[] },
@@ -100,8 +105,8 @@ function compileLegacy(config: MessageFilterPiiConfig): CompiledFilter | null {
   if (LEGACY_CACHE.has(config)) {
     return LEGACY_CACHE.get(config) ?? null;
   }
-  const inspector = createLegacyPiiInspector(config);
-  if (inspector == null) {
+  const inspector = createPatternContentInspector(config, { linearTime: true });
+  if (!inspector.active) {
     LEGACY_CACHE.set(config, null);
     return null;
   }
@@ -117,36 +122,79 @@ function compileLegacy(config: MessageFilterPiiConfig): CompiledFilter | null {
 }
 
 function createInspector(rules: readonly CompiledFilter[]): ConfiguredContentInspector {
-  return {
-    inspect(fragments) {
-      const inspectedTextByRule = rules.map(() => new Set<string>());
-      for (const fragment of fragments) {
-        for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
-          const rule = rules[ruleIndex];
-          if (!rule.sources.has(fragment.source)) {
-            continue;
-          }
-          if (rule.fields != null && !rule.fields.has(fragment.field)) {
-            continue;
-          }
-          if (rule.applies?.(fragment) === false) {
-            continue;
-          }
-          const inspectedText = inspectedTextByRule[ruleIndex];
-          if (inspectedText.has(fragment.text)) {
-            continue;
-          }
-          inspectedText.add(fragment.text);
-          const finding = rule.inspector.inspect([fragment]);
-          if (finding != null) {
-            return {
-              ...finding,
-              detectorId: rule.detectorId,
-            };
-          }
-        }
+  const rulesBySource = new Map<ContentSource, Array<readonly [number, CompiledFilter]>>();
+  for (let ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
+    const rule = rules[ruleIndex];
+    for (const source of rule.sources) {
+      const sourceRules = rulesBySource.get(source);
+      if (sourceRules == null) {
+        rulesBySource.set(source, [[ruleIndex, rule]]);
+      } else {
+        sourceRules.push([ruleIndex, rule]);
       }
+    }
+  }
+
+  const inspectFragment = (
+    fragment: TextContentFragment,
+    inspectedTextByRule: Array<Set<string> | undefined>,
+  ): ProtectionFinding | null => {
+    const sourceRules = rulesBySource.get(fragment.source);
+    if (sourceRules == null) {
       return null;
+    }
+    for (const [ruleIndex, rule] of sourceRules) {
+      if (rule.fields != null && !rule.fields.has(fragment.field)) {
+        continue;
+      }
+      if (rule.applies?.(fragment) === false) {
+        continue;
+      }
+      const inspectedText = (inspectedTextByRule[ruleIndex] ??= new Set<string>());
+      if (inspectedText.has(fragment.text)) {
+        continue;
+      }
+      if (inspectedText.size < MAX_INSPECTION_DEDUPE_ENTRIES_PER_RULE) {
+        inspectedText.add(fragment.text);
+      }
+      const finding = rule.inspector.inspectFragment(fragment);
+      if (finding != null) {
+        return {
+          ...finding,
+          detectorId: rule.detectorId,
+        };
+      }
+    }
+    return null;
+  };
+  const inspect = (
+    fragments: Iterable<TextContentFragment>,
+    inspectedTextByRule: Array<Set<string> | undefined>,
+  ): ProtectionFinding | null => {
+    for (const fragment of fragments) {
+      const finding = inspectFragment(fragment, inspectedTextByRule);
+      if (finding != null) {
+        return finding;
+      }
+    }
+    return null;
+  };
+  const createSession = (): ConfiguredContentInspectionSession => {
+    const inspectedTextByRule: Array<Set<string> | undefined> = new Array(rules.length);
+    return {
+      inspectFragment(fragment) {
+        return inspectFragment(fragment, inspectedTextByRule);
+      },
+      inspect(fragments) {
+        return inspect(fragments, inspectedTextByRule);
+      },
+    };
+  };
+
+  return {
+    createSession,
+    inspect(fragments) {
+      return inspect(fragments, new Array(rules.length));
     },
   };
 }

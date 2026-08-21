@@ -7,7 +7,39 @@ export const FILTER_PII_STARTER_PATTERNS = [
   'api_key_header',
 ] as const;
 
-const MAX_CUSTOM_PATTERN_LENGTH = 512;
+export const MAX_PII_PATTERNS_PER_SOURCE = 256;
+export const MAX_PII_PATTERN_LENGTH = 512;
+export const MAX_PII_PATTERN_ID_LENGTH = 256;
+export const MAX_PII_PATTERN_LABEL_LENGTH = 512;
+export const MAX_PII_CUSTOM_REGEX_CHARACTERS = 8_192;
+export const MAX_PII_CUSTOM_REGEX_INSTRUCTIONS = 8_192;
+
+const MAX_PII_REGEX_SIZE_CACHE_ENTRIES = 512;
+const PII_REGEX_PROGRAM_SIZE_CACHE = new Map<string, number | null>();
+
+function getPiiRegexProgramSize(pattern: string): number | null {
+  if (PII_REGEX_PROGRAM_SIZE_CACHE.has(pattern)) {
+    return PII_REGEX_PROGRAM_SIZE_CACHE.get(pattern) ?? null;
+  }
+  let programSize: number | null = null;
+  let compiled: RE2JS | undefined;
+  try {
+    compiled = RE2JS.compile(pattern);
+    const candidate = compiled.programSize();
+    if (Number.isSafeInteger(candidate) && candidate > 0) {
+      programSize = candidate;
+    }
+  } catch {
+    programSize = null;
+  } finally {
+    compiled?.reset();
+  }
+  if (PII_REGEX_PROGRAM_SIZE_CACHE.size >= MAX_PII_REGEX_SIZE_CACHE_ENTRIES) {
+    PII_REGEX_PROGRAM_SIZE_CACHE.clear();
+  }
+  PII_REGEX_PROGRAM_SIZE_CACHE.set(pattern, programSize);
+  return programSize;
+}
 
 export const MESSAGE_FILTER_FIELDS = [
   'name',
@@ -234,23 +266,15 @@ export function hasActiveFiltersConfig(filters: FiltersConfig | null | undefined
 export const filterPiiRegexSchema = z
   .string()
   .min(1)
-  .max(MAX_CUSTOM_PATTERN_LENGTH)
-  .refine(
-    (value) => {
-      try {
-        RE2JS.compile(value);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    { message: 'Regex must use supported linear-time syntax' },
-  );
+  .max(MAX_PII_PATTERN_LENGTH)
+  .refine((value) => getPiiRegexProgramSize(value) != null, {
+    message: 'Regex must use supported linear-time syntax',
+  });
 
 export const filterPiiCustomPatternSchema = z
   .object({
-    id: z.string().min(1),
-    label: z.string().min(1),
+    id: z.string().min(1).max(MAX_PII_PATTERN_ID_LENGTH),
+    label: z.string().min(1).max(MAX_PII_PATTERN_LABEL_LENGTH),
     regex: filterPiiRegexSchema,
   })
   .strict();
@@ -261,8 +285,14 @@ function createPiiFilterSchema<Field extends z.ZodTypeAny>(fieldSchema: Field) {
   return z
     .object({
       fields: z.array(fieldSchema).min(1).optional(),
-      starterPatterns: z.array(filterPiiStarterPatternSchema).optional(),
-      customPatterns: z.array(filterPiiCustomPatternSchema).optional(),
+      starterPatterns: z
+        .array(filterPiiStarterPatternSchema)
+        .max(MAX_PII_PATTERNS_PER_SOURCE)
+        .optional(),
+      customPatterns: z
+        .array(filterPiiCustomPatternSchema)
+        .max(MAX_PII_PATTERNS_PER_SOURCE)
+        .optional(),
     })
     .strict();
 }
@@ -307,6 +337,28 @@ export const filtersConfigSchema = z
     modelParameters: createSourceFilterSchema(modelParameterFilterFieldSchema).optional(),
     actionMetadata: createSourceFilterSchema(actionMetadataFilterFieldSchema).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((filters, context) => {
+    let regexCharacters = 0;
+    let regexInstructions = 0;
+    for (const source of Object.values(filters)) {
+      for (const pattern of source?.pii?.customPatterns ?? []) {
+        regexCharacters += pattern.regex.length;
+        regexInstructions += getPiiRegexProgramSize(pattern.regex) ?? 0;
+      }
+    }
+    if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Custom PII regexes may contain at most ${MAX_PII_CUSTOM_REGEX_CHARACTERS} characters in total`,
+      });
+    }
+    if (regexInstructions > MAX_PII_CUSTOM_REGEX_INSTRUCTIONS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Custom PII regexes may compile to at most ${MAX_PII_CUSTOM_REGEX_INSTRUCTIONS} instructions in total`,
+      });
+    }
+  });
 
 export type FiltersConfig = z.infer<typeof filtersConfigSchema>;

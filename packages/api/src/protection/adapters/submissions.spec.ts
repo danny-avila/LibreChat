@@ -1397,6 +1397,10 @@ describe('submitted content adapters', () => {
           vendor: { description: 'unknown nested description' },
         },
       ],
+      tool_call: {
+        name: 'known tool name',
+        vendor: { description: 'unknown tool description' },
+      },
       source: {
         type: 'json',
         label: 'unknown source label',
@@ -1427,6 +1431,12 @@ describe('submitted content adapters', () => {
           text: 'unknown source label',
         }),
         expect.objectContaining({
+          source: 'message',
+          field: 'content_part',
+          path: '/content/0/tool_call/vendor/description',
+          text: 'unknown tool description',
+        }),
+        expect.objectContaining({
           source: 'agent_instruction',
           field: 'instructions',
           path: '/content/0/source/label',
@@ -1439,6 +1449,12 @@ describe('submitted content adapters', () => {
     ).toHaveLength(1);
     expect(
       fragments.filter(({ source, text }) => source === 'message' && text === 'known nested text'),
+    ).toHaveLength(1);
+    expect(
+      fragments.filter(
+        ({ source, field, text }) =>
+          source === 'tool_argument' && field === 'name' && text === 'known tool name',
+      ),
     ).toHaveLength(1);
     expect(fragments.some(({ text }) => text.includes('encoded-document'))).toBe(false);
     expect(fragments.some(({ text }) => text === 'vendor_content')).toBe(false);

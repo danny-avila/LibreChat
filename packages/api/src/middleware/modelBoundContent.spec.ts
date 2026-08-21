@@ -2355,6 +2355,160 @@ describe('assertModelBoundProviderContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
+  it('uses typed contribution boundaries for exact Human attribution', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'PRIVATE-BOUNDARY',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [{ attribution: 'user' }, { attribution: 'synthetic' }],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'PRIVATE-BOUNDARY',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [{ attribution: 'model' }, { attribution: 'synthetic' }],
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-BOUNDARY' },
+              ],
+            },
+          },
+        },
+        providerMessages: [
+          {
+            role: 'human',
+            content: [{ type: 'steer', steer: 'PRIVATE-BOUNDARY' }],
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [{ attribution: 'model' }, { attribution: 'synthetic' }],
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('promotes typed Human content when its selected canonical part is user-authored', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'edited-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [{ type: 'steer', steer: 'Safe retained edit' }],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained edit plus PRIVATE-DERIVATIVE',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'model',
+                    sourceMessageId: 'edited-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('routes typed artifact projections only through tool output policy', () => {
+    const toolOutputFilters: FiltersConfig = {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-ARTIFACT' }],
+        },
+      },
+    };
+    const providerMessages = [
+      {
+        role: 'human',
+        content: 'PRIVATE-ARTIFACT',
+        additional_kwargs: {
+          provenance: {
+            version: 1 as const,
+            parts: [{ attribution: 'model' as const }, { attribution: 'tool' as const }],
+          },
+        },
+      },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({ filters: toolOutputFilters, providerMessages }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() => assertModelBoundProviderContent({ filters, providerMessages })).not.toThrow();
+  });
+
+  it('recognizes the legacy artifact Human after a contiguous mixed tool-result block', () => {
+    const toolOutputFilters: FiltersConfig = {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-ARTIFACT' }],
+        },
+      },
+    };
+    const providerMessages = [
+      {
+        role: 'tool',
+        content: 'Tool response is included in the next message as a Human message',
+      },
+      { role: 'tool', content: 'A later non-artifact tool result' },
+      { role: 'human', content: 'PRIVATE-ARTIFACT' },
+    ];
+
+    expect(() =>
+      assertModelBoundProviderContent({ filters: toolOutputFilters, providerMessages }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() => assertModelBoundProviderContent({ filters, providerMessages })).not.toThrow();
+  });
+
   it('does not reclassify synthetic skill context as a submitted message', () => {
     expect(() =>
       assertModelBoundProviderContent({
@@ -2377,6 +2531,19 @@ describe('assertModelBoundProviderContent', () => {
             role: 'human',
             content: 'Injected PRIVATE-STEER',
             additional_kwargs: { injected: true, source: 'steer' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'User-authored PRIVATE-MOBILE',
+            additional_kwargs: { source: 'mobile' },
           },
         ],
       }),
@@ -2528,7 +2695,109 @@ describe('assertModelBoundProviderContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
-  it('does not infer a pruned middle source from legacy coalescing identities', () => {
+  it('sparsely retains typed canonical parts without restoring pruned steer, HITL, or files', () => {
+    const sparseFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part', 'answer'],
+          starterPatterns: [],
+          customPatterns: [
+            {
+              id: 'private-message',
+              label: 'private value',
+              regex: 'PRIVATE-(?:STEER|HITL)',
+            },
+          ],
+        },
+      },
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private-file', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+    const storedMessages = [
+      {
+        messageId: 'mixed-source',
+        role: 'assistant',
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'steer',
+            steer: 'PRIVATE-STEER',
+            tool_call: { output: 'PRIVATE-HITL' },
+            files: [{ file_id: 'private-file' }],
+          },
+          { type: 'text', text: 'Safe retained model tail' },
+        ],
+        userSubmittedPaths: ['/content/0/steer', '/content/0/files/0/file_id'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'answer' as const },
+        ],
+      },
+    ];
+    const resolvedFiles = [
+      { file_id: 'private-file', filename: 'private.txt', text: 'PRIVATE-FILE' },
+    ];
+    const baseInput = {
+      filters: sparseFilters,
+      storedMessages,
+      resolvedFiles,
+      fileIdsBySourceMessageId: new Map([['mixed-source', ['private-file']]]),
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        ...baseInput,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe retained model tail',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'model',
+                    sourceMessageId: 'mixed-source',
+                    sourceContentPartIndices: [1],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        ...baseInput,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe transformed provider payload',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'model',
+                    sourceMessageId: 'mixed-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow(/Submitted content contains a private (?:value|file)/);
+  });
+
+  it('fails closed instead of scanning for a pruned middle file source in legacy coalescing', () => {
     expect(() =>
       assertModelBoundProviderContent({
         filters: {
@@ -2578,7 +2847,45 @@ describe('assertModelBoundProviderContent', () => {
           },
         ],
       }),
-    ).not.toThrow();
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('fails closed for ambiguous legacy coalescing under exact HITL policy', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['answer'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-HITL' }],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'first-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe first turn',
+          },
+          {
+            messageId: 'last-message',
+            isCreatedByUser: true,
+            role: 'user',
+            text: 'Safe last turn',
+          },
+        ],
+        providerMessages: [
+          {
+            id: 'first-message',
+            role: 'human',
+            content: 'Safe first turn\n\nSafe last turn',
+            additional_kwargs: { sourceMessageId: 'last-message' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
   it('selects every canonical source carried by plural coalescing lineage', () => {
@@ -2635,6 +2942,222 @@ describe('assertModelBoundProviderContent', () => {
         ],
       }),
     ).toThrow('Submitted content contains a private value');
+  });
+
+  it('selects typed plural sources in envelope order', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'first-source',
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'Safe first source',
+          },
+          {
+            messageId: 'middle-source',
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'PRIVATE-MIDDLE',
+          },
+          {
+            messageId: 'last-source',
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'Safe last source',
+          },
+        ],
+        providerMessages: [
+          {
+            id: 'legacy-pruned-source',
+            role: 'human',
+            content: 'Safe provider projection',
+            additional_kwargs: {
+              sourceMessageId: 'legacy-pruned-source',
+              provenance: {
+                version: 1,
+                parts: [
+                  { attribution: 'user', sourceMessageId: 'first-source' },
+                  { attribution: 'user', sourceMessageId: 'middle-source' },
+                  { attribution: 'user', sourceMessageId: 'last-source' },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('bounds malformed typed and legacy lineage before canonical-only inspection', () => {
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    };
+    const oversizedParts = Array.from({ length: 257 }, () => ({
+      attribution: 'model' as const,
+    }));
+    const oversizedSourceIds = Array.from({ length: 257 }, (_, index) => `source-${index}`);
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe payload',
+            additional_kwargs: {
+              provenance: { version: 1, parts: oversizedParts },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe payload',
+            additional_kwargs: { sourceMessageIds: oversizedSourceIds },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+
+    const malformedAssistantMessages = [
+      {
+        role: 'ai',
+        content: 'PRIVATE-MALFORMED',
+        additional_kwargs: {
+          provenance: { version: 1 as const, parts: oversizedParts },
+        },
+      },
+    ];
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: malformedAssistantMessages,
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: { ...filters, ...fileFilters },
+        providerMessages: malformedAssistantMessages,
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          toolArguments: {
+            pii: {
+              fields: ['output'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'private', label: 'private value', regex: 'PRIVATE-MALFORMED' },
+              ],
+            },
+          },
+        },
+        providerMessages: malformedAssistantMessages,
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('looks up maximum typed lineage without traversing unrelated large history rows', () => {
+    let unrelatedContentReads = 0;
+    const unrelatedMessages = Array.from({ length: 3_840 }, (_, index) => ({
+      messageId: `unrelated-${index}`,
+      role: 'assistant',
+      isCreatedByUser: false,
+      get content() {
+        unrelatedContentReads++;
+        return [{ type: 'text', text: 'Unrelated model content' }];
+      },
+    }));
+    const retainedMessages = Array.from({ length: 256 }, (_, index) => ({
+      messageId: `retained-${index}`,
+      role: 'assistant',
+      isCreatedByUser: false,
+      content: [{ type: 'text', text: `Safe retained ${index}` }],
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [...unrelatedMessages, ...retainedMessages],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe exact provider content',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: retainedMessages.map((message) => ({
+                  attribution: 'model' as const,
+                  sourceMessageId: message.messageId,
+                  sourceContentPartIndices: [0],
+                })),
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(unrelatedContentReads).toBe(0);
+  });
+
+  it('compacts retained high-index source parts without iterating sparse holes', () => {
+    let selectedContentReads = 0;
+    const storedMessages = Array.from({ length: 256 }, (_, index) => {
+      const values = new Array<{ type: string; steer: string } | undefined>(4_096);
+      values[4_095] = { type: 'steer', steer: `Safe retained steer ${index}` };
+      const content = new Proxy(values, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            selectedContentReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      return {
+        messageId: `high-index-${index}`,
+        role: 'assistant',
+        isCreatedByUser: false,
+        content,
+      };
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe exact provider content',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: storedMessages.map((message) => ({
+                  attribution: 'model' as const,
+                  sourceMessageId: message.messageId,
+                  sourceContentPartIndices: [4_095],
+                })),
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(selectedContentReads).toBeLessThanOrEqual(1_536);
   });
 
   it('keeps the model callback usable after caller-owned state is released', () => {

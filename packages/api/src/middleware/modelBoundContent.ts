@@ -1,5 +1,6 @@
 import { StreamLimitExceededError } from '@librechat/agents';
 import {
+  FILE_FILTER_FIELDS,
   HITL_MESSAGE_FILTER_FIELDS,
   hasActivePiiFields,
   hasActivePiiPatterns,
@@ -19,6 +20,7 @@ import type {
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
+import type { ContentTraversalScope } from '../protection/adapters/nested';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
 import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
@@ -55,6 +57,19 @@ import { ContentFilterError, isContentFilterError } from './contentFilter';
 import { createConfiguredContentInspector } from '../protection/runtime';
 import { extractMessageContent } from '../protection/adapters/messages';
 
+export type ModelBoundProviderAttribution = 'user' | 'model' | 'tool' | 'synthetic';
+
+export interface ModelBoundProviderProvenancePart {
+  readonly attribution: ModelBoundProviderAttribution;
+  readonly sourceMessageId?: string;
+  readonly sourceContentPartIndices?: readonly number[];
+}
+
+export interface ModelBoundProviderProvenance {
+  readonly version: 1;
+  readonly parts: readonly ModelBoundProviderProvenancePart[];
+}
+
 export type ModelBoundProviderMessage = ExternalChatMessage &
   Omit<StoredMessageContentInput, 'content'> & {
     readonly id?: string;
@@ -66,6 +81,7 @@ export type ModelBoundProviderMessage = ExternalChatMessage &
       readonly source?: string;
       readonly sourceMessageId?: string;
       readonly sourceMessageIds?: readonly string[];
+      readonly provenance?: ModelBoundProviderProvenance;
     };
     readonly _getType?: () => string;
   };
@@ -89,6 +105,22 @@ type ModelBoundPolicyError =
   | ContentFilterError
   | ContentTraversalLimitError
   | UninspectableFileError;
+
+const LEGACY_ARTIFACT_PROJECTION_MARKER =
+  'Tool response is included in the next message as a Human message';
+const PROVIDER_PROVENANCE_ATTRIBUTIONS = new Set<ModelBoundProviderAttribution>([
+  'user',
+  'model',
+  'tool',
+  'synthetic',
+]);
+const LEGACY_SYNTHETIC_PROVIDER_SOURCES = new Set(['handoff', 'hook', 'skill', 'system']);
+const MAX_PROVIDER_PROVENANCE_PARTS = 256;
+const MAX_PROVIDER_SOURCE_PART_INDICES = 256;
+const MAX_PROVIDER_PROVENANCE_INDEX_REFS = 4_096;
+const MAX_PROVIDER_SOURCE_MESSAGE_IDS = 256;
+const MAX_PROVIDER_SOURCE_MESSAGE_ID_LENGTH = 512;
+const MAX_PROVIDER_SOURCE_CONTENT_PART_INDEX = 4_095;
 
 /**
  * Compatibility bridge for @librechat/agents 3.6.9. Its summarization,
@@ -327,6 +359,8 @@ export interface ModelBoundContentInput {
    * the fail-close traversal copy.
    */
   readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
+  /** Internal fail-closed provenance errors evaluated after files and findings. */
+  readonly deferredTraversalErrors?: readonly ContentTraversalLimitError[];
 }
 
 /**
@@ -417,6 +451,24 @@ function isFragmentWithinPath(fragment: TextContentFragment, path: JsonPointer):
   return fragment.path === path || fragment.path.startsWith(`${path}/`);
 }
 
+function isFragmentWithinSubmittedPaths(
+  fragment: TextContentFragment,
+  submittedPaths: ReadonlySet<string>,
+): boolean {
+  let candidate = fragment.path as string;
+  while (candidate.length > 0) {
+    if (submittedPaths.has(candidate)) {
+      return true;
+    }
+    const separator = candidate.lastIndexOf('/');
+    if (separator <= 0) {
+      return false;
+    }
+    candidate = candidate.slice(0, separator);
+  }
+  return false;
+}
+
 function asUserSubmittedMessageFragment(
   fragment: Extract<TextContentFragment, { source: 'tool_argument' }>,
 ): Extract<TextContentFragment, { source: 'message' }> {
@@ -469,22 +521,9 @@ function getExactUserSubmittedMessageFragments(
  * mixed assistant row would either include model prose or miss leaf-level
  * provenance marks rooted below `/content`.
  */
-function getUserSubmittedAssembledContext(
-  fragments: readonly TextContentFragment[],
+function createUserSubmittedAssembledContext(
+  text: readonly string[],
 ): Extract<TextContentFragment, { source: 'assembled_context' }> | undefined {
-  const text: string[] = [];
-  for (const fragment of fragments) {
-    if (
-      fragment.source === 'message' &&
-      (fragment.field === 'text' || fragment.field === 'content_part')
-    ) {
-      text.push(fragment.text);
-      continue;
-    }
-    if (fragment.source === 'tool_argument' && fragment.field === 'output') {
-      text.push(fragment.text);
-    }
-  }
   if (text.length === 0) {
     return undefined;
   }
@@ -595,15 +634,326 @@ function appendSourceMessageId(sourceIds: Set<string>, candidate: string | undef
   }
 }
 
-function getProviderSourceMessageIds(message: ModelBoundProviderMessage): Set<string> {
-  const sourceIds = new Set<string>();
-  for (const sourceId of message.additional_kwargs?.sourceMessageIds ?? []) {
-    appendSourceMessageId(sourceIds, sourceId);
+interface ModelBoundProviderProvenanceState {
+  readonly value?: ModelBoundProviderProvenance;
+  readonly invalid: boolean;
+}
+
+interface LegacyProviderLineage {
+  readonly sourceIds: ReadonlySet<string>;
+  readonly hasPluralLineage: boolean;
+  readonly invalid: boolean;
+}
+
+interface ProviderSourceContribution {
+  readonly attribution: ModelBoundProviderAttribution;
+  readonly sourceMessageId: string;
+  readonly selectedContentPartIndices?: ReadonlySet<number>;
+}
+
+interface OrderedProviderSourceContributions {
+  readonly contributions: readonly ProviderSourceContribution[];
+  readonly hasUserAttribution: boolean;
+  readonly hasToolAttribution: boolean;
+}
+
+function normalizeProviderSourceMessageId(candidate: unknown): string | undefined {
+  if (typeof candidate !== 'string') {
+    return undefined;
   }
-  appendSourceMessageId(sourceIds, message.additional_kwargs?.sourceMessageId);
-  appendSourceMessageId(sourceIds, message.messageId);
-  appendSourceMessageId(sourceIds, message.id);
-  return sourceIds;
+  const sourceMessageId = candidate.trim();
+  if (
+    sourceMessageId.length === 0 ||
+    sourceMessageId.length > MAX_PROVIDER_SOURCE_MESSAGE_ID_LENGTH
+  ) {
+    return undefined;
+  }
+  return sourceMessageId;
+}
+
+function getProviderMessageProvenanceState(
+  message: ModelBoundProviderMessage,
+): ModelBoundProviderProvenanceState {
+  const candidate: unknown = message.additional_kwargs?.provenance;
+  if (candidate == null) {
+    return { invalid: false };
+  }
+  if (typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return { invalid: true };
+  }
+  const value = candidate as { readonly version?: unknown; readonly parts?: unknown };
+  if (
+    value.version !== 1 ||
+    !Array.isArray(value.parts) ||
+    value.parts.length === 0 ||
+    value.parts.length > MAX_PROVIDER_PROVENANCE_PARTS
+  ) {
+    return { invalid: true };
+  }
+
+  const parts: ModelBoundProviderProvenancePart[] = [];
+  let totalIndexRefs = 0;
+  for (const candidatePart of value.parts) {
+    if (
+      candidatePart == null ||
+      typeof candidatePart !== 'object' ||
+      Array.isArray(candidatePart)
+    ) {
+      return { invalid: true };
+    }
+    const part = candidatePart as {
+      readonly attribution?: unknown;
+      readonly sourceMessageId?: unknown;
+      readonly sourceContentPartIndices?: unknown;
+    };
+    if (
+      typeof part.attribution !== 'string' ||
+      !PROVIDER_PROVENANCE_ATTRIBUTIONS.has(part.attribution as ModelBoundProviderAttribution)
+    ) {
+      return { invalid: true };
+    }
+    let sourceMessageId: string | undefined;
+    if (part.sourceMessageId !== undefined) {
+      sourceMessageId = normalizeProviderSourceMessageId(part.sourceMessageId);
+      if (sourceMessageId == null) {
+        return { invalid: true };
+      }
+    }
+    let sourceContentPartIndices: number[] | undefined;
+    if (part.sourceContentPartIndices !== undefined) {
+      if (
+        !Array.isArray(part.sourceContentPartIndices) ||
+        part.sourceContentPartIndices.length === 0 ||
+        part.sourceContentPartIndices.length > MAX_PROVIDER_SOURCE_PART_INDICES
+      ) {
+        return { invalid: true };
+      }
+      totalIndexRefs += part.sourceContentPartIndices.length;
+      if (totalIndexRefs > MAX_PROVIDER_PROVENANCE_INDEX_REFS) {
+        return { invalid: true };
+      }
+      sourceContentPartIndices = [];
+      const seenIndices = new Set<number>();
+      for (const index of part.sourceContentPartIndices) {
+        if (
+          !Number.isSafeInteger(index) ||
+          index < 0 ||
+          index > MAX_PROVIDER_SOURCE_CONTENT_PART_INDEX
+        ) {
+          return { invalid: true };
+        }
+        if (!seenIndices.has(index)) {
+          seenIndices.add(index);
+          sourceContentPartIndices.push(index);
+        }
+      }
+    }
+    parts.push({
+      attribution: part.attribution as ModelBoundProviderAttribution,
+      ...(sourceMessageId != null && { sourceMessageId }),
+      ...(sourceContentPartIndices != null && { sourceContentPartIndices }),
+    });
+  }
+  return { value: { version: 1, parts }, invalid: false };
+}
+
+function getLegacyProviderLineage(message: ModelBoundProviderMessage): LegacyProviderLineage {
+  const sourceIds = new Set<string>();
+  let invalid = false;
+  let hasPluralLineage = false;
+  const pluralCandidate: unknown = message.additional_kwargs?.sourceMessageIds;
+  if (pluralCandidate != null) {
+    if (
+      !Array.isArray(pluralCandidate) ||
+      pluralCandidate.length > MAX_PROVIDER_SOURCE_MESSAGE_IDS
+    ) {
+      invalid = true;
+    } else {
+      hasPluralLineage = pluralCandidate.length > 0;
+      for (const candidate of pluralCandidate) {
+        const sourceMessageId = normalizeProviderSourceMessageId(candidate);
+        if (sourceMessageId == null) {
+          invalid = true;
+          continue;
+        }
+        sourceIds.add(sourceMessageId);
+      }
+    }
+  }
+  for (const candidate of [
+    message.additional_kwargs?.sourceMessageId,
+    message.messageId,
+    message.id,
+  ]) {
+    if (candidate == null) {
+      continue;
+    }
+    const sourceMessageId = normalizeProviderSourceMessageId(candidate);
+    if (sourceMessageId == null) {
+      invalid = true;
+      continue;
+    }
+    sourceIds.add(sourceMessageId);
+  }
+  return { sourceIds, hasPluralLineage, invalid };
+}
+
+/** Coalesces only adjacent repeats. Non-contiguous contributions retain their
+ * exact envelope order because canonical fragments can be adjacency-sensitive. */
+function getOrderedProviderSourceContributions(
+  provenance: ModelBoundProviderProvenance,
+): OrderedProviderSourceContributions {
+  const contributions: Array<{
+    attribution: ModelBoundProviderAttribution;
+    sourceMessageId: string;
+    selectedContentPartIndices?: Set<number>;
+  }> = [];
+  let hasUserAttribution = false;
+  let hasToolAttribution = false;
+  for (const part of provenance.parts) {
+    hasUserAttribution ||= part.attribution === 'user';
+    hasToolAttribution ||= part.attribution === 'tool';
+    if (part.sourceMessageId == null) {
+      continue;
+    }
+    const existing = contributions[contributions.length - 1];
+    if (
+      existing == null ||
+      existing.attribution !== part.attribution ||
+      existing.sourceMessageId !== part.sourceMessageId
+    ) {
+      contributions.push({
+        attribution: part.attribution,
+        sourceMessageId: part.sourceMessageId,
+        ...(part.sourceContentPartIndices != null && {
+          selectedContentPartIndices: new Set(part.sourceContentPartIndices),
+        }),
+      });
+      continue;
+    }
+    if (existing.selectedContentPartIndices == null) {
+      continue;
+    }
+    if (part.sourceContentPartIndices == null) {
+      delete existing.selectedContentPartIndices;
+      continue;
+    }
+    for (const index of part.sourceContentPartIndices) {
+      existing.selectedContentPartIndices.add(index);
+    }
+  }
+  return { contributions, hasUserAttribution, hasToolAttribution };
+}
+
+function isLegacyArtifactProjectionMarker(content: unknown): boolean {
+  if (content === LEGACY_ARTIFACT_PROJECTION_MARKER) {
+    return true;
+  }
+  if (!Array.isArray(content) || content.length !== 1) {
+    return false;
+  }
+  const part = content[0];
+  if (part == null || typeof part !== 'object') {
+    return false;
+  }
+  const value = part as { readonly text?: unknown; readonly content?: unknown };
+  return (
+    value.text === LEGACY_ARTIFACT_PROJECTION_MARKER ||
+    value.content === LEGACY_ARTIFACT_PROJECTION_MARKER
+  );
+}
+
+/** @librechat/agents 3.6.9 projects artifact-bearing ToolMessages into an
+ * untyped terminal HumanMessage. Recognize only that generated adjacency and
+ * exact marker; ordinary untyped HumanMessages must retain user attribution. */
+function isLegacyArtifactProjectionHuman(
+  messages: readonly ModelBoundProviderMessage[],
+  index: number,
+  provenanceState: ModelBoundProviderProvenanceState,
+  legacyLineage: LegacyProviderLineage,
+): boolean {
+  const message = messages[index];
+  if (
+    message == null ||
+    index !== messages.length - 1 ||
+    provenanceState.value != null ||
+    provenanceState.invalid ||
+    normalizeRole(message) !== 'user' ||
+    legacyLineage.invalid ||
+    message.additional_kwargs?.sourceMessageId != null ||
+    message.additional_kwargs?.sourceMessageIds != null ||
+    message.messageId != null
+  ) {
+    return false;
+  }
+  const metadata = message.additional_kwargs;
+  if (metadata?.isMeta === true || metadata?.injected === true || metadata?.source != null) {
+    return false;
+  }
+  for (let previousIndex = index - 1; previousIndex >= 0; previousIndex--) {
+    const previous = messages[previousIndex];
+    if (normalizeRole(previous) !== 'tool') {
+      break;
+    }
+    if (isLegacyArtifactProjectionMarker(previous.content ?? previous.text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getLegacyCoalescedCanonicalScopes(
+  filters: FiltersConfig | undefined,
+): ContentTraversalScope[] {
+  const scopes: ContentTraversalScope[] = [];
+  const messagePii = filters?.messages?.pii;
+  const selectedHitlFields = HITL_MESSAGE_FILTER_FIELDS.filter(
+    (field) => messagePii?.fields == null || messagePii.fields.includes(field),
+  );
+  if (selectedHitlFields.length > 0 && hasActivePiiFields(messagePii, selectedHitlFields)) {
+    scopes.push({
+      source: 'message',
+      fields: selectedHitlFields,
+    });
+  }
+
+  const filePii = filters?.files?.pii;
+  const selectedFileFields = FILE_FILTER_FIELDS.filter(
+    (field) => filePii?.fields == null || filePii.fields.includes(field),
+  );
+  if (
+    selectedFileFields.length > 0 &&
+    (hasActivePiiFields(filePii, selectedFileFields) ||
+      getBlockedUninspectableFileField(filters, selectedFileFields) != null)
+  ) {
+    scopes.push({ source: 'file', fields: selectedFileFields });
+  }
+  return scopes;
+}
+
+function getLegacyCoalescedLineageError(
+  input: ModelBoundProviderContentInput,
+  providerMessage: ModelBoundProviderMessage,
+  matchedStoredMessages: ReadonlySet<StoredModelBoundMessage>,
+  provenanceState: ModelBoundProviderProvenanceState,
+  legacyLineage: LegacyProviderLineage,
+): ContentTraversalLimitError | null {
+  if (provenanceState.value != null) {
+    return null;
+  }
+  const hasInvalidLineage = provenanceState.invalid || legacyLineage.invalid;
+  const hasAmbiguousLegacyCoalescing =
+    normalizeRole(providerMessage) === 'user' &&
+    !legacyLineage.hasPluralLineage &&
+    matchedStoredMessages.size >= 2;
+  if (!hasInvalidLineage && !hasAmbiguousLegacyCoalescing) {
+    return null;
+  }
+  const scopes = getLegacyCoalescedCanonicalScopes(input.filters);
+  if (scopes.length > 0) {
+    return new ContentTraversalLimitError([], scopes);
+  }
+  return null;
 }
 
 function getStoredMessageIds(message: StoredModelBoundMessage): Set<string> {
@@ -628,8 +978,8 @@ function appendReferencedFileIds(
 ): void {
   for (const reference of references ?? []) {
     const fileId = reference?.file_id;
-    if (typeof fileId === 'string' && fileId.length > 0) {
-      fileIds.add(fileId);
+    if (typeof fileId === 'string' && fileId.trim().length > 0) {
+      fileIds.add(fileId.trim());
     }
   }
 }
@@ -641,8 +991,8 @@ function appendPartFileIds(
   appendReferencedFileIds(fileIds, part.files);
   appendReferencedFileIds(fileIds, part.image_file == null ? undefined : [part.image_file]);
   appendReferencedFileIds(fileIds, part.file == null ? undefined : [part.file]);
-  if (typeof part.file_id === 'string' && part.file_id.length > 0) {
-    fileIds.add(part.file_id);
+  if (typeof part.file_id === 'string' && part.file_id.trim().length > 0) {
+    fileIds.add(part.file_id.trim());
   }
 }
 
@@ -656,7 +1006,7 @@ function appendStoredMessageFileIds(
   const isEntireMessageUserSubmitted =
     message.isCreatedByUser === true ||
     message.isUserSubmitted === true ||
-    role === 'user' ||
+    (role === 'user' && message.isCreatedByUser !== false && message.isUserSubmitted !== false) ||
     role === 'tool' ||
     submittedPathState.overflowed ||
     (filters?.messages?.unattributedAssistantContent === 'inspect' &&
@@ -666,37 +1016,60 @@ function appendStoredMessageFileIds(
   if (isEntireMessageUserSubmitted) {
     appendReferencedFileIds(fileIds, message.files);
   }
+  const submittedFilePartIndices = new Set<number>();
+  for (const path of submittedPathState.paths) {
+    const segments = getSafeUserSubmittedPathSegments(path);
+    if (
+      segments?.[0] !== 'content' ||
+      !/^\d+$/.test(segments[1] ?? '') ||
+      (segments.length > 2 && !['file', 'file_id', 'files', 'image_file'].includes(segments[2]))
+    ) {
+      continue;
+    }
+    submittedFilePartIndices.add(Number(segments[1]));
+  }
   const content = Array.isArray(message.content) ? message.content : [];
   for (let index = 0; index < content.length; index++) {
     const part = content[index];
     if (part == null) {
       continue;
     }
-    const partPath = `/content/${index}`;
-    const hasSubmittedFilePath = submittedPathState.paths.some(
-      (path) =>
-        path === partPath ||
-        path.startsWith(`${partPath}/files`) ||
-        path.startsWith(`${partPath}/file_id`) ||
-        path.startsWith(`${partPath}/file`) ||
-        path.startsWith(`${partPath}/image_file`),
-    );
-    if (isEntireMessageUserSubmitted || hasSubmittedFilePath) {
+    if (isEntireMessageUserSubmitted || submittedFilePartIndices.has(index)) {
       appendPartFileIds(fileIds, part);
     }
   }
 }
 
-function projectProviderMessage(message: ModelBoundProviderMessage): StoredModelBoundMessage {
-  const role = normalizeRole(message);
+type ProviderExactAttribution = 'user' | 'tool' | 'non_user';
+
+function projectProviderMessage(
+  message: ModelBoundProviderMessage,
+  attribution?: ProviderExactAttribution,
+): StoredModelBoundMessage {
+  const role = attribution === 'tool' ? 'tool' : normalizeRole(message);
   const providerSource = message.additional_kwargs?.source;
   const isSyntheticContext =
     message.additional_kwargs?.isMeta === true ||
-    (providerSource != null && providerSource !== 'steer') ||
+    (typeof providerSource === 'string' && LEGACY_SYNTHETIC_PROVIDER_SOURCES.has(providerSource)) ||
     (message.additional_kwargs?.injected === true && providerSource !== 'steer');
-  const isUser = role === 'user' && !isSyntheticContext;
+  const isUser =
+    attribution === 'user' || (attribution == null && role === 'user' && !isSyntheticContext);
   const { content, text: providerText, ...messageWithoutContent } = message;
-  const providerContent = content ?? providerText;
+  const rawProviderContent = content ?? providerText;
+  let providerContent = rawProviderContent;
+  if (
+    (attribution === 'non_user' || attribution === 'tool') &&
+    Array.isArray(rawProviderContent) &&
+    rawProviderContent.some(
+      (part) => part != null && typeof part === 'object' && part.type === 'steer',
+    )
+  ) {
+    providerContent = rawProviderContent.map((part) =>
+      part != null && typeof part === 'object' && part.type === 'steer'
+        ? { ...part, type: 'text' }
+        : part,
+    );
+  }
   return {
     ...messageWithoutContent,
     role,
@@ -710,6 +1083,8 @@ function projectProviderMessage(message: ModelBoundProviderMessage): StoredModel
 
 function projectStoredMessageForProvider(
   message: StoredModelBoundMessage,
+  selectedContentPartIndices?: ReadonlySet<number>,
+  attribution?: Extract<ProviderExactAttribution, 'user' | 'tool'>,
 ): StoredModelBoundMessage {
   const {
     attachments: _attachments,
@@ -725,32 +1100,245 @@ function projectStoredMessageForProvider(
   } = message;
   const providerMessage: StoredModelBoundMessage = {
     ...providerMessageWithoutText,
-    ...(message.content == null && storedText != null ? { text: storedText } : {}),
+    ...(selectedContentPartIndices == null && message.content == null && storedText != null
+      ? { text: storedText }
+      : {}),
+    ...(attribution === 'user' && {
+      isCreatedByUser: true,
+      isUserSubmitted: true,
+    }),
+    ...(attribution === 'tool' && {
+      role: 'tool',
+      isCreatedByUser: false,
+      isUserSubmitted: false,
+    }),
   };
   if (!Array.isArray(message.content)) {
     return providerMessage;
   }
+  const projectPart = (
+    part: NonNullable<StoredMessageContentInput['content']>[number],
+  ): NonNullable<StoredMessageContentInput['content']>[number] => {
+    if (part == null) {
+      return part;
+    }
+    const {
+      file: _partFile,
+      files: _partFiles,
+      image_file: _imageFile,
+      file_id: _fileId,
+      ...providerPart
+    } = part;
+    return providerPart;
+  };
+  if (selectedContentPartIndices == null) {
+    return {
+      ...providerMessage,
+      content: message.content.map(projectPart),
+    };
+  }
+
+  const selectedIndices = [...selectedContentPartIndices]
+    .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < message.content.length)
+    .sort((left, right) => left - right);
+  const compactIndexBySourceIndex = new Map<number, number>();
+  const content: NonNullable<StoredMessageContentInput['content']> = [];
+  for (const sourceIndex of selectedIndices) {
+    const part = message.content[sourceIndex];
+    if (part == null) {
+      continue;
+    }
+    compactIndexBySourceIndex.set(sourceIndex, content.length);
+    content.push(projectPart(part));
+  }
+  const remapSelectedPath = (value: unknown): JsonPointer | undefined => {
+    if (typeof value !== 'string' || !value.startsWith('/')) {
+      return undefined;
+    }
+    const segments = getSafeUserSubmittedPathSegments(value as JsonPointer);
+    const encodedIndex = segments?.[1];
+    if (
+      segments?.[0] !== 'content' ||
+      encodedIndex == null ||
+      !/^\d+$/.test(encodedIndex) ||
+      String(Number(encodedIndex)) !== encodedIndex
+    ) {
+      return undefined;
+    }
+    const compactIndex = compactIndexBySourceIndex.get(Number(encodedIndex));
+    if (compactIndex == null) {
+      return undefined;
+    }
+    const sourcePrefix = `/content/${encodedIndex}`;
+    return `/content/${compactIndex}${value.slice(sourcePrefix.length)}` as JsonPointer;
+  };
+  const userSubmittedPaths = (message.userSubmittedPaths ?? [])
+    .map(remapSelectedPath)
+    .filter((path): path is JsonPointer => path != null);
+  const userSubmittedMessageFieldPaths = (message.userSubmittedMessageFieldPaths ?? [])
+    .map((entry) => {
+      const path = remapSelectedPath(entry?.path);
+      return path == null ? undefined : { ...entry, path };
+    })
+    .filter((entry): entry is UserSubmittedMessageFieldPath => entry != null);
   return {
     ...providerMessage,
-    content: message.content.map((part) => {
-      if (part == null) {
-        return part;
-      }
-      const {
-        file: _partFile,
-        files: _partFiles,
-        image_file: _imageFile,
-        file_id: _fileId,
-        ...providerPart
-      } = part;
-      return providerPart;
-    }),
+    userSubmittedPaths,
+    userSubmittedMessageFieldPaths,
+    content,
   };
+}
+
+interface StoredProviderContributionState {
+  readonly isCanonicalUserContribution: boolean;
+}
+
+interface CachedStoredProviderState {
+  readonly submittedMessageFieldState: ReturnType<typeof getUserSubmittedMessageFieldPathState>;
+  readonly explicitSubmittedPaths: ReadonlySet<string>;
+  wholeSubmittedPathState?: ReturnType<typeof getUserSubmittedPathState>;
+  wholeRawFileIds?: ReadonlySet<string>;
+}
+
+function getStoredSubmittedPathState(
+  message: StoredModelBoundMessage,
+  selectedContentPartIndices: ReadonlySet<number> | undefined,
+  cachedState: CachedStoredProviderState,
+): ReturnType<typeof getUserSubmittedPathState> {
+  if (selectedContentPartIndices != null) {
+    return getUserSubmittedPathState(message, {
+      semanticContentPartIndices: selectedContentPartIndices,
+    });
+  }
+  if (cachedState.wholeSubmittedPathState == null) {
+    cachedState.wholeSubmittedPathState = getUserSubmittedPathState(message);
+  }
+  return cachedState.wholeSubmittedPathState;
+}
+
+function pathIntersectsSelectedContentParts(
+  path: string,
+  selectedContentPartIndices: ReadonlySet<number> | undefined,
+): boolean {
+  if (selectedContentPartIndices == null) {
+    return true;
+  }
+  const segments = path.startsWith('/')
+    ? getSafeUserSubmittedPathSegments(path as JsonPointer)
+    : undefined;
+  return (
+    segments?.[0] === 'content' &&
+    /^\d+$/.test(segments[1] ?? '') &&
+    selectedContentPartIndices.has(Number(segments[1]))
+  );
+}
+
+function getStoredProviderContributionState(
+  message: StoredModelBoundMessage,
+  selectedContentPartIndices: ReadonlySet<number> | undefined,
+  cachedState: CachedStoredProviderState,
+): StoredProviderContributionState {
+  const submittedPathState = getStoredSubmittedPathState(
+    message,
+    selectedContentPartIndices,
+    cachedState,
+  );
+  let hasSelectedMaterial = selectedContentPartIndices == null;
+  if (!hasSelectedMaterial && Array.isArray(message.content)) {
+    for (const index of selectedContentPartIndices ?? []) {
+      if (message.content[index] != null) {
+        hasSelectedMaterial = true;
+        break;
+      }
+    }
+  }
+  const hasSelectedSubmittedPath = submittedPathState.paths.some((path) =>
+    pathIntersectsSelectedContentParts(path, selectedContentPartIndices),
+  );
+  const hasSelectedSubmittedField = cachedState.submittedMessageFieldState.entries.some((entry) =>
+    pathIntersectsSelectedContentParts(entry.path, selectedContentPartIndices),
+  );
+  const hasSubmittedCanonicalProvenance =
+    hasSelectedSubmittedPath ||
+    hasSelectedSubmittedField ||
+    (hasSelectedMaterial &&
+      (submittedPathState.overflowed || cachedState.submittedMessageFieldState.overflowed));
+  const storedRole = normalizeRole(message);
+  const isStoredUserSource =
+    hasSelectedMaterial &&
+    (message.isCreatedByUser === true || message.isUserSubmitted === true || storedRole === 'user');
+  return {
+    isCanonicalUserContribution: isStoredUserSource || hasSubmittedCanonicalProvenance,
+  };
+}
+
+function getSelectedRawStoredMessageFileIds(
+  message: StoredModelBoundMessage,
+  selectedContentPartIndices: ReadonlySet<number> | undefined,
+  cachedState: CachedStoredProviderState,
+): ReadonlySet<string> {
+  if (selectedContentPartIndices == null) {
+    if (cachedState.wholeRawFileIds != null) {
+      return cachedState.wholeRawFileIds;
+    }
+    const fileIds = new Set<string>();
+    appendReferencedFileIds(fileIds, message.files);
+    for (const part of message.content ?? []) {
+      if (part != null) {
+        appendPartFileIds(fileIds, part);
+      }
+    }
+    cachedState.wholeRawFileIds = fileIds;
+    return fileIds;
+  }
+  const fileIds = new Set<string>();
+  for (const index of selectedContentPartIndices) {
+    const part = message.content?.[index];
+    if (part != null) {
+      appendPartFileIds(fileIds, part);
+    }
+  }
+  return fileIds;
+}
+
+function appendMaterializedSelectedFileIds(
+  target: Set<string>,
+  materializedFileIds: readonly string[] | undefined,
+  rawSelectedFileIds: ReadonlySet<string>,
+): void {
+  for (const candidate of materializedFileIds ?? []) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+    const fileId = candidate.trim();
+    if (fileId.length > 0 && rawSelectedFileIds.has(fileId)) {
+      target.add(fileId);
+    }
+  }
 }
 
 interface ModelBoundProviderContentIndex {
   readonly storedMessagesById: ReadonlyMap<string, StoredModelBoundMessage>;
   readonly resolvedFilesById: ReadonlyMap<string, ModelBoundCanonicalFile>;
+  readonly storedStateByMessage: WeakMap<StoredModelBoundMessage, CachedStoredProviderState>;
+}
+
+function getCachedStoredProviderState(
+  index: ModelBoundProviderContentIndex,
+  message: StoredModelBoundMessage,
+): CachedStoredProviderState {
+  const cached = index.storedStateByMessage.get(message);
+  if (cached != null) {
+    return cached;
+  }
+  const state: CachedStoredProviderState = {
+    submittedMessageFieldState: getUserSubmittedMessageFieldPathState(message),
+    explicitSubmittedPaths: new Set(
+      (message.userSubmittedPaths ?? []).filter((path): path is string => typeof path === 'string'),
+    ),
+  };
+  index.storedStateByMessage.set(message, state);
+  return state;
 }
 
 function createModelBoundProviderContentIndex(
@@ -771,7 +1359,11 @@ function createModelBoundProviderContentIndex(
       resolvedFilesById.set(file.file_id, file);
     }
   }
-  return { storedMessagesById, resolvedFilesById };
+  return {
+    storedMessagesById,
+    resolvedFilesById,
+    storedStateByMessage: new WeakMap(),
+  };
 }
 
 function projectModelBoundProviderContent(
@@ -780,84 +1372,188 @@ function projectModelBoundProviderContent(
 ): {
   storedMessages: StoredModelBoundMessage[];
   resolvedFiles: ModelBoundCanonicalFile[];
+  deferredTraversalErrors: ContentTraversalLimitError[];
 } {
   const selectedMessages: StoredModelBoundMessage[] = [];
   const selectedStoredMessages = new Set<StoredModelBoundMessage>();
   const selectedFileIds = new Set<string>();
-  const selectStoredMessage = (message: StoredModelBoundMessage): void => {
+  const deferredTraversalErrors: ContentTraversalLimitError[] = [];
+  const selectLegacyStoredMessage = (message: StoredModelBoundMessage): void => {
     if (selectedStoredMessages.has(message)) {
       return;
     }
     selectedStoredMessages.add(message);
     selectedMessages.push(projectStoredMessageForProvider(message));
   };
-  for (const providerMessage of input.providerMessages) {
-    const sourceIds = getProviderSourceMessageIds(providerMessage);
+  for (let providerIndex = 0; providerIndex < input.providerMessages.length; providerIndex++) {
+    const providerMessage = input.providerMessages[providerIndex];
     const providerRole = normalizeRole(providerMessage);
-    let hasSubmittedCanonicalSource = false;
-    for (const sourceId of sourceIds) {
-      const storedMessage = index.storedMessagesById.get(sourceId);
-      if (storedMessage == null) {
-        continue;
+    const provenanceState = getProviderMessageProvenanceState(providerMessage);
+    let exactHasUserAttribution = false;
+    let exactHasToolAttribution = false;
+
+    if (provenanceState.value != null) {
+      const orderedContributions = getOrderedProviderSourceContributions(provenanceState.value);
+      exactHasUserAttribution = orderedContributions.hasUserAttribution;
+      exactHasToolAttribution = orderedContributions.hasToolAttribution;
+      for (const contribution of orderedContributions.contributions) {
+        const storedMessage = index.storedMessagesById.get(contribution.sourceMessageId);
+        if (storedMessage == null) {
+          continue;
+        }
+        const cachedState = getCachedStoredProviderState(index, storedMessage);
+        const contributionState = getStoredProviderContributionState(
+          storedMessage,
+          contribution.selectedContentPartIndices,
+          cachedState,
+        );
+        exactHasUserAttribution ||= contributionState.isCanonicalUserContribution;
+        const needsCanonicalProvenance =
+          contribution.attribution === 'user' ||
+          contribution.attribution === 'tool' ||
+          contributionState.isCanonicalUserContribution ||
+          (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
+            providerRole === 'assistant');
+        if (needsCanonicalProvenance) {
+          selectedMessages.push(
+            projectStoredMessageForProvider(
+              storedMessage,
+              contribution.selectedContentPartIndices,
+              contribution.attribution === 'user' || contribution.attribution === 'tool'
+                ? contribution.attribution
+                : undefined,
+            ),
+          );
+        }
+        if (
+          contribution.attribution === 'user' ||
+          contribution.attribution === 'tool' ||
+          contributionState.isCanonicalUserContribution
+        ) {
+          appendMaterializedSelectedFileIds(
+            selectedFileIds,
+            input.fileIdsBySourceMessageId?.get(contribution.sourceMessageId),
+            getSelectedRawStoredMessageFileIds(
+              storedMessage,
+              contribution.selectedContentPartIndices,
+              cachedState,
+            ),
+          );
+        }
       }
-      const storedRole = normalizeRole(storedMessage);
-      const isStoredUserSource =
-        storedMessage.isCreatedByUser === true ||
-        storedMessage.isUserSubmitted === true ||
-        storedRole === 'user';
-      const submittedPathState = getUserSubmittedPathState(storedMessage);
-      const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(storedMessage);
-      const explicitSubmittedPaths = new Set(
-        (storedMessage.userSubmittedPaths ?? []).filter(
-          (path): path is string => typeof path === 'string',
-        ),
-      );
-      const hasStoredSubmittedProvenance =
-        submittedPathState.overflowed ||
-        submittedMessageFieldState.overflowed ||
-        submittedPathState.paths.some(
-          (path) => explicitSubmittedPaths.has(path) && !isSteerSubmittedPath(storedMessage, path),
-        ) ||
-        submittedMessageFieldState.entries.length > 0;
-      hasSubmittedCanonicalSource ||= hasStoredSubmittedProvenance;
-      const needsCanonicalProvenance =
-        isStoredUserSource ||
-        hasStoredSubmittedProvenance ||
-        providerRole === 'user' ||
-        (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
-          providerRole === 'assistant');
-      if (needsCanonicalProvenance) {
-        selectStoredMessage(storedMessage);
-      }
-      if (isStoredUserSource || hasStoredSubmittedProvenance || providerRole === 'user') {
-        for (const fileId of input.fileIdsBySourceMessageId?.get(sourceId) ?? []) {
-          if (typeof fileId === 'string' && fileId.length > 0) {
-            selectedFileIds.add(fileId);
+    } else {
+      const legacyLineage = getLegacyProviderLineage(providerMessage);
+      const matchedStoredMessages = new Set<StoredModelBoundMessage>();
+      let hasSubmittedCanonicalSource = false;
+      for (const sourceId of legacyLineage.sourceIds) {
+        const storedMessage = index.storedMessagesById.get(sourceId);
+        if (storedMessage == null) {
+          continue;
+        }
+        matchedStoredMessages.add(storedMessage);
+        const cachedState = getCachedStoredProviderState(index, storedMessage);
+        const submittedPathState = getStoredSubmittedPathState(
+          storedMessage,
+          undefined,
+          cachedState,
+        );
+        const storedRole = normalizeRole(storedMessage);
+        const isStoredUserSource =
+          storedMessage.isCreatedByUser === true ||
+          storedMessage.isUserSubmitted === true ||
+          storedRole === 'user';
+        const hasStoredSubmittedProvenance =
+          submittedPathState.overflowed ||
+          cachedState.submittedMessageFieldState.overflowed ||
+          submittedPathState.paths.some(
+            (path) =>
+              cachedState.explicitSubmittedPaths.has(path) &&
+              !isSteerSubmittedPath(storedMessage, path),
+          ) ||
+          cachedState.submittedMessageFieldState.entries.length > 0;
+        hasSubmittedCanonicalSource ||= isStoredUserSource || hasStoredSubmittedProvenance;
+        const needsCanonicalProvenance =
+          isStoredUserSource ||
+          hasStoredSubmittedProvenance ||
+          providerRole === 'user' ||
+          (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
+            providerRole === 'assistant');
+        if (needsCanonicalProvenance) {
+          selectLegacyStoredMessage(storedMessage);
+        }
+        if (isStoredUserSource || hasStoredSubmittedProvenance || providerRole === 'user') {
+          for (const fileId of input.fileIdsBySourceMessageId?.get(sourceId) ?? []) {
+            if (typeof fileId === 'string' && fileId.length > 0) {
+              selectedFileIds.add(fileId);
+            }
           }
         }
       }
+
+      const lineageError = getLegacyCoalescedLineageError(
+        input,
+        providerMessage,
+        matchedStoredMessages,
+        provenanceState,
+        legacyLineage,
+      );
+      if (lineageError != null) {
+        deferredTraversalErrors.push(lineageError);
+      }
+
+      if (provenanceState.invalid) {
+        for (const attribution of ['user', 'tool'] as const) {
+          const projectedMessage = projectProviderMessage(providerMessage, attribution);
+          selectedMessages.push(projectedMessage);
+          appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+        }
+        continue;
+      }
+
+      const isLegacyArtifactHuman = isLegacyArtifactProjectionHuman(
+        input.providerMessages,
+        providerIndex,
+        provenanceState,
+        legacyLineage,
+      );
+      let projectedMessage = projectProviderMessage(
+        providerMessage,
+        isLegacyArtifactHuman ? 'tool' : undefined,
+      );
+      if (
+        !isLegacyArtifactHuman &&
+        (providerRole === 'user' || providerRole === 'assistant') &&
+        hasSubmittedCanonicalSource
+      ) {
+        projectedMessage = {
+          ...projectedMessage,
+          isCreatedByUser: true,
+          isUserSubmitted: true,
+        };
+      }
+      selectedMessages.push(projectedMessage);
+      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+      continue;
     }
 
-    /** Always inspect the exact final wire payload as well as canonical rows.
-     * This covers provider transformations and source-backed content merged
-     * with synthetic HumanMessages while canonical rows retain durable HITL
-     * and file provenance. Assistant/model prose remains model-attributed. */
-    let projectedMessage = projectProviderMessage(providerMessage);
-    if (providerRole === 'assistant' && hasSubmittedCanonicalSource) {
-      /** A mixed assistant row can collapse a user-edited/HITL fragment and
-       * adjacent model text into one provider AI payload. Until the SDK emits
-       * per-derived-part lineage, inspect that exact payload fail-closed so a
-       * blocked value cannot be assembled across the attribution boundary.
-       * Steer-only provenance is excluded above because steers are emitted as
-       * their own HumanMessages and may be pruned independently. */
-      projectedMessage = {
-        ...projectedMessage,
-        isCreatedByUser: true,
-        isUserSubmitted: true,
-      };
+    /** Typed provenance is authoritative for attribution and source selection.
+     * Cross-boundary payloads are inspected under every applicable external
+     * source, while all-model/synthetic Human projections remain non-user. */
+    const exactAttributions: ProviderExactAttribution[] = [];
+    if (exactHasUserAttribution) {
+      exactAttributions.push('user');
     }
-    selectedMessages.push(projectedMessage);
-    appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+    if (exactHasToolAttribution) {
+      exactAttributions.push('tool');
+    }
+    if (exactAttributions.length === 0) {
+      exactAttributions.push('non_user');
+    }
+    for (const attribution of exactAttributions) {
+      const projectedMessage = projectProviderMessage(providerMessage, attribution);
+      selectedMessages.push(projectedMessage);
+      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+    }
   }
 
   const resolvedFiles: ModelBoundCanonicalFile[] = [];
@@ -875,7 +1571,7 @@ function projectModelBoundProviderContent(
       files: [...selectedFileIds].map((file_id) => ({ file_id })),
     });
   }
-  return { storedMessages: selectedMessages, resolvedFiles };
+  return { storedMessages: selectedMessages, resolvedFiles, deferredTraversalErrors };
 }
 
 function assertIndexedModelBoundProviderContent(
@@ -891,6 +1587,7 @@ function assertIndexedModelBoundProviderContent(
     legacyPii: input.legacyPii,
     storedMessages: projection.storedMessages,
     resolvedFiles: projection.resolvedFiles,
+    deferredTraversalErrors: projection.deferredTraversalErrors,
   });
 }
 
@@ -1106,16 +1803,27 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
   if (inspector == null && !hasFileFailClose) {
     return;
   }
-  const fragments: TextContentFragment[] = [];
-  const traversalErrors: ContentTraversalLimitError[] = [];
+  const inspectionSession = inspector?.createSession();
+  let finding: ReturnType<NonNullable<typeof inspectionSession>['inspect']> = null;
+  const inspectFragments = (fragments: Iterable<TextContentFragment>): void => {
+    if (finding == null) {
+      finding = inspectionSession?.inspect(fragments) ?? null;
+    }
+  };
+  const inspectFragment = (fragment: TextContentFragment): void => {
+    if (finding == null) {
+      finding = inspectionSession?.inspectFragment(fragment) ?? null;
+    }
+  };
+  const traversalErrors: ContentTraversalLimitError[] = [...(input.deferredTraversalErrors ?? [])];
   const appendExtractedContent = (extract: () => readonly TextContentFragment[]) => {
     try {
-      fragments.push(...extract());
+      inspectFragments(extract());
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
         throw error;
       }
-      fragments.push(...getContentTraversalFragments(error));
+      inspectFragments(getContentTraversalFragments(error));
       if (
         isContentTraversalProtected({
           error,
@@ -1144,8 +1852,8 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     } else {
       assertInspectableFileInput(input.filters, file);
     }
-    fragments.push(
-      ...extractFileContent(typeof file === 'string' ? { content: file, text: file } : file),
+    inspectFragments(
+      extractFileContent(typeof file === 'string' ? { content: file, text: file } : file),
     );
     return isHydratedCanonicalFile ? (file as ModelBoundCanonicalFile) : undefined;
   };
@@ -1165,7 +1873,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
           content: message.content,
         })),
       )) {
-        fragments.push(fragment);
+        inspectFragment(fragment);
       }
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
@@ -1256,23 +1964,60 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
        *  assistant row as submitted content. Structured tool calls/results
        *  remain externally sourced model-bound content. Explicit paths and
        *  semantic steer parts identify user-authored fragments in mixed rows. */
-      const submittedFragments = messageFragments.filter((fragment) =>
-        userSubmittedPaths.some((path) => isFragmentWithinPath(fragment, path)),
-      );
-      const userSubmittedAssembledContext = getUserSubmittedAssembledContext(submittedFragments);
-      fragments.push(
-        ...messageFragments.filter((fragment) => fragment.source === 'tool_argument'),
-        ...submittedFragments.filter((fragment) => fragment.source !== 'tool_argument'),
-        ...submittedFragments
-          .filter(
-            (fragment): fragment is Extract<TextContentFragment, { source: 'tool_argument' }> =>
-              fragment.source === 'tool_argument' && fragment.field === 'output',
-          )
-          .map(asUserSubmittedMessageFragment),
-        ...exactMessageFragments,
-      );
-      if (userSubmittedAssembledContext != null) {
-        fragments.push(userSubmittedAssembledContext);
+      if (finding == null) {
+        const submittedPathSet = new Set<string>(userSubmittedPaths);
+        for (const fragment of messageFragments) {
+          if (fragment.source === 'tool_argument') {
+            inspectFragment(fragment);
+            if (finding != null) {
+              break;
+            }
+          }
+        }
+        if (finding == null) {
+          const submittedToolOutputs: Array<
+            Extract<TextContentFragment, { source: 'tool_argument' }>
+          > = [];
+          const assembledText: string[] = [];
+          for (const fragment of messageFragments) {
+            if (!isFragmentWithinSubmittedPaths(fragment, submittedPathSet)) {
+              continue;
+            }
+            if (fragment.source !== 'tool_argument') {
+              inspectFragment(fragment);
+              if (finding != null) {
+                break;
+              }
+            }
+            if (
+              fragment.source === 'message' &&
+              (fragment.field === 'text' || fragment.field === 'content_part')
+            ) {
+              assembledText.push(fragment.text);
+            } else if (fragment.source === 'tool_argument' && fragment.field === 'output') {
+              submittedToolOutputs.push(fragment);
+              assembledText.push(fragment.text);
+            }
+          }
+          if (finding == null) {
+            for (const fragment of submittedToolOutputs) {
+              inspectFragment(asUserSubmittedMessageFragment(fragment));
+              if (finding != null) {
+                break;
+              }
+            }
+          }
+          if (finding == null) {
+            inspectFragments(exactMessageFragments);
+          }
+          if (finding == null) {
+            const userSubmittedAssembledContext =
+              createUserSubmittedAssembledContext(assembledText);
+            if (userSubmittedAssembledContext != null) {
+              inspectFragment(userSubmittedAssembledContext);
+            }
+          }
+        }
       }
       if (traversalError != null) {
         let traversalFilters = input.filters;
@@ -1293,7 +2038,8 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       continue;
     }
     storedUserMessages.push(message);
-    fragments.push(...messageFragments, ...exactMessageFragments);
+    inspectFragments(messageFragments);
+    inspectFragments(exactMessageFragments);
     if (
       traversalError != null &&
       isContentTraversalProtected({
@@ -1335,15 +2081,12 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     appendExtractedContent(() => extractSkillContent(skill));
   }
   for (const memory of input.memories ?? []) {
-    fragments.push(
-      ...extractMemoryContent(typeof memory === 'string' ? { value: memory } : memory),
-    );
+    inspectFragments(extractMemoryContent(typeof memory === 'string' ? { value: memory } : memory));
   }
   for (const file of input.files ?? []) {
     appendFile(file);
   }
 
-  const finding = inspector?.inspect(fragments) ?? null;
   if (finding != null) {
     throw new ContentFilterError(finding);
   }

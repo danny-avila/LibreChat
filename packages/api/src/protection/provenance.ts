@@ -35,6 +35,8 @@ export interface UserSubmittedPathState {
 
 export interface UserSubmittedPathOptions {
   readonly scope?: 'stored_message' | 'shared_message';
+  /** Restricts semantic steer discovery to provider-retained source parts. */
+  readonly semanticContentPartIndices?: Iterable<number>;
 }
 
 type UserSubmittedPathCarrier = object & {
@@ -93,23 +95,44 @@ function isEffectiveUserSubmittedPath(
   return source !== undefined;
 }
 
-function getSemanticUserSubmittedPaths(message: UserSubmittedPathCarrier): JsonPointer[] {
-  if (!Array.isArray(message.content)) {
-    return [];
+function visitSemanticUserSubmittedPaths(
+  message: UserSubmittedPathCarrier,
+  visit: (path: JsonPointer) => boolean,
+  contentPartIndices?: Iterable<number>,
+): boolean {
+  const content = message.content;
+  if (!Array.isArray(content)) {
+    return true;
   }
-  const paths: JsonPointer[] = [];
-  for (let index = 0; index < message.content.length; index++) {
-    const part = message.content[index];
+  const visitSteerPath = (index: number): boolean => {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= content.length) {
+      return true;
+    }
+    const part = content[index];
     if (
       part != null &&
       typeof part === 'object' &&
       Object.prototype.hasOwnProperty.call(part, 'type') &&
       (part as Record<string, unknown>).type === 'steer'
     ) {
-      paths.push(`/content/${index}` as JsonPointer);
+      return visit(`/content/${index}` as JsonPointer);
+    }
+    return true;
+  };
+  if (contentPartIndices != null) {
+    for (const index of contentPartIndices) {
+      if (!visitSteerPath(index)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  for (let index = 0; index < content.length; index++) {
+    if (!visitSteerPath(index)) {
+      return false;
     }
   }
-  return paths;
+  return true;
 }
 
 /**
@@ -121,30 +144,44 @@ export function getUserSubmittedPathState(
   message: UserSubmittedPathCarrier,
   options: UserSubmittedPathOptions = {},
 ): UserSubmittedPathState {
-  const candidates = [
-    ...(Array.isArray(message.userSubmittedPaths) ? message.userSubmittedPaths : []),
-    ...getSemanticUserSubmittedPaths(message),
-  ];
   const paths: JsonPointer[] = [];
   const seen = new Set<string>();
-
-  for (const path of candidates) {
+  const appendCandidate = (path: unknown, knownEffective = false): boolean => {
     if (
       typeof path !== 'string' ||
       !path.startsWith('/') ||
       path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
       seen.has(path)
     ) {
-      continue;
+      return true;
     }
     seen.add(path);
     if (seen.size > MAX_USER_SUBMITTED_PATHS) {
-      return { paths, overflowed: true };
+      return false;
     }
     const pointer = path as JsonPointer;
-    if (isEffectiveUserSubmittedPath(message, pointer, options.scope ?? 'stored_message')) {
+    if (
+      knownEffective ||
+      isEffectiveUserSubmittedPath(message, pointer, options.scope ?? 'stored_message')
+    ) {
       paths.push(pointer);
     }
+    return true;
+  };
+
+  for (const path of Array.isArray(message.userSubmittedPaths) ? message.userSubmittedPaths : []) {
+    if (!appendCandidate(path)) {
+      return { paths, overflowed: true };
+    }
+  }
+  if (
+    !visitSemanticUserSubmittedPaths(
+      message,
+      (path) => appendCandidate(path, true),
+      options.semanticContentPartIndices,
+    )
+  ) {
+    return { paths, overflowed: true };
   }
   return { paths, overflowed: false };
 }

@@ -44,6 +44,26 @@ describe('getUserSubmittedPathState', () => {
     });
   });
 
+  it('discovers semantic steer provenance only at retained source indices', () => {
+    let contentReads = 0;
+    const values = new Array<unknown>(4_096);
+    values[0] = { type: 'steer', steer: 'pruned steer' };
+    values[4_095] = { type: 'steer', steer: 'retained steer' };
+    const content = new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          contentReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(getUserSubmittedPathState({ content }, { semanticContentPartIndices: [4_095] })).toEqual(
+      { paths: ['/content/4095'], overflowed: false },
+    );
+    expect(contentReads).toBe(1);
+  });
+
   it('fails closed when unique bounded pointer candidates exceed 256', () => {
     const content = Array.from({ length: 257 }, (_, index) => ({ text: `part-${index}` }));
 
