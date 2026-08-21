@@ -49,7 +49,12 @@ const askSilentQuestion = (query, input = process.stdin, destination = process.s
   const rl = readline.createInterface({
     input,
     output,
-    terminal: input.isTTY,
+    // Always use terminal mode so readline puts stdin in raw mode and
+    // prevents the terminal driver from echoing typed characters.
+    // Without this, passwords would be visible on terminals where
+    // input.isTTY is falsy or on platforms that echo before readline
+    // intercepts.
+    terminal: true,
   });
 
   destination.write(query);
