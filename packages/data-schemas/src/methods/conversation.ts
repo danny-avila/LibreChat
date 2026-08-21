@@ -209,6 +209,7 @@ export interface ConversationMethods {
   getConvoOwnership(
     user: string,
     conversationId: string,
+    tenantId?: string | null,
   ): Promise<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'> | null>;
   getConvoRetention(
     user: string,
@@ -478,11 +479,17 @@ export function createConversationMethods(
    * without materializing the full conversation document (preset spread +
    * message ObjectId array).
    */
-  async function getConvoOwnership(user: string, conversationId: string) {
+  async function getConvoOwnership(user: string, conversationId: string, tenantId?: string | null) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const tenantFilter =
+        tenantId === undefined ? {} : subagentLeaseTenantFilter(tenantId ?? undefined);
       return await Conversation.findOne(
-        { user, conversationId },
+        {
+          user,
+          conversationId,
+          ...tenantFilter,
+        },
         'user tenantId subagentThread',
       ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
     } catch (error) {

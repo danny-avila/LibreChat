@@ -37,7 +37,7 @@ const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archive
 const subagentThreadViewHandler = createSubagentThreadViewHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
-  getMessages: db.getMessages,
+  getMessagesForSubagentThreadView: db.getMessagesForSubagentThreadView,
 });
 router.use(requireJwtAuth);
 

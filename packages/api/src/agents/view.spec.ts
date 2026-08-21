@@ -88,20 +88,20 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent,
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response, json } = createResponse();
 
     await handler(createRequest(), response);
 
-    expect(getMessages).toHaveBeenCalledWith(
-      { conversationId: threadId, user: 'user-1', tenantId: 'tenant-1' },
-      'messageId parentMessageId isCreatedByUser text createdAt error +subagentTask',
-      {
-        limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
-        sort: { createdAt: -1, _id: -1 },
-      },
-    );
+    expect(getMessages).toHaveBeenCalledWith({
+      conversationId: threadId,
+      user: 'user-1',
+      tenantId: 'tenant-1',
+      limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
+      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes,
+    });
+    expect(getConvoOwnership).toHaveBeenCalledWith('user-1', parentConversationId, 'tenant-1');
     expect(json).toHaveBeenCalledWith({
       threadId,
       parentConversationId,
@@ -145,7 +145,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
-      getMessages: jest.fn().mockResolvedValue(messages),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue(messages),
     });
     const { response, json } = createResponse();
 
@@ -166,7 +166,7 @@ describe('subagent thread parent-scoped view', () => {
       getSubagentThreadForParent: jest
         .fn()
         .mockResolvedValue({ ...child, tenantId: undefined, subagentThreadLease: undefined }),
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response } = createResponse();
 
@@ -175,15 +175,12 @@ describe('subagent thread parent-scoped view', () => {
       response,
     );
 
-    expect(getMessages).toHaveBeenCalledWith(
-      {
-        conversationId: threadId,
-        user: 'user-1',
-        tenantId: { $exists: false },
-      },
-      expect.any(String),
-      expect.any(Object),
-    );
+    expect(getMessages).toHaveBeenCalledWith({
+      conversationId: threadId,
+      user: 'user-1',
+      limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
+      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes,
+    });
   });
 
   it.each([
@@ -204,7 +201,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response, json } = createResponse();
 
@@ -220,7 +217,7 @@ describe('subagent thread parent-scoped view', () => {
       getSubagentThreadForParent: jest
         .fn()
         .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
-      getMessages: jest.fn().mockResolvedValue([]),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([]),
     });
     const { response, json } = createResponse();
 
@@ -235,7 +232,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership: jest.fn().mockResolvedValue(parent),
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
-      getMessages: jest.fn().mockResolvedValue([]),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([]),
     });
     const { response, json } = createResponse();
 
@@ -254,7 +251,9 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership: jest.fn().mockResolvedValue(parent),
       getSubagentThreadForParent: jest.fn().mockResolvedValue(activeChild),
-      getMessages: jest.fn().mockResolvedValue([message('task-1:assistant', 'completed')]),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([message('task-1:assistant', 'completed')]),
     });
     const { response, json } = createResponse();
 
@@ -271,7 +270,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
-      getMessages: jest.fn().mockResolvedValue(messages),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue(messages),
     });
     const { response, json } = createResponse();
 
@@ -306,7 +305,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent: jest.fn().mockResolvedValue(childRecord),
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response, status, json } = createResponse();
 
@@ -330,7 +329,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent,
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response, status } = createResponse();
 
@@ -349,7 +348,7 @@ describe('subagent thread parent-scoped view', () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership,
       getSubagentThreadForParent,
-      getMessages,
+      getMessagesForSubagentThreadView: getMessages,
     });
     const { response, status } = createResponse();
 
@@ -368,7 +367,9 @@ describe('subagent thread parent-scoped view', () => {
       getSubagentThreadForParent: jest
         .fn()
         .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
-      getMessages: jest.fn().mockResolvedValue([message('task-1:user', 'running', true)]),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([message('task-1:user', 'running', true)]),
     });
     const { response, json } = createResponse();
 

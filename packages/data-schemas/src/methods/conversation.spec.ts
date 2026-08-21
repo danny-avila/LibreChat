@@ -1546,6 +1546,36 @@ describe('Conversation Operations', () => {
       });
       expect(result).not.toHaveProperty('title');
     });
+
+    it('selects the exact tenant when conversation identifiers collide', async () => {
+      await runAsSystem(async () => {
+        await Conversation.create([
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            title: 'Tenantless parent',
+            endpoint: EModelEndpoint.agents,
+          },
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            tenantId: 'tenant-a',
+            title: 'Tenant parent',
+            endpoint: EModelEndpoint.agents,
+          },
+        ]);
+      });
+
+      const tenantless = await methods.getConvoOwnership('user123', 'shared-conversation-id', null);
+      const tenant = await methods.getConvoOwnership(
+        'user123',
+        'shared-conversation-id',
+        'tenant-a',
+      );
+
+      expect(tenantless?.tenantId).toBeUndefined();
+      expect(tenant?.tenantId).toBe('tenant-a');
+    });
   });
 
   describe('getConvoRetention', () => {

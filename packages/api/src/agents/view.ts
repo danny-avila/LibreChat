@@ -4,7 +4,11 @@ import type {
   SubagentThreadStatus,
   SubagentThreadView,
 } from 'librechat-data-provider';
-import type { ConversationMethods, IMessage, MessageMethods } from '@librechat/data-schemas';
+import type {
+  ConversationMethods,
+  MessageMethods,
+  SubagentThreadViewMessageRecord,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 
@@ -14,14 +18,11 @@ const MAX_RESPONSE_TEXT_BYTES = 128 * 1024;
 const MAX_RESPONSE_BYTES = 160 * 1024;
 const MAX_PUBLIC_ID_BYTES = 512;
 const MAX_TITLE_BYTES = 1024;
-const SUBAGENT_TASK_SELECT =
-  'messageId parentMessageId isCreatedByUser text createdAt error +subagentTask';
-
 type SubagentThreadViewDependencies = Pick<
   ConversationMethods,
   'getConvoOwnership' | 'getSubagentThreadForParent'
 > &
-  Pick<MessageMethods, 'getMessages'>;
+  Pick<MessageMethods, 'getMessagesForSubagentThreadView'>;
 
 type SubagentThreadViewParams = {
   parentConversationId?: string;
@@ -68,7 +69,7 @@ const truncateUtf8 = (
 };
 
 const publicMessage = (
-  message: IMessage,
+  message: SubagentThreadViewMessageRecord,
   byteLimit: number,
 ): { message: SubagentThreadMessage; bytes: number } => {
   const text = message.text ?? '';
@@ -91,7 +92,7 @@ const publicMessage = (
 };
 
 const publicStatus = (
-  messages: IMessage[],
+  messages: SubagentThreadViewMessageRecord[],
   activeLeaseTaskId: string | undefined,
 ): SubagentThreadStatus => {
   if (activeLeaseTaskId != null) {
@@ -146,7 +147,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
     try {
       const now = new Date();
       const [parent, child] = await Promise.all([
-        deps.getConvoOwnership(userId, parentConversationId),
+        deps.getConvoOwnership(userId, parentConversationId, tenantId ?? null),
         deps.getSubagentThreadForParent({
           user: userId,
           parentConversationId,
@@ -167,15 +168,13 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         return;
       }
 
-      const messages = await deps.getMessages(
-        {
-          conversationId: threadId,
-          user: userId,
-          ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
-        },
-        SUBAGENT_TASK_SELECT,
-        { limit: MAX_THREAD_MESSAGES + 1, sort: { createdAt: -1, _id: -1 } },
-      );
+      const messages = await deps.getMessagesForSubagentThreadView({
+        conversationId: threadId,
+        user: userId,
+        ...(tenantId == null ? {} : { tenantId }),
+        limit: MAX_THREAD_MESSAGES + 1,
+        textCodePointLimit: MAX_MESSAGE_TEXT_BYTES,
+      });
 
       const historyTruncated = messages.length > MAX_THREAD_MESSAGES;
       const newestFirst = historyTruncated ? messages.slice(0, MAX_THREAD_MESSAGES) : messages;
