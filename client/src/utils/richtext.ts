@@ -18,6 +18,7 @@ import type {
   Table,
 } from 'mdast';
 import type { Extension as MicromarkExtension } from 'micromark-util-types';
+import { mcpUIResourcePlugin } from '~/components/MCPUIResource/plugin';
 import { remarkApproxTilde } from './tilde';
 import { preprocessLaTeX } from './latex';
 
@@ -54,7 +55,12 @@ type SuperSubNode = {
   children: SerializableNode[];
 };
 
-type SerializableNode = RootContent | SuperSubNode;
+/** `mcpUIResourcePlugin` produces these in place of its own protocol markers. */
+type McpResourceNode = {
+  type: 'mcp-ui-resource' | 'mcp-ui-carousel';
+};
+
+type SerializableNode = RootContent | SuperSubNode | McpResourceNode;
 
 const MONOSPACE = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
 
@@ -82,6 +88,9 @@ const EMPTY_RESERVED: ReadonlySet<string> = new Set();
  * title, so the implementation inside it is never on screen to be copied.
  */
 const ARTIFACT_DIRECTIVE = 'artifact';
+
+/** `Artifact`'s own fallback when a directive carries no title. */
+const ARTIFACT_DEFAULT_TITLE = 'untitled';
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -146,12 +155,8 @@ function resolveUrl(url: string): string {
   }
 }
 
-const artifactTitle = (
-  attributes: Record<string, string | null | undefined> | null | undefined,
-) => {
-  const title = attributes?.title ?? '';
-  return title.length > 0 ? `<p>${escapeText(title)}</p>` : '';
-};
+const artifactTitle = (attributes: Record<string, string | null | undefined> | null | undefined) =>
+  `<p>${escapeText(attributes?.title || ARTIFACT_DEFAULT_TITLE)}</p>`;
 
 const anchor = (url: string, children: string): string => {
   const resolved = resolveUrl(url);
@@ -328,6 +333,10 @@ function serializeNode(node: SerializableNode, context: SerializeContext): strin
         : serializeChildren(node.children, context);
     case 'definition':
       return '';
+    /** An embedded, interactive resource has no static form to paste. */
+    case 'mcp-ui-resource':
+    case 'mcp-ui-carousel':
+      return '';
     default:
       return 'children' in node ? serializeChildren(node.children, context) : '';
   }
@@ -383,6 +392,9 @@ export function markdownToHtml(
 
   remarkApproxTilde()(tree);
   applySuperSub(tree);
+  if (mode.variant === 'full') {
+    mcpUIResourcePlugin()(tree);
+  }
 
   const children = tree.children as SerializableNode[];
   const context: SerializeContext = {

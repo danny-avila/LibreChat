@@ -156,6 +156,21 @@ describe('markdownToHtml', () => {
     );
   });
 
+  it('falls back to the button default for an untitled artifact', () => {
+    expect(markdownToHtml('::artifact{identifier="a" type="x"}')).toBe('<p>untitled</p>');
+  });
+
+  it('drops MCP resource markers rather than pasting the protocol text', () => {
+    expect(markdownToHtml('See \\ui{resource1} here.')).toBe('<p>See  here.</p>');
+    expect(markdownToHtml('See \\ui{a,b} here.')).toBe('<p>See  here.</p>');
+  });
+
+  it('leaves MCP markers alone for the lite renderer, which does not transform them', () => {
+    expect(markdownToHtml('See \\ui{resource1} here.', { variant: 'lite', latex: false })).toBe(
+      '<p>See \\ui{resource1} here.</p>',
+    );
+  });
+
   it('routes rooted image sources through the deployment base', () => {
     const html = markdownToHtml('![chart](/images/chart.png)');
     expect(html).toBe(
