@@ -16,16 +16,17 @@ import type { EndpointDbMethods, ServerRequest } from '~/types';
 import type { EndpointTokenConfig } from '~/types/tokens';
 import type { RecordUsageDeps } from '~/agents/usage';
 import {
-  checkAndIncrementPendingRequest,
-  decrementPendingRequest,
-  getViolationInfo,
-} from '~/middleware/concurrency';
-import {
   compactConversation,
   selectBranchMessages,
   EmptyCompactionError,
   NothingToCompactError,
+  TranscriptTooLargeError,
 } from './summary';
+import {
+  checkAndIncrementPendingRequest,
+  decrementPendingRequest,
+  getViolationInfo,
+} from '~/middleware/concurrency';
 import { aggregateEmittedUsage, computeUsageCostUSD, recordCollectedUsage } from '~/agents/usage';
 import { getBalanceConfig, getTransactionsConfig } from '~/app/config';
 import { validateAgentModel } from '~/agents/validation';
@@ -44,6 +45,7 @@ export const CompactErrorCodes = {
   ALREADY_RUNNING: 'ALREADY_RUNNING',
   GENERATING: 'GENERATING',
   BRANCH_MOVED: 'BRANCH_MOVED',
+  TRANSCRIPT_TOO_LARGE: 'TRANSCRIPT_TOO_LARGE',
   CONCURRENT_LIMIT: 'CONCURRENT_LIMIT',
   AGENT_NOT_FOUND: 'AGENT_NOT_FOUND',
   ILLEGAL_MODEL: 'ILLEGAL_MODEL',
@@ -524,6 +526,14 @@ export async function handleCompactRequest(
         status: 400,
         error: 'No messages to compact',
         code: CompactErrorCodes.NOTHING_TO_COMPACT,
+      };
+    }
+    /** Refused rather than silently summarizing part of the branch. */
+    if (error instanceof TranscriptTooLargeError) {
+      return {
+        status: 413,
+        error: 'This conversation is too long to compact in one pass',
+        code: CompactErrorCodes.TRANSCRIPT_TOO_LARGE,
       };
     }
     logger.error('[compact] Error compacting conversation', error);

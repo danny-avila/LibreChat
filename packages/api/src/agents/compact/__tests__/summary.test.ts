@@ -89,6 +89,24 @@ const dbMethods = {
 
 const ids = { messageId: 'new_1', conversationId: 'convo_1', parentMessageId: 'm4' };
 
+/** A model the token map does not know, so the summarizer falls back to the
+ *  32k default window and the chunking thresholds stay deterministic. */
+const smallWindowAgent = {
+  provider: 'openAI',
+  endpoint: 'openAI',
+  model: 'test-small-window',
+  model_parameters: { model: 'test-small-window' },
+};
+
+/** Text that does not collapse under BPE, so token size tracks length. */
+function bulk(label: string, words: number): string {
+  const parts: string[] = [label];
+  for (let i = 0; i < words; i++) {
+    parts.push(`w${i}${label}`);
+  }
+  return parts.join(' ');
+}
+
 /** Chunked provider response: usage lands on the final chunk, as it does on
  *  the wire, so the aggregation has to survive the merge to be read. */
 async function* chunksOf(
@@ -461,32 +479,93 @@ describe('compactConversation', () => {
     expect(result.usage?.output_tokens).toBe(9000);
   });
 
-  it('drops the oldest turns when the branch exceeds the summarizer window', async () => {
+  it('consolidates an over-window branch across passes instead of dropping turns', async () => {
     const long: TMessage[] = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 12; i++) {
       const parent = i === 0 ? Constants.NO_PARENT : `m${i - 1}`;
       long.push(
         i % 2 === 0
-          ? ({ ...userMessage(`m${i}`, parent, 'x'.repeat(20000)) } as TMessage)
+          ? ({ ...userMessage(`m${i}`, parent, `turn${i} ${bulk(`u${i}`, 1200)}`) } as TMessage)
           : assistantMessage(`m${i}`, parent, [
-              { type: ContentTypes.TEXT, text: 'y'.repeat(20000) },
+              { type: ContentTypes.TEXT, text: bulk(`a${i}`, 1200) },
             ]),
       );
     }
+    let pass = 0;
+    mockStream.mockImplementation(() => chunksOf(`checkpoint after pass ${++pass}`));
 
-    await compactConversation({
+    const result = await compactConversation({
       req: makeReq(),
-      agent,
+      agent: smallWindowAgent,
       branch: long,
       ids,
       db: dbMethods,
     });
 
-    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
-    /** Bounded rather than sent whole, and cut at a turn boundary so no tool
-     *  result is orphaned. */
-    expect(sent.length).toBeLessThan(long.length);
-    expect(sent[0].getType()).toBe('human');
+    /** More than one call means it chunked rather than sending an over-window
+     *  prompt, and the final checkpoint is the last pass's output. */
+    expect(mockStream.mock.calls.length).toBeGreaterThan(1);
+    expect(result.summary.content?.[0].text).toBe(`checkpoint after pass ${pass}`);
+
+    /** Every message reaches some pass: nothing is summarized away silently. */
+    const seen = new Set<string>();
+    for (const call of mockStream.mock.calls) {
+      for (const message of call[0] as BaseMessage[]) {
+        seen.add(JSON.stringify(message.content).slice(0, 40));
+      }
+    }
+    for (let i = 0; i < 12; i += 2) {
+      expect([...seen].some((key) => key.includes(`turn${i} `))).toBe(true);
+    }
+
+    /** Each pass after the first folds in the running checkpoint. */
+    const secondPass = mockStream.mock.calls[1][0] as BaseMessage[];
+    expect(String(secondPass[secondPass.length - 1].content)).toContain('checkpoint after pass 1');
+  });
+
+  it('uses the endpoint, not the provider map, for the context window', async () => {
+    /** `providerEndpointMap` has no google entry, so mapping through it would
+     *  fall back to the 32k default and chunk a Gemini branch that fits its
+     *  real window comfortably. */
+    const googleAgent = {
+      provider: 'google',
+      endpoint: 'google',
+      model: 'gemini-2.5-pro',
+      model_parameters: { model: 'gemini-2.5-pro' },
+    };
+    const branchOverSmallWindow: TMessage[] = [
+      { ...userMessage('g1', Constants.NO_PARENT, bulk('g', 30000)) } as TMessage,
+    ];
+    process.env.GOOGLE_KEY = 'test-key';
+
+    await compactConversation({
+      req: makeReq(),
+      agent: googleAgent,
+      branch: branchOverSmallWindow,
+      ids,
+      db: dbMethods,
+    });
+
+    /** One pass: the real Gemini window swallows it. */
+    expect(mockStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a branch needing more passes than the cap rather than truncating it', async () => {
+    const huge: TMessage[] = [];
+    for (let i = 0; i < 40; i++) {
+      const parent = i === 0 ? Constants.NO_PARENT : `m${i - 1}`;
+      huge.push({ ...userMessage(`m${i}`, parent, bulk(`h${i}`, 2500)) } as TMessage);
+    }
+
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent: smallWindowAgent,
+        branch: huge,
+        ids,
+        db: dbMethods,
+      }),
+    ).rejects.toMatchObject({ name: 'TranscriptTooLargeError' });
   });
 
   it('refuses a branch that formats to nothing', async () => {
