@@ -252,7 +252,38 @@ async function resolveOrchestrationSnapshot(
     };
   }
 
-  const [terminalResult, leaseResult] = await Promise.allSettled([
+  let readUncertain = false;
+  let activeLeases: Awaited<ReturnType<WakeupMethods['listActiveSubagentThreadLeases']>> = [];
+  /** Snapshot leases before terminal rows: a child settling between these reads is
+   * then visible either through its earlier lease or through its later terminal. */
+  try {
+    activeLeases = (
+      await methods.listActiveSubagentThreadLeases({
+        user: input.userId,
+        now: new Date(),
+        ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
+      })
+    ).filter((lease) => lease.parentConversationId === input.parentConversationId);
+  } catch {
+    readUncertain = true;
+  }
+  const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
+  const activeRead =
+    boundedActiveLeases.length === 0
+      ? Promise.resolve([])
+      : methods.getMessages(
+          {
+            user: input.userId,
+            messageId: {
+              $in: boundedActiveLeases.map(({ taskId }) => `${taskId}:user`),
+            },
+            'subagentTask.parentRunId': input.parentMessageId,
+            'subagentTask.status': 'running',
+          },
+          ORCHESTRATION_TASK_SELECT,
+          { sort: false, limit: MAX_ORCHESTRATION_TASKS + 1 },
+        );
+  const [terminalResult, activeResult] = await Promise.allSettled([
     methods.getMessages(
       {
         user: input.userId,
@@ -262,41 +293,11 @@ async function resolveOrchestrationSnapshot(
       ORCHESTRATION_TASK_SELECT,
       { sort: { updatedAt: -1, _id: -1 }, limit: MAX_ORCHESTRATION_CANDIDATES },
     ),
-    methods.listActiveSubagentThreadLeases({
-      user: input.userId,
-      now: new Date(),
-      ...(input.tenantId == null ? {} : { tenantId: input.tenantId }),
-    }),
+    activeRead,
   ]);
-  const readUncertain = terminalResult.status === 'rejected' || leaseResult.status === 'rejected';
+  readUncertain ||= terminalResult.status === 'rejected' || activeResult.status === 'rejected';
   const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
-  const activeLeases =
-    leaseResult.status === 'fulfilled'
-      ? leaseResult.value.filter(
-          (lease) => lease.parentConversationId === input.parentConversationId,
-        )
-      : [];
-  const boundedActiveLeases = activeLeases.slice(0, MAX_ORCHESTRATION_ACTIVE_LEASES);
-  let activeMessages: IMessage[] = [];
-  let activeReadUncertain = false;
-  if (boundedActiveLeases.length > 0) {
-    try {
-      activeMessages = await methods.getMessages(
-        {
-          user: input.userId,
-          messageId: {
-            $in: boundedActiveLeases.map(({ taskId }) => `${taskId}:user`),
-          },
-          'subagentTask.parentRunId': input.parentMessageId,
-          'subagentTask.status': 'running',
-        },
-        ORCHESTRATION_TASK_SELECT,
-        { sort: false, limit: MAX_ORCHESTRATION_TASKS + 1 },
-      );
-    } catch {
-      activeReadUncertain = true;
-    }
-  }
+  const activeMessages = activeResult.status === 'fulfilled' ? activeResult.value : [];
   if (terminalMessages.length === 0 && activeMessages.length === 0 && readUncertain) {
     const lineage = input.currentThread.subagentThread;
     if (lineage == null) {
@@ -409,7 +410,7 @@ async function resolveOrchestrationSnapshot(
       activeMessages.length === MAX_ORCHESTRATION_TASKS + 1 ||
       candidates.length > MAX_ORCHESTRATION_TASKS,
     lineageUncertain,
-    readUncertain: readUncertain || activeReadUncertain,
+    readUncertain,
   };
 }
 
