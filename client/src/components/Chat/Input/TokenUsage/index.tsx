@@ -6,6 +6,7 @@ import type { CurrencyConfig } from '~/utils';
 import { useGetLangfuseSessionLinkQuery, useGetStartupConfig } from '~/data-provider';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 import { formatTokens, cn } from '~/utils';
+import CompactAction from './CompactAction';
 import { useLocalize } from '~/hooks';
 import Breakdown from './Breakdown';
 import Gauge from './Gauge';
@@ -28,10 +29,12 @@ function TokenUsageIndicator({
   showCost,
   currency,
   langfuseConnectionAccess,
+  compactionEnabled,
 }: TokenUsageProps & {
   showCost: boolean;
   currency?: CurrencyConfig;
   langfuseConnectionAccess: boolean;
+  compactionEnabled: boolean;
 }) {
   const localize = useLocalize();
   const view = useTokenUsage({ index, conversation, isSubmitting });
@@ -220,12 +223,20 @@ function TokenUsageIndicator({
           'data-[leave]:translate-y-1 data-[leave]:scale-95 data-[leave]:opacity-0',
         )}
       >
-        <Breakdown
-          view={view}
-          showCost={showCost}
-          currency={currency}
-          langfuseSessionUrl={langfuseSession?.url ?? undefined}
-        />
+        <div className="space-y-3">
+          <Breakdown
+            view={view}
+            showCost={showCost}
+            currency={currency}
+            langfuseSessionUrl={langfuseSession?.url ?? undefined}
+          />
+          {compactionEnabled && (
+            <>
+              <div className="border-t border-border-light" role="separator" />
+              <CompactAction />
+            </>
+          )}
+        </div>
       </Ariakit.Popover>
     </>
   );
@@ -246,6 +257,10 @@ const TokenUsage = memo(function TokenUsage(props: TokenUsageProps) {
       showCost={startupConfig.interface?.contextCost === true}
       currency={startupConfig.interface?.currency}
       langfuseConnectionAccess={startupConfig.langfuseConnectionAccess === true}
+      /** Same `summarization.enabled` switch that governs the automatic detour,
+       *  so an operator who turned summarization off does not get a control
+       *  that only ever fails. */
+      compactionEnabled={startupConfig.compactionEnabled !== false}
     />
   );
 });
