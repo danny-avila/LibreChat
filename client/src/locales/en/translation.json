@@ -1051,6 +1051,7 @@
   "com_ui_context_compact_failed": "Could not compact the conversation",
   "com_ui_context_compact_info": "Replaces the conversation so far with a summary. Earlier messages stay visible here but are no longer sent to the model.",
   "com_ui_context_compact_noop": "Already compacted. Nothing new to summarize.",
+  "com_ui_context_compact_too_large": "This conversation is too long to compact in one pass",
   "com_ui_context_compacted": "Conversation compacted",
   "com_ui_context_compacting": "Compacting...",
   "com_ui_context_cost": "Cost",

@@ -1,11 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import {
-  Constants,
-  ContentTypes,
-  EModelEndpoint,
-  FileSources,
-  providerEndpointMap,
-} from 'librechat-data-provider';
+import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-data-provider';
 import {
   Providers,
   HumanMessage,
@@ -139,6 +133,9 @@ export interface CompactionUsage {
 
 export interface CompactionModel {
   provider: Providers;
+  /** The endpoint the call resolved to, for token-window lookups that key on
+   *  endpoints rather than SDK provider names. */
+  endpoint: string;
   model?: string;
   clientOptions: ClientOptions;
   endpointTokenConfig?: EndpointTokenConfig;
@@ -450,6 +447,7 @@ export async function resolveCompactionModel({
 
   return {
     provider,
+    endpoint,
     model,
     clientOptions,
     endpointTokenConfig: options.endpointTokenConfig,
@@ -483,21 +481,28 @@ const TRANSCRIPT_BUDGET_RATIO = 0.7;
 /** Assumed window when the summarizer's model is unknown to the token map. */
 const FALLBACK_CONTEXT_TOKENS = 32_768;
 
+/** Guard against a runaway number of model calls on an enormous branch. */
+const MAX_COMPACTION_PASSES = 8;
+
 /**
- * Drops the oldest turns until the transcript fits the summarizer's context
- * window.
+ * Splits the transcript into consecutive chunks that each fit the summarizer's
+ * context window.
  *
  * A normal turn is pruned by the SDK before it reaches the provider; this path
- * rebuilds the whole root-to-leaf branch itself, so without a bound a long
- * conversation, or any conversation compacted with a smaller administrator
- * chosen summary model, gets a context-length error exactly when compaction is
- * most needed. Cutting only at human-message boundaries keeps tool_call and
- * tool_result pairs together, the same rule the SDK's recency split follows.
+ * rebuilds the whole root-to-leaf branch itself, so an unbounded prompt gets a
+ * context-length error exactly when compaction is most needed. Chunking rather
+ * than truncating is what keeps the checkpoint complete: every chunk is folded
+ * into the running checkpoint in turn, so no turn is dropped unsummarized.
+ *
+ * Chunks start at human messages so tool_call and tool_result pairs are never
+ * split, the same rule the SDK's recency boundary follows. A single turn larger
+ * than the budget becomes its own oversized chunk; the provider's own limits
+ * govern from there rather than this module silently discarding it.
  */
-async function boundTranscript(
-  messages: BaseMessage[],
-  budget: number,
-): Promise<{ messages: BaseMessage[]; dropped: number }> {
+async function chunkTranscript(messages: BaseMessage[], budget: number): Promise<BaseMessage[][]> {
+  if (messages.length === 0) {
+    return [];
+  }
   const counts: number[] = [];
   let total = 0;
   for (const message of messages) {
@@ -506,27 +511,24 @@ async function boundTranscript(
     total += size;
   }
   if (total <= budget) {
-    return { messages, dropped: 0 };
+    return [messages];
   }
 
-  /** Walk back from the newest turn, keeping whole turns while they fit. */
-  let kept = 0;
-  let cut = messages.length;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    kept += counts[i];
-    if (kept > budget) {
-      break;
+  const chunks: BaseMessage[][] = [];
+  let start = 0;
+  let running = 0;
+  for (let i = 0; i < messages.length; i++) {
+    const wouldExceed = running + counts[i] > budget;
+    /** Only break at a turn boundary, and never emit an empty chunk. */
+    if (wouldExceed && i > start && messages[i].getType() === 'human') {
+      chunks.push(messages.slice(start, i));
+      start = i;
+      running = 0;
     }
-    if (messages[i].getType() === 'human') {
-      cut = i;
-    }
+    running += counts[i];
   }
-  /** No boundary fits (one oversized turn): keep the newest message alone and
-   *  let the provider's own truncation handle the remainder. */
-  if (cut === messages.length) {
-    cut = messages.length - 1;
-  }
-  return { messages: messages.slice(cut), dropped: cut };
+  chunks.push(messages.slice(start));
+  return chunks;
 }
 
 async function countMessageTokens(message: BaseMessage): Promise<number> {
@@ -559,6 +561,39 @@ function extractResponseText(message: BaseMessage | undefined): string {
     .map((block) => (typeof block === 'string' ? block : ((block as { text?: string }).text ?? '')))
     .join('')
     .trim();
+}
+
+/** Adds one pass's reported usage into the running total across passes. */
+function mergeUsage(
+  running: CompactionUsage | undefined,
+  next: CompactionUsage | undefined,
+): CompactionUsage | undefined {
+  if (!next) {
+    return running;
+  }
+  if (!running) {
+    return next;
+  }
+  return {
+    ...running,
+    input_tokens: (running.input_tokens ?? 0) + (next.input_tokens ?? 0),
+    output_tokens: (running.output_tokens ?? 0) + (next.output_tokens ?? 0),
+    total_tokens:
+      running.total_tokens != null || next.total_tokens != null
+        ? (running.total_tokens ?? 0) + (next.total_tokens ?? 0)
+        : undefined,
+    input_token_details:
+      running.input_token_details != null || next.input_token_details != null
+        ? {
+            cache_read:
+              (running.input_token_details?.cache_read ?? 0) +
+              (next.input_token_details?.cache_read ?? 0),
+            cache_creation:
+              (running.input_token_details?.cache_creation ?? 0) +
+              (next.input_token_details?.cache_creation ?? 0),
+          }
+        : undefined,
+  };
 }
 
 function extractUsage(
@@ -666,6 +701,22 @@ export class NothingToCompactError extends Error {
 }
 
 /**
+ * Raised when a branch needs more consolidation passes than the cap allows.
+ * Refusing is deliberate: a checkpoint built from part of the branch would
+ * still replace all of it in every later prompt, losing the rest silently.
+ */
+export class TranscriptTooLargeError extends Error {
+  readonly passes: number;
+  readonly maxPasses: number;
+  constructor(passes: number, maxPasses: number) {
+    super(`Conversation needs ${passes} compaction passes, more than the ${maxPasses} allowed`);
+    this.name = 'TranscriptTooLargeError';
+    this.passes = passes;
+    this.maxPasses = maxPasses;
+  }
+}
+
+/**
  * Raised when the provider answered with no usable text. Carries the usage it
  * reported: an empty or content-filtered completion is still a billed call, so
  * the host records it before surfacing the failure.
@@ -738,31 +789,33 @@ export async function compactConversation({
     ? summarization.updatePrompt
     : DEFAULT_COMPACTION_UPDATE_PROMPT;
 
-  const { provider, model, clientOptions, endpointTokenConfig, sameEndpoint } =
+  const { provider, endpoint, model, clientOptions, endpointTokenConfig, sameEndpoint } =
     await resolveCompactionModel({ req, agent, ids, db });
 
-  const instruction = buildCompactionInstruction(promptText, updatePromptText, priorSummary?.text);
   const llm = initializeModel({ provider, clientOptions });
 
+  /** The endpoint the call resolved to, not the SDK provider name:
+   *  `providerEndpointMap` covers only four endpoints, so mapping through it
+   *  would send `undefined` for Google and fall back to a tiny window. */
   const contextWindow =
-    getModelMaxTokens(
-      model ?? '',
-      providerEndpointMap[provider as keyof typeof providerEndpointMap] as EModelEndpoint,
-      endpointTokenConfig,
-    ) ?? FALLBACK_CONTEXT_TOKENS;
-  const { messages: bounded, dropped } = await boundTranscript(
+    getModelMaxTokens(model ?? '', endpoint as EModelEndpoint, endpointTokenConfig) ??
+    FALLBACK_CONTEXT_TOKENS;
+  const chunks = await chunkTranscript(
     messages as BaseMessage[],
     Math.max(1024, Math.floor(contextWindow * TRANSCRIPT_BUDGET_RATIO)),
   );
-  if (dropped > 0) {
-    logger.warn(
-      `[compact] Transcript exceeded the summarizer's window; dropped ${dropped} of ${messages.length} messages`,
-      { provider, model, contextWindow },
-    );
+  if (chunks.length > MAX_COMPACTION_PASSES) {
+    /** Refuse rather than drop: a checkpoint that silently omitted the oldest
+     *  turns would still replace them in every later prompt. */
+    throw new TranscriptTooLargeError(chunks.length, MAX_COMPACTION_PASSES);
   }
 
-  const promptMessages = [...bounded, new HumanMessage(instruction)] as BaseMessage[];
-  const promptTokens = await countPromptTokens(promptMessages);
+  /** Sum across every pass so the balance gate covers the whole operation, not
+   *  just its first call. */
+  let promptTokens = 0;
+  for (const chunk of chunks) {
+    promptTokens += await countPromptTokens(chunk);
+  }
   if (beforeInvoke) {
     await beforeInvoke({ promptTokens, model, provider, endpointTokenConfig });
   }
@@ -773,17 +826,38 @@ export async function compactConversation({
       ? AbortSignal.any([signal, timeout])
       : timeout;
 
-  const response = await invokeCompactionModel(llm, promptMessages, {
-    signal: abortSignal,
-    runName: 'CompactRun',
-    configurable: {
-      thread_id: ids.conversationId,
-      user_id: req.user?.id,
-    },
-  });
+  /**
+   * Each chunk is folded into the running checkpoint through the SAME update
+   * prompt a second manual compaction uses, so an over-window branch is
+   * consolidated rather than truncated.
+   */
+  let text = '';
+  let usage: CompactionUsage | undefined;
+  for (const chunk of chunks) {
+    const instruction = buildCompactionInstruction(
+      promptText,
+      updatePromptText,
+      text || priorSummary?.text,
+    );
+    const response = await invokeCompactionModel(
+      llm,
+      [...chunk, new HumanMessage(instruction)] as BaseMessage[],
+      {
+        signal: abortSignal,
+        runName: 'CompactRun',
+        configurable: {
+          thread_id: ids.conversationId,
+          user_id: req.user?.id,
+        },
+      },
+    );
+    usage = mergeUsage(usage, extractUsage(response, model, provider));
+    const passText = extractResponseText(response);
+    if (passText !== '') {
+      text = passText;
+    }
+  }
 
-  const text = extractResponseText(response);
-  const usage = extractUsage(response, model, provider);
   if (text === '') {
     /** Still a billed call: an OpenAI-compatible gateway may report no usage
      *  at all, so the local estimate travels with the failure. */
