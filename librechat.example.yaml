@@ -1061,6 +1061,29 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# SearXNG as the search provider example:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   # searxngApiKey: '${SEARXNG_API_KEY}'
+#   searxngSearchOptions:
+#     # Engines your instance should query. Accepts a comma-separated string or a list.
+#     # Defaults to 'google,bing,duckduckgo'; DuckDuckGo serves CAPTCHAs to most
+#     # self-hosted instances, so override it when results come back empty.
+#     #
+#     # Names must match engines enabled on your own instance. SearXNG ignores an
+#     # engine it does not know instead of reporting an error, so a typo or a
+#     # disabled engine shows up as fewer results rather than a failure. Check the
+#     # enabled list at https://your-instance/config before setting this.
+#     engines:
+#       - google
+#       - bing
+#       - startpage
+#       - qwant
+#     # language: en            # Result language code (default: 'all')
+#     # timeRange: month        # 'day', 'month', or 'year'
+#     # timeout: 10000          # HTTP request timeout in milliseconds (1-120000, default: 10000)
 
 # Memory configuration for user memories
 # memory:
