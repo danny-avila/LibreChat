@@ -1308,6 +1308,7 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   let listWarning: string | undefined;
+  const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
   if (params.subagentTasks != null) {
     try {
       const routedStore = routedSubagentStore(params.subagentTasks.store);
@@ -1315,20 +1316,15 @@ export async function runCheckBackgroundTask(params: {
         routedStore == null
           ? params.subagentTasks.store.list(params.subagentTasks.scopeId)
           : await routedStore.listTasks(params.subagentTasks.scopeId);
-      const completionWakeups = usesSubagentCompletionWakeups(params.subagentTasks);
-      subagentTasks = snapshots.map((task) =>
-        serializeSubagentSnapshot(task, { completionWakeups }),
-      );
+      subagentTasks = snapshots.map((task) => serializeSubagentSnapshot(task));
     } catch (error) {
       if (error instanceof SubagentTaskOwnerUnavailableError) {
         /** Cross-replica discovery is an additive source. A Redis outage must not
          * hide ordinary tasks or subagents owned by this process; surface the
          * incomplete view explicitly so the caller can retry for remote tasks. */
-        subagentTasks = params.subagentTasks.store.list(params.subagentTasks.scopeId).map((task) =>
-          serializeSubagentSnapshot(task, {
-            completionWakeups: usesSubagentCompletionWakeups(params.subagentTasks),
-          }),
-        );
+        subagentTasks = params.subagentTasks.store
+          .list(params.subagentTasks.scopeId)
+          .map((task) => serializeSubagentSnapshot(task));
         listWarning = `Cross-replica subagent tasks could not be listed: ${error.message}`;
       } else {
         throw error;
@@ -1343,6 +1339,9 @@ export async function runCheckBackgroundTask(params: {
       ...tasks.map((task) => serializeTask(task, { includeResult: false })),
       ...subagentTasks,
     ],
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
+      : {}),
     ...(listWarning != null && { partial: true, warning: listWarning }),
   });
 }

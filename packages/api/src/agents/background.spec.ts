@@ -1358,6 +1358,17 @@ describe('runCheckBackgroundTask (singleton)', () => {
       message: SUBAGENT_WAKEUP_GUIDANCE,
     });
 
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        args: {},
+        subagentTasks,
+      }),
+    );
+    expect(listed.message).toBe(SUBAGENT_WAKEUP_GUIDANCE);
+    expect(listed.tasks[0].message).toBeUndefined();
+
     store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
   });
 
