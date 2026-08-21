@@ -589,6 +589,58 @@ describe('createSubagentCompletionWakeupResolver', () => {
     ]);
   });
 
+  it('preserves uncertainty for a retry lease without a same-task seed or terminal', async () => {
+    const { methods, terminal } = resolverMethods();
+    methods.listActiveSubagentThreadLeases.mockResolvedValueOnce([
+      {
+        conversationId: 'thread-2',
+        parentConversationId: 'conversation-1',
+        taskId: 'retry-task',
+      },
+    ]);
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: 'response-1',
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter.messageId != null || filter['subagentTask.parentRunId'] === 'response-1') {
+        return [];
+      }
+      return [];
+    });
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
+    expect(snapshot.value.completeness).toBe('uncertain');
+    expect(snapshot.value.additional_children_may_exist).toBe(true);
+    expect(snapshot.value.note).toContain('Do not infer that no other children ran');
+  });
+
   it('omits sibling task records outside the authorized parent lineage', async () => {
     const { methods, terminal } = resolverMethods();
     const sibling = (taskId: string, threadId: string, sender: string) => ({

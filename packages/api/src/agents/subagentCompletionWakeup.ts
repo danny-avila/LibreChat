@@ -298,6 +298,19 @@ async function resolveOrchestrationSnapshot(
   readUncertain ||= terminalResult.status === 'rejected' || activeResult.status === 'rejected';
   const terminalMessages = terminalResult.status === 'fulfilled' ? terminalResult.value : [];
   const activeMessages = activeResult.status === 'fulfilled' ? activeResult.value : [];
+  if (activeMessages.length < MAX_ORCHESTRATION_TASKS + 1) {
+    const resolvedActiveTaskIds = new Set(
+      activeMessages.flatMap((message) => {
+        const taskId = taskIdFromMessage(message);
+        return taskId == null ? [] : [taskId];
+      }),
+    );
+    /** A retry can acquire a replacement task lease before persisting its terminal
+     * assistant row, while retaining only the abandoned attempt's seed. Without a
+     * durable lease-to-attempt identity, report that gap instead of inventing a
+     * child identity or claiming the sibling set is complete. */
+    readUncertain ||= boundedActiveLeases.some(({ taskId }) => !resolvedActiveTaskIds.has(taskId));
+  }
   if (terminalMessages.length === 0 && activeMessages.length === 0 && readUncertain) {
     const lineage = input.currentThread.subagentThread;
     if (lineage == null) {
