@@ -410,10 +410,11 @@ export async function handleCompactRequest(
           endpointTokenConfig,
         }) => {
           /** `supportsBalanceCheck` is keyed by endpoint TYPE: a named custom
-           *  endpoint (`Ollama`) lives under `custom`, and looking it up by its
-           *  own name silently skipped the gate on a call that is still
-           *  billed. `balanceEndpoint` carries that resolved type. Pricing
-           *  still uses the real endpoint name plus its token config. */
+           *  endpoint (`Ollama`) lives under `custom` and Vertex AI under
+           *  `google`, so looking either up by its own name silently skipped
+           *  the gate on a call that is still billed. `balanceEndpoint`
+           *  carries that resolved type. Pricing still uses the real endpoint
+           *  name plus its token config. */
           const balanceKey = balanceEndpoint;
           if (
             balanceConfig?.enabled !== true ||
