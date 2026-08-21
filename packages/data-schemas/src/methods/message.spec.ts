@@ -319,6 +319,26 @@ describe('Message Operations', () => {
         rows.find(({ messageId }) => messageId === 'bulk-user-submitted')?.isUserSubmitted,
       ).toBe(true);
     });
+
+    it('caps exact field provenance without promoting model output to whole-message provenance', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-exact-overflow',
+          conversationId,
+          isCreatedByUser: false,
+          userSubmittedMessageFieldPaths: Array.from({ length: 300 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        },
+      ]);
+
+      const row = await Message.findOne({ messageId: 'bulk-exact-overflow' }).lean();
+      expect(row?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    });
   });
 
   describe('recordMessage', () => {
@@ -479,6 +499,34 @@ describe('Message Operations', () => {
       expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
       expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
       expect(updatedMessage?.isUserSubmitted).toBe(true);
+    });
+
+    it('keeps repeated exact-field overflow scoped instead of promoting the whole message', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index}`,
+          field: 'decision_response' as const,
+        })),
+      });
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index + 200}`,
+          field: 'decision_response' as const,
+        })),
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(0);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(false);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {

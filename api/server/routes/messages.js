@@ -610,7 +610,9 @@ router.put('/:conversationId/:messageId', messageMutationMiddleware, async (req,
     };
     updatedContent[index] =
       currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
-    assertStoredMessageMutationAllowed(req.config?.filters, { content: updatedContent });
+    assertStoredMessageMutationAllowed(req.config?.filters, {
+      content: [updatedContent[index]],
+    });
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {

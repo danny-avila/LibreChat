@@ -80,7 +80,7 @@ function capNormalizedProvenance(
 ): {
   userSubmittedPaths: string[];
   userSubmittedMessageFieldPaths: UserSubmittedMessageFieldPath[];
-  overflowed: boolean;
+  promoteWholeMessage: boolean;
 } {
   return {
     userSubmittedPaths: userSubmittedPaths.slice(0, MAX_STORED_USER_SUBMITTED_PATHS),
@@ -88,9 +88,7 @@ function capNormalizedProvenance(
       0,
       MAX_STORED_USER_SUBMITTED_FIELD_PATHS,
     ),
-    overflowed:
-      userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS ||
-      userSubmittedMessageFieldPaths.length > MAX_STORED_USER_SUBMITTED_PATHS,
+    promoteWholeMessage: userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS,
   };
 }
 
@@ -163,20 +161,7 @@ function buildAtomicProvenanceMerge(
         isUserSubmitted: {
           $cond: [
             {
-              $or: [
-                {
-                  $gt: [
-                    { $size: `$${PROVENANCE_PATHS_UNION_FIELD}` },
-                    MAX_STORED_USER_SUBMITTED_PATHS,
-                  ],
-                },
-                {
-                  $gt: [
-                    { $size: `$${PROVENANCE_FIELD_PATHS_UNION_FIELD}` },
-                    MAX_STORED_USER_SUBMITTED_PATHS,
-                  ],
-                },
-              ],
+              $gt: [{ $size: `$${PROVENANCE_PATHS_UNION_FIELD}` }, MAX_STORED_USER_SUBMITTED_PATHS],
             },
             true,
             existingOrSubmitted,
@@ -523,7 +508,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         } else {
           delete normalizedMessage.userSubmittedMessageFieldPaths;
         }
-        if (provenance.overflowed) {
+        if (provenance.promoteWholeMessage) {
           normalizedMessage.isUserSubmitted = true;
         }
         return {
@@ -585,12 +570,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         ...(provenance.userSubmittedMessageFieldPaths.length > 0 && {
           userSubmittedMessageFieldPaths: provenance.userSubmittedMessageFieldPaths,
         }),
-        ...(provenance.overflowed && { isUserSubmitted: true }),
+        ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
       const update =
         rest.isCreatedByUser === false &&
         rest.isUserSubmitted === undefined &&
-        !provenance.overflowed
+        !provenance.promoteWholeMessage
           ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
           : message;
 

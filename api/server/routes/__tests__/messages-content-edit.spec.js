@@ -57,6 +57,7 @@ jest.mock('~/server/middleware', () => ({
 describe('PUT /:conversationId/:messageId content edit', () => {
   let app;
   const { getMessages, updateMessage } = require('~/models');
+  const { assertStoredMessageMutationAllowed } = require('@librechat/api');
 
   beforeAll(() => {
     const messagesRouter = require('../messages');
@@ -109,6 +110,31 @@ describe('PUT /:conversationId/:messageId content edit', () => {
         },
       ],
       userSubmittedPaths: ['/content/0/text'],
+    });
+  });
+
+  it('inspects the finalized edited part without reclassifying untouched model siblings', async () => {
+    getMessages.mockResolvedValue([
+      {
+        conversationId: 'conversation-1',
+        tokenCount: 10,
+        content: [
+          { type: ContentTypes.TEXT, text: 'Original response', phase: 'commentary' },
+          { type: ContentTypes.TEXT, text: 'PRIVATE-MODEL-SIBLING', phase: 'final' },
+        ],
+      },
+    ]);
+
+    const response = await request(app)
+      .put('/api/messages/conversation-1/message-1')
+      .send({ index: 0, text: 'Edited response', model: 'gpt-5' });
+
+    expect(response.status).toBe(200);
+    expect(assertStoredMessageMutationAllowed).toHaveBeenNthCalledWith(1, undefined, {
+      content: [{ text: 'Edited response' }],
+    });
+    expect(assertStoredMessageMutationAllowed).toHaveBeenNthCalledWith(2, undefined, {
+      content: [{ type: ContentTypes.TEXT, text: 'Edited response', phase: 'commentary' }],
     });
   });
 
