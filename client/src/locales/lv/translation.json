@@ -1884,6 +1884,7 @@
   "com_ui_storage_filter_sort": "Filtrēt un kārtot pēc datu krātuves",
   "com_ui_subagent_cancelled": "Aģents atcelts",
   "com_ui_subagent_complete": "Palaida aģentu",
+  "com_ui_subagent_dialog_description": "Izolēta konteksta pakārtota palaišana. Aktivitāte un galīgais rezultāts zemāk.",
   "com_ui_subagent_dialog_title": "\"{{0}}\" aģents",
   "com_ui_subagent_dialog_title_self": "Aģents",
   "com_ui_subagent_empty_result": "Teksts netika atgriezts.",

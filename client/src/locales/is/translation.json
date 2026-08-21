@@ -1878,6 +1878,7 @@
   "com_ui_storage_filter_sort": "Sía og raða eftir geymslu",
   "com_ui_subagent_cancelled": "Hætti við fulltrúa",
   "com_ui_subagent_complete": "Keyrði fulltrúa",
+  "com_ui_subagent_dialog_description": "Undirkeyrsla í einangruðu samhengi. Aðgerðir og lokaniðurstaða hér að neðan.",
   "com_ui_subagent_dialog_title": "Fulltrúinn „{{0}}“",
   "com_ui_subagent_dialog_title_self": "Fulltrúi",
   "com_ui_subagent_empty_result": "Engum texta skilað.",

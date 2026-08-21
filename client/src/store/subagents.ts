@@ -49,6 +49,7 @@ export type ActiveSubagentPanel = {
   parentConversationId: string;
   parentMessageId: string;
   toolCallId: string;
+  partIndex: number;
   subagentType: string;
   prompt?: string;
   legacyOutput?: string | null;
@@ -68,10 +69,13 @@ export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
 });
 
 /** Stable identity for one subagent invocation in the parent conversation. */
-export const subagentProgressKey = (parentMessageId: string, toolCallId: string) =>
-  `${parentMessageId}\u0000${toolCallId}`;
+export const subagentProgressKey = (
+  parentMessageId: string,
+  toolCallId: string,
+  partIndex: number,
+) => `${parentMessageId}\u0000${toolCallId}\u0000${partIndex}`;
 
-/** Progress state keyed by parent message + tool_call_id. */
+/** Progress state keyed by one concrete tool-call content-part occurrence. */
 export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
   key: 'subagentProgressByToolCallId',
   default: null,

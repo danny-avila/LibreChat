@@ -21,7 +21,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const resetSelection = useResetRecoilState(activeSubagentPanel);
   const progress = useRecoilValue(
     subagentProgressByToolCallId(
-      subagentProgressKey(selection.parentMessageId, selection.toolCallId),
+      subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
     ),
   );
   const foregroundTitle =
@@ -49,11 +49,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       ).find(
         (element) =>
           element.dataset.subagentToolCall === selection.toolCallId &&
-          element.dataset.subagentParentMessage === selection.parentMessageId,
+          element.dataset.subagentParentMessage === selection.parentMessageId &&
+          element.dataset.subagentPartIndex === String(selection.partIndex),
       );
       trigger?.focus();
     });
-  }, [resetSelection, selection.parentMessageId, selection.toolCallId]);
+  }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);
 
   useFocusTrap(panelRef, isMobile, close);
 
@@ -147,8 +148,14 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       {/* Keep the foreground panel's existing nested-tool approval controls
           coordinated within this invocation. Detached activity projections
           never include approval payloads. */}
-      <ApprovalProvider>
-        <SubagentActivity activity={activity} state={panelState} />
+      <ApprovalProvider
+        key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+      >
+        <SubagentActivity
+          key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+          activity={activity}
+          state={panelState}
+        />
       </ApprovalProvider>
     </aside>
   );

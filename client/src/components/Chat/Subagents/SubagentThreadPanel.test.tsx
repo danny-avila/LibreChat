@@ -13,6 +13,8 @@ import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/su
 import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
+const mockApprovalProviderMounted = jest.fn();
+const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
@@ -22,6 +24,18 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/hooks', () => ({
   useFocusTrap: jest.fn(),
   useLocalize: () => (key: string) => key,
+}));
+
+jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
+  __esModule: true,
+  default: ({ children }: { children: React.ReactNode }) => {
+    const mockReact = jest.requireActual<typeof import('react')>('react');
+    mockReact.useEffect(() => {
+      mockApprovalProviderMounted();
+      return () => mockApprovalProviderUnmounted();
+    }, []);
+    return children;
+  },
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
@@ -67,6 +81,7 @@ const selection: ActiveSubagentPanel = {
   parentConversationId: 'parent-conversation',
   parentMessageId: 'parent-message',
   toolCallId: 'tool-call',
+  partIndex: 2,
   subagentType: 'researcher',
   initialProgress: 1,
   isSubmitting: false,
@@ -105,6 +120,8 @@ const completedView: SubagentThreadView = {
 describe('SubagentThreadPanel', () => {
   beforeEach(() => {
     mockIsMobile = false;
+    mockApprovalProviderMounted.mockClear();
+    mockApprovalProviderUnmounted.mockClear();
   });
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
@@ -126,6 +143,7 @@ describe('SubagentThreadPanel', () => {
           type="button"
           data-subagent-tool-call="tool-call"
           data-subagent-parent-message="parent-message"
+          data-subagent-part-index="2"
         />
         <Observer />
         <SubagentThreadPanel selection={selection} />
@@ -147,7 +165,7 @@ describe('SubagentThreadPanel', () => {
     await waitFor(() =>
       expect(
         container.querySelector(
-          '[data-subagent-tool-call="tool-call"][data-subagent-parent-message="parent-message"]',
+          '[data-subagent-tool-call="tool-call"][data-subagent-parent-message="parent-message"][data-subagent-part-index="2"]',
         ),
       ).toHaveFocus(),
     );
@@ -164,6 +182,7 @@ describe('SubagentThreadPanel', () => {
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       toolCallId: 'foreground-call',
+      partIndex: 3,
       subagentType: 'researcher',
       prompt: 'Review this change.',
       persistedContent: [
@@ -182,6 +201,34 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('Review this change.')).toBeInTheDocument();
     expect(screen.getByText('Review complete.')).toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
+  });
+
+  it('resets invocation-scoped approval state when the selected card changes', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={{ ...selection, durable: undefined }} />
+      </RecoilRoot>,
+    );
+
+    expect(mockApprovalProviderMounted).toHaveBeenCalledTimes(1);
+    expect(mockApprovalProviderUnmounted).not.toHaveBeenCalled();
+
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel
+          selection={{ ...selection, partIndex: selection.partIndex + 1, durable: undefined }}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(mockApprovalProviderUnmounted).toHaveBeenCalledTimes(1);
+    expect(mockApprovalProviderMounted).toHaveBeenCalledTimes(2);
   });
 
   it('keeps an expected pre-reservation 404 in the readiness state', () => {
@@ -232,7 +279,11 @@ describe('SubagentThreadPanel', () => {
         initializeState={({ set }) =>
           set(
             subagentProgressByToolCallId(
-              subagentProgressKey(selection.parentMessageId, selection.toolCallId),
+              subagentProgressKey(
+                selection.parentMessageId,
+                selection.toolCallId,
+                selection.partIndex,
+              ),
             ),
             {
               subagentRunId: 'run',

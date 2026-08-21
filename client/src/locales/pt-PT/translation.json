@@ -1655,6 +1655,7 @@
   "com_ui_stop": "Parar",
   "com_ui_storage": "Armazenamento",
   "com_ui_subagent_complete": "Executou o agente",
+  "com_ui_subagent_dialog_description": "Execução secundária em contexto isolado. Atividade e resultado final abaixo.",
   "com_ui_subagent_dialog_title": "Agente \"{{0}}\"",
   "com_ui_subagent_empty_result": "Não foi devolvido qualquer texto.",
   "com_ui_subagent_errored": "O agente deu erro",

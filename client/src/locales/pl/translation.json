@@ -1876,6 +1876,7 @@
   "com_ui_storage_filter_sort": "Filtruj i Sortuj według Pamięci",
   "com_ui_subagent_cancelled": "Anulowany agent",
   "com_ui_subagent_complete": "Prowadził agenta",
+  "com_ui_subagent_dialog_description": "Uruchomienie podrzędne w izolowanym kontekście. Poniżej aktywność i wynik końcowy.",
   "com_ui_subagent_dialog_title": "Agent „{{0}}”.",
   "com_ui_subagent_dialog_title_self": "Agent",
   "com_ui_subagent_empty_result": "Nie zwrócono żadnego tekstu.",

@@ -2990,7 +2990,7 @@ describe('useStepHandler', () => {
      */
     const renderStepHandlerWithReader = (): {
       result: ReturnType<typeof renderHook>['result'];
-      getProgress: (toolCallId: string, parentMessageId?: string) => unknown;
+      getProgress: (toolCallId: string, parentMessageId?: string, partIndex?: number) => unknown;
     } => {
       /** Composite hook: the step handler under test + a `useRecoilCallback`
        *  reader that shares the same `RecoilRoot` store. Reading via a
@@ -3001,10 +3001,16 @@ describe('useStepHandler', () => {
           const stepHandler = useStepHandler(createHookParams());
           const read = useRecoilCallback(
             ({ snapshot }) =>
-              (toolCallId: string, parentMessageId: string = 'response-msg-1'): unknown =>
+              (
+                toolCallId: string,
+                parentMessageId: string = 'response-msg-1',
+                partIndex: number = 0,
+              ): unknown =>
                 snapshot
                   .getLoadable(
-                    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId)),
+                    subagentProgressByToolCallId(
+                      subagentProgressKey(parentMessageId, toolCallId, partIndex),
+                    ),
                   )
                   .valueOrThrow(),
             [],
@@ -3014,8 +3020,11 @@ describe('useStepHandler', () => {
         { wrapper: RecoilRoot },
       );
 
-      const getProgress = (toolCallId: string, parentMessageId?: string): unknown =>
-        (hookResult.result.current as any).read(toolCallId, parentMessageId);
+      const getProgress = (
+        toolCallId: string,
+        parentMessageId?: string,
+        partIndex?: number,
+      ): unknown => (hookResult.result.current as any).read(toolCallId, parentMessageId, partIndex);
       return { result: hookResult.result, getProgress };
     };
 
@@ -3147,7 +3156,7 @@ describe('useStepHandler', () => {
       });
 
       const first = getProgress('call_old') as { latestLabel?: string };
-      const second = getProgress('call_new') as { latestLabel?: string };
+      const second = getProgress('call_new', undefined, 1) as { latestLabel?: string };
       expect(first.latestLabel).toBe('first');
       expect(second.latestLabel).toBe('second');
     });
@@ -3340,7 +3349,7 @@ describe('useStepHandler', () => {
         status: string;
         latestLabel?: string;
       };
-      const bucketB = getProgress('call_b') as {
+      const bucketB = getProgress('call_b', undefined, 1) as {
         subagentRunId: string;
         status: string;
         latestLabel?: string;
@@ -3403,6 +3412,46 @@ describe('useStepHandler', () => {
       );
       expect(getProgress('call_shared', 'response-two')).toEqual(
         expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'second parent' }),
+      );
+    });
+
+    it('keeps repeated provider tool-call IDs isolated by content-part occurrence', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, [
+        'call_shared',
+        'call_shared',
+      ]);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              subagentRunId: 'child-one',
+              parentToolCallId: 'call_shared',
+              label: 'first occurrence',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              label: 'second occurrence',
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-msg-1', 0)).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-one', latestLabel: 'first occurrence' }),
+      );
+      expect(getProgress('call_shared', 'response-msg-1', 1)).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'second occurrence' }),
       );
     });
 

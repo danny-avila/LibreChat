@@ -167,13 +167,11 @@ export default function useStepHandler({
   const pendingDeltaFlushIds = useRef(new Set<string>());
   const pendingDeltaFlushRef = useRef<(() => void) | null>(null);
   /**
-   * Maps `SubagentUpdateEvent.subagentRunId` → parent invocation key.
-   * Preferred source is `payload.parentToolCallId` (threaded through by the
-   * SDK from `ToolRunnableConfig.toolCall.id`, deterministic). If a host
-   * runs an older SDK that doesn't emit it, we fall back to a temporal
-   * claim: the OLDEST unclaimed `subagent` tool call in the active message.
-   * Forward (oldest-first) iteration matches the order tool calls are
-   * created in, so concurrent spawns map in creation order.
+   * Maps `SubagentUpdateEvent.subagentRunId` → one concrete parent content-part
+   * occurrence. `payload.parentToolCallId` narrows the candidates when present,
+   * but provider IDs are not unique enough to be the atom identity: they may be
+   * reused across messages or even within one message. Forward (oldest-first)
+   * claiming preserves creation order for both modern and legacy envelopes.
    */
   const subagentRunToInvocationKey = useRef(new Map<string, string>());
   const claimedSubagentInvocationKeys = useRef(new Set<string>());
@@ -205,9 +203,7 @@ export default function useStepHandler({
    *  memory past what the structural output requires. */
 
   /**
-   * Attempts to resolve the parent `tool_call_id` for a subagent run, using
-   * the SDK-provided `parentToolCallId` first and falling back to an
-   * oldest-unclaimed temporal claim.
+   * Resolves a subagent run to an occurrence-scoped parent invocation key.
    */
   const resolveSubagentInvocationKey = useCallback(
     (payload: SubagentUpdateEvent, parentMessageId: string): string | undefined => {
@@ -215,14 +211,9 @@ export default function useStepHandler({
       if (cached != null) return cached;
       if (parentMessageId === '') return undefined;
 
-      if (payload.parentToolCallId) {
-        const invocationKey = subagentProgressKey(parentMessageId, payload.parentToolCallId);
-        subagentRunToInvocationKey.current.set(payload.subagentRunId, invocationKey);
-        claimedSubagentInvocationKeys.current.add(invocationKey);
-        return invocationKey;
-      }
-
-      // Fallback — oldest unclaimed subagent tool call wins.
+      // Claim one concrete content-part occurrence. Providers can repeat a
+      // tool_call ID even within one assistant message, so raw IDs alone are
+      // not sufficient identity for either the card or its live progress.
       const preferred = messageMap.current.get(parentMessageId);
       const candidates = preferred
         ? [[parentMessageId, preferred] as const]
@@ -239,9 +230,10 @@ export default function useStepHandler({
           if (
             tc?.name === Constants.SUBAGENT &&
             tc.id &&
-            !claimedSubagentInvocationKeys.current.has(subagentProgressKey(messageId, tc.id))
+            (payload.parentToolCallId == null || tc.id === payload.parentToolCallId) &&
+            !claimedSubagentInvocationKeys.current.has(subagentProgressKey(messageId, tc.id, i))
           ) {
-            const invocationKey = subagentProgressKey(messageId, tc.id);
+            const invocationKey = subagentProgressKey(messageId, tc.id, i);
             subagentRunToInvocationKey.current.set(payload.subagentRunId, invocationKey);
             claimedSubagentInvocationKeys.current.add(invocationKey);
             return invocationKey;

@@ -206,6 +206,11 @@ export function projectSubagentActivity(
       existing.status = toolResultStatus(data.status);
       if (output.value !== '') existing.output = output.value;
       if (output.truncated) existing.outputTruncated = true;
+      const declarationIndex = activity.indexOf(existing);
+      if (declarationIndex >= 0 && declarationIndex !== activity.length - 1) {
+        activity.splice(declarationIndex, 1);
+        activity.push(existing);
+      }
       continue;
     }
     const name = typeof data.name === 'string' && data.name !== '' ? data.name : 'tool';

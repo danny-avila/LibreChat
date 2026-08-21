@@ -149,4 +149,27 @@ describe('durable subagent activity projection', () => {
       }),
     ]);
   });
+
+  it('retains a late tool completion even when its declaration predates the item tail', () => {
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        { type: 'ai', data: { tool_calls: [{ id: 'early', name: 'search', args: {} }] } },
+        ...Array.from({ length: SUBAGENT_ACTIVITY_LIMITS.items + 10 }, (_, index) => ({
+          type: 'ai',
+          data: { content: `update-${index}` },
+        })),
+        { type: 'tool', data: { tool_call_id: 'early', content: 'late result' } },
+      ]),
+    );
+
+    expect(projection.truncated).toBe(true);
+    expect(projection.activity[projection.activity.length - 1]).toEqual(
+      expect.objectContaining({
+        type: 'tool',
+        toolCallId: 'early',
+        output: 'late result',
+        status: 'completed',
+      }),
+    );
+  });
 });

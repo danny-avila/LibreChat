@@ -168,8 +168,9 @@ export default function SubagentCall({
   const localize = useLocalize();
   const parentMessageContext = useContext(MessageContext);
   const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
+  const partIndex = parentMessageContext.partIndex ?? 0;
   const progress = useRecoilValue(
-    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId)),
+    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId, partIndex)),
   );
   const setSelectedSubagent = useSetRecoilState(activeSubagentPanel);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
@@ -281,6 +282,7 @@ export default function SubagentCall({
       parentConversationId,
       parentMessageId,
       toolCallId,
+      partIndex,
       subagentType,
       ...(prompt == null ? {} : { prompt }),
       ...(backgroundHandle == null ? { legacyOutput: output } : {}),
@@ -305,6 +307,7 @@ export default function SubagentCall({
       output,
       parentConversationId,
       parentMessageId,
+      partIndex,
       persistedContent,
       prompt,
       runStepStatus,
@@ -315,11 +318,13 @@ export default function SubagentCall({
 
   useEffect(() => {
     setSelectedSubagent((current) =>
-      current?.parentMessageId === parentMessageId && current.toolCallId === toolCallId
+      current?.parentMessageId === parentMessageId &&
+      current.toolCallId === toolCallId &&
+      current.partIndex === partIndex
         ? panelSelection
         : current,
     );
-  }, [panelSelection, parentMessageId, setSelectedSubagent, toolCallId]);
+  }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
 
   const openDetails = useCallback(() => {
     resetCurrentArtifactId();
@@ -337,6 +342,7 @@ export default function SubagentCall({
         }
         data-subagent-tool-call={toolCallId}
         data-subagent-parent-message={parentMessageId}
+        data-subagent-part-index={partIndex}
         className={cn(
           'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
           running && !detachedStatusUnknown && 'animate-pulse-slow',

@@ -2035,6 +2035,7 @@
   "com_ui_storage_filter_sort": "Nach Speicher filtern und sortieren",
   "com_ui_subagent_cancelled": "Agent abgebrochen",
   "com_ui_subagent_complete": "Agent gestartet",
+  "com_ui_subagent_dialog_description": "Untergeordneter Lauf mit isoliertem Kontext. Aktivität und Endergebnis findest du unten.",
   "com_ui_subagent_dialog_title": "„{{0}}“-Agent",
   "com_ui_subagent_dialog_title_self": "Agent",
   "com_ui_subagent_empty_result": "Keine Antwort erhalten.",

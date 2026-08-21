@@ -96,6 +96,7 @@ const OpenSubagentPanel = () => {
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       toolCallId: 'tool-call',
+      partIndex: 0,
       subagentType: 'researcher',
       initialProgress: 1,
       isSubmitting: false,

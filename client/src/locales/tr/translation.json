@@ -1736,6 +1736,7 @@
   "com_ui_storage_filter_sort": "Depolamaya Göre Filtrele ve Sırala",
   "com_ui_subagent_cancelled": "İptal edilen aracı",
   "com_ui_subagent_complete": "Çalıştırılan aracı",
+  "com_ui_subagent_dialog_description": "İzole bağlamlı alt çalıştırma. Etkinlik ve nihai sonuç aşağıdadır.",
   "com_ui_subagent_dialog_title": "\"{{0}}\" aracı",
   "com_ui_subagent_dialog_title_self": "Aracı",
   "com_ui_subagent_empty_result": "Metin dönmedi.",

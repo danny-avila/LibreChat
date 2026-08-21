@@ -112,7 +112,7 @@ function renderWithState(args: {
       ({ set }) =>
         (next: SubagentProgress | null) =>
           set(
-            subagentProgressByToolCallId(subagentProgressKey('parent-message', args.toolCallId)),
+            subagentProgressByToolCallId(subagentProgressKey('parent-message', args.toolCallId, 0)),
             next,
           ),
       [],

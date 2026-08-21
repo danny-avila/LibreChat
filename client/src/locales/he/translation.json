@@ -1873,6 +1873,7 @@
   "com_ui_storage_filter_sort": "סנן ומיין לפי אחסון",
   "com_ui_subagent_cancelled": "בטל סוכן",
   "com_ui_subagent_complete": "ריצה של סוכן",
+  "com_ui_subagent_dialog_description": "הרצת תת-תהליך בהקשר מבודד. פעילות ותוצאה סופית מוצגות למטה.",
   "com_ui_subagent_dialog_title": "סוכן \"{{0}}\"",
   "com_ui_subagent_dialog_title_self": "סוכן",
   "com_ui_subagent_empty_result": "לא הוחזר טקסט.",
