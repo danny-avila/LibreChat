@@ -608,7 +608,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         expectedCreatedAt: job.createdAt,
         awaitProviderDrain: true,
       });
-      stopped = abortResult != null && abortResult.failureReason == null;
+      stopped = abortResult?.success === true;
     } catch (error) {
       logger.warn('[ResumeAgentController] Failed to stop inactive scheduled run', error);
     }
@@ -979,7 +979,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
         });
-        stopped = abortResult != null && abortResult.failureReason == null;
+        stopped = abortResult?.success === true;
       } catch (error) {
         logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
       }
