@@ -183,6 +183,27 @@ export function serverNeedsAction(
 }
 
 /**
+ * Request-scoped servers are usable without an idle transport connection once
+ * their authorization requirement is satisfied. Agent tooling uses this
+ * readiness signal to attach the runtime wildcard instead of waiting for a
+ * tool catalog that can only be discovered during a chat request.
+ */
+export function isMCPServerReadyForAgent(
+  status: MCPServerStatus | undefined,
+  requestScoped: boolean,
+): boolean {
+  if (status?.connectionState === 'connected') {
+    return true;
+  }
+  if (!requestScoped) {
+    return false;
+  }
+  return (
+    status?.authorizationState === 'not_required' || status?.authorizationState === 'authorized'
+  );
+}
+
+/**
  * Determines if an action button should be shown for a server status.
  * Returns true only when the button would be actionable (not just informational).
  */
