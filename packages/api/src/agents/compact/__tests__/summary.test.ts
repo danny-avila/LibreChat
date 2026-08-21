@@ -717,6 +717,69 @@ describe('compactConversation', () => {
     expect(mockStream).not.toHaveBeenCalled();
   });
 
+  it('maps parallel replies through the same agent map a normal run uses', async () => {
+    const parallel = {
+      ...assistantMessage('p1', Constants.NO_PARENT, [
+        { type: ContentTypes.TEXT, text: 'answer A', agentId: 'agent_a', groupId: 1 },
+        { type: ContentTypes.TEXT, text: 'answer B', agentId: 'agent_b', groupId: 1 },
+      ] as TMessage['content']),
+      /** The mapper runs on added-convo responses only, matching the
+       *  `mapCondition` the normal send path uses. */
+      addedConvo: true,
+    } as TMessage;
+    const getAgent = jest.fn(async ({ id }: { id: string }) => ({
+      id,
+      name: id === 'agent_a' ? 'Researcher' : 'Reviewer',
+    }));
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [parallel],
+      ids,
+      db: dbMethods,
+      getAgent: getAgent as never,
+    });
+
+    /** The mapper receives the same agent map the normal run builds, so
+     *  handoff content can be labelled and routing metadata is stripped. */
+    expect(getAgent).toHaveBeenCalledTimes(2);
+    const body = JSON.stringify(
+      (mockStream.mock.calls[0][0] as BaseMessage[]).map((m) => m.content),
+    );
+    /** Only the group's primary reply is summarized: the conflicting sibling
+     *  is dropped exactly as a normal turn would drop it. */
+    expect(body).toContain('answer A');
+    expect(body).not.toContain('answer B');
+    /** Routing metadata never reaches the summarizer. */
+    expect(body).not.toContain('groupId');
+  });
+
+  it('manifests text attachments when nothing was actually inlined', async () => {
+    const withDoc = {
+      ...userMessage('d1', Constants.NO_PARENT, 'summarize this'),
+      files: [{ file_id: 'file_doc' }],
+    } as TMessage;
+    /** No fileTokenLimit configured, so extractFileContext inlines nothing. */
+    const req = makeReq();
+    (req.config as AppConfig).fileConfig = { fileTokenLimit: 0 } as never;
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'file_doc',
+        filename: 'spec.md',
+        type: 'text/markdown',
+        source: 'text',
+        text: 'RFC',
+      },
+    ]);
+
+    await compactConversation({ req, agent, branch: [withDoc], ids, db: dbMethods, getFiles });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    /** The turn keeps a mention of what was attached rather than nothing. */
+    expect(JSON.stringify(sent[0].content)).toContain('spec.md');
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),

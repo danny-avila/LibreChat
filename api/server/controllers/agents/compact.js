@@ -22,6 +22,7 @@ const CompactController = async (req, res) => {
       logViolation,
       getModelsConfig,
       getFiles: db.getFiles,
+      getAgent: db.getAgent,
       skills: {
         getSkillByName: db.getSkillByName,
         findAccessibleSkillIds: () =>
