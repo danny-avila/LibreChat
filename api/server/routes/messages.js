@@ -23,6 +23,7 @@ const {
   validateMessageReq,
   configMiddleware,
   sendValidationResponse,
+  canReadActiveJobConversation,
   prepareMessageRequestValidation,
 } = require('~/server/middleware');
 const db = require('~/models');
@@ -83,7 +84,11 @@ router.get('/', async (req, res) => {
       );
 
       const conversation = await ownershipRead;
-      if (!conversation || conversation.subagentThread != null) {
+      const canReadActiveJob =
+        conversation == null &&
+        !messageId &&
+        (await canReadActiveJobConversation(req, conversationId));
+      if ((!conversation && !canReadActiveJob) || conversation?.subagentThread != null) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
     } else if (conversationId) {

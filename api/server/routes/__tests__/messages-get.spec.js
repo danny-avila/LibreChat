@@ -53,6 +53,7 @@ jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next()
 
 jest.mock('~/server/middleware', () => {
   const validateMessageReq = jest.fn((req, res, next) => next());
+  const canReadActiveJobConversation = jest.fn().mockResolvedValue(false);
   const prepareMessageRequestValidation = jest.fn((req, res, next) => {
     req.messageRequestValidation = {
       conversationId: 'convo-1',
@@ -71,6 +72,7 @@ jest.mock('~/server/middleware', () => {
   return {
     requireJwtAuth: (req, res, next) => next(),
     validateMessageReq,
+    canReadActiveJobConversation,
     sendValidationResponse,
     prepareMessageRequestValidation,
     configMiddleware: (req, res, next) => next(),
@@ -94,7 +96,10 @@ describe('message route conversation ownership filters', () => {
     saveConvo,
     saveMessage,
   } = require('~/models');
-  const { prepareMessageRequestValidation } = require('~/server/middleware');
+  const {
+    canReadActiveJobConversation,
+    prepareMessageRequestValidation,
+  } = require('~/server/middleware');
 
   const authenticatedUserId = 'user-owner-123';
 
@@ -112,6 +117,7 @@ describe('message route conversation ownership filters', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    canReadActiveJobConversation.mockResolvedValue(false);
     prepareMessageRequestValidation.mockImplementation((req, res, next) => {
       req.messageRequestValidation = {
         conversationId: 'convo-1',
@@ -270,6 +276,26 @@ describe('message route conversation ownership filters', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.messages).toEqual([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+  });
+
+  it('allows an owner-scoped active generation before its conversation row exists', async () => {
+    getConvoOwnership.mockResolvedValue(null);
+    canReadActiveJobConversation.mockResolvedValue(true);
+    getMessagesByCursor.mockResolvedValue({
+      messages: [{ messageId: 'prompt-1', conversationId: 'active-convo' }],
+      nextCursor: null,
+    });
+
+    const response = await request(app).get('/api/messages?conversationId=active-convo');
+
+    expect(response.status).toBe(200);
+    expect(response.body.messages).toEqual([
+      { messageId: 'prompt-1', conversationId: 'active-convo' },
+    ]);
+    expect(canReadActiveJobConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ user: { id: authenticatedUserId } }),
+      'active-convo',
+    );
   });
 
   it('should start conversation message reads before validation resolves', async () => {

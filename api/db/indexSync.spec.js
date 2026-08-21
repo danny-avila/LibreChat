@@ -576,4 +576,32 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
     expect(Conversation.cleanupExcludedMeiliIndex).not.toHaveBeenCalled();
   });
+
+  test('continues conversation cleanup when message cleanup fails transiently', async () => {
+    const cleanupError = new Error('message cleanup timed out');
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 100,
+      pendingCleanup: 1,
+      isComplete: false,
+    });
+    Message.cleanupExcludedMeiliIndex.mockRejectedValue(cleanupError);
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 50,
+      pendingCleanup: 1,
+      isComplete: false,
+    });
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
+    expect(Conversation.cleanupExcludedMeiliIndex).toHaveBeenCalledTimes(1);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      '[indexSync] Message reconciliation failed; continuing with conversations:',
+      cleanupError,
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith('[indexSync] error', cleanupError);
+  });
 });

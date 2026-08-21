@@ -790,12 +790,22 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
 
   if (options.excludeFromIndexPath != null) {
     schema.index(
-      { _meiliIndex: 1, _meiliIndexAttempted: 1, [options.primaryKey]: 1 },
+      { _meiliIndex: 1, [options.primaryKey]: 1 },
       {
-        name: 'meili_excluded_cleanup_v2',
+        name: 'meili_excluded_indexed_cleanup_v3',
         partialFilterExpression: {
           [options.excludeFromIndexPath]: { $exists: true },
-          $or: [{ _meiliIndex: true }, { _meiliIndexAttempted: true }],
+          _meiliIndex: { $eq: true },
+        },
+      },
+    );
+    schema.index(
+      { _meiliIndexAttempted: 1, [options.primaryKey]: 1 },
+      {
+        name: 'meili_excluded_attempted_cleanup_v3',
+        partialFilterExpression: {
+          [options.excludeFromIndexPath]: { $exists: true },
+          _meiliIndexAttempted: { $eq: true },
         },
       },
     );

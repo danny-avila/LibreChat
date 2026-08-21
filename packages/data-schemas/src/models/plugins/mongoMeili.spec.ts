@@ -819,22 +819,42 @@ describe('Meilisearch Mongoose plugin', () => {
     const messageIndexes = createMessageModel(mongoose).schema.indexes();
 
     expect(conversationIndexes).toContainEqual([
-      { _meiliIndex: 1, _meiliIndexAttempted: 1, conversationId: 1 },
+      { _meiliIndex: 1, conversationId: 1 },
       expect.objectContaining({
-        name: 'meili_excluded_cleanup_v2',
+        name: 'meili_excluded_indexed_cleanup_v3',
         partialFilterExpression: {
           subagentThread: { $exists: true },
-          $or: [{ _meiliIndex: true }, { _meiliIndexAttempted: true }],
+          _meiliIndex: { $eq: true },
+        },
+      }),
+    ]);
+    expect(conversationIndexes).toContainEqual([
+      { _meiliIndexAttempted: 1, conversationId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_attempted_cleanup_v3',
+        partialFilterExpression: {
+          subagentThread: { $exists: true },
+          _meiliIndexAttempted: { $eq: true },
         },
       }),
     ]);
     expect(messageIndexes).toContainEqual([
-      { _meiliIndex: 1, _meiliIndexAttempted: 1, messageId: 1 },
+      { _meiliIndex: 1, messageId: 1 },
       expect.objectContaining({
-        name: 'meili_excluded_cleanup_v2',
+        name: 'meili_excluded_indexed_cleanup_v3',
         partialFilterExpression: {
           subagentTask: { $exists: true },
-          $or: [{ _meiliIndex: true }, { _meiliIndexAttempted: true }],
+          _meiliIndex: { $eq: true },
+        },
+      }),
+    ]);
+    expect(messageIndexes).toContainEqual([
+      { _meiliIndexAttempted: 1, messageId: 1 },
+      expect.objectContaining({
+        name: 'meili_excluded_attempted_cleanup_v3',
+        partialFilterExpression: {
+          subagentTask: { $exists: true },
+          _meiliIndexAttempted: { $eq: true },
         },
       }),
     ]);

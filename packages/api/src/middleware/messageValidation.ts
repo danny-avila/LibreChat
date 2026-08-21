@@ -72,6 +72,10 @@ export type MessageValidationDeps = {
 };
 
 export type MessageRequestMiddleware = {
+  canReadActiveJobConversation: (
+    req: MessageValidationRequest,
+    conversationId?: string,
+  ) => Promise<boolean>;
   createMessageRequestValidation: (req: MessageValidationRequest) => MessageRequestValidation;
   prepareMessageRequestValidation: (
     req: MessageValidationRequest,
@@ -237,6 +241,7 @@ export function createMessageRequestMiddleware(
   }
 
   return {
+    canReadActiveJobConversation,
     createMessageRequestValidation: createMessageRequestValidation,
     prepareMessageRequestValidation: prepareMessageRequestValidation,
     sendValidationResponse: sendValidationResponse,
