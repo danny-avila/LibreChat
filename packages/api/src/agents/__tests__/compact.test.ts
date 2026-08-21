@@ -18,9 +18,16 @@ const mockModel: { invoke: jest.Mock; stream?: jest.Mock } = {
   invoke: mockInvoke,
   stream: mockStream,
 };
+const mockInitializeModel = jest.fn(
+  (_params: { provider: string; clientOptions?: Record<string, unknown> }) => mockModel,
+);
 jest.mock('@librechat/agents', () => {
   const actual = jest.requireActual('@librechat/agents');
-  return { ...actual, initializeModel: jest.fn(() => mockModel) };
+  return {
+    ...actual,
+    initializeModel: (params: { provider: string; clientOptions?: Record<string, unknown> }) =>
+      mockInitializeModel(params),
+  };
 });
 
 import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
@@ -155,6 +162,7 @@ describe('compactConversation', () => {
   beforeEach(() => {
     mockInvoke.mockReset();
     mockStream.mockReset();
+    mockInitializeModel.mockClear();
     mockModel.stream = mockStream;
     mockStream.mockImplementation(() =>
       chunksOf('## Checkpoint\nDid the thing.', {
@@ -286,6 +294,90 @@ describe('compactConversation', () => {
     expect(result.summary.content).toEqual([
       { type: ContentTypes.TEXT, text: '## Checkpoint\nDid the thing.' },
     ]);
+  });
+
+  it('merges quoted excerpts into the transcript it summarizes', async () => {
+    const quoted = {
+      ...userMessage('q1', Constants.NO_PARENT, 'what does this do?'),
+      quotes: ['fn parse(input: &str) -> Result<Record, Error>'],
+    } as TMessage;
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [quoted],
+      ids,
+      db: dbMethods,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    /** Dropping the quote would silently lose the referenced material once the
+     *  summary becomes the boundary. */
+    expect(JSON.stringify(sent[0].content)).toContain('fn parse(input: &str)');
+    expect(JSON.stringify(sent[0].content)).toContain('what does this do?');
+  });
+
+  it('tags the usage with the provider so cached input is not billed twice', async () => {
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    expect(result.usage?.provider).toBe('openAI');
+  });
+
+  it('applies admin summarization parameters and the summary output cap', async () => {
+    await compactConversation({
+      req: makeReq({ parameters: { temperature: 0.1 }, maxSummaryTokens: 512 }),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const clientOptions = mockInitializeModel.mock.calls[0]?.[0]?.clientOptions ?? {};
+    expect(clientOptions.temperature).toBe(0.1);
+    expect(clientOptions.maxTokens).toBe(512);
+  });
+
+  it('runs the pre-flight gate before contacting the provider, and aborts when it throws', async () => {
+    const order: string[] = [];
+    mockStream.mockImplementation(() => {
+      order.push('invoke');
+      return chunksOf('## Checkpoint');
+    });
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+      beforeInvoke: async ({ promptTokens, provider }) => {
+        order.push('gate');
+        expect(promptTokens).toBeGreaterThan(0);
+        expect(provider).toBe('openAI');
+      },
+    });
+    expect(order).toEqual(['gate', 'invoke']);
+
+    mockStream.mockClear();
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent,
+        branch,
+        ids,
+        db: dbMethods,
+        beforeInvoke: async () => {
+          throw new Error('Insufficient balance');
+        },
+      }),
+    ).rejects.toThrow('Insufficient balance');
+    expect(mockStream).not.toHaveBeenCalled();
   });
 
   it('refuses a branch that formats to nothing', async () => {

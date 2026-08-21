@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useToastContext } from '@librechat/client';
 import { useCompactConversationMutation } from '~/data-provider';
+import { isTemporaryConversation } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { useGetEphemeralAgent } from '~/store';
 import useLocalize from '~/hooks/useLocalize';
@@ -54,6 +55,9 @@ export default function useCompactConversation() {
          *  re-sent to resolve the same agent the conversation runs on. */
         promptPrefix: conversation?.promptPrefix,
         ephemeralAgent: getEphemeralAgent(conversationId),
+        /** Without this the summary is saved as a permanent message inside a
+         *  temporary conversation and outlives every message it replaced. */
+        isTemporary: isTemporaryConversation(conversation),
       },
       {
         onSuccess: () =>
