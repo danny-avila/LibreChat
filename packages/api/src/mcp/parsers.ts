@@ -94,10 +94,34 @@ function isImageContent(item: t.ToolContentPart): item is t.ImageContent {
   return item.type === 'image';
 }
 
+/**
+ * Renders `structuredContent` (MCP spec revision 2025-06-18) as pretty JSON.
+ *
+ * Tools that declare an `outputSchema` may return their payload solely in
+ * `structuredContent`. The spec says servers SHOULD also mirror it into a text
+ * content block, but that is a SHOULD, and some servers omit it — in at least
+ * one case only after a protocol version newer than 2024-11-05 is negotiated.
+ * Since the SDK defaults a missing `content` to `[]`, such a result is
+ * otherwise indistinguishable from an empty response and the payload is
+ * silently dropped.
+ *
+ * @returns the serialized structured content, or undefined if there is none.
+ */
+function stringifyStructuredContent(result: t.MCPToolCallResponse): string | undefined {
+  const structured = result?.structuredContent;
+  if (structured == null || typeof structured !== 'object') {
+    return undefined;
+  }
+  if (Object.keys(structured).length === 0) {
+    return undefined;
+  }
+  return JSON.stringify(structured, null, 2);
+}
+
 function parseAsString(result: t.MCPToolCallResponse): string {
   const content = result?.content ?? [];
   if (!content.length) {
-    return '(No response)';
+    return stringifyStructuredContent(result) ?? '(No response)';
   }
 
   const text = content
@@ -148,7 +172,7 @@ export function formatToolContent(
 
   const content = result?.content ?? [];
   if (!content.length) {
-    return ['(No response)', undefined];
+    return [stringifyStructuredContent(result) ?? '(No response)', undefined];
   }
 
   const imageUrls: t.FormattedContent[] = [];
@@ -250,5 +274,10 @@ UI Resource Markers Available:
     };
   }
 
-  return [currentTextBlock || (artifacts !== undefined ? '' : '(No response)'), artifacts];
+  return [
+    currentTextBlock ||
+      stringifyStructuredContent(result) ||
+      (artifacts !== undefined ? '' : '(No response)'),
+    artifacts,
+  ];
 }
