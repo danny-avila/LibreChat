@@ -744,14 +744,14 @@ describe('initializeClient — subagent loading', () => {
   it('uses one normalized MCP body for discovery, deferred execution, and AgentClient', async () => {
     const requestBody = Object.freeze({
       messageId: 'response-message',
-      conversationId: 'conv_1',
+      conversationId: 'conv_sub',
       parentMessageId: 'user-message',
     });
-    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
-    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [] });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
 
     await initializeClient({
-      req: makeReq(),
+      req: makeSubagentReq(),
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
