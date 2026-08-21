@@ -215,10 +215,11 @@ export default function useStepHandler({
       // tool_call ID even within one assistant message, so raw IDs alone are
       // not sufficient identity for either the card or its live progress.
       const preferred = messageMap.current.get(parentMessageId);
-      const candidates = preferred
-        ? [[parentMessageId, preferred] as const]
-        : [...messageMap.current.entries()];
-      for (const [messageId, message] of candidates) {
+      // `runId` gives us the expected parent message. If that message has not
+      // arrived yet, buffer instead of claiming a same-ID call from another
+      // parallel response; the mapping is permanent once claimed.
+      if (preferred == null) return undefined;
+      for (const [messageId, message] of [[parentMessageId, preferred] as const]) {
         const content = message.content;
         if (!Array.isArray(content)) continue;
         for (let i = 0; i < content.length; i++) {

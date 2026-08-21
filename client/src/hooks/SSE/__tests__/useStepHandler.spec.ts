@@ -3415,6 +3415,57 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('buffers an update for its expected parent instead of claiming another same-ID call', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const firstResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-one' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(firstResponse);
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-two',
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              label: 'arrived before parent two',
+            }),
+          },
+          createSubmission(),
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toBeNull();
+
+      const secondResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-two' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(secondResponse);
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-two',
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              phase: 'run_step',
+              label: 'parent two ready',
+            }),
+          },
+          createSubmission(),
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toBeNull();
+      expect(getProgress('call_shared', 'response-two')).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'parent two ready' }),
+      );
+    });
+
     it('keeps repeated provider tool-call IDs isolated by content-part occurrence', () => {
       const { result, getProgress } = renderStepHandlerWithReader();
       const { submission } = seedResponseWithSubagentToolCalls(result, [

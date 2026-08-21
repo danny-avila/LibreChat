@@ -150,6 +150,38 @@ describe('durable subagent activity projection', () => {
     ]);
   });
 
+  it('correlates a large repeated-ID queue in FIFO order within the item cap', () => {
+    const count = SUBAGENT_ACTIVITY_LIMITS.items * 3;
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        ...Array.from({ length: count }, (_, index) => ({
+          type: 'ai',
+          data: { tool_calls: [{ id: 'call', name: `tool-${index}`, args: {} }] },
+        })),
+        ...Array.from({ length: count }, (_, index) => ({
+          type: 'tool',
+          data: { tool_call_id: 'call', content: `result-${index}` },
+        })),
+      ]),
+    );
+
+    expect(projection.activity).toHaveLength(SUBAGENT_ACTIVITY_LIMITS.items);
+    expect(projection.activity[0]).toEqual(
+      expect.objectContaining({
+        toolCallId: 'call#201',
+        name: 'tool-200',
+        output: 'result-200',
+      }),
+    );
+    expect(projection.activity[projection.activity.length - 1]).toEqual(
+      expect.objectContaining({
+        toolCallId: 'call#300',
+        name: 'tool-299',
+        output: 'result-299',
+      }),
+    );
+  });
+
   it('retains a late tool completion even when its declaration predates the item tail', () => {
     const projection = projectSubagentActivity(
       JSON.stringify([
@@ -171,5 +203,33 @@ describe('durable subagent activity projection', () => {
         status: 'completed',
       }),
     );
+  });
+
+  it('keeps an escape-heavy terminal result within the serialized byte cap', () => {
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        { type: 'ai', data: { tool_calls: [{ id: 'terminal', name: 'compute', args: {} }] } },
+        {
+          type: 'tool',
+          data: {
+            tool_call_id: 'terminal',
+            content: '\u0000'.repeat(SUBAGENT_ACTIVITY_LIMITS.toolOutputBytes),
+          },
+        },
+      ]),
+    );
+
+    expect(projection.truncated).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(projection.activity), 'utf8')).toBeLessThanOrEqual(
+      SUBAGENT_ACTIVITY_LIMITS.bytes,
+    );
+    expect(projection.activity).toEqual([
+      expect.objectContaining({
+        type: 'tool',
+        toolCallId: 'terminal',
+        status: 'completed',
+        outputTruncated: true,
+      }),
+    ]);
   });
 });
