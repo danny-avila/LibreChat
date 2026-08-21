@@ -134,6 +134,8 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
     colorClass = 'bg-status-error';
   } else if (connectionState === 'disconnected' && requiresOAuth) {
     colorClass = 'bg-status-warning';
+  } else if (connectionState === 'disconnected' && serverStatus.requiresRequestScope) {
+    colorClass = 'bg-status-info';
   }
 
   return (

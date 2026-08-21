@@ -89,6 +89,7 @@ const {
   resolveAllMcpConfigs,
   resolveMcpServerContext,
   resolveCollisionAuditNames,
+  getServerConnectionStatus,
 } = require('../MCP');
 
 describe('getAssistantToolDefinitions', () => {
@@ -580,5 +581,50 @@ describe('createMCPTool', () => {
     expect(toolInstance).toBeDefined();
     expect(toolInstance.name).toBe(canonicalToolKey);
     expect(reinitMCPServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('getServerConnectionStatus', () => {
+  const appConnections = new Map();
+  const userConnections = new Map();
+  const oauthServers = new Set();
+
+  it('marks request-scoped servers (body placeholders) as requiresRequestScope', async () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'http://my-server:8000/mcp',
+      headers: {
+        'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        'X-Parent-Message-ID': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}',
+      },
+    };
+    const result = await getServerConnectionStatus(
+      'user-1',
+      'scoped-server',
+      config,
+      appConnections,
+      userConnections,
+      oauthServers,
+    );
+    expect(result.connectionState).toBe('disconnected');
+    expect(result.requiresRequestScope).toBe(true);
+  });
+
+  it('does not mark regular servers as requiresRequestScope', async () => {
+    const config = {
+      type: 'streamable-http',
+      url: 'http://my-server:8000/mcp',
+      headers: { 'X-Api-Key': 'static-key' },
+    };
+    const result = await getServerConnectionStatus(
+      'user-1',
+      'regular-server',
+      config,
+      appConnections,
+      userConnections,
+      oauthServers,
+    );
+    expect(result.connectionState).toBe('disconnected');
+    expect(result.requiresRequestScope).toBe(false);
   });
 });

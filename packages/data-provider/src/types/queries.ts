@@ -209,6 +209,8 @@ export type ListRolesResponse = {
 
 export interface MCPServerStatus {
   requiresOAuth: boolean;
+  /** True when the server config uses LIBRECHAT_BODY_* placeholders — its connection is request-scoped and torn down after each chat turn, so "disconnected" is the normal idle state. */
+  requiresRequestScope?: boolean;
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'error';
   authorizationState?:
     | 'not_required'
