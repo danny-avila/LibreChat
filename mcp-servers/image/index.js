@@ -14,6 +14,16 @@ const DASHSCOPE_EDIT_BASE_URL = process.env.DASHSCOPE_EDIT_BASE_URL || DASHSCOPE
 const IMAGE_MODEL = process.env.IMAGE_MODEL || 'qwen-image-2.0-pro';
 const IMAGE_EDIT_MODEL = process.env.IMAGE_EDIT_MODEL || 'qwen-image-edit-max';
 const IMAGES_PATH = process.env.IMAGES_PATH || '/app/generated_files/';
+const UPLOADS_ROOT = process.env.UPLOADS_ROOT || '/app/uploads';
+const PUBLIC_IMAGES_ROOT = process.env.PUBLIC_IMAGES_ROOT || '/app/client/public/images';
+
+const MIME_BY_EXT = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+};
 
 if (!DASHSCOPE_API_KEY) {
   console.error('Error: DASHSCOPE_API_KEY environment variable is required');
@@ -43,6 +53,56 @@ function saveImageToDisk(base64, filename) {
   const buffer = Buffer.from(base64, 'base64');
   fs.writeFileSync(filepath, buffer);
   return filepath;
+}
+
+/**
+ * Resolves a local filesystem path from a LibreChat path or self-hosted URL.
+ * Returns null for external URLs and unresolvable inputs.
+ */
+function resolveLocalImagePath(input) {
+  if (!input || input.startsWith('data:')) {
+    return null;
+  }
+  let pathname = input;
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      pathname = decodeURIComponent(new URL(input).pathname);
+    } catch {
+      return null;
+    }
+  }
+  if (pathname.startsWith('/uploads/')) {
+    return path.join(UPLOADS_ROOT, pathname.slice('/uploads/'.length));
+  }
+  if (pathname.startsWith('/images/')) {
+    return path.join(PUBLIC_IMAGES_ROOT, pathname.slice('/images/'.length));
+  }
+  if (pathname.startsWith('/app/')) {
+    return pathname;
+  }
+  return null;
+}
+
+/**
+ * DashScope image editing accepts public URLs or base64 data URIs only.
+ * LibreChat-attached images are local, so convert them to data URIs;
+ * external URLs pass through untouched.
+ */
+async function prepareImageUrl(imageUrl) {
+  if (!imageUrl) {
+    return imageUrl;
+  }
+  let localPath = resolveLocalImagePath(imageUrl);
+  if (!localPath && !/^https?:\/\//i.test(imageUrl) && !imageUrl.startsWith('data:')) {
+    // Bare filename — look in the generated files directory
+    localPath = path.join(IMAGES_PATH, imageUrl);
+  }
+  if (!localPath || !fs.existsSync(localPath)) {
+    return imageUrl; // external URL or not found locally — let DashScope fetch it
+  }
+  const buffer = fs.readFileSync(localPath);
+  const mimeType = MIME_BY_EXT[path.extname(localPath).toLowerCase()] || 'image/png';
+  return `data:${mimeType};base64,${buffer.toString('base64')}`;
 }
 
 const server = new Server(
@@ -86,13 +146,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'edit_image',
-        description: 'Edit or modify an existing image using Qwen Image model. Provide the image URL and describe the changes.',
+        description: 'Edit or modify an existing image using Qwen Image model. Accepts a public image URL, a LibreChat attachment path (/uploads/... or /images/...), or a base64 data URI. Describe the changes to make.',
         inputSchema: {
           type: 'object',
           properties: {
             image_url: {
               type: 'string',
-              description: 'URL of the image to edit.',
+              description: 'The image to edit: a public URL, a LibreChat path (/uploads/... or /images/...), or a data URI. Local images are converted automatically.',
             },
             prompt: {
               type: 'string',
@@ -238,7 +298,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      const imageUrl = await callDashScopeAPI(IMAGE_EDIT_MODEL, prompt, null, size, image_url, DASHSCOPE_EDIT_API_KEY, DASHSCOPE_EDIT_BASE_URL);
+      const preparedImage = await prepareImageUrl(image_url);
+      const imageUrl = await callDashScopeAPI(IMAGE_EDIT_MODEL, prompt, null, size, preparedImage, DASHSCOPE_EDIT_API_KEY, DASHSCOPE_EDIT_BASE_URL);
       const { base64, contentType } = await downloadImageAsBase64(imageUrl);
 
       // Save to disk
