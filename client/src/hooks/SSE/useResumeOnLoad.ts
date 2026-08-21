@@ -16,8 +16,8 @@ import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
+import { useStreamStatus, useActiveJobs } from '~/data-provider';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import { useStreamStatus } from '~/data-provider';
 import store from '~/store';
 
 function hasSubmissionUserMessage(
@@ -232,6 +232,10 @@ export default function useResumeOnLoad(
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
+  /** Conversation whose active-job announcement has already been answered with
+   * a status read, so a run that stays listed re-arms once rather than on every
+   * poll. Cleared when the run leaves the list, which re-arms the next one. */
+  const rearmedForActiveJobRef = useRef<string | null>(null);
   /** `generationHandoff` lives in the React Query snapshot until a later
    * status refetch. Remember the exact epoch already consumed so clearing the
    * replacement submission on FINAL cannot re-install that stale snapshot and
@@ -371,13 +375,35 @@ export default function useResumeOnLoad(
   const hasStaleSubmissionForDifferentConvo =
     !!currentSubmission && submissionConvoId != null && submissionConvoId !== conversationId;
 
+  /**
+   * A run this pane did not start — another tab, another device, a scheduled
+   * trigger — announces itself only through the user-scoped active-job list,
+   * which already polls while anything is running and refetches on focus. The
+   * status query is the one thing that could turn that into an attachment, and
+   * it switches off for the rest of this conversation's mount the moment it has
+   * answered inactive once. Without a re-arm the pane sits on history it cannot
+   * see has moved on, and a send from here forks a branch off a stale tail.
+   *
+   * Consumed once per run rather than held open: a job stays listed for its
+   * whole lifetime, and re-opening the query on every poll would turn a
+   * five-second heartbeat into a five-second status read.
+   */
+  const { data: activeJobsData } = useActiveJobs(resumableEnabled);
+  const hasActiveJobForThisConvo =
+    !!conversationId &&
+    conversationId !== Constants.NEW_CONVO &&
+    activeJobsData?.activeJobIds?.includes(conversationId) === true;
+  const shouldRearmForActiveJob =
+    hasActiveJobForThisConvo && rearmedForActiveJobRef.current !== conversationId;
+
   const shouldCheck =
     resumableEnabled &&
     messagesLoaded && // Wait for messages to load before checking
     !hasActiveSubmissionForThisConvo && // Allow if no submission or a confirmed stale submission
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&
-    processedConvoRef.current !== conversationId; // Don't re-check processed convos
+    // Don't re-check processed convos, unless a run appeared without this pane
+    (processedConvoRef.current !== conversationId || shouldRearmForActiveJob);
 
   const {
     data: streamStatus,
@@ -416,6 +442,7 @@ export default function useResumeOnLoad(
       console.log('[ResumeOnLoad] Skipping - already have active submission for this conversation');
       // Mark as processed so we don't try again
       processedConvoRef.current = conversationId;
+      rearmedForActiveJobRef.current = hasActiveJobForThisConvo ? conversationId : null;
       return;
     }
 
@@ -471,11 +498,13 @@ export default function useResumeOnLoad(
         userMessageId: currentSubmission?.userMessage?.messageId,
       });
       processedConvoRef.current = conversationId;
+      rearmedForActiveJobRef.current = hasActiveJobForThisConvo ? conversationId : null;
       return;
     }
 
-    // Don't process the same conversation twice
-    if (processedConvoRef.current === conversationId) {
+    // Don't process the same conversation twice, unless a run appeared for it
+    // without this pane (another tab, another device, a scheduled trigger).
+    if (processedConvoRef.current === conversationId && !shouldRearmForActiveJob) {
       console.log('[ResumeOnLoad] Skipping - already processed this conversation');
       return;
     }
@@ -503,10 +532,12 @@ export default function useResumeOnLoad(
       settleAppliedSteerParts(conversationId, getMessages());
       restoreSteerChips(conversationId, undefined);
       processedConvoRef.current = conversationId;
+      rearmedForActiveJobRef.current = hasActiveJobForThisConvo ? conversationId : null;
       return;
     }
 
     processedConvoRef.current = conversationId;
+    rearmedForActiveJobRef.current = hasActiveJobForThisConvo ? conversationId : null;
     if (handoffGenerationKey != null) {
       consumedHandoffGenerationRef.current = handoffGenerationKey;
     }
@@ -599,6 +630,8 @@ export default function useResumeOnLoad(
     settleAppliedSteerParts,
     convertSteersToQueued,
     setActiveGenerationCreatedAt,
+    hasActiveJobForThisConvo,
+    shouldRearmForActiveJob,
   ]);
 
   // Reset processedConvoRef when conversation changes to allow re-checking
@@ -611,6 +644,15 @@ export default function useResumeOnLoad(
       });
       processedConvoRef.current = null;
       consumedHandoffGenerationRef.current = null;
+      rearmedForActiveJobRef.current = null;
     }
   }, [conversationId]);
+
+  /** Release the consumed announcement once the run leaves the list, so the
+   *  next run started without this pane re-arms in turn. */
+  useEffect(() => {
+    if (!hasActiveJobForThisConvo && rearmedForActiveJobRef.current === conversationId) {
+      rearmedForActiveJobRef.current = null;
+    }
+  }, [conversationId, hasActiveJobForThisConvo]);
 }

@@ -9,10 +9,12 @@ import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
 const mockUseStreamStatus = jest.fn();
+const mockUseActiveJobs = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useStreamStatus: (conversationId: string | undefined, enabled: boolean) =>
     mockUseStreamStatus(conversationId, enabled),
+  useActiveJobs: (enabled?: boolean) => mockUseActiveJobs(enabled),
 }));
 
 const CONVERSATION_ID = 'conv-current';
@@ -146,6 +148,8 @@ describe('useResumeOnLoad', () => {
       isSuccess: false,
       isFetching: false,
     });
+    mockUseActiveJobs.mockReset();
+    mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] } });
   });
 
   afterEach(() => {
@@ -193,6 +197,162 @@ describe('useResumeOnLoad', () => {
     rerender();
 
     expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, false);
+  });
+
+  describe('a run started by another client', () => {
+    const INACTIVE_STATUS = {
+      isSuccess: true,
+      isFetching: false,
+      data: { active: false },
+    };
+
+    const ACTIVE_STATUS = {
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        createdAt: 4242,
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          aggregatedContent: [{ type: ContentTypes.TEXT, text: 'partial' }],
+          responseMessageId: RESPONSE_MESSAGE_ID,
+          userMessage: { messageId: USER_MESSAGE_ID, conversationId: CONVERSATION_ID },
+        },
+      },
+    };
+
+    it('stops asking about a conversation once it has answered inactive', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({ messages: [] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+
+      rerender();
+
+      /** Documents the gap this suite's next case closes: the status query is
+       *  the only thing that could notice another client's run, and it is now
+       *  switched off for the rest of this conversation's mount. */
+      expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, false);
+    });
+
+    it('attaches when a job for the viewed conversation becomes active elsewhere', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
+
+      /** Another tab (or another device) sends into this same conversation.
+       *  `/chat/active` is scoped to the user, not to the client that started
+       *  the run, so this pane can see it — and it refetches on focus. */
+      mockUseStreamStatus.mockClear();
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      mockUseStreamStatus.mockReturnValue(ACTIVE_STATUS);
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** Re-armed: the status query re-opens off the announcement... */
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+      /** ...and closes again once the attachment exists, rather than staying
+       *  open for the run's whole lifetime. */
+      expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, false);
+      const attached = observedSubmissions[observedSubmissions.length - 1] as
+        | (TSubmission & { resumeStreamId?: string; resumeGenerationCreatedAt?: number })
+        | null;
+      expect(attached?.resumeStreamId).toBe(CONVERSATION_ID);
+      expect(attached?.resumeGenerationCreatedAt).toBe(4242);
+    });
+
+    it('re-arms once per run rather than on every poll of the active list', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender } = renderUseResumeOnLoad({ messages: [] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      /** The job is listed, but the status read that answers the announcement
+       *  finds it already finished — a run that ended between the two calls. */
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+
+      mockUseStreamStatus.mockClear();
+      /** The list keeps reporting the same job on its five-second heartbeat. */
+      rerender();
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).not.toHaveBeenCalledWith(CONVERSATION_ID, true);
+    });
+
+    it('re-arms again for the next run once the previous one leaves the list', async () => {
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+      const { rerender } = renderUseResumeOnLoad({ messages: [] });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [] } });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseStreamStatus.mockClear();
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [CONVERSATION_ID] } });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenCalledWith(CONVERSATION_ID, true);
+    });
+
+    it('does not re-arm for a conversation that is not the one being viewed', async () => {
+      const observedSubmissions: Array<TSubmission | null> = [];
+      mockUseStreamStatus.mockReturnValue(INACTIVE_STATUS);
+
+      const { rerender } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      mockUseActiveJobs.mockReturnValue({ data: { activeJobIds: [STALE_CONVERSATION_ID] } });
+      rerender();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(mockUseStreamStatus).toHaveBeenLastCalledWith(CONVERSATION_ID, false);
+      expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
+    });
   });
 
   it('does not replace a null-conversation submission when stream status matches its resume state', async () => {
