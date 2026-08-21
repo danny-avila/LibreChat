@@ -146,13 +146,48 @@ jobs:
 
       # `video: 'on-first-retry'` needs ffmpeg; without it the first retry dies in
       # browserContext.newPage before the test body runs, so a flaky test loses the
-      # retry that would have recovered it. The CLI can hang after the download
-      # finishes on these runners, so bound it and keep it non-fatal — worst case is
-      # today's behaviour of retrying without video.
+      # retry that would have recovered it.
+      #
+      # This step used to burn its full 90s bound on every job. Playwright's bundled
+      # extractor hangs on Node 24.16.0 (a yauzl/extract-zip regression fixed in
+      # Playwright 1.60.0): the 2.3MB download finished in under a second, then
+      # extraction stalled and the timeout reaped it, leaving a truncated binary and
+      # no INSTALLATION_COMPLETE marker — so ffmpeg was never actually installed and
+      # retries never got video. With Playwright bumped past the fix the install
+      # takes about a second, and a restored cache skips it outright.
+      #
+      # The cache is only saved once the binary is verified to run, so a partial
+      # extraction can never be promoted into a cache every later job restores.
+      # Kept non-fatal: retry video is a debugging aid, not something CI asserts on.
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright ffmpeg cache
+        id: cache-ffmpeg
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright ffmpeg (best effort)
+        id: install-ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         timeout-minutes: 3
         continue-on-error: true
-        run: timeout -k 10 90 npx playwright install ffmpeg
+        run: |
+          timeout -k 10 60 npx playwright install ffmpeg
+          .github/scripts/verify-playwright-ffmpeg.sh
+
+      - name: Save Playwright ffmpeg cache
+        if: steps.install-ffmpeg.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
 
       # The runner's Chrome is an apt package, so its real library dependencies are
       # already satisfied; all `install-deps` adds here are optional CJK/Thai/Cyrillic
@@ -246,23 +281,47 @@ jobs:
         run: google-chrome --version
 
       # ffmpeg for retry video — see the note in the e2e_shards job.
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -p "require('./package-lock.json').packages['node_modules/playwright-core'].version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright ffmpeg cache
+        id: cache-ffmpeg
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
       - name: Install Playwright ffmpeg (best effort)
+        id: install-ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         timeout-minutes: 3
         continue-on-error: true
-        run: timeout -k 10 90 npx playwright install ffmpeg
+        run: |
+          timeout -k 10 60 npx playwright install ffmpeg
+          .github/scripts/verify-playwright-ffmpeg.sh
 
-      # Optional fonts only — see the note in the e2e_shards job.
-      - name: Install optional Playwright font dependencies (best effort)
-        timeout-minutes: 4
+      - name: Save Playwright ffmpeg cache
+        if: steps.install-ffmpeg.outcome == 'success'
         continue-on-error: true
-        run: .github/scripts/install-playwright-fonts.sh
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ffmpeg-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      # This job deliberately skips the optional font install: its bounded
+      # Playwright apt process can outlive the wrapper on a slow mirror and
+      # retain the package-manager lock needed by the required Redis install.
+      # The MCP suite does not enable visual snapshot assertions.
 
       # Redis is a hard requirement for this job, so this step stays fatal.
       - name: Install Redis runtime dependencies
         timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y redis-server redis-tools
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y redis-server redis-tools
 
       - name: Start standalone Redis and Redis Cluster
         run: |

@@ -12,6 +12,13 @@ const createFireEnvelope = () =>
     receivedAt: 20,
     principal: { id: 'user-1', role: 'member', tenantId: 'tenant-1' },
     target: { agentId: 'agent-1' },
+    run: {
+      conversationId: 'scheduled-conversation-1',
+      timezone: 'Europe/Paris',
+      chatProjectId: 'project-1',
+      files: [{ file_id: 'file-1' }],
+      metadata: { manual: false },
+    },
     event: {
       id: 'event-1',
       type: 'resource.ready',
@@ -42,6 +49,27 @@ const createSteerEnvelope = () =>
       source: { id: 'game-1', type: 'mcp' },
     },
     input: 'The opponent moved. Take your turn.',
+  });
+
+const createContinueEnvelope = () =>
+  createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: 'request-3',
+    deliveryId: 'delivery-3',
+    receivedAt: 35,
+    principal: { id: 'user-1', role: 'member', tenantId: 'tenant-1' },
+    target: {
+      agentId: 'agent-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+    },
+    event: {
+      id: 'event-3',
+      type: 'subagent.completed',
+      occurredAt: 31,
+      source: { id: 'subagent-completion', type: 'internal' },
+    },
+    input: 'Collect the completed child task.',
   });
 
 function response(payload: unknown, init?: ResponseInit): Response {
@@ -133,7 +161,21 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
       isRegenerate: false,
       clientRequestId: idempotencyKey,
       generationProtocolVersion: 2,
-      timezone: 'America/New_York',
+      agentTrigger: {
+        version: envelope.version,
+        deliveryId: envelope.deliveryId,
+        event: {
+          id: envelope.event.id,
+          type: envelope.event.type,
+          occurredAt: envelope.event.occurredAt,
+          source: envelope.event.source,
+        },
+        metadata: { manual: false },
+      },
+      newConversationId: 'scheduled-conversation-1',
+      chatProjectId: 'project-1',
+      files: [{ file_id: 'file-1' }],
+      timezone: 'Europe/Paris',
     });
     expect(mintToken).toHaveBeenCalledWith(envelope.principal, envelope);
   });
@@ -291,6 +333,48 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
         code: 'TIMEOUT',
       });
     });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('releases a prepared result that arrives after setup has timed out', async () => {
+    let finishPreparation!: (value: {
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      releaseOnDefiniteFailure: () => Promise<void>;
+    }) => void;
+    const preparation = new Promise<{
+      status: 'ready';
+      input: string;
+      parentMessageId: string;
+      releaseOnDefiniteFailure: () => Promise<void>;
+    }>((resolve) => {
+      finishPreparation = resolve;
+    });
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const fetcher = fetchMock(async () => response({}));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        prepareContinue: () => preparation,
+        timeoutMs: 10,
+      }),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      mode: 'continue',
+      certainty: 'definite',
+      retryable: true,
+      code: 'TIMEOUT',
+    });
+    finishPreparation({
+      status: 'ready',
+      input: 'late durable child result',
+      parentMessageId: 'response-1',
+      releaseOnDefiniteFailure,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -452,6 +536,219 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
         });
       });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('createAgentTriggerExecutionHost continue adapter', () => {
+  it('appends an idempotent turn to the exact existing conversation branch', async () => {
+    const envelope = createContinueEnvelope();
+    const idempotencyKey = getAgentTriggerIdempotencyKey(envelope);
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        generationCreatedAt: 50,
+        status: 'started',
+      }),
+    );
+    const host = createAgentTriggerExecutionHost(deps(fetcher));
+
+    await expect(host.dispatch(envelope)).resolves.toEqual({
+      mode: 'continue',
+      streamId: 'conversation-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 50,
+      status: 'started',
+    });
+    const [input, init] = fetcher.mock.calls[0];
+    expect(String(input)).toBe('http://127.0.0.1:3080/api/agents/chat/agents');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: envelope.input,
+      endpoint: EModelEndpoint.agents,
+      agent_id: 'agent-1',
+      parentMessageId: 'response-1',
+      conversationId: 'conversation-1',
+      isContinued: false,
+      isRegenerate: false,
+      clientRequestId: idempotencyKey,
+      generationProtocolVersion: 2,
+    });
+  });
+
+  it('retries without consuming the logical delivery when the parent is not settled', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'PARENT_NOT_READY', error: 'The parent is still running.' },
+            { status: 409 },
+          ),
+        ),
+      ),
+    );
+
+    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'continue',
+        certainty: 'definite',
+        retryable: true,
+        deferWithoutAttempt: true,
+        code: 'PARENT_NOT_READY',
+        status: 409,
+      });
+    });
+  });
+
+  it('releases a prepared durable result after a definite admission rejection', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => response({ code: 'AGENT_NOT_FOUND' }, { status: 404 })),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      code: 'AGENT_NOT_FOUND',
+    });
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a prepared durable result after an ambiguous admission outcome', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => Promise.reject(new Error('connection reset'))),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'ambiguous',
+      code: 'NETWORK_ERROR',
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
+  it('retains a prepared durable result when a retry gets a definite 5xx response', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'SERVER_NOT_READY', error: 'Generation is finalizing.' },
+            { status: 503, headers: { 'retry-after': '1' } },
+          ),
+        ),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: true,
+      code: 'SERVER_NOT_READY',
+      status: 503,
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
+  it('releases a prepared durable result when parent state fails before admission', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            { code: 'PARENT_STATE_UNAVAILABLE', error: 'Parent state is unavailable.' },
+            { status: 503, headers: { 'retry-after': '1' } },
+          ),
+        ),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: true,
+      code: 'PARENT_STATE_UNAVAILABLE',
+      status: 503,
+    });
+    expect(releaseOnDefiniteFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a prepared durable result when an earlier admitted run was replaced', async () => {
+    const releaseOnDefiniteFailure = jest.fn(async () => undefined);
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () => response({ code: 'RUN_REPLACED' }, { status: 409 })),
+        {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable child result',
+            parentMessageId: 'response-1',
+            releaseOnDefiniteFailure,
+          }),
+        },
+      ),
+    );
+
+    await expect(host.dispatch(createContinueEnvelope())).rejects.toMatchObject({
+      certainty: 'definite',
+      retryable: false,
+      code: 'RUN_REPLACED',
+      status: 409,
+    });
+    expect(releaseOnDefiniteFailure).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mismatched continued conversation as an ambiguous outcome', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response({ streamId: 'other', conversationId: 'other', status: 'started' }),
+        ),
+      ),
+    );
+
+    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'continue',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+      });
+    });
   });
 });
 

@@ -168,6 +168,9 @@ function serializeSourceStatus(
     /* The per-skill entries name repository paths, so they follow the same
        visibility rule as owner/repo/paths rather than the bare count. */
     skippedSkills: includePrivateSourceMetadata ? status.skippedSkills : undefined,
+    skippedFileCount: status.skippedFileCount ?? 0,
+    /* Same rule: `path`/`skillPath` name repository paths, unlike the count. */
+    skippedFiles: includePrivateSourceMetadata ? status.skippedFiles : undefined,
     createdAt: toIso(status.createdAt),
     updatedAt: toIso(status.updatedAt),
   };

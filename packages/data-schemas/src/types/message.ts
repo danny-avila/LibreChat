@@ -42,6 +42,25 @@ export interface IMessage extends Document {
   iconURL?: string;
   addedConvo?: boolean;
   metadata?: Record<string, unknown>;
+  /** Server-private canonical message delta for durable subagent-thread continuation. */
+  subagentTranscript?: {
+    taskId: string;
+    mode: 'append' | 'replace';
+    messagesJson: string;
+  };
+  /** Server-private durable idempotency marker for one detached subagent turn. */
+  subagentTask?: {
+    attemptKey: string;
+    /** Parent response that initiated this exact child task. */
+    parentRunId?: string;
+    requestFingerprint?: string;
+    status: 'running' | 'completed' | 'error' | 'cancelled';
+    resultClaim?: {
+      kind: 'manual' | 'wakeup';
+      claimId: string;
+      claimedAt: Date;
+    };
+  };
   contextMeta?: {
     calibrationRatio?: number;
     encoding?: string;

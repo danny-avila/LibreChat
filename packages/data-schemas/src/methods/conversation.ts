@@ -1,7 +1,14 @@
 import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
+import type {
+  AppConfig,
+  IChatProjectDocument,
+  IActiveSubagentThreadLease,
+  IConversation,
+  ISharedLink,
+  ISubagentThreadReservation,
+} from '~/types';
 import type { MessageMethods } from './message';
 import {
   activeExpirationFilter,
@@ -30,6 +37,17 @@ type ConversationUpdateResult = {
     updatedExisting?: boolean;
   };
 };
+
+export type SubagentThreadReadRecord = Pick<
+  IConversation,
+  | 'conversationId'
+  | 'tenantId'
+  | 'title'
+  | 'agent_id'
+  | 'updatedAt'
+  | 'subagentThread'
+  | 'subagentThreadLease'
+>;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
@@ -143,10 +161,56 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<SubagentThreadReadRecord | null>;
+  reserveSubagentThread(input: {
+    user: string;
+    conversationId: string;
+    conversation: Partial<IConversation>;
+    tenantId?: string;
+  }): Promise<ISubagentThreadReservation>;
+  acquireSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    taskId: string;
+    now: Date;
+    expiresAt: Date;
+    tenantId?: string;
+  }): Promise<boolean>;
+  renewSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    now: Date;
+    expiresAt: Date;
+    tenantId?: string;
+  }): Promise<boolean>;
+  releaseSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    tenantId?: string;
+  }): Promise<boolean>;
+  countActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<number>;
+  listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]>;
   getConvoOwnership(
     user: string,
     conversationId: string,
-  ): Promise<Pick<IConversation, 'user'> | null>;
+    tenantId?: string | null,
+  ): Promise<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'> | null>;
   getConvoRetention(
     user: string,
     conversationId: string,
@@ -172,6 +236,11 @@ export function createConversationMethods(
 
   function getVisibleConversationRetentionFilter(): FilterQuery<IConversation> {
     return buildRetentionVisibilityFilter<IConversation>();
+  }
+
+  /** Child threads are durable execution records, not user-navigable conversations. */
+  function getHumanConversationFilter(): FilterQuery<IConversation> {
+    return { subagentThread: { $exists: false } } as FilterQuery<IConversation>;
   }
 
   /**
@@ -203,17 +272,226 @@ export function createConversationMethods(
     }
   }
 
-  /**
-   * Ownership probe for request validation: resolves only the owning user id
-   * instead of materializing the full conversation document (preset spread +
-   * message ObjectId array).
-   */
-  async function getConvoOwnership(user: string, conversationId: string) {
+  /** Resolves a child only through its owning parent and includes its private live lease. */
+  async function getSubagentThreadForParent(input: {
+    user: string;
+    parentConversationId: string;
+    conversationId: string;
+    tenantId?: string;
+  }): Promise<SubagentThreadReadRecord | null> {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({ user, conversationId }, 'user').lean<
-        Pick<IConversation, 'user'>
+      return await Conversation.findOne({
+        user: input.user,
+        conversationId: input.conversationId,
+        'subagentThread.parentConversationId': input.parentConversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+      })
+        .select(
+          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease',
+        )
+        .lean<SubagentThreadReadRecord>();
+    } catch (error) {
+      logger.error('[getSubagentThreadForParent] Error getting child conversation', error);
+      throw new Error('Error getting child conversation');
+    }
+  }
+
+  /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
+  async function reserveSubagentThread(input: {
+    user: string;
+    conversationId: string;
+    conversation: Partial<IConversation>;
+    tenantId?: string;
+  }): Promise<ISubagentThreadReservation> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const filter = {
+      user: input.user,
+      conversationId: input.conversationId,
+      ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
+    };
+    try {
+      const result = (await Conversation.findOneAndUpdate(
+        filter,
+        {
+          $setOnInsert: {
+            ...input.conversation,
+            user: input.user,
+            conversationId: input.conversationId,
+            messages: [],
+          },
+        },
+        { new: true, upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true },
+      )) as unknown as ConversationUpdateResult;
+      if (result.value == null) {
+        throw new Error('Unable to reserve the subagent thread.');
+      }
+      return {
+        conversation: result.value.toObject(),
+        created: result.lastErrorObject?.updatedExisting !== true,
+      };
+    } catch (error) {
+      /** Concurrent upserts can race at the unique index. The document that won is
+       * the reservation; callers still validate its immutable lineage before use. */
+      if ((error as { code?: number }).code === 11000) {
+        const existing = await Conversation.findOne(filter).lean<IConversation>();
+        if (existing != null) {
+          return { conversation: existing, created: false };
+        }
+      }
+      throw error;
+    }
+  }
+
+  function subagentLeaseTenantFilter(tenantId?: string): FilterQuery<IConversation> {
+    return tenantId == null ? { tenantId: { $exists: false } } : { tenantId };
+  }
+
+  /** Atomically claims one durable child thread across all API replicas. */
+  async function acquireSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    taskId: string;
+    now: Date;
+    expiresAt: Date;
+    tenantId?: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const result = await Conversation.updateOne(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        subagentThread: { $exists: true },
+        ...subagentLeaseTenantFilter(input.tenantId),
+        $or: [
+          { subagentThreadLease: { $exists: false } },
+          { 'subagentThreadLease.expiresAt': { $lte: input.now } },
+          { 'subagentThreadLease.token': input.token },
+        ],
+      },
+      {
+        $set: {
+          subagentThreadLease: {
+            token: input.token,
+            taskId: input.taskId,
+            expiresAt: input.expiresAt,
+          },
+        },
+      },
+      { timestamps: false },
+    );
+    return result.matchedCount === 1;
+  }
+
+  /** Renews only the unexpired lease owned by this exact task token. */
+  async function renewSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    now: Date;
+    expiresAt: Date;
+    tenantId?: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const result = await Conversation.updateOne(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        'subagentThreadLease.token': input.token,
+        'subagentThreadLease.expiresAt': { $gt: input.now },
+      },
+      { $set: { 'subagentThreadLease.expiresAt': input.expiresAt } },
+      { timestamps: false },
+    );
+    return result.matchedCount === 1;
+  }
+
+  /** Releases only the lease owned by this exact task token. */
+  async function releaseSubagentThreadLease(input: {
+    user: string;
+    conversationId: string;
+    token: string;
+    tenantId?: string;
+  }): Promise<boolean> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const result = await Conversation.updateOne(
+      {
+        user: input.user,
+        conversationId: input.conversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        'subagentThreadLease.token': input.token,
+      },
+      { $unset: { subagentThreadLease: 1 } },
+      { timestamps: false },
+    );
+    return result.modifiedCount === 1;
+  }
+
+  /** Counts live child execution fences while account deletion drains. */
+  async function countActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<number> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    return Conversation.countDocuments({
+      user: input.user,
+      ...subagentLeaseTenantFilter(input.tenantId),
+      'subagentThreadLease.expiresAt': { $gt: input.now },
+    });
+  }
+
+  /** Resolves only live task addresses so account-wide cancellation stays O(active tasks). */
+  async function listActiveSubagentThreadLeases(input: {
+    user: string;
+    now: Date;
+    tenantId?: string;
+  }): Promise<IActiveSubagentThreadLease[]> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversations = await Conversation.find({
+      user: input.user,
+      ...subagentLeaseTenantFilter(input.tenantId),
+      'subagentThreadLease.expiresAt': { $gt: input.now },
+    })
+      .select('conversationId subagentThread.parentConversationId +subagentThreadLease')
+      .lean<
+        Array<Pick<IConversation, 'conversationId' | 'subagentThread' | 'subagentThreadLease'>>
       >();
+    return conversations.flatMap((conversation) => {
+      const { conversationId } = conversation;
+      const parentConversationId = conversation.subagentThread?.parentConversationId;
+      const taskId = conversation.subagentThreadLease?.taskId;
+      return typeof conversationId === 'string' &&
+        conversationId !== '' &&
+        typeof parentConversationId === 'string' &&
+        parentConversationId !== '' &&
+        typeof taskId === 'string' &&
+        taskId !== ''
+        ? [{ conversationId, parentConversationId, taskId }]
+        : [];
+    });
+  }
+
+  /**
+   * Public-read probe: resolves ownership plus the child-thread discriminator
+   * without materializing the full conversation document (preset spread +
+   * message ObjectId array).
+   */
+  async function getConvoOwnership(user: string, conversationId: string, tenantId?: string | null) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const tenantFilter =
+        tenantId === undefined ? {} : subagentLeaseTenantFilter(tenantId ?? undefined);
+      return await Conversation.findOne(
+        {
+          user,
+          conversationId,
+          ...tenantFilter,
+        },
+        'user tenantId subagentThread',
+      ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
     } catch (error) {
       logger.error('[getConvoOwnership] Error checking conversation ownership', error);
       throw new Error('Error checking conversation ownership');
@@ -821,6 +1099,7 @@ export function createConversationMethods(
     }
 
     filters.push(getVisibleConversationRetentionFilter());
+    filters.push(getHumanConversationFilter());
 
     if (search) {
       try {
@@ -1010,10 +1289,12 @@ export function createConversationMethods(
       const conversationIds = convoIds.map((convo) => convo.conversationId);
 
       const results = await Conversation.find({
-        user,
-        conversationId: { $in: conversationIds },
-        ...getVisibleConversationRetentionFilter(),
-      }).lean<IConversation[]>();
+        $and: [
+          { user, conversationId: { $in: conversationIds } },
+          getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
+        ],
+      } as FilterQuery<IConversation>).lean<IConversation[]>();
 
       results.sort(
         (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
@@ -1071,12 +1352,58 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
-      const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId tags',
-      );
-      const conversationIds = conversations.map((c) => c.conversationId);
+      type DeletionConversation = Pick<IConversation, 'conversationId' | 'chatProjectId' | 'tags'>;
+      const conversations = await Conversation.find(userFilter)
+        .select('conversationId chatProjectId tags')
+        .lean<DeletionConversation[]>();
+      if (!conversations.length) {
+        throw new Error('Conversation not found or already deleted.');
+      }
+
+      /**
+       * Delete roots first, then walk their owner-scoped lineage. Apart from
+       * making child threads share the parent's lifecycle, deleting each wave
+       * before discovering the next closes the child-creation race: a creator
+       * that started concurrently sees its parent disappear and rolls back,
+       * while a child already committed is found by the next query.
+       */
+      const deletedConversations: DeletionConversation[] = [];
+      const seen = new Set<string>();
+      let pending = conversations;
+      let acknowledged = true;
+      let deletedCount = 0;
+      while (pending.length > 0) {
+        const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
+        if (wave.length === 0) {
+          break;
+        }
+        const waveIds = wave.map((conversation) => conversation.conversationId);
+        try {
+          const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
+          acknowledged &&= result.acknowledged;
+          deletedCount += result.deletedCount;
+          for (const conversation of wave) {
+            seen.add(conversation.conversationId);
+            deletedConversations.push(conversation);
+          }
+          pending = await Conversation.find({
+            user,
+            'subagentThread.parentConversationId': { $in: waveIds },
+          })
+            .select('conversationId chatProjectId tags')
+            .lean<DeletionConversation[]>();
+        } catch (error) {
+          if (deletedConversations.length === 0) {
+            throw error;
+          }
+          logger.error('[deleteConvos] Root deleted but child-thread cascade failed', error);
+          break;
+        }
+      }
+
+      const conversationIds = deletedConversations.map((c) => c.conversationId);
       const projectIds = new Set(
-        conversations
+        deletedConversations
           .map((conversation) => conversation.chatProjectId)
           .filter((projectId): projectId is string => Boolean(projectId)),
       );
@@ -1087,7 +1414,7 @@ export function createConversationMethods(
        * the bookmark count once.
        */
       const tagDecrements: string[] = [];
-      for (const conversation of conversations) {
+      for (const conversation of deletedConversations) {
         if (!conversation.tags?.length) {
           continue;
         }
@@ -1096,11 +1423,7 @@ export function createConversationMethods(
         }
       }
 
-      if (!conversationIds.length) {
-        throw new Error('Conversation not found or already deleted.');
-      }
-
-      const deleteConvoResult = await Conversation.deleteMany(userFilter);
+      const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
       const deleted = deleteConvoResult.deletedCount > 0;
 
       /**
@@ -1180,6 +1503,7 @@ export function createConversationMethods(
         $and: [
           { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
           getVisibleConversationRetentionFilter(),
+          getHumanConversationFilter(),
         ],
       } as FilterQuery<IConversation>;
 
@@ -1292,6 +1616,13 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getSubagentThreadForParent,
+    reserveSubagentThread,
+    acquireSubagentThreadLease,
+    renewSubagentThreadLease,
+    releaseSubagentThreadLease,
+    countActiveSubagentThreadLeases,
+    listActiveSubagentThreadLeases,
     getConvoOwnership,
     getConvoRetention,
     getConvoTitle,

@@ -665,6 +665,88 @@ describe('webSearchSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('accepts SearXNG search options', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google,bing,startpage,qwant',
+        language: 'en',
+        timeRange: 'month',
+        timeout: 15000,
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+    expect(result.searxngSearchOptions?.language).toBe('en');
+    expect(result.searxngSearchOptions?.timeRange).toBe('month');
+    expect(result.searxngSearchOptions?.timeout).toBe(15000);
+  });
+
+  it('normalizes a SearXNG engine list into a comma-separated string', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: ['google', 'bing', 'startpage', 'qwant'],
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage,qwant');
+  });
+
+  it('trims whitespace and empty entries from SearXNG engines', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: 'google, bing , , startpage',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBe('google,bing,startpage');
+  });
+
+  it('treats a blank SearXNG engines value as unset', () => {
+    const result = webSearchSchema.parse({
+      searxngSearchOptions: {
+        engines: '  ,  ',
+      },
+    });
+
+    expect(result.searxngSearchOptions?.engines).toBeUndefined();
+  });
+
+  it('rejects invalid SearXNG search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeRange: 'week',
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          engines: 42,
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a zero SearXNG timeout, which axios reads as no timeout at all', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        searxngSearchOptions: {
+          timeout: 0,
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('bedrockModels defaults', () => {

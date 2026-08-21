@@ -156,7 +156,7 @@ function AskUserQuestionPopoverPanel({
           scroll region: the panel is absolutely positioned, so anything that
           overflows it is unreachable by page scroll. */}
       <div
-        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-white p-2 shadow-lg dark:bg-gray-700"
+        className="popover border-token-border-light flex max-h-[60vh] flex-col rounded-2xl border bg-surface-secondary p-2 shadow-lg"
         onKeyDown={handlePopoverKeyDown}
       >
         <div className="flex shrink-0 items-start justify-between gap-2 p-2">
@@ -165,7 +165,7 @@ function AskUserQuestionPopoverPanel({
               {liveAsk.question.question}
             </p>
             {liveAsk.question.description != null && liveAsk.question.description.length > 0 && (
-              <p className="mt-0.5 text-xs text-text-secondary [overflow-wrap:anywhere]">
+              <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
                 {liveAsk.question.description}
               </p>
             )}
@@ -193,19 +193,23 @@ function AskUserQuestionPopoverPanel({
           {options.map((option, index) => {
             const isChecked = multiSelect && checked.includes(index);
             return (
-              <button
+              <Button
                 key={option.value}
                 ref={(el) => {
                   optionRefs.current[index] = el;
                 }}
                 type="button"
+                size="sm"
+                variant="choice"
                 role={multiSelect ? 'checkbox' : undefined}
                 aria-checked={multiSelect ? isChecked : undefined}
                 disabled={locked}
+                /** Layout and the keyboard highlight are the only things the
+                 *  popover owns here — these rows are the same answer controls
+                 *  as the cards', so their appearance stays in the variant. */
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-lg p-2 text-left text-sm text-text-primary',
-                  selected === index ? 'bg-surface-active' : 'hover:bg-surface-hover',
-                  locked ? 'cursor-not-allowed opacity-60' : '',
+                  'mt-1 h-auto min-h-9 w-full justify-start gap-3 whitespace-normal p-2 text-left',
+                  selected === index && 'bg-surface-active hover:bg-surface-active',
                 )}
                 onClick={() => (multiSelect ? toggleChecked(index) : submitOption(index))}
               >
@@ -213,14 +217,14 @@ function AskUserQuestionPopoverPanel({
                   className={cn(
                     'flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs',
                     isChecked
-                      ? 'bg-surface-submit text-white'
-                      : 'bg-surface-tertiary text-text-secondary',
+                      ? 'bg-surface-submit text-text-on-status'
+                      : 'border border-border-xheavy text-text-secondary',
                   )}
                 >
                   {isChecked ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
                 </span>
                 <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

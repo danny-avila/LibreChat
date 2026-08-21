@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { Provider, createStore } from 'jotai';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import {
@@ -35,6 +36,7 @@ jest.mock('../messageLayout', () => ({
 
 import useMessageScrolling from '../useMessageScrolling';
 import { reconcileMessageContentLayout } from '../messageLayout';
+import { autoScrollAtom } from '~/store/autoScroll';
 
 const mockReconcileMessageContentLayout = reconcileMessageContentLayout as jest.Mock;
 
@@ -585,6 +587,114 @@ describe('useMessageScrolling resize reconciliation', () => {
     });
 
     expect(scrollable.scrollTop).toBe(700);
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+});
+
+describe('useMessageScrolling navigation landing', () => {
+  const treeFor = (conversationId: string): TMessage[] => [
+    { ...message, conversationId } as TMessage,
+  ];
+
+  const harness = (
+    store: ReturnType<typeof createStore>,
+    conversationId: string,
+    messagesTree: TMessage[] | null,
+  ) => (
+    <RecoilRoot>
+      <Provider store={store}>
+        <MessagesViewContext.Provider
+          value={createContextValue({
+            isSubmitting: false,
+            conversation: { ...conversation, conversationId } as TConversation,
+            conversationId,
+          })}
+        >
+          <ScrollingHarness messagesTree={messagesTree} />
+        </MessagesViewContext.Provider>
+      </Provider>
+    </RecoilRoot>
+  );
+
+  function renderLanding(
+    conversationId: string,
+    messagesTree: TMessage[] | null,
+    autoScroll = true,
+  ) {
+    const store = createStore();
+    store.set(autoScrollAtom, autoScroll);
+    const view = render(harness(store, conversationId, messagesTree));
+    return {
+      ...view,
+      rerenderWith: (nextId: string, nextTree: TMessage[] | null) =>
+        view.rerender(harness(store, nextId, nextTree)),
+    };
+  }
+
+  beforeEach(() => {
+    MockResizeObserver.reset();
+    MockIntersectionObserver.reset();
+    mockScrollToBottom.mockClear();
+    mockScrollToBottom.cancel.mockClear();
+    (global as unknown as { ResizeObserver: typeof MockResizeObserver }).ResizeObserver =
+      MockResizeObserver;
+    (
+      global as unknown as { IntersectionObserver: typeof MockIntersectionObserver }
+    ).IntersectionObserver = MockIntersectionObserver;
+  });
+
+  afterEach(() => {
+    (global as unknown as { ResizeObserver: typeof ResizeObserver | undefined }).ResizeObserver =
+      originalResizeObserver;
+    (
+      global as unknown as { IntersectionObserver: typeof IntersectionObserver | undefined }
+    ).IntersectionObserver = originalIntersectionObserver;
+  });
+
+  it('waits for the opened conversation to own the rendered rows', () => {
+    /** The id reaches the hook commits before the tree does. Landing on the
+     *  outgoing thread spends the one scroll this navigation gets, and leaves
+     *  the reader at the top of the thread they actually asked for. */
+    renderLanding('conversation-2', treeFor('conversation-1'));
+
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+
+  it('lands once the rendered tree names the opened conversation', () => {
+    const { rerenderWith } = renderLanding('conversation-2', treeFor('conversation-1'));
+    expect(mockScrollToBottom).not.toHaveBeenCalled();
+
+    rerenderWith('conversation-2', treeFor('conversation-2'));
+
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-land on the tree identities a stream mints', () => {
+    const { rerenderWith } = renderLanding('conversation-2', treeFor('conversation-2'));
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+
+    /** Every delta writes a fresh array; re-landing on those would haul back a
+     *  reader who deliberately scrolled up. */
+    rerenderWith('conversation-2', treeFor('conversation-2'));
+    rerenderWith('conversation-2', treeFor('conversation-2'));
+
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands again for the next conversation opened', () => {
+    const { rerenderWith } = renderLanding('conversation-2', treeFor('conversation-2'));
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+
+    rerenderWith('conversation-3', treeFor('conversation-2'));
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+
+    rerenderWith('conversation-3', treeFor('conversation-3'));
+    expect(mockScrollToBottom).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays put when the setting is off', () => {
+    renderLanding('conversation-2', treeFor('conversation-2'), false);
+
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 });

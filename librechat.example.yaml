@@ -196,6 +196,25 @@ interface:
     create: true
     share: false
     public: false
+  # Scheduled chats are experimental and disabled unless explicitly enabled.
+  # A deployment with Redis-backed resumable streams can run this on every replica.
+  # A single-process deployment without Redis must also set
+  # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # schedules:
+  #   use: true
+  #   create: true
+  #   maxPerUser: 10
+  #   minIntervalMinutes: 60
+  #   autoDisableAfterFailures: 5
+  #   fireConcurrency: 5
+  #   # Require every schedule to be filed under a chat project. Enforced on
+  #   # create/update AND at each fire, so turning it on stops (auto-disables)
+  #   # schedules that predate it rather than letting their runs land loose.
+  #   requireProject: false
+  #   # Pin every scheduled run to ONE chat project, ignoring the user's choice.
+  #   # Implies `requireProject`. Chat projects are user-owned, so a value set here
+  #   # only makes sense as a per-user or per-role config override.
+  #   # projectId: '000000000000000000000000'
   peoplePicker:
     users: true
     groups: true
@@ -203,6 +222,8 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Show the thumbs up/thumbs down feedback buttons on responses (default: true)
+  feedback: true
   # Tools pinned to the prompt bar by default for all users.
   # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
   # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
@@ -523,6 +544,9 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Maximum explicit subagents per agent, for both the flat list and
+  #   # graph definitions. Defaults to 10; hard cap 50.
+  #   maxSubagents: 20
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
@@ -1037,6 +1061,29 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# SearXNG as the search provider example:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   # searxngApiKey: '${SEARXNG_API_KEY}'
+#   searxngSearchOptions:
+#     # Engines your instance should query. Accepts a comma-separated string or a list.
+#     # Defaults to 'google,bing,duckduckgo'; DuckDuckGo serves CAPTCHAs to most
+#     # self-hosted instances, so override it when results come back empty.
+#     #
+#     # Names must match engines enabled on your own instance. SearXNG ignores an
+#     # engine it does not know instead of reporting an error, so a typo or a
+#     # disabled engine shows up as fewer results rather than a failure. Check the
+#     # enabled list at https://your-instance/config before setting this.
+#     engines:
+#       - google
+#       - bing
+#       - startpage
+#       - qwant
+#     # language: en            # Result language code (default: 'all')
+#     # timeRange: month        # 'day', 'month', or 'year'
+#     # timeout: 10000          # HTTP request timeout in milliseconds (1-120000, default: 10000)
 
 # Memory configuration for user memories
 # memory:

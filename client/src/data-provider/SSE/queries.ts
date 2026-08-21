@@ -223,7 +223,11 @@ export function useActiveJobs(enabled = true) {
     enabled,
     staleTime: 5_000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    /** Unconditional: the interval is off while nothing is listed, so a run
+     *  another client started during the last `staleTime` window would be
+     *  invisible until some unrelated refetch, and returning to the tab is
+     *  exactly when a pane needs to know whether its history has moved. */
+    refetchOnWindowFocus: 'always',
     refetchInterval: (data) => ((data?.activeJobIds?.length ?? 0) > 0 ? 5_000 : false),
     retry: false,
   });

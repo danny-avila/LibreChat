@@ -32,6 +32,7 @@ module.exports = {
       });
       return archiveAllHandler;
     }),
+    createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
@@ -121,4 +122,22 @@ module.exports = {
     })),
 
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
+
+  subagentThreadStore: () => ({
+    cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
+    withOwnerDeletionFence: jest.fn().mockImplementation(async (_userId, _tenantId, deletion) => {
+      return deletion();
+    }),
+    planCancellationForConversations: jest
+      .fn()
+      .mockImplementation(async (userId, conversationIds, tenantId) => ({
+        userId,
+        tenantId,
+        conversationIds: [...conversationIds],
+        scopes: [],
+        leases: [],
+      })),
+    cancelPlan: jest.fn().mockResolvedValue(0),
+    cancelForOwner: jest.fn(),
+  }),
 };

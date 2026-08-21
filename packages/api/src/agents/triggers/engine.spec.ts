@@ -280,6 +280,41 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.dead).not.toHaveBeenCalled();
   });
 
+  it('defers a continuation until its parent generation settles without consuming an attempt', async () => {
+    const store = storeWith();
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () =>
+          Promise.reject(
+            new AgentTriggerExecutionError('parent generation is still running', {
+              mode: 'continue',
+              certainty: 'definite',
+              retryable: true,
+              deferWithoutAttempt: true,
+              code: 'PARENT_NOT_READY',
+              status: 409,
+            }),
+          ),
+        now: () => START,
+        workerId: 'worker-1',
+      },
+      { concurrency: 1, maxAttempts: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.defer).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: 1,
+      availableAt: new Date(START.getTime() + 5_000),
+    });
+    expect(store.retry).not.toHaveBeenCalled();
+    expect(store.dead).not.toHaveBeenCalled();
+  });
+
   it('does not shorten Retry-After to the exponential backoff cap', async () => {
     const store = storeWith();
     const error = new AgentTriggerExecutionError('maintenance', {

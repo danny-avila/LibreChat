@@ -897,6 +897,38 @@ describe('injectSkillCatalog', () => {
     expect(agent.additional_instructions).toContain('desc-my-skill');
   });
 
+  it('warns when a skill description exceeds the catalog entry cap', async () => {
+    const { logger } = await import('@librechat/data-schemas');
+    const warnSpy = jest.spyOn(logger, 'warn');
+    const longDesc = 'x'.repeat(400);
+    const longSkill: PageSkill = {
+      ...makeSkill('long-skill', userObjectId),
+      description: longDesc,
+    };
+    const shortSkill = makeSkill('short-skill', userObjectId);
+    const listSkillsByAccess = buildPager([[longSkill, shortSkill]]);
+    const agent = makeAgent();
+    await injectSkillCatalog(baseParams({ listSkillsByAccess, agent }));
+
+    const truncWarns = warnSpy.mock.calls
+      .map((call) => String(call[0]))
+      .filter((msg) => msg.includes('truncated to'));
+    expect(truncWarns).toHaveLength(1);
+    expect(truncWarns[0]).toContain('"long-skill"');
+    expect(truncWarns[0]).toContain('was 400');
+    /* Short description is not flagged. */
+    expect(
+      warnSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((msg) => msg.includes('"short-skill"') && msg.includes('truncated')),
+    ).toHaveLength(0);
+
+    /* The catalog still reaches the model — the warning is additive. */
+    expect(agent.additional_instructions).toContain('long-skill');
+    expect(agent.additional_instructions).toContain('short-skill');
+    warnSpy.mockRestore();
+  });
+
   it('honors a configured maxCatalogSkills below the default hard limit', async () => {
     const first = makeSkill('first-skill', userObjectId);
     const second = makeSkill('second-skill', userObjectId);

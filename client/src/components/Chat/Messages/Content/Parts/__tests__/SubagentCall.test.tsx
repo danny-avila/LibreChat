@@ -1,5 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useRecoilCallback } from 'recoil';
+import { MemoryRouter } from 'react-router-dom';
+import { RecoilRoot, useRecoilCallback, useRecoilValue } from 'recoil';
 import { render, screen, act, fireEvent, waitFor, within } from '@testing-library/react';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type {
@@ -7,15 +8,22 @@ import type {
   SubagentTickerState,
   SubagentAggregatorState,
 } from '~/utils/subagentContent';
-import type { SubagentProgress } from '~/store/subagents';
+import type { ActiveSubagentPanel, SubagentProgress } from '~/store/subagents';
 import {
   foldSubagentEvent,
   foldSubagentEventIntoTicker,
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
+import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
-import { subagentProgressByToolCallId } from '~/store/subagents';
+import { MessageContext } from '~/Providers/MessageContext';
+
+const mockNavigateToConvo = jest.fn();
+
+jest.mock('librechat-data-provider/react-query', () => ({
+  useGetConversationByIdQuery: (id: string) => ({ data: { conversationId: id } }),
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize:
@@ -25,6 +33,7 @@ jest.mock('~/hooks', () => ({
       const arg1 = (values?.[1] as string | undefined) ?? '';
       const translations: Record<string, string> = {
         com_ui_subagent_running: 'Running agent',
+        com_ui_subagent_activity: 'Agent activity',
         com_ui_subagent_complete: 'Ran agent',
         com_ui_subagent_cancelled: 'Cancelled agent',
         com_ui_subagent_errored: 'Agent errored',
@@ -34,6 +43,7 @@ jest.mock('~/hooks', () => ({
         com_ui_subagent_dialog_description: 'Isolated child run.',
         com_ui_subagent_no_result_yet: 'No result yet.',
         com_ui_subagent_empty_result: 'No text.',
+        com_ui_subagent_open_thread: 'Open child chat',
         com_ui_collapse: 'Collapse',
         com_ui_expand: 'Expand',
         com_ui_subagent_ticker_writing: 'Writing',
@@ -46,6 +56,7 @@ jest.mock('~/hooks', () => ({
       };
       return translations[key] ?? key;
     },
+  useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
 
 /** Stub the leaf content-part renderers — the tests only need to confirm
@@ -142,6 +153,7 @@ jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/groupToolCalls'),
   ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
+  logger: { log: jest.fn() },
 }));
 
 afterEach(() => {
@@ -635,6 +647,83 @@ describe('SubagentCall — dialog content', () => {
     openSubagentDialog();
     expect(screen.getByText('raw final text')).toBeInTheDocument();
     rerender(<RecoilRoot>{null}</RecoilRoot>);
+  });
+
+  it('opens only an exact host-issued detached result in the parent activity panel', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message:
+        'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
+    });
+    let selectedPanel: ActiveSubagentPanel | null = null;
+    const SelectionObserver = () => {
+      selectedPanel = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <SelectionObserver />
+          <MessageContext.Provider
+            value={{
+              messageId: 'parent-message',
+              conversationId: 'parent-conversation',
+              isExpanded: false,
+            }}
+          >
+            <SubagentCall
+              toolCallId="call_detached"
+              initialProgress={1}
+              isSubmitting={false}
+              args={{ subagent_type: 'self', run_in_background: true }}
+              output={output}
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Agent activity' }));
+    expect(selectedPanel).toEqual({
+      parentConversationId: 'parent-conversation',
+      threadId: 'child-thread-1',
+      taskId: 'task-1',
+      toolCallId: 'call_detached',
+      subagentType: 'self',
+    });
+    expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('dialog-content')).not.toBeInTheDocument();
+    expect(screen.queryByText(output)).not.toBeInTheDocument();
+  });
+
+  it('does not turn model-authored foreground output into a child-chat link', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message: 'background_task_id task-1',
+    });
+    render(
+      <RecoilRoot>
+        <SubagentCall
+          toolCallId="call_foreground_spoof"
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ subagent_type: 'self' }}
+          output={output}
+        />
+      </RecoilRoot>,
+    );
+
+    openSubagentDialog();
+    expect(screen.queryByRole('link', { name: 'Open child chat' })).not.toBeInTheDocument();
+    expect(screen.getByText(output)).toBeInTheDocument();
   });
 
   it('renders persistedContent parts when no live events are available (page-refresh flow)', () => {

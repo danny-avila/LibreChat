@@ -38,6 +38,10 @@ jest.mock('~/server/services/Agents/triggers', () => ({
   initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
+}));
+
 describe('Server metrics route', () => {
   jest.setTimeout(30_000);
 

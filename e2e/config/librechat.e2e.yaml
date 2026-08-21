@@ -13,6 +13,13 @@ interface:
   # value the permission falls through to the seeded role default and
   # `handlePlusCommand` returns before opening the popover.
   multiConvo: true
+  # Scheduled chats are EXPERIMENTAL and default-off, so the e2e harness must opt in
+  # explicitly before schedule writes and fires are accepted.
+  # minIntervalMinutes is lowered so the spec can create a schedule without waiting
+  # out the production 60-minute floor.
+  schedules:
+    use: true
+    minIntervalMinutes: 1
 
 # Enables the memory feature so the MEMORIES.USE permission is granted and the
 # ephemeral memory badge (inline set_memory/delete_memory tools) is available.
