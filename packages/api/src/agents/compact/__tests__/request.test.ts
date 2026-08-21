@@ -187,6 +187,36 @@ describe('handleCompactRequest', () => {
     expect(mockCompactConversation).not.toHaveBeenCalled();
   });
 
+  it('compacts with the request-resolved model parameters, not the stored ones', async () => {
+    /** An enforced model spec lands in `endpointOption.model_parameters` while
+     *  `endpointOption.agent` stays the raw document; normal turns run the
+     *  resolved values, so compaction has to as well. LibreChat-only keys are
+     *  not provider parameters and are dropped exactly as they are normally. */
+    const req = makeReq({
+      endpointOption: {
+        agent: Promise.resolve({
+          provider: 'openAI',
+          model: 'gpt-4o-mini',
+          model_parameters: { model: 'gpt-4o-mini', temperature: 0.2 },
+        }),
+        model_parameters: { model: 'gpt-4o', temperature: 0.9, maxContextTokens: 8000 },
+      },
+    });
+    const deps = makeDeps({ getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-4o'] }) });
+
+    const result = await handleCompactRequest({ req, res }, deps);
+
+    expect(result).toMatchObject({ status: 201 });
+    expect(mockCompactConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({
+          model: 'gpt-4o',
+          model_parameters: { model: 'gpt-4o', temperature: 0.9 },
+        }),
+      }),
+    );
+  });
+
   it('rejects a model the caller is not allowed to use', async () => {
     const deps = makeDeps({ getModelsConfig: jest.fn().mockResolvedValue({ openAI: ['gpt-4o'] }) });
     const result = await handleCompactRequest({ req: makeReq(), res }, deps);

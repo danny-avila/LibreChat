@@ -860,6 +860,24 @@ describe('compactConversation', () => {
     expect(mockStream.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('reads an output cap the endpoint relocated into modelKwargs', async () => {
+    /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
+     *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so
+     *  reading only the provider key would size chunks as if the response were
+     *  free and overflow the window mid-run, after billing. */
+    const gpt5Agent = {
+      provider: 'openAI',
+      endpoint: 'openAI',
+      model: 'gpt-5',
+      model_parameters: { model: 'gpt-5', max_tokens: 350000 },
+    };
+
+    await expect(
+      compactConversation({ req: makeReq(), agent: gpt5Agent, branch, ids, db: dbMethods }),
+    ).rejects.toMatchObject({ name: 'UnworkableContextError' });
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
   it('reserves for the longer of the initial and update prompts', async () => {
     /** A long update prompt is what later passes actually send; sizing from the
      *  initial one alone lets a later pass overflow after billing. */
