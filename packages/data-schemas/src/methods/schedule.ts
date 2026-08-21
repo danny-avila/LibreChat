@@ -229,6 +229,11 @@ export type ScheduleMethods = {
     chatProjectId: string | undefined,
     expectedClaimToken?: string,
   ) => Promise<void>;
+  /** The destination one occurrence used; null when the row is absent. */
+  getScheduleRunProject: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<{ chatProjectId?: string } | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (
@@ -807,6 +812,22 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * WITHOUT a configRevision bump: this is the server reconciling itself to policy,
    * not an owner edit, and bumping would fence an in-flight occurrence off its own run.
    */
+  /**
+   * The destination one OCCURRENCE actually used, for re-validating a paused run.
+   * Null when no row exists; a row without the field is a pre-scope occurrence and the
+   * caller falls back to the schedule-level resolution rather than treating it as
+   * unscoped — an absent record must never be read as evidence to stop a run.
+   */
+  async function getScheduleRunProject(
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ): Promise<{ chatProjectId?: string } | null> {
+    return await ScheduleRun()
+      .findOne({ scheduleId, scheduledFor: new Date(scheduledFor) })
+      .select('chatProjectId')
+      .lean<{ chatProjectId?: string } | null>();
+  }
+
   async function persistResolvedProject(
     id: string,
     chatProjectId: string | undefined,
@@ -2065,6 +2086,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     getCapacityOccupancy,
     requestRunAbort,
     persistResolvedProject,
+    getScheduleRunProject,
     getScheduleRunAbortState,
     markRunResumeClaimed,
     releaseRunResumeClaim,

@@ -601,6 +601,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     !(await isScheduleLive(scheduleId, job.metadata?.scheduleConfigRevision, {
       automatic: job.metadata?.scheduleManual !== true,
       policy: true,
+      // Re-validate the destination THIS occurrence recorded, not the schedule's
+      // current one: a later fire can have redirected the schedule while this run sat
+      // paused, and its conversation stays where it was filed.
+      scheduledFor,
     }))
   ) {
     let stopped = false;

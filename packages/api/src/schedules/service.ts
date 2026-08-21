@@ -239,7 +239,7 @@ export interface SchedulesService {
   isScheduleLive: (
     scheduleId: string,
     expectedConfigRevision?: number,
-    options?: { automatic?: boolean; policy?: boolean },
+    options?: { automatic?: boolean; policy?: boolean; scheduledFor?: string | Date },
   ) => Promise<boolean>;
   /** Soft-deletes an owner's schedule: stop claims, abort active runs, drain, erase. */
   deleteScheduleForOwner: (scheduleId: string, userId: string) => Promise<ScheduleDeleteResult>;
@@ -992,7 +992,7 @@ export function createSchedulesService(
   async function isScheduleLive(
     scheduleId: string,
     expectedConfigRevision?: number,
-    options?: { automatic?: boolean; policy?: boolean },
+    options?: { automatic?: boolean; policy?: boolean; scheduledFor?: string | Date },
   ): Promise<boolean> {
     if (!scheduleId) {
       return false;
@@ -1058,15 +1058,26 @@ export function createSchedulesService(
       // context, and the continuation reuses the same conversationId), so refusing
       // would strand a pending approval over a pin that only governs where the NEXT
       // run lands, which the fire path already redirects.
-      if (
-        limits.requireProject &&
-        resolveScheduleProjectId(limits, schedule.chatProjectId) == null
-      ) {
+      // Prefer the destination THIS OCCURRENCE recorded over the schedule-level value.
+      // A paused run does not block later occurrences (the single-active index covers
+      // `started` only), so after a pin moves, a subsequent fire rewrites the schedule
+      // row while the paused conversation stays where it was — validating the row would
+      // then check a project that conversation was never filed under.
+      //
+      // An ABSENT record falls back to the schedule: a pre-scope occurrence, or one
+      // whose row is gone, must never be read as evidence to stop a run.
+      const occurrence =
+        options?.scheduledFor != null
+          ? await methods.getScheduleRunProject(scheduleId, options.scheduledFor)
+          : null;
+      const effectiveProject =
+        occurrence?.chatProjectId ?? resolveScheduleProjectId(limits, schedule.chatProjectId);
+      if (limits.requireProject && effectiveProject == null) {
         return false;
       }
       if (
-        schedule.chatProjectId != null &&
-        (await engineDeps.projectAccess(schedule.chatProjectId, owner)) !== 'ok'
+        effectiveProject != null &&
+        (await engineDeps.projectAccess(effectiveProject, owner)) !== 'ok'
       ) {
         return false;
       }

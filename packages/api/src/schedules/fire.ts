@@ -483,6 +483,10 @@ export async function fireSchedule(
           firedAt: new Date(),
           capacitySlot,
           deliveryKey,
+          // The destination THIS occurrence used. The schedule-level value can move on
+          // (a pin redirects later fires, and a paused run does not block them), so a
+          // resume must re-validate what its own conversation was filed under.
+          ...(chatProjectId != null && { chatProjectId }),
           ...(typeof schedule.configRevision === 'number'
             ? { configRevision: schedule.configRevision }
             : {}),

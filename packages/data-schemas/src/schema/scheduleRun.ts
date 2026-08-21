@@ -35,6 +35,9 @@ const scheduleRunSchema: Schema<IScheduleRunDocument> = new Schema(
     deliveryKey: {
       type: String,
     },
+    chatProjectId: {
+      type: String,
+    },
     /** Fresh while a RESUME of this paused run is mid-flight; a re-pause hand-off's
      *  writes are still landing, so quiesce must not settle on the paused job state.
      *  Cleared by the pause record (the hand-off completion) or aged out. */

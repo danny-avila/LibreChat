@@ -28,13 +28,13 @@ Scheduled chats remain experimental and default-off.
   `isScheduleLive(..., { policy: true })` check and `claimScheduleResume` is not caught:
   deletion bumps no revision, so the lease fence cannot see it and the continuation
   starts against a conversation that was just unscoped. Sub-second, and self-correcting
-  at the next fire (which auto-disables the schedule). Closing it needs the effective
-  project persisted per OCCURRENCE on the run row plus a distinct policy conflict the
-  controller routes through abort-and-settle, rather than the schedule-level check that
-  exists today.
+  at the next fire (which auto-disables the schedule). Closing it needs a distinct
+  policy conflict returned from the claim that the controller routes through
+  abort-and-settle, rather than the bare 409 an `inactive` conflict produces today.
 - The stored project converges on an operator pin only when the schedule actually
   FIRES. A schedule that has not fired since the pin moved still carries its old id,
   which the wire projection already papers over but a direct read of the row does not.
+  Resume validation is unaffected — it reads the occurrence's own record.
 
 ## Runtime scope
 

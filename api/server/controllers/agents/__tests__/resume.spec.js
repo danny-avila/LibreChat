@@ -351,9 +351,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'SCHEDULE_NO_LONGER_ACTIVE' });
+      // `scheduledFor` identifies the OCCURRENCE: a later fire can redirect the
+      // schedule while this run sits paused, so the policy recheck validates the
+      // destination this run recorded rather than the schedule's current one.
       expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 4, {
         automatic: true,
         policy: true,
+        scheduledFor,
       });
       expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
         expectedCreatedAt: 1000,

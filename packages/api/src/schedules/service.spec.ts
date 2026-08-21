@@ -832,6 +832,7 @@ describe('isScheduleLive policy recheck', () => {
       row: Record<string, unknown>,
       schedulesConfig: Record<string, unknown>,
       project: unknown = { _id: 'proj-1' },
+      over: { run?: { chatProjectId?: string } | null } = {},
     ) {
       const service = makeService(
         jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]),
@@ -850,6 +851,9 @@ describe('isScheduleLive policy recheck', () => {
         ...row,
       }));
       methods.getRoleByName = jest.fn(async () => ({ permissions: { SCHEDULES: { USE: true } } }));
+      (methods as unknown as { getScheduleRunProject: jest.Mock }).getScheduleRunProject = jest.fn(
+        async () => ('run' in over ? over.run : null),
+      );
       (service.engineDeps as unknown as { getUserContext: jest.Mock }).getUserContext = jest.fn(
         async () => ({ id: 'u1', tenantId: 't1', role: 'USER' }),
       );
@@ -883,6 +887,61 @@ describe('isScheduleLive policy recheck', () => {
     it('admits a scoped schedule whose project is still owned', async () => {
       const service = makeProjectService({ chatProjectId: 'proj-1' }, {});
       await expect(service.isScheduleLive('s1', undefined, { policy: true })).resolves.toBe(true);
+    });
+
+    /**
+     * A paused run does NOT block later occurrences (the single-active index covers
+     * `started` only), so a fire after a pin move rewrites the schedule row while the
+     * paused conversation stays where it was filed. The occurrence's own record is
+     * what must be validated.
+     */
+    it('validates the occurrence record over a schedule row a later fire moved', async () => {
+      const service = makeProjectService(
+        { chatProjectId: 'proj-new' },
+        { projectId: 'proj-new' },
+        null,
+        { run: { chatProjectId: 'proj-paused' } },
+      );
+      const access = (service.engineDeps as unknown as { projectAccess: jest.Mock }).projectAccess;
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(false);
+      expect(access).toHaveBeenCalledWith('proj-paused', expect.anything());
+    });
+
+    it('admits when the occurrence record itself is still live', async () => {
+      const service = makeProjectService(
+        { chatProjectId: 'proj-new' },
+        {},
+        { _id: 'x' },
+        {
+          run: { chatProjectId: 'proj-paused' },
+        },
+      );
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(true);
+    });
+
+    /** An absent record is not evidence to stop a run: pre-scope occurrences and rows
+     *  that are simply gone fall back to the schedule-level resolution. */
+    it('falls back to the schedule when the occurrence recorded nothing', async () => {
+      const service = makeProjectService({ chatProjectId: 'proj-gone' }, {}, null, { run: null });
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(false);
     });
 
     it('leaves the non-policy recheck untouched', async () => {

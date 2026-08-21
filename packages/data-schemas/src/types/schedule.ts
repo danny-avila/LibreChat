@@ -91,6 +91,11 @@ export interface IScheduleRun {
    *  state instead of orphan-settling a jobless run that is merely deferred (Retry-After)
    *  or that dead-lettered before a generation ever started. */
   deliveryKey?: string;
+  /** The destination project THIS occurrence actually used. Recorded at reservation
+   *  because the schedule-level value can move on (an operator pin redirects later
+   *  fires, and a paused run does not block them), leaving the row describing a project
+   *  this occurrence's conversation was never filed under. */
+  chatProjectId?: string;
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;

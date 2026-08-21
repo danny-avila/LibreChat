@@ -1,4 +1,4 @@
-import type { ISchedule } from '@librechat/data-schemas';
+import type { ISchedule, IScheduleRun } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './types';
 import type { SchedulesHandlersDeps } from './handlers';
@@ -44,6 +44,7 @@ function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedu
  *  prechecks pass, so a skipped fire is distinguishable from a dispatched one. */
 function makeMethods() {
   const disabled: string[] = [];
+  const reservations: Array<Partial<IScheduleRun>> = [];
   const methods = {
     releaseLease: jest.fn(async () => true),
     releaseLeaseByHolder: jest.fn(async () => undefined),
@@ -52,7 +53,10 @@ function makeMethods() {
       disabled.push(reason);
     }),
     revalidateClaim: jest.fn(async () => true),
-    reserveStartedRun: jest.fn(async () => ({ run: { scheduleId: 'sched-1' } })),
+    reserveStartedRun: jest.fn(async (data: Partial<IScheduleRun>) => {
+      reservations.push(data);
+      return { run: { scheduleId: 'sched-1' } };
+    }),
     getCapacityOccupancy: jest.fn(async () => ({ takenSlots: [] as number[], unslotted: 0 })),
     deleteScheduleRun: jest.fn(async () => undefined),
     setRunFireDetails: jest.fn(async () => undefined),
@@ -60,7 +64,7 @@ function makeMethods() {
     countActiveRuns: jest.fn(async () => 0),
     recordSkippedRun: jest.fn(async () => undefined),
   };
-  return { methods, disabled };
+  return { methods, disabled, reservations };
 }
 
 function makeEngineDeps(
@@ -244,6 +248,30 @@ describe('fire-time project scope', () => {
 
     expect(result.fired).toBe(true);
     expect(enqueueTrigger).toHaveBeenCalledTimes(1);
+  });
+
+  /** The schedule-level value can move on while a run is paused, so the RESERVATION
+   *  is what a resume re-validates against. */
+  it('records the destination on the occurrence it reserves', async () => {
+    const { methods, reservations } = makeMethods();
+    const pinned = { ...BASE_LIMITS, requireProject: true, projectId: 'proj-pinned' };
+
+    await fireSchedule(
+      makeEngineDeps(methods, { getLimits: async () => pinned }),
+      makeSchedule({ chatProjectId: 'proj-old' }),
+      BASE_LIMITS,
+      dueAt(),
+    );
+
+    expect(reservations[0].chatProjectId).toBe('proj-pinned');
+  });
+
+  it('reserves an unscoped occurrence without the field', async () => {
+    const { methods, reservations } = makeMethods();
+
+    await fireSchedule(makeEngineDeps(methods), makeSchedule(), BASE_LIMITS, dueAt());
+
+    expect(reservations[0]).not.toHaveProperty('chatProjectId');
   });
 
   it('never consults project access for an unscoped schedule', async () => {
