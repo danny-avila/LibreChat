@@ -1275,7 +1275,13 @@ describe('Meilisearch Mongoose plugin', () => {
       // Spy on updateMany and make it fail
       const updateManySpy = jest
         .spyOn(conversationModel, 'updateMany')
-        .mockResolvedValueOnce({ acknowledged: true, matchedCount: 1, modifiedCount: 1 })
+        .mockResolvedValueOnce({
+          acknowledged: true,
+          matchedCount: 1,
+          modifiedCount: 1,
+          upsertedCount: 0,
+          upsertedId: null,
+        })
         .mockRejectedValueOnce(new Error('Database connection error'));
 
       // Sync should throw the error
