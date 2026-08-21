@@ -271,6 +271,26 @@ describe('handleCompactRequest', () => {
     expect(deps.deleteMessages).toHaveBeenCalled();
   });
 
+  it('bills the passes that completed when a later one throws', async () => {
+    const { PartialCompactionError } = jest.requireActual('../summary');
+    mockCompactConversation.mockRejectedValue(
+      new PartialCompactionError({
+        cause: new Error('provider exploded'),
+        usage: { model: 'gpt-4o-mini', provider: 'openAI', input_tokens: 500, output_tokens: 20 },
+        model: 'gpt-4o-mini',
+        provider: 'openAI',
+        estimatedUsage: { input_tokens: 500, output_tokens: 20 },
+      }),
+    );
+
+    const deps = makeDeps();
+    const result = await handleCompactRequest({ req: makeReq(), res }, deps);
+
+    expect(result.status).toBe(500);
+    /** The completed provider call is still charged. */
+    expect(deps.insertMany).toHaveBeenCalled();
+  });
+
   it('reports an already-compacted branch as its own code', async () => {
     mockCompactConversation.mockRejectedValue(new NothingToCompactError());
     const result = await handleCompactRequest({ req: makeReq(), res }, makeDeps());
