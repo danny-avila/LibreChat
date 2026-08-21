@@ -23,10 +23,9 @@ const HITL_QUESTION = `Which environment should Bombadil use for ${HITL_LABEL}?`
 const HITL_OPTION = 'Staging';
 const FINAL_REPLY = 'E2E mock reply: pong';
 const COMPLETED_ANSWER_LABEL = 'You answered:';
-/** The settled Q&A record is a collapsed tool-call line that names the
- *  question in its summary; the answer itself lives in the panel it opens,
- *  under its own label rather than running on from it. */
-const ASK_RECORD_SUMMARY = '[data-testid="ask-user-question-call"] span';
+/** The settled Q&A record: a collapsed tool-call line naming the question,
+ *  over a panel holding the description and the answer. */
+const ASK_RECORD = '[data-testid="ask-user-question-call"]';
 let reloadIssued = false;
 let pausedReloadIssued = false;
 
@@ -83,6 +82,12 @@ function target(
   return null;
 }
 
+function visibleCount(state: State, selector: string): number {
+  return Array.from(state.document.querySelectorAll(selector)).filter(
+    (element) => visiblePoint(state, element) !== null,
+  ).length;
+}
+
 function visibleTextCount(
   state: State,
   selector: string,
@@ -114,6 +119,7 @@ function clickOrWait(targetValue: Target | null): Action[] {
 
 const ui = extract((state: State) => {
   const messageElements = Array.from(state.document.querySelectorAll('.message-render'));
+  const askRecordCount = visibleCount(state, ASK_RECORD);
   const messageText = messageElements.map((element) => element.textContent ?? '').join('\n');
   const modelTrigger = state.document.querySelector('button[aria-label="Select a model"]');
   return {
@@ -128,7 +134,14 @@ const ui = extract((state: State) => {
     emailFocused: isFocused(state, '#email'),
     passwordValue: inputValue(state, '#password'),
     passwordFocused: isFocused(state, '#password'),
-    questionCount: visibleTextCount(state, `p, ${ASK_RECORD_SUMMARY}`, HITL_QUESTION),
+    /** Once the pause settles, the record IS the question's presentation, so
+     *  count records rather than every node repeating their text — an
+     *  expanded record (Auto-expand tool details) shows the question in both
+     *  its summary line and its panel, and matching text would count one
+     *  record twice. Before a record exists the live pause renders the
+     *  question as a paragraph. */
+    questionCount:
+      askRecordCount > 0 ? askRecordCount : visibleTextCount(state, 'p', HITL_QUESTION),
     answerOptionCount: visibleTextCount(state, 'button', HITL_OPTION, true),
     finalReplyCount: messageElements.filter((element) =>
       (element.textContent ?? '').includes(FINAL_REPLY),

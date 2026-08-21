@@ -121,16 +121,22 @@ export default function AskUserQuestionCall({
     ) : null;
 
   const count = batch?.questions.length ?? 1;
+  /**
+   * Past tense unconditionally: a live, unanswered pause returns above, so
+   * every state that reaches this header is settled — answered, abandoned
+   * (the run stopped before an answer), or rejected. An abandoned pause was
+   * still ASKED; it explains itself with "no answer" inside the panel, and a
+   * present-tense summary would strand it as permanently in-flight now that
+   * the panel starts closed. Matches `ToolCallGroup`, which settles its own
+   * question header on `!isSubmitting`.
+   */
   const statusLabel = (() => {
     if (failed) {
       return localize('com_ui_question_failed');
     }
-    if (count > 1) {
-      return answered
-        ? localize('com_ui_asked_n_questions', { 0: String(count) })
-        : localize('com_ui_asking_n_questions', { 0: String(count) });
-    }
-    return answered ? localize('com_ui_asked') : localize('com_ui_asking');
+    return count > 1
+      ? localize('com_ui_asked_n_questions', { 0: String(count) })
+      : localize('com_ui_asked');
   })();
   /** A batch is summarized by its count; a lone question is summarized by
    *  itself, so the collapsed line still says what was asked. */
@@ -161,6 +167,15 @@ export default function AskUserQuestionCall({
           isExpanded={expanded}
         />
       </div>
+      {/* A rejected call is the one state the reader did not ask for and
+          cannot see coming. The explanation lives in the panel, which starts
+          closed and is `inert` while it is — so the announcement has to sit
+          outside the disclosure to reach the accessibility tree at all. */}
+      {failed && (
+        <span className="sr-only" role="status">
+          {`${statusLabel}. ${localize('com_ui_question_failed_description')}`}
+        </span>
+      )}
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           <div className="my-2 flex w-full flex-col gap-4 rounded-lg border border-border-light bg-surface-secondary p-4">
@@ -194,7 +209,7 @@ export default function AskUserQuestionCall({
               />
             )}
             {failed && (
-              <p className="text-sm leading-relaxed text-text-secondary" role="status">
+              <p className="text-sm leading-relaxed text-text-secondary">
                 {localize('com_ui_question_failed_description')}
               </p>
             )}

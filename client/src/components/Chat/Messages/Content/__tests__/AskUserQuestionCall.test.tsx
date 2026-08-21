@@ -125,6 +125,31 @@ describe('AskUserQuestionCall', () => {
     );
   });
 
+  test('reads as settled when a run is stopped before the question is answered', () => {
+    renderCall(<AskUserQuestionCall args={args} output="" toolCallId="call_1" />);
+
+    const header = screen.getByRole('button');
+    /** The pause ended; only its panel says the answer never came, and that
+     *  panel starts closed — a present-tense summary would strand the record
+     *  as permanently in flight. */
+    expect(header).toHaveTextContent('Asked');
+    expect(header).not.toHaveTextContent('Asking');
+    expect(screen.getByText('No answer was given')).toBeInTheDocument();
+  });
+
+  test('announces a rejected question from outside the collapsed panel', () => {
+    renderCall(<AskUserQuestionCall args={args} output="Error processing tool" failed />);
+
+    const announcement = screen.getByRole('status');
+    expect(announcement).toHaveTextContent("Question wasn't shown");
+    expect(announcement).toHaveTextContent(
+      "The agent couldn't show this question and may retry automatically.",
+    );
+    /** `useExpandCollapse` marks the closed panel inert, so an announcement
+     *  inside it would never reach the accessibility tree. */
+    expect(announcement.closest('[inert]')).toBeNull();
+  });
+
   test('renders a successful tool result as the user answer', () => {
     renderCall(<AskUserQuestionCall args={args} output="public" />);
 
