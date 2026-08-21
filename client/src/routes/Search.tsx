@@ -128,6 +128,12 @@ export default function Search() {
   const itemsRef = useRef<TMessage[]>(messages);
   itemsRef.current = messages;
 
+  /** Each page-state is drained at most once. A failed request leaves the page
+   *  count unchanged, so the empty-page drain below can't re-fire and hammer an
+   *  endpoint that is persistently failing (401/500/offline) — the error
+   *  surfaces instead. */
+  const drainedPageCountRef = useRef(-1);
+
   const listRef = useRef<List>(null);
   const {
     ref: listContainerRef,
@@ -159,6 +165,9 @@ export default function Search() {
    *  so the List keeps its old scrollTop — drop measured heights AND scroll back
    *  to the top, or the next search can open mid-list and hide the top matches. */
   useEffect(() => {
+    /** A new query restarts paging at page 1, so the empty-page drain must not
+     *  inherit the previous search's marker and skip its first drain. */
+    drainedPageCountRef.current = -1;
     const frameId = requestAnimationFrame(() => {
       recompute(true);
       listRef.current?.scrollToPosition(0);
@@ -212,6 +221,46 @@ export default function Search() {
     [fetchNextPage],
   );
   useEffect(() => () => throttledFetchNext.cancel(), [throttledFetchNext]);
+
+  /**
+   * A page can filter down to zero rows server-side while later pages still
+   * hold matches. With nothing rendered there is no row range to report, so
+   * `handleRowsRendered` never runs and the cursor would never be followed —
+   * the search would settle on "nothing found" with results still behind it.
+   * Follow it here instead.
+   */
+  const pageCount = searchMessages?.pages.length ?? 0;
+  /** Keyed on the LAST page, not the aggregate: a page can come back empty after
+   *  results are already rendered, and then the total stays nonzero while the
+   *  row count is unchanged, so nothing re-fires `handleRowsRendered`. */
+  const lastPageEmpty =
+    pageCount > 0 && (searchMessages?.pages[pageCount - 1]?.messages?.length ?? 0) === 0;
+  useEffect(() => {
+    if (!searchQuery || showingStale || !hasNextPage || isFetchingNextPage || isError) {
+      return;
+    }
+    if (!lastPageEmpty || drainedPageCountRef.current === pageCount) {
+      return;
+    }
+    drainedPageCountRef.current = pageCount;
+    /**
+     * Deliberately NOT the throttled fetch. That one debounces bursts of
+     * `onRowsRendered` and is `trailing: false`, so a sub-500ms empty page would
+     * land inside its cooldown and be dropped, leaving the drain stuck. This
+     * walk is already self-limiting: `isFetchingNextPage` gates it to one
+     * request at a time and it stops as soon as a page brings rows.
+     */
+    fetchNextPage();
+  }, [
+    searchQuery,
+    showingStale,
+    hasNextPage,
+    isFetchingNextPage,
+    isError,
+    lastPageEmpty,
+    pageCount,
+    fetchNextPage,
+  ]);
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
@@ -296,8 +345,14 @@ export default function Search() {
   /** Spinner while there is nothing to show AND we're loading or the current
    *  results are stale — `showingStale` covers the case where the previous
    *  search was empty and `keepPreviousData` holds those empty pages during the
-   *  new request, which would otherwise flash a false "nothing found". */
-  if ((isLoading || showingStale) && !hasResults) {
+   *  new request, which would otherwise flash a false "nothing found".
+   *  `hasNextPage` covers a page that filtered down to zero rows: the drain is
+   *  following the cursor, so that is still loading, not "no results" — but only
+   *  while the drain can actually progress. Once it has errored out, the cached
+   *  empty page keeps `hasNextPage` true forever, and spinning on that would
+   *  strand the user on a loading screen after the error toast. */
+  const drainInFlight = hasNextPage && !isError;
+  if ((isLoading || showingStale || drainInFlight) && !hasResults) {
     return loadingSpinner;
   }
 
