@@ -13,11 +13,12 @@ export const MAX_PII_PATTERN_ID_LENGTH = 256;
 export const MAX_PII_PATTERN_LABEL_LENGTH = 512;
 export const MAX_PII_CUSTOM_REGEX_CHARACTERS = 8_192;
 export const MAX_PII_CUSTOM_REGEX_INSTRUCTIONS = 8_192;
+export const MAX_PII_CUSTOM_PATTERNS_TOTAL = 256;
 
 const MAX_PII_REGEX_SIZE_CACHE_ENTRIES = 512;
 const PII_REGEX_PROGRAM_SIZE_CACHE = new Map<string, number | null>();
 
-function getPiiRegexProgramSize(pattern: string): number | null {
+export function getPiiRegexProgramSize(pattern: string): number | null {
   if (PII_REGEX_PROGRAM_SIZE_CACHE.has(pattern)) {
     return PII_REGEX_PROGRAM_SIZE_CACHE.get(pattern) ?? null;
   }
@@ -284,7 +285,7 @@ export type FilterPiiCustomPatternConfig = z.infer<typeof filterPiiCustomPattern
 function createPiiFilterSchema<Field extends z.ZodTypeAny>(fieldSchema: Field) {
   return z
     .object({
-      fields: z.array(fieldSchema).min(1).optional(),
+      fields: z.array(fieldSchema).min(1).max(MAX_PII_PATTERNS_PER_SOURCE).optional(),
       starterPatterns: z
         .array(filterPiiStarterPatternSchema)
         .max(MAX_PII_PATTERNS_PER_SOURCE)
@@ -339,13 +340,21 @@ export const filtersConfigSchema = z
   })
   .strict()
   .superRefine((filters, context) => {
+    let customPatterns = 0;
     let regexCharacters = 0;
     let regexInstructions = 0;
     for (const source of Object.values(filters)) {
       for (const pattern of source?.pii?.customPatterns ?? []) {
+        customPatterns++;
         regexCharacters += pattern.regex.length;
         regexInstructions += getPiiRegexProgramSize(pattern.regex) ?? 0;
       }
+    }
+    if (customPatterns > MAX_PII_CUSTOM_PATTERNS_TOTAL) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `At most ${MAX_PII_CUSTOM_PATTERNS_TOTAL} custom PII patterns may be configured in total`,
+      });
     }
     if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
       context.addIssue({

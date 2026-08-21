@@ -3,6 +3,7 @@ import type { FiltersConfig } from 'librechat-data-provider';
 import {
   assertModelBoundContent,
   assertModelBoundProviderContent,
+  collectModelBoundHistoricalFileIdState,
   collectModelBoundHistoricalFileIds,
   createModelBoundChatModelCallback,
   createInitialModelBoundAdmissionCallback,
@@ -1792,6 +1793,85 @@ describe('assertModelBoundProviderContent', () => {
     ]);
   });
 
+  it('bounds sparse historical file carriers before walking their declared lengths', () => {
+    let contentReads = 0;
+    const values = new Array<undefined | { type: string; file_id: string }>(10_000_000);
+    values[0] = { type: 'input_file', file_id: 'visible-file' };
+    const content = new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          contentReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(collectModelBoundHistoricalFileIdState([{ content }])).toEqual({
+      fileIds: ['visible-file'],
+      overflowed: true,
+    });
+    expect(contentReads).toBeLessThanOrEqual(4_096);
+  });
+
+  it.each([Number.NaN, -1])(
+    'marks an invalid historical reference length %s incomplete without iterating',
+    (invalidLength) => {
+      let iteratorReads = 0;
+      const files = new Proxy([{ file_id: 'unread-file' }], {
+        get(target, property, receiver) {
+          if (property === 'length') {
+            return invalidLength;
+          }
+          if (property === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('historical iterator must not run');
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+
+      expect(collectModelBoundHistoricalFileIdState([{ files }])).toEqual({
+        fileIds: [],
+        overflowed: true,
+      });
+      expect(iteratorReads).toBe(0);
+    },
+  );
+
+  it('captures a changing historical reference length once', () => {
+    let lengthReads = 0;
+    const files = new Proxy([{ file_id: 'retained-file' }], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : Number.NaN;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(collectModelBoundHistoricalFileIdState([{ files }])).toEqual({
+      fileIds: ['retained-file'],
+      overflowed: false,
+    });
+    expect(lengthReads).toBe(1);
+  });
+
+  it('marks unread historical messages when the file budget ends exactly', () => {
+    const firstMessageFiles = Array.from({ length: 4_096 }, (_, index) => ({
+      file_id: `bounded-file-${index}`,
+    }));
+
+    const state = collectModelBoundHistoricalFileIdState([
+      { files: firstMessageFiles },
+      { files: [{ file_id: 'unread-sensitive-file' }] },
+    ]);
+
+    expect(state.overflowed).toBe(true);
+    expect(state.fileIds).toHaveLength(4_096);
+    expect(state.fileIds).not.toContain('unread-sensitive-file');
+  });
+
   it('projects source-bound and canonical files in typed backend code', () => {
     const historicalFile = {
       file_id: 'historical-file',
@@ -1812,6 +1892,7 @@ describe('assertModelBoundProviderContent', () => {
       messageFilesBySourceMessageId: {
         ' source-message ': [{ file_id: 'current-file' }, { file_id: 'current-file' }],
       },
+      sourceMessages: [{ messageId: ' source-message ' }],
       steerFileIdsBySourceMessageId: new Map([
         ['source-message', new Set(['steer-file', 'current-file'])],
       ]),
@@ -1832,6 +1913,103 @@ describe('assertModelBoundProviderContent', () => {
         historicalFiles: [historicalFile],
       }).resolvedFiles,
     ).toEqual([historicalFile]);
+  });
+
+  it('bounds source-file projection carriers without dispatching custom iterators', () => {
+    let sourceReads = 0;
+    let fileReads = 0;
+    let resolvedReads = 0;
+    let steerMapIteratorReads = 0;
+    let steerSetIteratorReads = 0;
+    let historicalMapIteratorReads = 0;
+    const sourceValues = new Array<{ messageId: string } | undefined>(10_000_000);
+    sourceValues[0] = { messageId: 'visible-source' };
+    const sourceMessages = new Proxy(sourceValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          sourceReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const fileValues = new Array<{ file_id: string } | undefined>(10_000_000);
+    fileValues[0] = { file_id: 'visible-file' };
+    const sourceFiles = new Proxy(fileValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          fileReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const resolvedValues = new Array<{ file_id: string; text: string } | undefined>(10_000_000);
+    resolvedValues[0] = { file_id: 'visible-file', text: 'Safe canonical file' };
+    const resolvedFiles = new Proxy(resolvedValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          resolvedReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const steerFileIds = new Set(['steer-file']);
+    Object.defineProperty(steerFileIds, Symbol.iterator, {
+      configurable: true,
+      value() {
+        steerSetIteratorReads++;
+        throw new Error('custom steer set iterator must not run');
+      },
+    });
+    const steerFiles = new Map([['visible-source', steerFileIds]]);
+    Object.defineProperty(steerFiles, Symbol.iterator, {
+      configurable: true,
+      value() {
+        steerMapIteratorReads++;
+        throw new Error('custom steer map iterator must not run');
+      },
+    });
+    const historicalFiles = new Map([
+      ['historical-file', { file_id: 'historical-file', text: 'Safe history' }],
+    ]);
+    Object.defineProperty(historicalFiles, Symbol.iterator, {
+      configurable: true,
+      value() {
+        historicalMapIteratorReads++;
+        throw new Error('custom historical map iterator must not run');
+      },
+    });
+
+    const projection = projectModelBoundSourceFiles({
+      messageFilesBySourceMessageId: { 'visible-source': sourceFiles },
+      sourceMessages,
+      steerFileIdsBySourceMessageId: steerFiles,
+      replayHistoricalFiles: true,
+      historicalFiles,
+      processedCurrentFiles: resolvedFiles,
+    });
+
+    expect(projection.overflowed).toBe(true);
+    expect(projection.fileIdsBySourceMessageId.get('visible-source')).toContain('visible-file');
+    expect(projection.resolvedFiles).toContainEqual({
+      file_id: 'historical-file',
+      text: 'Safe history',
+    });
+    expect(sourceReads).toBeLessThanOrEqual(4_096);
+    expect(fileReads).toBeLessThanOrEqual(4_096);
+    expect(resolvedReads).toBeLessThanOrEqual(4_096);
+    expect(steerMapIteratorReads).toBe(0);
+    expect(steerSetIteratorReads).toBe(0);
+    expect(historicalMapIteratorReads).toBe(0);
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [{ role: 'human', content: 'Safe content' }],
+        fileIdsBySourceMessageId: projection.fileIdsBySourceMessageId,
+        resolvedFiles: projection.resolvedFiles,
+        sourceFileProjectionOverflowed: projection.overflowed,
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
   it('inspects only canonical rows selected by the final provider payload', () => {
@@ -2695,6 +2873,301 @@ describe('assertModelBoundProviderContent', () => {
     ).toThrow('Submitted content contains a private value');
   });
 
+  it('uses one explicit-path snapshot when a legacy carrier shrinks', () => {
+    let lengthReads = 0;
+    const userSubmittedPaths = new Proxy(['/text'], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : 0;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'shrinking-path-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            text: 'PRIVATE-SHRINKING-PATH',
+            userSubmittedPaths,
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'Safe assistant derivative',
+            additional_kwargs: { sourceMessageId: 'shrinking-path-source' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(lengthReads).toBe(1);
+  });
+
+  it('uses one captured content part for legacy path classification and projection', () => {
+    let contentReads = 0;
+    const content = new Proxy(
+      [{ type: 'text', text: 'PRIVATE-CONTENT-RACE' }] as Array<{
+        type: string;
+        text?: string;
+        steer?: string;
+      }>,
+      {
+        get(target, property, receiver) {
+          if (property === '0') {
+            contentReads++;
+            return contentReads === 1
+              ? { type: 'text', text: 'PRIVATE-CONTENT-RACE' }
+              : { type: 'steer', steer: 'Safe changed part' };
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+    const contentFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'private', label: 'private value', regex: 'PRIVATE-CONTENT-RACE' },
+          ],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        storedMessages: [
+          {
+            messageId: 'changing-part-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content,
+            userSubmittedPaths: ['/content/0/text'],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'Safe assistant derivative',
+            additional_kwargs: { sourceMessageId: 'changing-part-source' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(contentReads).toBeLessThanOrEqual(2);
+  });
+
+  it('uses the first selected content-part value for typed attribution and projection', () => {
+    let contentReads = 0;
+    const content = new Proxy([{ type: 'text', text: 'PRIVATE-SELECTED-PART' }], {
+      get(target, property, receiver) {
+        if (property === '0') {
+          contentReads++;
+          return contentReads === 1
+            ? { type: 'text', text: 'PRIVATE-SELECTED-PART' }
+            : { type: 'text', text: 'Safe changed part' };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const contentFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'private', label: 'private value', regex: 'PRIVATE-SELECTED-PART' },
+          ],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        storedMessages: [
+          {
+            messageId: 'selected-part-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content,
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider derivative',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'user',
+                    sourceMessageId: 'selected-part-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(contentReads).toBe(1);
+  });
+
+  it('uses the first selected file part when resolving canonical file content', () => {
+    let contentReads = 0;
+    const content = new Proxy([{ type: 'input_file', file_id: 'private-selected-file' }], {
+      get(target, property, receiver) {
+        if (property === '0') {
+          contentReads++;
+          return contentReads === 1
+            ? { type: 'input_file', file_id: 'private-selected-file' }
+            : { type: 'text', text: 'Safe changed part' };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages: [
+          {
+            messageId: 'selected-file-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content,
+          },
+        ],
+        resolvedFiles: [
+          {
+            file_id: 'private-selected-file',
+            filename: 'private.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        fileIdsBySourceMessageId: new Map([['selected-file-source', ['private-selected-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider derivative',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'user',
+                    sourceMessageId: 'selected-file-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private file');
+    expect(contentReads).toBe(1);
+  });
+
+  it('uses one top-level file snapshot for canonical file selection', () => {
+    let fileCarrierReads = 0;
+    const storedMessage = {
+      messageId: 'top-level-file-source',
+      role: 'user',
+      isCreatedByUser: true,
+      text: 'Safe stored text',
+      get files() {
+        fileCarrierReads++;
+        return fileCarrierReads === 1 ? [{ file_id: 'private-top-level-file' }] : [];
+      },
+    };
+    const fileFilters: FiltersConfig = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private file', regex: 'PRIVATE-FILE' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: fileFilters,
+        storedMessages: [storedMessage],
+        resolvedFiles: [
+          {
+            file_id: 'private-top-level-file',
+            filename: 'private.txt',
+            text: 'PRIVATE-FILE',
+          },
+        ],
+        fileIdsBySourceMessageId: new Map([['top-level-file-source', ['private-top-level-file']]]),
+        providerMessages: [
+          {
+            role: 'ai',
+            content: 'Safe provider derivative',
+            additional_kwargs: { sourceMessageId: 'top-level-file-source' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private file');
+    expect(fileCarrierReads).toBe(1);
+  });
+
+  it('captures provider role and lineage metadata once', () => {
+    let roleReads = 0;
+    let metadataReads = 0;
+    const providerMessage = {
+      get role() {
+        roleReads++;
+        return roleReads === 1 ? 'human' : 'ai';
+      },
+      content: 'PRIVATE-PROVIDER-ROLE',
+      get additional_kwargs() {
+        metadataReads++;
+        return metadataReads === 1 ? { sourceMessageId: 'provider-lineage-source' } : {};
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'provider-lineage-source',
+            role: 'user',
+            isCreatedByUser: true,
+            text: 'PRIVATE-STORED-LINEAGE',
+          },
+        ],
+        providerMessages: [providerMessage],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(roleReads).toBe(1);
+    expect(metadataReads).toBe(1);
+  });
+
   it('sparsely retains typed canonical parts without restoring pruned steer, HITL, or files', () => {
     const sparseFilters: FiltersConfig = {
       messages: {
@@ -3262,6 +3735,785 @@ describe('assertModelBoundProviderContent', () => {
     expect(selectedContentReads).toBeLessThanOrEqual(1_536);
   });
 
+  it('keeps selected semantic steer parts canonically user-authored', () => {
+    const contentFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-STEER-CACHE' }],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        storedMessages: [
+          {
+            messageId: 'semantic-steer-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [{ type: 'steer', steer: 'PRIVATE-STEER-CACHE' }],
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider derivative',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'model',
+                    sourceMessageId: 'semantic-steer-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('fails closed when a stored content length grows after provenance parsing', () => {
+    let lengthReads = 0;
+    let numericReads = 0;
+    const values = new Array<{ type: string; text: string } | undefined>(10_000_000);
+    values[0] = { type: 'text', text: 'PRIVATE-CHANGING-CONTENT' };
+    const content = new Proxy(values, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : 10_000_000;
+        }
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          messages: {
+            pii: {
+              fields: ['content_part'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'private',
+                  label: 'private value',
+                  regex: 'PRIVATE-CHANGING-CONTENT',
+                },
+              ],
+            },
+          },
+        },
+        storedMessages: [
+          {
+            messageId: 'changing-content-source',
+            role: 'user',
+            isCreatedByUser: true,
+            content,
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe provider content',
+            additional_kwargs: { sourceMessageId: 'changing-content-source' },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(lengthReads).toBeLessThanOrEqual(3);
+    expect(numericReads).toBeLessThanOrEqual(4_097);
+  });
+
+  it('bounds sparse provenance metadata while projecting selected canonical parts', () => {
+    let pathReads = 0;
+    const pathValues = new Array<string>(10_000_000);
+    pathValues[0] = '/content/0/text';
+    const userSubmittedPaths = new Proxy(pathValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          pathReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'sparse-provenance-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content: [{ type: 'text', text: 'Safe selected content' }],
+            userSubmittedPaths,
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe exact provider content',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [
+                  {
+                    attribution: 'user',
+                    sourceMessageId: 'sparse-provenance-source',
+                    sourceContentPartIndices: [0],
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(pathReads).toBeLessThanOrEqual(512);
+  });
+
+  it('allows one complete maximum-size canonical projection', () => {
+    const content = Array.from({ length: 4_096 }, (_, index) => ({
+      type: 'text',
+      text: `Safe canonical part ${index}`,
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'maximum-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content,
+          },
+        ],
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe exact provider content',
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [{ attribution: 'user', sourceMessageId: 'maximum-source' }],
+              },
+            },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('deduplicates repeated canonical and file-selection work', () => {
+    let contentReads = 0;
+    const values = Array.from({ length: 1_024 }, (_, index) => ({
+      type: 'text',
+      text: `Safe source part ${index}`,
+      files: [{ file_id: 'repeated-file' }],
+    }));
+    const content = new Proxy(values, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          contentReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const parts = Array.from({ length: 256 }, (_, index) => ({
+      attribution: index % 2 === 0 ? ('user' as const) : ('model' as const),
+      sourceMessageId: 'repeated-source',
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages: [
+          {
+            messageId: 'repeated-source',
+            role: 'assistant',
+            isCreatedByUser: false,
+            content,
+          },
+        ],
+        resolvedFiles: [
+          { file_id: 'repeated-file', filename: 'safe.txt', text: 'Safe file content' },
+        ],
+        fileIdsBySourceMessageId: new Map([['repeated-source', ['repeated-file']]]),
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe exact provider content',
+            additional_kwargs: { provenance: { version: 1, parts } },
+          },
+        ],
+      }),
+    ).not.toThrow();
+    expect(contentReads).toBeLessThanOrEqual(5_120);
+  });
+
+  it('defers aggregate projection overflow so a specific exact finding wins', () => {
+    let contentReads = 0;
+    const storedMessages = Array.from({ length: 5 }, (_, messageIndex) => {
+      const values = Array.from({ length: 1_024 }, (_, partIndex) => ({
+        type: 'text',
+        text: `Safe ${messageIndex}-${partIndex}`,
+      }));
+      const content = new Proxy(values, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            contentReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      return {
+        messageId: `bounded-source-${messageIndex}`,
+        role: 'assistant',
+        isCreatedByUser: false,
+        content,
+      };
+    });
+    const provenanceParts = storedMessages.map((message) => ({
+      attribution: 'user' as const,
+      sourceMessageId: message.messageId,
+    }));
+    const baseInput = {
+      filters,
+      storedMessages,
+      providerMessages: [
+        {
+          role: 'human',
+          content: 'Safe exact provider content',
+          additional_kwargs: { provenance: { version: 1 as const, parts: provenanceParts } },
+        },
+      ],
+    };
+
+    expect(() => assertModelBoundProviderContent(baseInput)).toThrow(
+      'Submitted content could not be completely inspected before processing.',
+    );
+    expect(contentReads).toBeLessThanOrEqual(15_000);
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        ...baseInput,
+        providerMessages: [
+          {
+            ...baseInput.providerMessages[0],
+            content: 'PRIVATE-BUDGET',
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('preserves a full batch of 4,096 simple provider messages', () => {
+    const providerMessages = Array.from({ length: 4_096 }, (_, index) => ({
+      role: 'human',
+      content: `Safe provider message ${index}`,
+    }));
+
+    expect(() => assertModelBoundProviderContent({ filters, providerMessages })).not.toThrow();
+  });
+
+  it('allows 4,096 provider content parts and fails closed at 4,097', () => {
+    const contentFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-PREFIX' }],
+        },
+      },
+    };
+    const createMessage = (content: Array<{ type: string; text: string }>) => ({
+      role: 'human',
+      content,
+      additional_kwargs: {
+        provenance: { version: 1 as const, parts: [{ attribution: 'user' as const }] },
+      },
+    });
+    const boundaryContent = Array.from({ length: 4_096 }, (_, index) => ({
+      type: 'text',
+      text: `Safe provider part ${index}`,
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        providerMessages: [createMessage(boundaryContent)],
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        providerMessages: [
+          createMessage([...boundaryContent, { type: 'text', text: 'Safe unread part' }]),
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+
+    const sensitivePrefix = [...boundaryContent, { type: 'text', text: 'Safe unread part' }];
+    sensitivePrefix[4_095] = { type: 'text', text: 'PRIVATE-PREFIX' };
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: contentFilters,
+        providerMessages: [createMessage(sensitivePrefix)],
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('bounds sparse provider-part projection before steer normalization', () => {
+    let numericReads = 0;
+    let iteratorReads = 0;
+    const values = new Array<{ type: string; text: string } | undefined>(10_000_000);
+    values[0] = { type: 'steer', text: 'PRIVATE-SPARSE-PROVIDER' };
+    const content = new Proxy(values, {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) {
+          iteratorReads++;
+          throw new Error('provider content iterator must not run');
+        }
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const toolFilters: FiltersConfig = {
+      toolArguments: {
+        pii: {
+          fields: ['output'],
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'private', label: 'private value', regex: 'PRIVATE-SPARSE-PROVIDER' },
+          ],
+        },
+      },
+    };
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: toolFilters,
+        providerMessages: [
+          {
+            role: 'human',
+            content,
+            additional_kwargs: {
+              provenance: {
+                version: 1,
+                parts: [{ attribution: 'tool' }],
+              },
+            },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(numericReads).toBeLessThanOrEqual(4_096);
+    expect(iteratorReads).toBe(0);
+  });
+
+  it.each([Number.NaN, -1])(
+    'fails closed for typed-provenance length %s without dispatching iterators',
+    (invalidLength) => {
+      let iteratorReads = 0;
+      const parts = new Proxy([{ attribution: 'model' as const }], {
+        get(target, property, receiver) {
+          if (property === 'length') {
+            return invalidLength;
+          }
+          if (property === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('typed provenance iterator must not run');
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+
+      expect(() =>
+        assertModelBoundProviderContent({
+          filters,
+          providerMessages: [
+            {
+              role: 'human',
+              content: 'PRIVATE-TYPED-LENGTH',
+              additional_kwargs: { provenance: { version: 1, parts } },
+            },
+          ],
+        }),
+      ).toThrow('Submitted content contains a private value');
+      expect(iteratorReads).toBe(0);
+    },
+  );
+
+  it('captures a changing typed-provenance length once', () => {
+    let lengthReads = 0;
+    const parts = new Proxy([{ attribution: 'user' as const }], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : Number.NaN;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'PRIVATE-TYPED-CHANGING',
+            additional_kwargs: { provenance: { version: 1, parts } },
+          },
+        ],
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(lengthReads).toBe(1);
+  });
+
+  it('preserves one maximum valid typed-provenance envelope', () => {
+    const parts = Array.from({ length: 256 }, (_, partIndex) => ({
+      attribution: 'model' as const,
+      sourceContentPartIndices: Array.from({ length: 16 }, (_, index) => partIndex * 16 + index),
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        providerMessages: [
+          {
+            role: 'human',
+            content: 'Safe maximum provenance envelope',
+            additional_kwargs: { provenance: { version: 1, parts } },
+          },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it('bounds typed provenance parts and index refs across the whole provider batch', () => {
+    let partReads = 0;
+    let indexReads = 0;
+    const indexValues = Array.from({ length: 256 }, (_, index) => index);
+    const sourceContentPartIndices = new Proxy(indexValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          indexReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const partValues = Array.from({ length: 256 }, () => ({
+      attribution: 'user' as const,
+      sourceContentPartIndices,
+    }));
+    const parts = new Proxy(partValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          partReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const providerMessages = Array.from({ length: 4_096 }, (_, index) => ({
+      role: 'human',
+      content: index === 4_095 ? 'PRIVATE-PROVENANCE-BUDGET' : `Safe provider message ${index}`,
+      additional_kwargs: { provenance: { version: 1 as const, parts } },
+    }));
+    const safeProviderMessages = providerMessages.map((message) => ({
+      ...message,
+      content: message.content.replace('PRIVATE-PROVENANCE-BUDGET', 'Safe content'),
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({ filters, providerMessages: safeProviderMessages }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(partReads).toBeLessThanOrEqual(4_096);
+    expect(indexReads).toBeLessThanOrEqual(4_096);
+
+    partReads = 0;
+    indexReads = 0;
+    expect(() => assertModelBoundProviderContent({ filters, providerMessages })).toThrow(
+      'Submitted content contains a private value',
+    );
+    expect(partReads).toBeLessThanOrEqual(4_096);
+    expect(indexReads).toBeLessThanOrEqual(4_096);
+  });
+
+  it('bounds stored provenance-state resolution across distinct source rows', () => {
+    let contentReads = 0;
+    const storedMessages = Array.from({ length: 512 }, (_, messageIndex) => {
+      const content = new Proxy(new Array<undefined>(4_096), {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            contentReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      return {
+        messageId: `state-source-${messageIndex}`,
+        role: 'assistant',
+        isCreatedByUser: false,
+        content,
+      };
+    });
+    const providerMessages = [0, 256].map((start, batchIndex) => ({
+      role: 'human',
+      content: `Safe state batch ${batchIndex}`,
+      additional_kwargs: {
+        provenance: {
+          version: 1 as const,
+          parts: storedMessages.slice(start, start + 256).map((message) => ({
+            attribution: 'model' as const,
+            sourceMessageId: message.messageId,
+          })),
+        },
+      },
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({ filters, storedMessages, providerMessages }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(contentReads).toBeLessThanOrEqual(13_000);
+
+    contentReads = 0;
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters,
+        storedMessages,
+        providerMessages: providerMessages.map((message, index) => ({
+          ...message,
+          content: index === 1 ? 'PRIVATE-STATE-BUDGET' : message.content,
+        })),
+      }),
+    ).toThrow('Submitted content contains a private value');
+    expect(contentReads).toBeLessThanOrEqual(13_000);
+  });
+
+  it('does not rescan explicit path carriers that grow after capture', () => {
+    let lengthReads = 0;
+    let pathReads = 0;
+    const storedMessages = Array.from({ length: 512 }, (_, messageIndex) => {
+      const values = new Array<string>(256).fill('/text');
+      let carrierLengthReads = 0;
+      const userSubmittedPaths = new Proxy(values, {
+        get(target, property, receiver) {
+          if (property === 'length') {
+            lengthReads++;
+            carrierLengthReads++;
+            return carrierLengthReads === 1 ? 1 : 256;
+          }
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            pathReads++;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      return {
+        messageId: `growing-path-source-${messageIndex}`,
+        role: 'assistant',
+        isCreatedByUser: false,
+        text: `Safe stored content ${messageIndex}`,
+        userSubmittedPaths,
+      };
+    });
+    const providerMessages = storedMessages.map((message, index) => ({
+      role: 'ai',
+      content: `Safe provider content ${index}`,
+      additional_kwargs: { sourceMessageId: message.messageId },
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({ filters, storedMessages, providerMessages }),
+    ).not.toThrow();
+    expect(lengthReads).toBe(512);
+    expect(pathReads).toBe(512);
+  });
+
+  it('bounds plural legacy lineage IDs across the whole provider batch', () => {
+    let sourceIdReads = 0;
+    const sourceIdValues = Array.from({ length: 256 }, (_, index) => `source-${index}`);
+    const sourceMessageIds = new Proxy(sourceIdValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          sourceIdReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const providerMessages = Array.from({ length: 4_096 }, (_, index) => ({
+      role: 'human',
+      content: `Safe legacy provider message ${index}`,
+      additional_kwargs: { sourceMessageIds },
+    }));
+
+    expect(() => assertModelBoundProviderContent({ filters, providerMessages })).toThrow(
+      'Submitted content could not be completely inspected before processing.',
+    );
+    expect(sourceIdReads).toBeLessThanOrEqual(4_352);
+  });
+
+  it('bounds aggregate nested extraction across distinct selected source rows', () => {
+    let nestedReads = 0;
+    const nestedValues = Array.from({ length: 3_500 }, (_, index) => `safe-nested-${index}`);
+    const nestedPayload = new Proxy(nestedValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          nestedReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const aggregateFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+        },
+      },
+    };
+    const storedMessages = Array.from({ length: 512 }, (_, index) => ({
+      messageId: `nested-source-${index}`,
+      role: 'assistant',
+      isCreatedByUser: false,
+      content: [{ type: 'custom', payload: nestedPayload }],
+    }));
+    const providerMessages = [0, 256].map((offset) => ({
+      role: 'human',
+      content: `Safe aggregate provider content ${offset}`,
+      additional_kwargs: {
+        provenance: {
+          version: 1 as const,
+          parts: storedMessages.slice(offset, offset + 256).map((message) => ({
+            attribution: 'user' as const,
+            sourceMessageId: message.messageId,
+            sourceContentPartIndices: [0],
+          })),
+        },
+      },
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: aggregateFilters,
+        storedMessages,
+        providerMessages,
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+    expect(nestedReads).toBeLessThanOrEqual(8_192);
+  });
+
+  it('preserves a concrete finding before aggregate nested traversal overflow', () => {
+    const nestedPayload = Array.from({ length: 3_500 }, (_, index) =>
+      index === 0 ? 'PRIVATE-NESTED-PREFIX' : `safe-nested-${index}`,
+    );
+    const aggregateFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [
+            { id: 'private', label: 'private value', regex: 'PRIVATE-NESTED-PREFIX' },
+          ],
+        },
+      },
+    };
+    const storedMessages = Array.from({ length: 512 }, (_, index) => ({
+      messageId: `finding-nested-source-${index}`,
+      role: 'assistant',
+      isCreatedByUser: false,
+      content: [{ type: 'custom', payload: nestedPayload }],
+    }));
+    const providerMessages = [0, 256].map((offset) => ({
+      role: 'human',
+      content: `Safe aggregate provider content ${offset}`,
+      additional_kwargs: {
+        provenance: {
+          version: 1 as const,
+          parts: storedMessages.slice(offset, offset + 256).map((message) => ({
+            attribution: 'user' as const,
+            sourceMessageId: message.messageId,
+            sourceContentPartIndices: [0],
+          })),
+        },
+      },
+    }));
+
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: aggregateFilters,
+        storedMessages,
+        providerMessages,
+      }),
+    ).toThrow('Submitted content contains a private value');
+  });
+
+  it('shares aggregate nested extraction work across callback batches', () => {
+    const callbackFilters: FiltersConfig = {
+      messages: {
+        pii: {
+          fields: ['content_part'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-NEVER' }],
+        },
+      },
+    };
+    const storedMessages = [0, 1, 2].map((index) => ({
+      messageId: `callback-nested-source-${index}`,
+      role: 'assistant',
+      isCreatedByUser: false,
+      content: [
+        {
+          type: 'custom',
+          payload: Array.from({ length: 3_000 }, (_, leaf) => `safe-${index}-${leaf}`),
+        },
+      ],
+    }));
+    const callback = createModelBoundChatModelCallback({
+      filters: callbackFilters,
+      storedMessages,
+    });
+    const createBatch = (index: number) => [
+      {
+        role: 'human',
+        content: `Safe callback provider content ${index}`,
+        additional_kwargs: {
+          provenance: {
+            version: 1 as const,
+            parts: [
+              {
+                attribution: 'user' as const,
+                sourceMessageId: storedMessages[index].messageId,
+                sourceContentPartIndices: [0],
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    expect(() =>
+      callback.handleChatModelStart(undefined, [createBatch(0), createBatch(1), createBatch(2)]),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
   it('keeps the model callback usable after caller-owned state is released', () => {
     const storedMessages = [
       {
@@ -3285,6 +4537,276 @@ describe('assertModelBoundProviderContent', () => {
         ],
       ]),
     ).toThrow('Submitted content contains a private value');
+  });
+
+  it('bounds sparse callback snapshots before copying caller-owned state', () => {
+    let storedReads = 0;
+    let storedLengthReads = 0;
+    let resolvedReads = 0;
+    let resolvedLengthReads = 0;
+    let fileIdReads = 0;
+    let fileIdLengthReads = 0;
+    const storedValues = new Array<undefined | { messageId: string }>(10_000_000);
+    storedValues[0] = { messageId: 'visible-message' };
+    const storedMessages = new Proxy(storedValues, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          storedLengthReads++;
+        } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+          storedReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const resolvedValues = new Array<undefined | { file_id: string; text: string }>(10_000_000);
+    resolvedValues[0] = { file_id: 'visible-file', text: 'Safe file' };
+    const resolvedFiles = new Proxy(resolvedValues, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          resolvedLengthReads++;
+        } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+          resolvedReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const fileIdValues = new Array<string>(10_000_000);
+    fileIdValues[0] = 'visible-file';
+    const fileIds = new Proxy(fileIdValues, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          fileIdLengthReads++;
+        } else if (typeof property === 'string' && /^\d+$/.test(property)) {
+          fileIdReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    let customMapIteratorReads = 0;
+    const fileIdsBySourceMessageId = new Map([['visible-message', fileIds]]);
+    Object.defineProperty(fileIdsBySourceMessageId, Symbol.iterator, {
+      configurable: true,
+      value() {
+        customMapIteratorReads++;
+        throw new Error('custom map iterator must not run');
+      },
+    });
+    const callback = createModelBoundChatModelCallback({
+      filters,
+      storedMessages,
+      resolvedFiles,
+      fileIdsBySourceMessageId,
+    });
+
+    expect(storedLengthReads).toBe(1);
+    expect(resolvedLengthReads).toBe(1);
+    expect(fileIdLengthReads).toBe(1);
+    expect(storedReads).toBeLessThanOrEqual(4_096);
+    expect(resolvedReads).toBeLessThanOrEqual(4_096);
+    expect(fileIdReads).toBeLessThanOrEqual(4_096);
+    expect(customMapIteratorReads).toBe(0);
+    expect(() =>
+      callback.handleChatModelStart(undefined, [[{ role: 'human', content: 'Safe content' }]]),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('bounds callback batches without dispatching custom array iterators', () => {
+    let outerIteratorReads = 0;
+    let innerIteratorReads = 0;
+    let outerLengthReads = 0;
+    const providerMessages = [{ role: 'human', content: 'Safe content' }];
+    Object.defineProperty(providerMessages, Symbol.iterator, {
+      configurable: true,
+      value() {
+        innerIteratorReads++;
+        throw new Error('custom provider iterator must not run');
+      },
+    });
+    const messageBatchValues = [providerMessages];
+    Object.defineProperty(messageBatchValues, Symbol.iterator, {
+      configurable: true,
+      value() {
+        outerIteratorReads++;
+        throw new Error('custom batch iterator must not run');
+      },
+    });
+    const messageBatches = new Proxy(messageBatchValues, {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          outerLengthReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const callback = createModelBoundChatModelCallback({ filters });
+
+    expect(() => callback.handleChatModelStart(undefined, messageBatches)).not.toThrow();
+    expect(outerIteratorReads).toBe(0);
+    expect(innerIteratorReads).toBe(0);
+    expect(outerLengthReads).toBe(1);
+  });
+
+  it.each([
+    ['outer', Number.NaN],
+    ['outer', -1],
+    ['inner', Number.NaN],
+    ['inner', -1],
+  ] as const)(
+    'makes an invalid %s callback-array length %s fatal without iterating',
+    (carrier, invalidLength) => {
+      let iteratorReads = 0;
+      const providerMessages = new Proxy([{ role: 'human', content: 'PRIVATE-INVALID-LENGTH' }], {
+        get(target, property, receiver) {
+          if (carrier === 'inner' && property === 'length') {
+            return invalidLength;
+          }
+          if (property === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('inner iterator must not run');
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const batches = new Proxy([providerMessages], {
+        get(target, property, receiver) {
+          if (carrier === 'outer' && property === 'length') {
+            return invalidLength;
+          }
+          if (property === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('outer iterator must not run');
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+      const callback = createModelBoundChatModelCallback({ filters });
+
+      expect(() => callback.handleChatModelStart(undefined, batches)).toThrow(
+        'Submitted content could not be completely inspected before processing.',
+      );
+      expect(iteratorReads).toBe(0);
+    },
+  );
+
+  it('captures a changing provider-batch length once before copying numerically', () => {
+    let lengthReads = 0;
+    const providerMessages = new Proxy([{ role: 'human', content: 'PRIVATE-CHANGING-LENGTH' }], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : 10_000_000;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const callback = createModelBoundChatModelCallback({ filters });
+
+    expect(() => callback.handleChatModelStart(undefined, [providerMessages])).toThrow(
+      'Submitted content contains a private value',
+    );
+    expect(lengthReads).toBe(1);
+  });
+
+  it('enforces one provider-message traversal cap across callback batches', () => {
+    let lateMessageReads = 0;
+    const firstBatch = Array.from({ length: 4_096 }, (_, index) => ({
+      role: 'human',
+      content: `Safe callback message ${index}`,
+    }));
+    const lateBatch = new Proxy([{ role: 'human', content: 'Safe unread message' }], {
+      get(target, property, receiver) {
+        if (property === '0') {
+          lateMessageReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const callback = createModelBoundChatModelCallback({ filters });
+
+    expect(() => callback.handleChatModelStart(undefined, [firstBatch, lateBatch])).toThrow(
+      'Submitted content could not be completely inspected before processing.',
+    );
+    expect(lateMessageReads).toBe(0);
+  });
+
+  it('shares the provenance parse budget across callback batches', () => {
+    let partReads = 0;
+    const partValues = Array.from({ length: 256 }, () => ({
+      attribution: 'model' as const,
+    }));
+    const parts = new Proxy(partValues, {
+      get(target, property, receiver) {
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          partReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const messageBatches = Array.from({ length: 18 }, (_, index) => [
+      {
+        role: 'human',
+        content: `Safe provenance batch ${index}`,
+        additional_kwargs: { provenance: { version: 1 as const, parts } },
+      },
+    ]);
+    const callback = createModelBoundChatModelCallback({ filters });
+
+    expect(() => callback.handleChatModelStart(undefined, messageBatches)).toThrow(
+      'Submitted content could not be completely inspected before processing.',
+    );
+    expect(partReads).toBeLessThanOrEqual(4_352);
+  });
+
+  it.each([
+    [
+      'batch element',
+      () => {
+        const batches: Array<readonly []> = [];
+        Object.defineProperty(batches, '0', {
+          configurable: true,
+          get() {
+            throw new Error('hostile batch accessor');
+          },
+        });
+        batches.length = 1;
+        return batches;
+      },
+    ],
+    [
+      'provider field',
+      () => {
+        const providerMessage = { content: 'Safe content' } as { role?: string; content: string };
+        Object.defineProperty(providerMessage, 'role', {
+          configurable: true,
+          get() {
+            throw new Error('hostile provider accessor');
+          },
+        });
+        return [[providerMessage]];
+      },
+    ],
+  ])('makes a throwing %s accessor a fatal policy rejection', (_name, createBatches) => {
+    const onContentRejected = jest.fn();
+    const callback = createModelBoundChatModelCallback({ filters }, { onContentRejected });
+    let thrown: unknown;
+
+    try {
+      callback.handleChatModelStart(
+        undefined,
+        createBatches() as Parameters<typeof callback.handleChatModelStart>[1],
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(StreamLimitExceededError);
+    expect(isContentFilterError(thrown)).toBe(true);
+    expect(onContentRejected).toHaveBeenCalledTimes(1);
+    expect(thrown).toMatchObject({
+      code: 'content_filter_uninspectable',
+      cause: expect.objectContaining({ code: 'content_filter_uninspectable' }),
+    });
   });
 
   it('marks callback policy failures fatal across SDK recovery paths', () => {

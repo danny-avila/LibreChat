@@ -112,6 +112,44 @@ const TEXTUAL_APPLICATION_MIME_TYPES = new Set([
   'application/yaml',
 ]);
 
+function captureOpaqueArrayLength(value: readonly unknown[]): number {
+  const length = value.length;
+  if (!Number.isSafeInteger(length) || length < 0) {
+    throw new ContentTraversalLimitError();
+  }
+  return length;
+}
+
+function snapshotCanonicalFiles(
+  candidate: readonly (CanonicalFileInspectionFile | null | undefined)[] | null | undefined,
+): Array<CanonicalFileInspectionFile | null | undefined> {
+  if (candidate == null) {
+    return [];
+  }
+  let isArray: boolean;
+  try {
+    isArray = Array.isArray(candidate);
+  } catch {
+    throw new ContentTraversalLimitError();
+  }
+  if (!isArray) {
+    throw new ContentTraversalLimitError();
+  }
+  const length = captureOpaqueArrayLength(candidate);
+  if (length > MAX_OPAQUE_NODES) {
+    throw new ContentTraversalLimitError();
+  }
+  const files: Array<CanonicalFileInspectionFile | null | undefined> = [];
+  try {
+    for (let index = 0; index < length; index++) {
+      files.push(candidate[index]);
+    }
+  } catch {
+    throw new ContentTraversalLimitError();
+  }
+  return files;
+}
+
 function getFilePii(filters: FiltersConfig | undefined): FilePiiConfig | undefined {
   return filters?.files?.pii as FilePiiConfig | undefined;
 }
@@ -305,6 +343,13 @@ function hasSubmittedPayload(value: unknown): boolean {
   if (value == null || typeof value !== 'object') {
     return false;
   }
+  try {
+    if (Array.isArray(value) && captureOpaqueArrayLength(value) > 0) {
+      return true;
+    }
+  } catch {
+    return true;
+  }
   const boundedEntries = getBoundedOwnEnumerableEntries(value, 32);
   return (
     !boundedEntries.complete ||
@@ -353,18 +398,19 @@ function getMediaFields(parentType: string, parentMimeType: string): readonly Fi
 }
 
 function hasBoundedNonEmptyString(values: readonly unknown[]): boolean {
-  const inspectedLength = Math.min(values.length, MAX_OPAQUE_NODES);
   try {
+    const valueLength = captureOpaqueArrayLength(values);
+    const inspectedLength = Math.min(valueLength, MAX_OPAQUE_NODES);
     for (let index = 0; index < inspectedLength; index++) {
       const value = values[index];
       if (typeof value === 'string' && value.length > 0) {
         return true;
       }
     }
+    return inspectedLength < valueLength;
   } catch {
     return true;
   }
-  return inspectedLength < values.length;
 }
 
 function isRemoteUri(value: string): boolean {
@@ -385,12 +431,14 @@ function getOpaqueFields(
   parentMimeType: string,
 ): readonly FileFilterField[] | null {
   const normalizedKey = key.toLowerCase();
-  if (
-    (normalizedKey === 'file_ids' || normalizedKey === 'vector_store_ids') &&
-    Array.isArray(value) &&
-    hasBoundedNonEmptyString(value)
-  ) {
-    return DERIVED_FILE_FIELDS;
+  if (normalizedKey === 'file_ids' || normalizedKey === 'vector_store_ids') {
+    try {
+      if (Array.isArray(value) && hasBoundedNonEmptyString(value)) {
+        return DERIVED_FILE_FIELDS;
+      }
+    } catch {
+      return DERIVED_FILE_FIELDS;
+    }
   }
   if (normalizedKey === 'file_id' && typeof value === 'string' && value.length > 0) {
     const pathLower = path.toLowerCase();
@@ -410,14 +458,18 @@ function getOpaqueFields(
     (normalizedKey === 'file_data' || normalizedKey === 'filedata') &&
     hasSubmittedPayload(value)
   ) {
-    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
-      const payloadEntries = getBoundedOwnEnumerableEntries(value, 32);
-      if (payloadEntries.complete) {
-        return getMediaFields(
-          getObjectType(payloadEntries.entries),
-          getObjectMimeType(payloadEntries.entries),
-        );
+    try {
+      if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+        const payloadEntries = getBoundedOwnEnumerableEntries(value, 32);
+        if (payloadEntries.complete) {
+          return getMediaFields(
+            getObjectType(payloadEntries.entries),
+            getObjectMimeType(payloadEntries.entries),
+          );
+        }
       }
+    } catch {
+      return DERIVED_FILE_FIELDS;
     }
     return DERIVED_FILE_FIELDS;
   }
@@ -594,20 +646,35 @@ export function getBlockedOpaqueFileField(
     }
     seen.add(current.value);
 
-    if (Array.isArray(current.value)) {
-      if (current.depth >= MAX_OPAQUE_DEPTH && current.value.length > 0) {
+    let currentIsArray: boolean;
+    try {
+      currentIsArray = Array.isArray(current.value);
+    } catch {
+      traversalTruncated = true;
+      continue;
+    }
+    if (currentIsArray) {
+      const arrayValue = current.value as readonly unknown[];
+      let arrayLength: number;
+      try {
+        arrayLength = captureOpaqueArrayLength(arrayValue);
+      } catch {
+        traversalTruncated = true;
+        continue;
+      }
+      if (current.depth >= MAX_OPAQUE_DEPTH && arrayLength > 0) {
         traversalTruncated = true;
         continue;
       }
       const availableNodes = Math.max(0, MAX_OPAQUE_NODES - visitedNodes - pending.length);
-      const scheduledNodes = Math.min(current.value.length, availableNodes);
-      if (scheduledNodes < current.value.length) {
+      const scheduledNodes = Math.min(arrayLength, availableNodes);
+      if (scheduledNodes < arrayLength) {
         traversalTruncated = true;
       }
       try {
         for (let index = scheduledNodes - 1; index >= 0; index--) {
           pending.push({
-            value: current.value[index],
+            value: arrayValue[index],
             path: `${current.path}/${index}`,
             depth: current.depth + 1,
           });
@@ -708,23 +775,47 @@ function getCanonicalFileReferenceIds(input: unknown): CanonicalReferenceTravers
         } else {
           markIncomplete(true);
         }
-      } else if (key === 'file_ids' && Array.isArray(value)) {
-        const remainingIds = Math.max(0, MAX_OPAQUE_NODES - fileIds.size);
-        const inspectedIds = value.slice(0, remainingIds + 1);
-        for (const fileId of inspectedIds) {
-          if (typeof fileId === 'string' && fileId.length > 0) {
-            if (fileIds.size < MAX_OPAQUE_NODES || fileIds.has(fileId)) {
-              fileIds.add(fileId);
-            } else {
+      } else if (key === 'file_ids') {
+        let valueIsArray: boolean;
+        try {
+          valueIsArray = Array.isArray(value);
+        } catch {
+          markIncomplete(true);
+          continue;
+        }
+        if (valueIsArray) {
+          const fileIdValues = value as readonly unknown[];
+          let fileIdCount: number;
+          try {
+            fileIdCount = captureOpaqueArrayLength(fileIdValues);
+          } catch {
+            markIncomplete(true);
+            continue;
+          }
+          const remainingIds = Math.max(0, MAX_OPAQUE_NODES - fileIds.size);
+          const inspectedIdCount = Math.min(fileIdCount, remainingIds + 1);
+          for (let index = 0; index < inspectedIdCount; index++) {
+            let fileId: unknown;
+            try {
+              fileId = fileIdValues[index];
+            } catch {
               markIncomplete(true);
               break;
             }
+            if (typeof fileId === 'string' && fileId.length > 0) {
+              if (fileIds.size < MAX_OPAQUE_NODES || fileIds.has(fileId)) {
+                fileIds.add(fileId);
+              } else {
+                markIncomplete(true);
+                break;
+              }
+            }
           }
+          if (inspectedIdCount < fileIdCount) {
+            markIncomplete(true);
+          }
+          continue;
         }
-        if (inspectedIds.length < value.length) {
-          markIncomplete(true);
-        }
-        continue;
       }
       if (value != null && typeof value === 'object') {
         (current.fileRelevant || isLikelyFileReferenceContainer(key)
@@ -862,15 +953,25 @@ function omitResolvedFileLocators(
   }
   traversal.visited++;
 
-  if (Array.isArray(value)) {
+  let valueIsArray: boolean;
+  try {
+    valueIsArray = Array.isArray(value);
+  } catch {
+    throw new ContentTraversalLimitError();
+  }
+  if (valueIsArray) {
+    const arrayValue = value as readonly unknown[];
+    const arrayLength = captureOpaqueArrayLength(arrayValue);
     const remainingNodes = MAX_OPAQUE_NODES - traversal.visited;
-    if (value.length > remainingNodes) {
+    if (arrayLength > remainingNodes) {
       throw new ContentTraversalLimitError();
     }
     const cloned: unknown[] = [];
     traversal.seen.set(value, cloned);
-    for (const item of value) {
-      cloned.push(omitResolvedFileLocators(item, resolvedFilesById, depth + 1, traversal));
+    for (let index = 0; index < arrayLength; index++) {
+      cloned.push(
+        omitResolvedFileLocators(arrayValue[index], resolvedFilesById, depth + 1, traversal),
+      );
     }
     return cloned;
   }
@@ -909,12 +1010,21 @@ function omitResolvedFileLocators(
     ) {
       continue;
     }
-    if (key === 'file_ids' && Array.isArray(child)) {
-      if (child.length > MAX_OPAQUE_NODES - traversal.visited) {
+    let childIsArray: boolean;
+    try {
+      childIsArray = Array.isArray(child);
+    } catch {
+      throw new ContentTraversalLimitError();
+    }
+    if (key === 'file_ids' && childIsArray) {
+      const childFileIds = child as readonly unknown[];
+      const childFileIdCount = captureOpaqueArrayLength(childFileIds);
+      if (childFileIdCount > MAX_OPAQUE_NODES - traversal.visited) {
         throw new ContentTraversalLimitError();
       }
       const unresolvedFileIds: unknown[] = [];
-      for (const childFileId of child) {
+      for (let index = 0; index < childFileIdCount; index++) {
+        const childFileId = childFileIds[index];
         if (typeof childFileId !== 'string' || !resolvedFilesById.has(childFileId)) {
           unresolvedFileIds.push(childFileId);
         }
@@ -975,6 +1085,8 @@ export async function resolveCanonicalFileReferences<T>(
     };
   }
 
+  const trustedLiveFiles = snapshotCanonicalFiles(input.trustedLiveFiles);
+
   const references = getCanonicalFileReferenceIds(input.input);
   if (references.incomplete) {
     const blockedField = getRequiredOpaqueFileField(filters);
@@ -998,8 +1110,9 @@ export async function resolveCanonicalFileReferences<T>(
       ...(input.user?.tenantId != null && { tenantId: input.user.tenantId }),
     };
     try {
-      const currentFiles = (await input.getFiles(filter, {}, {})) ?? [];
-      for (const file of currentFiles) {
+      const currentFiles = snapshotCanonicalFiles(await input.getFiles(filter, {}, {}));
+      for (let index = 0; index < currentFiles.length; index++) {
+        const file = currentFiles[index];
         if (
           typeof file?.file_id === 'string' &&
           file.file_id.length > 0 &&
@@ -1014,7 +1127,8 @@ export async function resolveCanonicalFileReferences<T>(
     }
   }
 
-  for (const file of input.trustedLiveFiles ?? []) {
+  for (let index = 0; index < trustedLiveFiles.length; index++) {
+    const file = trustedLiveFiles[index];
     if (typeof file?.file_id !== 'string' || file.file_id.length === 0) {
       continue;
     }
@@ -1033,11 +1147,13 @@ export async function resolveCanonicalFileReferences<T>(
     }
   }
 
-  const hydratedFiles = [
+  const unassociatedLiveFiles = trustedLiveFiles.filter(
+    (file): file is CanonicalFileInspectionFile =>
+      file != null && (typeof file.file_id !== 'string' || file.file_id.length === 0),
+  );
+  const hydratedFiles: CanonicalFileInspectionFile[] = [
     ...currentById.values(),
-    ...(input.trustedLiveFiles ?? []).filter(
-      (file) => typeof file?.file_id !== 'string' || file.file_id.length === 0,
-    ),
+    ...unassociatedLiveFiles,
   ];
   for (const file of hydratedFiles) {
     assertHydratedFileInspectable(filters, file);

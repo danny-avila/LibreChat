@@ -1,4 +1,4 @@
-import { RE2JS } from 're2js';
+import { RE2JS, RE2Set } from 're2js';
 import { FILTER_PII_STARTER_PATTERNS } from 'librechat-data-provider';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { ContentFieldMap, ContentSource, TextContentFragment } from './types';
@@ -426,6 +426,30 @@ describe('configured content inspection', () => {
     expect(readLater).not.toHaveBeenCalled();
   });
 
+  it('allocates shared regex-set memory by unique config identity', () => {
+    const sharedPii = {
+      starterPatterns: [],
+      customPatterns: [
+        { id: 'shared-memory', label: 'Shared memory', regex: 'SHARED-MEMORY-[0-9]+' },
+      ],
+    };
+    const filters = {
+      messages: { pii: sharedPii },
+      prompts: { pii: sharedPii },
+    } as FiltersConfig;
+    const setCompile = jest.spyOn(RE2Set.prototype, 'compile');
+
+    try {
+      expect(createConfiguredContentInspector({ filters })).not.toBeNull();
+      expect(setCompile).toHaveBeenCalledTimes(1);
+      expect((setCompile.mock.contexts[0] as unknown as { readonly maxMem: number }).maxMem).toBe(
+        8 * 1_024 * 1_024,
+      );
+    } finally {
+      setCompile.mockRestore();
+    }
+  });
+
   it('inspects identical text once per applicable source filter', () => {
     const filters: FiltersConfig = {
       skills: {
@@ -441,7 +465,7 @@ describe('configured content inspection', () => {
         },
       },
     };
-    const patternTest = jest.spyOn(RE2JS.prototype, 'test');
+    const patternTest = jest.spyOn(RE2Set.prototype, 'match');
     let callCount = 0;
 
     try {
@@ -476,7 +500,7 @@ describe('configured content inspection', () => {
     };
     const inspector = createConfiguredContentInspector({ filters });
     const session = inspector?.createSession();
-    const patternTest = jest.spyOn(RE2JS.prototype, 'test');
+    const patternTest = jest.spyOn(RE2Set.prototype, 'match');
 
     try {
       expect(
@@ -506,7 +530,7 @@ describe('configured content inspection', () => {
       },
     };
     const session = createConfiguredContentInspector({ filters })?.createSession();
-    const patternTest = jest.spyOn(RE2JS.prototype, 'test');
+    const patternTest = jest.spyOn(RE2Set.prototype, 'match');
 
     try {
       expect(
@@ -544,6 +568,225 @@ describe('configured content inspection', () => {
     expect(
       inspectContent([fragment('message', 'text', `${'a'.repeat(100_000)}!`)], { filters }),
     ).toBeNull();
+  });
+
+  it('rejects aggregate pattern count before compiling regex programs or sets', () => {
+    const makePatterns = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `${prefix}-${index}`,
+        label: `${prefix} ${index}`,
+        regex: `${prefix.toUpperCase()}-${index}`,
+      }));
+    const filters = {
+      messages: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('message-count', 128) },
+      },
+      prompts: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('prompt-count', 129) },
+      },
+    } as FiltersConfig;
+    const regexCompile = jest.spyOn(RE2JS, 'compile');
+    const setCompile = jest.spyOn(RE2Set.prototype, 'compile');
+
+    try {
+      expect(() => createConfiguredContentInspector({ filters })).toThrow(
+        'custom patterns exceed 256 configured patterns',
+      );
+      expect(regexCompile).not.toHaveBeenCalled();
+      expect(setCompile).not.toHaveBeenCalled();
+    } finally {
+      regexCompile.mockRestore();
+      setCompile.mockRestore();
+    }
+  });
+
+  it('rejects aggregate regex characters before compiling regex programs or sets', () => {
+    const makePatterns = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `${prefix}-${index}`,
+        label: `${prefix} ${index}`,
+        regex: `${prefix}${index}${'x'.repeat(512 - prefix.length - String(index).length)}`,
+      }));
+    const filters = {
+      messages: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('character-message', 9) },
+      },
+      prompts: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('character-prompt', 8) },
+      },
+    } as FiltersConfig;
+    const regexCompile = jest.spyOn(RE2JS, 'compile');
+    const setCompile = jest.spyOn(RE2Set.prototype, 'compile');
+
+    try {
+      expect(() => createConfiguredContentInspector({ filters })).toThrow(
+        'custom patterns exceed 8192 regex characters',
+      );
+      expect(regexCompile).not.toHaveBeenCalled();
+      expect(setCompile).not.toHaveBeenCalled();
+    } finally {
+      regexCompile.mockRestore();
+      setCompile.mockRestore();
+    }
+  });
+
+  it('stops shared instruction measurement at the first aggregate overflow', () => {
+    const makeSource = (prefix: string) => ({
+      pii: {
+        starterPatterns: [],
+        customPatterns: Array.from({ length: 8 }, (_, index) => ({
+          id: `${prefix}-${index}`,
+          label: `${prefix} ${index}`,
+          regex: `a{1000}${prefix.toUpperCase()}${index}`,
+        })),
+      },
+    });
+    const filters = {
+      messages: makeSource('phase-message'),
+      prompts: makeSource('phase-prompt'),
+      skills: makeSource('phase-skill'),
+    } as FiltersConfig;
+    const regexCompile = jest.spyOn(RE2JS, 'compile');
+    const setCompile = jest.spyOn(RE2Set.prototype, 'compile');
+
+    try {
+      expect(() => createConfiguredContentInspector({ filters })).toThrow(
+        'custom patterns exceed 8192 compiled instructions',
+      );
+      const firstAttemptCompiles = regexCompile.mock.calls.length;
+      expect(firstAttemptCompiles).toBeGreaterThan(8);
+      expect(firstAttemptCompiles).toBeLessThan(24);
+      expect(setCompile).not.toHaveBeenCalled();
+
+      expect(() => createConfiguredContentInspector({ filters })).toThrow(
+        'custom patterns exceed 8192 compiled instructions',
+      );
+      expect(regexCompile).toHaveBeenCalledTimes(firstAttemptCompiles);
+      expect(setCompile).not.toHaveBeenCalled();
+    } finally {
+      regexCompile.mockRestore();
+      setCompile.mockRestore();
+    }
+  });
+
+  it('enforces one aggregate instruction budget across legacy and source-aware rules', () => {
+    const makePatterns = (prefix: string) =>
+      Array.from({ length: 5 }, (_, index) => ({
+        id: `${prefix}-${index}`,
+        label: `${prefix} ${index}`,
+        regex: `b{900}${prefix.toUpperCase()}${index}`,
+      }));
+    const filters = {
+      messages: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('combined-filter') },
+      },
+    } as FiltersConfig;
+    const legacyPii = {
+      starterPatterns: [],
+      customPatterns: makePatterns('combined-legacy'),
+    } as MessageFilterPiiConfig;
+
+    expect(() => createConfiguredContentInspector({ filters, legacyPii })).toThrow(
+      'custom patterns exceed 8192 compiled instructions',
+    );
+  });
+
+  it('accepts the aggregate custom-pattern count boundary', () => {
+    const makePatterns = (prefix: string) =>
+      Array.from({ length: 128 }, (_, index) => ({
+        id: `${prefix}-${index}`,
+        label: `${prefix} ${index}`,
+        regex: `${prefix.toUpperCase()}-${index}`,
+      }));
+    const filters = {
+      messages: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('boundary-message') },
+      },
+      prompts: {
+        pii: { starterPatterns: [], customPatterns: makePatterns('boundary-prompt') },
+      },
+    } as FiltersConfig;
+
+    expect(createConfiguredContentInspector({ filters })).not.toBeNull();
+  });
+
+  it('bounds fields and pattern carriers without dispatching custom iterators', () => {
+    let fieldLengthReads = 0;
+    let fieldIteratorReads = 0;
+    const fields = new Proxy(['text'], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          fieldLengthReads++;
+        } else if (property === Symbol.iterator) {
+          fieldIteratorReads++;
+          throw new Error('field iterator must not run');
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const filters = {
+      messages: {
+        pii: {
+          fields,
+          starterPatterns: [],
+          customPatterns: [BLOCK_PATTERN],
+        },
+      },
+    } as FiltersConfig;
+
+    expect(createConfiguredContentInspector({ filters })).not.toBeNull();
+    expect(fieldLengthReads).toBe(1);
+    expect(fieldIteratorReads).toBe(0);
+
+    for (const property of ['fields', 'starterPatterns', 'customPatterns'] as const) {
+      let lengthReads = 0;
+      let numericReads = 0;
+      let iteratorReads = 0;
+      const sparse = new Proxy(new Array<unknown>(10_000_000), {
+        get(target, key, receiver) {
+          if (key === 'length') {
+            lengthReads++;
+          } else if (key === Symbol.iterator) {
+            iteratorReads++;
+            throw new Error('sparse iterator must not run');
+          } else if (typeof key === 'string' && /^\d+$/.test(key)) {
+            numericReads++;
+          }
+          return Reflect.get(target, key, receiver);
+        },
+      });
+      const pii = {
+        fields: ['text'],
+        starterPatterns: [],
+        customPatterns: [BLOCK_PATTERN],
+        [property]: sparse,
+      };
+
+      expect(() =>
+        createConfiguredContentInspector({
+          filters: { messages: { pii } } as FiltersConfig,
+        }),
+      ).toThrow('may contain at most 256 entries');
+      expect(lengthReads).toBe(1);
+      expect(numericReads).toBe(0);
+      expect(iteratorReads).toBe(0);
+    }
+
+    const { proxy: revokedFields, revoke } = Proxy.revocable([], {});
+    revoke();
+    expect(() =>
+      createConfiguredContentInspector({
+        filters: {
+          messages: {
+            pii: {
+              fields: revokedFields,
+              starterPatterns: [],
+              customPatterns: [BLOCK_PATTERN],
+            },
+          },
+        } as FiltersConfig,
+      }),
+    ).toThrow('fields could not be inspected safely');
   });
 
   it('fails closed when typed callers bypass the compiled-program schema budget', () => {

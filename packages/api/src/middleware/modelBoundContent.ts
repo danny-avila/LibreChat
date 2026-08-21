@@ -20,7 +20,10 @@ import type {
   StoredMessageContentInput,
 } from '../protection/adapters/submissions';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
-import type { ContentTraversalScope } from '../protection/adapters/nested';
+import type {
+  ContentTraversalScope,
+  VisitNestedStringsBudget,
+} from '../protection/adapters/nested';
 import type { ExternalChatMessage } from '../protection/adapters/messages';
 import type { CanonicalFileInspectionFile } from '../protection/files';
 import {
@@ -42,12 +45,15 @@ import {
   extractStoredMessageContent,
 } from '../protection/adapters/submissions';
 import {
+  CONTENT_TRAVERSAL_MAX_NODES,
   getContentTraversalFragments,
   isContentTraversalProtected,
   isContentTraversalLimitError,
   isNestedMessageTraversalProtected,
 } from '../protection/adapters/nested';
 import {
+  MAX_USER_SUBMITTED_PATHS,
+  getCapturedUserSubmittedPathMetadata,
   getSafeUserSubmittedPathSegments,
   getUserSubmittedMessageFieldPathState,
   getUserSubmittedPathState,
@@ -121,6 +127,51 @@ const MAX_PROVIDER_PROVENANCE_INDEX_REFS = 4_096;
 const MAX_PROVIDER_SOURCE_MESSAGE_IDS = 256;
 const MAX_PROVIDER_SOURCE_MESSAGE_ID_LENGTH = 512;
 const MAX_PROVIDER_SOURCE_CONTENT_PART_INDEX = 4_095;
+const MAX_PROVIDER_PROJECTION_WORK = 4_096;
+const MAX_PROVIDER_PROVENANCE_PARSE_WORK =
+  MAX_PROVIDER_PROVENANCE_INDEX_REFS + MAX_PROVIDER_PROVENANCE_PARTS;
+const MAX_PROVIDER_STORED_STATE_WORK =
+  MAX_PROVIDER_PROJECTION_WORK + MAX_PROVIDER_PROVENANCE_PARTS * 2;
+/** One root plus bounded structural bookkeeping for every valid provider part. */
+const MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK = CONTENT_TRAVERSAL_MAX_NODES * 2;
+
+interface ProviderProjectionWorkBudget {
+  remaining: number;
+  overflowed: boolean;
+}
+
+interface ProviderProjectionWorkBudgets {
+  readonly projection: ProviderProjectionWorkBudget;
+  readonly providerContent: ProviderProjectionWorkBudget;
+  readonly fileScan: ProviderProjectionWorkBudget;
+  readonly provenance: ProviderProjectionWorkBudget;
+  readonly storedState: ProviderProjectionWorkBudget;
+  readonly nestedTraversal: VisitNestedStringsBudget;
+}
+
+function captureProviderArrayLength(candidate: readonly unknown[]): number {
+  const length = candidate.length;
+  if (!Number.isSafeInteger(length) || length < 0) {
+    throw new ContentTraversalLimitError();
+  }
+  return length;
+}
+
+function consumeProviderProjectionWork(
+  budget: ProviderProjectionWorkBudget,
+  requested: number,
+): boolean {
+  if (!Number.isSafeInteger(requested) || requested < 0 || requested > budget.remaining) {
+    budget.overflowed = true;
+    return false;
+  }
+  budget.remaining -= requested;
+  return true;
+}
+
+function markProviderProjectionWorkOverflow(budget: ProviderProjectionWorkBudget): void {
+  budget.overflowed = true;
+}
 
 /**
  * Compatibility bridge for @librechat/agents 3.6.9. Its summarization,
@@ -156,6 +207,8 @@ export interface ModelBoundProviderContentInput {
   readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
   /** Canonical files actually materialized for each persisted source row. */
   readonly fileIdsBySourceMessageId?: ReadonlyMap<string, readonly string[]>;
+  /** A bounded upstream source/file projection was incomplete. */
+  readonly sourceFileProjectionOverflowed?: boolean;
 }
 
 type ModelBoundFileReference = { readonly file_id?: string } | null | undefined;
@@ -164,55 +217,145 @@ export interface ModelBoundSourceFileInput {
   readonly messageFilesBySourceMessageId?: Readonly<
     Record<string, readonly ModelBoundFileReference[] | null | undefined>
   >;
-  readonly steerFileIdsBySourceMessageId?: ReadonlyMap<string, Iterable<string>>;
+  readonly sourceMessages?: readonly (
+    | { readonly messageId?: string; readonly id?: string }
+    | null
+    | undefined
+  )[];
+  readonly steerFileIdsBySourceMessageId?: ReadonlyMap<
+    string,
+    readonly string[] | ReadonlySet<string>
+  >;
   readonly replayHistoricalFiles: boolean;
-  readonly historicalFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
-  readonly processedCurrentFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
-  readonly canonicalCurrentFiles?: Iterable<ModelBoundCanonicalFile | null | undefined>;
+  readonly historicalFiles?:
+    | readonly (ModelBoundCanonicalFile | null | undefined)[]
+    | ReadonlyMap<string, ModelBoundCanonicalFile | null | undefined>;
+  readonly processedCurrentFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
+  readonly canonicalCurrentFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
+  readonly initiallyOverflowed?: boolean;
 }
 
 export interface ModelBoundSourceFileProjection {
   readonly fileIdsBySourceMessageId: ReadonlyMap<string, readonly string[]>;
   readonly resolvedFiles: readonly ModelBoundCanonicalFile[];
+  readonly overflowed: boolean;
+}
+
+export interface ModelBoundHistoricalFileIdState {
+  readonly fileIds: string[];
+  readonly overflowed: boolean;
 }
 
 /** Collects every provider-supported persisted file locator for owner hydration. */
-export function collectModelBoundHistoricalFileIds(
+export function collectModelBoundHistoricalFileIdState(
   messages: readonly (StoredMessageContentInput | null | undefined)[],
-): string[] {
+): ModelBoundHistoricalFileIdState {
   const fileIds = new Set<string>();
+  const budget: ProviderProjectionWorkBudget = {
+    remaining: MAX_PROVIDER_PROJECTION_WORK,
+    overflowed: false,
+  };
+  const appendFileId = (candidate: unknown): boolean => {
+    if (!consumeProviderProjectionWork(budget, 1)) {
+      return false;
+    }
+    if (typeof candidate !== 'string') {
+      return true;
+    }
+    const fileId = candidate.trim();
+    if (fileId.length > 0) {
+      fileIds.add(fileId);
+    }
+    return true;
+  };
+  const appendReference = (reference: ModelBoundFileReference): boolean =>
+    appendFileId(reference?.file_id);
   const appendReferences = (
     references: readonly ModelBoundFileReference[] | null | undefined,
   ): void => {
-    for (const reference of references ?? []) {
-      if (typeof reference?.file_id !== 'string') {
-        continue;
+    try {
+      if (!Array.isArray(references)) {
+        return;
       }
-      const fileId = reference.file_id.trim();
-      if (fileId.length > 0) {
-        fileIds.add(fileId);
+      const referenceCount = captureProviderArrayLength(references);
+      let index = 0;
+      for (; index < referenceCount; index++) {
+        if (!appendReference(references[index])) {
+          break;
+        }
       }
+      if (index < referenceCount) {
+        markProviderProjectionWorkOverflow(budget);
+      }
+    } catch {
+      markProviderProjectionWorkOverflow(budget);
     }
   };
-  for (const message of messages) {
-    if (message == null) {
-      continue;
+  let messageCount = 0;
+  try {
+    const messageLength = captureProviderArrayLength(messages);
+    messageCount = Math.min(messageLength, MAX_PROVIDER_PROJECTION_WORK);
+    if (messageLength > messageCount) {
+      markProviderProjectionWorkOverflow(budget);
     }
-    appendReferences(message.files);
-    appendReferences(message.attachments);
-    for (const part of message.content ?? []) {
-      if (part == null) {
+  } catch {
+    return { fileIds: [], overflowed: true };
+  }
+  let messageIndex = 0;
+  for (; messageIndex < messageCount && budget.remaining > 0; messageIndex++) {
+    try {
+      const message = messages[messageIndex];
+      if (message == null) {
         continue;
       }
-      appendReferences(part.files);
-      appendReferences(part.image_file == null ? undefined : [part.image_file]);
-      appendReferences(part.file == null ? undefined : [part.file]);
-      if (typeof part.file_id === 'string') {
-        appendReferences([{ file_id: part.file_id }]);
+      appendReferences(message.files);
+      appendReferences(message.attachments);
+      const contentCandidate = message.content;
+      if (!Array.isArray(contentCandidate)) {
+        continue;
       }
+      const contentCount = captureProviderArrayLength(contentCandidate);
+      let contentIndex = 0;
+      for (; contentIndex < contentCount; contentIndex++) {
+        if (!consumeProviderProjectionWork(budget, 1)) {
+          break;
+        }
+        const part = contentCandidate[contentIndex];
+        if (part == null) {
+          continue;
+        }
+        appendReferences(part.files);
+        const imageFile = part.image_file;
+        if (imageFile != null) {
+          appendReference(imageFile);
+        }
+        const file = part.file;
+        if (file != null) {
+          appendReference(file);
+        }
+        const directFileId = part.file_id;
+        if (typeof directFileId === 'string') {
+          appendFileId(directFileId);
+        }
+      }
+      if (contentIndex < contentCount) {
+        markProviderProjectionWorkOverflow(budget);
+      }
+    } catch {
+      markProviderProjectionWorkOverflow(budget);
     }
   }
-  return [...fileIds];
+  if (messageIndex < messageCount) {
+    markProviderProjectionWorkOverflow(budget);
+  }
+  return { fileIds: [...fileIds], overflowed: budget.overflowed };
+}
+
+/** Backward-compatible ID-only view for callers that do not enforce model-bound content. */
+export function collectModelBoundHistoricalFileIds(
+  messages: readonly (StoredMessageContentInput | null | undefined)[],
+): string[] {
+  return collectModelBoundHistoricalFileIdState(messages).fileIds;
 }
 
 /**
@@ -225,51 +368,226 @@ export function projectModelBoundSourceFiles(
   input: ModelBoundSourceFileInput,
 ): ModelBoundSourceFileProjection {
   const fileIdsBySourceMessageId = new Map<string, Set<string>>();
-  const appendFileIds = (
-    sourceMessageId: string,
-    files: Iterable<string | ModelBoundFileReference>,
-  ): void => {
+  let overflowed = input.initiallyOverflowed === true;
+  let remainingAssociations = MAX_PROVIDER_PROJECTION_WORK;
+  const appendFileId = (sourceMessageId: unknown, candidate: unknown): boolean => {
+    if (remainingAssociations <= 0) {
+      overflowed = true;
+      return false;
+    }
+    remainingAssociations--;
+    if (typeof sourceMessageId !== 'string') {
+      return true;
+    }
     const normalizedSourceId = sourceMessageId.trim();
-    if (normalizedSourceId.length === 0) {
-      return;
+    if (
+      normalizedSourceId.length === 0 ||
+      normalizedSourceId.length > MAX_PROVIDER_SOURCE_MESSAGE_ID_LENGTH
+    ) {
+      return true;
+    }
+    let rawFileId: unknown;
+    if (typeof candidate === 'string') {
+      rawFileId = candidate;
+    } else if (candidate != null && typeof candidate === 'object') {
+      rawFileId = (candidate as ModelBoundFileReference)?.file_id;
+    }
+    if (typeof rawFileId !== 'string') {
+      return true;
+    }
+    const fileId = rawFileId.trim();
+    if (fileId.length === 0) {
+      return true;
     }
     const fileIds = fileIdsBySourceMessageId.get(normalizedSourceId) ?? new Set<string>();
-    for (const file of files) {
-      const candidate = typeof file === 'string' ? file : file?.file_id;
-      if (typeof candidate !== 'string') {
-        continue;
+    fileIds.add(fileId);
+    fileIdsBySourceMessageId.set(normalizedSourceId, fileIds);
+    return true;
+  };
+  const appendFileIdArray = (sourceMessageId: unknown, candidate: unknown): void => {
+    try {
+      if (!Array.isArray(candidate)) {
+        if (candidate != null) {
+          overflowed = true;
+        }
+        return;
       }
-      const fileId = candidate.trim();
-      if (fileId.length > 0) {
-        fileIds.add(fileId);
+      const candidateLength = captureProviderArrayLength(candidate);
+      let index = 0;
+      for (; index < candidateLength; index++) {
+        if (remainingAssociations <= 0) {
+          overflowed = true;
+          break;
+        }
+        if (!appendFileId(sourceMessageId, candidate[index])) {
+          break;
+        }
       }
+      if (index < candidateLength) {
+        overflowed = true;
+      }
+    } catch {
+      overflowed = true;
     }
-    if (fileIds.size > 0) {
-      fileIdsBySourceMessageId.set(normalizedSourceId, fileIds);
+  };
+  const appendSteerFileIds = (sourceMessageId: unknown, candidate: unknown): void => {
+    try {
+      if (Array.isArray(candidate)) {
+        appendFileIdArray(sourceMessageId, candidate);
+        return;
+      }
+      if (!(candidate instanceof Set)) {
+        if (candidate != null) {
+          overflowed = true;
+        }
+        return;
+      }
+      const values = Set.prototype.values.call(candidate) as IterableIterator<string>;
+      while (remainingAssociations > 0) {
+        const next = values.next();
+        if (next.done) {
+          return;
+        }
+        appendFileId(sourceMessageId, next.value);
+      }
+      if (!values.next().done) {
+        overflowed = true;
+      }
+    } catch {
+      overflowed = true;
+    }
+  };
+  const appendSourceMessageFiles = (
+    messageFiles: Readonly<Record<string, readonly ModelBoundFileReference[] | null | undefined>>,
+    sourceMessageId: unknown,
+  ): void => {
+    if (
+      typeof sourceMessageId === 'string' &&
+      Object.prototype.hasOwnProperty.call(messageFiles, sourceMessageId)
+    ) {
+      appendFileIdArray(sourceMessageId, messageFiles[sourceMessageId]);
     }
   };
 
-  for (const [sourceMessageId, files] of Object.entries(
-    input.messageFilesBySourceMessageId ?? {},
-  )) {
-    appendFileIds(sourceMessageId, files ?? []);
+  try {
+    const messageFiles = input.messageFilesBySourceMessageId;
+    if (messageFiles != null) {
+      const sourceMessages = input.sourceMessages;
+      if (!Array.isArray(sourceMessages)) {
+        overflowed = true;
+      } else {
+        const sourceMessageLength = captureProviderArrayLength(sourceMessages);
+        const sourceMessageCount = Math.min(sourceMessageLength, MAX_PROVIDER_PROJECTION_WORK);
+        if (sourceMessageLength > sourceMessageCount) {
+          overflowed = true;
+        }
+        for (let index = 0; index < sourceMessageCount; index++) {
+          const message = sourceMessages[index];
+          if (message == null) {
+            continue;
+          }
+          const messageId = message.messageId;
+          const id = message.id;
+          appendSourceMessageFiles(messageFiles, messageId);
+          if (id !== messageId) {
+            appendSourceMessageFiles(messageFiles, id);
+          }
+        }
+      }
+    }
+  } catch {
+    overflowed = true;
   }
-  for (const [sourceMessageId, fileIds] of input.steerFileIdsBySourceMessageId ?? []) {
-    appendFileIds(sourceMessageId, fileIds);
+  try {
+    const steerFiles = input.steerFileIdsBySourceMessageId;
+    if (steerFiles != null) {
+      if (!(steerFiles instanceof Map)) {
+        overflowed = true;
+      } else {
+        const entries = Map.prototype.entries.call(steerFiles) as IterableIterator<
+          [string, readonly string[] | ReadonlySet<string>]
+        >;
+        let entryCount = 0;
+        while (entryCount < MAX_PROVIDER_PROJECTION_WORK) {
+          const next = entries.next();
+          if (next.done) {
+            break;
+          }
+          entryCount++;
+          appendSteerFileIds(next.value[0], next.value[1]);
+        }
+        if (entryCount === MAX_PROVIDER_PROJECTION_WORK && !entries.next().done) {
+          overflowed = true;
+        }
+      }
+    }
+  } catch {
+    overflowed = true;
   }
 
   const resolvedFilesById = new Map<string, ModelBoundCanonicalFile>();
-  const appendResolvedFiles = (
-    files: Iterable<ModelBoundCanonicalFile | null | undefined> | undefined,
-  ): void => {
-    for (const file of files ?? []) {
-      if (typeof file?.file_id !== 'string') {
-        continue;
+  let remainingResolvedFiles = MAX_PROVIDER_PROJECTION_WORK;
+  const appendResolvedFile = (file: unknown): boolean => {
+    if (remainingResolvedFiles <= 0) {
+      overflowed = true;
+      return false;
+    }
+    remainingResolvedFiles--;
+    if (file == null || typeof file !== 'object') {
+      return true;
+    }
+    const candidate = file as ModelBoundCanonicalFile;
+    const rawFileId = candidate.file_id;
+    if (typeof rawFileId !== 'string') {
+      return true;
+    }
+    const fileId = rawFileId.trim();
+    if (fileId.length > 0) {
+      resolvedFilesById.set(fileId, candidate);
+    }
+    return true;
+  };
+  const appendResolvedFiles = (candidate: unknown): void => {
+    try {
+      if (candidate == null) {
+        return;
       }
-      const fileId = file.file_id.trim();
-      if (fileId.length > 0) {
-        resolvedFilesById.set(fileId, file);
+      if (Array.isArray(candidate)) {
+        const fileLength = captureProviderArrayLength(candidate);
+        let index = 0;
+        for (; index < fileLength; index++) {
+          if (remainingResolvedFiles <= 0) {
+            overflowed = true;
+            break;
+          }
+          if (!appendResolvedFile(candidate[index])) {
+            break;
+          }
+        }
+        if (index < fileLength) {
+          overflowed = true;
+        }
+        return;
       }
+      if (!(candidate instanceof Map)) {
+        overflowed = true;
+        return;
+      }
+      const values = Map.prototype.values.call(candidate) as IterableIterator<
+        ModelBoundCanonicalFile | null | undefined
+      >;
+      while (remainingResolvedFiles > 0) {
+        const next = values.next();
+        if (next.done) {
+          return;
+        }
+        appendResolvedFile(next.value);
+      }
+      if (!values.next().done) {
+        overflowed = true;
+      }
+    } catch {
+      overflowed = true;
     }
   };
   if (input.replayHistoricalFiles) {
@@ -280,14 +598,14 @@ export function projectModelBoundSourceFiles(
    * provider encoding that intentionally reduces transport metadata. */
   appendResolvedFiles(input.canonicalCurrentFiles);
 
+  const projectedFileIds = new Map<string, string[]>();
+  for (const [sourceMessageId, fileIds] of fileIdsBySourceMessageId) {
+    projectedFileIds.set(sourceMessageId, [...fileIds]);
+  }
   return {
-    fileIdsBySourceMessageId: new Map(
-      [...fileIdsBySourceMessageId].map(([sourceMessageId, fileIds]) => [
-        sourceMessageId,
-        [...fileIds],
-      ]),
-    ),
+    fileIdsBySourceMessageId: projectedFileIds,
     resolvedFiles: [...resolvedFilesById.values()],
+    overflowed,
   };
 }
 
@@ -361,6 +679,8 @@ export interface ModelBoundContentInput {
   readonly resolvedFiles?: readonly (ModelBoundCanonicalFile | null | undefined)[];
   /** Internal fail-closed provenance errors evaluated after files and findings. */
   readonly deferredTraversalErrors?: readonly ContentTraversalLimitError[];
+  /** Internal aggregate nested-work budget shared by one provider callback invocation. */
+  readonly traversalBudget?: VisitNestedStringsBudget;
 }
 
 /**
@@ -596,6 +916,7 @@ function projectUserSubmittedPaths(
 function extractExactUserSubmittedMessageFragments(
   message: StoredModelBoundMessage,
   entries: readonly UserSubmittedMessageFieldPath[],
+  traversalBudget?: VisitNestedStringsBudget,
 ): {
   fragments: Array<Extract<TextContentFragment, { source: 'message' }>>;
   traversalError: ContentTraversalLimitError | null;
@@ -610,7 +931,7 @@ function extractExactUserSubmittedMessageFragments(
   let projectedFragments: readonly TextContentFragment[];
   let traversalError: ContentTraversalLimitError | null = null;
   try {
-    projectedFragments = extractStoredMessageContent(projectedMessage);
+    projectedFragments = extractStoredMessageContent(projectedMessage, traversalBudget);
   } catch (error) {
     if (!isContentTraversalLimitError(error)) {
       throw error;
@@ -635,7 +956,7 @@ function appendSourceMessageId(sourceIds: Set<string>, candidate: string | undef
 }
 
 interface ModelBoundProviderProvenanceState {
-  readonly value?: ModelBoundProviderProvenance;
+  readonly orderedContributions?: OrderedProviderSourceContributions;
   readonly invalid: boolean;
 }
 
@@ -673,6 +994,7 @@ function normalizeProviderSourceMessageId(candidate: unknown): string | undefine
 
 function getProviderMessageProvenanceState(
   message: ModelBoundProviderMessage,
+  budget: ProviderProjectionWorkBudget,
 ): ModelBoundProviderProvenanceState {
   const candidate: unknown = message.additional_kwargs?.provenance;
   if (candidate == null) {
@@ -687,14 +1009,29 @@ function getProviderMessageProvenanceState(
   if (version !== 1 || !Array.isArray(candidateParts)) {
     return { invalid: true };
   }
-  const candidatePartCount = candidateParts.length;
+  let candidatePartCount: number;
+  try {
+    candidatePartCount = captureProviderArrayLength(candidateParts);
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+    return { invalid: true };
+  }
   if (candidatePartCount === 0 || candidatePartCount > MAX_PROVIDER_PROVENANCE_PARTS) {
     return { invalid: true };
   }
 
-  const parts: ModelBoundProviderProvenancePart[] = [];
+  const contributions: Array<{
+    attribution: ModelBoundProviderAttribution;
+    sourceMessageId: string;
+    selectedContentPartIndices?: Set<number>;
+  }> = [];
+  let hasUserAttribution = false;
+  let hasToolAttribution = false;
   let totalIndexRefs = 0;
   for (let partIndex = 0; partIndex < candidatePartCount; partIndex++) {
+    if (!consumeProviderProjectionWork(budget, 1)) {
+      return { invalid: true };
+    }
     const candidatePart = candidateParts[partIndex];
     if (
       candidatePart == null ||
@@ -724,12 +1061,18 @@ function getProviderMessageProvenanceState(
         return { invalid: true };
       }
     }
-    let sourceContentPartIndices: number[] | undefined;
+    let sourceContentPartIndices: Set<number> | undefined;
     if (candidateSourceContentPartIndices !== undefined) {
       if (!Array.isArray(candidateSourceContentPartIndices)) {
         return { invalid: true };
       }
-      const candidateIndexCount = candidateSourceContentPartIndices.length;
+      let candidateIndexCount: number;
+      try {
+        candidateIndexCount = captureProviderArrayLength(candidateSourceContentPartIndices);
+      } catch {
+        markProviderProjectionWorkOverflow(budget);
+        return { invalid: true };
+      }
       if (candidateIndexCount === 0 || candidateIndexCount > MAX_PROVIDER_SOURCE_PART_INDICES) {
         return { invalid: true };
       }
@@ -737,8 +1080,10 @@ function getProviderMessageProvenanceState(
       if (totalIndexRefs > MAX_PROVIDER_PROVENANCE_INDEX_REFS) {
         return { invalid: true };
       }
-      sourceContentPartIndices = [];
-      const seenIndices = new Set<number>();
+      if (!consumeProviderProjectionWork(budget, candidateIndexCount)) {
+        return { invalid: true };
+      }
+      sourceContentPartIndices = new Set<number>();
       for (let indexPosition = 0; indexPosition < candidateIndexCount; indexPosition++) {
         const index = candidateSourceContentPartIndices[indexPosition];
         if (
@@ -748,22 +1093,51 @@ function getProviderMessageProvenanceState(
         ) {
           return { invalid: true };
         }
-        if (!seenIndices.has(index)) {
-          seenIndices.add(index);
-          sourceContentPartIndices.push(index);
-        }
+        sourceContentPartIndices.add(index);
       }
     }
-    parts.push({
-      attribution: attribution as ModelBoundProviderAttribution,
-      ...(sourceMessageId != null && { sourceMessageId }),
-      ...(sourceContentPartIndices != null && { sourceContentPartIndices }),
-    });
+    const normalizedAttribution = attribution as ModelBoundProviderAttribution;
+    hasUserAttribution ||= normalizedAttribution === 'user';
+    hasToolAttribution ||= normalizedAttribution === 'tool';
+    if (sourceMessageId == null) {
+      continue;
+    }
+    const existing = contributions[contributions.length - 1];
+    if (
+      existing == null ||
+      existing.attribution !== normalizedAttribution ||
+      existing.sourceMessageId !== sourceMessageId
+    ) {
+      contributions.push({
+        attribution: normalizedAttribution,
+        sourceMessageId,
+        ...(sourceContentPartIndices != null && {
+          selectedContentPartIndices: sourceContentPartIndices,
+        }),
+      });
+      continue;
+    }
+    if (existing.selectedContentPartIndices == null) {
+      continue;
+    }
+    if (sourceContentPartIndices == null) {
+      delete existing.selectedContentPartIndices;
+      continue;
+    }
+    for (const index of sourceContentPartIndices) {
+      existing.selectedContentPartIndices.add(index);
+    }
   }
-  return { value: { version: 1, parts }, invalid: false };
+  return {
+    orderedContributions: { contributions, hasUserAttribution, hasToolAttribution },
+    invalid: false,
+  };
 }
 
-function getLegacyProviderLineage(message: ModelBoundProviderMessage): LegacyProviderLineage {
+function getLegacyProviderLineage(
+  message: ModelBoundProviderMessage,
+  budget: ProviderProjectionWorkBudget,
+): LegacyProviderLineage {
   const sourceIds = new Set<string>();
   let invalid = false;
   let hasPluralLineage = false;
@@ -772,12 +1146,23 @@ function getLegacyProviderLineage(message: ModelBoundProviderMessage): LegacyPro
     if (!Array.isArray(pluralCandidate)) {
       invalid = true;
     } else {
-      const sourceMessageIdCount = pluralCandidate.length;
+      let sourceMessageIdCount: number;
+      try {
+        sourceMessageIdCount = captureProviderArrayLength(pluralCandidate);
+      } catch {
+        markProviderProjectionWorkOverflow(budget);
+        invalid = true;
+        sourceMessageIdCount = 0;
+      }
       if (sourceMessageIdCount > MAX_PROVIDER_SOURCE_MESSAGE_IDS) {
         invalid = true;
       } else {
         hasPluralLineage = sourceMessageIdCount > 0;
         for (let index = 0; index < sourceMessageIdCount; index++) {
+          if (!consumeProviderProjectionWork(budget, 1)) {
+            invalid = true;
+            break;
+          }
           const candidate = pluralCandidate[index];
           const sourceMessageId = normalizeProviderSourceMessageId(candidate);
           if (sourceMessageId == null) {
@@ -789,69 +1174,25 @@ function getLegacyProviderLineage(message: ModelBoundProviderMessage): LegacyPro
       }
     }
   }
-  for (const candidate of [
-    message.additional_kwargs?.sourceMessageId,
-    message.messageId,
-    message.id,
-  ]) {
+  const appendCandidate = (candidate: unknown): void => {
     if (candidate == null) {
-      continue;
+      return;
+    }
+    if (!consumeProviderProjectionWork(budget, 1)) {
+      invalid = true;
+      return;
     }
     const sourceMessageId = normalizeProviderSourceMessageId(candidate);
     if (sourceMessageId == null) {
       invalid = true;
-      continue;
+      return;
     }
     sourceIds.add(sourceMessageId);
-  }
+  };
+  appendCandidate(message.additional_kwargs?.sourceMessageId);
+  appendCandidate(message.messageId);
+  appendCandidate(message.id);
   return { sourceIds, hasPluralLineage, invalid };
-}
-
-/** Coalesces only adjacent repeats. Non-contiguous contributions retain their
- * exact envelope order because canonical fragments can be adjacency-sensitive. */
-function getOrderedProviderSourceContributions(
-  provenance: ModelBoundProviderProvenance,
-): OrderedProviderSourceContributions {
-  const contributions: Array<{
-    attribution: ModelBoundProviderAttribution;
-    sourceMessageId: string;
-    selectedContentPartIndices?: Set<number>;
-  }> = [];
-  let hasUserAttribution = false;
-  let hasToolAttribution = false;
-  for (const part of provenance.parts) {
-    hasUserAttribution ||= part.attribution === 'user';
-    hasToolAttribution ||= part.attribution === 'tool';
-    if (part.sourceMessageId == null) {
-      continue;
-    }
-    const existing = contributions[contributions.length - 1];
-    if (
-      existing == null ||
-      existing.attribution !== part.attribution ||
-      existing.sourceMessageId !== part.sourceMessageId
-    ) {
-      contributions.push({
-        attribution: part.attribution,
-        sourceMessageId: part.sourceMessageId,
-        ...(part.sourceContentPartIndices != null && {
-          selectedContentPartIndices: new Set(part.sourceContentPartIndices),
-        }),
-      });
-      continue;
-    }
-    if (existing.selectedContentPartIndices == null) {
-      continue;
-    }
-    if (part.sourceContentPartIndices == null) {
-      delete existing.selectedContentPartIndices;
-      continue;
-    }
-    for (const index of part.sourceContentPartIndices) {
-      existing.selectedContentPartIndices.add(index);
-    }
-  }
-  return { contributions, hasUserAttribution, hasToolAttribution };
 }
 
 function isLegacyArtifactProjectionMarker(content: unknown): boolean {
@@ -877,6 +1218,8 @@ function isLegacyArtifactProjectionMarker(content: unknown): boolean {
  * exact marker; ordinary untyped HumanMessages must retain user attribution. */
 function isLegacyArtifactProjectionHuman(
   messages: readonly ModelBoundProviderMessage[],
+  roles: readonly (string | undefined)[],
+  contents: readonly unknown[],
   index: number,
   provenanceState: ModelBoundProviderProvenanceState,
   legacyLineage: LegacyProviderLineage,
@@ -885,9 +1228,9 @@ function isLegacyArtifactProjectionHuman(
   if (
     message == null ||
     index !== messages.length - 1 ||
-    provenanceState.value != null ||
+    provenanceState.orderedContributions != null ||
     provenanceState.invalid ||
-    normalizeRole(message) !== 'user' ||
+    roles[index] !== 'user' ||
     legacyLineage.invalid ||
     message.additional_kwargs?.sourceMessageId != null ||
     message.additional_kwargs?.sourceMessageIds != null ||
@@ -900,11 +1243,10 @@ function isLegacyArtifactProjectionHuman(
     return false;
   }
   for (let previousIndex = index - 1; previousIndex >= 0; previousIndex--) {
-    const previous = messages[previousIndex];
-    if (normalizeRole(previous) !== 'tool') {
+    if (roles[previousIndex] !== 'tool') {
       break;
     }
-    if (isLegacyArtifactProjectionMarker(previous.content ?? previous.text)) {
+    if (isLegacyArtifactProjectionMarker(contents[previousIndex])) {
       return true;
     }
   }
@@ -942,19 +1284,17 @@ function getLegacyCoalescedCanonicalScopes(
 
 function getLegacyCoalescedLineageError(
   input: ModelBoundProviderContentInput,
-  providerMessage: ModelBoundProviderMessage,
+  providerRole: string | undefined,
   matchedStoredMessages: ReadonlySet<StoredModelBoundMessage>,
   provenanceState: ModelBoundProviderProvenanceState,
   legacyLineage: LegacyProviderLineage,
 ): ContentTraversalLimitError | null {
-  if (provenanceState.value != null) {
+  if (provenanceState.orderedContributions != null) {
     return null;
   }
   const hasInvalidLineage = provenanceState.invalid || legacyLineage.invalid;
   const hasAmbiguousLegacyCoalescing =
-    normalizeRole(providerMessage) === 'user' &&
-    !legacyLineage.hasPluralLineage &&
-    matchedStoredMessages.size >= 2;
+    providerRole === 'user' && !legacyLineage.hasPluralLineage && matchedStoredMessages.size >= 2;
   if (!hasInvalidLineage && !hasAmbiguousLegacyCoalescing) {
     return null;
   }
@@ -972,36 +1312,77 @@ function getStoredMessageIds(message: StoredModelBoundMessage): Set<string> {
   return messageIds;
 }
 
-function isSteerSubmittedPath(message: StoredModelBoundMessage, path: JsonPointer): boolean {
-  const segments = getSafeUserSubmittedPathSegments(path);
-  if (segments == null || segments[0] !== 'content' || !/^\d+$/.test(segments[1] ?? '')) {
-    return false;
-  }
-  const part = Array.isArray(message.content) ? message.content[Number(segments[1])] : undefined;
-  return part != null && typeof part === 'object' && part.type === 'steer';
-}
-
 function appendReferencedFileIds(
   fileIds: Set<string>,
   references: readonly ({ readonly file_id?: string } | null | undefined)[] | null | undefined,
+  budget: ProviderProjectionWorkBudget,
 ): void {
-  for (const reference of references ?? []) {
-    const fileId = reference?.file_id;
-    if (typeof fileId === 'string' && fileId.trim().length > 0) {
-      fileIds.add(fileId.trim());
+  try {
+    if (!Array.isArray(references)) {
+      return;
     }
+    const referenceCount = captureProviderArrayLength(references);
+    let index = 0;
+    for (; index < referenceCount; index++) {
+      if (!appendReferencedFileId(fileIds, references[index], budget)) {
+        break;
+      }
+    }
+    if (index < referenceCount) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
+}
+
+function appendReferencedFileId(
+  fileIds: Set<string>,
+  reference: { readonly file_id?: string } | null | undefined,
+  budget: ProviderProjectionWorkBudget,
+): boolean {
+  return appendFileIdCandidate(fileIds, reference?.file_id, budget);
+}
+
+function appendFileIdCandidate(
+  fileIds: Set<string>,
+  candidate: unknown,
+  budget: ProviderProjectionWorkBudget,
+): boolean {
+  if (!consumeProviderProjectionWork(budget, 1)) {
+    return false;
+  }
+  if (typeof candidate !== 'string') {
+    return true;
+  }
+  const fileId = candidate.trim();
+  if (fileId.length > 0) {
+    fileIds.add(fileId);
+  }
+  return true;
 }
 
 function appendPartFileIds(
   fileIds: Set<string>,
   part: NonNullable<NonNullable<StoredMessageContentInput['content']>[number]>,
+  budget: ProviderProjectionWorkBudget,
 ) {
-  appendReferencedFileIds(fileIds, part.files);
-  appendReferencedFileIds(fileIds, part.image_file == null ? undefined : [part.image_file]);
-  appendReferencedFileIds(fileIds, part.file == null ? undefined : [part.file]);
-  if (typeof part.file_id === 'string' && part.file_id.trim().length > 0) {
-    fileIds.add(part.file_id.trim());
+  try {
+    appendReferencedFileIds(fileIds, part.files, budget);
+    const imageFile = part.image_file;
+    if (imageFile != null) {
+      appendReferencedFileId(fileIds, imageFile, budget);
+    }
+    const file = part.file;
+    if (file != null) {
+      appendReferencedFileId(fileIds, file, budget);
+    }
+    const directFileId = part.file_id;
+    if (typeof directFileId === 'string') {
+      appendFileIdCandidate(fileIds, directFileId, budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
 }
 
@@ -1009,6 +1390,7 @@ function appendStoredMessageFileIds(
   fileIds: Set<string>,
   message: StoredModelBoundMessage,
   filters: FiltersConfig | undefined,
+  budget: ProviderProjectionWorkBudget,
 ): void {
   const submittedPathState = getUserSubmittedPathState(message);
   const role = normalizeRole(message);
@@ -1023,7 +1405,7 @@ function appendStoredMessageFileIds(
       submittedPathState.paths.length === 0 &&
       (message.isCreatedByUser === false || role === 'assistant'));
   if (isEntireMessageUserSubmitted) {
-    appendReferencedFileIds(fileIds, message.files);
+    appendReferencedFileIds(fileIds, message.files, budget);
   }
   const submittedFilePartIndices = new Set<number>();
   for (const path of submittedPathState.paths) {
@@ -1037,25 +1419,121 @@ function appendStoredMessageFileIds(
     }
     submittedFilePartIndices.add(Number(segments[1]));
   }
-  const content = Array.isArray(message.content) ? message.content : [];
-  for (let index = 0; index < content.length; index++) {
-    const part = content[index];
-    if (part == null) {
-      continue;
+  try {
+    const contentCandidate = message.content;
+    if (!Array.isArray(contentCandidate)) {
+      return;
     }
-    if (isEntireMessageUserSubmitted || submittedFilePartIndices.has(index)) {
-      appendPartFileIds(fileIds, part);
+    const contentCount = captureProviderArrayLength(contentCandidate);
+    let index = 0;
+    for (; index < contentCount; index++) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      const part = contentCandidate[index];
+      if (part == null) {
+        continue;
+      }
+      if (isEntireMessageUserSubmitted || submittedFilePartIndices.has(index)) {
+        appendPartFileIds(fileIds, part, budget);
+      }
     }
+    if (index < contentCount) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
 }
 
 type ProviderExactAttribution = 'user' | 'tool' | 'non_user';
 
+function snapshotProviderMessageEnvelope(
+  message: ModelBoundProviderMessage,
+  budget: ProviderProjectionWorkBudget,
+): ModelBoundProviderMessage {
+  const read = <Value>(getter: () => Value): Value | undefined => {
+    try {
+      return getter();
+    } catch {
+      markProviderProjectionWorkOverflow(budget);
+      return undefined;
+    }
+  };
+  const additionalKwargs = read(() => message.additional_kwargs);
+  const additionalKwargsSnapshot =
+    additionalKwargs == null
+      ? undefined
+      : {
+          injected: read(() => additionalKwargs.injected),
+          isMeta: read(() => additionalKwargs.isMeta),
+          source: read(() => additionalKwargs.source),
+          sourceMessageId: read(() => additionalKwargs.sourceMessageId),
+          sourceMessageIds: read(() => additionalKwargs.sourceMessageIds),
+          provenance: read(() => additionalKwargs.provenance),
+        };
+  const extendedMessage = message as ModelBoundProviderMessage & StoredModelBoundMessage;
+  return {
+    id: read(() => message.id),
+    messageId: read(() => message.messageId),
+    role: read(() => normalizeRole(message)),
+    name: read(() => message.name),
+    sender: read(() => extendedMessage.sender),
+    text: read(() => message.text),
+    summary: read(() => extendedMessage.summary),
+    quotes: read(() => extendedMessage.quotes),
+    content: read(() => message.content),
+    tool_calls: read(() => message.tool_calls),
+    files: read(() => extendedMessage.files),
+    attachments: read(() => extendedMessage.attachments),
+    original: read(() => extendedMessage.original),
+    updated: read(() => extendedMessage.updated),
+    feedback: read(() => extendedMessage.feedback),
+    isCreatedByUser: read(() => extendedMessage.isCreatedByUser),
+    isUserSubmitted: read(() => extendedMessage.isUserSubmitted),
+    userSubmittedPaths: read(() => extendedMessage.userSubmittedPaths),
+    userSubmittedMessageFieldPaths: read(() => extendedMessage.userSubmittedMessageFieldPaths),
+    additional_kwargs: additionalKwargsSnapshot,
+  };
+}
+
+function snapshotProviderMessageContent(
+  message: ModelBoundProviderMessage,
+  budget: ProviderProjectionWorkBudget,
+): unknown {
+  try {
+    const messageContent = message.content;
+    const messageText = messageContent == null ? message.text : undefined;
+    const candidate = messageContent ?? messageText;
+    if (!Array.isArray(candidate)) {
+      return candidate;
+    }
+    const candidateLength = captureProviderArrayLength(candidate);
+    const content: unknown[] = [];
+    let index = 0;
+    for (; index < candidateLength; index++) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      content.push(candidate[index]);
+    }
+    if (index < candidateLength) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+    return content;
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+    return undefined;
+  }
+}
+
 function projectProviderMessage(
   message: ModelBoundProviderMessage,
-  attribution?: ProviderExactAttribution,
+  attribution: ProviderExactAttribution | undefined,
+  capturedProviderContent: unknown,
+  providerRole: string | undefined,
 ): StoredModelBoundMessage {
-  const role = attribution === 'tool' ? 'tool' : normalizeRole(message);
+  const role = attribution === 'tool' ? 'tool' : providerRole;
   const providerSource = message.additional_kwargs?.source;
   const isSyntheticContext =
     message.additional_kwargs?.isMeta === true ||
@@ -1063,40 +1541,58 @@ function projectProviderMessage(
     (message.additional_kwargs?.injected === true && providerSource !== 'steer');
   const isUser =
     attribution === 'user' || (attribution == null && role === 'user' && !isSyntheticContext);
-  const { content, text: providerText, ...messageWithoutContent } = message;
-  const rawProviderContent = content ?? providerText;
+  const { content: _providerContent, text: _providerText, ...messageWithoutContent } = message;
+  const rawProviderContent = capturedProviderContent;
   let providerContent = rawProviderContent;
-  if (
-    (attribution === 'non_user' || attribution === 'tool') &&
-    Array.isArray(rawProviderContent) &&
-    rawProviderContent.some(
-      (part) => part != null && typeof part === 'object' && part.type === 'steer',
-    )
-  ) {
-    providerContent = rawProviderContent.map((part) =>
-      part != null && typeof part === 'object' && part.type === 'steer'
-        ? { ...part, type: 'text' }
-        : part,
-    );
+  if ((attribution === 'non_user' || attribution === 'tool') && Array.isArray(rawProviderContent)) {
+    let projectedContent: unknown[] | undefined;
+    const contentLength = rawProviderContent.length;
+    for (let index = 0; index < contentLength; index++) {
+      const part = rawProviderContent[index];
+      if (part == null || typeof part !== 'object' || part.type !== 'steer') {
+        if (projectedContent != null) {
+          projectedContent.push(part);
+        }
+        continue;
+      }
+      if (projectedContent == null) {
+        projectedContent = rawProviderContent.slice(0, index);
+      }
+      projectedContent.push({ ...part, type: 'text' });
+    }
+    providerContent = projectedContent ?? rawProviderContent;
+  }
+  const projectedContentFields: {
+    content?: StoredModelBoundMessage['content'];
+    text?: string;
+  } = {};
+  if (typeof providerContent === 'string') {
+    projectedContentFields.text = providerContent;
+  } else if (Array.isArray(providerContent)) {
+    projectedContentFields.content = providerContent as StoredModelBoundMessage['content'];
   }
   return {
     ...messageWithoutContent,
     role,
     isCreatedByUser: isUser,
     isUserSubmitted: isUser,
-    ...(typeof providerContent === 'string'
-      ? { text: providerContent }
-      : { content: providerContent }),
+    ...projectedContentFields,
   };
 }
 
 function projectStoredMessageForProvider(
   message: StoredModelBoundMessage,
+  budget: ProviderProjectionWorkBudget,
   selectedContentPartIndices?: ReadonlySet<number>,
   attribution?: Extract<ProviderExactAttribution, 'user' | 'tool'>,
+  capturedContentParts?: Map<number, unknown>,
+  capturedContentLength?: number,
+  submittedPathsSnapshot?: readonly string[],
+  submittedFieldPathsSnapshot?: readonly UserSubmittedMessageFieldPath[],
 ): StoredModelBoundMessage {
   const {
     attachments: _attachments,
+    content: messageContentCandidate,
     feedback: _feedback,
     files: _files,
     name: _name,
@@ -1105,11 +1601,15 @@ function projectStoredMessageForProvider(
     summary: _summary,
     text: storedText,
     updated: _updated,
+    userSubmittedMessageFieldPaths: rawFieldPathCandidate,
+    userSubmittedPaths: rawPathCandidate,
     ...providerMessageWithoutText
   } = message;
+  const pathCandidate = submittedPathsSnapshot ?? rawPathCandidate;
+  const fieldPathCandidate = submittedFieldPathsSnapshot ?? rawFieldPathCandidate;
   const providerMessage: StoredModelBoundMessage = {
     ...providerMessageWithoutText,
-    ...(selectedContentPartIndices == null && message.content == null && storedText != null
+    ...(selectedContentPartIndices == null && messageContentCandidate == null && storedText != null
       ? { text: storedText }
       : {}),
     ...(attribution === 'user' && {
@@ -1122,8 +1622,22 @@ function projectStoredMessageForProvider(
       isUserSubmitted: false,
     }),
   };
-  const messageContent = message.content;
-  if (!Array.isArray(messageContent)) {
+  let hasArrayContent = false;
+  let messageContentLength = 0;
+  let messageContent: NonNullable<StoredMessageContentInput['content']> | undefined;
+  try {
+    hasArrayContent = Array.isArray(messageContentCandidate);
+    if (hasArrayContent) {
+      messageContent = messageContentCandidate as NonNullable<StoredMessageContentInput['content']>;
+      messageContentLength = capturedContentLength ?? captureProviderArrayLength(messageContent);
+      if (!Number.isSafeInteger(messageContentLength) || messageContentLength < 0) {
+        throw new TypeError('invalid captured stored content length');
+      }
+    } else {
+      consumeProviderProjectionWork(budget, 1);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
     return providerMessage;
   }
   const projectPart = (
@@ -1141,25 +1655,58 @@ function projectStoredMessageForProvider(
     } = part;
     return providerPart;
   };
-  if (selectedContentPartIndices == null) {
-    return {
-      ...providerMessage,
-      content: messageContent.map(projectPart),
-    };
-  }
-
-  const selectedIndices = [...selectedContentPartIndices]
-    .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < messageContent.length)
-    .sort((left, right) => left - right);
   const compactIndexBySourceIndex = new Map<number, number>();
   const content: Array<NonNullable<StoredMessageContentInput['content']>[number]> = [];
-  for (const sourceIndex of selectedIndices) {
-    const part = messageContent[sourceIndex];
-    if (part == null) {
-      continue;
+  const readContentPart = (
+    index: number,
+  ): NonNullable<StoredMessageContentInput['content']>[number] => {
+    if (capturedContentParts?.has(index) === true) {
+      return capturedContentParts.get(index) as NonNullable<
+        StoredMessageContentInput['content']
+      >[number];
     }
-    compactIndexBySourceIndex.set(sourceIndex, content.length);
-    content.push(projectPart(part));
+    const part = messageContent?.[index] as NonNullable<
+      StoredMessageContentInput['content']
+    >[number];
+    capturedContentParts?.set(index, part);
+    return part;
+  };
+  if (hasArrayContent && selectedContentPartIndices == null) {
+    let index = 0;
+    try {
+      for (; index < messageContentLength; index++) {
+        if (!consumeProviderProjectionWork(budget, 1)) {
+          break;
+        }
+        compactIndexBySourceIndex.set(index, content.length);
+        content.push(projectPart(readContentPart(index)));
+      }
+    } catch {
+      markProviderProjectionWorkOverflow(budget);
+    }
+    if (index < messageContentLength) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+  } else if (hasArrayContent && selectedContentPartIndices != null) {
+    const selectedIndices = [...selectedContentPartIndices]
+      .filter((index) => Number.isSafeInteger(index) && index >= 0 && index < messageContentLength)
+      .sort((left, right) => left - right);
+    for (const sourceIndex of selectedIndices) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      try {
+        const part = readContentPart(sourceIndex);
+        if (part == null) {
+          continue;
+        }
+        compactIndexBySourceIndex.set(sourceIndex, content.length);
+        content.push(projectPart(part));
+      } catch {
+        markProviderProjectionWorkOverflow(budget);
+        break;
+      }
+    }
   }
   const remapSelectedPath = (value: unknown): JsonPointer | undefined => {
     if (typeof value !== 'string' || !value.startsWith('/')) {
@@ -1182,21 +1729,69 @@ function projectStoredMessageForProvider(
     const sourcePrefix = `/content/${encodedIndex}`;
     return `/content/${compactIndex}${value.slice(sourcePrefix.length)}` as JsonPointer;
   };
-  const userSubmittedPaths = (message.userSubmittedPaths ?? [])
-    .map(remapSelectedPath)
-    .filter((path): path is JsonPointer => path != null);
+  const userSubmittedPaths: JsonPointer[] = [];
   const userSubmittedMessageFieldPaths: UserSubmittedMessageFieldPath[] = [];
-  for (const entry of message.userSubmittedMessageFieldPaths ?? []) {
-    const path = remapSelectedPath(entry?.path);
-    if (path != null) {
-      userSubmittedMessageFieldPaths.push({ ...entry, path });
+  try {
+    if (pathCandidate != null && !Array.isArray(pathCandidate)) {
+      markProviderProjectionWorkOverflow(budget);
+    } else if (Array.isArray(pathCandidate)) {
+      const pathLength = captureProviderArrayLength(pathCandidate);
+      const pathCount = Math.min(pathLength, MAX_PROVIDER_PROVENANCE_PARTS);
+      let index = 0;
+      for (; index < pathCount; index++) {
+        if (!consumeProviderProjectionWork(budget, 1)) {
+          break;
+        }
+        const candidate = pathCandidate[index];
+        if (selectedContentPartIndices == null) {
+          if (typeof candidate === 'string') {
+            userSubmittedPaths.push(candidate as JsonPointer);
+          }
+        } else {
+          const path = remapSelectedPath(candidate);
+          if (path != null) {
+            userSubmittedPaths.push(path);
+          }
+        }
+      }
+      if (index < pathLength || pathLength > pathCount) {
+        markProviderProjectionWorkOverflow(budget);
+      }
     }
+    if (fieldPathCandidate != null && !Array.isArray(fieldPathCandidate)) {
+      markProviderProjectionWorkOverflow(budget);
+    } else if (Array.isArray(fieldPathCandidate)) {
+      const fieldPathLength = captureProviderArrayLength(fieldPathCandidate);
+      const fieldPathCount = Math.min(fieldPathLength, MAX_PROVIDER_PROVENANCE_PARTS);
+      let index = 0;
+      for (; index < fieldPathCount; index++) {
+        if (!consumeProviderProjectionWork(budget, 1)) {
+          break;
+        }
+        const entry = fieldPathCandidate[index];
+        if (selectedContentPartIndices == null) {
+          if (entry != null && typeof entry === 'object') {
+            userSubmittedMessageFieldPaths.push(entry);
+          }
+        } else {
+          const path = remapSelectedPath(entry?.path);
+          if (path != null) {
+            userSubmittedMessageFieldPaths.push({ ...entry, path });
+          }
+        }
+      }
+      if (index < fieldPathLength || fieldPathLength > fieldPathCount) {
+        markProviderProjectionWorkOverflow(budget);
+      }
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
   return {
     ...providerMessage,
     userSubmittedPaths,
     userSubmittedMessageFieldPaths,
-    content,
+    ...(hasArrayContent && { content }),
   };
 }
 
@@ -1205,109 +1800,276 @@ interface StoredProviderContributionState {
 }
 
 interface CachedStoredProviderState {
+  readonly messageSnapshot: StoredModelBoundMessage;
+  readonly contentLength?: number;
+  readonly contentParts: Map<number, unknown>;
+  readonly explicitSubmittedPathState: ReturnType<typeof getUserSubmittedPathState>;
   readonly submittedMessageFieldState: ReturnType<typeof getUserSubmittedMessageFieldPathState>;
-  readonly explicitSubmittedPaths: ReadonlySet<string>;
+  explicitSubmittedPaths?: ReadonlySet<string>;
   wholeSubmittedPathState?: ReturnType<typeof getUserSubmittedPathState>;
+  submittedContentPartIndices?: ReadonlySet<number>;
+  submittedFieldContentPartIndices?: ReadonlySet<number>;
   wholeRawFileIds?: ReadonlySet<string>;
 }
 
-function getStoredSubmittedPathState(
+function readCachedStoredContentPart(
+  cachedState: CachedStoredProviderState,
+  index: number,
+  budget: ProviderProjectionWorkBudget,
+): unknown {
+  if (
+    cachedState.contentLength == null ||
+    !Number.isSafeInteger(index) ||
+    index < 0 ||
+    index >= cachedState.contentLength
+  ) {
+    return undefined;
+  }
+  if (cachedState.contentParts.has(index)) {
+    return cachedState.contentParts.get(index);
+  }
+  try {
+    const content = cachedState.messageSnapshot.content;
+    if (!Array.isArray(content)) {
+      markProviderProjectionWorkOverflow(budget);
+      return undefined;
+    }
+    const part = content[index];
+    cachedState.contentParts.set(index, part);
+    return part;
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+    return undefined;
+  }
+}
+
+function getProviderContentSelectionKey(
+  selectedContentPartIndices: ReadonlySet<number> | undefined,
+): string {
+  return selectedContentPartIndices == null
+    ? '*'
+    : [...selectedContentPartIndices].sort((left, right) => left - right).join(',');
+}
+
+function markUniqueStoredSelection(
+  selections: WeakMap<StoredModelBoundMessage, Set<string>>,
   message: StoredModelBoundMessage,
+  key: string,
+): boolean {
+  const messageSelections = selections.get(message);
+  if (messageSelections?.has(key) === true) {
+    return false;
+  }
+  if (messageSelections == null) {
+    selections.set(message, new Set([key]));
+  } else {
+    messageSelections.add(key);
+  }
+  return true;
+}
+
+function getStoredSubmittedPathState(
   selectedContentPartIndices: ReadonlySet<number> | undefined,
   cachedState: CachedStoredProviderState,
+  budget: ProviderProjectionWorkBudget,
 ): ReturnType<typeof getUserSubmittedPathState> {
   if (selectedContentPartIndices != null) {
-    return getUserSubmittedPathState(message, {
-      semanticContentPartIndices: selectedContentPartIndices,
-    });
+    return cachedState.explicitSubmittedPathState;
   }
   if (cachedState.wholeSubmittedPathState == null) {
-    cachedState.wholeSubmittedPathState = getUserSubmittedPathState(message);
+    const semanticState = getUserSubmittedPathState(cachedState.messageSnapshot, {
+      includeExplicitPaths: false,
+      budget,
+      capturedContent: cachedState.messageSnapshot.content,
+      hasCapturedContent: true,
+      capturedContentLength: cachedState.contentLength,
+      capturedContentParts: cachedState.contentParts,
+    });
+    if (semanticState.overflowed) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+    const paths: JsonPointer[] = [];
+    const seen = new Set<string>();
+    let overflowed = cachedState.explicitSubmittedPathState.overflowed || semanticState.overflowed;
+    for (const state of [cachedState.explicitSubmittedPathState, semanticState]) {
+      for (const path of state.paths) {
+        if (seen.has(path)) {
+          continue;
+        }
+        seen.add(path);
+        if (seen.size > MAX_USER_SUBMITTED_PATHS) {
+          overflowed = true;
+          break;
+        }
+        paths.push(path);
+      }
+    }
+    cachedState.wholeSubmittedPathState = { paths, overflowed };
   }
   return cachedState.wholeSubmittedPathState;
 }
 
-function pathIntersectsSelectedContentParts(
-  path: string,
+function getSubmittedContentPartIndices(
+  paths: readonly { readonly path?: string }[] | readonly string[],
+): ReadonlySet<number> {
+  const indices = new Set<number>();
+  for (let index = 0; index < paths.length; index++) {
+    const candidate = paths[index];
+    const path = typeof candidate === 'string' ? candidate : candidate.path;
+    if (typeof path !== 'string' || !path.startsWith('/')) {
+      continue;
+    }
+    const segments = getSafeUserSubmittedPathSegments(path as JsonPointer);
+    const encodedIndex = segments?.[1];
+    if (
+      segments?.[0] === 'content' &&
+      encodedIndex != null &&
+      /^\d+$/.test(encodedIndex) &&
+      String(Number(encodedIndex)) === encodedIndex
+    ) {
+      indices.add(Number(encodedIndex));
+    }
+  }
+  return indices;
+}
+
+function selectedPartsIntersect(
   selectedContentPartIndices: ReadonlySet<number> | undefined,
+  submittedContentPartIndices: ReadonlySet<number>,
 ): boolean {
   if (selectedContentPartIndices == null) {
-    return true;
+    return submittedContentPartIndices.size > 0;
   }
-  const segments = path.startsWith('/')
-    ? getSafeUserSubmittedPathSegments(path as JsonPointer)
-    : undefined;
-  return (
-    segments?.[0] === 'content' &&
-    /^\d+$/.test(segments[1] ?? '') &&
-    selectedContentPartIndices.has(Number(segments[1]))
-  );
+  for (const index of selectedContentPartIndices) {
+    if (submittedContentPartIndices.has(index)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function getStoredProviderContributionState(
-  message: StoredModelBoundMessage,
   selectedContentPartIndices: ReadonlySet<number> | undefined,
   cachedState: CachedStoredProviderState,
+  budget: ProviderProjectionWorkBudget,
 ): StoredProviderContributionState {
   const submittedPathState = getStoredSubmittedPathState(
-    message,
     selectedContentPartIndices,
     cachedState,
+    budget,
   );
   let hasSelectedMaterial = selectedContentPartIndices == null;
-  if (!hasSelectedMaterial && Array.isArray(message.content)) {
+  let hasSelectedSemanticPath = false;
+  if (!hasSelectedMaterial && cachedState.contentLength != null) {
     for (const index of selectedContentPartIndices ?? []) {
-      if (message.content[index] != null) {
-        hasSelectedMaterial = true;
+      if (!consumeProviderProjectionWork(budget, 1)) {
         break;
+      }
+      const part = readCachedStoredContentPart(cachedState, index, budget);
+      if (part != null) {
+        hasSelectedMaterial = true;
+        hasSelectedSemanticPath ||=
+          typeof part === 'object' &&
+          Object.prototype.hasOwnProperty.call(part, 'type') &&
+          part.type === 'steer';
       }
     }
   }
-  const hasSelectedSubmittedPath = submittedPathState.paths.some((path) =>
-    pathIntersectsSelectedContentParts(path, selectedContentPartIndices),
+  cachedState.submittedContentPartIndices ??= getSubmittedContentPartIndices(
+    submittedPathState.paths,
   );
-  const hasSelectedSubmittedField = cachedState.submittedMessageFieldState.entries.some((entry) =>
-    pathIntersectsSelectedContentParts(entry.path, selectedContentPartIndices),
+  cachedState.submittedFieldContentPartIndices ??= getSubmittedContentPartIndices(
+    cachedState.submittedMessageFieldState.entries,
   );
+  const hasSelectedSubmittedPath =
+    selectedContentPartIndices == null
+      ? submittedPathState.paths.length > 0
+      : hasSelectedSemanticPath ||
+        selectedPartsIntersect(selectedContentPartIndices, cachedState.submittedContentPartIndices);
+  const hasSelectedSubmittedField =
+    selectedContentPartIndices == null
+      ? cachedState.submittedMessageFieldState.entries.length > 0
+      : selectedPartsIntersect(
+          selectedContentPartIndices,
+          cachedState.submittedFieldContentPartIndices,
+        );
   const hasSubmittedCanonicalProvenance =
     hasSelectedSubmittedPath ||
     hasSelectedSubmittedField ||
     (hasSelectedMaterial &&
       (submittedPathState.overflowed || cachedState.submittedMessageFieldState.overflowed));
-  const storedRole = normalizeRole(message);
+  const storedRole = normalizeRole(cachedState.messageSnapshot);
   const isStoredUserSource =
     hasSelectedMaterial &&
-    (message.isCreatedByUser === true || message.isUserSubmitted === true || storedRole === 'user');
+    (cachedState.messageSnapshot.isCreatedByUser === true ||
+      cachedState.messageSnapshot.isUserSubmitted === true ||
+      storedRole === 'user');
   return {
     isCanonicalUserContribution: isStoredUserSource || hasSubmittedCanonicalProvenance,
   };
 }
 
 function getSelectedRawStoredMessageFileIds(
-  message: StoredModelBoundMessage,
   selectedContentPartIndices: ReadonlySet<number> | undefined,
   cachedState: CachedStoredProviderState,
+  budget: ProviderProjectionWorkBudget,
 ): ReadonlySet<string> {
   if (selectedContentPartIndices == null) {
     if (cachedState.wholeRawFileIds != null) {
       return cachedState.wholeRawFileIds;
     }
     const fileIds = new Set<string>();
-    appendReferencedFileIds(fileIds, message.files);
-    for (const part of message.content ?? []) {
-      if (part != null) {
-        appendPartFileIds(fileIds, part);
+    const wasOverflowed = budget.overflowed;
+    try {
+      appendReferencedFileIds(fileIds, cachedState.messageSnapshot.files, budget);
+      if (cachedState.contentLength != null) {
+        const contentLength = cachedState.contentLength;
+        const contentCount = Math.min(contentLength, MAX_PROVIDER_PROJECTION_WORK);
+        for (let index = 0; index < contentCount; index++) {
+          if (!consumeProviderProjectionWork(budget, 1)) {
+            break;
+          }
+          const part = readCachedStoredContentPart(cachedState, index, budget);
+          if (part != null) {
+            appendPartFileIds(
+              fileIds,
+              part as NonNullable<NonNullable<StoredMessageContentInput['content']>[number]>,
+              budget,
+            );
+          }
+        }
+        if (contentLength > contentCount) {
+          markProviderProjectionWorkOverflow(budget);
+        }
       }
+    } catch {
+      markProviderProjectionWorkOverflow(budget);
     }
-    cachedState.wholeRawFileIds = fileIds;
+    if (!wasOverflowed && !budget.overflowed) {
+      cachedState.wholeRawFileIds = fileIds;
+    }
     return fileIds;
   }
   const fileIds = new Set<string>();
-  for (const index of selectedContentPartIndices) {
-    const part = message.content?.[index];
-    if (part != null) {
-      appendPartFileIds(fileIds, part);
+  try {
+    if (cachedState.contentLength == null) {
+      return fileIds;
     }
+    for (const index of selectedContentPartIndices) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      const part = readCachedStoredContentPart(cachedState, index, budget);
+      if (part != null) {
+        appendPartFileIds(
+          fileIds,
+          part as NonNullable<NonNullable<StoredMessageContentInput['content']>[number]>,
+          budget,
+        );
+      }
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
   return fileIds;
 }
@@ -1316,15 +2078,60 @@ function appendMaterializedSelectedFileIds(
   target: Set<string>,
   materializedFileIds: readonly string[] | undefined,
   rawSelectedFileIds: ReadonlySet<string>,
+  budget: ProviderProjectionWorkBudget,
 ): void {
-  for (const candidate of materializedFileIds ?? []) {
-    if (typeof candidate !== 'string') {
-      continue;
+  try {
+    if (!Array.isArray(materializedFileIds)) {
+      return;
     }
-    const fileId = candidate.trim();
-    if (fileId.length > 0 && rawSelectedFileIds.has(fileId)) {
-      target.add(fileId);
+    const candidateCount = captureProviderArrayLength(materializedFileIds);
+    let index = 0;
+    for (; index < candidateCount; index++) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      const candidate = materializedFileIds[index];
+      if (typeof candidate !== 'string') {
+        continue;
+      }
+      const fileId = candidate.trim();
+      if (fileId.length > 0 && rawSelectedFileIds.has(fileId)) {
+        target.add(fileId);
+      }
     }
+    if (index < candidateCount) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+  }
+}
+
+function appendLegacyMaterializedFileIds(
+  target: Set<string>,
+  materializedFileIds: readonly string[] | undefined,
+  budget: ProviderProjectionWorkBudget,
+): void {
+  try {
+    if (!Array.isArray(materializedFileIds)) {
+      return;
+    }
+    const candidateCount = captureProviderArrayLength(materializedFileIds);
+    let index = 0;
+    for (; index < candidateCount; index++) {
+      if (!consumeProviderProjectionWork(budget, 1)) {
+        break;
+      }
+      const fileId = materializedFileIds[index];
+      if (typeof fileId === 'string' && fileId.length > 0) {
+        target.add(fileId);
+      }
+    }
+    if (index < candidateCount) {
+      markProviderProjectionWorkOverflow(budget);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
   }
 }
 
@@ -1332,54 +2139,179 @@ interface ModelBoundProviderContentIndex {
   readonly storedMessagesById: ReadonlyMap<string, StoredModelBoundMessage>;
   readonly resolvedFilesById: ReadonlyMap<string, ModelBoundCanonicalFile>;
   readonly storedStateByMessage: WeakMap<StoredModelBoundMessage, CachedStoredProviderState>;
+  readonly overflowed: boolean;
 }
 
 function getCachedStoredProviderState(
   index: ModelBoundProviderContentIndex,
   message: StoredModelBoundMessage,
+  budget: ProviderProjectionWorkBudget,
 ): CachedStoredProviderState {
   const cached = index.storedStateByMessage.get(message);
   if (cached != null) {
     return cached;
   }
+  let messageSnapshot: StoredModelBoundMessage = {};
+  try {
+    messageSnapshot = {
+      id: message.id,
+      messageId: message.messageId,
+      role: message.role,
+      name: message.name,
+      sender: message.sender,
+      text: message.text,
+      summary: message.summary,
+      quotes: message.quotes,
+      content: message.content,
+      tool_calls: message.tool_calls,
+      files: message.files,
+      attachments: message.attachments,
+      original: message.original,
+      updated: message.updated,
+      feedback: message.feedback,
+      isCreatedByUser: message.isCreatedByUser,
+      isUserSubmitted: message.isUserSubmitted,
+      userSubmittedPaths: message.userSubmittedPaths,
+      userSubmittedMessageFieldPaths: message.userSubmittedMessageFieldPaths,
+    };
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+  }
+  let contentLength: number | undefined;
+  try {
+    if (Array.isArray(messageSnapshot.content)) {
+      contentLength = captureProviderArrayLength(messageSnapshot.content);
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(budget);
+    contentLength = -1;
+  }
+  const contentParts = new Map<number, unknown>();
+  const provenanceOptions = {
+    budget,
+    capturedContent: messageSnapshot.content,
+    hasCapturedContent: true,
+    capturedContentLength: contentLength,
+    capturedContentParts: contentParts,
+  };
+  const explicitSubmittedPathState = getUserSubmittedPathState(messageSnapshot, {
+    ...provenanceOptions,
+    includeSemanticContent: false,
+  });
+  const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(
+    messageSnapshot,
+    provenanceOptions,
+  );
+  if (explicitSubmittedPathState.overflowed || submittedMessageFieldState.overflowed) {
+    markProviderProjectionWorkOverflow(budget);
+  }
   const state: CachedStoredProviderState = {
-    submittedMessageFieldState: getUserSubmittedMessageFieldPathState(message),
-    explicitSubmittedPaths: new Set(
-      (message.userSubmittedPaths ?? []).filter((path): path is string => typeof path === 'string'),
-    ),
+    messageSnapshot,
+    contentLength,
+    contentParts,
+    explicitSubmittedPathState,
+    submittedMessageFieldState,
   };
   index.storedStateByMessage.set(message, state);
   return state;
 }
 
+function getExplicitStoredSubmittedPaths(
+  cachedState: CachedStoredProviderState,
+): ReadonlySet<string> {
+  if (cachedState.explicitSubmittedPaths != null) {
+    return cachedState.explicitSubmittedPaths;
+  }
+  const explicitSubmittedPaths = new Set<string>(cachedState.explicitSubmittedPathState.paths);
+  cachedState.explicitSubmittedPaths = explicitSubmittedPaths;
+  return explicitSubmittedPaths;
+}
+
 function createModelBoundProviderContentIndex(
   input: Pick<ModelBoundProviderContentInput, 'storedMessages' | 'resolvedFiles'>,
+  initiallyOverflowed = false,
 ): ModelBoundProviderContentIndex {
   const storedMessagesById = new Map<string, StoredModelBoundMessage>();
-  for (const message of input.storedMessages ?? []) {
-    if (message == null) {
-      continue;
+  let overflowed = initiallyOverflowed;
+  try {
+    const storedMessages = input.storedMessages;
+    if (Array.isArray(storedMessages)) {
+      const storedMessageLength = captureProviderArrayLength(storedMessages);
+      const storedMessageCount = Math.min(storedMessageLength, MAX_PROVIDER_PROJECTION_WORK);
+      overflowed ||= storedMessageLength > storedMessageCount;
+      for (let index = 0; index < storedMessageCount; index++) {
+        const message = storedMessages[index];
+        if (message == null) {
+          continue;
+        }
+        for (const messageId of getStoredMessageIds(message)) {
+          storedMessagesById.set(messageId, message);
+        }
+      }
     }
-    for (const messageId of getStoredMessageIds(message)) {
-      storedMessagesById.set(messageId, message);
-    }
+  } catch {
+    overflowed = true;
   }
   const resolvedFilesById = new Map<string, ModelBoundCanonicalFile>();
-  for (const file of input.resolvedFiles ?? []) {
-    if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
-      resolvedFilesById.set(file.file_id, file);
+  try {
+    const resolvedFiles = input.resolvedFiles;
+    if (Array.isArray(resolvedFiles)) {
+      const resolvedFileLength = captureProviderArrayLength(resolvedFiles);
+      const resolvedFileCount = Math.min(resolvedFileLength, MAX_PROVIDER_PROJECTION_WORK);
+      overflowed ||= resolvedFileLength > resolvedFileCount;
+      for (let index = 0; index < resolvedFileCount; index++) {
+        const file = resolvedFiles[index];
+        if (typeof file?.file_id === 'string' && file.file_id.length > 0) {
+          resolvedFilesById.set(file.file_id, file);
+        }
+      }
     }
+  } catch {
+    overflowed = true;
   }
   return {
     storedMessagesById,
     resolvedFilesById,
     storedStateByMessage: new WeakMap(),
+    overflowed,
+  };
+}
+
+function createProviderProjectionWorkBudgets(
+  index: ModelBoundProviderContentIndex,
+): ProviderProjectionWorkBudgets {
+  return {
+    projection: {
+      remaining: MAX_PROVIDER_PROJECTION_WORK,
+      overflowed: index.overflowed,
+    },
+    providerContent: {
+      remaining: MAX_PROVIDER_PROJECTION_WORK,
+      overflowed: index.overflowed,
+    },
+    fileScan: {
+      remaining: MAX_PROVIDER_PROJECTION_WORK,
+      overflowed: index.overflowed,
+    },
+    provenance: {
+      remaining: MAX_PROVIDER_PROVENANCE_PARSE_WORK,
+      overflowed: false,
+    },
+    storedState: {
+      remaining: MAX_PROVIDER_STORED_STATE_WORK,
+      overflowed: false,
+    },
+    nestedTraversal: {
+      visitedNodes: 0,
+      maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,
+    },
   };
 }
 
 function projectModelBoundProviderContent(
   input: ModelBoundProviderContentInput,
   index: ModelBoundProviderContentIndex,
+  workBudgets = createProviderProjectionWorkBudgets(index),
 ): {
   storedMessages: StoredModelBoundMessage[];
   resolvedFiles: ModelBoundCanonicalFile[];
@@ -1389,22 +2321,70 @@ function projectModelBoundProviderContent(
   const selectedStoredMessages = new Set<StoredModelBoundMessage>();
   const selectedFileIds = new Set<string>();
   const deferredTraversalErrors: ContentTraversalLimitError[] = [];
-  const selectLegacyStoredMessage = (message: StoredModelBoundMessage): void => {
+  const projectionBudget = workBudgets.projection;
+  const providerContentBudget = workBudgets.providerContent;
+  const fileScanBudget = workBudgets.fileScan;
+  const provenanceBudget = workBudgets.provenance;
+  const storedStateBudget = workBudgets.storedState;
+  const exactCanonicalSelections = new WeakMap<StoredModelBoundMessage, Set<string>>();
+  const exactFileSelections = new WeakMap<StoredModelBoundMessage, Set<string>>();
+  const exactContributionStates = new WeakMap<
+    StoredModelBoundMessage,
+    Map<string, StoredProviderContributionState>
+  >();
+  const legacyFileSourceIds = new Set<string>();
+  const selectLegacyStoredMessage = (
+    message: StoredModelBoundMessage,
+    cachedState: CachedStoredProviderState,
+  ): void => {
     if (selectedStoredMessages.has(message)) {
       return;
     }
     selectedStoredMessages.add(message);
-    selectedMessages.push(projectStoredMessageForProvider(message));
+    selectedMessages.push(
+      projectStoredMessageForProvider(
+        cachedState.messageSnapshot,
+        projectionBudget,
+        undefined,
+        undefined,
+        cachedState.contentParts,
+        cachedState.contentLength,
+        cachedState.wholeSubmittedPathState?.paths ?? cachedState.explicitSubmittedPathState.paths,
+        cachedState.submittedMessageFieldState.entries,
+      ),
+    );
   };
-  for (let providerIndex = 0; providerIndex < input.providerMessages.length; providerIndex++) {
-    const providerMessage = input.providerMessages[providerIndex];
-    const providerRole = normalizeRole(providerMessage);
-    const provenanceState = getProviderMessageProvenanceState(providerMessage);
+  const providerMessages: ModelBoundProviderMessage[] = [];
+  const providerRoles: Array<string | undefined> = [];
+  const providerContents: unknown[] = [];
+  try {
+    const providerMessageLength = captureProviderArrayLength(input.providerMessages);
+    const providerMessageCount = Math.min(providerMessageLength, MAX_PROVIDER_PROJECTION_WORK);
+    if (providerMessageLength > providerMessageCount) {
+      markProviderProjectionWorkOverflow(projectionBudget);
+    }
+    for (let index = 0; index < providerMessageCount; index++) {
+      const providerMessage = snapshotProviderMessageEnvelope(
+        input.providerMessages[index],
+        providerContentBudget,
+      );
+      providerMessages.push(providerMessage);
+      providerRoles.push(providerMessage.role);
+      providerContents.push(snapshotProviderMessageContent(providerMessage, providerContentBudget));
+    }
+  } catch {
+    markProviderProjectionWorkOverflow(projectionBudget);
+  }
+  for (let providerIndex = 0; providerIndex < providerMessages.length; providerIndex++) {
+    const providerMessage = providerMessages[providerIndex];
+    const capturedProviderContent = providerContents[providerIndex];
+    const providerRole = providerRoles[providerIndex];
+    const provenanceState = getProviderMessageProvenanceState(providerMessage, provenanceBudget);
     let exactHasUserAttribution = false;
     let exactHasToolAttribution = false;
 
-    if (provenanceState.value != null) {
-      const orderedContributions = getOrderedProviderSourceContributions(provenanceState.value);
+    if (provenanceState.orderedContributions != null) {
+      const orderedContributions = provenanceState.orderedContributions;
       exactHasUserAttribution = orderedContributions.hasUserAttribution;
       exactHasToolAttribution = orderedContributions.hasToolAttribution;
       for (const contribution of orderedContributions.contributions) {
@@ -1412,12 +2392,29 @@ function projectModelBoundProviderContent(
         if (storedMessage == null) {
           continue;
         }
-        const cachedState = getCachedStoredProviderState(index, storedMessage);
-        const contributionState = getStoredProviderContributionState(
-          storedMessage,
+        const contentSelectionKey = getProviderContentSelectionKey(
           contribution.selectedContentPartIndices,
-          cachedState,
         );
+        const cachedState = getCachedStoredProviderState(index, storedMessage, storedStateBudget);
+        let contributionState = exactContributionStates
+          .get(storedMessage)
+          ?.get(contentSelectionKey);
+        if (contributionState == null) {
+          contributionState = getStoredProviderContributionState(
+            contribution.selectedContentPartIndices,
+            cachedState,
+            storedStateBudget,
+          );
+          const storedContributionStates = exactContributionStates.get(storedMessage);
+          if (storedContributionStates == null) {
+            exactContributionStates.set(
+              storedMessage,
+              new Map([[contentSelectionKey, contributionState]]),
+            );
+          } else {
+            storedContributionStates.set(contentSelectionKey, contributionState);
+          }
+        }
         exactHasUserAttribution ||= contributionState.isCanonicalUserContribution;
         const needsCanonicalProvenance =
           contribution.attribution === 'user' ||
@@ -1426,34 +2423,48 @@ function projectModelBoundProviderContent(
           (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
             providerRole === 'assistant');
         if (needsCanonicalProvenance) {
-          selectedMessages.push(
-            projectStoredMessageForProvider(
-              storedMessage,
-              contribution.selectedContentPartIndices,
-              contribution.attribution === 'user' || contribution.attribution === 'tool'
-                ? contribution.attribution
-                : undefined,
-            ),
-          );
+          const exactAttribution =
+            contribution.attribution === 'user' || contribution.attribution === 'tool'
+              ? contribution.attribution
+              : undefined;
+          const selectionKey = `${exactAttribution ?? 'canonical'}:${contentSelectionKey}`;
+          if (markUniqueStoredSelection(exactCanonicalSelections, storedMessage, selectionKey)) {
+            selectedMessages.push(
+              projectStoredMessageForProvider(
+                cachedState.messageSnapshot,
+                projectionBudget,
+                contribution.selectedContentPartIndices,
+                exactAttribution,
+                cachedState.contentParts,
+                cachedState.contentLength,
+                cachedState.explicitSubmittedPathState.paths,
+                cachedState.submittedMessageFieldState.entries,
+              ),
+            );
+          }
         }
         if (
           contribution.attribution === 'user' ||
           contribution.attribution === 'tool' ||
           contributionState.isCanonicalUserContribution
         ) {
-          appendMaterializedSelectedFileIds(
-            selectedFileIds,
-            input.fileIdsBySourceMessageId?.get(contribution.sourceMessageId),
-            getSelectedRawStoredMessageFileIds(
-              storedMessage,
-              contribution.selectedContentPartIndices,
-              cachedState,
-            ),
-          );
+          const fileSelectionKey = contentSelectionKey;
+          if (markUniqueStoredSelection(exactFileSelections, storedMessage, fileSelectionKey)) {
+            appendMaterializedSelectedFileIds(
+              selectedFileIds,
+              input.fileIdsBySourceMessageId?.get(contribution.sourceMessageId),
+              getSelectedRawStoredMessageFileIds(
+                contribution.selectedContentPartIndices,
+                cachedState,
+                fileScanBudget,
+              ),
+              fileScanBudget,
+            );
+          }
         }
       }
     } else {
-      const legacyLineage = getLegacyProviderLineage(providerMessage);
+      const legacyLineage = getLegacyProviderLineage(providerMessage, provenanceBudget);
       const matchedStoredMessages = new Set<StoredModelBoundMessage>();
       let hasSubmittedCanonicalSource = false;
       for (const sourceId of legacyLineage.sourceIds) {
@@ -1462,24 +2473,27 @@ function projectModelBoundProviderContent(
           continue;
         }
         matchedStoredMessages.add(storedMessage);
-        const cachedState = getCachedStoredProviderState(index, storedMessage);
+        const cachedState = getCachedStoredProviderState(index, storedMessage, storedStateBudget);
         const submittedPathState = getStoredSubmittedPathState(
-          storedMessage,
           undefined,
           cachedState,
+          storedStateBudget,
         );
-        const storedRole = normalizeRole(storedMessage);
+        const storedRole = normalizeRole(cachedState.messageSnapshot);
         const isStoredUserSource =
-          storedMessage.isCreatedByUser === true ||
-          storedMessage.isUserSubmitted === true ||
+          cachedState.messageSnapshot.isCreatedByUser === true ||
+          cachedState.messageSnapshot.isUserSubmitted === true ||
           storedRole === 'user';
+        const explicitPathMetadata = getCapturedUserSubmittedPathMetadata(
+          cachedState.explicitSubmittedPathState,
+        );
         const hasStoredSubmittedProvenance =
           submittedPathState.overflowed ||
           cachedState.submittedMessageFieldState.overflowed ||
           submittedPathState.paths.some(
             (path) =>
-              cachedState.explicitSubmittedPaths.has(path) &&
-              !isSteerSubmittedPath(storedMessage, path),
+              getExplicitStoredSubmittedPaths(cachedState).has(path) &&
+              !explicitPathMetadata.steerPaths.has(path),
           ) ||
           cachedState.submittedMessageFieldState.entries.length > 0;
         hasSubmittedCanonicalSource ||= isStoredUserSource || hasStoredSubmittedProvenance;
@@ -1490,20 +2504,23 @@ function projectModelBoundProviderContent(
           (input.filters?.messages?.unattributedAssistantContent === 'inspect' &&
             providerRole === 'assistant');
         if (needsCanonicalProvenance) {
-          selectLegacyStoredMessage(storedMessage);
+          selectLegacyStoredMessage(storedMessage, cachedState);
         }
         if (isStoredUserSource || hasStoredSubmittedProvenance || providerRole === 'user') {
-          for (const fileId of input.fileIdsBySourceMessageId?.get(sourceId) ?? []) {
-            if (typeof fileId === 'string' && fileId.length > 0) {
-              selectedFileIds.add(fileId);
-            }
+          if (!legacyFileSourceIds.has(sourceId)) {
+            legacyFileSourceIds.add(sourceId);
+            appendLegacyMaterializedFileIds(
+              selectedFileIds,
+              input.fileIdsBySourceMessageId?.get(sourceId),
+              fileScanBudget,
+            );
           }
         }
       }
 
       const lineageError = getLegacyCoalescedLineageError(
         input,
-        providerMessage,
+        providerRole,
         matchedStoredMessages,
         provenanceState,
         legacyLineage,
@@ -1514,15 +2531,27 @@ function projectModelBoundProviderContent(
 
       if (provenanceState.invalid) {
         for (const attribution of ['user', 'tool'] as const) {
-          const projectedMessage = projectProviderMessage(providerMessage, attribution);
+          const projectedMessage = projectProviderMessage(
+            providerMessage,
+            attribution,
+            capturedProviderContent,
+            providerRole,
+          );
           selectedMessages.push(projectedMessage);
-          appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+          appendStoredMessageFileIds(
+            selectedFileIds,
+            projectedMessage,
+            input.filters,
+            fileScanBudget,
+          );
         }
         continue;
       }
 
       const isLegacyArtifactHuman = isLegacyArtifactProjectionHuman(
-        input.providerMessages,
+        providerMessages,
+        providerRoles,
+        providerContents,
         providerIndex,
         provenanceState,
         legacyLineage,
@@ -1530,6 +2559,8 @@ function projectModelBoundProviderContent(
       let projectedMessage = projectProviderMessage(
         providerMessage,
         isLegacyArtifactHuman ? 'tool' : undefined,
+        capturedProviderContent,
+        providerRole,
       );
       if (
         !isLegacyArtifactHuman &&
@@ -1543,7 +2574,7 @@ function projectModelBoundProviderContent(
         };
       }
       selectedMessages.push(projectedMessage);
-      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters, fileScanBudget);
       continue;
     }
 
@@ -1561,9 +2592,14 @@ function projectModelBoundProviderContent(
       exactAttributions.push('non_user');
     }
     for (const attribution of exactAttributions) {
-      const projectedMessage = projectProviderMessage(providerMessage, attribution);
+      const projectedMessage = projectProviderMessage(
+        providerMessage,
+        attribution,
+        capturedProviderContent,
+        providerRole,
+      );
       selectedMessages.push(projectedMessage);
-      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters);
+      appendStoredMessageFileIds(selectedFileIds, projectedMessage, input.filters, fileScanBudget);
     }
   }
 
@@ -1582,29 +2618,113 @@ function projectModelBoundProviderContent(
       files: [...selectedFileIds].map((file_id) => ({ file_id })),
     });
   }
+  if (
+    projectionBudget.overflowed ||
+    providerContentBudget.overflowed ||
+    fileScanBudget.overflowed ||
+    provenanceBudget.overflowed ||
+    storedStateBudget.overflowed
+  ) {
+    deferredTraversalErrors.push(new ContentTraversalLimitError());
+  }
   return { storedMessages: selectedMessages, resolvedFiles, deferredTraversalErrors };
 }
 
 function assertIndexedModelBoundProviderContent(
   input: ModelBoundProviderContentInput,
   index: ModelBoundProviderContentIndex,
+  workBudgets?: ProviderProjectionWorkBudgets,
 ): void {
   if (!hasModelBoundContentProtection(input.filters, input.legacyPii)) {
     return;
   }
-  const projection = projectModelBoundProviderContent(input, index);
+  const resolvedWorkBudgets = workBudgets ?? createProviderProjectionWorkBudgets(index);
+  const projection = projectModelBoundProviderContent(input, index, resolvedWorkBudgets);
   assertModelBoundContent({
     filters: input.filters,
     legacyPii: input.legacyPii,
     storedMessages: projection.storedMessages,
     resolvedFiles: projection.resolvedFiles,
     deferredTraversalErrors: projection.deferredTraversalErrors,
+    traversalBudget: resolvedWorkBudgets.nestedTraversal,
   });
 }
 
 /** Inspects the exact provider selection while retaining persisted provenance. */
 export function assertModelBoundProviderContent(input: ModelBoundProviderContentInput): void {
-  assertIndexedModelBoundProviderContent(input, createModelBoundProviderContentIndex(input));
+  assertIndexedModelBoundProviderContent(
+    input,
+    createModelBoundProviderContentIndex(input, input.sourceFileProjectionOverflowed === true),
+  );
+}
+
+function snapshotBoundedProviderArray<T>(candidate: readonly T[] | undefined): {
+  readonly values: T[];
+  readonly overflowed: boolean;
+} {
+  const values: T[] = [];
+  try {
+    if (!Array.isArray(candidate)) {
+      return { values, overflowed: candidate != null };
+    }
+    const candidateCount = captureProviderArrayLength(candidate);
+    const boundedCandidateCount = Math.min(candidateCount, MAX_PROVIDER_PROJECTION_WORK);
+    for (let index = 0; index < boundedCandidateCount; index++) {
+      values.push(candidate[index]);
+    }
+    return { values, overflowed: candidateCount > boundedCandidateCount };
+  } catch {
+    return { values, overflowed: true };
+  }
+}
+
+function snapshotBoundedSourceFileIds(
+  candidate: ReadonlyMap<string, readonly string[]> | undefined,
+): { readonly values: Map<string, string[]>; readonly overflowed: boolean } {
+  const values = new Map<string, string[]>();
+  let overflowed = false;
+  let remaining = MAX_PROVIDER_PROJECTION_WORK;
+  try {
+    if (candidate == null) {
+      return { values, overflowed };
+    }
+    if (!(candidate instanceof Map)) {
+      return { values, overflowed: true };
+    }
+    const entries = Map.prototype.entries.call(candidate) as IterableIterator<
+      [string, readonly string[]]
+    >;
+    let entryCount = 0;
+    while (entryCount < MAX_PROVIDER_PROJECTION_WORK) {
+      const next = entries.next();
+      if (next.done) {
+        break;
+      }
+      const [sourceMessageId, fileIds] = next.value;
+      entryCount++;
+      if (!Array.isArray(fileIds)) {
+        overflowed = true;
+        continue;
+      }
+      const fileIdCount = captureProviderArrayLength(fileIds);
+      const boundedFileIdCount = Math.min(fileIdCount, remaining);
+      const copiedFileIds: string[] = [];
+      for (let index = 0; index < boundedFileIdCount; index++) {
+        copiedFileIds.push(fileIds[index]);
+      }
+      values.set(sourceMessageId, copiedFileIds);
+      remaining -= boundedFileIdCount;
+      if (fileIdCount > boundedFileIdCount) {
+        overflowed = true;
+      }
+    }
+    if (entryCount === MAX_PROVIDER_PROJECTION_WORK && !entries.next().done) {
+      overflowed = true;
+    }
+  } catch {
+    overflowed = true;
+  }
+  return { values, overflowed };
 }
 
 /** Creates a run-stable callback shared by root, summary, and subagent model clients. */
@@ -1612,22 +2732,23 @@ export function createModelBoundChatModelCallback(
   input: Omit<ModelBoundProviderContentInput, 'providerMessages'>,
   options: { readonly onContentRejected?: (error: unknown) => void } = {},
 ): ModelBoundChatModelCallback {
-  const storedMessages = [...(input.storedMessages ?? [])];
-  const resolvedFiles = [...(input.resolvedFiles ?? [])];
-  const fileIdsBySourceMessageId = new Map(
-    [...(input.fileIdsBySourceMessageId ?? [])].map(([sourceMessageId, fileIds]) => [
-      sourceMessageId,
-      [...fileIds],
-    ]),
-  );
+  const storedMessageSnapshot = snapshotBoundedProviderArray(input.storedMessages);
+  const resolvedFileSnapshot = snapshotBoundedProviderArray(input.resolvedFiles);
+  const sourceFileIdSnapshot = snapshotBoundedSourceFileIds(input.fileIdsBySourceMessageId);
   const stableInput = {
     filters: input.filters,
     legacyPii: input.legacyPii,
-    storedMessages,
-    resolvedFiles,
-    fileIdsBySourceMessageId,
+    storedMessages: storedMessageSnapshot.values,
+    resolvedFiles: resolvedFileSnapshot.values,
+    fileIdsBySourceMessageId: sourceFileIdSnapshot.values,
   };
-  const index = createModelBoundProviderContentIndex(stableInput);
+  const index = createModelBoundProviderContentIndex(
+    stableInput,
+    storedMessageSnapshot.overflowed ||
+      resolvedFileSnapshot.overflowed ||
+      sourceFileIdSnapshot.overflowed ||
+      input.sourceFileProjectionOverflowed === true,
+  );
   const callback: ModelBoundChatModelCallback = Object.freeze({
     name: 'librechat-model-bound-content-filter',
     raiseError: true,
@@ -1636,22 +2757,61 @@ export function createModelBoundChatModelCallback(
       _llm: object | undefined,
       messageBatches: readonly (readonly ModelBoundProviderMessage[])[],
     ) => {
-      for (const providerMessages of messageBatches) {
+      let messageBatchCount = 0;
+      let messageBatchesOverflowed = false;
+      try {
+        if (!Array.isArray(messageBatches)) {
+          throw new TypeError('provider message batches must be an array');
+        }
+        const messageBatchLength = captureProviderArrayLength(messageBatches);
+        messageBatchCount = Math.min(messageBatchLength, MAX_PROVIDER_PROJECTION_WORK);
+        messageBatchesOverflowed = messageBatchLength > messageBatchCount;
+      } catch {
+        const error = new ContentTraversalLimitError();
+        options.onContentRejected?.(error);
+        throw new FatalModelBoundPolicyError(error);
+      }
+      const workBudgets = createProviderProjectionWorkBudgets(index);
+      let remainingProviderMessages = MAX_PROVIDER_PROJECTION_WORK;
+      for (let batchIndex = 0; batchIndex < messageBatchCount; batchIndex++) {
         try {
+          const providerMessageCandidate = messageBatches[batchIndex];
+          if (!Array.isArray(providerMessageCandidate)) {
+            throw new ContentTraversalLimitError();
+          }
+          const providerMessageLength = captureProviderArrayLength(providerMessageCandidate);
+          const providerMessageCount = Math.min(providerMessageLength, remainingProviderMessages);
+          const providerMessages: ModelBoundProviderMessage[] = [];
+          for (let index = 0; index < providerMessageCount; index++) {
+            providerMessages.push(providerMessageCandidate[index]);
+          }
+          remainingProviderMessages -= providerMessageCount;
           assertIndexedModelBoundProviderContent(
             {
               ...stableInput,
               providerMessages,
             },
             index,
+            workBudgets,
           );
+          if (providerMessageCount < providerMessageLength) {
+            throw new ContentTraversalLimitError();
+          }
         } catch (error) {
-          if (!isContentFilterError(error) || error instanceof FatalModelBoundPolicyError) {
+          if (error instanceof FatalModelBoundPolicyError) {
             throw error;
           }
-          options.onContentRejected?.(error);
-          throw new FatalModelBoundPolicyError(error);
+          const policyError = isContentFilterError(error)
+            ? error
+            : new ContentTraversalLimitError();
+          options.onContentRejected?.(policyError);
+          throw new FatalModelBoundPolicyError(policyError);
         }
+      }
+      if (messageBatchesOverflowed) {
+        const error = new ContentTraversalLimitError();
+        options.onContentRejected?.(error);
+        throw new FatalModelBoundPolicyError(error);
       }
     },
   });
@@ -1903,6 +3063,23 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     }
   }
   const storedUserMessages: StoredModelBoundMessage[] = [];
+  const storedMessageTraversalBudget = input.traversalBudget ?? {
+    visitedNodes: 0,
+    maxNodes: MAX_MODEL_BOUND_NESTED_TRAVERSAL_WORK,
+  };
+  let aggregateStoredTraversalErrorAdded = false;
+  const appendStoredTraversalError = (error: ContentTraversalLimitError): void => {
+    if (
+      storedMessageTraversalBudget.visitedNodes >=
+      (storedMessageTraversalBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES)
+    ) {
+      if (aggregateStoredTraversalErrorAdded) {
+        return;
+      }
+      aggregateStoredTraversalErrorAdded = true;
+    }
+    traversalErrors.push(error);
+  };
   for (const message of input.storedMessages ?? []) {
     const submittedPathState = getUserSubmittedPathState(message);
     const submittedMessageFieldState = getUserSubmittedMessageFieldPathState(message);
@@ -1925,7 +3102,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
     let messageFragments: readonly TextContentFragment[];
     let traversalError: ContentTraversalLimitError | null = null;
     try {
-      messageFragments = extractStoredMessageContent(message);
+      messageFragments = extractStoredMessageContent(message, storedMessageTraversalBudget);
     } catch (error) {
       if (!isContentTraversalLimitError(error)) {
         throw error;
@@ -1933,20 +3110,32 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
       traversalError = error;
       messageFragments = getContentTraversalFragments(error);
     }
-    const exactMessageInspection = extractExactUserSubmittedMessageFragments(
-      message,
-      submittedMessageFieldState.entries,
-    );
-    const exactMessageFragments = exactMessageInspection.fragments;
     const exactMessageFields = [
       ...new Set(submittedMessageFieldState.entries.map((entry) => entry.field)),
     ];
-    if (
-      exactMessageInspection.traversalError != null &&
-      (hasActivePiiPatterns(input.legacyPii) ||
-        hasActivePiiFields(input.filters?.messages?.pii, exactMessageFields))
-    ) {
-      traversalErrors.push(
+    const shouldInspectExactMessageFields =
+      hasActivePiiPatterns(input.legacyPii) ||
+      hasActivePiiFields(input.filters?.messages?.pii, exactMessageFields);
+    let exactMessageFragments: Array<Extract<TextContentFragment, { source: 'message' }>> = [];
+    let exactMessageTraversalError: ContentTraversalLimitError | null = null;
+    if (shouldInspectExactMessageFields) {
+      if (traversalError == null) {
+        exactMessageFragments = getExactUserSubmittedMessageFragments(
+          messageFragments,
+          submittedMessageFieldState.entries,
+        );
+      } else {
+        const exactMessageInspection = extractExactUserSubmittedMessageFragments(
+          message,
+          submittedMessageFieldState.entries,
+          storedMessageTraversalBudget,
+        );
+        exactMessageFragments = exactMessageInspection.fragments;
+        exactMessageTraversalError = exactMessageInspection.traversalError;
+      }
+    }
+    if (exactMessageTraversalError != null && shouldInspectExactMessageFields) {
+      appendStoredTraversalError(
         new ContentTraversalLimitError([], [{ source: 'message', fields: exactMessageFields }]),
       );
     }
@@ -2044,7 +3233,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
             roles: userSubmittedPaths.length > 0 ? ['user'] : [message.role],
           })
         ) {
-          traversalErrors.push(traversalError);
+          appendStoredTraversalError(traversalError);
         }
       }
       continue;
@@ -2061,7 +3250,7 @@ export function assertModelBoundContent(input: ModelBoundContentInput): void {
         roles: [message.role ?? 'user'],
       })
     ) {
-      traversalErrors.push(traversalError);
+      appendStoredTraversalError(traversalError);
     }
   }
   assertInspectableFileInput(

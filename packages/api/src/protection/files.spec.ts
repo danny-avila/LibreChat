@@ -635,6 +635,98 @@ describe('file content inspection policy', () => {
     expect(overflowValueRead).toBe(false);
   });
 
+  it('fails closed for invalid opaque file-array lengths without dispatching iterators', () => {
+    let iteratorReads = 0;
+    const fileIds = new Proxy(['unread-file'], {
+      get(target, property, receiver) {
+        if (property === 'length') {
+          return Number.NaN;
+        }
+        if (property === Symbol.iterator) {
+          iteratorReads++;
+          throw new Error('file iterator must not run');
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    expect(getBlockedOpaqueFileField(filters, { file_ids: fileIds })).toBe('extracted_text');
+    expect(iteratorReads).toBe(0);
+  });
+
+  it('reads canonical file arrays numerically without dispatching custom iterators', async () => {
+    let iteratorReads = 0;
+    let numericReads = 0;
+    const fileIds = new Proxy(['owned-file'], {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) {
+          iteratorReads++;
+          throw new Error('file iterator must not run');
+        }
+        if (typeof property === 'string' && /^\d+$/.test(property)) {
+          numericReads++;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { file_ids: fileIds },
+        user: { id: 'user-1' },
+        getFiles: jest
+          .fn()
+          .mockResolvedValue([{ file_id: 'owned-file', text: 'Safe extracted text' }]),
+      }),
+    ).resolves.toMatchObject({ sanitizedInput: {} });
+    expect(iteratorReads).toBe(0);
+    expect(numericReads).toBeLessThanOrEqual(2);
+  });
+
+  it('rejects invalid canonical file-reference lengths before owner lookup', async () => {
+    const fileIds = new Proxy(['owned-file'], {
+      get(target, property, receiver) {
+        return property === 'length' ? -1 : Reflect.get(target, property, receiver);
+      },
+    });
+    const getFiles = jest.fn();
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { file_ids: fileIds },
+        user: { id: 'user-1' },
+        getFiles,
+      }),
+    ).rejects.toMatchObject({ code: 'content_filter_uninspectable' });
+    expect(getFiles).not.toHaveBeenCalled();
+  });
+
   it('rejects an over-wide canonical-reference input before an owner lookup', async () => {
     const files = Array.from({ length: 4_200 }, (_, index) => ({
       file_id: `file-${index}`,

@@ -1,5 +1,5 @@
 import type { ContentFieldMap, ContentSource, JsonPointer, TextContentFragment } from '../types';
-import type { ContentTraversalScope } from './nested';
+import type { ContentTraversalScope, VisitNestedStringsBudget } from './nested';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -1075,8 +1075,9 @@ export function extractConversationTitleContent(
   return fragments;
 }
 
-export function extractStoredMessageContent(
+function extractStoredMessageContentWithBudget(
   input: StoredMessageContentInput | null | undefined,
+  traversalBudget: VisitNestedStringsBudget,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const assembledText: string[] = [];
@@ -1119,7 +1120,7 @@ export function extractStoredMessageContent(
     path: JsonPointer,
   ) => {
     try {
-      fragments.push(...extractToolArgumentValue(value, field, id, path));
+      fragments.push(...extractToolArgumentValue(value, field, id, path, traversalBudget));
     } catch (error) {
       if (!(error instanceof ContentTraversalLimitError)) {
         throw error;
@@ -1399,6 +1400,7 @@ export function extractStoredMessageContent(
         },
         {
           includeKeys: true,
+          budget: traversalBudget,
           shouldVisit: ({ path }) => !isHandledPath(path),
           shouldInclude: shouldIncludeNestedSubmittedText,
         },
@@ -1540,6 +1542,26 @@ export function extractStoredMessageContent(
   return fragments;
 }
 
+export function extractStoredMessageContent(
+  input: StoredMessageContentInput | null | undefined,
+  aggregateBudget: VisitNestedStringsBudget = { visitedNodes: 0 },
+): readonly TextContentFragment[] {
+  const aggregateMaxNodes = aggregateBudget.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
+  const remainingAggregateNodes = Math.max(0, aggregateMaxNodes - aggregateBudget.visitedNodes);
+  const traversalBudget: VisitNestedStringsBudget = {
+    visitedNodes: 0,
+    maxNodes: Math.min(
+      CONTENT_TRAVERSAL_MAX_NODES + (aggregateBudget.maxNodes == null ? 0 : 2),
+      remainingAggregateNodes,
+    ),
+  };
+  try {
+    return extractStoredMessageContentWithBudget(input, traversalBudget);
+  } finally {
+    aggregateBudget.visitedNodes += traversalBudget.visitedNodes;
+  }
+}
+
 export function* extractConversationImportContent(
   input: ConversationImportContentInput,
 ): Generator<TextContentFragment, void, undefined> {
@@ -1611,6 +1633,7 @@ type BoundedJsonValue =
 
 interface BoundedJsonTraversal {
   readonly seen: WeakSet<object>;
+  readonly maxNodes: number;
   visitedNodes: number;
 }
 
@@ -1619,7 +1642,7 @@ function toBoundedJsonValue(
   traversal: BoundedJsonTraversal,
   depth = 0,
 ): BoundedJsonValue | typeof OMIT_SUBMITTED_VALUE {
-  if (traversal.visitedNodes >= CONTENT_TRAVERSAL_MAX_NODES) {
+  if (traversal.visitedNodes >= traversal.maxNodes) {
     return OMIT_SUBMITTED_VALUE;
   }
   traversal.visitedNodes++;
@@ -1653,7 +1676,7 @@ function toBoundedJsonValue(
     }
     if (
       (depth >= CONTENT_TRAVERSAL_MAX_DEPTH && length > 0) ||
-      length > CONTENT_TRAVERSAL_MAX_NODES - traversal.visitedNodes
+      length > traversal.maxNodes - traversal.visitedNodes
     ) {
       return OMIT_SUBMITTED_VALUE;
     }
@@ -1680,7 +1703,7 @@ function toBoundedJsonValue(
 
   const boundedEntries = getBoundedOwnEnumerableEntries(
     value,
-    Math.max(0, CONTENT_TRAVERSAL_MAX_NODES - traversal.visitedNodes),
+    Math.max(0, traversal.maxNodes - traversal.visitedNodes),
   );
   if (
     !boundedEntries.complete ||
@@ -1707,7 +1730,10 @@ function toBoundedJsonValue(
   return output;
 }
 
-function stringifySubmittedValue(value: unknown): {
+function stringifySubmittedValue(
+  value: unknown,
+  budget?: VisitNestedStringsBudget,
+): {
   readonly text: string;
   readonly format: TextContentFragment['format'];
 } | null {
@@ -1717,10 +1743,15 @@ function stringifySubmittedValue(value: unknown): {
   if (value == null) {
     return null;
   }
-  const boundedValue = toBoundedJsonValue(value, {
+  const traversal: BoundedJsonTraversal = {
     seen: new WeakSet<object>(),
-    visitedNodes: 0,
-  });
+    maxNodes: budget?.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES,
+    visitedNodes: budget?.visitedNodes ?? 0,
+  };
+  const boundedValue = toBoundedJsonValue(value, traversal);
+  if (budget != null) {
+    budget.visitedNodes = traversal.visitedNodes;
+  }
   if (boundedValue === OMIT_SUBMITTED_VALUE) {
     return null;
   }
@@ -1745,8 +1776,9 @@ function extractSubmittedValueContent(
   path: JsonPointer,
   createFragments: (value: SubmittedValueFragment) => readonly TextContentFragment[],
   scopes: readonly ContentTraversalScope[],
+  budget?: VisitNestedStringsBudget,
 ): readonly TextContentFragment[] {
-  const serialized = stringifySubmittedValue(value);
+  const serialized = stringifySubmittedValue(value, budget);
   if (serialized != null) {
     return createFragments({
       text: serialized.text,
@@ -1780,7 +1812,7 @@ function extractSubmittedValueContent(
       );
       nestedIndex++;
     },
-    { includeKeys: true },
+    { includeKeys: true, budget },
   );
   if (!complete) {
     throw new ContentTraversalLimitError(fragments, scopes);
@@ -1793,6 +1825,7 @@ function extractToolArgumentValue(
   field: ContentFieldMap['tool_argument'],
   id: string,
   path: JsonPointer,
+  budget?: VisitNestedStringsBudget,
 ): readonly TextContentFragment[] {
   return extractSubmittedValueContent(
     value,
@@ -1809,6 +1842,7 @@ function extractToolArgumentValue(
       ),
     ],
     [{ source: 'tool_argument', fields: [field] }],
+    budget,
   );
 }
 

@@ -29,6 +29,8 @@ export interface NestedStringContext {
 
 export interface VisitNestedStringsBudget {
   visitedNodes: number;
+  /** Optional aggregate ceiling for callers whose valid envelope spans several traversals. */
+  readonly maxNodes?: number;
 }
 
 export interface VisitNestedStringsOptions {
@@ -338,14 +340,14 @@ export function visitNestedStrings(
   options: VisitNestedStringsOptions = {},
 ): boolean {
   const maxDepth = options.maxDepth ?? CONTENT_TRAVERSAL_MAX_DEPTH;
-  const maxNodes = options.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
+  const maxNodes = options.maxNodes ?? options.budget?.maxNodes ?? CONTENT_TRAVERSAL_MAX_NODES;
   const pending: PendingValue[] = [{ value, path, key: undefined, parent: undefined, depth: 0 }];
   const seen = new WeakSet<object>();
   let visitedNodes = 0;
   let complete = true;
   const getVisitedNodes = () => options.budget?.visitedNodes ?? visitedNodes;
 
-  while (pending.length > 0 && getVisitedNodes() < maxNodes) {
+  while (pending.length > 0) {
     const current = pending.pop();
     if (current == null) {
       continue;
@@ -354,11 +356,6 @@ export function visitNestedStrings(
       complete = false;
       continue;
     }
-    visitedNodes++;
-    if (options.budget != null) {
-      options.budget.visitedNodes++;
-    }
-
     const context = {
       key: current.key,
       parent: current.parent,
@@ -366,6 +363,14 @@ export function visitNestedStrings(
     };
     if (options.shouldVisit?.({ ...context, value: current.value }) === false) {
       continue;
+    }
+    if (getVisitedNodes() >= maxNodes) {
+      complete = false;
+      break;
+    }
+    visitedNodes++;
+    if (options.budget != null) {
+      options.budget.visitedNodes++;
     }
     if (typeof current.value === 'string') {
       if (current.value.length > 0 && options.shouldInclude?.(current.value, context) !== false) {
@@ -381,23 +386,42 @@ export function visitNestedStrings(
     }
     seen.add(current.value);
 
-    if (Array.isArray(current.value)) {
-      if (current.depth >= maxDepth && current.value.length > 0) {
+    let currentIsArray: boolean;
+    try {
+      currentIsArray = Array.isArray(current.value);
+    } catch {
+      complete = false;
+      continue;
+    }
+    if (currentIsArray) {
+      const arrayValue = current.value as unknown[];
+      let arrayLength: number;
+      try {
+        arrayLength = arrayValue.length;
+      } catch {
+        complete = false;
+        continue;
+      }
+      if (!Number.isSafeInteger(arrayLength) || arrayLength < 0) {
+        complete = false;
+        continue;
+      }
+      if (current.depth >= maxDepth && arrayLength > 0) {
         complete = false;
         continue;
       }
       const availableNodes = Math.max(0, maxNodes - getVisitedNodes() - pending.length);
-      const scheduledNodes = Math.min(current.value.length, availableNodes);
-      if (scheduledNodes < current.value.length) {
+      const scheduledNodes = Math.min(arrayLength, availableNodes);
+      if (scheduledNodes < arrayLength) {
         complete = false;
       }
       try {
         for (let index = scheduledNodes - 1; index >= 0; index--) {
           pending.push({
-            value: current.value[index],
+            value: arrayValue[index],
             path: `${current.path}/${index}`,
             key: String(index),
-            parent: current.value,
+            parent: arrayValue,
             depth: current.depth + 1,
           });
         }

@@ -1495,6 +1495,7 @@ class AgentClient extends BaseClient {
         storedMessages: this.modelBoundStoredMessages,
         fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
         resolvedFiles: fileProjection.resolvedFiles,
+        sourceFileProjectionOverflowed: fileProjection.overflowed,
       },
       {
         onContentRejected: persistence?.cancel,

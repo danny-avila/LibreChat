@@ -16,7 +16,7 @@ const {
   getLangfuseTraceMessageFields,
   isContentFilterError,
   assertModelBoundProviderContent,
-  collectModelBoundHistoricalFileIds,
+  collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
 } = require('@librechat/api');
 const {
@@ -253,15 +253,17 @@ class BaseClient {
   getModelBoundFileProjection() {
     return projectModelBoundSourceFiles({
       messageFilesBySourceMessageId: this.message_file_map,
+      sourceMessages: this.modelBoundStoredMessages,
       steerFileIdsBySourceMessageId: this.modelBoundSteerFileIdsBySourceMessageId,
       replayHistoricalFiles: this.options.resendFiles !== false,
-      historicalFiles: this.authorizedHistoricalFiles?.values?.(),
+      historicalFiles: this.authorizedHistoricalFiles,
       processedCurrentFiles: Array.isArray(this.options.attachments)
         ? this.options.attachments
         : [],
       canonicalCurrentFiles: Array.isArray(this.modelBoundCurrentFiles)
         ? this.modelBoundCurrentFiles
         : [],
+      initiallyOverflowed: this.modelBoundHistoricalFileIdsOverflowed === true,
     });
   }
 
@@ -300,6 +302,7 @@ class BaseClient {
       storedMessages: this.modelBoundStoredMessages,
       fileIdsBySourceMessageId: fileProjection.fileIdsBySourceMessageId,
       resolvedFiles: fileProjection.resolvedFiles,
+      sourceFileProjectionOverflowed: fileProjection.overflowed,
     });
   }
 
@@ -739,8 +742,12 @@ class BaseClient {
       ? [...this.options.attachments]
       : [];
     if (this.options.resendFiles !== false && this.authorizedHistoricalFiles == null) {
-      const historicalFileIds = collectModelBoundHistoricalFileIds(modelBoundStoredMessages);
-      const files = await getOwnerHistoricalFiles(historicalFileIds, this.options.req?.user);
+      const historicalFileState = collectModelBoundHistoricalFileIdState(modelBoundStoredMessages);
+      this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
+      const files = await getOwnerHistoricalFiles(
+        historicalFileState.fileIds,
+        this.options.req?.user,
+      );
       this.authorizedHistoricalFiles = new Map(
         files
           .filter((file) => typeof file?.file_id === 'string' && file.file_id.length > 0)
@@ -1800,9 +1807,13 @@ class BaseClient {
       }
     }
 
-    const historicalFileIds = collectModelBoundHistoricalFileIds(_messages);
+    const historicalFileState = collectModelBoundHistoricalFileIdState(_messages);
+    this.modelBoundHistoricalFileIdsOverflowed ||= historicalFileState.overflowed;
     const authorizedFilesById = new Map();
-    const files = await getOwnerHistoricalFiles(historicalFileIds, this.options.req?.user);
+    const files = await getOwnerHistoricalFiles(
+      historicalFileState.fileIds,
+      this.options.req?.user,
+    );
     for (const file of files) {
       if (file?.file_id) {
         authorizedFilesById.set(file.file_id, file);

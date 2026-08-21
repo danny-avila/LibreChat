@@ -136,6 +136,55 @@ describe('filtersConfigSchema', () => {
         })),
       ),
     ).toBe(true);
+
+    expect(
+      filtersConfigSchema.safeParse({
+        messages: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: Array.from({ length: 128 }, (_, index) => ({
+              id: `message-${index}`,
+              label: `Message ${index}`,
+              regex: `M${index}`,
+            })),
+          },
+        },
+        prompts: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: Array.from({ length: 129 }, (_, index) => ({
+              id: `prompt-${index}`,
+              label: `Prompt ${index}`,
+              regex: `P${index}`,
+            })),
+          },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      filtersConfigSchema.safeParse({
+        messages: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: Array.from({ length: 128 }, (_, index) => ({
+              id: `message-boundary-${index}`,
+              label: `Message boundary ${index}`,
+              regex: `MB${index}`,
+            })),
+          },
+        },
+        prompts: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: Array.from({ length: 128 }, (_, index) => ({
+              id: `prompt-boundary-${index}`,
+              label: `Prompt boundary ${index}`,
+              regex: `PB${index}`,
+            })),
+          },
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it('keeps default patterns, custom patterns, and explicit file fail-close active', () => {
@@ -254,6 +303,11 @@ describe('filtersConfigSchema', () => {
     expect(filtersConfigSchema.safeParse({ messages: { pii: { fields: [] } } }).success).toBe(
       false,
     );
+    expect(
+      filtersConfigSchema.safeParse({
+        messages: { pii: { fields: Array.from({ length: 257 }, () => 'text') } },
+      }).success,
+    ).toBe(false);
     expect(
       filtersConfigSchema.safeParse({
         messages: {
