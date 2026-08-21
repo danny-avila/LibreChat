@@ -22,7 +22,11 @@ const HITL_PROMPT = `E2E_ASK_USER_QUESTION:${HITL_LABEL}`;
 const HITL_QUESTION = `Which environment should Bombadil use for ${HITL_LABEL}?`;
 const HITL_OPTION = 'Staging';
 const FINAL_REPLY = 'E2E mock reply: pong';
-const COMPLETED_ANSWER = 'You answered: Staging';
+const COMPLETED_ANSWER_LABEL = 'You answered:';
+/** The settled Q&A record is a collapsed tool-call line that names the
+ *  question in its summary; the answer itself lives in the panel it opens,
+ *  under its own label rather than running on from it. */
+const ASK_RECORD_SUMMARY = '[data-testid="ask-user-question-call"] span';
 let reloadIssued = false;
 let pausedReloadIssued = false;
 
@@ -124,14 +128,15 @@ const ui = extract((state: State) => {
     emailFocused: isFocused(state, '#email'),
     passwordValue: inputValue(state, '#password'),
     passwordFocused: isFocused(state, '#password'),
-    questionCount: visibleTextCount(state, 'p', HITL_QUESTION),
+    questionCount: visibleTextCount(state, `p, ${ASK_RECORD_SUMMARY}`, HITL_QUESTION),
     answerOptionCount: visibleTextCount(state, 'button', HITL_OPTION, true),
     finalReplyCount: messageElements.filter((element) =>
       (element.textContent ?? '').includes(FINAL_REPLY),
     ).length,
-    completedAnswerCount: messageElements.filter((element) =>
-      (element.textContent ?? '').includes(COMPLETED_ANSWER),
-    ).length,
+    completedAnswerCount: messageElements.filter((element) => {
+      const text = element.textContent ?? '';
+      return text.includes(COMPLETED_ANSWER_LABEL) && text.includes(HITL_OPTION);
+    }).length,
     isSubmitting: state.document.querySelector('button[aria-label="Stop generating"]') !== null,
     hasComposer: state.document.querySelector('#prompt-textarea') !== null,
     loginEmail: target(state, '#email', 'Login email'),
