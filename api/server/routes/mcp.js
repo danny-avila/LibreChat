@@ -926,6 +926,7 @@ router.get('/connection/status', requireJwtAuth, async (req, res) => {
               {
                 connectionState: 'error',
                 requiresOAuth: oauthServers.has(serverName),
+                ...(requiresEphemeralUserConnection(config) && { requestScoped: true }),
                 authorizationState: oauthServers.has(serverName) ? 'error' : 'not_required',
                 error: message,
               },
