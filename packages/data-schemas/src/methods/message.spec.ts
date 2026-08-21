@@ -625,7 +625,7 @@ describe('Message Operations', () => {
     it('declares the compound index that serves the conversation fetch and its sort', () => {
       const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
       expect(indexes).toContainEqual([
-        { conversationId: 1, user: 1, createdAt: 1 },
+        { conversationId: 1, user: 1, createdAt: 1, _id: 1 },
         expect.anything(),
       ]);
     });
@@ -707,6 +707,8 @@ describe('Message Operations', () => {
 
       expect(messages).toHaveLength(1);
       expect(Array.from(messages[0].text ?? '')).toHaveLength(8_192);
+      expect(Buffer.byteLength(messages[0].text ?? '', 'utf8')).toBeLessThanOrEqual(32 * 1024);
+      expect(messages[0].textProjectionTruncated).toBe(true);
       expect(messages[0]).not.toHaveProperty('user');
       expect(messages[0]).not.toHaveProperty('conversationId');
     });

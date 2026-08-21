@@ -62,7 +62,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'createdAt'
   | 'error'
   | 'subagentTask'
->;
+> & { textProjectionTruncated?: boolean };
 
 export interface MessageMethods {
   saveMessage(
@@ -768,6 +768,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             isCreatedByUser: 1,
             text: {
               $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
+            },
+            textProjectionTruncated: {
+              $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
             },
             createdAt: 1,
             error: 1,

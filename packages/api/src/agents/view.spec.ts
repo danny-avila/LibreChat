@@ -79,8 +79,11 @@ const createRequest = (params: Record<string, string> = {}): ServerRequest =>
 describe('subagent thread parent-scoped view', () => {
   it('returns a bounded public child projection through the owning parent', async () => {
     const getConvoOwnership = jest.fn().mockResolvedValue(parent);
-    const oversized = '🧵'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes);
-    const newest = { ...message('task-1:assistant', 'completed'), text: oversized } as IMessage;
+    const newest = {
+      ...message('task-1:assistant', 'completed'),
+      text: 'a'.repeat(SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes / 4),
+      textProjectionTruncated: true,
+    } as IMessage & { textProjectionTruncated: boolean };
     const getMessages = jest
       .fn()
       .mockResolvedValue([newest, message('task-1:user', 'running', true)]);
@@ -99,7 +102,7 @@ describe('subagent thread parent-scoped view', () => {
       user: 'user-1',
       tenantId: 'tenant-1',
       limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
-      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes,
+      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes / 4,
     });
     expect(getConvoOwnership).toHaveBeenCalledWith('user-1', parentConversationId, 'tenant-1');
     expect(json).toHaveBeenCalledWith({
@@ -179,7 +182,7 @@ describe('subagent thread parent-scoped view', () => {
       conversationId: threadId,
       user: 'user-1',
       limit: SUBAGENT_THREAD_VIEW_LIMITS.messages + 1,
-      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes,
+      textCodePointLimit: SUBAGENT_THREAD_VIEW_LIMITS.messageTextBytes / 4,
     });
   });
 

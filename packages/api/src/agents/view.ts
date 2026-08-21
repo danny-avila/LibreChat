@@ -14,6 +14,9 @@ import type { ServerRequest } from '~/types';
 
 const MAX_THREAD_MESSAGES = 50;
 const MAX_MESSAGE_TEXT_BYTES = 32 * 1024;
+// MongoDB slices by Unicode code points, so reserve the UTF-8 worst case and
+// keep the storage projection at or below the public byte ceiling.
+const MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS = Math.floor(MAX_MESSAGE_TEXT_BYTES / 4);
 const MAX_RESPONSE_TEXT_BYTES = 128 * 1024;
 const MAX_RESPONSE_BYTES = 160 * 1024;
 const MAX_PUBLIC_ID_BYTES = 512;
@@ -85,7 +88,9 @@ const publicMessage = (
       text: projected.text,
       ...(isoDate(message.createdAt) == null ? {} : { createdAt: isoDate(message.createdAt) }),
       ...(message.error === true ? { error: true } : {}),
-      ...(projected.truncated ? { textTruncated: true } : {}),
+      ...(message.textProjectionTruncated === true || projected.truncated
+        ? { textTruncated: true }
+        : {}),
     },
     bytes: projected.bytes,
   };
@@ -173,7 +178,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         user: userId,
         ...(tenantId == null ? {} : { tenantId }),
         limit: MAX_THREAD_MESSAGES + 1,
-        textCodePointLimit: MAX_MESSAGE_TEXT_BYTES,
+        textCodePointLimit: MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS,
       });
 
       const historyTruncated = messages.length > MAX_THREAD_MESSAGES;
