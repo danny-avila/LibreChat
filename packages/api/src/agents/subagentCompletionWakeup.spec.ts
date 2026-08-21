@@ -241,6 +241,8 @@ function orchestrationSnapshot(
   return {
     rendered: prepared.input.slice(start + marker.length),
     value: JSON.parse(prepared.input.slice(start + marker.length)) as {
+      parent_message_id?: string;
+      parent_message_id_truncated?: boolean;
       completeness: 'complete' | 'bounded' | 'uncertain';
       known_children: Array<{
         background_task_id: string;
@@ -406,9 +408,9 @@ describe('createSubagentCompletionWakeupResolver', () => {
     expect(snapshot.rendered).not.toContain('hidden reasoning');
   });
 
-  it('bounds sibling count and rendered snapshot characters', async () => {
+  it('bounds sibling count and rendered snapshot bytes', async () => {
     const { methods, terminal } = resolverMethods();
-    const long = 'x'.repeat(240);
+    const long = '界'.repeat(240);
     const siblingMessages = Array.from({ length: 40 }, (_, index) => ({
       ...terminal,
       messageId: `task-${index}-${long}:assistant`,
@@ -472,9 +474,65 @@ describe('createSubagentCompletionWakeupResolver', () => {
 
     expect(snapshot.value.known_children.length).toBeLessThanOrEqual(16);
     expect(snapshot.value.known_children.length).toBeLessThan(13);
-    expect(snapshot.rendered.length).toBeLessThanOrEqual(8 * 1_024);
+    expect(Buffer.byteLength(snapshot.rendered, 'utf8')).toBeLessThanOrEqual(8 * 1_024);
     expect(snapshot.value.completeness).toBe('bounded');
     expect(snapshot.value.additional_children_may_exist).toBe(true);
+  });
+
+  it('bounds an oversized parent identity before rendering the UTF-8 snapshot', async () => {
+    const { methods, terminal } = resolverMethods();
+    const oversizedParentMessageId = '界'.repeat(10_000);
+    terminal.subagentTask = {
+      ...terminal.subagentTask!,
+      parentRunId: oversizedParentMessageId,
+    };
+    methods.getMessages.mockImplementation(async (filter: TestMessageFilter) => {
+      if (filter.conversationId === 'conversation-1') {
+        return [
+          {
+            messageId: oversizedParentMessageId,
+            parentMessageId: 'user-1',
+            isCreatedByUser: false,
+            createdAt: new Date(NOW - 30),
+          },
+        ];
+      }
+      if (filter.conversationId === 'thread-1') {
+        return [
+          {
+            messageId: 'task-1:user',
+            conversationId: 'thread-1',
+            isCreatedByUser: true,
+          },
+          terminal,
+        ];
+      }
+      if (filter['subagentTask.parentRunId'] === oversizedParentMessageId) {
+        return [terminal];
+      }
+      return [];
+    });
+    methods.claimSubagentTaskResult.mockResolvedValueOnce({
+      status: 'acquired',
+      message: terminal,
+    });
+    const envelope = wakeupEnvelope();
+    envelope.target.parentMessageId = oversizedParentMessageId;
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const snapshot = orchestrationSnapshot(
+      await resolve(envelope, { idempotencyKey: 'trigger_claim_1' } as never),
+    );
+
+    expect(Buffer.byteLength(snapshot.rendered, 'utf8')).toBeLessThanOrEqual(8 * 1_024);
+    expect(snapshot.value.parent_message_id).toBe('界'.repeat(256));
+    expect(snapshot.value.parent_message_id_truncated).toBe(true);
+    expect(snapshot.value.known_children).toEqual([
+      expect.objectContaining({ background_task_id: 'task-1', current_completion: true }),
+    ]);
   });
 
   it('keeps an older actively leased child ahead of newer settled siblings', async () => {

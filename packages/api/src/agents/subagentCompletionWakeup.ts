@@ -26,7 +26,8 @@ const ORCHESTRATION_TASK_SELECT =
 const MAX_ORCHESTRATION_TASKS = 16;
 const MAX_ORCHESTRATION_CANDIDATES = MAX_ORCHESTRATION_TASKS * 2 + 1;
 const MAX_ORCHESTRATION_ACTIVE_LEASES = 200;
-const MAX_ORCHESTRATION_SNAPSHOT_CHARS = 8 * 1_024;
+const MAX_ORCHESTRATION_SNAPSHOT_BYTES = 8 * 1_024;
+const MAX_ORCHESTRATION_SCALAR_CHARS = 256;
 
 export type EnqueueAgentTrigger = (
   envelope: unknown,
@@ -448,6 +449,8 @@ function renderOrchestrationSnapshot(
 ): string {
   const knownChildren = resolution.tasks.slice(0, MAX_ORCHESTRATION_TASKS);
   let omitted = resolution.tasks.length - knownChildren.length;
+  const boundedParentMessageId = parentMessageId.slice(0, MAX_ORCHESTRATION_SCALAR_CHARS);
+  const parentMessageIdTruncated = boundedParentMessageId !== parentMessageId;
   const completeness = (): 'complete' | 'bounded' | 'uncertain' => {
     if (resolution.readUncertain || resolution.lineageUncertain) {
       return 'uncertain';
@@ -466,7 +469,8 @@ function renderOrchestrationSnapshot(
   const serialize = () =>
     JSON.stringify({
       scope: 'current_parent_branch',
-      parent_message_id: parentMessageId,
+      parent_message_id: boundedParentMessageId,
+      ...(parentMessageIdTruncated ? { parent_message_id_truncated: true } : {}),
       completeness: completeness(),
       known_children: knownChildren,
       omitted_known_children: omitted,
@@ -478,10 +482,24 @@ function renderOrchestrationSnapshot(
       note: note(),
     });
   let rendered = serialize();
-  while (rendered.length > MAX_ORCHESTRATION_SNAPSHOT_CHARS && knownChildren.length > 1) {
+  while (
+    Buffer.byteLength(rendered, 'utf8') > MAX_ORCHESTRATION_SNAPSHOT_BYTES &&
+    knownChildren.length > 0
+  ) {
     knownChildren.pop();
     omitted += 1;
     rendered = serialize();
+  }
+  if (Buffer.byteLength(rendered, 'utf8') > MAX_ORCHESTRATION_SNAPSHOT_BYTES) {
+    return JSON.stringify({
+      scope: 'current_parent_branch',
+      completeness: 'uncertain',
+      known_children: [],
+      omitted_known_children: resolution.tasks.length,
+      additional_children_may_exist: true,
+      current_completion_in_preceding_result: true,
+      note: 'Snapshot metadata exceeded its byte budget. Do not infer that no other children ran.',
+    });
   }
   return rendered;
 }
