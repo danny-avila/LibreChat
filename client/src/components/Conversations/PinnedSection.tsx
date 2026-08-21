@@ -17,10 +17,10 @@ import {
 } from '~/data-provider';
 import useFavoritesData from '~/components/Nav/Favorites/useFavoritesData';
 import FavoriteItem from '~/components/Nav/Favorites/FavoriteItem';
+import { CONVERSATION_DRAG_TYPE, shouldSwapOnHover } from './dnd';
 import { useLocalize, useLocalStorage } from '~/hooks';
 import { getSpecAgentAvatarURL, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
-import { CONVERSATION_DRAG_TYPE } from './dnd';
 import { Collapse } from '~/components/ui';
 import Convo from './Convo';
 
@@ -61,6 +61,7 @@ const FavoriteRowSkeleton = () => (
 interface DraggablePinnedRowProps {
   entry: PinnedEntry;
   conversation?: TConversation;
+  indexOfKey: (key: string) => number;
   moveEntry: (dragKey: string, hoverKey: string) => void;
   onDrop: () => void;
   children: React.ReactNode;
@@ -72,6 +73,7 @@ interface DraggablePinnedRowProps {
 const DraggablePinnedRow = ({
   entry,
   conversation,
+  indexOfKey,
   moveEntry,
   onDrop,
   children,
@@ -83,8 +85,23 @@ const DraggablePinnedRow = ({
     collect(monitor) {
       return { handlerId: monitor.getHandlerId() };
     },
-    hover(item) {
-      if (item.key === entry.key || !item.key) {
+    hover(item, monitor) {
+      if (!item.key || item.key === entry.key || !ref.current) {
+        return;
+      }
+      const clientOffset = monitor.getClientOffset();
+      if (!clientOffset) {
+        return;
+      }
+      const rect = ref.current.getBoundingClientRect();
+      const swap = shouldSwapOnHover({
+        dragIndex: indexOfKey(item.key),
+        hoverIndex: indexOfKey(entry.key),
+        pointerY: clientOffset.y,
+        hoverTop: rect.top,
+        hoverBottom: rect.bottom,
+      });
+      if (!swap) {
         return;
       }
       moveEntry(item.key, entry.key);
@@ -292,6 +309,13 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
 
   const displayEntries = liveEntries ?? orderedEntries;
 
+  /** Live index of a key in the list the drag is mutating, so a hover can tell
+   *  which side of the hovered row the drag is coming from. */
+  const indexOfKey = useCallback(
+    (key: string) => dragEntriesRef.current.findIndex((entry) => entry.key === key),
+    [],
+  );
+
   const moveEntry = useCallback((dragKey: string, hoverKey: string) => {
     const list = [...dragEntriesRef.current];
     const from = list.findIndex((entry) => entry.key === dragKey);
@@ -343,16 +367,17 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     [favoritesData, isSmallScreen, toggleNav],
   );
 
+  const conversationByKey = useMemo(
+    () => new Map(conversations.map((convo) => [convo.conversationId ?? '', convo])),
+    [conversations],
+  );
+
   /* The section renders while either half is present or still resolving, and
    * drops out only once both are definitively empty. A live conversation drag
    * keeps it mounted as a drop target even when empty. */
   if (naturalEntries.length === 0 && !favoritesData.isLoading && !draggingConversation) {
     return null;
   }
-
-  const conversationByKey = new Map(
-    conversations.map((convo) => [convo.conversationId ?? '', convo]),
-  );
 
   return (
     <div
@@ -416,6 +441,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                     <DraggablePinnedRow
                       entry={entry}
                       conversation={convo}
+                      indexOfKey={indexOfKey}
                       moveEntry={moveEntry}
                       onDrop={commitOrder}
                     >
@@ -431,7 +457,12 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
               }
               return (
                 <li key={entry.key} className="list-none">
-                  <DraggablePinnedRow entry={entry} moveEntry={moveEntry} onDrop={commitOrder}>
+                  <DraggablePinnedRow
+                    entry={entry}
+                    indexOfKey={indexOfKey}
+                    moveEntry={moveEntry}
+                    onDrop={commitOrder}
+                  >
                     <FavoriteRow
                       favorite={entry.favorite}
                       agentsMap={favoritesData.agentsMap}

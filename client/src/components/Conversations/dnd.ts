@@ -49,3 +49,31 @@ export const useAssignDroppedConversation = () => {
     [assignConversation, localize, showToast],
   );
 };
+
+/** Whether a hover should reorder yet. Rows only swap once the pointer crosses
+ *  the hovered row's midpoint: without the threshold a shorter dragged row
+ *  keeps re-entering the taller row it just displaced, and the list oscillates
+ *  under a cursor that never moved. */
+export const shouldSwapOnHover = ({
+  dragIndex,
+  hoverIndex,
+  pointerY,
+  hoverTop,
+  hoverBottom,
+}: {
+  dragIndex: number;
+  hoverIndex: number;
+  pointerY: number;
+  hoverTop: number;
+  hoverBottom: number;
+}): boolean => {
+  if (dragIndex < 0 || hoverIndex < 0 || dragIndex === hoverIndex) {
+    return false;
+  }
+  const middleY = (hoverBottom - hoverTop) / 2;
+  const offsetY = pointerY - hoverTop;
+  if (dragIndex < hoverIndex) {
+    return offsetY >= middleY;
+  }
+  return offsetY <= middleY;
+};
