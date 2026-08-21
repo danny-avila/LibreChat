@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { QueryKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
 import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
+import type { Favorite } from '~/store/favorites';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useFavorites, useGetConversation, useNewConvo } from '~/hooks';
-import type { Favorite } from '~/store/favorites';
+import useSelectMention from '~/hooks/Input/useSelectMention';
 
 /** A 404/403 from getAgentById means the agent is gone or inaccessible; other errors are transient. */
 export const isMissingAgentError = (error: unknown): boolean => {
