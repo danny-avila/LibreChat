@@ -388,6 +388,35 @@ describe('ResumableAgentController resume metadata', () => {
     },
   );
 
+  it.each(['overrideUserMessageId', 'overrideConvoId'])(
+    'rejects a non-string %s before admission',
+    async (field) => {
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Invalid override identity',
+          messageId: 'user-message',
+          clientRequestId: 'override-request',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          [field]: { malformed: true },
+        },
+        config: {},
+      };
+      const res = { json: jest.fn(), status: jest.fn(() => res) };
+
+      await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'INVALID_OVERRIDE_ID' }),
+      );
+      expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ['empty recovery id', { clientRequestId: 'steer-recovery:' }],
     ['regenerate', { isRegenerate: true }],

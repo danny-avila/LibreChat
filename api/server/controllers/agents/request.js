@@ -371,6 +371,23 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     );
   }
   const clientRequestId = rawClientRequestId;
+  const rawOverrideUserMessageId = req.body?.overrideUserMessageId;
+  const rawOverrideConversationId = req.body?.overrideConvoId;
+  if (
+    (rawOverrideUserMessageId != null && typeof rawOverrideUserMessageId !== 'string') ||
+    (rawOverrideConversationId != null && typeof rawOverrideConversationId !== 'string')
+  ) {
+    startupTelemetry?.end('rejected');
+    return sendGenerationJson(
+      res,
+      400,
+      {
+        code: 'INVALID_OVERRIDE_ID',
+        error: 'overrideUserMessageId and overrideConvoId must be strings.',
+      },
+      generationProtocolVersion,
+    );
+  }
   const rawExpectedPredecessorCreatedAt = req.body?.expectedPredecessorCreatedAt;
   if (
     rawExpectedPredecessorCreatedAt != null &&
@@ -415,7 +432,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   }
   const recoveredSteerId = explicitRecoveredSteerId ?? legacyRecoveredSteerId;
   const isRecoveredSteerRequest = recoveredSteerId != null;
-  const recoveryUserMessageId = req.body?.overrideUserMessageId;
+  const recoveryUserMessageId = rawOverrideUserMessageId;
   const recoveredSteerPayload = isRecoveredSteerRequest
     ? buildRecoveredSteerPayload(text, req.body?.files)
     : undefined;
@@ -979,13 +996,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
    * discovery and graph execution must receive the same response-scoped body.
    * BaseClient otherwise allocates these IDs later in `sendMessage`, after MCP
    * connections already exist. */
-  const rawOverrideUserMessageId = req.body?.overrideUserMessageId;
   const overrideUserMessageId = rawOverrideUserMessageId
     ? rawOverrideUserMessageId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;
   const preallocatedUserMessageId =
     overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
-  const rawOverrideConversationId = req.body?.overrideConvoId;
   const overrideConversationId = rawOverrideConversationId
     ? rawOverrideConversationId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;

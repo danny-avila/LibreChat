@@ -1,3 +1,4 @@
+import { GraphEvents } from '@librechat/agents';
 import { ErrorTypes } from 'librechat-data-provider';
 import type { ChatCompletionDependencies } from './service';
 import { createAgentChatCompletion } from './service';
@@ -128,6 +129,39 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(runArgs.requestBody).toEqual(expect.objectContaining({ parentMessageId: 'parent-123' }));
     const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
     expect(streamConfig.configurable?.requestBody).toEqual(runArgs.requestBody);
+  });
+
+  it('forwards the normalized MCP body to deferred execution loaders', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' }) as unknown as {
+      body: Record<string, unknown>;
+    };
+    req.body.stream = true;
+    req.body.parent_message_id = 'parent-123';
+    const loadTools = jest.fn().mockResolvedValue({ loadedTools: [] });
+    deps.toolExecuteOptions = { loadTools };
+
+    await createAgentChatCompletion(req as never, createMockRes(), deps);
+
+    const runArgs = createRun.mock.calls[0][0] as CreateRunArgs & {
+      customHandlers: Record<string, { handle: (event: string, data: unknown) => Promise<void> }>;
+    };
+    const streamConfig = processStream.mock.calls[0][1] as ProcessStreamConfig;
+    const resolve = jest.fn();
+    const reject = jest.fn();
+    await runArgs.customHandlers[GraphEvents.ON_TOOL_EXECUTE].handle(GraphEvents.ON_TOOL_EXECUTE, {
+      toolCalls: [{ id: 'tool-call-1', name: 'deferred_mcp_tool', args: {} }],
+      agentId: 'agent_test',
+      configurable: streamConfig.configurable,
+      metadata: {},
+      resolve,
+      reject,
+    });
+
+    expect(loadTools).toHaveBeenCalledWith(
+      ['deferred_mcp_tool'],
+      'agent_test',
+      expect.objectContaining({ requestBody: runArgs.requestBody }),
+    );
   });
 
   it('uses the root parent sentinel when chat completions omit a parent id', async () => {
