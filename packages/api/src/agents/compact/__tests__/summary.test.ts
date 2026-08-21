@@ -1228,6 +1228,60 @@ describe('compactConversation', () => {
     expect(JSON.stringify(assistantText?.content ?? '')).not.toContain('RFC-9110 defines GET.');
   });
 
+  it('keeps the run model when a configured summarizer provider cannot resolve', async () => {
+    /** The fallback deliberately returns to the agent's endpoint and drops the
+     *  model override, so the conversation's own context limit describes the
+     *  call again. */
+    const wideBranch: TMessage[] = [
+      userMessage('u1', Constants.NO_PARENT, bulk('alpha', 900)),
+      userMessage('u2', 'u1', bulk('beta', 900)),
+      userMessage('u3', 'u2', bulk('gamma', 900)),
+    ];
+
+    await compactConversation({
+      req: makeReq({ provider: 'not-a-real-endpoint' }),
+      agent: { ...smallWindowAgent, maxContextTokens: 6000 },
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'u3' },
+      db: dbMethods,
+    });
+    const afterFallback = mockStream.mock.calls.length;
+
+    mockStream.mockClear();
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...smallWindowAgent, maxContextTokens: 6000 },
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'u3' },
+      db: dbMethods,
+    });
+
+    /** Same target, so the 6K limit applies in both and the pass count matches. */
+    expect(afterFallback).toBe(mockStream.mock.calls.length);
+    expect(afterFallback).toBeGreaterThan(1);
+  });
+
+  it('never lets summarization parameters redirect the model', async () => {
+    /** `clientOptions.model` is what `initializeModel` invokes, while sizing,
+     *  billing and the persisted metadata read the resolved model. */
+    mockInitializeModel.mockClear();
+
+    const result = await compactConversation({
+      req: makeReq({
+        model: 'gpt-4o',
+        parameters: { model: 'gpt-4o-mini', modelName: 'gpt-4o-mini' },
+      }),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const clientOptions = mockInitializeModel.mock.calls[0][0].clientOptions as { model?: string };
+    expect(clientOptions.model).toBe('gpt-4o');
+    expect(result.summary.model).toBe('gpt-4o');
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so
