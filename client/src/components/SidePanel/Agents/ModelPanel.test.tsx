@@ -96,4 +96,20 @@ describe('ModelPanel model availability', () => {
     });
     expect(screen.getByRole('button', { name: 'com_ui_model' })).toBeEnabled();
   });
+
+  it('disables provider selection while model reconciliation is paused', async () => {
+    const { rerender } = render(<ModelPanelHarness models={{}} modelsLoaded={false} />);
+
+    expect(screen.getByRole('button', { name: 'com_ui_provider' })).toBeDisabled();
+
+    rerender(<ModelPanelHarness models={{}} modelsError={true} modelsLoaded={false} />);
+
+    expect(screen.getByRole('button', { name: 'com_ui_provider' })).toBeDisabled();
+
+    rerender(<ModelPanelHarness models={{ openAI: ['configured-model'] }} modelsLoaded={true} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'com_ui_provider' })).toBeEnabled();
+    });
+  });
 });

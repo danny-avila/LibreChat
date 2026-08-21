@@ -548,6 +548,18 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+      if (!modelsLoaded) {
+        return showToast({
+          message: localize('com_error_models_not_loaded'),
+          status: 'error',
+        });
+      }
+      if (!(models[provider] ?? []).includes(model)) {
+        return showToast({
+          message: localize('com_error_model_not_found'),
+          status: 'error',
+        });
+      }
       if (!data.name) {
         return showToast({
           message: localize('com_agents_missing_name'),
@@ -557,7 +569,17 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      dirtyFields,
+      handleAvatarUpload,
+      models,
+      modelsLoaded,
+      update,
+      showToast,
+      localize,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {

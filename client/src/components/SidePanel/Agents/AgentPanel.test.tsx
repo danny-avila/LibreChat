@@ -12,6 +12,7 @@ import type { AgentForm } from '~/common';
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
 let mockActivePanel = 'builder';
+let mockWatchedAgentId = 'agent-123';
 let mockModelPanelModels: TModelsConfig | undefined;
 let mockModelPanelModelsError: boolean | undefined;
 let mockModelPanelModelsLoaded: boolean | undefined;
@@ -49,6 +50,7 @@ jest.mock('librechat-data-provider', () => {
   return {
     ...actualModule,
     dataService: {
+      createAgent: jest.fn(),
       updateAgent: jest.fn(),
     },
     Tools: actualModule.Tools || {
@@ -228,7 +230,7 @@ jest.mock('react-hook-form', () => {
       };
     },
     FormProvider: ({ children }: any) => children,
-    useWatch: () => 'agent-123',
+    useWatch: () => mockWatchedAgentId,
   };
 });
 
@@ -366,6 +368,82 @@ describe('AgentPanel - Model Availability', () => {
     expect(mockModelPanelModels).toEqual({});
     expect(mockModelPanelModelsError).toBe(true);
     expect(mockModelPanelModelsLoaded).toBe(false);
+  });
+});
+
+describe('AgentPanel - Create Model Validation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockActivePanel = 'builder';
+    mockWatchedAgentId = '';
+    mockShowToast = jest.fn();
+    mockFormSubmitHandler = null;
+    capturedFormMethods = null;
+
+    const { mockUseGetAgentByIdQuery } = setupMocks();
+    mockAgentQuery(mockUseGetAgentByIdQuery, createMockAgent());
+  });
+
+  afterEach(() => {
+    mockWatchedAgentId = 'agent-123';
+  });
+
+  it('refuses creation while the authoritative models are still pending', async () => {
+    mockModelsQuery = {
+      data: { openai: ['gpt-4'] },
+      isFetchedAfterMount: false,
+      isSuccess: true,
+    };
+
+    await renderAndSubmitForm();
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_error_models_not_loaded',
+        status: 'error',
+      });
+    });
+    expect(dataService.createAgent).not.toHaveBeenCalled();
+  });
+
+  /** The form seeds provider/model from local storage, so a pair the active server
+   *  configuration no longer exposes can reach submission without any user interaction. */
+  it('refuses creation when the seeded model is absent from the authoritative map', async () => {
+    mockModelsQuery = {
+      data: { openai: ['gpt-5'] },
+      isFetchedAfterMount: true,
+      isSuccess: true,
+    };
+
+    await renderAndSubmitForm();
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_error_model_not_found',
+        status: 'error',
+      });
+    });
+    expect(dataService.createAgent).not.toHaveBeenCalled();
+  });
+
+  it('creates the agent when the pair is present in the authoritative map', async () => {
+    mockModelsQuery = {
+      data: { openai: ['gpt-4'] },
+      isFetchedAfterMount: true,
+      isSuccess: true,
+    };
+    (dataService.createAgent as jest.Mock).mockResolvedValue(createMockAgent());
+
+    await renderAndSubmitForm();
+
+    await waitFor(() => {
+      expect(dataService.createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-4', provider: 'openai' }),
+      );
+    });
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_error_model_not_found' }),
+    );
   });
 });
 

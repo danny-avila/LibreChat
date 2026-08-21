@@ -136,10 +136,13 @@ export default function ModelPanel({
       </header>
       <div>
         {/* Endpoint aka Provider for Agents */}
-        <div className="mb-3">
+        <div className="mb-3" aria-busy={!modelsLoaded && !modelsError}>
           <label
             id="provider-label"
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className={cn(
+              'mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+              !modelsLoaded && 'opacity-60',
+            )}
             htmlFor="provider"
           >
             {localize('com_ui_provider')} <span className="text-red-500">*</span>
@@ -171,7 +174,8 @@ export default function ModelPanel({
                       label: typeof provider === 'string' ? provider : provider.label,
                       value: typeof provider === 'string' ? provider : provider.value,
                     }))}
-                    className={cn(error ? 'border-2 border-red-500' : '')}
+                    disabled={!modelsLoaded}
+                    className={cn('disabled:opacity-50', error ? 'border-2 border-red-500' : '')}
                     ariaLabel={localize('com_ui_provider')}
                     isCollapsed={false}
                     showCarat={true}
