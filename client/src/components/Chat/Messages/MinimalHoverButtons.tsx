@@ -17,6 +17,7 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
     text: message.text,
     content: message.content,
     searchResults,
+    isCreatedByUser: message.isCreatedByUser,
   });
   const canCopy = useMemo(
     () => hasCopyableText({ text: message.text, content: message.content, searchResults }),

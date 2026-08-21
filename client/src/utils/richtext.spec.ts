@@ -69,7 +69,46 @@ describe('markdownToHtml', () => {
   });
 
   it('renders math as its LaTeX source and unwraps directives', () => {
-    expect(markdownToHtml('$E = mc^2$')).toBe('<p>E = mc^2</p>');
+    expect(markdownToHtml('$$E = mc^2$$')).toBe('<p>E = mc^2</p>');
     expect(markdownToHtml(':::artifact\ncontents\n:::')).toBe('<p>contents</p>');
+  });
+
+  it('leaves paired currency alone, as the renderer does', () => {
+    expect(markdownToHtml('Costs rose from $5 to $10.')).toBe('<p>Costs rose from $5 to $10.</p>');
+  });
+
+  it('resolves reference-style links and images against their definitions', () => {
+    expect(markdownToHtml('See [docs][guide].\n\n[guide]: https://example.com')).toBe(
+      '<p>See <a href="https://example.com">docs</a>.</p>',
+    );
+    expect(markdownToHtml('![logo][pic]\n\n[pic]: https://example.com/a.png')).toBe(
+      '<p><img src="https://example.com/a.png" alt="logo" /></p>',
+    );
+  });
+
+  it('falls back to plain text when a reference has no definition', () => {
+    expect(markdownToHtml('See [docs][missing].')).toBe('<p>See [docs][missing].</p>');
+  });
+
+  it('pairs every background it sets with its own foreground', () => {
+    const html = markdownToHtml('`x`\n\n```\ny\n```\n\n| a |\n| --- |\n| b |');
+    const backgrounds = html.match(/background-color:[^;]+;/g) ?? [];
+
+    expect(backgrounds.length).toBeGreaterThan(0);
+    for (const style of html.match(/style="[^"]*background-color[^"]*"/g) ?? []) {
+      expect(style).toContain('color:#24292f;');
+    }
+    expect(backgrounds).toHaveLength(
+      (html.match(/style="[^"]*background-color[^"]*"/g) ?? []).length,
+    );
+  });
+
+  it('lets blockquotes and table cells inherit the destination colors', () => {
+    expect(markdownToHtml('> quoted')).toContain(
+      '<blockquote style="margin:0 0 16px;padding:0 1em;border-left:4px solid #d0d7de;">',
+    );
+    expect(markdownToHtml('| a |\n| --- |\n| b |')).toContain(
+      '<td style="border:1px solid #d0d7de;padding:6px 13px;">b</td>',
+    );
   });
 });

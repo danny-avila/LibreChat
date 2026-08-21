@@ -122,7 +122,12 @@ export default function useMessageActions(props: TMessageActions) {
     regenerate(message, { addedConvo: getAddedConvo() });
   }, [chatContext, isCreatedByUser, message, regenerate, getAddedConvo]);
 
-  const copyToClipboard = useCopyMessageToClipboard({ text, content, searchResults });
+  const copyToClipboard = useCopyMessageToClipboard({
+    text,
+    content,
+    searchResults,
+    isCreatedByUser,
+  });
 
   const getCanCopy = useCallback(
     () => hasCopyableText({ text, content, searchResults }),

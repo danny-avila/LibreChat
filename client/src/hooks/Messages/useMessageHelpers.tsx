@@ -81,7 +81,7 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message, { addedConvo: getAddedConvo() });
   };
 
-  const copyToClipboard = useCopyMessageToClipboard({ text, content });
+  const copyToClipboard = useCopyMessageToClipboard({ text, content, isCreatedByUser });
 
   const getCanCopy = useCallback(() => hasCopyableText({ text, content }), [text, content]);
 

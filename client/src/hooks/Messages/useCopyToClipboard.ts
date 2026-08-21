@@ -153,13 +153,21 @@ export default function useCopyToClipboard({
   return copyToClipboard;
 }
 
+type MessageClipboardSource = ClipboardSource & Partial<Pick<TMessage, 'isCreatedByUser'>>;
+
 /**
  * Copies a message honoring the user's rich text preference. Kept apart from
  * `useCopyToClipboard` so the plain copies (share links, API keys, callback
  * URLs) never get wrapped in markup.
+ *
+ * A user message is only rendered as markdown when `enableUserMsgMarkdown` is
+ * on, so with it off the HTML flavor is skipped: otherwise text that reads as
+ * literal on screen would arrive formatted in the paste target.
  */
-export function useCopyMessageToClipboard(source: ClipboardSource) {
-  const richText = useRecoilValue(store.copyRichText);
+export function useCopyMessageToClipboard({ isCreatedByUser, ...source }: MessageClipboardSource) {
+  const copyRichText = useRecoilValue(store.copyRichText);
+  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const richText = copyRichText && (isCreatedByUser !== true || enableUserMsgMarkdown);
   return useCopyToClipboard({ ...source, richText });
 }
 
