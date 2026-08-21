@@ -33,11 +33,11 @@ import {
   hasModelSelection,
   buildDefaultConvo,
   requestChatFocus,
-  chatNavigation,
   renewNewConversationDraftToken,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
+import { supersedeNavigation } from './Conversations/useNavigateToConvo';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { clearUploadRecovery } from './Files/useFileHandling';
@@ -261,6 +261,12 @@ const useNewConvo = (index = 0) => {
           return searchParamsString ? `?${searchParamsString}` : '';
         };
 
+        /** A first visit to another conversation may still be waiting on its
+         * record. Starting a new chat keeps the pathname, so nothing the route
+         * check sees changes — without this, that record lands and pulls the
+         * user into the conversation they just abandoned. */
+        supersedeNavigation();
+
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
           const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
@@ -273,7 +279,7 @@ const useNewConvo = (index = 0) => {
           if (!disableFocus) {
             requestChatFocus();
           }
-          navigate(path, chatNavigation);
+          navigate(path);
           return;
         }
 
@@ -281,7 +287,7 @@ const useNewConvo = (index = 0) => {
         if (!disableFocus) {
           requestChatFocus();
         }
-        navigate(path, { ...chatNavigation, replace: true });
+        navigate(path, { replace: true });
       },
     [
       endpointsConfig,

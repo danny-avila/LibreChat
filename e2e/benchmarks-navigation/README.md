@@ -32,10 +32,9 @@ renders and main-thread long tasks across each switch.
 default in react-router v7. A transition keeps the OUTGOING tree painted until
 the incoming one has finished rendering — so any work that makes the incoming
 conversation slow to render is paid as time the user spends looking at the
-wrong conversation, under the right URL. Conversation switches opt out per
-navigation via `chatNavigation` (`flushSync`); every other route keeps the
-transition, so dropping that option anywhere in the chat-switch path is one of
-the regressions this benchmark catches.
+wrong conversation, under the right URL. `App.jsx` opts out at the provider,
+so putting the app back on the transition lane is one of the regressions this
+benchmark catches.
 
 ## Run
 

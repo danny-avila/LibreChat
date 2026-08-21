@@ -4,7 +4,7 @@ import { render, screen, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import type { TConversation, TEndpointsConfig } from 'librechat-data-provider';
-import useNavigateToConvo from '../useNavigateToConvo';
+import useNavigateToConvo, { supersedeNavigation } from '../useNavigateToConvo';
 import { SetConvoProvider } from '~/Providers';
 import store from '~/store';
 
@@ -98,6 +98,16 @@ function Harness() {
           setConversation({ ...(conversation as TConversation), model: 'user-picked-model' })
         }
       />
+      {/* What `useNewConvo` does on "New chat": records that the user wants a
+          different conversation, then navigates — to the SAME pathname when
+          they are already on `/c/new`. */}
+      <button
+        data-testid="new-chat"
+        onClick={() => {
+          supersedeNavigation();
+          navigate('/c/new');
+        }}
+      />
       <div data-testid="path">{location.pathname}</div>
       <div data-testid="convo">{JSON.stringify(conversation ?? null)}</div>
     </div>
@@ -111,6 +121,10 @@ function renderHarness(cached: TConversation[] = []) {
 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData([QueryKeys.endpoints], endpointsConfig);
+  queryClient.setQueryData([QueryKeys.allConversations], {
+    pages: [{ conversations: [rowB, rowC], nextCursor: null }],
+    pageParams: [undefined],
+  });
   for (const record of cached) {
     queryClient.setQueryData([QueryKeys.conversation, record.conversationId], record);
   }
@@ -213,6 +227,24 @@ describe('useNavigateToConvo', () => {
       expect(currentConvo()?.promptPrefix).toBe('You are terse.');
     });
 
+    it('updates the sidebar row so it cannot reinstate settings the refresh replaced', async () => {
+      const queryClient = renderHarness([recordB]);
+      click('go-b');
+      /** `endpoint`, `model` and `spec` are in the sidebar projection, so a row
+       *  from before a change made on another device would spread back over the
+       *  refreshed record on every switch — until the list itself refetched. */
+      await settle(B, { ...recordB, model: 'gpt-4o-elsewhere' });
+
+      await waitFor(() => {
+        const row = queryClient
+          .getQueryData<{
+            pages: { conversations: TConversation[] }[];
+          }>([QueryKeys.allConversations])
+          ?.pages[0].conversations.find((c) => c.conversationId === B);
+        expect(row?.model).toBe('gpt-4o-elsewhere');
+      });
+    });
+
     it('keeps a setting the user picks while the refresh is in flight', async () => {
       renderHarness([recordB]);
       click('go-b');
@@ -309,6 +341,28 @@ describe('useNavigateToConvo', () => {
       /** Completing the navigation here would yank the user out of the chat
        *  they deliberately opened and into one they had already left. */
       expect(currentPath()).toBe('/c/new');
+    });
+
+    it('does not land a first-visit record after the user starts a new chat', async () => {
+      renderHarness();
+      /** Start where "New chat" also lands, so the pathname genuinely cannot
+       *  distinguish before from after. */
+      click('go-elsewhere');
+      expect(currentPath()).toBe('/c/new');
+
+      click('go-b');
+      /** Uncached, so the route has not moved — still `/c/new`. */
+      expect(currentPath()).toBe('/c/new');
+
+      click('new-chat');
+      /** "New chat" from `/c/new` lands on `/c/new`: the pathname is unchanged,
+       *  so only the recorded intent can tell that B is no longer wanted. */
+      expect(currentPath()).toBe('/c/new');
+
+      await settle(B, recordB);
+
+      expect(currentPath()).toBe('/c/new');
+      expect(currentConvo()?.conversationId).not.toBe(B);
     });
 
     it('lands on the last conversation clicked, not the first record to arrive', async () => {

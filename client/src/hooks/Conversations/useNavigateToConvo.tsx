@@ -22,7 +22,7 @@ import {
   buildDefaultConvo,
   requestChatFocus,
   isNotFoundError,
-  chatNavigation,
+  updateConvoInAllQueries,
   logger,
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
@@ -64,6 +64,25 @@ const currentRoute = () => window.location.pathname;
  * to the row that was clicked and blind to the click that superseded it.
  */
 let navigationGeneration = 0;
+
+/**
+ * Records that the user has asked for a different conversation, so a first
+ * visit still waiting on its record abandons instead of landing.
+ *
+ * Called by `useNewConvo`, which is the only other place a user action decides
+ * WHICH conversation they want. Starting a new chat from `/c/new` leaves the
+ * pathname exactly where it was, so the route check cannot see it — the same
+ * blind spot two first-visit clicks have, and for the same reason.
+ *
+ * Deliberately not called from every `navigate()` that touches `/c/*`. The
+ * recoveries in `useEventHandlers` and `useChatFunctions` are the app reacting
+ * to a stream, not the user changing their mind, and they should not cancel a
+ * conversation the user deliberately opened. Intent is a closed set; navigation
+ * is not.
+ */
+export const supersedeNavigation = () => {
+  navigationGeneration++;
+};
 
 const useNavigateToConvo = (index = 0) => {
   const navigate = useNavigate();
@@ -123,6 +142,13 @@ const useNavigateToConvo = (index = 0) => {
     try {
       const data = await fetchConversationRecord(conversationId);
       logger.log('conversation', 'Refreshed cached conversation record', data);
+      /** The sidebar row overlays this record on the next switch, and the row
+       * projection carries `endpoint`, `model` and `spec` — so leaving the list
+       * untouched would let a row from before an edit made elsewhere reinstate
+       * the old setting on every switch until the list itself refetches, which
+       * is the opposite of what this refresh is for. Merged rather than swapped
+       * so list-only fields survive. */
+      updateConvoInAllQueries(queryClient, conversationId, (row) => ({ ...row, ...data }));
     } catch (error) {
       logger.error('conversation', 'Error refreshing conversation record on navigation', error);
       /** Only a conversation that is confirmed GONE invalidates what is on
@@ -173,7 +199,7 @@ const useNavigateToConvo = (index = 0) => {
       return;
     }
     applyConversation(record);
-    navigate(`/c/${conversationId}`, chatNavigation);
+    navigate(`/c/${conversationId}`);
   };
 
   const navigateToConvo = (
@@ -263,12 +289,12 @@ const useNavigateToConvo = (index = 0) => {
        * write this navigation makes — what the user sees now is what a send
        * will carry until they change it themselves. */
       applyConversation({ ...cachedConvo, ...convo });
-      navigate(`/c/${convo.conversationId}`, chatNavigation);
+      navigate(`/c/${convo.conversationId}`);
       refreshConversationRecord(convo.conversationId);
     } else {
       setConversation(convo);
       requestChatFocus();
-      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, chatNavigation);
+      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
     }
   };
 

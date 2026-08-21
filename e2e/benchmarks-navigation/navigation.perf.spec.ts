@@ -39,10 +39,9 @@ import {
  * location updates inside `React.startTransition` by default in react-router
  * v7, which keeps the OUTGOING tree painted until the incoming one has fully
  * rendered — so every millisecond the next thread takes to render was spent
- * showing the previous one (conversation switches now pass `flushSync`, see
- * `chatNavigation`). And navigation used to await a conversation refetch
- * before changing the route at all, spending a server round trip on the
- * departing conversation.
+ * showing the previous one (`App.jsx` now opts out). And navigation used to
+ * await a conversation refetch before changing the route at all, spending a
+ * server round trip on the departing conversation.
  *
  * The in-page sampler measures exactly that window, so either regression —
  * route updates back on the transition lane, or navigation gated behind a
