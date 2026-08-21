@@ -160,6 +160,24 @@ export class ServerConfigsCacheRedisAggregateKey
     });
   }
 
+  /** Merges derived fields into an existing entry without bumping `updatedAt` —
+   * see the interface doc: a bump would mark live connections stale. */
+  public async patch(serverName: string, fields: Partial<ParsedServerConfig>): Promise<boolean> {
+    if (this.leaderOnly) await this.leaderCheck('patch MCP servers');
+    return this.withWriteLock(async () => {
+      this.invalidateLocalSnapshot(); // Force fresh Redis read (see add() comment)
+      const all = await this.getAll();
+      const existing = all[serverName];
+      if (!existing) {
+        return false;
+      }
+      const newAll = { ...all, [serverName]: { ...existing, ...fields } };
+      const success = await this.cache.set(AGGREGATE_KEY, newAll);
+      this.successCheck(`patch ${this.namespace} server "${serverName}"`, success);
+      return true;
+    });
+  }
+
   public async remove(serverName: string): Promise<void> {
     if (this.leaderOnly) await this.leaderCheck('remove MCP servers');
     return this.withWriteLock(async () => {
