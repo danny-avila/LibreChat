@@ -1144,6 +1144,90 @@ describe('compactConversation', () => {
     expect(JSON.stringify(sent[0].content)).not.toContain('RFC-9110 defines GET.');
   });
 
+  it('ignores the conversation context limit when a summarizer model is configured', async () => {
+    /** The limit describes the model the CONVERSATION runs on; a configured
+     *  summarizer is a different model with its own window. */
+    const wideBranch: TMessage[] = [
+      userMessage('w1', Constants.NO_PARENT, bulk('alpha', 900)),
+      userMessage('w2', 'w1', bulk('beta', 900)),
+      userMessage('w3', 'w2', bulk('gamma', 900)),
+    ];
+
+    await compactConversation({
+      req: makeReq({ model: 'test-other-summarizer' }),
+      agent: { ...smallWindowAgent, maxContextTokens: 6000 },
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'w3' },
+      db: dbMethods,
+    });
+    const withSummarizerModel = mockStream.mock.calls.length;
+
+    mockStream.mockClear();
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...smallWindowAgent, maxContextTokens: 6000 },
+      branch: wideBranch,
+      ids: { ...ids, parentMessageId: 'w3' },
+      db: dbMethods,
+    });
+
+    /** The summarizer falls back to its own window, which is larger than the
+     *  conversation's 6K limit, so it needs fewer passes. */
+    expect(withSummarizerModel).toBeLessThan(mockStream.mock.calls.length);
+  });
+
+  it('aborts when a historical agent lookup fails rather than dropping attribution', async () => {
+    const multiAgent = {
+      ...assistantMessage('a1', Constants.NO_PARENT, [
+        { type: ContentTypes.TEXT, text: 'from one agent', agentId: 'agent_x' },
+      ] as TMessage['content']),
+      addedConvo: true,
+    } as TMessage;
+
+    await expect(
+      compactConversation({
+        req: makeReq(),
+        agent,
+        branch: [multiAgent],
+        ids: { ...ids, parentMessageId: 'a1' },
+        db: dbMethods,
+        getAgent: jest.fn().mockRejectedValue(new Error('db unavailable')),
+      }),
+    ).rejects.toThrow('db unavailable');
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
+  it('gives a steer its own attachments instead of the assistant turn', async () => {
+    const withSteerFile = {
+      ...assistantMessage('s1', Constants.NO_PARENT, [
+        { type: ContentTypes.TEXT, text: 'working on it' },
+        { type: ContentTypes.STEER, steer: 'use this spec', files: [{ file_id: 'file_s' }] },
+      ] as TMessage['content']),
+    } as TMessage;
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_s', filename: 'spec.md', source: 'text', text: 'RFC-9110 defines GET.' },
+      ]);
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [withSteerFile],
+      ids: { ...ids, parentMessageId: 's1' },
+      db: dbMethods,
+      getFiles,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const steerMessage = sent.find((message) => message.additional_kwargs?.source === 'steer');
+    /** The user attached it mid-run, so it rides with the replayed steer, not
+     *  with the assistant text that happens to precede it. */
+    expect(JSON.stringify(steerMessage?.content)).toContain('RFC-9110 defines GET.');
+    const assistantText = sent.find((message) => message.getType() === 'ai');
+    expect(JSON.stringify(assistantText?.content ?? '')).not.toContain('RFC-9110 defines GET.');
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so

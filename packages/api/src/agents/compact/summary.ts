@@ -27,8 +27,9 @@ import type { EndpointTokenConfig } from '~/types/tokens';
 import type { OwnerFileFilter } from '~/files/history';
 import {
   buildOwnerFileFilter,
+  collectSteerFileRefs,
+  collectMessageFileRefs,
   collectHistoricalFileIds,
-  collectHistoricalFileRefs,
 } from '~/files/history';
 import { extractInvokedSkillsFromPayload, shouldReplayReasoningContent } from '~/agents/run';
 import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/agents/client';
@@ -181,6 +182,9 @@ export interface CompactionModel {
   /** True when compaction resolved to the agent's OWN endpoint, which decides
    *  whether `endpointTokenConfig` is authoritative for pricing. */
   sameEndpoint: boolean;
+  /** True when it also resolved to the model the conversation runs on, which
+   *  decides whether that conversation's own context limit describes it. */
+  usesRunModel: boolean;
 }
 
 /** Minimal agent view compaction needs: provider, endpoint, and model. */
@@ -326,9 +330,14 @@ async function resolveHistoryAgents(
   if (agentIds.size === 0) {
     return undefined;
   }
-  const resolved = await Promise.all(
-    Array.from(agentIds).map((id) => getAgent({ id }).catch(() => null)),
-  );
+  /**
+   * A REJECTED lookup is not the same as a missing agent. Swallowing it leaves
+   * an empty map, and the mapper still strips the stored `agentId`/`groupId`
+   * routing metadata, so parallel replies would merge into anonymous assistant
+   * content in a permanent checkpoint. A deleted agent still resolves to null
+   * and compacts, unlabelled, as before.
+   */
+  const resolved = await Promise.all(Array.from(agentIds).map((id) => getAgent({ id })));
   const configs = new Map<string, Agent>();
   for (const found of resolved) {
     if (found?.id) {
@@ -385,71 +394,92 @@ async function hydrateAttachments(
   branch: TMessage[],
   req: ServerRequest,
   getFiles?: GetFilesFn,
-): Promise<Map<string, string>> {
+): Promise<HydratedAttachments> {
   const contextByMessageId = new Map<string, string>();
+  const contextBySteerPart = new Map<string, string>();
+  const empty = { contextByMessageId, contextBySteerPart };
   if (!getFiles) {
-    return contextByMessageId;
+    return empty;
   }
   const filter = buildOwnerFileFilter(collectHistoricalFileIds(branch), req.user);
   if (!filter) {
-    return contextByMessageId;
+    return empty;
   }
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
   for (const message of branch) {
-    const attachments: IMongoFile[] = [];
     /** Deduplicated per MESSAGE, not across the branch: a file attached both
      *  before and after an existing summary boundary must hydrate onto the
      *  later occurrence too, since `formatAgentMessages` discards the earlier
      *  one and the checkpoint would otherwise lose what was reattached. */
     const seen = new Set<string>();
-    /** Includes refs carried inside a persisted steer part, which
-     *  `collectHistoricalFileIds` already fetched but a `message.files` read
-     *  would skip entirely. */
-    for (const ref of collectHistoricalFileRefs(message)) {
-      if (!ref?.file_id || seen.has(ref.file_id)) {
-        continue;
+    const resolve = (refs: Array<{ file_id?: string }>): IMongoFile[] => {
+      const attachments: IMongoFile[] = [];
+      for (const ref of refs) {
+        if (!ref?.file_id || seen.has(ref.file_id)) {
+          continue;
+        }
+        const file = byId.get(ref.file_id);
+        if (file) {
+          attachments.push(file);
+          seen.add(ref.file_id);
+        }
       }
-      const file = byId.get(ref.file_id);
-      if (file) {
-        attachments.push(file);
-        seen.add(ref.file_id);
+      return attachments;
+    };
+    /** Steer refs FIRST, so a file the user attached mid-run is claimed by the
+     *  part that replays it rather than by the enclosing assistant turn. */
+    for (const { index, refs } of collectSteerFileRefs(message)) {
+      const combined = await describeAttachments(resolve(refs), req);
+      if (combined) {
+        contextBySteerPart.set(`${message.messageId}#${index}`, combined);
       }
     }
-    if (attachments.length === 0) {
-      continue;
-    }
-    const fileContext = await extractFileContext({
-      attachments,
-      req,
-      tokenCountFn: (text: string) => countTokens(text),
-    });
-    /**
-     * `extractFileContext` only inlines text sources. Images, audio, video and
-     * provider-native documents are deliberately NOT re-encoded here: the
-     * summarizer may be a cheap text model on another endpoint, and a
-     * checkpoint cannot carry pixels anyway. What it CAN carry is the fact that
-     * they existed, so they are listed by name and type and the summary records
-     * them instead of dropping the turn's attachments silently.
-     */
-    /** Keyed on what was ACTUALLY inlined: with no `fileTokenLimit` configured
-     *  `extractFileContext` returns nothing, and treating text files as inlined
-     *  anyway left them with neither their text nor a mention. */
-    const media = fileContext
-      ? attachments.filter((file) => !isInlinedTextSource(file))
-      : attachments;
-    const manifest =
-      media.length > 0
-        ? `[Attachments: ${media
-            .map((file) => `${file.filename ?? 'file'} (${file.type ?? 'unknown type'})`)
-            .join(', ')}]`
-        : '';
-    const combined = [fileContext, manifest].filter(Boolean).join('\n\n');
+    const combined = await describeAttachments(resolve(collectMessageFileRefs(message)), req);
     if (combined) {
       contextByMessageId.set(message.messageId, combined);
     }
   }
-  return contextByMessageId;
+  return empty;
+}
+
+interface HydratedAttachments {
+  contextByMessageId: Map<string, string>;
+  /** Keyed `${messageId}#${partIndex}`. */
+  contextBySteerPart: Map<string, string>;
+}
+
+/** Inlined text plus a manifest of what could not be inlined, or nothing. */
+async function describeAttachments(attachments: IMongoFile[], req: ServerRequest): Promise<string> {
+  if (attachments.length === 0) {
+    return '';
+  }
+  const fileContext = await extractFileContext({
+    attachments,
+    req,
+    tokenCountFn: (text: string) => countTokens(text),
+  });
+  /**
+   * `extractFileContext` only inlines text sources. Images, audio, video and
+   * provider-native documents are deliberately NOT re-encoded here: the
+   * summarizer may be a cheap text model on another endpoint, and a
+   * checkpoint cannot carry pixels anyway. What it CAN carry is the fact that
+   * they existed, so they are listed by name and type and the summary records
+   * them instead of dropping the turn's attachments silently.
+   */
+  /** Keyed on what was ACTUALLY inlined: with no `fileTokenLimit` configured
+   *  `extractFileContext` returns nothing, and treating text files as inlined
+   *  anyway left them with neither their text nor a mention. */
+  const media = fileContext
+    ? attachments.filter((file) => !isInlinedTextSource(file))
+    : attachments;
+  const manifest =
+    media.length > 0
+      ? `[Attachments: ${media
+          .map((file) => `${file.filename ?? 'file'} (${file.type ?? 'unknown type'})`)
+          .join(', ')}]`
+      : '';
+  return [fileContext, manifest].filter(Boolean).join('\n\n');
 }
 
 /**
@@ -464,12 +494,53 @@ async function hydrateAttachments(
  * built without them drops the referenced material permanently once it becomes
  * the context boundary.
  */
+/**
+ * Moves a steer's hydrated attachments onto the steer part itself.
+ *
+ * `formatAgentMessages` replays a steer as its own `HumanMessage`, built from
+ * the part's media or its text. Prepending at MESSAGE level would attach the
+ * user's document to the assistant turn that happens to contain the steer, so
+ * the summarizer reads it as something the assistant produced.
+ */
+function applySteerFileContext(
+  message: TMessage,
+  contextBySteerPart: Map<string, string>,
+): TMessage {
+  if (!Array.isArray(message.content)) {
+    return message;
+  }
+  const content = message.content.map((part, index) => {
+    const context = contextBySteerPart.get(`${message.messageId}#${index}`);
+    if (part?.type !== ContentTypes.STEER || !context) {
+      return part;
+    }
+    const steerPart = part as typeof part & { media?: unknown[] };
+    /** Media wins over text in the replay, so the context has to ride with it
+     *  when one is stored. */
+    if (Array.isArray(steerPart.media) && steerPart.media.length > 0) {
+      return {
+        ...steerPart,
+        media: [{ type: ContentTypes.TEXT, text: context }, ...steerPart.media],
+      };
+    }
+    const steerText = steerPart[ContentTypes.STEER];
+    return {
+      ...steerPart,
+      [ContentTypes.STEER]: `${context}\n${typeof steerText === 'string' ? steerText : ''}`,
+    };
+  });
+  return { ...message, content } as TMessage;
+}
+
 function toPayload(
   branch: TMessage[],
   fileContextByMessageId: Map<string, string>,
+  contextBySteerPart: Map<string, string>,
   mapMultiAgent: (message: TMessage) => TMessage,
 ): Array<Partial<TMessage>> {
-  return branch.map((source) => {
+  return branch.map((original) => {
+    const source =
+      contextBySteerPart.size > 0 ? applySteerFileContext(original, contextBySteerPart) : original;
     /** Added-convo responses carry per-agent groups and routing metadata; the
      *  normal send path maps them to each group's primary output before the
      *  model sees them, so a checkpoint built from the raw content would
@@ -731,6 +802,7 @@ export async function resolveCompactionModel({
     provider,
     endpoint,
     tokenLookupEndpoint: resolveEndpointKey(endpoint, providerConfig.customEndpointConfig != null),
+    usesRunModel: !targetsOtherEndpoint && model === runModel,
     replaysReasoningContent: shouldReplayReasoningContent({
       provider,
       model,
@@ -1224,6 +1296,7 @@ export async function compactConversation({
     clientOptions,
     endpointTokenConfig,
     sameEndpoint,
+    usesRunModel,
     replaysReasoningContent,
   } = await resolveCompactionModel({ req, agent, ids, db });
 
@@ -1231,13 +1304,18 @@ export async function compactConversation({
    *  uploaded files, and the normal history path returns before loading any.
    *  Re-inlining them here would send those documents again, possibly to a
    *  different configured summarization provider. */
-  const fileContextByMessageId =
+  const { contextByMessageId, contextBySteerPart } =
     agent.resendFiles === false
-      ? new Map<string, string>()
+      ? { contextByMessageId: new Map<string, string>(), contextBySteerPart: new Map() }
       : await hydrateAttachments(branch, req, getFiles);
   const agentConfigs = await resolveHistoryAgents(branch, getAgent);
   const payload = stripActivityLabelParts(
-    toPayload(branch, fileContextByMessageId, createMultiAgentMapper(agent as Agent, agentConfigs)),
+    toPayload(
+      branch,
+      contextByMessageId,
+      contextBySteerPart,
+      createMultiAgentMapper(agent as Agent, agentConfigs),
+    ),
   );
   /**
    * A manually invoked skill leaves only its tool call in history, not the
@@ -1275,10 +1353,16 @@ export async function compactConversation({
    *  only four endpoints, so mapping through it sends `undefined` for Google
    *  and falls back to a tiny window. Named custom endpoints resolve to
    *  `custom`, where their models actually live in the token map. */
-  const contextWindow =
-    (agent.maxContextTokens != null && agent.maxContextTokens > 0
+  /** The conversation's own limit describes the model the CONVERSATION runs on.
+   *  A configured summarizer is a different model with its own window, so the
+   *  override applies only when compaction stayed on the run's target. */
+  const configuredWindow =
+    usesRunModel && agent.maxContextTokens != null && agent.maxContextTokens > 0
       ? agent.maxContextTokens
-      : getModelMaxTokens(model ?? '', tokenLookupEndpoint, endpointTokenConfig)) ??
+      : undefined;
+  const contextWindow =
+    configuredWindow ??
+    getModelMaxTokens(model ?? '', tokenLookupEndpoint, endpointTokenConfig) ??
     FALLBACK_CONTEXT_TOKENS;
   /** The request asks for output too: a chunk sized against the whole window
    *  plus an inherited output cap exceeds the provider's combined limit. */
