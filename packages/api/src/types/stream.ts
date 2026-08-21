@@ -2,6 +2,7 @@ import type { Agents } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
+import type { MCPRuntimeRequestBody } from '../mcp/types';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
@@ -19,6 +20,9 @@ export interface GenerationJobMetadata {
   responseMessageId?: string;
   /** Whether this generation replaces an existing assistant branch. */
   isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. Persisted so HITL
+   * resume does not reconstruct a different parent or overridden conversation. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
   /** Endpoint identifier for abort handling */

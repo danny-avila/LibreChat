@@ -100,6 +100,11 @@ describe('GenerationJobManager startup telemetry', () => {
         },
         responseMessageId: 'response-1',
         isRegenerate: true,
+        mcpRequestBody: {
+          messageId: 'response-1',
+          conversationId: 'overridden-conversation',
+          parentMessageId: 'response-1',
+        },
         sender: 'Agent',
         endpoint: 'agents',
         iconURL: 'https://example.com/icon.png',
@@ -131,6 +136,11 @@ describe('GenerationJobManager startup telemetry', () => {
       },
       responseMessageId: 'response-1',
       isRegenerate: true,
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',

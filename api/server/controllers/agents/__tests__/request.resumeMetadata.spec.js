@@ -701,6 +701,11 @@ describe('ResumableAgentController resume metadata', () => {
           agent_id: undefined,
           isTemporary: true,
           responseMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          mcpRequestBody: {
+            messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            conversationId,
+            parentMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          },
           userMessage: {
             messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
             parentMessageId: 'original-response',
@@ -1057,7 +1062,31 @@ describe('ResumableAgentController resume metadata', () => {
     const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
     expect(jobOptions.initialMetadata.responseMessageId).toBe(requestBody.messageId);
     expect(jobOptions.initialMetadata.userMessage.messageId).toBe(requestBody.parentMessageId);
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
     expect(requestBody.messageId).not.toBe(req.body.messageId);
+  });
+
+  it('uses the effective overridden conversation in the MCP request body', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Continue in the overridden conversation.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'source-conversation',
+        overrideConvoId: 'overridden-conversation__0',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(requestBody.conversationId).toBe('overridden-conversation');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
   });
 
   it('preallocates the replacement response as the MCP parent for edited content', async () => {
@@ -1080,9 +1109,11 @@ describe('ResumableAgentController resume metadata', () => {
     await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
 
     const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
     expect(requestBody.messageId).toMatch(/^[0-9a-f-]{36}$/);
     expect(requestBody.parentMessageId).toBe(requestBody.messageId);
     expect(requestBody.messageId).not.toBe('existing-response-message');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
   });
 
   it('stores model spec icon fallbacks and agent ids in early resume metadata', async () => {

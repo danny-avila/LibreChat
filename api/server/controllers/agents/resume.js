@@ -1191,11 +1191,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       signal: job.abortController.signal,
       jobCreatedAt: job.createdAt,
       checkpointNamespace,
-      requestBody: createMCPRuntimeRequestBody({
-        messageId: job.metadata.responseMessageId,
-        conversationId: streamId,
-        parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
-      }),
+      requestBody:
+        job.metadata.mcpRequestBody ??
+        createMCPRuntimeRequestBody({
+          messageId: job.metadata.responseMessageId,
+          conversationId: streamId,
+          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+        }),
     });
     client = result.client;
 

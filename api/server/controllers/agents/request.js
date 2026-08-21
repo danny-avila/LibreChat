@@ -985,6 +985,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     : undefined;
   const preallocatedUserMessageId =
     overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
+  const rawOverrideConversationId = req.body?.overrideConvoId;
+  const overrideConversationId = rawOverrideConversationId
+    ? rawOverrideConversationId.split(Constants.COMMON_DIVIDER)[0]
+    : undefined;
+  const effectiveConversationId = overrideConversationId ?? conversationId;
   let preallocatedResponseMessageId = editedResponseMessageId ?? crypto.randomUUID();
   if (
     (editedContent != null && !isContinued) ||
@@ -994,7 +999,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   }
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: preallocatedResponseMessageId,
-    conversationId,
+    conversationId: effectiveConversationId,
     parentMessageId:
       editedContent != null ? preallocatedResponseMessageId : preallocatedUserMessageId,
   });
@@ -1079,6 +1084,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             }
           : {}),
         responseMessageId: preallocatedResponseMessageId,
+        mcpRequestBody,
         userMessage: preliminaryUserMessage,
       },
     });

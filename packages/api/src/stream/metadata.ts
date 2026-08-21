@@ -9,6 +9,9 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.isRegenerate !== undefined) {
     patch.isRegenerate = metadata.isRegenerate;
   }
+  if (metadata.mcpRequestBody) {
+    patch.mcpRequestBody = metadata.mcpRequestBody;
+  }
   if (metadata.sender) {
     patch.sender = metadata.sender;
   }

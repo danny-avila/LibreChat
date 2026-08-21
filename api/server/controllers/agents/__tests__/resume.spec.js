@@ -1217,6 +1217,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('reuses the persisted MCP identity for edited and overridden turns', async () => {
+      const persistedMCPRequestBody = {
+        messageId: RESPONSE_MSG_ID,
+        conversationId: 'overridden-conversation',
+        parentMessageId: RESPONSE_MSG_ID,
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { mcpRequestBody: persistedMCPRequestBody } }),
+      );
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(capturedInit.requestBody).toBe(persistedMCPRequestBody);
+    });
+
     it('reuses the persisted generation checkpoint namespace and keeps legacy fallback explicit', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(
         makeToolApprovalJob({ metadata: { checkpointNamespace: 'generation-1000' } }),
