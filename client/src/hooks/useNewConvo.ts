@@ -261,12 +261,6 @@ const useNewConvo = (index = 0) => {
           return searchParamsString ? `?${searchParamsString}` : '';
         };
 
-        /** A first visit to another conversation may still be waiting on its
-         * record. Starting a new chat keeps the pathname, so nothing the route
-         * check sees changes — without this, that record lands and pulls the
-         * user into the conversation they just abandoned. */
-        supersedeNavigation();
-
         if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
           const appTitle = localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
           if (appTitle) {
@@ -414,6 +408,19 @@ const useNewConvo = (index = 0) => {
         if (!saveDrafts && filesToDelete.length > 0) {
           mutateAsync({ files: filesToDelete });
         }
+      }
+
+      /** A first visit to another conversation may still be waiting on its
+       * record. Starting a new chat keeps the pathname, so nothing the route
+       * check sees changes — without this, that record lands and pulls the user
+       * into the conversation they just abandoned.
+       *
+       * `keepComposerState` marks a call that re-renders a composer an earlier
+       * call already opened, such as agent metadata arriving late. The user did
+       * not ask for anything there, so it must not cancel a conversation they
+       * clicked while it was in flight. */
+      if (!keepComposerState) {
+        supersedeNavigation();
       }
 
       switchToConversation(

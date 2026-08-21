@@ -98,6 +98,15 @@ function Harness() {
           setConversation({ ...(conversation as TConversation), model: 'user-picked-model' })
         }
       />
+      {/* What `ProjectLandingChip` does: re-scopes the draft and rewrites the
+          query string in place. The pathname never moves. */}
+      <button
+        data-testid="scope-draft"
+        onClick={() => {
+          setConversation({ ...(conversation as TConversation), chatProjectId: 'project-x' });
+          navigate('/c/new?projectId=project-x', { replace: true });
+        }}
+      />
       {/* What `useNewConvo` does on "New chat": records that the user wants a
           different conversation, then navigates — to the SAME pathname when
           they are already on `/c/new`. */}
@@ -147,6 +156,11 @@ function renderHarness(cached: TConversation[] = []) {
 const currentConvo = (): TConversation | null =>
   JSON.parse(screen.getByTestId('convo').textContent ?? 'null');
 const currentPath = () => screen.getByTestId('path').textContent;
+
+const sidebarRow = (queryClient: QueryClient, id: string) =>
+  queryClient
+    .getQueryData<{ pages: { conversations: TConversation[] }[] }>([QueryKeys.allConversations])
+    ?.pages[0].conversations.find((c) => c.conversationId === id);
 
 const click = (testId: string) => {
   act(() => {
@@ -235,14 +249,24 @@ describe('useNavigateToConvo', () => {
        *  refreshed record on every switch — until the list itself refetched. */
       await settle(B, { ...recordB, model: 'gpt-4o-elsewhere' });
 
-      await waitFor(() => {
-        const row = queryClient
-          .getQueryData<{
-            pages: { conversations: TConversation[] }[];
-          }>([QueryKeys.allConversations])
-          ?.pages[0].conversations.find((c) => c.conversationId === B);
-        expect(row?.model).toBe('gpt-4o-elsewhere');
+      await waitFor(() => expect(sidebarRow(queryClient, B)?.model).toBe('gpt-4o-elsewhere'));
+    });
+
+    it('leaves list-owned row state alone when the refresh lands', async () => {
+      const queryClient = renderHarness([recordB]);
+      click('go-b');
+
+      /** Renaming and pinning land in the list while this request is in flight.
+       *  The response is a snapshot from before either happened. */
+      queryClient.setQueryData([QueryKeys.allConversations], {
+        pages: [{ conversations: [{ ...rowB, title: 'Renamed', pinned: true }, rowC] }],
+        pageParams: [undefined],
       });
+      await settle(B, { ...recordB, model: 'gpt-4o-elsewhere' });
+
+      await waitFor(() => expect(sidebarRow(queryClient, B)?.model).toBe('gpt-4o-elsewhere'));
+      expect(sidebarRow(queryClient, B)?.title).toBe('Renamed');
+      expect(sidebarRow(queryClient, B)?.pinned).toBe(true);
     });
 
     it('keeps a setting the user picks while the refresh is in flight', async () => {
@@ -362,6 +386,24 @@ describe('useNavigateToConvo', () => {
       await settle(B, recordB);
 
       expect(currentPath()).toBe('/c/new');
+      expect(currentConvo()?.conversationId).not.toBe(B);
+    });
+
+    it('does not land a first-visit record after the user re-scopes the draft', async () => {
+      renderHarness();
+      click('go-elsewhere');
+      expect(currentPath()).toBe('/c/new');
+
+      click('go-b');
+      click('scope-draft');
+      /** Only the query string moved, so a pathname-only comparison sees
+       *  nothing — and this action never goes through a conversation hook, so
+       *  no intent is recorded either. */
+      expect(currentPath()).toBe('/c/new');
+
+      await settle(B, recordB);
+
+      expect(currentConvo()?.chatProjectId).toBe('project-x');
       expect(currentConvo()?.conversationId).not.toBe(B);
     });
 

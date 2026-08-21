@@ -41,12 +41,18 @@ import store from '~/store';
  * button — where any bookkeeping this hook maintained itself would only cover
  * the navigations that happen to route through it.
  *
+ * The query string counts: `/c/new?projectId=A` is a different conversation
+ * scope than `/c/new`, and the chip that changes it writes the draft in place
+ * without ever going through a conversation hook — so a pathname-only
+ * comparison would let a pending record land on a draft the user had just
+ * re-scoped.
+ *
  * Read directly rather than through `useLocation` because each sidebar row
  * mounts its own `useNavigateToConvo`: subscribing would re-render every row on
  * every navigation, which is the cost this hook exists to avoid. Comparing a
- * pathname against a pathname also makes the router basename cancel out.
+ * location against a location also makes the router basename cancel out.
  */
-const currentRoute = () => window.location.pathname;
+const currentRoute = () => window.location.pathname + window.location.search;
 
 /**
  * Counts navigations this hook starts, so the user's LAST click is the one
@@ -146,9 +152,20 @@ const useNavigateToConvo = (index = 0) => {
        * projection carries `endpoint`, `model` and `spec` — so leaving the list
        * untouched would let a row from before an edit made elsewhere reinstate
        * the old setting on every switch until the list itself refetches, which
-       * is the opposite of what this refresh is for. Merged rather than swapped
-       * so list-only fields survive. */
-      updateConvoInAllQueries(queryClient, conversationId, (row) => ({ ...row, ...data }));
+       * is the opposite of what this refresh is for.
+       *
+       * Only those three fields. This response is a snapshot from before the
+       * user could touch anything, and the list is where renaming, pinning and
+       * sharing land — writing it wholesale would undo a rename that completed
+       * while this was in flight, which is the same stale-snapshot-over-live-
+       * state mistake this refresh stopped making against the conversation
+       * atom. No list mutation touches these three. */
+      updateConvoInAllQueries(queryClient, conversationId, (row) => ({
+        ...row,
+        endpoint: data.endpoint,
+        model: data.model,
+        spec: data.spec,
+      }));
     } catch (error) {
       logger.error('conversation', 'Error refreshing conversation record on navigation', error);
       /** Only a conversation that is confirmed GONE invalidates what is on
