@@ -1,6 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
 import { getDownloadFilename } from '~/utils/downloadFile';
-import { getPreviewKind } from '../preview';
+import { getPreviewKind, shouldUseSharedFileDownload } from '../preview';
 
 describe('FilePreviewDialog text-source behavior', () => {
   it('previews extracted PDF content as text', () => {
@@ -15,5 +15,11 @@ describe('FilePreviewDialog text-source behavior', () => {
   it('preserves the original behavior for stored files', () => {
     expect(getPreviewKind('report.pdf', 'application/pdf', FileSources.local)).toBe('pdf');
     expect(getDownloadFilename('report.pdf', 'file-3', FileSources.local)).toBe('report.pdf');
+  });
+
+  it('routes any identified file through the share boundary in a shared view', () => {
+    expect(shouldUseSharedFileDownload('share-1', 'file-1')).toBe(true);
+    expect(shouldUseSharedFileDownload('share-1', undefined)).toBe(false);
+    expect(shouldUseSharedFileDownload(undefined, 'file-1')).toBe(false);
   });
 });

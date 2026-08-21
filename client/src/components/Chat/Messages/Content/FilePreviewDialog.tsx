@@ -3,7 +3,7 @@ import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import { getFileExtension, getPreviewKind } from './preview';
+import { getFileExtension, getPreviewKind, shouldUseSharedFileDownload } from './preview';
 import { revokeDownloadURL, useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -72,7 +72,6 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
-  filePath,
   relevance,
   pages,
   pageRelevance,
@@ -92,9 +91,9 @@ export default function FilePreviewDialog({
     purpose: 'preview',
   });
   const { refetch: previewShared } = useSharedFileDownload(shareId, fileId, 'preview');
-  // Use the share route only for snapshotted files (filepath rewritten to the
-  // share path); otherwise fall back to the owner route.
-  const useShared = !!shareId && (filePath?.startsWith('/api/share/') ?? false);
+  // A shared viewer must stay inside the share-scoped authorization boundary;
+  // citation and retrieval previews do not carry a rewritten filepath signal.
+  const useShared = shouldUseSharedFileDownload(shareId, fileId);
   const downloadFile = useShared ? downloadShared : downloadOwned;
   const previewFile = useShared ? previewShared : previewOwned;
 

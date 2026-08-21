@@ -34,6 +34,10 @@ export function getFileExtension(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
+export function shouldUseSharedFileDownload(shareId?: string, fileId?: string): boolean {
+  return !!shareId && !!fileId;
+}
+
 function getPreviewKindByMime(mime?: string): PreviewKind {
   if (!mime) {
     return false;
