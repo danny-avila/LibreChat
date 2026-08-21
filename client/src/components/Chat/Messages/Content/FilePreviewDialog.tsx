@@ -3,9 +3,9 @@ import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
-import { getDownloadFilename, getFileExtension, getPreviewKind } from './preview';
+import { getFileExtension, getPreviewKind } from './preview';
 import { useFileDownload, useSharedFileDownload } from '~/data-provider';
-import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
+import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -161,7 +161,7 @@ export default function FilePreviewDialog({
   }, [downloadFile, downloadFilename, fileId]);
 
   useEffect(() => {
-    if (open && previewKind && !fileContent && !fileBlobUrl) {
+    if (open && previewKind && fileContent === null && !fileBlobUrl) {
       loadPreview();
     }
   }, [open, previewKind, fileContent, fileBlobUrl, loadPreview]);
@@ -259,7 +259,7 @@ export default function FilePreviewDialog({
               className="h-[70vh] w-full rounded-lg border border-border-light"
             />
           )}
-          {fileContent && (
+          {fileContent !== null && (
             <>
               <div className="pointer-events-none sticky top-0 z-10 flex justify-end pr-1">
                 <CopyButton

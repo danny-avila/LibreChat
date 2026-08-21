@@ -4,7 +4,12 @@ import { FileSources, QueryKeys, DynamicQueryKeys, dataService } from 'librechat
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
 import { isEphemeralAgent } from '~/common';
-import { addFileToCache } from '~/utils';
+import {
+  addFileToCache,
+  getDownloadFilename,
+  registerDownloadFilename,
+  unregisterDownloadFilename,
+} from '~/utils';
 import store from '~/store';
 
 export const useGetFiles = <TData = t.TFile[] | boolean>(
@@ -65,6 +70,7 @@ export const revokeDownloadURL = (url?: string | null): void => {
   if (!url?.startsWith('blob:')) {
     return;
   }
+  unregisterDownloadFilename(url);
   window.URL.revokeObjectURL(url);
 };
 
@@ -105,6 +111,10 @@ export const useFileDownload = (
         }
 
         addFileToCache(queryClient, metadata);
+        registerDownloadFilename(
+          downloadURL,
+          getDownloadFilename(metadata.filename, metadata.file_id, metadata.source),
+        );
       } catch (e) {
         console.error('Error parsing file metadata, skipped updating file query cache', e);
       }

@@ -1,5 +1,31 @@
+import { FileSources } from 'librechat-data-provider';
+
+const blobDownloadFilenames = new Map<string, string>();
+
 export const isHttpDownloadTarget = (target?: string | null): boolean =>
   /^https?:\/\//i.test(target ?? '');
+
+export function getDownloadFilename(
+  fileName: string,
+  fileId?: string,
+  fileSource?: string | null,
+): string {
+  const filename = fileName || fileId || 'download';
+  if (fileSource !== FileSources.text || filename.toLowerCase().endsWith('.txt')) {
+    return filename;
+  }
+  return `${filename}.txt`;
+}
+
+export function registerDownloadFilename(target: string, filename: string): void {
+  if (target.startsWith('blob:')) {
+    blobDownloadFilenames.set(target, filename);
+  }
+}
+
+export function unregisterDownloadFilename(target: string): void {
+  blobDownloadFilenames.delete(target);
+}
 
 /**
  * Maps a fenced-block language hint to a file extension. Used to name
@@ -63,7 +89,8 @@ export function triggerDownload(target: string, filename: string): void {
   const isBlob = target.startsWith('blob:');
   const link = document.createElement('a');
   link.href = target;
-  link.setAttribute('download', filename);
+  link.setAttribute('download', blobDownloadFilenames.get(target) ?? filename);
+  blobDownloadFilenames.delete(target);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

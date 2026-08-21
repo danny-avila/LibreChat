@@ -976,7 +976,7 @@ describe('File Routes - Delete with Agent Access', () => {
       await createFile({
         user: otherUserId,
         file_id: userFileId,
-        filename: 'notes.txt',
+        filename: 'NOTES.TXT',
         filepath: FileSources.mistral_ocr,
         bytes: 20,
         type: 'text/plain',
@@ -987,8 +987,8 @@ describe('File Routes - Delete with Agent Access', () => {
       const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
 
       expect(response.status).toBe(200);
-      expect(response.headers['content-disposition']).toContain('filename="notes.txt"');
-      expect(response.headers['content-disposition']).not.toContain('notes.txt.txt');
+      expect(response.headers['content-disposition']).toContain('filename="NOTES.TXT"');
+      expect(response.headers['content-disposition']).not.toContain('NOTES.TXT.txt');
       expect(response.text).toBe('plain text notes');
     });
 

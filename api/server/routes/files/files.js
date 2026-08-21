@@ -578,7 +578,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
         return res.status(404).send('No file content found');
       }
-      const textFilename = file.filename?.endsWith('.txt')
+      const textFilename = file.filename?.toLowerCase().endsWith('.txt')
         ? file.filename
         : `${file.filename || file_id}.txt`;
       res.setHeader('Content-Disposition', getContentDisposition(textFilename));

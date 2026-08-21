@@ -73,15 +73,3 @@ export function getPreviewKind(
   }
   return getPreviewKindByMime(fileType) || getPreviewKindByExtension(fileName);
 }
-
-export function getDownloadFilename(
-  fileName: string,
-  fileId?: string,
-  fileSource?: string,
-): string {
-  const filename = fileName || fileId || 'download';
-  if (fileSource !== FileSources.text || filename.toLowerCase().endsWith('.txt')) {
-    return filename;
-  }
-  return `${filename}.txt`;
-}
