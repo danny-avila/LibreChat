@@ -630,6 +630,42 @@ describe('compactConversation', () => {
     ).rejects.toMatchObject({ name: 'TranscriptTooLargeError' });
   });
 
+  it('reconstructs an invoked skill body so the checkpoint records its rules', async () => {
+    const withSkill = assistantMessage('s1', Constants.NO_PARENT, [
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call_skill',
+          name: 'skill',
+          args: '{"skillName":"rust-style"}',
+          output: 'loaded',
+        },
+      },
+    ] as TMessage['content']);
+    const getSkillByName = jest
+      .fn()
+      .mockResolvedValue({ name: 'rust-style', body: 'Always prefer iterators over index loops.' });
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: [withSkill],
+      ids,
+      db: dbMethods,
+      skills: {
+        getSkillByName,
+        findAccessibleSkillIds: jest.fn().mockResolvedValue(['skill_id_1']),
+      },
+    });
+
+    /** ACL-gated: the accessible-id set is what the lookup is scoped by. */
+    expect(getSkillByName).toHaveBeenCalledWith('rust-style', ['skill_id_1']);
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    expect(JSON.stringify(sent.map((m) => m.content))).toContain(
+      'Always prefer iterators over index loops.',
+    );
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),
