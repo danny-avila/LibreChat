@@ -688,6 +688,7 @@ describe('OpenAIChatCompletionController', () => {
   describe('recursionLimit resolution', () => {
     it('threads the OpenAI parent message id through both MCP execution bodies', async () => {
       const { validateRequest, createRun, initializeAgent } = require('@librechat/api');
+      const { getConvo } = require('~/models');
       validateRequest.mockReturnValueOnce({
         request: {
           model: 'agent-123',
@@ -697,6 +698,7 @@ describe('OpenAIChatCompletionController', () => {
           parent_message_id: 'parent-123',
         },
       });
+      getConvo.mockResolvedValueOnce({ conversationId: 'conversation-123', user: 'user-123' });
 
       await OpenAIChatCompletionController(req, res);
 
