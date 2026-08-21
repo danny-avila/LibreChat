@@ -266,12 +266,14 @@ describe('fire-time project scope', () => {
     expect(reservations[0].chatProjectId).toBe('proj-pinned');
   });
 
-  it('reserves an unscoped occurrence without the field', async () => {
+  /** Recorded as an explicit null, never omitted: a later reader must be able to tell
+   *  "this run had no project" from "this row predates the field". */
+  it('records an unscoped occurrence as an explicit null', async () => {
     const { methods, reservations } = makeMethods();
 
     await fireSchedule(makeEngineDeps(methods), makeSchedule(), BASE_LIMITS, dueAt());
 
-    expect(reservations[0]).not.toHaveProperty('chatProjectId');
+    expect(reservations[0]).toHaveProperty('chatProjectId', null);
   });
 
   it('never consults project access for an unscoped schedule', async () => {

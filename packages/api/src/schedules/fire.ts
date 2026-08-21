@@ -486,7 +486,10 @@ export async function fireSchedule(
           // The destination THIS occurrence used. The schedule-level value can move on
           // (a pin redirects later fires, and a paused run does not block them), so a
           // resume must re-validate what its own conversation was filed under.
-          ...(chatProjectId != null && { chatProjectId }),
+          // ALWAYS written, `null` when deliberately unscoped: a later reader has to be
+          // able to tell "this run had no project" from "this row predates the field",
+          // and only the latter may fall back to the schedule's current value.
+          chatProjectId: chatProjectId ?? null,
           ...(typeof schedule.configRevision === 'number'
             ? { configRevision: schedule.configRevision }
             : {}),

@@ -233,7 +233,7 @@ export type ScheduleMethods = {
   getScheduleRunProject: (
     scheduleId: string,
     scheduledFor: string | Date,
-  ) => Promise<{ chatProjectId?: string } | null>;
+  ) => Promise<{ recorded: boolean; chatProjectId?: string } | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (
@@ -814,18 +814,29 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    */
   /**
    * The destination one OCCURRENCE actually used, for re-validating a paused run.
-   * Null when no row exists; a row without the field is a pre-scope occurrence and the
-   * caller falls back to the schedule-level resolution rather than treating it as
-   * unscoped — an absent record must never be read as evidence to stop a run.
+   *
+   * `recorded` is the load-bearing part. A reservation ALWAYS writes the field (null
+   * when deliberately unscoped), so a row missing the key is one written before this
+   * existed — "unknown", not "no project". Callers fall back to the schedule-level
+   * resolution only for unknown, and treat a recorded null as the genuinely unscoped
+   * occurrence it is. Returns null when there is no row at all.
    */
   async function getScheduleRunProject(
     scheduleId: string,
     scheduledFor: string | Date,
-  ): Promise<{ chatProjectId?: string } | null> {
-    return await ScheduleRun()
+  ): Promise<{ recorded: boolean; chatProjectId?: string } | null> {
+    const run = await ScheduleRun()
       .findOne({ scheduleId, scheduledFor: new Date(scheduledFor) })
       .select('chatProjectId')
-      .lean<{ chatProjectId?: string } | null>();
+      .lean<{ chatProjectId?: string | null } | null>();
+    if (run == null) {
+      return null;
+    }
+    // Key PRESENCE, not truthiness: `null` is a recorded decision, absent is not.
+    const recorded = Object.prototype.hasOwnProperty.call(run, 'chatProjectId');
+    return recorded && run.chatProjectId != null
+      ? { recorded, chatProjectId: run.chatProjectId }
+      : { recorded };
   }
 
   async function persistResolvedProject(

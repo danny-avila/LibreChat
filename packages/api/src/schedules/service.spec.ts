@@ -832,7 +832,7 @@ describe('isScheduleLive policy recheck', () => {
       row: Record<string, unknown>,
       schedulesConfig: Record<string, unknown>,
       project: unknown = { _id: 'proj-1' },
-      over: { run?: { chatProjectId?: string } | null } = {},
+      over: { run?: { recorded: boolean; chatProjectId?: string } | null } = {},
     ) {
       const service = makeService(
         jest.fn<Promise<ActiveRun[]>, [string]>().mockResolvedValue([]),
@@ -900,7 +900,7 @@ describe('isScheduleLive policy recheck', () => {
         { chatProjectId: 'proj-new' },
         { projectId: 'proj-new' },
         null,
-        { run: { chatProjectId: 'proj-paused' } },
+        { run: { recorded: true, chatProjectId: 'proj-paused' } },
       );
       const access = (service.engineDeps as unknown as { projectAccess: jest.Mock }).projectAccess;
 
@@ -919,7 +919,7 @@ describe('isScheduleLive policy recheck', () => {
         {},
         { _id: 'x' },
         {
-          run: { chatProjectId: 'proj-paused' },
+          run: { recorded: true, chatProjectId: 'proj-paused' },
         },
       );
 
@@ -942,6 +942,48 @@ describe('isScheduleLive policy recheck', () => {
           scheduledFor: '2026-08-17T12:00:00.000Z',
         }),
       ).resolves.toBe(false);
+    });
+
+    /**
+     * A run that DELIBERATELY went unscoped recorded that decision. Falling back to the
+     * schedule's current project for it would admit a conversation satisfying no
+     * present requirement — the fallback is for UNKNOWN records only.
+     */
+    it('refuses a recorded-unscoped occurrence once a project became required', async () => {
+      const service = makeProjectService(
+        { chatProjectId: 'proj-new' },
+        { requireProject: true },
+        { _id: 'x' },
+        {
+          run: { recorded: true },
+        },
+      );
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(false);
+    });
+
+    /** A pre-scope row is UNKNOWN, not unscoped, and keeps today's behaviour. */
+    it('falls back for an unrecorded pre-scope occurrence', async () => {
+      const service = makeProjectService(
+        { chatProjectId: 'proj-live' },
+        { requireProject: true },
+        { _id: 'x' },
+        {
+          run: { recorded: false },
+        },
+      );
+
+      await expect(
+        service.isScheduleLive('s1', undefined, {
+          policy: true,
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      ).resolves.toBe(true);
     });
 
     it('leaves the non-policy recheck untouched', async () => {

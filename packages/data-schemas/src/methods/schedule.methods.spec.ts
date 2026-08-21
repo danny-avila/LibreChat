@@ -221,6 +221,56 @@ describe('recordSkippedRun duplicate-occurrence guard', () => {
   });
 });
 
+describe('getScheduleRunProject (occurrence scope, recorded vs unknown)', () => {
+  /**
+   * The whole distinction rests on a stored `null` surviving as a PRESENT key while a
+   * never-written field stays absent. Asserted against real Mongo rather than assumed:
+   * if that ever stopped holding, a deliberately unscoped run would silently start
+   * being validated against the schedule's current project instead.
+   */
+  it('reports a recorded null apart from a field that was never written', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const scoped = new Date('2026-07-20T12:00:00Z');
+    const unscoped = new Date('2026-07-21T12:00:00Z');
+
+    await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor: scoped, chatProjectId: 'proj-1' }),
+    );
+    await methods.recordRunOutcome({
+      scheduleId: schedule.id,
+      scheduledFor: scoped,
+      status: 'success',
+      autoDisableAfterFailures: 5,
+    });
+    await methods.reserveStartedRun(
+      runData(schedule, { scheduledFor: unscoped, chatProjectId: null }),
+    );
+
+    expect(await methods.getScheduleRunProject(schedule.id, scoped)).toEqual({
+      recorded: true,
+      chatProjectId: 'proj-1',
+    });
+    // Recorded, and deliberately without a project — NOT a fallback case.
+    expect(await methods.getScheduleRunProject(schedule.id, unscoped)).toEqual({ recorded: true });
+  });
+
+  it('reports a pre-scope row as unrecorded, and a missing row as null', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const legacy = new Date('2026-07-22T12:00:00Z');
+    await methods.reserveStartedRun(runData(schedule, { scheduledFor: legacy }));
+    // Strip the key the way a row written before this field looks on disk.
+    await mongoose.models.ScheduleRun.collection.updateOne(
+      { scheduleId: schedule.id, scheduledFor: legacy },
+      { $unset: { chatProjectId: '' } },
+    );
+
+    expect(await methods.getScheduleRunProject(schedule.id, legacy)).toEqual({ recorded: false });
+    expect(
+      await methods.getScheduleRunProject(schedule.id, new Date('2030-01-01T00:00:00Z')),
+    ).toBeNull();
+  });
+});
+
 describe('settledAt retention marker', () => {
   it('stamps settledAt on terminal outcomes but never on a pause', async () => {
     const schedule = await methods.createSchedule(scheduleData());

@@ -1070,8 +1070,13 @@ export function createSchedulesService(
         options?.scheduledFor != null
           ? await methods.getScheduleRunProject(scheduleId, options.scheduledFor)
           : null;
-      const effectiveProject =
-        occurrence?.chatProjectId ?? resolveScheduleProjectId(limits, schedule.chatProjectId);
+      // `recorded`, not the id: an occurrence that deliberately ran unscoped recorded a
+      // null, and validating the schedule's CURRENT value for it would admit a
+      // conversation that satisfies no present requirement. Only an unknown record — a
+      // row from before the field, or none at all — falls back.
+      const effectiveProject = occurrence?.recorded
+        ? occurrence.chatProjectId
+        : resolveScheduleProjectId(limits, schedule.chatProjectId);
       if (limits.requireProject && effectiveProject == null) {
         return false;
       }

@@ -91,11 +91,15 @@ export interface IScheduleRun {
    *  state instead of orphan-settling a jobless run that is merely deferred (Retry-After)
    *  or that dead-lettered before a generation ever started. */
   deliveryKey?: string;
-  /** The destination project THIS occurrence actually used. Recorded at reservation
+  /** The destination project THIS occurrence actually used, recorded at reservation
    *  because the schedule-level value can move on (an operator pin redirects later
    *  fires, and a paused run does not block them), leaving the row describing a project
-   *  this occurrence's conversation was never filed under. */
-  chatProjectId?: string;
+   *  this occurrence's conversation was never filed under.
+   *
+   *  ALWAYS written, `null` for a deliberately unscoped occurrence: an absent key means
+   *  "this row predates the field", which is a different thing from "this run had no
+   *  project" and must not be validated as if it were. */
+  chatProjectId?: string | null;
   droppedFileIds?: string[];
   durationMs?: number;
   bookkept?: boolean;
