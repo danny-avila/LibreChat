@@ -71,6 +71,9 @@ function resolveLocalImagePath(input) {
       return null;
     }
   }
+  if (!pathname.startsWith('/')) {
+    pathname = `/${pathname}`;
+  }
   if (pathname.startsWith('/uploads/')) {
     return path.join(UPLOADS_ROOT, pathname.slice('/uploads/'.length));
   }
@@ -83,26 +86,66 @@ function resolveLocalImagePath(input) {
   return null;
 }
 
+const RAW_BASE64_RE = /^[A-Za-z0-9+/=\s]{100,}$/;
+
+function looksLikeRawBase64(input) {
+  return !input.startsWith('data:') && !/^https?:\/\//i.test(input) && RAW_BASE64_RE.test(input);
+}
+
+/** Guesses an image mime type from base64 magic bytes. */
+function sniffBase64Mime(base64) {
+  if (base64.startsWith('/9j/')) {
+    return 'image/jpeg';
+  }
+  if (base64.startsWith('iVBOR')) {
+    return 'image/png';
+  }
+  if (base64.startsWith('R0lGOD')) {
+    return 'image/gif';
+  }
+  if (base64.startsWith('UklGR')) {
+    return 'image/webp';
+  }
+  return 'image/png';
+}
+
 /**
  * DashScope image editing accepts public URLs or base64 data URIs only.
- * LibreChat-attached images are local, so convert them to data URIs;
- * external URLs pass through untouched.
+ * LibreChat-attached images live on local paths the API cannot fetch, so:
+ *  - local paths/URLs are read from disk and inlined as data URIs
+ *  - raw base64 payloads are wrapped with a data: prefix
+ *  - external URLs and data URIs pass through untouched
  */
 async function prepareImageUrl(imageUrl) {
   if (!imageUrl) {
     return imageUrl;
   }
-  let localPath = resolveLocalImagePath(imageUrl);
-  if (!localPath && !/^https?:\/\//i.test(imageUrl) && !imageUrl.startsWith('data:')) {
-    // Bare filename — look in the generated files directory
-    localPath = path.join(IMAGES_PATH, imageUrl);
+
+  const trimmed = imageUrl.trim();
+
+  if (looksLikeRawBase64(trimmed)) {
+    const compact = trimmed.replace(/\s+/g, '');
+    return `data:${sniffBase64Mime(compact)};base64,${compact}`;
+  }
+
+  let localPath = resolveLocalImagePath(trimmed);
+  if (!localPath && !/^https?:\/\//i.test(trimmed) && !trimmed.startsWith('data:')) {
+    // Bare filename or relative path — look in the generated files directory
+    const candidate = path.join(IMAGES_PATH, trimmed);
+    localPath = fs.existsSync(candidate) ? candidate : null;
   }
   if (!localPath || !fs.existsSync(localPath)) {
-    return imageUrl; // external URL or not found locally — let DashScope fetch it
+    return trimmed; // external URL or not found locally — let DashScope fetch it
   }
   const buffer = fs.readFileSync(localPath);
   const mimeType = MIME_BY_EXT[path.extname(localPath).toLowerCase()] || 'image/png';
   return `data:${mimeType};base64,${buffer.toString('base64')}`;
+}
+
+function debugLogImageInput(received, prepared) {
+  const show = (s) => (s == null ? 'null' : s.length > 80 ? `${s.slice(0, 80)}…[len=${s.length}]` : s);
+  console.error(`[image MCP] edit_image image_url received: ${show(received)}`);
+  console.error(`[image MCP] edit_image image_url sent:      ${show(prepared)}`);
 }
 
 const server = new Server(
@@ -299,6 +342,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const preparedImage = await prepareImageUrl(image_url);
+      debugLogImageInput(image_url, preparedImage);
       const imageUrl = await callDashScopeAPI(IMAGE_EDIT_MODEL, prompt, null, size, preparedImage, DASHSCOPE_EDIT_API_KEY, DASHSCOPE_EDIT_BASE_URL);
       const { base64, contentType } = await downloadImageAsBase64(imageUrl);
 
