@@ -581,7 +581,7 @@ function appendModelParameterContent(
   appendTraversalAwareContent(fragments, () => extractModelParameterContent(input));
 }
 
-function visitBoundedSubmittedArray<Value>(
+export function visitBoundedSubmittedArray<Value>(
   candidate: unknown,
   budget: VisitNestedStringsBudget,
   visit: (value: Value | null | undefined, index: number) => void,
@@ -2234,12 +2234,19 @@ function extractToolArgumentValue(
 
 export function extractToolArgumentContent(
   input: ToolArgumentContentInput | null | undefined,
+  budget?: VisitNestedStringsBudget,
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   for (const field of ['name', 'arguments', 'output'] as const) {
     try {
       fragments.push(
-        ...extractToolArgumentValue(input?.[field], field, `tool-argument.${field}`, `/${field}`),
+        ...extractToolArgumentValue(
+          input?.[field],
+          field,
+          `tool-argument.${field}`,
+          `/${field}`,
+          budget,
+        ),
       );
     } catch (error) {
       if (error instanceof ContentTraversalLimitError) {

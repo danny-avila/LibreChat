@@ -53,6 +53,7 @@ import {
   resolveSkillCatalog,
   resolveManualSkills,
   resolveAlwaysApplySkills,
+  selectSkillPrimesForTurn,
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
@@ -870,6 +871,24 @@ export async function initializeAgent(
     alwaysApplySkillPrimes = alwaysApplyPrimesResult;
     resolvedSkillCatalog = catalogResult;
 
+    const selectedPrimes = selectSkillPrimesForTurn({
+      manualSkillPrimes: manualSkillPrimes ?? [],
+      alwaysApplySkillPrimes: alwaysApplySkillPrimes ?? [],
+    });
+    if (selectedPrimes.alwaysApplyDedupedFromManual > 0) {
+      logger.info(
+        `[initializeAgent] Dropped ${selectedPrimes.alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
+      );
+    }
+    if (selectedPrimes.alwaysApplyDropped > 0) {
+      logger.warn(
+        `[initializeAgent] Combined primes exceeds MAX_PRIMED_SKILLS_PER_TURN (${MAX_PRIMED_SKILLS_PER_TURN}); truncating ${selectedPrimes.alwaysApplyDropped} always-apply prime(s) so every initializer consumer sees the model-bound set.`,
+      );
+    }
+    manualSkillPrimes = manualSkillPrimes == null ? undefined : selectedPrimes.manualSkillPrimes;
+    alwaysApplySkillPrimes =
+      alwaysApplySkillPrimes == null ? undefined : selectedPrimes.alwaysApplySkillPrimes;
+
     assertResolvedSkillContentAllowed(
       [
         ...(manualSkillPrimes ?? []),
@@ -1147,53 +1166,6 @@ export async function initializeAgent(
    * contribute before the same name gets deduped on a later prime).
    */
   if (hasSkillAccess) {
-    /**
-     * Cross-list dedup: when a user `$`-invokes a skill that is also
-     * marked `always-apply`, the always-apply copy is dropped here so
-     * the same SKILL.md body isn't primed twice in the same turn.
-     * Manual wins because it sits closer to the user message and
-     * carries explicit intent. Done at the initializer (not just at
-     * splice time in `injectSkillPrimes`) so persisted user-bubble
-     * `alwaysAppliedSkills` pills reflect the post-dedup set and the
-     * tool-union step below doesn't bill allowed-tools to the dropped
-     * always-apply entry.
-     */
-    if (
-      alwaysApplySkillPrimes &&
-      alwaysApplySkillPrimes.length > 0 &&
-      manualSkillPrimes &&
-      manualSkillPrimes.length > 0
-    ) {
-      const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
-      const deduped = alwaysApplySkillPrimes.filter((p) => !manualNames.has(p.name));
-      const removed = alwaysApplySkillPrimes.length - deduped.length;
-      if (removed > 0) {
-        logger.info(
-          `[initializeAgent] Dropped ${removed} always-apply prime(s) already present in the manual list; same-named skills prime only once per turn.`,
-        );
-        alwaysApplySkillPrimes = deduped;
-      }
-    }
-
-    /**
-     * Enforce the combined `MAX_PRIMED_SKILLS_PER_TURN` ceiling up-front
-     * so persisted user-bubble `alwaysAppliedSkills` pills stay in sync
-     * with what actually gets primed. `injectSkillPrimes` re-applies the
-     * cap as defense-in-depth at splice time. Always-apply primes are
-     * truncated first — manual invocation is explicit user intent and
-     * should never be silently dropped.
-     */
-    const manualCount = manualSkillPrimes?.length ?? 0;
-    const alwaysApplyCount = alwaysApplySkillPrimes?.length ?? 0;
-    if (alwaysApplySkillPrimes && manualCount + alwaysApplyCount > MAX_PRIMED_SKILLS_PER_TURN) {
-      const budgetForAlwaysApply = Math.max(0, MAX_PRIMED_SKILLS_PER_TURN - manualCount);
-      const dropped = alwaysApplyCount - budgetForAlwaysApply;
-      logger.warn(
-        `[initializeAgent] Combined primes (${manualCount} manual + ${alwaysApplyCount} always-apply) exceeds MAX_PRIMED_SKILLS_PER_TURN (${MAX_PRIMED_SKILLS_PER_TURN}); truncating ${dropped} always-apply prime(s) so persisted user-message pills stay in sync with what got primed.`,
-      );
-      alwaysApplySkillPrimes = alwaysApplySkillPrimes.slice(0, budgetForAlwaysApply);
-    }
-
     /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
      *  declared before the normalized-key convention would neither dedupe
      *  against the healed agent tools nor match the normalized-keyed tool

@@ -97,7 +97,12 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     jest.clearAllMocks();
   });
 
-  const createAppWithUser = (userId, userRole = SystemRoles.USER, config = {}) => {
+  const createAppWithUser = (
+    userId,
+    userRole = SystemRoles.USER,
+    config = {},
+    fileOverrides = {},
+  ) => {
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
@@ -108,6 +113,7 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
           size: 100,
           path: '/tmp/t.png',
           filename: 'test.png',
+          ...fileOverrides,
         };
         req.file_id = uuidv4();
       }
@@ -126,6 +132,43 @@ describe('POST /images - Agent Upload Permission Check (Integration)', () => {
     app.use('/images', router);
     return app;
   };
+
+  it('inspects the canonical sanitized image filename used by upload processing', async () => {
+    const app = createAppWithUser(
+      authorId,
+      SystemRoles.USER,
+      {
+        filters: {
+          files: {
+            pii: {
+              fields: ['name'],
+              starterPatterns: [],
+              customPatterns: [
+                { id: 'canonical-name', label: 'canonical name', regex: 'PRIVATE_IMAGE' },
+              ],
+            },
+          },
+        },
+      },
+      { originalname: 'PRIVATE IMAGE.png' },
+    );
+
+    const response = await request(app).post('/images').send({
+      endpoint: 'agents',
+      agent_id: agentCustomId,
+      tool_resource: 'context',
+      file_id: uuidv4(),
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: 'content_filter_block',
+      source: 'file',
+      field: 'name',
+    });
+    expect(processAgentFileUpload).not.toHaveBeenCalled();
+    expect(processImageFile).not.toHaveBeenCalled();
+  });
 
   it('should return 403 when user has no permission on agent', async () => {
     await createAgent({

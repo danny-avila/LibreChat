@@ -1321,6 +1321,58 @@ export interface InjectSkillPrimesResult {
   alwaysApplyDedupedFromManual: number;
 }
 
+export interface SelectSkillPrimesForTurnResult<ManualPrime, AlwaysApplyPrime> {
+  manualSkillPrimes: ManualPrime[];
+  alwaysApplySkillPrimes: AlwaysApplyPrime[];
+  alwaysApplyDropped: number;
+  alwaysApplyDedupedFromManual: number;
+}
+
+/**
+ * Resolves the one authoritative set of skill primes for a turn. Keeping this
+ * selection separate from message injection lets every earlier consumer
+ * (content inspection, allowed-tool union, persisted pills) operate on exactly
+ * the same deduped and capped lists that the model will eventually receive.
+ */
+export function selectSkillPrimesForTurn<
+  ManualPrime extends Pick<ResolvedManualSkill, 'name'>,
+  AlwaysApplyPrime extends Pick<ResolvedAlwaysApplySkill, 'name'>,
+>(params: {
+  manualSkillPrimes: readonly ManualPrime[];
+  alwaysApplySkillPrimes: readonly AlwaysApplyPrime[];
+  maxPrimesPerTurn?: number;
+}): SelectSkillPrimesForTurnResult<ManualPrime, AlwaysApplyPrime> {
+  const {
+    manualSkillPrimes,
+    alwaysApplySkillPrimes,
+    maxPrimesPerTurn = MAX_PRIMED_SKILLS_PER_TURN,
+  } = params;
+  let alwaysApply = [...alwaysApplySkillPrimes];
+  let alwaysApplyDedupedFromManual = 0;
+
+  if (alwaysApply.length > 0 && manualSkillPrimes.length > 0) {
+    const manualNames = new Set(manualSkillPrimes.map((prime) => prime.name));
+    const deduped = alwaysApply.filter((prime) => !manualNames.has(prime.name));
+    alwaysApplyDedupedFromManual = alwaysApply.length - deduped.length;
+    alwaysApply = deduped;
+  }
+
+  let alwaysApplyDropped = 0;
+  const total = manualSkillPrimes.length + alwaysApply.length;
+  if (total > maxPrimesPerTurn) {
+    const budgetForAlwaysApply = Math.max(0, maxPrimesPerTurn - manualSkillPrimes.length);
+    alwaysApplyDropped = alwaysApply.length - budgetForAlwaysApply;
+    alwaysApply = alwaysApply.slice(0, budgetForAlwaysApply);
+  }
+
+  return {
+    manualSkillPrimes: [...manualSkillPrimes],
+    alwaysApplySkillPrimes: alwaysApply,
+    alwaysApplyDropped,
+    alwaysApplyDedupedFromManual,
+  };
+}
+
 /**
  * Splices manual + always-apply skill prime messages into a formatted
  * message array just before the latest user message. Ordering: always-apply
@@ -1350,26 +1402,23 @@ export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillP
   } = params;
   let { indexTokenCountMap } = params;
 
-  let alwaysApply = alwaysApplySkillPrimes;
-  let alwaysApplyDedupedFromManual = 0;
-  if (alwaysApply.length > 0 && manualSkillPrimes.length > 0) {
-    const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
-    const deduped = alwaysApply.filter((p) => !manualNames.has(p.name));
-    alwaysApplyDedupedFromManual = alwaysApply.length - deduped.length;
-    if (alwaysApplyDedupedFromManual > 0) {
-      logger.info(
-        `[injectSkillPrimes] Dropped ${alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills are primed only once per turn.`,
-      );
-      alwaysApply = deduped;
-    }
+  const selected = selectSkillPrimesForTurn({
+    manualSkillPrimes,
+    alwaysApplySkillPrimes,
+    maxPrimesPerTurn,
+  });
+  const {
+    alwaysApplySkillPrimes: alwaysApply,
+    alwaysApplyDropped,
+    alwaysApplyDedupedFromManual,
+  } = selected;
+  if (alwaysApplyDedupedFromManual > 0) {
+    logger.info(
+      `[injectSkillPrimes] Dropped ${alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills are primed only once per turn.`,
+    );
   }
-
-  let alwaysApplyDropped = 0;
-  const total = manualSkillPrimes.length + alwaysApply.length;
-  if (total > maxPrimesPerTurn) {
-    const budgetForAlwaysApply = Math.max(0, maxPrimesPerTurn - manualSkillPrimes.length);
-    alwaysApplyDropped = alwaysApply.length - budgetForAlwaysApply;
-    alwaysApply = alwaysApply.slice(0, budgetForAlwaysApply);
+  if (alwaysApplyDropped > 0) {
+    const total = manualSkillPrimes.length + alwaysApplySkillPrimes.length;
     logger.warn(
       `[injectSkillPrimes] Combined primes ${total} exceeds cap ${maxPrimesPerTurn}; dropping ${alwaysApplyDropped} always-apply prime(s) to preserve manual invocations.`,
     );

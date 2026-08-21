@@ -5,7 +5,11 @@ import {
   getContentTraversalFragments,
   getContentTraversalScopes,
 } from './nested';
-import { extractModelParameterContent, extractToolArgumentContent } from './submissions';
+import {
+  extractModelParameterContent,
+  extractToolArgumentContent,
+  visitBoundedSubmittedArray,
+} from './submissions';
 import { getReferencedQuoteEntries, mergeQuotedText } from '../../utils/quotes';
 
 export interface ChatSubmissionDecision {
@@ -92,6 +96,7 @@ export function extractChatContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const traversalErrors: ContentTraversalLimitError[] = [];
+  const submittedArrayBudget = { visitedNodes: 0 };
   const text = typeof body?.text === 'string' ? body.text : '';
 
   if (text.length > 0) {
@@ -209,8 +214,9 @@ export function extractChatContent(
       createFragment('chat.greeting', '/greeting', body.greeting, 'prompt', 'greeting'),
     );
   }
-  for (let index = 0; index < (body?.examples?.length ?? 0); index++) {
-    const example = body?.examples?.[index];
+  const examplesComplete = visitBoundedSubmittedArray<
+    NonNullable<ChatSubmissionBody['examples']>[number]
+  >(body?.examples, submittedArrayBudget, (example, index) => {
     const exampleInput =
       typeof example?.input === 'string' ? example.input : example?.input?.content;
     const exampleOutput =
@@ -237,6 +243,14 @@ export function extractChatContent(
         ),
       );
     }
+  });
+  if (!examplesComplete) {
+    traversalErrors.push(
+      new ContentTraversalLimitError(
+        [],
+        [{ source: 'prompt', fields: ['example_input', 'example_output'] }],
+      ),
+    );
   }
   if (
     typeof body?.addedConvo?.promptPrefix === 'string' &&
@@ -309,24 +323,33 @@ export function extractChatContent(
       ),
     );
   }
-  for (let index = 0; index < (body?.manualSkills?.length ?? 0); index++) {
-    const skillName = body?.manualSkills?.[index];
-    if (typeof skillName !== 'string' || skillName.length === 0) {
-      continue;
-    }
-    fragments.push(
-      createFragment(
-        `chat.manual-skill.${index}`,
-        `/manualSkills/${index}`,
-        skillName,
-        'skill',
-        'name',
-      ),
+  const manualSkillsComplete = visitBoundedSubmittedArray<unknown>(
+    body?.manualSkills,
+    submittedArrayBudget,
+    (skillName, index) => {
+      if (typeof skillName !== 'string' || skillName.length === 0) {
+        return;
+      }
+      fragments.push(
+        createFragment(
+          `chat.manual-skill.${index}`,
+          `/manualSkills/${index}`,
+          skillName,
+          'skill',
+          'name',
+        ),
+      );
+    },
+  );
+  if (!manualSkillsComplete) {
+    traversalErrors.push(
+      new ContentTraversalLimitError([], [{ source: 'skill', fields: ['name'] }]),
     );
   }
-  if (Array.isArray(body?.decisions)) {
-    for (let index = 0; index < body.decisions.length; index++) {
-      const decision = body.decisions[index];
+  const decisionsComplete = visitBoundedSubmittedArray<ChatSubmissionDecision>(
+    body?.decisions,
+    submittedArrayBudget,
+    (decision, index) => {
       if (typeof decision?.responseText === 'string' && decision.responseText.length > 0) {
         fragments.push(
           createFragment(
@@ -350,12 +373,15 @@ export function extractChatContent(
         );
       }
       if (decision?.editedArguments == null) {
-        continue;
+        return;
       }
       try {
         fragments.push(
           ...remapEditedArgumentFragments(
-            extractToolArgumentContent({ arguments: decision.editedArguments }),
+            extractToolArgumentContent(
+              { arguments: decision.editedArguments },
+              submittedArrayBudget,
+            ),
             index,
           ),
         );
@@ -366,7 +392,18 @@ export function extractChatContent(
         fragments.push(...remapEditedArgumentFragments(getContentTraversalFragments(error), index));
         traversalErrors.push(error);
       }
-    }
+    },
+  );
+  if (!decisionsComplete) {
+    traversalErrors.push(
+      new ContentTraversalLimitError(
+        [],
+        [
+          { source: 'message', fields: ['decision_response', 'decision_reason'] },
+          { source: 'tool_argument', fields: ['arguments'] },
+        ],
+      ),
+    );
   }
 
   try {

@@ -427,6 +427,42 @@ describe('File Routes - Agent Files Endpoint', () => {
       return testApp;
     };
 
+    it('inspects the canonical sanitized filename used by upload processing', async () => {
+      const testApp = createAppWithUser(
+        authorId,
+        SystemRoles.USER,
+        {
+          filters: {
+            files: {
+              pii: {
+                fields: ['name'],
+                starterPatterns: [],
+                customPatterns: [
+                  { id: 'canonical-name', label: 'canonical name', regex: 'PRIVATE_FILE' },
+                ],
+              },
+            },
+          },
+        },
+        { originalname: 'PRIVATE FILE.txt' },
+      );
+
+      const response = await request(testApp).post('/files').send({
+        endpoint: 'agents',
+        agent_id: agentCustomId,
+        tool_resource: 'context',
+        file_id: uuidv4(),
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        error: 'content_filter_block',
+        source: 'file',
+        field: 'name',
+      });
+      expect(processAgentFileUpload).not.toHaveBeenCalled();
+    });
+
     it('should deny file upload to agent when user has no permission', async () => {
       // Create an agent owned by authorId
       await createAgent({

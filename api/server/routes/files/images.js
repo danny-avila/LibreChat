@@ -16,6 +16,7 @@ const {
   contentFilterUninspectableResponse,
   getBlockedUninspectableFileField,
   canInspectUploadExtractedTextAfterProcessing,
+  sanitizeFilename,
 } = require('@librechat/api');
 const {
   isAssistantsEndpoint,
@@ -46,6 +47,7 @@ router.post('/', async (req, res) => {
   };
 
   try {
+    req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req, image: true });
 
     const contentFinding = inspectContent(extractFileContent({ name: req.file?.originalname }), {

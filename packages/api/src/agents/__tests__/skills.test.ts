@@ -46,6 +46,7 @@ import {
   resolveAlwaysApplySkills,
   injectManualSkillPrimes,
   injectSkillPrimes,
+  selectSkillPrimesForTurn,
   collectFreshSkillPrimeNames,
   extractManualSkills,
   isSkillPrimeMessage,
@@ -2142,6 +2143,23 @@ describe('resolveAlwaysApplySkills', () => {
 describe('injectSkillPrimes', () => {
   const manual = (name: string, body: string) => ({ name, body });
   const always = (name: string, body: string) => ({ name, body });
+
+  it('selects the shared model-bound prime set before downstream consumers run', () => {
+    const selected = selectSkillPrimesForTurn({
+      manualSkillPrimes: [manual('shared', 'manual'), manual('explicit', 'explicit')],
+      alwaysApplySkillPrimes: [
+        always('shared', 'discarded'),
+        always('ambient-1', 'ambient-1'),
+        always('ambient-2', 'ambient-2'),
+      ],
+      maxPrimesPerTurn: 3,
+    });
+
+    expect(selected.manualSkillPrimes.map(({ name }) => name)).toEqual(['shared', 'explicit']);
+    expect(selected.alwaysApplySkillPrimes.map(({ name }) => name)).toEqual(['ambient-1']);
+    expect(selected.alwaysApplyDedupedFromManual).toBe(1);
+    expect(selected.alwaysApplyDropped).toBe(1);
+  });
 
   it('splices both lists with always-apply first, manual last (closer to user msg)', () => {
     const userMsg = new HumanMessage('what next?');

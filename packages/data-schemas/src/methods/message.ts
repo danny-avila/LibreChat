@@ -9,8 +9,11 @@ import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_STORED_USER_SUBMITTED_PATHS = 257;
+const MAX_STORED_USER_SUBMITTED_PATHS = 256;
+const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
+const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 
 function normalizeUserSubmittedPaths(paths: unknown): string[] {
@@ -30,7 +33,7 @@ function normalizeUserSubmittedPaths(paths: unknown): string[] {
     }
     seen.add(path);
     normalized.push(path);
-    if (normalized.length >= MAX_STORED_USER_SUBMITTED_PATHS) {
+    if (normalized.length >= MAX_NORMALIZED_USER_SUBMITTED_PATHS) {
       break;
     }
   }
@@ -63,11 +66,114 @@ function normalizeUserSubmittedMessageFieldPaths(values: unknown): UserSubmitted
     }
     seen.add(key);
     normalized.push({ path, field: field as UserSubmittedMessageFieldPath['field'] });
-    if (normalized.length >= MAX_STORED_USER_SUBMITTED_PATHS) {
+    if (normalized.length >= MAX_NORMALIZED_USER_SUBMITTED_PATHS) {
       break;
     }
   }
   return normalized;
+}
+
+function capNormalizedProvenance(
+  userSubmittedPaths: readonly string[],
+  userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
+): {
+  userSubmittedPaths: string[];
+  userSubmittedMessageFieldPaths: UserSubmittedMessageFieldPath[];
+  overflowed: boolean;
+} {
+  return {
+    userSubmittedPaths: userSubmittedPaths.slice(0, MAX_STORED_USER_SUBMITTED_PATHS),
+    userSubmittedMessageFieldPaths: userSubmittedMessageFieldPaths.slice(
+      0,
+      MAX_STORED_USER_SUBMITTED_PATHS,
+    ),
+    overflowed:
+      userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS ||
+      userSubmittedMessageFieldPaths.length > MAX_STORED_USER_SUBMITTED_PATHS,
+  };
+}
+
+function getStoredArrayExpression(field: string): Record<string, unknown> {
+  return {
+    $cond: [{ $isArray: `$${field}` }, `$${field}`, []],
+  };
+}
+
+function getSetUnionExpression(field: string, values: readonly unknown[]): Record<string, unknown> {
+  return {
+    $setUnion: [getStoredArrayExpression(field), values],
+  };
+}
+
+/**
+ * Builds one Mongo aggregation update that merges and caps both provenance
+ * sets. If detailed provenance no longer fits, the message is promoted to
+ * whole-message user provenance before excess paths are discarded. That
+ * keeps repeated concurrent edits bounded without turning truncation into a
+ * source-aware inspection bypass.
+ */
+function buildAtomicProvenanceMerge(
+  update: Record<string, unknown>,
+  userSubmittedPaths: readonly string[],
+  userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
+  stampModelOutputOnInsert = false,
+): Record<string, unknown>[] {
+  const pathsUnion = getSetUnionExpression('userSubmittedPaths', userSubmittedPaths);
+  const fieldPathsUnion = getSetUnionExpression(
+    'userSubmittedMessageFieldPaths',
+    userSubmittedMessageFieldPaths,
+  );
+  let existingOrSubmitted: unknown = '$isUserSubmitted';
+  if (typeof update.isUserSubmitted === 'boolean') {
+    existingOrSubmitted = update.isUserSubmitted;
+  } else if (stampModelOutputOnInsert) {
+    existingOrSubmitted = { $ifNull: ['$isUserSubmitted', false] };
+  }
+
+  return [
+    {
+      $set: {
+        ...update,
+        [PROVENANCE_PATHS_UNION_FIELD]: pathsUnion,
+        [PROVENANCE_FIELD_PATHS_UNION_FIELD]: fieldPathsUnion,
+      },
+    },
+    {
+      $set: {
+        userSubmittedPaths: {
+          $slice: [`$${PROVENANCE_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
+        },
+        userSubmittedMessageFieldPaths: {
+          $slice: [`$${PROVENANCE_FIELD_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
+        },
+        isUserSubmitted: {
+          $cond: [
+            {
+              $or: [
+                {
+                  $gt: [
+                    { $size: `$${PROVENANCE_PATHS_UNION_FIELD}` },
+                    MAX_STORED_USER_SUBMITTED_PATHS,
+                  ],
+                },
+                {
+                  $gt: [
+                    { $size: `$${PROVENANCE_FIELD_PATHS_UNION_FIELD}` },
+                    MAX_STORED_USER_SUBMITTED_PATHS,
+                  ],
+                },
+              ],
+            },
+            true,
+            existingOrSubmitted,
+          ],
+        },
+      },
+    },
+    {
+      $unset: [PROVENANCE_PATHS_UNION_FIELD, PROVENANCE_FIELD_PATHS_UNION_FIELD],
+    },
+  ];
 }
 
 function getSteerUserSubmittedPaths(content: unknown): string[] {
@@ -314,29 +420,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       delete update.userSubmittedMessageFieldPaths;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
-      const messageUpdate =
-        userSubmittedPaths.length > 0 ||
-        userSubmittedMessageFieldPaths.length > 0 ||
-        stampModelOutputOnInsert
-          ? {
-              $set: update,
-              ...((userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) && {
-                $addToSet: {
-                  ...(userSubmittedPaths.length > 0 && {
-                    userSubmittedPaths: { $each: userSubmittedPaths },
-                  }),
-                  ...(userSubmittedMessageFieldPaths.length > 0 && {
-                    userSubmittedMessageFieldPaths: {
-                      $each: userSubmittedMessageFieldPaths,
-                    },
-                  }),
-                },
-              }),
-              ...(stampModelOutputOnInsert && {
-                $setOnInsert: { isUserSubmitted: false },
-              }),
-            }
-          : update;
+      let messageUpdate: Record<string, unknown> | Record<string, unknown>[] = update;
+      if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
+        messageUpdate = buildAtomicProvenanceMerge(
+          update,
+          userSubmittedPaths,
+          userSubmittedMessageFieldPaths,
+          stampModelOutputOnInsert,
+        );
+      } else if (stampModelOutputOnInsert) {
+        messageUpdate = { $set: update, $setOnInsert: { isUserSubmitted: false } };
+      }
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
         messageUpdate,
@@ -400,19 +494,23 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const Message = mongoose.models.Message as Model<IMessage>;
       const bulkOps = messages.map((message) => {
         const normalizedMessage = { ...message };
-        const submittedPaths = normalizeUserSubmittedPaths(message.userSubmittedPaths);
-        const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
-          message.userSubmittedMessageFieldPaths,
+        const provenance = capNormalizedProvenance(
+          normalizeUserSubmittedPaths(message.userSubmittedPaths),
+          normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
         );
-        if (submittedPaths.length > 0) {
-          normalizedMessage.userSubmittedPaths = submittedPaths;
+        if (provenance.userSubmittedPaths.length > 0) {
+          normalizedMessage.userSubmittedPaths = provenance.userSubmittedPaths;
         } else {
           delete normalizedMessage.userSubmittedPaths;
         }
-        if (submittedMessageFields.length > 0) {
-          normalizedMessage.userSubmittedMessageFieldPaths = submittedMessageFields;
+        if (provenance.userSubmittedMessageFieldPaths.length > 0) {
+          normalizedMessage.userSubmittedMessageFieldPaths =
+            provenance.userSubmittedMessageFieldPaths;
         } else {
           delete normalizedMessage.userSubmittedMessageFieldPaths;
+        }
+        if (provenance.overflowed) {
+          normalizedMessage.isUserSubmitted = true;
         }
         return {
           updateOne: {
@@ -451,9 +549,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const submittedPaths = normalizeUserSubmittedPaths(rest.userSubmittedPaths);
-      const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
-        rest.userSubmittedMessageFieldPaths,
+      const provenance = capNormalizedProvenance(
+        normalizeUserSubmittedPaths(rest.userSubmittedPaths),
+        normalizeUserSubmittedMessageFieldPaths(rest.userSubmittedMessageFieldPaths),
       );
       const {
         userSubmittedPaths: _userSubmittedPaths,
@@ -467,13 +565,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         conversationId,
         parentMessageId,
         ...safeRest,
-        ...(submittedPaths.length > 0 && { userSubmittedPaths: submittedPaths }),
-        ...(submittedMessageFields.length > 0 && {
-          userSubmittedMessageFieldPaths: submittedMessageFields,
+        ...(provenance.userSubmittedPaths.length > 0 && {
+          userSubmittedPaths: provenance.userSubmittedPaths,
         }),
+        ...(provenance.userSubmittedMessageFieldPaths.length > 0 && {
+          userSubmittedMessageFieldPaths: provenance.userSubmittedMessageFieldPaths,
+        }),
+        ...(provenance.overflowed && { isUserSubmitted: true }),
       };
       const update =
-        rest.isCreatedByUser === false && rest.isUserSubmitted === undefined
+        rest.isCreatedByUser === false &&
+        rest.isUserSubmitted === undefined &&
+        !provenance.overflowed
           ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
           : message;
 
@@ -689,17 +792,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       delete update.userSubmittedMessageFieldPaths;
       const messageUpdate =
         submittedPaths.length > 0 || submittedMessageFields.length > 0
-          ? {
-              $set: update,
-              $addToSet: {
-                ...(submittedPaths.length > 0 && {
-                  userSubmittedPaths: { $each: submittedPaths },
-                }),
-                ...(submittedMessageFields.length > 0 && {
-                  userSubmittedMessageFieldPaths: { $each: submittedMessageFields },
-                }),
-              },
-            }
+          ? buildAtomicProvenanceMerge(update, submittedPaths, submittedMessageFields)
           : update;
       const updatedMessage = await Message.findOneAndUpdate(
         { messageId, user: userId },

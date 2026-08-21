@@ -1,4 +1,5 @@
 import {
+  CONTENT_TRAVERSAL_MAX_NODES,
   ContentTraversalLimitError,
   getContentTraversalFragments,
   getContentTraversalScopes,
@@ -8,6 +9,21 @@ import { inspectContent } from '../runtime';
 import { extractChatContent } from './chat';
 
 describe('extractChatContent', () => {
+  it('bounds aggregate traversal across submitted chat arrays', () => {
+    const examples = Array.from({ length: CONTENT_TRAVERSAL_MAX_NODES + 1 }, () => null);
+
+    try {
+      extractChatContent({ examples });
+      throw new Error('expected traversal failure');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContentTraversalLimitError);
+      expect(getContentTraversalScopes(error as ContentTraversalLimitError)).toContainEqual({
+        source: 'prompt',
+        fields: ['example_input', 'example_output'],
+      });
+    }
+  });
+
   it('classifies chat and resume fields in their legacy inspection order', () => {
     const editedArguments = { token: 'ORG-DEADBEEF' };
     const body = {

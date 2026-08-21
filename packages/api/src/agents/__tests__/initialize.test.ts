@@ -413,6 +413,73 @@ describe('initializeAgent — current content policy preflight', () => {
     expect(mockGetProviderConfig).not.toHaveBeenCalled();
   });
 
+  it('inspects only the deduped model-bound skill definition when manual invocation wins', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const author = {
+      toString: () => req.user?.id,
+    } as unknown as import('mongoose').Types.ObjectId;
+    const getSkillByName: InitializeAgentDbMethods['getSkillByName'] = jest.fn().mockResolvedValue({
+      _id: skillId,
+      name: 'shared-skill',
+      body: 'Safe manually selected instructions',
+      author,
+    });
+    const listAlwaysApplySkills: InitializeAgentDbMethods['listAlwaysApplySkills'] = jest
+      .fn()
+      .mockResolvedValue({
+        skills: [
+          {
+            _id: skillId,
+            name: 'shared-skill',
+            body: 'Discarded PRIVATE-SKILL definition',
+            author,
+          },
+        ],
+        has_more: false,
+        after: null,
+      });
+    req.config = {
+      filters: {
+        skills: {
+          pii: {
+            starterPatterns: [],
+            customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+          },
+        },
+      },
+    } as unknown as ServerRequest['config'];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['shared-skill'],
+      },
+      {
+        ...db,
+        getSkillByName,
+        listAlwaysApplySkills,
+        listSkillsByAccess: async () => ({ skills: [], has_more: false, after: null }),
+      },
+    );
+
+    expect(result.manualSkillPrimes).toEqual([
+      expect.objectContaining({
+        name: 'shared-skill',
+        body: 'Safe manually selected instructions',
+      }),
+    ]);
+    expect(result.alwaysApplySkillPrimes).toEqual([]);
+  });
+
   it('does not traverse resolved skill metadata when skill policy is inactive', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     const { Types } = await import('mongoose');

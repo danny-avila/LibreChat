@@ -175,10 +175,10 @@ describe('Message Operations', () => {
         userSubmittedPaths: submittedPaths,
       });
 
-      expect(result?.userSubmittedPaths).toHaveLength(257);
+      expect(result?.userSubmittedPaths).toHaveLength(256);
       expect(result?.userSubmittedPaths).not.toContain('not-a-pointer');
       expect(result?.userSubmittedPaths?.[0]).toBe('/content/0/text');
-      expect(result?.userSubmittedPaths?.[256]).toBe('/content/256/text');
+      expect(result?.isUserSubmitted).toBe(true);
     });
 
     it('validates and atomically preserves exact HITL field provenance', async () => {
@@ -238,7 +238,8 @@ describe('Message Operations', () => {
         ],
       });
 
-      expect(result?.userSubmittedPaths).toEqual(['/text', '/content/1']);
+      expect(result?.userSubmittedPaths).toEqual(expect.arrayContaining(['/text', '/content/1']));
+      expect(result?.userSubmittedPaths).toHaveLength(2);
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -420,6 +421,38 @@ describe('Message Operations', () => {
         expect.arrayContaining(['/text', '/content/0/text']),
       );
       expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index + 200}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index + 200}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(256);
+      expect(updatedMessage?.isUserSubmitted).toBe(true);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {
