@@ -91,4 +91,23 @@ describe('durable subagent activity projection', () => {
 
     expect(projection.activity[0]).toEqual(expect.objectContaining({ status: expected }));
   });
+
+  it('shows only the selected invocation segment from a replacement transcript', () => {
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        { type: 'human', data: { content: 'Earlier request.' } },
+        { type: 'ai', data: { content: 'Earlier private activity.' } },
+        { type: 'human', data: { content: 'Selected request.' } },
+        { type: 'ai', data: { content: 'Selected activity.' } },
+      ]),
+      'replace',
+    );
+
+    expect(projection.activity).toEqual([{ type: 'writing', text: 'Selected activity.' }]);
+    expect(JSON.stringify(projection)).not.toContain('Earlier private activity.');
+    expect(projectSubagentActivity('[{"type":"ai","data":{"content":"old"}}]', 'replace')).toEqual({
+      activity: [],
+      truncated: true,
+    });
+  });
 });

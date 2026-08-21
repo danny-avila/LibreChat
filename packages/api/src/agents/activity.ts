@@ -99,7 +99,10 @@ const normalizeToolCall = (value: unknown, index: number): MutableToolActivity |
  * retained; response metadata, artifacts, runtime fields, and reasoning text
  * are intentionally ignored.
  */
-export function projectSubagentActivity(messagesJson: string | undefined): Projection {
+export function projectSubagentActivity(
+  messagesJson: string | undefined,
+  mode: 'append' | 'replace' = 'append',
+): Projection {
   if (messagesJson == null) return { activity: [], truncated: false };
   let parsed: unknown;
   try {
@@ -108,6 +111,22 @@ export function projectSubagentActivity(messagesJson: string | undefined): Proje
     return { activity: [], truncated: true };
   }
   if (!Array.isArray(parsed)) return { activity: [], truncated: true };
+  let relevantMessages = parsed;
+  if (mode === 'replace') {
+    let latestInputIndex = -1;
+    for (let index = parsed.length - 1; index >= 0; index -= 1) {
+      const stored = parsed[index];
+      if (isRecord(stored) && (stored.type === 'human' || stored.type === 'user')) {
+        latestInputIndex = index;
+        break;
+      }
+    }
+    // A replacement transcript can contain the complete child history. If
+    // its current input boundary is missing, fail closed instead of exposing
+    // activity from earlier invocations on the selected parent card.
+    if (latestInputIndex < 0) return { activity: [], truncated: true };
+    relevantMessages = parsed.slice(latestInputIndex + 1);
+  }
 
   const activity: SubagentActivityItem[] = [];
   const toolsById = new Map<string, MutableToolActivity>();
@@ -121,7 +140,7 @@ export function projectSubagentActivity(messagesJson: string | undefined): Proje
     if (item.type === 'tool') toolsById.set(item.toolCallId, item);
   };
 
-  for (const stored of parsed) {
+  for (const stored of relevantMessages) {
     if (!isRecord(stored) || !isRecord(stored.data) || typeof stored.type !== 'string') {
       truncated = true;
       continue;

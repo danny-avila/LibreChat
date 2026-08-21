@@ -209,7 +209,10 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           ? undefined
           : newestFirst.find((message) => message.messageId === `${requestedTaskId}:assistant`)
               ?.subagentTranscript;
-      const projectedActivity = projectSubagentActivity(selectedTranscript?.messagesJson);
+      const projectedActivity =
+        selectedTranscript != null && selectedTranscript.taskId === requestedTaskId
+          ? projectSubagentActivity(selectedTranscript.messagesJson, selectedTranscript.mode)
+          : { activity: [], truncated: selectedTranscript != null };
       const projectedNewestFirst: SubagentThreadMessage[] = [];
       let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
       for (const message of newestFirst) {
