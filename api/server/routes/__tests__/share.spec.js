@@ -945,6 +945,28 @@ describe('share-scoped file routes', () => {
     expect(response.headers['content-disposition']).toContain('attachment');
   });
 
+  it('downloads stored text for a snapshotted text-source file', async () => {
+    getFiles.mockResolvedValue([{ status: 'ready', text: 'Shared extracted text' }]);
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'text',
+        filepath: 'mistral_ocr',
+        type: 'application/pdf',
+        filename: 'report.pdf',
+      },
+      hasSnapshots: true,
+    });
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1/download');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.headers['content-disposition']).toContain('attachment; report.pdf.txt');
+    expect(response.text).toBe('Shared extracted text');
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
   it('returns 500 when the backing stream fails before sending bytes', async () => {
     const failingStream = new Readable({
       read() {

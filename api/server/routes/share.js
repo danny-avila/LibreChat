@@ -197,7 +197,6 @@ const resolveShareFile = async (req, res, next) => {
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
 const streamSharedFile = async (req, res, file, requestedDisposition) => {
   const source = file.source || FileSources.local;
-  const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 
   // An update keeps the shareId, so these URLs are stable across re-publishes. Without
   // revalidation a viewer's cached copy would outlive a revoked "share files" choice or a
@@ -208,6 +207,22 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
   if (req.headers['if-none-match'] === etag) {
     return res.status(304).end();
   }
+
+  if (source === FileSources.text) {
+    if (req.liveFile?.text == null) {
+      return res.status(404).send('No file content found');
+    }
+    const textFilename = file.filename?.toLowerCase().endsWith('.txt')
+      ? file.filename
+      : `${file.filename || file.file_id}.txt`;
+    const disposition = requestedDisposition === 'inline' ? 'inline' : 'attachment';
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', getContentDisposition(textFilename, disposition));
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.send(req.liveFile.text);
+  }
+
+  const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 
   // Inline only safe preview types; anything else is forced to attachment.
   const disposition =

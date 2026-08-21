@@ -570,6 +570,26 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     // Access already validated by fileAccess middleware
     const file = req.fileAccess.file;
 
+    // Text-source files store extracted content in the DB; there is no backing file to stream
+    if (file.source === FileSources.text) {
+      /** `getFiles` excludes `text` by default, so the authorized record is re-fetched by `_id` */
+      const [textFile] = (await db.getFiles({ _id: file._id }, null, { text: 1 })) ?? [];
+      if (textFile?.text == null) {
+        logger.warn(`File download requested by user ${userId} has no stored text: ${file_id}`);
+        return res.status(404).send('No file content found');
+      }
+      const textFilename = file.filename?.toLowerCase().endsWith('.txt')
+        ? file.filename
+        : `${file.filename || file_id}.txt`;
+      res.setHeader('Content-Disposition', getContentDisposition(textFilename));
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader(
+        'X-File-Metadata',
+        encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
+      );
+      return res.send(textFile.text);
+    }
+
     if (checkOpenAIStorage(file.source) && !file.model) {
       logger.warn(`File download requested by user ${userId} has no associated model: ${file_id}`);
       return res.status(400).send('The model used when creating this file is not available');
@@ -642,6 +662,16 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+        if (res.headersSent) {
+          if (!res.writableEnded) {
+            res.destroy();
+          }
+          return;
+        }
+        res.removeHeader('Content-Disposition');
+        res.removeHeader('Content-Type');
+        res.removeHeader('X-File-Metadata');
+        res.status(500).send('Error downloading file');
       });
 
       setHeaders();
