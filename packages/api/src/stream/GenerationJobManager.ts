@@ -2529,6 +2529,7 @@ class GenerationJobManagerClass {
         userMessage: jobData.userMessage,
         responseMessageId: jobData.responseMessageId,
         isRegenerate: jobData.isRegenerate,
+        mcpRequestBody: jobData.mcpRequestBody,
         sender: jobData.sender,
         endpoint: jobData.endpoint,
         iconURL: jobData.iconURL,

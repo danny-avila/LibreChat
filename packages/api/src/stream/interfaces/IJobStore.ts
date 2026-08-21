@@ -3,6 +3,7 @@ import type { StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
+import type { MCPRuntimeRequestBody } from '~/mcp/types';
 
 /**
  * A pause owner has this long to durably persist the interrupted turn before
@@ -77,6 +78,8 @@ export interface SerializableJobData {
 
   /** Whether this generation replaces an existing assistant branch. */
   isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
 
   /**
    * Whether this run has activity labels enabled (per-endpoint
@@ -298,6 +301,7 @@ export type JobMetadataPatch = Partial<
     SerializableJobData,
     | 'responseMessageId'
     | 'isRegenerate'
+    | 'mcpRequestBody'
     | 'sender'
     | 'conversationId'
     | 'userMessage'

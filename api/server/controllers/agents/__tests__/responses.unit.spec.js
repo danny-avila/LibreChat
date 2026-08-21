@@ -122,6 +122,13 @@ jest.mock('@librechat/api', () => ({
   buildToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    }),
+  }),
   buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
   buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
   buildAgentContextAttachmentsByAgentId: (...args) =>
@@ -547,6 +554,15 @@ describe('createResponse controller', () => {
       expect(mockCreateAgentRunEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
         initializeAgent.mock.invocationCallOrder[0],
       );
+      expect(initializeAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: {
+            messageId: 'resp_mock-123',
+            conversationId: expect.any(String),
+          },
+        }),
+        expect.anything(),
+      );
       expect(req.body).not.toBe(requestBody);
       expect(req.body).toEqual(requestBody);
       expect(JSON.stringify(mockCreateAgentRunEnvelope.mock.results[0].value)).not.toContain(
@@ -734,7 +750,10 @@ describe('createResponse controller', () => {
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
       await toolExecuteOptions.loadTools(['file_search'], 'agent-123');
       expect(loadToolsForExecution).toHaveBeenLastCalledWith(
-        expect.objectContaining({ agentResourceType: ResourceType.REMOTE_AGENT }),
+        expect.objectContaining({
+          agentResourceType: ResourceType.REMOTE_AGENT,
+          requestBody: initializeParams.requestBody,
+        }),
       );
     });
   });

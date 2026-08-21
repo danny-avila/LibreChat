@@ -2540,6 +2540,32 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     );
   });
 
+  it('threads the normalized MCP request body into tool discovery', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['custom_tool'];
+    const requestBody = {
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    };
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        requestBody,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(loadTools).toHaveBeenCalledWith(expect.objectContaining({ requestBody }));
+  });
+
   it('unions snapshot config names into the audit when the merged read omits them', async () => {
     /** The registry's merged read tolerates config-server init failures and
      *  can silently drop config-only servers — the heal audit must restore

@@ -1429,6 +1429,33 @@ describe('ToolService - Action Capability Gating', () => {
       );
     });
 
+    it('threads the normalized MCP body through deferred tool loading', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.web_search];
+      const req = createMockReq(capabilities);
+      const requestBody = {
+        messageId: 'response-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'parent-1',
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        requestBody,
+        agent: { id: 'agent_123', tools: [Tools.web_search] },
+        toolNames: [Tools.web_search],
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({ requestBody }),
+        }),
+      );
+      expect(result.configurable.requestBody).toBe(requestBody);
+    });
+
     const actionToolName = `get_weather${actionDelimiter}api_example_com`;
     const regularTool = Tools.web_search;
 
@@ -2147,6 +2174,11 @@ describe('ToolService - Action Capability Gating', () => {
       // zodSchema, name, and description for assistants API"), so key
       // resolution assertions off the request builder path instead.
       expect(mockCreateActionTool).toHaveBeenCalledTimes(2);
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({ res: client.res }),
+        }),
+      );
       const builderPaths = mockCreateActionTool.mock.calls.map((c) => c[0].requestBuilder?.path);
       expect(builderPaths).toEqual(expect.arrayContaining(['/echo', '/items']));
       // Each call must carry a distinct builder — guards against the bug

@@ -83,6 +83,11 @@ jest.mock('@librechat/api', () => ({
   getAgentStartupTelemetry: jest.fn(() => undefined),
   acceptAgentStartupTelemetry: jest.fn(),
   isUnpersistedPreliminaryParent: jest.fn(async () => false),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/server/cleanup', () => ({

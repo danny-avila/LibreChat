@@ -27,17 +27,18 @@ import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/ag
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
 import type { Response as ServerResponse } from 'express';
 import type {
+  ServerRequest,
+  RequestBody,
+  EndpointDbMethods,
+  EndpointTokenConfig,
+  InitializeResultBase,
+} from '~/types';
+import type {
   ResolvedManualSkill,
   ResolvedAlwaysApplySkill,
   TListSkillsByAccess,
   TGetSkillByName,
 } from './skills';
-import type {
-  ServerRequest,
-  EndpointDbMethods,
-  EndpointTokenConfig,
-  InitializeResultBase,
-} from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -417,6 +418,8 @@ export interface InitializeAgentParams {
   conversationId?: string | null;
   /** Parent message ID for determining the current thread (optional) */
   parentMessageId?: string | null;
+  /** Normalized body used by MCP runtime placeholders during tool discovery. */
+  requestBody?: RequestBody;
   /** Request files */
   requestFiles?: IMongoFile[];
   /** Function to load agent tools */
@@ -429,6 +432,7 @@ export interface InitializeAgentParams {
     model: string | null;
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
+    requestBody?: RequestBody;
     /** Trusted endpoint/profile resolved for this agent before any code-file priming. */
     codeExecutionContext: CodeExecutionContext;
     /** Full accessible MCP server names (operator + user DB) when the heal
@@ -613,6 +617,7 @@ export async function initializeAgent(
     conversationId,
     endpointOption,
     parentMessageId,
+    requestBody,
     allowedProviders,
     isInitialAgent = false,
   } = params;
@@ -1068,6 +1073,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
+      requestBody,
       codeExecutionContext,
       accessibleMcpServerNames: resolvedAuditNames,
     });

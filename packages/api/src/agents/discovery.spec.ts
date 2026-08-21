@@ -273,6 +273,40 @@ describe('discoverConnectedAgents', () => {
     );
   });
 
+  it('forwards normalized request metadata to every handoff initializeAgent call', async () => {
+    const primaryConfig = makeConfig('A', [{ from: 'A', to: 'B', edgeType: 'handoff' }]);
+    const getAgent = jest.fn(async () => makeAgent('B', []));
+    const checkPermission = jest.fn().mockResolvedValue(true);
+    const requestBody = {
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'parent-1',
+    };
+
+    await discoverConnectedAgents(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        requestBody,
+      },
+      {
+        getAgent,
+        checkPermission,
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ requestBody }),
+      expect.anything(),
+    );
+  });
+
   it('forwards codeEnvAvailable=false verbatim so handoff agents respect disabled capability', async () => {
     /* Symmetric to the "true" case: when the primary resolved
        `codeEnvAvailable = false`, handoffs must NOT accidentally

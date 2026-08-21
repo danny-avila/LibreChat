@@ -327,6 +327,11 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
@@ -389,6 +394,11 @@ describe('RedisJobStore', () => {
         parentMessageId: 'parent-1',
       },
       responseMessageId: 'response-1',
+      mcpRequestBody: {
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      },
       sender: 'Agent',
       endpoint: 'agents',
       iconURL: 'https://example.com/icon.png',
@@ -423,6 +433,11 @@ describe('RedisJobStore', () => {
     expect(storedFields).toMatchObject({
       conversationId: 'conversation-1',
       responseMessageId: 'response-1',
+      mcpRequestBody: JSON.stringify({
+        messageId: 'response-1',
+        conversationId: 'overridden-conversation',
+        parentMessageId: 'response-1',
+      }),
       agent_id: 'agent-1',
       isTemporary: '0',
       scheduleId: 'schedule-1',

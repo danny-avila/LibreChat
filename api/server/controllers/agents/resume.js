@@ -24,6 +24,7 @@ const {
   isSteerPreemptSupported,
   isStopConfirmed,
   toPendingSteer,
+  createMCPRuntimeRequestBody,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1190,6 +1191,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       signal: job.abortController.signal,
       jobCreatedAt: job.createdAt,
       checkpointNamespace,
+      requestBody:
+        job.metadata.mcpRequestBody ??
+        createMCPRuntimeRequestBody({
+          messageId: job.metadata.responseMessageId,
+          conversationId: streamId,
+          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+        }),
     });
     client = result.client;
 

@@ -29,6 +29,7 @@ const {
   buildMCPAuthRunStepDeltaEvent,
   buildMCPAuthRunStepEndDeltaEvent,
   isUserSourced,
+  hasCustomUserVars,
   checkAccessWithRequestCache,
   getMissingCustomUserVars,
   getUserMCPAuthMap,
@@ -1461,6 +1462,19 @@ async function hasDurableMCPAuthorization(userId, serverName, config, runtimeCon
   });
 }
 
+async function getMCPUserConfigurationState(serverName, config, runtimeContext = {}) {
+  if (!hasCustomUserVars(config)) {
+    return undefined;
+  }
+
+  const userMCPAuthMap =
+    runtimeContext.userMCPAuthMap ?? (await runtimeContext.loadUserMCPAuthMap?.());
+  const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+  return getMissingCustomUserVars(config, customUserVars).length > 0
+    ? 'needs_configuration'
+    : 'configured';
+}
+
 function canDetectMCPRuntimeOAuth(config) {
   return config.requiresOAuth == null && config.apiKey == null && hasRuntimeUrlPlaceholders(config);
 }
@@ -1474,7 +1488,7 @@ function canDetectMCPRuntimeOAuth(config) {
  * @param {Map<string, import('@librechat/api').MCPConnection>} userConnections - User-level connections
  * @param {Set} oauthServers - Set of OAuth servers
  * @param {{ user?: Partial<IUser>, userMCPAuthMap?: Record<string, Record<string, string>>, loadUserMCPAuthMap?: () => Promise<Record<string, Record<string, string>> | undefined>, loadMCPAllowlists?: () => Promise<{ allowedDomains?: string[] | null, allowedAddresses?: string[] | null }> }} [runtimeContext]
- * @returns {Object} Object containing requiresOAuth and connectionState
+ * @returns {Object} Object containing requiresOAuth, requestScoped, connectionState, and authorizationState
  */
 async function getServerConnectionStatus(
   userId,
@@ -1491,6 +1505,10 @@ async function getServerConnectionStatus(
   const liveConnectionOAuth = connection?.usesOAuth?.() === true;
   const runtimeOAuthCandidate = canDetectMCPRuntimeOAuth(config);
   const effectiveOAuth = configuredOAuth || liveConnectionOAuth;
+  const requestScoped = requiresEphemeralUserConnection(config);
+  const configurationState = requestScoped
+    ? await getMCPUserConfigurationState(serverName, config, runtimeContext)
+    : undefined;
 
   const baseConnectionState = isStaleOrDoNotExist
     ? 'disconnected'
@@ -1535,6 +1553,8 @@ async function getServerConnectionStatus(
 
   return {
     requiresOAuth,
+    ...(requestScoped && { requestScoped: true }),
+    ...(configurationState && { configurationState }),
     connectionState: finalConnectionState,
     authorizationState,
   };

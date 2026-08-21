@@ -169,9 +169,26 @@ export function useMCPServerManager({
   // Poll intervals are kept local (not serializable)
   const pollIntervalsRef = useRef<PollIntervals>({});
 
-  const { connectionStatus } = useMCPConnectionStatus({
+  const { connectionStatus: polledConnectionStatus } = useMCPConnectionStatus({
     enabled: !isLoading && availableMCPServers.length > 0,
   });
+  const connectionStatus = useMemo(() => {
+    if (!polledConnectionStatus) {
+      return polledConnectionStatus;
+    }
+
+    let changed = false;
+    const nextStatus: MCPConnectionStatusResponse['connectionStatus'] = {};
+    for (const [serverName, status] of Object.entries(polledConnectionStatus)) {
+      if (status.requestScoped === true || loadedServers?.[serverName]?.requestScoped !== true) {
+        nextStatus[serverName] = status;
+        continue;
+      }
+      changed = true;
+      nextStatus[serverName] = { ...status, requestScoped: true };
+    }
+    return changed ? nextStatus : polledConnectionStatus;
+  }, [polledConnectionStatus, loadedServers]);
 
   const updateServerInitState = useCallback(
     (serverName: string, updates: Partial<MCPServerInitState>) => {

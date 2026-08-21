@@ -103,6 +103,11 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
   isSteerPreemptSupported: jest.fn(() => true),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/models', () => ({
@@ -292,7 +297,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     });
 
     mockAddTitle = jest.fn().mockResolvedValue(undefined);
-    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace }) => {
+    mockInitializeClient = jest.fn(async ({ req, checkpointNamespace, requestBody }) => {
       // Capture the request state the controller seeds BEFORE reconstruction.
       capturedInit = {
         parentMessageId: req.body.parentMessageId,
@@ -301,6 +306,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         conversationCreatedAt: req.conversationCreatedAt,
         timezone: req.body.timezone,
         checkpointNamespace,
+        requestBody,
       };
       return { client: makeClient(), userMCPAuthMap: { server1: { token: 't' } } };
     });
@@ -1195,6 +1201,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       // initializeAgent scopes thread files off req.body.parentMessageId, seeded
       // from the paused user message's parent before initializeClient runs.
       expect(capturedInit.parentMessageId).toBe(THREAD_PARENT_ID);
+      expect(capturedInit.requestBody).toEqual({
+        messageId: RESPONSE_MSG_ID,
+        conversationId: CONVO_ID,
+        parentMessageId: USER_MSG_ID,
+      });
 
       expect(mockInitializeClient).toHaveBeenCalledTimes(1);
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
@@ -1204,6 +1215,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
           userMCPAuthMap: { server1: { token: 't' } },
         }),
       );
+    });
+
+    it('reuses the persisted MCP identity for edited and overridden turns', async () => {
+      const persistedMCPRequestBody = {
+        messageId: RESPONSE_MSG_ID,
+        conversationId: 'overridden-conversation',
+        parentMessageId: RESPONSE_MSG_ID,
+      };
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { mcpRequestBody: persistedMCPRequestBody } }),
+      );
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      expect(capturedInit.requestBody).toBe(persistedMCPRequestBody);
     });
 
     it('reuses the persisted generation checkpoint namespace and keeps legacy fallback explicit', async () => {
