@@ -382,13 +382,17 @@ export async function handleCompactRequest(
     } catch (error) {
       /** A provider that answered with empty or filtered content still charged
        *  for the call; bill it before surfacing the failure. */
-      if (error instanceof EmptyCompactionError && error.usage) {
+      if (error instanceof EmptyCompactionError) {
         await recordCompactionUsage(deps, {
           userId,
           appConfig,
           conversationId,
           messageId,
-          usage: error.usage,
+          usage: error.usage ?? {
+            model: error.model,
+            provider: error.provider,
+            ...error.estimatedUsage,
+          },
           model: error.model,
           endpointTokenConfig: error.endpointTokenConfig,
         });
