@@ -1,5 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, ContentTypes, EModelEndpoint, FileSources } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  FileSources,
+  providerEndpointMap,
+} from 'librechat-data-provider';
 import {
   Providers,
   HumanMessage,
@@ -30,6 +36,7 @@ import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
+import { getModelMaxTokens } from '~/utils/tokens';
 import { countTokens } from '~/utils/tokenizer';
 import { createSafeUser } from '~/utils/env';
 
@@ -467,6 +474,67 @@ export function buildCompactionInstruction(
 }
 
 /**
+ * Fraction of the summarizer's context window the transcript may occupy. The
+ * rest is headroom for the checkpoint prompt, the summary itself, and the
+ * provider's own accounting of a prompt this module can only estimate.
+ */
+const TRANSCRIPT_BUDGET_RATIO = 0.7;
+
+/** Assumed window when the summarizer's model is unknown to the token map. */
+const FALLBACK_CONTEXT_TOKENS = 32_768;
+
+/**
+ * Drops the oldest turns until the transcript fits the summarizer's context
+ * window.
+ *
+ * A normal turn is pruned by the SDK before it reaches the provider; this path
+ * rebuilds the whole root-to-leaf branch itself, so without a bound a long
+ * conversation, or any conversation compacted with a smaller administrator
+ * chosen summary model, gets a context-length error exactly when compaction is
+ * most needed. Cutting only at human-message boundaries keeps tool_call and
+ * tool_result pairs together, the same rule the SDK's recency split follows.
+ */
+async function boundTranscript(
+  messages: BaseMessage[],
+  budget: number,
+): Promise<{ messages: BaseMessage[]; dropped: number }> {
+  const counts: number[] = [];
+  let total = 0;
+  for (const message of messages) {
+    const size = await countMessageTokens(message);
+    counts.push(size);
+    total += size;
+  }
+  if (total <= budget) {
+    return { messages, dropped: 0 };
+  }
+
+  /** Walk back from the newest turn, keeping whole turns while they fit. */
+  let kept = 0;
+  let cut = messages.length;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    kept += counts[i];
+    if (kept > budget) {
+      break;
+    }
+    if (messages[i].getType() === 'human') {
+      cut = i;
+    }
+  }
+  /** No boundary fits (one oversized turn): keep the newest message alone and
+   *  let the provider's own truncation handle the remainder. */
+  if (cut === messages.length) {
+    cut = messages.length - 1;
+  }
+  return { messages: messages.slice(cut), dropped: cut };
+}
+
+async function countMessageTokens(message: BaseMessage): Promise<number> {
+  const { content } = message;
+  return countTokens(typeof content === 'string' ? content : JSON.stringify(content));
+}
+
+/**
  * Prompt-size estimate for the pre-flight balance check. Counts the serialized
  * content of every message the provider will receive, matching how the send
  * path derives its `promptTokens` argument closely enough for a spend gate.
@@ -474,8 +542,7 @@ export function buildCompactionInstruction(
 async function countPromptTokens(messages: BaseMessage[]): Promise<number> {
   let total = 0;
   for (const message of messages) {
-    const { content } = message;
-    total += await countTokens(typeof content === 'string' ? content : JSON.stringify(content));
+    total += await countMessageTokens(message);
   }
   return total;
 }
@@ -606,17 +673,25 @@ export class NothingToCompactError extends Error {
 export class EmptyCompactionError extends Error {
   readonly usage?: CompactionUsage;
   readonly model?: string;
+  readonly provider?: string;
   readonly endpointTokenConfig?: EndpointTokenConfig;
+  /** Local count of what was sent, so the call is billed even when the
+   *  provider reported nothing at all alongside the empty completion. */
+  readonly estimatedUsage: { input_tokens: number; output_tokens: number };
   constructor(details: {
     usage?: CompactionUsage;
     model?: string;
+    provider?: string;
     endpointTokenConfig?: EndpointTokenConfig;
+    estimatedUsage: { input_tokens: number; output_tokens: number };
   }) {
     super('Compaction produced empty output');
     this.name = 'EmptyCompactionError';
     this.usage = details.usage;
     this.model = details.model;
+    this.provider = details.provider;
     this.endpointTokenConfig = details.endpointTokenConfig;
+    this.estimatedUsage = details.estimatedUsage;
   }
 }
 
@@ -669,7 +744,24 @@ export async function compactConversation({
   const instruction = buildCompactionInstruction(promptText, updatePromptText, priorSummary?.text);
   const llm = initializeModel({ provider, clientOptions });
 
-  const promptMessages = [...messages, new HumanMessage(instruction)] as BaseMessage[];
+  const contextWindow =
+    getModelMaxTokens(
+      model ?? '',
+      providerEndpointMap[provider as keyof typeof providerEndpointMap] as EModelEndpoint,
+      endpointTokenConfig,
+    ) ?? FALLBACK_CONTEXT_TOKENS;
+  const { messages: bounded, dropped } = await boundTranscript(
+    messages as BaseMessage[],
+    Math.max(1024, Math.floor(contextWindow * TRANSCRIPT_BUDGET_RATIO)),
+  );
+  if (dropped > 0) {
+    logger.warn(
+      `[compact] Transcript exceeded the summarizer's window; dropped ${dropped} of ${messages.length} messages`,
+      { provider, model, contextWindow },
+    );
+  }
+
+  const promptMessages = [...bounded, new HumanMessage(instruction)] as BaseMessage[];
   const promptTokens = await countPromptTokens(promptMessages);
   if (beforeInvoke) {
     await beforeInvoke({ promptTokens, model, provider, endpointTokenConfig });
@@ -693,13 +785,26 @@ export async function compactConversation({
   const text = extractResponseText(response);
   const usage = extractUsage(response, model, provider);
   if (text === '') {
-    throw new EmptyCompactionError({ usage, model, endpointTokenConfig });
+    /** Still a billed call: an OpenAI-compatible gateway may report no usage
+     *  at all, so the local estimate travels with the failure. */
+    throw new EmptyCompactionError({
+      usage,
+      model,
+      provider,
+      endpointTokenConfig,
+      estimatedUsage: { input_tokens: promptTokens, output_tokens: 0 },
+    });
   }
 
-  const providerOutputTokens = usage?.output_tokens ?? 0;
-  const tokenCount =
-    (providerOutputTokens > 0 ? providerOutputTokens : await countTokens(text)) +
-    SUMMARY_WRAPPER_OVERHEAD_TOKENS;
+  /**
+   * Sized from the PERSISTED text, never the provider's `output_tokens`. On a
+   * reasoning summarizer those two diverge by the hidden thinking, which is
+   * billed but never written into the checkpoint; using it here would make
+   * every later context calculation reserve room for tokens that are not sent.
+   * Provider output usage stays exclusively a billing input.
+   */
+  const summaryTokens = await countTokens(text);
+  const tokenCount = summaryTokens + SUMMARY_WRAPPER_OVERHEAD_TOKENS;
 
   logger.debug('[compact] Compaction complete', {
     provider,
@@ -717,7 +822,7 @@ export async function compactConversation({
     endpointTokenConfig,
     provider,
     model,
-    estimatedUsage: { input_tokens: promptTokens, output_tokens: await countTokens(text) },
+    estimatedUsage: { input_tokens: promptTokens, output_tokens: summaryTokens },
     summary: {
       type: ContentTypes.SUMMARY,
       content: [{ type: ContentTypes.TEXT, text }],

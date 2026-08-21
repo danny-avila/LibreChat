@@ -213,13 +213,15 @@ describe('compactConversation', () => {
     ]);
     expect(result.summary.provider).toBe('openAI');
     expect(result.summary.model).toBe('gpt-4o-mini');
-    /** Reported output tokens plus the summary-carrier overhead. */
-    expect(result.summary.tokenCount).toBe(73);
+    /** Counted from the persisted text plus the summary-carrier overhead,
+     *  independent of what the provider billed as output. */
+    expect(result.summary.tokenCount).toBeGreaterThan(33);
+    expect(result.summary.tokenCount).toBeLessThan(60);
     expect(result.messagesCompacted).toBe(6);
     expect(result.usage).toMatchObject({ input_tokens: 1200, output_tokens: 40 });
   });
 
-  it('counts the summary itself when the provider reports no output tokens', async () => {
+  it('still sizes the summary when the provider reports no output tokens', async () => {
     mockStream.mockImplementation(() => chunksOf('## Checkpoint\nDid the thing.'));
 
     const result = await compactConversation({
@@ -434,6 +436,59 @@ describe('compactConversation', () => {
     expect(JSON.stringify(sent[0].content)).toContain('chart.png');
   });
 
+  it('sizes the summary from its persisted text, not billed reasoning tokens', async () => {
+    /** A reasoning summarizer bills far more output than it writes; reserving
+     *  window for tokens that are never sent back would overstate every later
+     *  context calculation. */
+    mockStream.mockImplementation(() =>
+      chunksOf('short checkpoint', {
+        input_tokens: 100,
+        output_tokens: 9000,
+        total_tokens: 9100,
+      }),
+    );
+
+    const result = await compactConversation({
+      req: makeReq(),
+      agent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    expect(result.summary.tokenCount).toBeLessThan(100);
+    /** Provider output stays available for billing. */
+    expect(result.usage?.output_tokens).toBe(9000);
+  });
+
+  it('drops the oldest turns when the branch exceeds the summarizer window', async () => {
+    const long: TMessage[] = [];
+    for (let i = 0; i < 60; i++) {
+      const parent = i === 0 ? Constants.NO_PARENT : `m${i - 1}`;
+      long.push(
+        i % 2 === 0
+          ? ({ ...userMessage(`m${i}`, parent, 'x'.repeat(20000)) } as TMessage)
+          : assistantMessage(`m${i}`, parent, [
+              { type: ContentTypes.TEXT, text: 'y'.repeat(20000) },
+            ]),
+      );
+    }
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: long,
+      ids,
+      db: dbMethods,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    /** Bounded rather than sent whole, and cut at a turn boundary so no tool
+     *  result is orphaned. */
+    expect(sent.length).toBeLessThan(long.length);
+    expect(sent[0].getType()).toBe('human');
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),
@@ -453,6 +508,18 @@ describe('compactConversation', () => {
     ).rejects.toMatchObject({
       name: 'EmptyCompactionError',
       usage: { input_tokens: 900, provider: 'openAI' },
+    });
+  });
+
+  it('carries a local estimate when an empty response also omits usage', async () => {
+    mockStream.mockImplementation(() => chunksOf('   '));
+
+    await expect(
+      compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
+    ).rejects.toMatchObject({
+      name: 'EmptyCompactionError',
+      usage: undefined,
+      estimatedUsage: { output_tokens: 0 },
     });
   });
 
