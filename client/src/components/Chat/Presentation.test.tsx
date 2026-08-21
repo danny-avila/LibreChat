@@ -1,6 +1,7 @@
 import React from 'react';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { TConversation } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { activeSubagentPanel } from '~/store/subagents';
 import Presentation from './Presentation';
@@ -90,10 +91,11 @@ const OpenSubagentPanel = () => {
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const setSelection = useSetRecoilState(activeSubagentPanel);
   const open = () => {
-    setConversation({ conversationId: 'parent-conversation' });
+    setConversation({ conversationId: 'parent-conversation' } as TConversation);
     setSelection({
       parentConversationId: 'parent-conversation',
       threadId: 'child-thread',
+      taskId: 'background-task',
       toolCallId: 'tool-call',
       subagentType: 'researcher',
     });
