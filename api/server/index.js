@@ -92,6 +92,10 @@ const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
 const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
+const SCHEDULE_ENGINE_MAX_RETRIES = 3;
+const SCHEDULE_ENGINE_RETRY_DELAY_MS = 5000;
+let scheduleEngineRetries = 0;
+let scheduleEnginePermanentFailure = false;
 
 const rejectChatStartsUntilReady = (req, res, next) => {
   if (serverReady || req.method !== 'POST' || req.path === '/abort') {
