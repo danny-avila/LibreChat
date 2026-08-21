@@ -74,7 +74,7 @@ describe('durable subagent activity projection', () => {
     expect(Buffer.byteLength(JSON.stringify(projection.activity), 'utf8')).toBeLessThanOrEqual(
       SUBAGENT_ACTIVITY_LIMITS.bytes,
     );
-    expect(projection.activity.at(-1)).toEqual(
+    expect(projection.activity[projection.activity.length - 1]).toEqual(
       expect.objectContaining({ type: 'tool', toolCallId: 'call-499' }),
     );
   });
