@@ -185,6 +185,22 @@ export const getExistingConversationAbortMessages = ({
   return [...sourceMessages];
 };
 
+export const mergeErrorMessages = ({
+  messages,
+  regenerateMessages,
+  userMessage,
+  errorMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'userMessage' | 'isRegenerate'> & {
+  errorMessage: TMessage;
+}): TMessage[] => {
+  if (isRegenerate) {
+    return [...(regenerateMessages ?? messages), errorMessage];
+  }
+
+  return [...messages, userMessage, errorMessage];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   runIndex?: number;
@@ -945,14 +961,14 @@ export default function useEventHandlers({
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { messages, userMessage, initialResponse } = submission;
+      const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
