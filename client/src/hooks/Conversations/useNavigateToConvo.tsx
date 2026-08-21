@@ -22,6 +22,7 @@ import {
   buildDefaultConvo,
   requestChatFocus,
   isNotFoundError,
+  chatNavigation,
   logger,
 } from '~/utils';
 import { useApplyModelSpecEffects } from '~/hooks/Agents';
@@ -31,12 +32,14 @@ import store from '~/store';
 /**
  * The route the browser is actually showing, as the browser reports it.
  *
- * Every async step below captures this before its request and re-reads it
- * before writing, so work started for one route is abandoned once the user has
- * gone anywhere else. The browser's own location is the only thing that sees
- * EVERY way that can happen — a different sidebar row, "New chat", a link, a
- * redirect, or the back button — where any bookkeeping this hook maintained
- * itself would only cover the navigations that happen to route through it.
+ * Only `navigateWithRecord` needs this, and only because it is the one path
+ * that still calls `navigate()` after an await: it captures the route before
+ * its request and re-reads it before moving the user, so a record that lands
+ * for a conversation the user has already left cannot pull them back. The
+ * browser's own location is the only thing that sees EVERY way they can leave
+ * — a different sidebar row, "New chat", a link, a redirect, or the back
+ * button — where any bookkeeping this hook maintained itself would only cover
+ * the navigations that happen to route through it.
  *
  * Read directly rather than through `useLocation` because each sidebar row
  * mounts its own `useNavigateToConvo`: subscribing would re-render every row on
@@ -100,38 +103,34 @@ const useNavigateToConvo = (index = 0) => {
     );
 
   /**
-   * Reconciles the conversation record AFTER the route has already changed,
-   * for a conversation whose full record was already cached. The cached record
-   * carries everything the sidebar projection omits, so this only refreshes
-   * server-side changes — awaiting it before navigating would spend a round
-   * trip with the DEPARTING conversation still on screen.
+   * Refreshes the cached record AFTER the route has already changed, for a
+   * conversation whose full record was already cached. The cache already
+   * carries everything the sidebar projection omits, so this exists only to
+   * pick up edits made elsewhere — awaiting it before navigating would spend a
+   * round trip with the DEPARTING conversation still on screen.
+   *
+   * It refreshes the CACHE and deliberately writes nothing into conversation
+   * state. That state is the user's: model, endpoint, prompt prefix, sampling
+   * params, and the target is interactive from the moment the route changes,
+   * so writing a server snapshot into it once the response lands races the
+   * user's own selections and every other writer — streamed updates, presets,
+   * mention select. No predicate closes that: "is this still wanted?" gains one
+   * more answer per writer, and a route or ordering guard cannot see a user who
+   * never left. The refreshed record is read by the next switch to this
+   * conversation, which is where a cached record is consumed.
    */
-  const reconcileConversation = async (conversationId: string, generation: number) => {
-    /** The route this refresh belongs to — already this conversation, since
-     * the caller navigated synchronously before starting it. */
-    const routeAtStart = currentRoute();
-    const isCurrent = () => generation === navigationGeneration && currentRoute() === routeAtStart;
+  const refreshConversationRecord = async (conversationId: string) => {
     try {
       const data = await fetchConversationRecord(conversationId);
-      /** The user may have clicked another conversation, or gone elsewhere
-       * entirely, while this was in flight. Writing anyway would restore THIS
-       * conversation into state while the route and transcript show another
-       * one, and sends read from state — so the user could submit into a
-       * conversation they are no longer looking at. */
-      if (!isCurrent()) {
-        logger.log('conversation', 'Discarding superseded reconciliation', conversationId);
-        return;
-      }
-      logger.log('conversation', 'Fetched fresh conversation data', data);
-      applyConversation(data);
+      logger.log('conversation', 'Refreshed cached conversation record', data);
     } catch (error) {
-      logger.error('conversation', 'Error fetching conversation data on navigation', error);
+      logger.error('conversation', 'Error refreshing conversation record on navigation', error);
       /** Only a conversation that is confirmed GONE invalidates what is on
        * screen. The messages query is already mounted by now, so dropping its
        * cache on a transient failure would cancel an in-flight history fetch
        * (or discard one that already succeeded) with no route change left to
        * remount it, blanking a transcript that was fine. */
-      if (isCurrent() && isNotFoundError(error)) {
+      if (isNotFoundError(error)) {
         queryClient.removeQueries([QueryKeys.messages, conversationId]);
       }
     }
@@ -174,7 +173,7 @@ const useNavigateToConvo = (index = 0) => {
       return;
     }
     applyConversation(record);
-    navigate(`/c/${conversationId}`);
+    navigate(`/c/${conversationId}`, chatNavigation);
   };
 
   const navigateToConvo = (
@@ -260,15 +259,16 @@ const useNavigateToConvo = (index = 0) => {
        * task, so the switch commits once instead of straddling a round trip.
        * The cached record underlays the row, which is a list PROJECTION: the
        * row's fields are the fresher ones, everything the projection drops
-       * (prompt prefix, sampling params, files) survives, and a send during
-       * the reconcile window still carries this conversation's real settings. */
+       * (prompt prefix, sampling params, files) survives, and this is the last
+       * write this navigation makes — what the user sees now is what a send
+       * will carry until they change it themselves. */
       applyConversation({ ...cachedConvo, ...convo });
-      navigate(`/c/${convo.conversationId}`);
-      reconcileConversation(convo.conversationId, generation);
+      navigate(`/c/${convo.conversationId}`, chatNavigation);
+      refreshConversationRecord(convo.conversationId);
     } else {
       setConversation(convo);
       requestChatFocus();
-      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`);
+      navigate(`/c/${convo.conversationId ?? Constants.NEW_CONVO}`, chatNavigation);
     }
   };
 

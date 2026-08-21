@@ -74,6 +74,7 @@ const notFound = () => ({ status: 404, message: 'not found' });
 function Harness() {
   const { navigateToConvo } = useNavigateToConvo();
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const { setConversation } = store.useSetConversationAtom(0);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -88,6 +89,15 @@ function Harness() {
           redirect, the back button — moves the route without going through
           `navigateToConvo`, exactly like `useNewConvo` does. */}
       <button data-testid="go-elsewhere" onClick={() => navigate('/c/new')} />
+      {/* Picking a model, endpoint or spec reaches the same atom through
+          `newConversation` and stays on the same route — the case no route or
+          ordering guard can see. */}
+      <button
+        data-testid="pick-model"
+        onClick={() =>
+          setConversation({ ...(conversation as TConversation), model: 'user-picked-model' })
+        }
+      />
       <div data-testid="path">{location.pathname}</div>
       <div data-testid="convo">{JSON.stringify(conversation ?? null)}</div>
     </div>
@@ -177,13 +187,47 @@ describe('useNavigateToConvo', () => {
       expect(optimistic?.model).toBe('gpt-4o-mini');
     });
 
-    it('applies the refreshed record once it lands', async () => {
+    it('refreshes the cached record for the next switch', async () => {
+      const queryClient = renderHarness([recordB]);
+      click('go-b');
+      await settle(B, { ...recordB, title: 'Bravo (server)' });
+
+      await waitFor(() =>
+        expect(queryClient.getQueryData<TConversation>([QueryKeys.conversation, B])?.title).toBe(
+          'Bravo (server)',
+        ),
+      );
+    });
+
+    it('does not write the refreshed record into conversation state', async () => {
       renderHarness([recordB]);
       click('go-b');
       await settle(B, { ...recordB, title: 'Bravo (server)' });
 
-      await waitFor(() => expect(currentConvo()?.title).toBe('Bravo (server)'));
+      /** Conversation state is the user's — model, endpoint, prompt prefix,
+       *  sampling params — and the target is interactive the moment the route
+       *  changes. A background write of a server snapshot into it races the
+       *  user and every other writer, so this navigation's last write is the
+       *  optimistic one. */
+      expect(currentConvo()?.title).toBe('Bravo');
       expect(currentConvo()?.promptPrefix).toBe('You are terse.');
+    });
+
+    it('keeps a setting the user picks while the refresh is in flight', async () => {
+      renderHarness([recordB]);
+      click('go-b');
+
+      /** Same conversation, same route, same navigation: no ordering or route
+       *  guard can tell this apart from an untouched screen. */
+      click('pick-model');
+      expect(currentConvo()?.model).toBe('user-picked-model');
+
+      await settle(B, recordB);
+
+      /** `recordB.model` is `gpt-4o`. Restoring it here would visibly revert
+       *  the pick and make the next send carry settings the user did not
+       *  choose. */
+      expect(currentConvo()?.model).toBe('user-picked-model');
     });
   });
 
@@ -218,14 +262,15 @@ describe('useNavigateToConvo', () => {
   });
 
   describe('when a later navigation supersedes an in-flight one', () => {
-    it('discards a refresh that resolves after the user moved on', async () => {
+    it('does not restore a conversation whose refresh resolves after the user moved on', async () => {
       renderHarness([recordB, recordC]);
       click('go-b');
       click('go-c');
       expect(currentPath()).toBe(`/c/${C}`);
 
       /** B's refresh lands last. Writing it would restore B into state while
-       *  the route and transcript show C — and sends read from state. */
+       *  the route and transcript show C — and sends read from state. The
+       *  refresh writes only the query cache, so there is nothing to restore. */
       await settle(B, { ...recordB, title: 'Bravo (late)' });
 
       expect(currentPath()).toBe(`/c/${C}`);

@@ -33,6 +33,7 @@ import {
   hasModelSelection,
   buildDefaultConvo,
   requestChatFocus,
+  chatNavigation,
   renewNewConversationDraftToken,
   logger,
 } from '~/utils';
@@ -272,7 +273,7 @@ const useNewConvo = (index = 0) => {
           if (!disableFocus) {
             requestChatFocus();
           }
-          navigate(path);
+          navigate(path, chatNavigation);
           return;
         }
 
@@ -280,7 +281,7 @@ const useNewConvo = (index = 0) => {
         if (!disableFocus) {
           requestChatFocus();
         }
-        navigate(path, { replace: true });
+        navigate(path, { ...chatNavigation, replace: true });
       },
     [
       endpointsConfig,
