@@ -13,9 +13,20 @@ import { useChatContext } from '~/Providers';
  * The branch already ends at a summary boundary, so a second pass has nothing
  * left to fold in. Not a failure, so it is reported as information.
  */
-const isNothingToCompact = (error: unknown): boolean =>
-  (error as { response?: { data?: { code?: string } } } | undefined)?.response?.data?.code ===
-  'NOTHING_TO_COMPACT';
+const errorCode = (error: unknown): string | undefined =>
+  (error as { response?: { data?: { code?: string } } } | undefined)?.response?.data?.code;
+
+/** Codes that describe the conversation rather than a failure to compact it. */
+const TOAST_BY_CODE = {
+  NOTHING_TO_COMPACT: {
+    key: 'com_ui_context_compact_noop',
+    severity: NotificationSeverity.INFO,
+  },
+  TRANSCRIPT_TOO_LARGE: {
+    key: 'com_ui_context_compact_too_large',
+    severity: NotificationSeverity.WARNING,
+  },
+} as const;
 
 /**
  * Manual context compaction: summarizes the active branch on demand and
@@ -71,16 +82,17 @@ export default function useCompactConversation() {
             message: localize('com_ui_context_compacted'),
             severity: NotificationSeverity.SUCCESS,
           }),
-        onError: (error) =>
-          isNothingToCompact(error)
-            ? showToast({
-                message: localize('com_ui_context_compact_noop'),
-                severity: NotificationSeverity.INFO,
-              })
-            : showToast({
-                message: localize('com_ui_context_compact_failed'),
-                severity: NotificationSeverity.ERROR,
-              }),
+        onError: (error) => {
+          const known = TOAST_BY_CODE[(errorCode(error) ?? '') as keyof typeof TOAST_BY_CODE];
+          showToast(
+            known
+              ? { message: localize(known.key), severity: known.severity }
+              : {
+                  message: localize('com_ui_context_compact_failed'),
+                  severity: NotificationSeverity.ERROR,
+                },
+          );
+        },
       },
     );
   }, [
