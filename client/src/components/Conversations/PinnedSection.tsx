@@ -15,13 +15,14 @@ import {
   usePinConversationMutation,
   useUpdatePinnedOrderMutation,
 } from '~/data-provider';
+import { CONVERSATION_DRAG_TYPE, mergeVisibleOrder, shouldSwapOnHover } from './dnd';
 import useFavoritesData from '~/components/Nav/Favorites/useFavoritesData';
 import FavoriteItem from '~/components/Nav/Favorites/FavoriteItem';
-import { CONVERSATION_DRAG_TYPE, shouldSwapOnHover } from './dnd';
 import { useLocalize, useLocalStorage } from '~/hooks';
 import { getSpecAgentAvatarURL, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { Collapse } from '~/components/ui';
+import { focusFirstRow } from './focus';
 import Convo from './Convo';
 
 const FAVORITE_ROW_DRAG_TYPE = 'favorite-item';
@@ -44,6 +45,9 @@ export const favoriteEntryKey = (favorite: Favorite): string => {
 
 const convoEntryKey = (conversationId: string): string => `convo:${conversationId}`;
 
+const sameKeyOrder = (a: PinnedEntry[], b: PinnedEntry[]): boolean =>
+  a.length === b.length && a.every((entry, index) => entry.key === b[index].key);
+
 type PinnedEntry =
   | { key: string; kind: 'favorite'; favorite: Favorite }
   | { key: string; kind: 'convo'; conversationId: string };
@@ -63,18 +67,21 @@ interface DraggablePinnedRowProps {
   conversation?: TConversation;
   indexOfKey: (key: string) => number;
   moveEntry: (dragKey: string, hoverKey: string) => void;
+  moveEntryBy: (key: string, delta: number) => void;
   onDrop: () => void;
   children: React.ReactNode;
 }
 
 /** Hover-reorder wrapper for the unified pinned list, following the favorites
  *  pattern: rows shift as the drag passes them and the order commits on drop.
- *  Touch pointers are excluded, matching every other drag source here. */
+ *  Touch pointers are excluded, matching every other drag source here, so the
+ *  Alt+Arrow shortcut below is the only way to reorder without a mouse. */
 const DraggablePinnedRow = ({
   entry,
   conversation,
   indexOfKey,
   moveEntry,
+  moveEntryBy,
   onDrop,
   children,
 }: DraggablePinnedRowProps) => {
@@ -128,8 +135,28 @@ const DraggablePinnedRow = ({
   drop(ref);
   drag(canDrag ? ref : null);
 
+  /* Keyboard equivalent of the drag: the shortcut is caught as it bubbles from
+   * whichever element inside the row holds focus, so the row keeps that focus
+   * across the move. */
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    moveEntryBy(entry.key, event.key === 'ArrowUp' ? -1 : 1);
+  };
+
   return (
-    <div ref={ref} style={{ opacity: isDragging ? 0 : 1 }} data-handler-id={handlerId}>
+    <div
+      ref={ref}
+      style={{ opacity: isDragging ? 0 : 1 }}
+      data-handler-id={handlerId}
+      onKeyDown={handleKeyDown}
+    >
       {children}
     </div>
   );
@@ -143,6 +170,7 @@ interface FavoriteRowProps {
   isAgentsLoading: boolean;
   onSelectEndpoint: SelectEndpointHandler;
   onSelectSpec: SelectSpecHandler;
+  onRemoveFocus: () => void;
 }
 
 /** One favorite rendered for the unified list; skeleton while its agent is
@@ -156,6 +184,7 @@ const FavoriteRow = ({
   isAgentsLoading,
   onSelectEndpoint,
   onSelectSpec,
+  onRemoveFocus,
 }: FavoriteRowProps) => {
   if (favorite.agentId) {
     const agent = agentsMap[favorite.agentId];
@@ -165,7 +194,14 @@ const FavoriteRow = ({
       }
       return null;
     }
-    return <FavoriteItem item={agent} type="agent" onSelectEndpoint={onSelectEndpoint} />;
+    return (
+      <FavoriteItem
+        item={agent}
+        type="agent"
+        onSelectEndpoint={onSelectEndpoint}
+        onRemoveFocus={onRemoveFocus}
+      />
+    );
   }
   if (favorite.spec) {
     const spec = specsMap[favorite.spec];
@@ -179,6 +215,7 @@ const FavoriteRow = ({
         onSelectSpec={onSelectSpec}
         endpointsConfig={endpointsConfig}
         agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
+        onRemoveFocus={onRemoveFocus}
       />
     );
   }
@@ -188,6 +225,7 @@ const FavoriteRow = ({
         item={{ model: favorite.model, endpoint: favorite.endpoint }}
         type="model"
         onSelectEndpoint={onSelectEndpoint}
+        onRemoveFocus={onRemoveFocus}
       />
     );
   }
@@ -198,13 +236,23 @@ interface PinnedSectionProps {
   conversations: TConversation[];
   toggleNav: () => void;
   isSmallScreen?: boolean;
+  /** A bookmark filter hides part of the pinned list. The order then has to be
+   *  merged into the stored one rather than replacing it, or the hidden keys
+   *  are dropped; without a filter, replacing also prunes keys whose item is
+   *  gone. */
+  isFiltered?: boolean;
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
  *  reorderable list: favorites and conversations interleave freely, the order
  *  persists per user, and the section opens with the same collapse motion as
  *  the Projects section above it. */
-const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectionProps) => {
+const PinnedSection = ({
+  conversations,
+  toggleNav,
+  isSmallScreen,
+  isFiltered = false,
+}: PinnedSectionProps) => {
   const localize = useLocalize();
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
   const { data: activeJobsData } = useActiveJobs();
@@ -213,6 +261,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
   const { showToast } = useToastContext();
+  const sectionRef = useRef<HTMLDivElement | null>(null);
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
@@ -302,9 +351,18 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
    * drag cannot clobber the in-flight arrangement. */
   const dragEntriesRef = useRef<PinnedEntry[]>(orderedEntries);
   const [liveEntries, setLiveEntries] = useState<PinnedEntry[] | null>(null);
+  const [announcement, setAnnouncement] = useState('');
 
   if (orderedEntries !== dragEntriesRef.current && liveEntries === null) {
     dragEntriesRef.current = orderedEntries;
+  }
+
+  /* Hold the local arrangement until the stored order agrees with it. Dropping
+   * it at commit time instead would snap the list back to the pre-move order
+   * for as long as the write takes, and a second keyboard move in that window
+   * would start from the order the user had already left behind. */
+  if (liveEntries !== null && sameKeyOrder(liveEntries, orderedEntries)) {
+    setLiveEntries(null);
   }
 
   const displayEntries = liveEntries ?? orderedEntries;
@@ -335,28 +393,53 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     setLiveEntries(list);
   }, []);
 
+  /** Keyboard reorder: one step per keypress, persisted immediately, with the
+   *  new position announced because nothing visual conveys it to a screen
+   *  reader. */
+  const moveEntryBy = useCallback(
+    (key: string, delta: number) => {
+      const list = [...dragEntriesRef.current];
+      const from = list.findIndex((entry) => entry.key === key);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= list.length) {
+        return;
+      }
+      const [moved] = list.splice(from, 1);
+      list.splice(to, 0, moved);
+      dragEntriesRef.current = list;
+      hasReorderedRef.current = true;
+      setLiveEntries(list);
+      setAnnouncement(
+        localize('com_ui_moved_to_position', { 0: `${to + 1}`, 1: `${list.length}` }),
+      );
+      commitOrderRef.current();
+    },
+    [localize],
+  );
+
   const commitOrder = useCallback(() => {
     if (!hasReorderedRef.current) {
       return;
     }
     hasReorderedRef.current = false;
     const entries = dragEntriesRef.current;
-    setLiveEntries(null);
+    const visibleKeys = entries.map((entry) => entry.key);
+    const nextOrder = isFiltered ? mergeVisibleOrder(storedOrder ?? [], visibleKeys) : visibleKeys;
     /* The optimistic update rolls back on failure, so a rejected order (the
      * server caps how many entries it stores) would otherwise snap the row
      * back with nothing said. */
-    updatePinnedOrder.mutate(
-      entries.map((entry) => entry.key),
-      {
-        onError: () => {
-          showToast({
-            message: localize('com_ui_reorder_error'),
-            severity: NotificationSeverity.ERROR,
-            showIcon: true,
-          });
-        },
+    updatePinnedOrder.mutate(nextOrder, {
+      onError: () => {
+        /* The rollback restores the previous stored order, which the local
+         * arrangement will never converge on, so release it explicitly. */
+        setLiveEntries(null);
+        showToast({
+          message: localize('com_ui_reorder_error'),
+          severity: NotificationSeverity.ERROR,
+          showIcon: true,
+        });
       },
-    );
+    });
     /* Keep the favorites array itself matching its new relative order, so any
      * other consumer of favorites agrees with what the section shows. */
     const orderedFavorites = entries
@@ -369,7 +452,20 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     if (changed) {
       favoritesData.reorderFavorites(orderedFavorites, true);
     }
-  }, [updatePinnedOrder, favoritesData, showToast, localize]);
+  }, [updatePinnedOrder, favoritesData, isFiltered, storedOrder, showToast, localize]);
+
+  /* `moveEntryBy` is declared above `commitOrder` and both are stable across a
+   * drag, so the commit is reached through a ref rather than reordering them
+   * into a dependency cycle. */
+  const commitOrderRef = useRef(commitOrder);
+  commitOrderRef.current = commitOrder;
+
+  /* `FavoriteItem` reports the removal only once its row is already gone, so
+   * there is no position left to search around: focus goes to the first
+   * surviving row, matching what the favorites list did before this merge. */
+  const handleRemoveFocus = useCallback(() => {
+    focusFirstRow(sectionRef.current);
+  }, []);
 
   const handleSelectEndpoint = useCallback<SelectEndpointHandler>(
     (...args) => {
@@ -396,6 +492,16 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     [conversations],
   );
 
+  /** The section root is both the pin drop target and the scope focus falls
+   *  back into when a row is removed. */
+  const setSectionRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      sectionRef.current = node;
+      pinDropRef(node);
+    },
+    [pinDropRef],
+  );
+
   /* The section renders while either half is present or still resolving, and
    * drops out only once both are definitively empty. A live conversation drag
    * keeps it mounted as a drop target even when empty. */
@@ -405,7 +511,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
 
   return (
     <div
-      ref={pinDropRef}
+      ref={setSectionRef}
       className="flex flex-col px-3 text-sm"
       role="region"
       aria-label={localize('com_ui_pinned')}
@@ -448,6 +554,10 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
               {localize('com_ui_drop_to_pin')}
             </div>
           )}
+          <p className="sr-only">{localize('com_ui_pinned_reorder_hint')}</p>
+          <p className="sr-only" role="status" aria-live="polite">
+            {announcement}
+          </p>
           <ul className="m-0 list-none p-0">
             {favoritesData.isLoading && favoritesData.favorites.length === 0 && (
               <li className="list-none">
@@ -467,6 +577,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                       conversation={convo}
                       indexOfKey={indexOfKey}
                       moveEntry={moveEntry}
+                      moveEntryBy={moveEntryBy}
                       onDrop={commitOrder}
                     >
                       <Convo
@@ -485,6 +596,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                     entry={entry}
                     indexOfKey={indexOfKey}
                     moveEntry={moveEntry}
+                    moveEntryBy={moveEntryBy}
                     onDrop={commitOrder}
                   >
                     <FavoriteRow
@@ -495,6 +607,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                       isAgentsLoading={favoritesData.isAgentsLoading}
                       onSelectEndpoint={handleSelectEndpoint}
                       onSelectSpec={handleSelectSpec}
+                      onRemoveFocus={handleRemoveFocus}
                     />
                   </DraggablePinnedRow>
                 </li>

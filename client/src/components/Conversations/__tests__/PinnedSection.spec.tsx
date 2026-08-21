@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -55,7 +55,9 @@ jest.mock('~/components/Nav/Favorites/useFavoritesData', () => ({
 jest.mock('../Convo', () => ({
   __esModule: true,
   default: ({ conversation }: { conversation: { title: string } }) => (
-    <div data-testid="pinned-convo">{conversation.title}</div>
+    <div data-testid="pinned-convo">
+      <button type="button">{conversation.title}</button>
+    </div>
   ),
 }));
 
@@ -80,10 +82,10 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
 const pinnedConvo = (id: string, title: string) =>
   ({ conversationId: id, title, pinned: true }) as unknown as TConversation;
 
-const renderSection = (conversations: TConversation[]) =>
+const renderSection = (conversations: TConversation[], isFiltered = false) =>
   render(
     <DndProvider backend={HTML5Backend}>
-      <PinnedSection conversations={conversations} toggleNav={jest.fn()} />
+      <PinnedSection conversations={conversations} toggleNav={jest.fn()} isFiltered={isFiltered} />
     </DndProvider>,
   );
 
@@ -154,5 +156,91 @@ describe('PinnedSection unified list', () => {
     const { container } = renderSection([]);
     expect(screen.getByTestId('favorite-item')).toBeInTheDocument();
     expect(container).not.toBeEmptyDOMElement();
+  });
+
+  describe('keyboard reordering', () => {
+    const moveFocusedRow = (label: string, key: 'ArrowUp' | 'ArrowDown') =>
+      fireEvent.keyDown(screen.getByText(label), { key, altKey: true });
+
+    it('moves a row down with Alt+ArrowDown and persists the new order', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
+      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+        ['convo:c1', 'model:openAI::gpt-4o'],
+        expect.anything(),
+      );
+    });
+
+    it('moves a row up with Alt+ArrowUp', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      moveFocusedRow('Pinned Chat', 'ArrowUp');
+
+      expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
+    });
+
+    it('does nothing at the ends of the list', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      moveFocusedRow('gpt-4o', 'ArrowUp');
+
+      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+      expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+    });
+
+    it('ignores a bare arrow key so list navigation still works', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      fireEvent.keyDown(screen.getByText('gpt-4o'), { key: 'ArrowDown' });
+
+      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+      expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+    });
+
+    it('announces the new position', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      expect(screen.getByRole('status')).toHaveTextContent('com_ui_moved_to_position');
+    });
+
+    /* A bookmark filter hides part of the list; persisting only what is on
+     * screen would drop every hidden pin from the stored order. */
+    it('merges into the stored order while filtered', () => {
+      mockPinnedOrder = ['convo:hidden', 'model:openAI::gpt-4o', 'convo:c1'];
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')], true);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+        ['convo:hidden', 'convo:c1', 'model:openAI::gpt-4o'],
+        expect.anything(),
+      );
+    });
+
+    it('replaces the stored order when nothing is filtered out', () => {
+      mockPinnedOrder = ['convo:gone', 'model:openAI::gpt-4o', 'convo:c1'];
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      /* Unfiltered, replacing also prunes `convo:gone`, whose chat is no longer pinned. */
+      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+        ['convo:c1', 'model:openAI::gpt-4o'],
+        expect.anything(),
+      );
+    });
   });
 });

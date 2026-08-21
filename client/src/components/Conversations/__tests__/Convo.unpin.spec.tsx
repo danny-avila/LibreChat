@@ -97,20 +97,8 @@ const renderPinnedSection = (conversations: TConversation[]) =>
   );
 
 describe('pinned conversation row unpin', () => {
-  let rafSpy: jest.SpyInstance;
-
   beforeEach(() => {
     pinCalls.length = 0;
-    rafSpy = jest
-      .spyOn(window, 'requestAnimationFrame')
-      .mockImplementation((callback: FrameRequestCallback) => {
-        callback(0);
-        return 0;
-      });
-  });
-
-  afterEach(() => {
-    rafSpy.mockRestore();
   });
 
   it('unpins from the row badge without opening the options menu', () => {
@@ -122,10 +110,18 @@ describe('pinned conversation row unpin', () => {
     expect(pinCalls[0].variables).toEqual({ conversationId: 'c1', pinned: false });
   });
 
+  /** Activating the badge focuses it, by click or by keyboard; the focus
+   *  handoff only applies when the row that is going away actually held it. */
+  const activateUnpin = (index: number) => {
+    const button = screen.getAllByTestId('convo-unpin-button')[index];
+    button.focus();
+    fireEvent.click(button);
+  };
+
   it('hands focus to a neighbouring row, not the row that is going away', () => {
     renderPinnedSection([pinned('c1', 'First'), pinned('c2', 'Second')]);
 
-    fireEvent.click(screen.getAllByTestId('convo-unpin-button')[0]);
+    activateUnpin(0);
     act(() => {
       pinCalls[0].options?.onSuccess?.();
     });
@@ -138,7 +134,7 @@ describe('pinned conversation row unpin', () => {
   it('falls back to the row above when the last row is unpinned', () => {
     renderPinnedSection([pinned('c1', 'First'), pinned('c2', 'Second')]);
 
-    fireEvent.click(screen.getAllByTestId('convo-unpin-button')[1]);
+    activateUnpin(1);
     act(() => {
       pinCalls[0].options?.onSuccess?.();
     });
@@ -146,14 +142,32 @@ describe('pinned conversation row unpin', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('open First'));
   });
 
-  it('leaves focus alone when no other row survives', () => {
+  it('falls back to New Chat when no other row survives', () => {
+    const newChat = document.createElement('button');
+    newChat.setAttribute('data-testid', 'nav-new-chat-button');
+    document.body.appendChild(newChat);
+
     renderPinnedSection([pinned('c1', 'Only')]);
 
-    fireEvent.click(screen.getByTestId('convo-unpin-button'));
+    activateUnpin(0);
     act(() => {
       pinCalls[0].options?.onSuccess?.();
     });
 
-    expect(document.activeElement).not.toBe(screen.getByLabelText('open Only'));
+    expect(document.activeElement).toBe(newChat);
+    newChat.remove();
+  });
+
+  it('does not steal focus when the removed row never had it', () => {
+    renderPinnedSection([pinned('c1', 'First'), pinned('c2', 'Second')]);
+
+    /* A pointer user unpinning a row they were not keyboard-focused on should
+     * keep whatever they had focused, not be yanked into the sidebar. */
+    fireEvent.click(screen.getAllByTestId('convo-unpin-button')[0]);
+    act(() => {
+      pinCalls[0].options?.onSuccess?.();
+    });
+
+    expect(document.activeElement).not.toBe(screen.getByLabelText('open Second'));
   });
 });

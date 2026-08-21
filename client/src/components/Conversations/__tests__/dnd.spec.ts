@@ -1,4 +1,4 @@
-import { shouldSwapOnHover } from '../dnd';
+import { mergeVisibleOrder, shouldSwapOnHover } from '../dnd';
 
 /** A 36px favorite row and a 48px chat row, the two heights the pinned list
  *  mixes below the `md` breakpoint. */
@@ -52,5 +52,30 @@ describe('shouldSwapOnHover', () => {
     expect(shouldSwapOnHover({ dragIndex: 1, hoverIndex: 0, pointerY: 62, ...row(0, 48) })).toBe(
       false,
     );
+  });
+});
+
+describe('mergeVisibleOrder', () => {
+  it('replaces the whole order when everything is visible', () => {
+    expect(mergeVisibleOrder(['a', 'b', 'c'], ['c', 'a', 'b'])).toEqual(['c', 'a', 'b']);
+  });
+
+  it('keeps hidden keys in place when only part of the list is visible', () => {
+    /* `b` and `d` are filtered out of view. Reordering the visible `a`, `c`, `e`
+     * must not drop them, which is what persisting the visible list alone did. */
+    const stored = ['a', 'b', 'c', 'd', 'e'];
+    expect(mergeVisibleOrder(stored, ['e', 'c', 'a'])).toEqual(['e', 'b', 'c', 'd', 'a']);
+  });
+
+  it('appends visible keys the stored order does not know', () => {
+    expect(mergeVisibleOrder(['a', 'b'], ['b', 'a', 'new'])).toEqual(['b', 'a', 'new']);
+  });
+
+  it('drops nothing when the stored order is empty', () => {
+    expect(mergeVisibleOrder([], ['a', 'b'])).toEqual(['a', 'b']);
+  });
+
+  it('keeps every hidden key when only one row is visible', () => {
+    expect(mergeVisibleOrder(['a', 'b', 'c'], ['c'])).toEqual(['a', 'b', 'c']);
   });
 });

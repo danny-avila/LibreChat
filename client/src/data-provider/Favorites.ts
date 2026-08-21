@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
@@ -57,19 +58,41 @@ export const useGetPinnedOrderQuery = (
 
 export const useUpdatePinnedOrderMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation((pinnedOrder: string[]) => dataService.updatePinnedOrder(pinnedOrder), {
-    onMutate: async (newOrder) => {
-      await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
-      const previousOrder = queryClient.getQueryData<string[]>([QueryKeys.pinnedOrder]);
-      queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
-      return { previousOrder };
+  /** Two drags completed inside one round trip would otherwise race, and the
+   *  server would keep whichever request happened to land last rather than the
+   *  order the user finished on. Chaining the requests makes arrival order
+   *  match intent order. */
+  const pending = useRef<Promise<unknown>>(Promise.resolve());
+
+  return useMutation(
+    (pinnedOrder: string[]) => {
+      const next = pending.current
+        .catch(() => undefined)
+        .then(() => dataService.updatePinnedOrder(pinnedOrder));
+      pending.current = next;
+      return next;
     },
-    onError: (_err, _newOrder, context) => {
-      if (context?.previousOrder) {
-        queryClient.setQueryData([QueryKeys.pinnedOrder], context.previousOrder);
-      }
+    {
+      onMutate: async (newOrder) => {
+        await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
+        const previousOrder = queryClient.getQueryData<string[]>([QueryKeys.pinnedOrder]);
+        queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
+        return { previousOrder };
+      },
+      onError: (_err, _newOrder, context) => {
+        if (context?.previousOrder !== undefined) {
+          queryClient.setQueryData([QueryKeys.pinnedOrder], context.previousOrder);
+          return;
+        }
+        /* The first write can land before the initial fetch has populated the
+         * cache, and `onMutate` cancelled that fetch. With every automatic
+         * refetch trigger disabled, leaving the optimistic value behind would
+         * pass an order that was never persisted off as server data for the
+         * rest of the session, so discard it and fetch the real one. */
+        queryClient.resetQueries([QueryKeys.pinnedOrder]);
+      },
     },
-  });
+  );
 };
 
 export const useGetToolFavoritesQuery = (
