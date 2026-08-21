@@ -87,7 +87,13 @@ jest.mock('~/db/models', () => ({
 
 describe('message route conversation ownership filters', () => {
   let app;
-  const { getConvoOwnership, getMessages, saveConvo, saveMessage } = require('~/models');
+  const {
+    getConvoOwnership,
+    getMessages,
+    getMessagesByCursor,
+    saveConvo,
+    saveMessage,
+  } = require('~/models');
   const { prepareMessageRequestValidation } = require('~/server/middleware');
 
   const authenticatedUserId = 'user-owner-123';
@@ -199,8 +205,60 @@ describe('message route conversation ownership filters', () => {
     expect(childResponse.body).toEqual({ error: 'Conversation not found' });
     expect(childResponse.status).toBe(missingResponse.status);
     expect(childResponse.body).toEqual(missingResponse.body);
-    expect(getMessages).not.toHaveBeenCalled();
+    expect(getMessages).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    {
+      name: 'single-message',
+      path: '/api/messages?conversationId=convo-1&messageId=message-1',
+      readMock: getMessages,
+      readResult: [{ messageId: 'message-1', conversationId: 'convo-1' }],
+    },
+    {
+      name: 'cursor',
+      path: '/api/messages?conversationId=convo-1',
+      readMock: getMessagesByCursor,
+      readResult: { messages: [], nextCursor: null },
+    },
+  ])(
+    'starts the $name query read before ownership validation resolves',
+    async ({ path, readMock, readResult }) => {
+      const events = [];
+      let resolveOwnership;
+      const ownershipPromise = new Promise((resolve) => {
+        resolveOwnership = resolve;
+      });
+      getConvoOwnership.mockImplementationOnce(() => {
+        events.push('ownership-started');
+        return ownershipPromise;
+      });
+
+      let resolveReadStarted;
+      const readStartedPromise = new Promise((resolve) => {
+        resolveReadStarted = resolve;
+      });
+      readMock.mockImplementationOnce(() => {
+        events.push('messages-started');
+        resolveReadStarted();
+        return Promise.resolve(readResult);
+      });
+
+      const responsePromise = new Promise((resolve, reject) => {
+        request(app)
+          .get(path)
+          .end((error, response) => (error ? reject(error) : resolve(response)));
+      });
+
+      await Promise.race([readStartedPromise, new Promise((resolve) => setTimeout(resolve, 100))]);
+      const eventsBeforeValidation = [...events];
+      resolveOwnership({ user: authenticatedUserId });
+      const response = await responsePromise;
+
+      expect(eventsBeforeValidation).toEqual(['ownership-started', 'messages-started']);
+      expect(response.status).toBe(200);
+    },
+  );
 
   it('allows an ordinary owned conversation query read', async () => {
     getConvoOwnership.mockResolvedValue({ user: authenticatedUserId });

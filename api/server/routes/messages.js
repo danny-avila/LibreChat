@@ -68,24 +68,41 @@ router.get('/', async (req, res) => {
       : 'createdAt';
     const sortOrder = sortDirection === 'asc' ? 1 : -1;
 
-    if (conversationId) {
-      const conversation =
-        typeof conversationId === 'string'
-          ? await db.getConvoOwnership(user, conversationId)
-          : null;
+    let scopedMessageRead;
+    if (typeof conversationId === 'string') {
+      const ownershipRead = db.getConvoOwnership(user, conversationId);
+      const messageRead = messageId
+        ? db.getMessages({ conversationId, messageId, user })
+        : db.getMessagesByCursor(
+            { conversationId, user },
+            { sortField, sortOrder, limit: pageSize, cursor },
+          );
+      scopedMessageRead = Promise.resolve(messageRead).then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      );
+
+      const conversation = await ownershipRead;
       if (!conversation || conversation.subagentThread != null) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
+    } else if (conversationId) {
+      return res.status(404).json({ error: 'Conversation not found' });
     }
 
     if (conversationId && messageId) {
-      const messages = await db.getMessages({ conversationId, messageId, user });
+      const messageResult = await scopedMessageRead;
+      if (!messageResult.ok) {
+        throw messageResult.error;
+      }
+      const messages = messageResult.value;
       response = { messages: messages?.length ? [messages[0]] : [], nextCursor: null };
     } else if (conversationId) {
-      response = await db.getMessagesByCursor(
-        { conversationId, user },
-        { sortField, sortOrder, limit: pageSize, cursor },
-      );
+      const messageResult = await scopedMessageRead;
+      if (!messageResult.ok) {
+        throw messageResult.error;
+      }
+      response = messageResult.value;
     } else if (search) {
       const searchResults = await db.searchMessages(search, { filter: `user = "${user}"` }, true);
 
