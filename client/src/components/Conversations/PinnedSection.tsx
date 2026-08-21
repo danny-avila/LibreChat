@@ -316,6 +316,11 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     [],
   );
 
+  /* Every drag end runs the commit, including drags that only filed a chat
+   * into a project and drags that were abandoned without passing a row. Only a
+   * drag that actually reordered something is worth a write. */
+  const hasReorderedRef = useRef(false);
+
   const moveEntry = useCallback((dragKey: string, hoverKey: string) => {
     const list = [...dragEntriesRef.current];
     const from = list.findIndex((entry) => entry.key === dragKey);
@@ -326,13 +331,32 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     const [moved] = list.splice(from, 1);
     list.splice(to, 0, moved);
     dragEntriesRef.current = list;
+    hasReorderedRef.current = true;
     setLiveEntries(list);
   }, []);
 
   const commitOrder = useCallback(() => {
+    if (!hasReorderedRef.current) {
+      return;
+    }
+    hasReorderedRef.current = false;
     const entries = dragEntriesRef.current;
     setLiveEntries(null);
-    updatePinnedOrder.mutate(entries.map((entry) => entry.key));
+    /* The optimistic update rolls back on failure, so a rejected order (the
+     * server caps how many entries it stores) would otherwise snap the row
+     * back with nothing said. */
+    updatePinnedOrder.mutate(
+      entries.map((entry) => entry.key),
+      {
+        onError: () => {
+          showToast({
+            message: localize('com_ui_reorder_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
     /* Keep the favorites array itself matching its new relative order, so any
      * other consumer of favorites agrees with what the section shows. */
     const orderedFavorites = entries
@@ -345,7 +369,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     if (changed) {
       favoritesData.reorderFavorites(orderedFavorites, true);
     }
-  }, [updatePinnedOrder, favoritesData]);
+  }, [updatePinnedOrder, favoritesData, showToast, localize]);
 
   const handleSelectEndpoint = useCallback<SelectEndpointHandler>(
     (...args) => {

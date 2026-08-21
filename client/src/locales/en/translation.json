@@ -1812,6 +1812,7 @@
   "com_ui_rename": "Rename",
   "com_ui_rename_conversation": "Rename Conversation",
   "com_ui_rename_failed": "Failed to rename conversation",
+  "com_ui_reorder_error": "Failed to save the new order",
   "com_ui_requires_auth": "Requires Authentication",
   "com_ui_reset": "Reset",
   "com_ui_reset_adjustments": "Reset adjustments",
