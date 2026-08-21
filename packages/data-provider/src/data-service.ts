@@ -77,11 +77,11 @@ export function updateFavorites(favorites: q.TUserFavorite[]): Promise<q.TUserFa
 
 /** Combined Pinned-section display order: favorite and pinned-chat entry keys interleaved. */
 export function getPinnedOrder(): Promise<string[]> {
-  return request.get(`${endpoints.apiBaseUrl()}/api/user/settings/pinned-order`);
+  return request.get(endpoints.pinnedOrder());
 }
 
 export function updatePinnedOrder(pinnedOrder: string[]): Promise<string[]> {
-  return request.post(`${endpoints.apiBaseUrl()}/api/user/settings/pinned-order`, { pinnedOrder });
+  return request.post(endpoints.pinnedOrder(), { pinnedOrder });
 }
 
 /** Tool favorites — starred marketplace items (builtins, tools, MCP servers, skills). */

@@ -36,16 +36,6 @@ const ConversationsSection = memo(() => {
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
   const [tags, setTags] = useState<string[]>([]);
-  /* Tag changes refetch with `keepPreviousData`, so `isLoading` never turns true
-     and the list would otherwise sit frozen on stale rows until the fetch lands.
-     Set on selection itself, cleared once the fetch settles (effect below). */
-  const [isTagsLoading, setIsTagsLoading] = useState(false);
-
-  const handleSetTags = useCallback((next: string[]) => {
-    setIsTagsLoading(true);
-    setTags(next);
-  }, []);
-
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
@@ -53,7 +43,7 @@ const ConversationsSection = memo(() => {
 
   const search = useRecoilValue(store.search);
 
-  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
+  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, isPreviousData } =
     useConversationsInfiniteQuery(
       {
         tags: tags.length === 0 ? undefined : tags,
@@ -146,12 +136,6 @@ const ConversationsSection = memo(() => {
     }
   }, [search.query, search.isTyping, isLoading, isFetching]);
 
-  useEffect(() => {
-    if (!isLoading && !isFetching) {
-      setIsTagsLoading(false);
-    }
-  }, [isLoading, isFetching]);
-
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden pb-3 pt-2"
@@ -165,7 +149,7 @@ const ConversationsSection = memo(() => {
         <div className="flex items-center gap-0.5 px-3">
           {hasAccessToBookmarks && (
             <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={handleSetTags} matchSearchBar />
+              <BookmarkNav tags={tags} setTags={setTags} matchSearchBar />
             </Suspense>
           )}
           {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
@@ -177,6 +161,7 @@ const ConversationsSection = memo(() => {
           conversations={pinnedConversations}
           toggleNav={toggleNav}
           isSmallScreen={isSmallScreen}
+          isFiltered={tags.length > 0}
         />
       )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
@@ -187,13 +172,13 @@ const ConversationsSection = memo(() => {
           containerRef={conversationsRef}
           loadMoreConversations={loadMoreConversations}
           isLoading={isFetchingNextPage || isLoading}
-          isSearchLoading={isSearchLoading || isTagsLoading}
+          isSearchLoading={isSearchLoading || isPreviousData}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
           chatsHeaderTrailing={
             isSmallScreen && hasAccessToBookmarks ? (
               <Suspense fallback={null}>
-                <BookmarkNav tags={tags} setTags={handleSetTags} />
+                <BookmarkNav tags={tags} setTags={setTags} />
               </Suspense>
             ) : undefined
           }
