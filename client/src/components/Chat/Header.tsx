@@ -80,11 +80,7 @@ function Header({
         )}
       >
         {parentConversationId != null && (
-          <SubagentThreadLink
-            threadId={parentConversationId}
-            relation="parent"
-            labelClassName="hidden lg:inline"
-          />
+          <SubagentThreadLink threadId={parentConversationId} labelClassName="hidden lg:inline" />
         )}
         {!readOnly && <ModelSelector startupConfig={startupConfig} />}
         {!readOnly && interfaceConfig.presets === true && interfaceConfig.modelSelect === true && (
