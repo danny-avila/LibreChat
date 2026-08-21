@@ -46,6 +46,15 @@ describe('subagent thread refresh policy', () => {
     expect(subagentThreadRefetchInterval(prior, 1_000, 1_000, 'new-task')).toBe(false);
   });
 
+  it('stops polling an older API view once the exact task response exists', () => {
+    const rollingDeployView = {
+      ...view('running'),
+      messages: [{ messageId: 'selected:assistant' }],
+    } as SubagentThreadView;
+
+    expect(subagentThreadRefetchInterval(rollingDeployView, 1_000, 500, 'selected')).toBe(false);
+  });
+
   it('treats only readiness-window 404s as pending', () => {
     expect(isSubagentReadinessPending({ response: { status: 404 } }, 1_000, 500)).toBe(true);
     expect(isSubagentReadinessPending({ response: { status: 404 } }, 1_000, 1_000)).toBe(false);

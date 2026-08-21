@@ -17,7 +17,7 @@ import type {
   SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
-import { subagentProgressByToolCallId } from '~/store/subagents';
+import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
@@ -2990,7 +2990,7 @@ describe('useStepHandler', () => {
      */
     const renderStepHandlerWithReader = (): {
       result: ReturnType<typeof renderHook>['result'];
-      getProgress: (toolCallId: string) => unknown;
+      getProgress: (toolCallId: string, parentMessageId?: string) => unknown;
     } => {
       /** Composite hook: the step handler under test + a `useRecoilCallback`
        *  reader that shares the same `RecoilRoot` store. Reading via a
@@ -3001,8 +3001,12 @@ describe('useStepHandler', () => {
           const stepHandler = useStepHandler(createHookParams());
           const read = useRecoilCallback(
             ({ snapshot }) =>
-              (toolCallId: string): unknown =>
-                snapshot.getLoadable(subagentProgressByToolCallId(toolCallId)).valueOrThrow(),
+              (toolCallId: string, parentMessageId: string = 'response-msg-1'): unknown =>
+                snapshot
+                  .getLoadable(
+                    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId)),
+                  )
+                  .valueOrThrow(),
             [],
           );
           return { ...stepHandler, read };
@@ -3010,8 +3014,8 @@ describe('useStepHandler', () => {
         { wrapper: RecoilRoot },
       );
 
-      const getProgress = (toolCallId: string): unknown =>
-        (hookResult.result.current as any).read(toolCallId);
+      const getProgress = (toolCallId: string, parentMessageId?: string): unknown =>
+        (hookResult.result.current as any).read(toolCallId, parentMessageId);
       return { result: hookResult.result, getProgress };
     };
 
@@ -3054,7 +3058,7 @@ describe('useStepHandler', () => {
     };
 
     const makeUpdate = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
-      runId: 'parent-run',
+      runId: 'response-msg-1',
       subagentRunId: 'child-run-1',
       subagentType: 'self',
       subagentAgentId: 'child-1',
@@ -3355,10 +3359,57 @@ describe('useStepHandler', () => {
       expect(bucketB.status).toBe('run_step');
     });
 
-    it('clearStepMaps preserves subagent atoms so the dialog can be re-opened for auditability', () => {
+    it('keeps reused provider tool-call IDs isolated across parent messages', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const firstResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-one' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      const secondResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-two' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(firstResponse);
+        (result.current as any).syncStepMessage(secondResponse);
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-one',
+              subagentRunId: 'child-one',
+              parentToolCallId: 'call_shared',
+              label: 'first parent',
+            }),
+          },
+          createSubmission(),
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-two',
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              label: 'second parent',
+            }),
+          },
+          createSubmission(),
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-one', latestLabel: 'first parent' }),
+      );
+      expect(getProgress('call_shared', 'response-two')).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'second parent' }),
+      );
+    });
+
+    it('clearStepMaps preserves subagent atoms so the panel can be re-opened for auditability', () => {
       /**
        * Intentionally the inverse of the earlier behavior: the collapsed
-       * `SubagentCall` ticker and its dialog must stay readable after the
+       * `SubagentCall` ticker and its panel must stay readable after the
        * stream ends. Wiping the atoms on `clearStepMaps` would leave a
        * completed subagent tool call with no content to display, forcing
        * the fallback "raw tool output" branch and losing interleaved tool

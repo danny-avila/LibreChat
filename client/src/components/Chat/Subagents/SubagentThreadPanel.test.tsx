@@ -4,8 +4,12 @@ import { ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
+import {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store/subagents';
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
-import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
 import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
@@ -226,14 +230,19 @@ describe('SubagentThreadPanel', () => {
     render(
       <RecoilRoot
         initializeState={({ set }) =>
-          set(subagentProgressByToolCallId(selection.toolCallId), {
-            subagentRunId: 'run',
-            subagentType: 'researcher',
-            status: 'message_delta',
-            contentParts: [{ type: ContentTypes.TEXT, text: 'Live child update.' }],
-            aggregatorState: initSubagentAggregatorState(),
-            tickerState: initSubagentTickerState(),
-          })
+          set(
+            subagentProgressByToolCallId(
+              subagentProgressKey(selection.parentMessageId, selection.toolCallId),
+            ),
+            {
+              subagentRunId: 'run',
+              subagentType: 'researcher',
+              status: 'message_delta',
+              contentParts: [{ type: ContentTypes.TEXT, text: 'Live child update.' }],
+              aggregatorState: initSubagentAggregatorState(),
+              tickerState: initSubagentTickerState(),
+            },
+          )
         }
       >
         <SubagentThreadPanel selection={{ ...selection, runStepStatus: 'completed' }} />

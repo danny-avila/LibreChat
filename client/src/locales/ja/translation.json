@@ -1914,7 +1914,6 @@
   "com_ui_storage_filter_sort": "ストレージによるフィルタリングと並べ替え",
   "com_ui_subagent_cancelled": "キャンセルされたエージェント",
   "com_ui_subagent_complete": "エージェントを実行した",
-  "com_ui_subagent_dialog_description": "隔離コンテキストでの子エージェント実行。アクティビティと最終結果は以下に示す。",
   "com_ui_subagent_dialog_title": "{{0}}エージェント",
   "com_ui_subagent_dialog_title_self": "エージェント",
   "com_ui_subagent_empty_result": "テキストは返されませんでした。",

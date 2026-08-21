@@ -1939,7 +1939,6 @@
   "com_ui_storage": "Armazenamento",
   "com_ui_storage_filter_sort": "Filtrar e classificar por armazenamento",
   "com_ui_subagent_complete": "Executou o agente",
-  "com_ui_subagent_dialog_description": "Execução secundária com contexto isolado. Veja a atividade e o resultado final abaixo.",
   "com_ui_subagent_dialog_title": "\"{{0}}\" agente",
   "com_ui_subagent_errored": "O agente apresentou um erro",
   "com_ui_subagent_running": "Agente em execução",

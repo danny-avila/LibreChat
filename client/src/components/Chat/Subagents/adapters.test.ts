@@ -93,4 +93,81 @@ describe('child activity adapters', () => {
       }),
     );
   });
+
+  it('redacts detached live reasoning while retaining its activity marker', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        { type: ContentTypes.THINK, think: 'private live reasoning' },
+        { type: ContentTypes.TEXT, text: 'Visible answer.' },
+      ] as TMessageContentParts[],
+      initialProgress: 0,
+      isSubmitting: true,
+      reasoningVisibility: 'marker',
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'reasoning' },
+      { type: 'writing', text: 'Visible answer.' },
+    ]);
+    expect(JSON.stringify(activity)).not.toContain('private live reasoning');
+  });
+
+  it('keeps an empty-output approval pending', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'tool',
+            name: 'protected_tool',
+            args: '{}',
+            output: '',
+            progress: 0.1,
+            approval: { expires_at: 123 },
+          },
+        },
+      ] as unknown as TMessageContentParts[],
+      initialProgress: 0,
+      isSubmitting: true,
+    });
+
+    expect(activity.items[0]).toEqual(
+      expect.objectContaining({
+        type: 'tool',
+        status: 'running',
+        output: '',
+        approval: expect.any(Object),
+      }),
+    );
+  });
+
+  it('uses the exact assistant row as terminal authority for an older API response', () => {
+    const oldView = {
+      threadId: 'thread',
+      parentConversationId: 'parent',
+      parentMessageId: 'parent-message',
+      parentToolCallId: 'parent-tool',
+      subagentType: 'researcher',
+      subagentKind: 'agent',
+      title: 'Research child',
+      status: 'running',
+      messages: [
+        {
+          messageId: 'task:assistant',
+          parentMessageId: 'task:user',
+          role: 'assistant',
+          text: 'Done.',
+        },
+      ],
+      historyTruncated: false,
+    } as SubagentThreadView;
+
+    expect(adaptDurableThreadActivity(oldView, 'task')).toEqual(
+      expect.objectContaining({ status: 'completed', items: [{ type: 'writing', text: 'Done.' }] }),
+    );
+  });
 });

@@ -1740,7 +1740,6 @@
   "com_ui_storage_filter_sort": "Filtruoti ir rūšiuoti pagal saugyklą",
   "com_ui_subagent_cancelled": "Atšauktas agentas",
   "com_ui_subagent_complete": "Agentas paleistas",
-  "com_ui_subagent_dialog_description": "Izoliuoto konteksto antrinis vykdymas. Veikla ir galutinis rezultatas žemiau.",
   "com_ui_subagent_dialog_title": "„{{0}}\" agentas",
   "com_ui_subagent_dialog_title_self": "Agentas",
   "com_ui_subagent_empty_result": "Tekstas negrąžintas.",

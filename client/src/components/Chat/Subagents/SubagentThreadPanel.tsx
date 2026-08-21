@@ -3,7 +3,11 @@ import { Bot, X } from 'lucide-react';
 import { Button, useMediaQuery } from '@librechat/client';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
 import type { ActiveSubagentPanel } from '~/store/subagents';
-import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
+import {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store/subagents';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useSubagentThreadQuery } from '~/data-provider';
@@ -15,7 +19,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const resetSelection = useResetRecoilState(activeSubagentPanel);
-  const progress = useRecoilValue(subagentProgressByToolCallId(selection.toolCallId));
+  const progress = useRecoilValue(
+    subagentProgressByToolCallId(
+      subagentProgressKey(selection.parentMessageId, selection.toolCallId),
+    ),
+  );
   const foregroundTitle =
     selection.subagentType === 'self'
       ? localize('com_ui_subagent_dialog_title_self')
@@ -70,6 +78,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         initialProgress: selection.durable == null ? selection.initialProgress : 0,
         isSubmitting: selection.durable == null ? selection.isSubmitting : detachedLiveSubmitting,
         runStepStatus: selection.durable == null ? selection.runStepStatus : undefined,
+        reasoningVisibility: selection.durable == null ? 'visible' : 'marker',
       }),
     [detachedLiveSubmitting, foregroundTitle, progress, selection],
   );

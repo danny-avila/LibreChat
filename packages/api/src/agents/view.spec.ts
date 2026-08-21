@@ -197,6 +197,42 @@ describe('subagent thread parent-scoped view', () => {
     expect(view.messages[0]).not.toHaveProperty('subagentTranscript');
   });
 
+  it('fences replacement activity to the exact selected task input', async () => {
+    const selected = {
+      ...message('task-1:assistant', 'completed'),
+      subagentTranscript: {
+        taskId: 'task-1',
+        mode: 'replace' as const,
+        messagesJson: JSON.stringify([
+          { type: 'human', data: { content: 'Earlier request.' } },
+          { type: 'ai', data: { content: 'Earlier activity.' } },
+          { type: 'human', data: { content: 'Investigate this.' } },
+          { type: 'ai', data: { content: 'Selected activity.' } },
+        ]),
+      },
+    } as IMessage;
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest
+        .fn()
+        .mockResolvedValue([selected, message('task-1:user', 'running', true)]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+
+    expect(json.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        activity: [{ type: 'writing', text: 'Selected activity.' }],
+        activityTruncated: false,
+      }),
+    );
+    expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('Earlier activity.');
+  });
+
   it('fails closed when the selected row carries a mismatched transcript identity', async () => {
     const selected = {
       ...message('task-1:assistant', 'completed'),

@@ -29,6 +29,16 @@ export const subagentThreadRefetchInterval = (
   ) {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
   }
+  // During a rolling deploy, an older replica can return a thread-wide status
+  // without the task-scoped activity projection. The exact assistant row is
+  // nevertheless authoritative evidence that this selected invocation ended.
+  if (
+    expectedTaskId != null &&
+    view?.activity == null &&
+    view?.messages.some((message) => message.messageId === `${expectedTaskId}:assistant`)
+  ) {
+    return false;
+  }
   if (view == null || view.status === 'dispatched') {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
   }

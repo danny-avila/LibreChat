@@ -75,7 +75,10 @@ const readToolCalls = (data: Record<string, unknown>): unknown[] => {
   return Array.isArray(additional?.tool_calls) ? additional.tool_calls : [];
 };
 
-const normalizeToolCall = (value: unknown, index: number): MutableToolActivity | undefined => {
+const normalizeToolCall = (
+  value: unknown,
+  index: number,
+): { rawId: string; item: MutableToolActivity } | undefined => {
   if (!isRecord(value)) return undefined;
   const fn = isRecord(value.function) ? value.function : undefined;
   const rawName = typeof value.name === 'string' ? value.name : fn?.name;
@@ -84,13 +87,30 @@ const normalizeToolCall = (value: unknown, index: number): MutableToolActivity |
   const rawInput = value.args ?? fn?.arguments;
   const input = truncateUtf8(safeJson(rawInput), MAX_TOOL_INPUT_BYTES);
   return {
-    type: 'tool',
-    toolCallId: truncateUtf8(rawId, MAX_TOOL_CALL_ID_BYTES).value,
-    name: truncateUtf8(rawName, MAX_TOOL_NAME_BYTES).value,
-    ...(input.value === '' ? {} : { input: input.value }),
-    ...(input.truncated ? { inputTruncated: true } : {}),
-    status: 'running',
+    rawId,
+    item: {
+      type: 'tool',
+      toolCallId: truncateUtf8(rawId, MAX_TOOL_CALL_ID_BYTES).value,
+      name: truncateUtf8(rawName, MAX_TOOL_NAME_BYTES).value,
+      ...(input.value === '' ? {} : { input: input.value }),
+      ...(input.truncated ? { inputTruncated: true } : {}),
+      status: 'running',
+    },
   };
+};
+
+const uniqueToolActivityId = (rawId: string, used: Set<string>): string => {
+  const base = truncateUtf8(rawId, MAX_TOOL_CALL_ID_BYTES).value || 'tool';
+  let candidate = base;
+  let occurrence = 2;
+  while (used.has(candidate)) {
+    const suffix = `#${occurrence}`;
+    const prefix = truncateUtf8(base, MAX_TOOL_CALL_ID_BYTES - Buffer.byteLength(suffix)).value;
+    candidate = `${prefix}${suffix}`;
+    occurrence += 1;
+  }
+  used.add(candidate);
+  return candidate;
 };
 
 /**
@@ -102,6 +122,7 @@ const normalizeToolCall = (value: unknown, index: number): MutableToolActivity |
 export function projectSubagentActivity(
   messagesJson: string | undefined,
   mode: 'append' | 'replace' = 'append',
+  expectedTaskInput?: string,
 ): Projection {
   if (messagesJson == null) return { activity: [], truncated: false };
   let parsed: unknown;
@@ -113,6 +134,7 @@ export function projectSubagentActivity(
   if (!Array.isArray(parsed)) return { activity: [], truncated: true };
   let relevantMessages = parsed;
   if (mode === 'replace') {
+    if (expectedTaskInput == null) return { activity: [], truncated: true };
     let latestInputIndex = -1;
     for (let index = parsed.length - 1; index >= 0; index -= 1) {
       const stored = parsed[index];
@@ -124,20 +146,23 @@ export function projectSubagentActivity(
     // A replacement transcript can contain the complete child history. If
     // its current input boundary is missing, fail closed instead of exposing
     // activity from earlier invocations on the selected parent card.
-    if (latestInputIndex < 0) return { activity: [], truncated: true };
+    if (
+      latestInputIndex < 0 ||
+      !isRecord(parsed[latestInputIndex]) ||
+      !isRecord(parsed[latestInputIndex].data) ||
+      visibleContent(parsed[latestInputIndex].data.content).text !== expectedTaskInput
+    ) {
+      return { activity: [], truncated: true };
+    }
     relevantMessages = parsed.slice(latestInputIndex + 1);
   }
 
   const activity: SubagentActivityItem[] = [];
-  const toolsById = new Map<string, MutableToolActivity>();
+  const toolsByRawId = new Map<string, MutableToolActivity[]>();
+  const usedToolActivityIds = new Set<string>();
   let truncated = false;
   const append = (item: SubagentActivityItem) => {
-    if (activity.length >= MAX_ACTIVITY_ITEMS) {
-      truncated = true;
-      return;
-    }
     activity.push(item);
-    if (item.type === 'tool') toolsById.set(item.toolCallId, item);
   };
 
   for (const stored of relevantMessages) {
@@ -158,15 +183,25 @@ export function projectSubagentActivity(
         });
       }
       readToolCalls(data).forEach((call, index) => {
-        const tool = normalizeToolCall(call, index);
-        if (tool != null) append(tool);
+        const normalized = normalizeToolCall(call, index);
+        if (normalized == null) return;
+        normalized.item.toolCallId = uniqueToolActivityId(
+          normalized.item.toolCallId,
+          usedToolActivityIds,
+        );
+        append(normalized.item);
+        const occurrences = toolsByRawId.get(normalized.rawId) ?? [];
+        occurrences.push(normalized.item);
+        toolsByRawId.set(normalized.rawId, occurrences);
       });
       continue;
     }
     if (stored.type !== 'tool') continue;
     const toolCallId = typeof data.tool_call_id === 'string' ? data.tool_call_id : '';
     const output = truncateUtf8(visibleContent(data.content).text, MAX_TOOL_OUTPUT_BYTES);
-    const existing = toolsById.get(toolCallId);
+    const existing = toolsByRawId
+      .get(toolCallId)
+      ?.find((candidate) => candidate.status === 'running');
     if (existing != null) {
       existing.status = toolResultStatus(data.status);
       if (output.value !== '') existing.output = output.value;
@@ -174,19 +209,30 @@ export function projectSubagentActivity(
       continue;
     }
     const name = typeof data.name === 'string' && data.name !== '' ? data.name : 'tool';
-    append({
+    const projectedToolCallId = uniqueToolActivityId(
+      toolCallId || `tool-result-${activity.length}`,
+      usedToolActivityIds,
+    );
+    const orphan: MutableToolActivity = {
       type: 'tool',
-      toolCallId: truncateUtf8(
-        toolCallId || `tool-result-${activity.length}`,
-        MAX_TOOL_CALL_ID_BYTES,
-      ).value,
+      toolCallId: projectedToolCallId,
       name: truncateUtf8(name, MAX_TOOL_NAME_BYTES).value,
       ...(output.value === '' ? {} : { output: output.value }),
       ...(output.truncated ? { outputTruncated: true } : {}),
       status: toolResultStatus(data.status),
-    });
+    };
+    append(orphan);
+    if (toolCallId !== '') {
+      const occurrences = toolsByRawId.get(toolCallId) ?? [];
+      occurrences.push(orphan);
+      toolsByRawId.set(toolCallId, occurrences);
+    }
   }
 
+  if (activity.length > MAX_ACTIVITY_ITEMS) {
+    activity.splice(0, activity.length - MAX_ACTIVITY_ITEMS);
+    truncated = true;
+  }
   while (Buffer.byteLength(JSON.stringify(activity), 'utf8') > MAX_ACTIVITY_BYTES) {
     activity.shift();
     truncated = true;

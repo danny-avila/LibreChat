@@ -1608,7 +1608,6 @@
   "com_ui_storage_filter_sort": "Filtra i ordena per emmagatzematge",
   "com_ui_subagent_cancelled": "Agent cancel·lat",
   "com_ui_subagent_complete": "S'ha executat l'agent",
-  "com_ui_subagent_dialog_description": "Execució filla en context aïllat. Activitat i resultat final a sota.",
   "com_ui_subagent_dialog_title": "Agent \"{{0}}\"",
   "com_ui_subagent_dialog_title_self": "Agent",
   "com_ui_subagent_empty_result": "No s'ha retornat cap text.",

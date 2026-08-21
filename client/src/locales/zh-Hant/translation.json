@@ -1858,7 +1858,6 @@
   "com_ui_storage_filter_sort": "依儲存空間篩選及排序",
   "com_ui_subagent_cancelled": "已取消 Agent",
   "com_ui_subagent_complete": "Agent 執行完畢",
-  "com_ui_subagent_dialog_description": "在獨立脈絡中執行的子項目。下方顯示活動與最終結果。",
   "com_ui_subagent_dialog_title": "「{{0}}」Agent",
   "com_ui_subagent_dialog_title_self": "Agent",
   "com_ui_subagent_empty_result": "未傳回任何文字。",

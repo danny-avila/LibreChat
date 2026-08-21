@@ -9,7 +9,11 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-import store, { activeSubagentPanel, subagentProgressByToolCallId } from '~/store';
+import store, {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store';
 import { MessageContext } from '~/Providers/MessageContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
@@ -147,7 +151,8 @@ function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T
  *
  * Progress is sourced from the `subagentProgressByToolCallId` Recoil atom
  * family, populated by `useStepHandler` as `ON_SUBAGENT_UPDATE` SSE
- * envelopes arrive. The atom is keyed by the parent's `tool_call_id`.
+ * envelopes arrive. The atom is keyed by the parent message and
+ * `tool_call_id`, since providers may reuse tool IDs across turns.
  */
 export default function SubagentCall({
   toolCallId,
@@ -162,7 +167,10 @@ export default function SubagentCall({
 }: SubagentCallProps) {
   const localize = useLocalize();
   const parentMessageContext = useContext(MessageContext);
-  const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
+  const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
+  const progress = useRecoilValue(
+    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId)),
+  );
   const setSelectedSubagent = useSetRecoilState(activeSubagentPanel);
   const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
@@ -172,7 +180,6 @@ export default function SubagentCall({
     [output, args],
   );
   const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
-  const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
   const canOpenDurablePanel = backgroundHandle != null && parentConversationId !== '';
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);

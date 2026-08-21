@@ -13,8 +13,8 @@ import type {
 /**
  * Progress bucket captured per subagent tool call. Populated as
  * `ON_SUBAGENT_UPDATE` SSE events stream in from the backend. Keyed by the
- * parent's `tool_call_id` so the `SubagentCall` renderer can look the bucket
- * up from the tool call it's rendering.
+ * parent invocation so provider-local tool call IDs cannot collide across
+ * separate assistant messages.
  *
  * Both the panel content and the ticker are aggregated *incrementally*
  * into the atom as each envelope arrives — the atom never keeps the raw
@@ -67,7 +67,11 @@ export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
   default: null,
 });
 
-/** Progress state keyed by parent tool_call_id. */
+/** Stable identity for one subagent invocation in the parent conversation. */
+export const subagentProgressKey = (parentMessageId: string, toolCallId: string) =>
+  `${parentMessageId}\u0000${toolCallId}`;
+
+/** Progress state keyed by parent message + tool_call_id. */
 export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
   key: 'subagentProgressByToolCallId',
   default: null,

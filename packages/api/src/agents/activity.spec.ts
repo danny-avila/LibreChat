@@ -74,6 +74,9 @@ describe('durable subagent activity projection', () => {
     expect(Buffer.byteLength(JSON.stringify(projection.activity), 'utf8')).toBeLessThanOrEqual(
       SUBAGENT_ACTIVITY_LIMITS.bytes,
     );
+    expect(projection.activity.at(-1)).toEqual(
+      expect.objectContaining({ type: 'tool', toolCallId: 'call-499' }),
+    );
   });
 
   it.each([
@@ -101,13 +104,49 @@ describe('durable subagent activity projection', () => {
         { type: 'ai', data: { content: 'Selected activity.' } },
       ]),
       'replace',
+      'Selected request.',
     );
 
     expect(projection.activity).toEqual([{ type: 'writing', text: 'Selected activity.' }]);
     expect(JSON.stringify(projection)).not.toContain('Earlier private activity.');
-    expect(projectSubagentActivity('[{"type":"ai","data":{"content":"old"}}]', 'replace')).toEqual({
-      activity: [],
-      truncated: true,
-    });
+    expect(
+      projectSubagentActivity('[{"type":"ai","data":{"content":"old"}}]', 'replace', 'new'),
+    ).toEqual({ activity: [], truncated: true });
+    expect(
+      projectSubagentActivity(
+        '[{"type":"human","data":{"content":"different"}}]',
+        'replace',
+        'selected',
+      ),
+    ).toEqual({ activity: [], truncated: true });
+    expect(
+      projectSubagentActivity('[{"type":"human","data":{"content":"selected"}}]', 'replace'),
+    ).toEqual({ activity: [], truncated: true });
+  });
+
+  it('correlates repeated provider tool IDs by occurrence without merging their results', () => {
+    const projection = projectSubagentActivity(
+      JSON.stringify([
+        { type: 'ai', data: { tool_calls: [{ id: 'call', name: 'first', args: {} }] } },
+        { type: 'ai', data: { tool_calls: [{ id: 'call', name: 'second', args: {} }] } },
+        { type: 'tool', data: { tool_call_id: 'call', content: 'first result' } },
+        { type: 'tool', data: { tool_call_id: 'call', content: 'second result' } },
+      ]),
+    );
+
+    expect(projection.activity).toEqual([
+      expect.objectContaining({
+        toolCallId: 'call',
+        name: 'first',
+        output: 'first result',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        toolCallId: 'call#2',
+        name: 'second',
+        output: 'second result',
+        status: 'completed',
+      }),
+    ]);
   });
 });

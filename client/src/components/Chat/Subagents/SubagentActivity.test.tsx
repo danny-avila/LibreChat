@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
 import SubagentActivity from './SubagentActivity';
 
@@ -83,7 +84,8 @@ jest.mock('~/components/Chat/Messages/Content/ToolCallGroup', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/ToolApproval', () => ({
   __esModule: true,
-  default: () => null,
+  // eslint-disable-next-line i18next/no-literal-string
+  default: () => <div data-testid="tool-approval">approval</div>,
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -136,6 +138,29 @@ describe('SubagentActivity', () => {
       expect(screen.getByText(`com_ui_subagent_thread_status_${status}`)).toBeInTheDocument();
     },
   );
+
+  it('renders approval controls when the provider persists an empty output', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          status: 'running',
+          items: [
+            {
+              type: 'tool',
+              toolCallId: 'tool',
+              name: 'protected_tool',
+              output: '',
+              status: 'running',
+              approval: {} as Agents.ToolCall['approval'],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('tool-approval')).toBeInTheDocument();
+  });
 
   it('marks bounded tool details as shortened without expanding them', () => {
     render(

@@ -2039,7 +2039,6 @@
   "com_ui_storage_filter_sort": "Filtrare e ordinare per stoccaggio",
   "com_ui_subagent_cancelled": "Agente cancellato",
   "com_ui_subagent_complete": "Eseguito l'agente",
-  "com_ui_subagent_dialog_description": "Esecuzione figlia in contesto isolato. Attività e risultato finale qui sotto.",
   "com_ui_subagent_dialog_title": "agente \"{{0}}\"",
   "com_ui_subagent_dialog_title_self": "Agente",
   "com_ui_subagent_empty_result": "Nessun testo restituito",

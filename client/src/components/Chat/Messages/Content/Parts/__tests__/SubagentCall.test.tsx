@@ -15,7 +15,11 @@ import {
   initSubagentAggregatorState,
   initSubagentTickerState,
 } from '~/utils/subagentContent';
-import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
+import {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store/subagents';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 import { MessageContext } from '~/Providers/MessageContext';
 
@@ -107,7 +111,10 @@ function renderWithState(args: {
     setter.current = useRecoilCallback(
       ({ set }) =>
         (next: SubagentProgress | null) =>
-          set(subagentProgressByToolCallId(args.toolCallId), next),
+          set(
+            subagentProgressByToolCallId(subagentProgressKey('parent-message', args.toolCallId)),
+            next,
+          ),
       [],
     );
     return null;

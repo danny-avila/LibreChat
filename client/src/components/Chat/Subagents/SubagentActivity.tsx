@@ -133,7 +133,7 @@ function ActivityPart({
         {localize('com_ui_subagent_thread_message_truncated')}
       </div>
     ) : null;
-  if (item.approval != null && item.output == null) {
+  if (item.approval != null && (item.output?.length ?? 0) === 0) {
     return (
       <>
         {toolCall}

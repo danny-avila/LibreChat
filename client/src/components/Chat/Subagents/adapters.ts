@@ -49,13 +49,21 @@ type ContentToolCall = {
   approval?: Agents.ToolCall['approval'];
 };
 
-const contentPartsToActivity = (parts: TMessageContentParts[]): ChildActivityItem[] =>
+const contentPartsToActivity = (
+  parts: TMessageContentParts[],
+  reasoningVisibility: 'visible' | 'marker',
+): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
     if (part.type === ContentTypes.TEXT) {
       return [{ type: 'writing', text: (part as { text: string }).text }];
     }
     if (part.type === ContentTypes.THINK) {
-      return [{ type: 'reasoning', text: (part as { think: string }).think }];
+      return [
+        {
+          type: 'reasoning',
+          ...(reasoningVisibility === 'visible' ? { text: (part as { think: string }).think } : {}),
+        },
+      ];
     }
     if (part.type !== ContentTypes.TOOL_CALL) return [];
     const tool = (part as { [ContentTypes.TOOL_CALL]?: ContentToolCall })[ContentTypes.TOOL_CALL];
@@ -63,7 +71,12 @@ const contentPartsToActivity = (parts: TMessageContentParts[]): ChildActivityIte
     const runStepStatus =
       (part as { runStepStatus?: PartMetadata['runStepStatus'] }).runStepStatus ??
       tool.runStepStatus;
-    const completed = (tool.progress ?? 0) >= 1 || tool.output != null;
+    const waitingForApproval =
+      tool.approval != null &&
+      (tool.output?.length ?? 0) === 0 &&
+      (tool.progress ?? 0) < 1 &&
+      runStepStatus == null;
+    const completed = !waitingForApproval && ((tool.progress ?? 0) >= 1 || tool.output != null);
     return [
       {
         type: 'tool',
@@ -115,11 +128,12 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  reasoningVisibility?: 'visible' | 'marker';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
   const parts = persisted.length > 0 ? persisted : live;
-  const items = contentPartsToActivity(parts);
+  const items = contentPartsToActivity(parts, input.reasoningVisibility ?? 'visible');
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
   }
@@ -140,6 +154,7 @@ export function adaptDurableThreadActivity(
   const response = view.messages.find((message) => message.messageId === `${taskId}:assistant`);
   // Tolerate a briefly mixed-version deployment where an older API replica
   // returns the pre-projection view shape.
+  const hasProjectedActivity = Array.isArray(view.activity);
   const items = publicActivityToChildActivity(view.activity ?? []);
   if (items.length === 0 && response?.text != null && response.text !== '') {
     items.push({
@@ -148,10 +163,14 @@ export function adaptDurableThreadActivity(
       ...(response.textTruncated === true ? { textTruncated: true } : {}),
     });
   }
+  let status = view.status;
+  if (!hasProjectedActivity && response != null) {
+    status = response.error === true ? 'failed' : 'completed';
+  }
   return {
     title: view.title,
     ...(prompt == null ? {} : { prompt }),
-    status: view.status,
+    status,
     items,
     activityTruncated: view.activityTruncated || view.historyTruncated,
   };
