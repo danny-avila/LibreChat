@@ -1005,8 +1005,9 @@ export function getMessagesByConvoId(conversationId: string): Promise<s.TMessage
 export function getSubagentThread(
   parentConversationId: string,
   threadId: string,
+  taskId?: string,
 ): Promise<t.SubagentThreadView> {
-  return request.get(endpoints.subagentThread(parentConversationId, threadId));
+  return request.get(endpoints.subagentThread(parentConversationId, threadId, taskId));
 }
 
 export function getPrompt(id: string): Promise<{ prompt: t.TPrompt }> {

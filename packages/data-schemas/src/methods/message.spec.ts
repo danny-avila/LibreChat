@@ -712,6 +712,44 @@ describe('Message Operations', () => {
       expect(messages[0]).not.toHaveProperty('user');
       expect(messages[0]).not.toHaveProperty('conversationId');
     });
+
+    it('projects the private transcript only for the explicitly selected task', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-a:assistant',
+        conversationId,
+        text: 'A',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-a',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"A"}}]',
+        },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-b:assistant',
+        conversationId,
+        text: 'B',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-b',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"B"}}]',
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 10,
+        textCodePointLimit: 8_192,
+        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
+      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
   });
 
   describe('deleteMessages', () => {

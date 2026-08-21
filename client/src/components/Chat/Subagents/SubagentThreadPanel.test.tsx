@@ -1,13 +1,14 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { fireEvent, render, screen } from '@testing-library/react';
-import type { SubagentThreadView } from 'librechat-data-provider';
+import { ContentTypes } from 'librechat-data-provider';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
-import { activeSubagentPanel } from '~/store/subagents';
+import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
+import { activeSubagentPanel, subagentProgressByToolCallId } from '~/store/subagents';
 import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
-const mockSpinnerLabel = 'spinner';
 let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
@@ -24,11 +25,28 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
   default: ({ content }: { content: string }) => <div>{content}</div>,
 }));
 
+jest.mock('./SubagentActivity', () => ({
+  __esModule: true,
+  default: ({
+    activity,
+    state,
+  }: {
+    activity: { status: string; prompt?: string; items: Array<{ type: string; text?: string }> };
+    state: string;
+  }) => (
+    <div data-testid="shared-activity" data-state={state} data-status={activity.status}>
+      {activity.prompt}
+      {activity.items.map((item, index) => (
+        <span key={index}>{item.text ?? item.type}</span>
+      ))}
+    </div>
+  ),
+}));
+
 jest.mock('@librechat/client', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
     <button {...props}>{children}</button>
   ),
-  Spinner: () => <span>{mockSpinnerLabel}</span>,
   useMediaQuery: () => mockIsMobile,
 }));
 
@@ -43,10 +61,11 @@ jest.mock('lucide-react', () => ({
 
 const selection: ActiveSubagentPanel = {
   parentConversationId: 'parent-conversation',
-  threadId: 'child-thread',
-  taskId: 'task',
   toolCallId: 'tool-call',
   subagentType: 'researcher',
+  initialProgress: 1,
+  isSubmitting: false,
+  durable: { threadId: 'child-thread', taskId: 'task' },
 };
 
 const completedView: SubagentThreadView = {
@@ -58,6 +77,8 @@ const completedView: SubagentThreadView = {
   subagentKind: 'agent',
   title: 'Research child',
   status: 'completed',
+  activity: [{ type: 'writing', text: 'The release is ready.' }],
+  activityTruncated: false,
   historyTruncated: true,
   messages: [
     {
@@ -81,7 +102,7 @@ describe('SubagentThreadPanel', () => {
     mockIsMobile = false;
   });
 
-  it('renders a bounded read-only activity timeline and closes its selection', () => {
+  it('renders a bounded read-only activity timeline and closes its selection', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
       isLoading: false,
@@ -94,8 +115,9 @@ describe('SubagentThreadPanel', () => {
       return null;
     };
 
-    render(
+    const { container } = render(
       <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <button type="button" data-subagent-tool-call="tool-call" />
         <Observer />
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,
@@ -107,14 +129,45 @@ describe('SubagentThreadPanel', () => {
       'task',
     );
     expect(screen.getByText('Research child')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_status_completed')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_message_truncated')).toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'completed');
 
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
     expect(active).toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector('[data-subagent-tool-call="tool-call"]')).toHaveFocus(),
+    );
+  });
+
+  it('renders foreground persisted activity through the same shared panel without a durable read', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const foreground: ActiveSubagentPanel = {
+      parentConversationId: 'parent-conversation',
+      toolCallId: 'foreground-call',
+      subagentType: 'researcher',
+      prompt: 'Review this change.',
+      persistedContent: [
+        { type: 'text', text: 'Review complete.' },
+      ] as unknown as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: false,
+    };
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={foreground} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('Review this change.')).toBeInTheDocument();
+    expect(screen.getByText('Review complete.')).toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
   });
 
   it('keeps an expected pre-reservation 404 in the readiness state', () => {
@@ -131,8 +184,54 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByText(mockSpinnerLabel)).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_subagent_thread_load_error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
+  });
+
+  it('surfaces a durable read failure after the readiness window', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'error');
+  });
+
+  it('shows live detached activity while its durable view is still becoming ready', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot
+        initializeState={({ set }) =>
+          set(subagentProgressByToolCallId(selection.toolCallId), {
+            subagentRunId: 'run',
+            subagentType: 'researcher',
+            status: 'message_delta',
+            contentParts: [{ type: ContentTypes.TEXT, text: 'Live child update.' }],
+            aggregatorState: initSubagentAggregatorState(),
+            tickerState: initSubagentTickerState(),
+          })
+        }
+      >
+        <SubagentThreadPanel selection={{ ...selection, runStepStatus: 'completed' }} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('Live child update.')).toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'running');
   });
 
   it('exposes the focus-trapped mobile overlay as a modal dialog', () => {

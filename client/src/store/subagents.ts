@@ -1,5 +1,9 @@
 import { atom, atomFamily } from 'recoil';
-import type { SubagentUpdatePhase } from 'librechat-data-provider';
+import type {
+  PartMetadata,
+  SubagentUpdatePhase,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -12,7 +16,7 @@ import type {
  * parent's `tool_call_id` so the `SubagentCall` renderer can look the bucket
  * up from the tool call it's rendering.
  *
- * Both the dialog content and the ticker are aggregated *incrementally*
+ * Both the panel content and the ticker are aggregated *incrementally*
  * into the atom as each envelope arrives — the atom never keeps the raw
  * event array. A long-running subagent can emit thousands of deltas
  * without the state growing past what its structural output (N text
@@ -40,13 +44,21 @@ export interface SubagentProgress {
   latestLabel?: string;
 }
 
-/** One parent-owned durable child selected for the read-only activity panel. */
+/** One child invocation selected for the shared read-only activity panel. */
 export type ActiveSubagentPanel = {
   parentConversationId: string;
-  threadId: string;
-  taskId: string;
   toolCallId: string;
   subagentType: string;
+  prompt?: string;
+  legacyOutput?: string | null;
+  persistedContent?: TMessageContentParts[];
+  initialProgress: number;
+  isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  durable?: {
+    threadId: string;
+    taskId: string;
+  };
 };
 
 export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({

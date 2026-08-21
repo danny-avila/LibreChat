@@ -61,6 +61,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'text'
   | 'createdAt'
   | 'error'
+  | 'subagentTranscript'
   | 'subagentTask'
 > & { textProjectionTruncated?: boolean };
 
@@ -127,6 +128,7 @@ export interface MessageMethods {
     tenantId?: string;
     limit: number;
     textCodePointLimit: number;
+    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
@@ -745,6 +747,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     tenantId?: string;
     limit: number;
     textCodePointLimit: number;
+    taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
@@ -756,6 +759,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             ...(input.tenantId == null
               ? { tenantId: { $exists: false } }
               : { tenantId: input.tenantId }),
+            ...(input.taskId == null
+              ? {}
+              : {
+                  messageId: {
+                    $in: [`${input.taskId}:user`, `${input.taskId}:assistant`],
+                  },
+                }),
           },
         },
         { $sort: { createdAt: -1, _id: -1 } },
@@ -774,6 +784,17 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
             createdAt: 1,
             error: 1,
+            ...(input.taskId == null
+              ? {}
+              : {
+                  subagentTranscript: {
+                    $cond: [
+                      { $eq: ['$messageId', `${input.taskId}:assistant`] },
+                      '$subagentTranscript',
+                      '$$REMOVE',
+                    ],
+                  },
+                }),
             subagentTask: 1,
           },
         },

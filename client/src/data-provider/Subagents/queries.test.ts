@@ -52,7 +52,7 @@ describe('subagent thread refresh policy', () => {
     expect(isSubagentReadinessPending({ response: { status: 500 } }, 1_000, 500)).toBe(false);
   });
 
-  it('refetches a terminal thread when a new invocation continues it', () => {
+  it('keys the bounded activity projection by the selected invocation', () => {
     const refetch = jest.fn();
     mockUseQuery.mockReturnValue({
       data: view('completed'),
@@ -64,8 +64,19 @@ describe('subagent thread refresh policy', () => {
       { initialProps: { taskId: 'task-1' } },
     );
 
-    expect(refetch).not.toHaveBeenCalled();
+    expect(mockUseQuery.mock.calls.at(-1)?.[0]).toEqual([
+      'subagentThread',
+      'parent-conversation',
+      'child-thread',
+      'task-1',
+    ]);
     rerender({ taskId: 'task-2' });
-    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(mockUseQuery.mock.calls.at(-1)?.[0]).toEqual([
+      'subagentThread',
+      'parent-conversation',
+      'child-thread',
+      'task-2',
+    ]);
+    expect(refetch).not.toHaveBeenCalled();
   });
 });
