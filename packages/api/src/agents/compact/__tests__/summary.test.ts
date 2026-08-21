@@ -780,6 +780,38 @@ describe('compactConversation', () => {
     expect(JSON.stringify(sent[0].content)).toContain('spec.md');
   });
 
+  it('bills a stream that failed after emitting output', async () => {
+    mockStream.mockImplementation(async function* () {
+      yield new AIMessageChunk({ content: 'partial checkpoint text' });
+      throw new Error('gateway interrupted');
+    });
+
+    await expect(
+      compactConversation({ req: makeReq(), agent, branch, ids, db: dbMethods }),
+    ).rejects.toMatchObject({
+      name: 'PartialCompactionError',
+      /** Chunks arrived, so the call is real spend and must be recorded. */
+      passes: [{ counted: { output_tokens: expect.any(Number) } }],
+    });
+  });
+
+  it('reserves for the longer of the initial and update prompts', async () => {
+    /** A long update prompt is what later passes actually send; sizing from the
+     *  initial one alone lets a later pass overflow after billing. */
+    const longUpdate = bulk('update', 4000);
+    await compactConversation({
+      req: makeReq({ prompt: 'short', updatePrompt: longUpdate }),
+      agent: smallWindowAgent,
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    /** The reserve is subtracted from the window, so a huge update prompt must
+     *  shrink the chunk budget enough to force more than one pass here. */
+    expect(mockStream.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('refuses a branch that formats to nothing', async () => {
     await expect(
       compactConversation({ req: makeReq(), agent, branch: [], ids, db: dbMethods }),

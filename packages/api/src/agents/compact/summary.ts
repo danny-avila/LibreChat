@@ -833,9 +833,16 @@ async function invokeCompactionModel(
   }
   const stream = await llm.stream(messages, config);
   let aggregate: AIMessageChunk | undefined;
-  for await (const chunk of stream) {
-    const next = chunk as AIMessageChunk;
-    aggregate = aggregate == null ? next : aggregate.concat(next);
+  try {
+    for await (const chunk of stream) {
+      const next = chunk as AIMessageChunk;
+      aggregate = aggregate == null ? next : aggregate.concat(next);
+    }
+  } catch (error) {
+    /** Chunks that already arrived are provider work the user must be charged
+     *  for; a gateway interruption partway through is not a free call. The
+     *  partial aggregate rides out with the failure so the caller can bill it. */
+    throw new StreamInterruptedError(error, aggregate);
   }
   return aggregate;
 }
@@ -883,8 +890,11 @@ export interface CompactConversationParams {
     model?: string;
     provider: string;
     /** The endpoint the call resolved to, which may differ from the
-     *  conversation's. Pricing and the support check must both key on it. */
+     *  conversation's. Prices the transaction. */
     endpoint: string;
+    /** Endpoint KEY for `supportsBalanceCheck`, which indexes named custom
+     *  endpoints under `custom` rather than their own name. */
+    balanceEndpoint: string;
     endpointTokenConfig?: EndpointTokenConfig;
   }) => Promise<void>;
 }
@@ -894,6 +904,18 @@ export class NothingToCompactError extends Error {
   constructor() {
     super('No messages to compact');
     this.name = 'NothingToCompactError';
+  }
+}
+
+/** A stream that produced output before failing. Carries what arrived. */
+class StreamInterruptedError extends Error {
+  readonly cause: unknown;
+  readonly partial?: AIMessageChunk;
+  constructor(cause: unknown, partial?: AIMessageChunk) {
+    super(cause instanceof Error ? cause.message : 'Compaction stream interrupted');
+    this.name = 'StreamInterruptedError';
+    this.cause = cause;
+    this.partial = partial;
   }
 }
 
@@ -1052,8 +1074,12 @@ export async function compactConversation({
   /** The request asks for output too: a chunk sized against the whole window
    *  plus an inherited output cap exceeds the provider's combined limit. */
   const outputReserve = resolveOutputReserve(clientOptions, provider);
-  const instructionReserve = await countTokens(
-    buildCompactionInstruction(promptText, updatePromptText, ''),
+  /** Later passes send the UPDATE prompt, which an administrator may configure
+   *  longer than the initial one; reserving only the initial form lets a
+   *  supposedly valid pass overflow after an earlier one has been billed. */
+  const instructionReserve = Math.max(
+    await countTokens(promptText),
+    await countTokens(updatePromptText),
   );
   /** Passes after the first also carry the running checkpoint as input, and a
    *  checkpoint is at most one full model output. Reserved unconditionally
@@ -1096,6 +1122,7 @@ export async function compactConversation({
       model,
       provider,
       endpoint,
+      balanceEndpoint: tokenLookupEndpoint,
       endpointTokenConfig,
     });
   }
@@ -1144,12 +1171,21 @@ export async function compactConversation({
         },
       });
     } catch (error) {
-      /** Only what ALREADY completed is billable. A rejected call (bad
-       *  credential, rate limit) produced no provider work, so this pass's
-       *  counted prompt is deliberately not added before rethrowing. */
+      /** A rejected call (bad credential, rate limit) produced no provider
+       *  work, so its prompt is not counted. A stream that failed AFTER
+       *  emitting is real spend and is recorded before rethrowing. */
+      if (error instanceof StreamInterruptedError) {
+        passes.push({
+          usage: extractUsage(error.partial as AIMessage | undefined, model, provider),
+          counted: {
+            input_tokens: passInputTokens,
+            output_tokens: await countTokens(extractResponseText(error.partial)),
+          },
+        });
+      }
       throw new PartialCompactionError({
         ...billingDetails(),
-        cause: error,
+        cause: error instanceof StreamInterruptedError ? error.cause : error,
         message: error instanceof Error ? error.message : 'Compaction pass failed',
       });
     }
