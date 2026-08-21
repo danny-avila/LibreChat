@@ -1,5 +1,7 @@
+const { PermissionBits, ResourceType } = require('librechat-data-provider');
 const { handleCompactRequest, GenerationJobManager } = require('@librechat/api');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
+const { findAccessibleResources } = require('~/server/services/PermissionService');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -20,6 +22,16 @@ const CompactController = async (req, res) => {
       logViolation,
       getModelsConfig,
       getFiles: db.getFiles,
+      skills: {
+        getSkillByName: db.getSkillByName,
+        findAccessibleSkillIds: () =>
+          findAccessibleResources({
+            userId: req.user.id,
+            role: req.user.role,
+            resourceType: ResourceType.SKILL,
+            requiredPermissions: PermissionBits.VIEW,
+          }),
+      },
       getMessages: db.getMessages,
       saveMessage: db.saveMessage,
       deleteMessages: db.deleteMessages,

@@ -20,6 +20,7 @@ import type { Runnable, RunnableConfig } from '@langchain/core/runnables';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ClientOptions } from '@librechat/agents';
+import type { Types } from 'mongoose';
 import type { EndpointDbMethods, OpenAIConfiguration, RequestBody, ServerRequest } from '~/types';
 import type { FormattedMessageWithContent } from '~/agents/client';
 import type { EndpointTokenConfig } from '~/types/tokens';
@@ -28,6 +29,7 @@ import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/age
 import { buildOwnerFileFilter, collectHistoricalFileIds } from '~/files/history';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { extractInvokedSkillsFromPayload } from '~/agents/run';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
 import { getModelMaxTokens } from '~/utils/tokens';
@@ -40,6 +42,19 @@ import { createSafeUser } from '~/utils/env';
  * to include that wrapper or every later budget read undercounts it.
  */
 const SUMMARY_WRAPPER_OVERHEAD_TOKENS = 33;
+
+/**
+ * Resolves the bodies of skills invoked in the branch so the checkpoint can
+ * record their constraints. Injected as a pair: the accessible-id lookup is the
+ * ACL gate, and a skill outside it must never be resolved.
+ */
+export interface CompactionSkillDeps {
+  findAccessibleSkillIds: () => Promise<Types.ObjectId[]>;
+  getSkillByName: (
+    name: string,
+    accessibleIds: Types.ObjectId[],
+  ) => Promise<{ body: string; name: string } | null>;
+}
 
 /** Owner-scoped file lookup, injected so this module stays free of the db. */
 export type GetFilesFn = (filter: OwnerFileFilter) => Promise<IMongoFile[] | null>;
@@ -255,6 +270,36 @@ export function selectBranchMessages(
 /** Text sources are the ones `extractFileContext` inlines verbatim. */
 function isInlinedTextSource(file: IMongoFile): boolean {
   return file.source === FileSources.text && typeof file.text === 'string' && file.text !== '';
+}
+
+/** Bodies of every skill the branch invoked, keyed by name. */
+async function resolveInvokedSkillBodies(
+  payload: Array<Partial<TMessage>>,
+  deps?: CompactionSkillDeps,
+): Promise<Map<string, string> | undefined> {
+  if (!deps) {
+    return undefined;
+  }
+  const invoked = extractInvokedSkillsFromPayload(
+    payload as Array<Partial<{ role: string; content: unknown }>>,
+  );
+  if (invoked.size === 0) {
+    return undefined;
+  }
+  const accessibleIds = await deps.findAccessibleSkillIds();
+  if (accessibleIds.length === 0) {
+    return undefined;
+  }
+  const resolved = await Promise.allSettled(
+    Array.from(invoked).map((name) => deps.getSkillByName(name, accessibleIds)),
+  );
+  const bodies = new Map<string, string>();
+  for (const outcome of resolved) {
+    if (outcome.status === 'fulfilled' && outcome.value?.body) {
+      bodies.set(outcome.value.name, outcome.value.body);
+    }
+  }
+  return bodies.size > 0 ? bodies : undefined;
 }
 
 /**
@@ -729,6 +774,8 @@ export interface CompactConversationParams {
   getFiles?: GetFilesFn;
   /** Handoff / parallel agents of the run, for added-convo content mapping. */
   agentConfigs?: Map<string, Agent>;
+  /** Resolves historical skill bodies; omitted when skills are disabled. */
+  skills?: CompactionSkillDeps;
   signal?: AbortSignal;
   /**
    * Runs after the prompt is assembled and the model resolved, but BEFORE the
@@ -838,18 +885,26 @@ export async function compactConversation({
   db,
   getFiles,
   agentConfigs,
+  skills,
   signal,
   beforeInvoke,
 }: CompactConversationParams): Promise<CompactionResult> {
   const fileContextByMessageId = await hydrateAttachments(branch, req, getFiles);
+  const payload = stripActivityLabelParts(
+    toPayload(branch, fileContextByMessageId, createMultiAgentMapper(agent as Agent, agentConfigs)),
+  );
+  /**
+   * A manually invoked skill leaves only its tool call in history, not the
+   * SKILL.md body the model actually received. Resolving it here lets the
+   * checkpoint record the skill's constraints, which the boundary is about to
+   * make unreconstructable from the messages themselves.
+   */
+  const skillBodies = await resolveInvokedSkillBodies(payload, skills);
   const { messages, summary: priorSummary } = formatAgentMessages(
-    stripActivityLabelParts(
-      toPayload(
-        branch,
-        fileContextByMessageId,
-        createMultiAgentMapper(agent as Agent, agentConfigs),
-      ),
-    ),
+    payload,
+    undefined,
+    undefined,
+    skillBodies,
   );
   if (messages.length === 0) {
     throw new NothingToCompactError();
