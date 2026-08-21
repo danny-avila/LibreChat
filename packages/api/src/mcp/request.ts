@@ -4,14 +4,14 @@ import { Constants } from 'librechat-data-provider';
 import type { RequestScopedMCPConnectionStore } from './types';
 import type { RequestBody } from '~/types';
 
-export type MCPRuntimeRequestBody = Required<
-  Pick<RequestBody, 'messageId' | 'conversationId' | 'parentMessageId'>
->;
+export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
+  Pick<RequestBody, 'parentMessageId'>;
 
 /**
  * Builds the complete request context that runtime MCP placeholders may resolve.
- * External agent protocols do not always supply a parent message identifier, but
- * the MCP contract must still distinguish a root turn from an omitted field.
+ * An explicit null parent means a known root turn and becomes the root sentinel.
+ * An omitted parent stays omitted so protocols without parent-message identity
+ * fail closed for configurations that require that BODY placeholder.
  */
 export function createMCPRuntimeRequestBody({
   messageId,
@@ -25,7 +25,9 @@ export function createMCPRuntimeRequestBody({
   return {
     messageId,
     conversationId,
-    parentMessageId: parentMessageId ?? Constants.NO_PARENT,
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? Constants.NO_PARENT,
+    }),
   };
 }
 

@@ -224,9 +224,10 @@ export function shouldShowActionButton(statusIconProps?: MCPServerStatusIconProp
   if (!serverStatus) return false;
   const { connectionState, requiresOAuth, requestScoped } = serverStatus;
 
-  // Request-scoped servers can only be initialized with an active MCP request context.
+  // Request-scoped servers can only be initialized with an active MCP request context,
+  // but their per-user variables must remain configurable while idle.
   if ((connectionState === 'disconnected' || connectionState === 'error') && requestScoped) {
-    return false;
+    return hasCustomUserVars === true;
   }
   if (connectionState === 'connected' && requestScoped) return hasCustomUserVars === true;
   // Show for disconnected/error (can reconnect/configure)

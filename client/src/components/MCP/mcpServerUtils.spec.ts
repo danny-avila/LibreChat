@@ -1,5 +1,5 @@
 import type { MCPServerStatus } from 'librechat-data-provider';
-import { isMCPServerReadyForAgent } from './mcpServerUtils';
+import { isMCPServerReadyForAgent, shouldShowActionButton } from './mcpServerUtils';
 
 const status = (
   connectionState: MCPServerStatus['connectionState'],
@@ -39,5 +39,28 @@ describe('isMCPServerReadyForAgent', () => {
   it('requires a live connection for servers that are not request-scoped', () => {
     expect(isMCPServerReadyForAgent(status('disconnected', 'not_required'), false)).toBe(false);
     expect(isMCPServerReadyForAgent(status('connected', 'not_required'), false)).toBe(true);
+  });
+});
+
+describe('shouldShowActionButton', () => {
+  it('keeps configuration actionable for an idle request-scoped server', () => {
+    const serverStatus: MCPServerStatus = {
+      connectionState: 'disconnected',
+      authorizationState: 'not_required',
+      requiresOAuth: false,
+      requestScoped: true,
+      configurationState: 'needs_configuration',
+    };
+    const baseProps = {
+      serverName: 'server',
+      serverStatus,
+      isInitializing: false,
+      canCancel: false,
+      onCancel: jest.fn(),
+      onConfigClick: jest.fn(),
+    };
+
+    expect(shouldShowActionButton({ ...baseProps, hasCustomUserVars: true })).toBe(true);
+    expect(shouldShowActionButton({ ...baseProps, hasCustomUserVars: false })).toBe(false);
   });
 });

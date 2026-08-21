@@ -91,7 +91,9 @@ export default function MCPServerStatusIcon({
 
   // Request-scoped servers can only be connected while serving an MCP request.
   if ((connectionState === 'disconnected' || connectionState === 'error') && requestScoped) {
-    return null;
+    return hasCustomUserVars ? (
+      <ConfigureButton serverName={serverName} onConfigClick={onConfigClick} />
+    ) : null;
   }
 
   // Disconnected or Error: show connect button (PlugZap icon)

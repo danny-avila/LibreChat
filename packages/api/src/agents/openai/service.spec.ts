@@ -130,6 +130,20 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     expect(streamConfig.configurable?.requestBody).toEqual(runArgs.requestBody);
   });
 
+  it('uses the root parent sentinel when chat completions omit a parent id', async () => {
+    const req = createMockReq({ id: 'user-123', role: 'USER' });
+
+    await createAgentChatCompletion(req, createMockRes(), deps);
+
+    expect(deps.initializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: expect.objectContaining({
+          parentMessageId: '00000000-0000-0000-0000-000000000000',
+        }),
+      }),
+    );
+  });
+
   it('forwards appConfig and tenantId to createRun', async () => {
     const appConfig = {
       endpoints: {

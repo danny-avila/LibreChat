@@ -5,6 +5,7 @@ import {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } from '~/mcp/request';
+import { getMissingRuntimeBodyPlaceholderFields } from '~/mcp/utils';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -125,9 +126,31 @@ describe('MCP runtime request body', () => {
     });
   });
 
-  it('uses the root-turn parent sentinel when a protocol omits the parent', () => {
+  it('uses the root-turn parent sentinel for an explicit root parent', () => {
     expect(
-      createMCPRuntimeRequestBody({ messageId: 'response-1', conversationId: 'conversation-1' }),
+      createMCPRuntimeRequestBody({
+        messageId: 'response-1',
+        conversationId: 'conversation-1',
+        parentMessageId: null,
+      }),
     ).toEqual(expect.objectContaining({ parentMessageId: '00000000-0000-0000-0000-000000000000' }));
+  });
+
+  it('leaves the parent absent when the protocol cannot supply that identity', () => {
+    const requestBody = createMCPRuntimeRequestBody({
+      messageId: 'response-1',
+      conversationId: 'conversation-1',
+    });
+
+    expect(requestBody).toEqual({ messageId: 'response-1', conversationId: 'conversation-1' });
+    expect(
+      getMissingRuntimeBodyPlaceholderFields(
+        {
+          source: 'yaml',
+          headers: { 'X-Parent': '{{LIBRECHAT_BODY_PARENTMESSAGEID}}' },
+        },
+        requestBody,
+      ),
+    ).toEqual(['parentMessageId']);
   });
 });

@@ -442,7 +442,7 @@ export async function createAgentChatCompletion(
   const mcpRequestBody = createMCPRuntimeRequestBody({
     messageId: requestId,
     conversationId,
-    parentMessageId: request.parent_message_id,
+    parentMessageId: request.parent_message_id ?? null,
   });
   const created = Math.floor(Date.now() / 1000);
 

@@ -125,7 +125,9 @@ jest.mock('@librechat/api', () => ({
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
     messageId,
     conversationId,
-    parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    ...(parentMessageId !== undefined && {
+      parentMessageId: parentMessageId ?? '00000000-0000-0000-0000-000000000000',
+    }),
   }),
   buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
   buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
@@ -557,7 +559,6 @@ describe('createResponse controller', () => {
           requestBody: {
             messageId: 'resp_mock-123',
             conversationId: expect.any(String),
-            parentMessageId: '00000000-0000-0000-0000-000000000000',
           },
         }),
         expect.anything(),
