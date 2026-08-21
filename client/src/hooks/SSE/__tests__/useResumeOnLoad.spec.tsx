@@ -1037,6 +1037,70 @@ describe('useResumeOnLoad', () => {
     ]);
   });
 
+  it('preserves an exact-ID edited regeneration branch for early-abort rollback', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const editedResponse = {
+      messageId: 'edited-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Original response before the edit',
+      isCreatedByUser: false,
+    } as TMessage;
+    const siblingResponse = {
+      messageId: 'sibling-response',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Unrelated sibling',
+      isCreatedByUser: false,
+    } as TMessage;
+    const observedSubmissions: Array<TSubmission | null> = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          responseMessageId: editedResponse.messageId,
+          isRegenerate: true,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: rootUser.messageId,
+            parentMessageId: rootUser.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: rootUser.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, siblingResponse, editedResponse],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.isRegenerate).toBe(true);
+    expect(submission?.initialResponse?.messageId).toBe(editedResponse.messageId);
+    expect(submission?.messages?.map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      siblingResponse.messageId,
+    ]);
+    expect(submission?.regenerateMessages?.map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      siblingResponse.messageId,
+      editedResponse.messageId,
+    ]);
+  });
+
   describe('steer chip restore', () => {
     const staleChip: PendingSteer = {
       steerId: 'stale-1',

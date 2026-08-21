@@ -17,6 +17,8 @@ export interface GenerationJobMetadata {
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */
   responseMessageId?: string;
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
   /** Endpoint identifier for abort handling */

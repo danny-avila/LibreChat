@@ -1080,6 +1080,48 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('records regeneration ownership for exact-ID resume reconstruction', async () => {
+    const conversationId = 'conversation-123';
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Regenerate the edited response.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        responseMessageId: 'edited-response',
+        isRegenerate: true,
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = {
+      headersSent: true,
+      json: jest.fn(() => {
+        res.headersSent = true;
+      }),
+      status: jest.fn(() => res),
+    };
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          responseMessageId: 'edited-response',
+          isRegenerate: true,
+        }),
+      }),
+    );
+  });
+
   it('falls back to the model spec preset endpoint when no icon URL is configured', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));

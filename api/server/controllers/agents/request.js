@@ -1050,6 +1050,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
         isTemporary: req.body?.isTemporary,
+        ...(isRegenerate && { isRegenerate: true }),
         ...(scheduleId
           ? {
               scheduleId,

@@ -140,7 +140,15 @@ function buildSubmissionFromResumeState(
       ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
       : undefined;
   const responseMetadataMessage = existingResponseMessage ?? persistedRegenerationResponse;
-  const isRegenerateResume = persistedRegenerationResponse != null;
+  const isRegenerateResume =
+    resumeState.isRegenerate === true || persistedRegenerationResponse != null;
+  let regenerateMessages: TMessage[] | undefined;
+  if (isRegenerateResume) {
+    regenerateMessages =
+      unpaddedResponseMessageId === responseMessageId
+        ? [...messages]
+        : messages.filter((message) => message.messageId !== responseMessageId);
+  }
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -191,8 +199,8 @@ function buildSubmissionFromResumeState(
   } as TConversation;
 
   // Non-regenerate resumes strip the persisted request/response pair before handlers
-  // re-supply it. A padded regeneration keeps the original user/response branch for
-  // early-abort rollback and removes only an exact active placeholder.
+  // re-supply it. A regeneration keeps the original branch for early-abort rollback;
+  // explicit resume metadata covers edited regenerations that reuse the exact response id.
   const dedupedMessages = messages.filter(
     (m) =>
       m.messageId !== initialResponse.messageId &&
@@ -205,7 +213,7 @@ function buildSubmissionFromResumeState(
     initialResponse,
     conversation,
     isRegenerate: isRegenerateResume,
-    ...(isRegenerateResume && { regenerateMessages: [...dedupedMessages] }),
+    ...(regenerateMessages && { regenerateMessages }),
     isTemporary: false,
     endpointOption: {},
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new
