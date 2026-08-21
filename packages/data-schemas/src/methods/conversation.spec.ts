@@ -1490,6 +1490,7 @@ describe('Conversation Operations', () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
         user: 'user123',
+        tenantId: 'tenant-a',
         title: 'Test Conversation',
         endpoint: EModelEndpoint.openAI,
       });
@@ -1500,6 +1501,7 @@ describe('Conversation Operations', () => {
       );
 
       expect(result?.user).toBe('user123');
+      expect(result?.tenantId).toBe('tenant-a');
       expect(result).not.toHaveProperty('title');
       expect(result).not.toHaveProperty('messages');
       expect(result).not.toHaveProperty('endpoint');
@@ -1543,6 +1545,36 @@ describe('Conversation Operations', () => {
         subagentThread: { parentConversationId: 'parent-conversation' },
       });
       expect(result).not.toHaveProperty('title');
+    });
+
+    it('selects the exact tenant when conversation identifiers collide', async () => {
+      await runAsSystem(async () => {
+        await Conversation.create([
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            title: 'Tenantless parent',
+            endpoint: EModelEndpoint.agents,
+          },
+          {
+            conversationId: 'shared-conversation-id',
+            user: 'user123',
+            tenantId: 'tenant-a',
+            title: 'Tenant parent',
+            endpoint: EModelEndpoint.agents,
+          },
+        ]);
+      });
+
+      const tenantless = await methods.getConvoOwnership('user123', 'shared-conversation-id', null);
+      const tenant = await methods.getConvoOwnership(
+        'user123',
+        'shared-conversation-id',
+        'tenant-a',
+      );
+
+      expect(tenantless?.tenantId).toBeUndefined();
+      expect(tenant?.tenantId).toBe('tenant-a');
     });
   });
 
@@ -3394,6 +3426,72 @@ describe('Conversation Operations', () => {
         reservations.find((reservation) => reservation.created)?.conversation.title,
       );
       expect(saved?.subagentThread).toEqual(lineage);
+    });
+
+    it('reads a child only through its exact parent and tenant with the private lease', async () => {
+      const parentConversationId = uuidv4();
+      const conversationId = uuidv4();
+      await Conversation.create([
+        {
+          conversationId: parentConversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+        },
+        {
+          conversationId,
+          user: 'view-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentConversationId,
+            parentConversationId,
+            parentMessageId: 'parent-message',
+            parentToolCallId: 'parent-tool',
+            subagentType: 'researcher',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-1',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+        },
+      ]);
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          conversationId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-1' }),
+        }),
+      );
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId: 'another-parent',
+          conversationId,
+          tenantId: 'tenant-a',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'view-user',
+          parentConversationId,
+          conversationId,
+          tenantId: 'tenant-b',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
+        'subagentThreadLease',
+      );
     });
 
     it('admits one cross-replica owner and fences renewal and release by token', async () => {

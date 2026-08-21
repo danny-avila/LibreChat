@@ -48,6 +48,7 @@ import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
   type MessageMethods,
+  type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
 } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
@@ -376,6 +377,7 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,

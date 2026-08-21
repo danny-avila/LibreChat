@@ -5,6 +5,7 @@ const {
   isEnabled,
   deleteAgentCheckpoints,
   createArchiveAllHandler,
+  createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -33,6 +34,11 @@ const assistantClients = {
 
 const router = express.Router();
 const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
+const subagentThreadViewHandler = createSubagentThreadViewHandler({
+  getConvoOwnership: db.getConvoOwnership,
+  getSubagentThreadForParent: db.getSubagentThreadForParent,
+  getMessagesForSubagentThreadView: db.getMessagesForSubagentThreadView,
+});
 router.use(requireJwtAuth);
 
 const isValidProjectFilter = (projectId) =>
@@ -78,6 +84,8 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Error fetching conversations' });
   }
 });
+
+router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);
 
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;

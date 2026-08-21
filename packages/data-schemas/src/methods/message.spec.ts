@@ -21,6 +21,9 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessagesForSubagentThreadView: ReturnType<
+  typeof createMessageMethods
+>['getMessagesForSubagentThreadView'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -44,6 +47,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -621,7 +625,7 @@ describe('Message Operations', () => {
     it('declares the compound index that serves the conversation fetch and its sort', () => {
       const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
       expect(indexes).toContainEqual([
-        { conversationId: 1, user: 1, createdAt: 1 },
+        { conversationId: 1, user: 1, createdAt: 1, _id: 1 },
         expect.anything(),
       ]);
     });
@@ -681,6 +685,32 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+  });
+
+  describe('getMessagesForSubagentThreadView', () => {
+    it('bounds text in MongoDB before returning the public projection', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'bounded-message',
+        conversationId,
+        text: '🧵'.repeat(20_000),
+        user: 'user123',
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(Array.from(messages[0].text ?? '')).toHaveLength(8_192);
+      expect(Buffer.byteLength(messages[0].text ?? '', 'utf8')).toBeLessThanOrEqual(32 * 1024);
+      expect(messages[0].textProjectionTruncated).toBe(true);
+      expect(messages[0]).not.toHaveProperty('user');
+      expect(messages[0]).not.toHaveProperty('conversationId');
     });
   });
 

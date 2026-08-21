@@ -245,12 +245,13 @@ messageSchema.index({
 
 /**
  * Serves the conversation fetch ({conversationId, user} filter + createdAt
- * sort) from the index alone; without it Mongo fetches every full document in
- * the conversation and sorts them in memory. tenantId is deliberately not in
- * the middle: untenanted deployments issue no tenantId predicate, and a gap in
- * the prefix would push the sort back into memory for them.
+ * sort) and the deterministic child-thread view sort from the index alone;
+ * without it Mongo fetches every full document in the conversation and sorts
+ * them in memory. tenantId is deliberately not in the middle: untenanted
+ * deployments issue no tenantId predicate, and a gap in the prefix would push
+ * the sort back into memory for them.
  */
-messageSchema.index({ conversationId: 1, user: 1, createdAt: 1 });
+messageSchema.index({ conversationId: 1, user: 1, createdAt: 1, _id: 1 });
 
 /** Bounds parent-run completion snapshots without scanning a user's message history. */
 messageSchema.index(

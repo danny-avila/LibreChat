@@ -51,5 +51,6 @@ export * from './triggers';
 export * from './activityLabels';
 export * from './activityPhases';
 export * from './subagentDelivery';
+export * from './view';
 export * from './reasoningLabels';
 export * from './toolValidation';
