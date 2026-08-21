@@ -11,6 +11,7 @@ import type {
 } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
+import { projectSubagentActivity, SUBAGENT_ACTIVITY_LIMITS } from './activity';
 
 const MAX_THREAD_MESSAGES = 50;
 const MAX_MESSAGE_TEXT_BYTES = 32 * 1024;
@@ -34,6 +35,11 @@ type SubagentThreadViewParams = {
 
 const validConversationId = (value: string | undefined): value is string =>
   value != null && value.trim() !== '' && value.length <= 256;
+
+const validTaskId = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.trim() !== '' &&
+  Buffer.byteLength(value, 'utf8') <= MAX_PUBLIC_ID_BYTES;
 
 const tenantMatches = (recordTenantId: string | undefined, requestTenantId: string | undefined) =>
   recordTenantId === requestTenantId;
@@ -99,8 +105,12 @@ const publicMessage = (
 const publicStatus = (
   messages: SubagentThreadViewMessageRecord[],
   activeLeaseTaskId: string | undefined,
+  requestedTaskId?: string,
 ): SubagentThreadStatus => {
-  if (activeLeaseTaskId != null) {
+  if (
+    activeLeaseTaskId != null &&
+    (requestedTaskId == null || requestedTaskId === activeLeaseTaskId)
+  ) {
     const activeTaskMessage = messages.find(
       (message) =>
         message.messageId === `${activeLeaseTaskId}:user` ||
@@ -114,7 +124,11 @@ const publicStatus = (
     }
     return publicStatus([activeTaskMessage], undefined);
   }
-  const message = messages.find((candidate) => candidate.subagentTask != null);
+  const message = messages.find(
+    (candidate) =>
+      candidate.subagentTask != null &&
+      (requestedTaskId == null || candidate.messageId.startsWith(`${requestedTaskId}:`)),
+  );
   switch (message?.subagentTask?.status) {
     case 'running':
       return 'interrupted';
@@ -139,11 +153,13 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
     const userId = req.user?.id;
     const tenantId = req.user?.tenantId || undefined;
     const { parentConversationId, threadId } = req.params as SubagentThreadViewParams;
+    const requestedTaskId = req.query?.taskId;
     if (
       !userId ||
       !validConversationId(parentConversationId) ||
       !validConversationId(threadId) ||
-      parentConversationId === threadId
+      parentConversationId === threadId ||
+      (requestedTaskId != null && !validTaskId(requestedTaskId))
     ) {
       notFound(res);
       return;
@@ -179,6 +195,7 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         ...(tenantId == null ? {} : { tenantId }),
         limit: MAX_THREAD_MESSAGES + 1,
         textCodePointLimit: MAX_MESSAGE_TEXT_PROJECTION_CODE_POINTS,
+        ...(requestedTaskId == null ? {} : { taskId: requestedTaskId }),
       });
 
       const historyTruncated = messages.length > MAX_THREAD_MESSAGES;
@@ -187,6 +204,23 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         child.subagentThreadLease != null && child.subagentThreadLease.expiresAt > now
           ? child.subagentThreadLease.taskId
           : undefined;
+      const selectedTranscript =
+        requestedTaskId == null
+          ? undefined
+          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:assistant`)
+              ?.subagentTranscript;
+      const selectedInput =
+        requestedTaskId == null
+          ? undefined
+          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:user`);
+      const projectedActivity =
+        selectedTranscript != null && selectedTranscript.taskId === requestedTaskId
+          ? projectSubagentActivity(
+              selectedTranscript.messagesJson,
+              selectedTranscript.mode,
+              selectedInput?.textProjectionTruncated === true ? undefined : selectedInput?.text,
+            )
+          : { activity: [], truncated: selectedTranscript != null };
       const projectedNewestFirst: SubagentThreadMessage[] = [];
       let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
       for (const message of newestFirst) {
@@ -209,7 +243,9 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
           : { agentId: truncateUtf8(child.agent_id, MAX_PUBLIC_ID_BYTES).text }),
         title: truncateUtf8(child.title ?? `Subagent: ${lineage.subagentType}`, MAX_TITLE_BYTES)
           .text,
-        status: publicStatus(newestFirst, activeLeaseTaskId),
+        status: publicStatus(newestFirst, activeLeaseTaskId, requestedTaskId),
+        activity: projectedActivity.activity,
+        activityTruncated: projectedActivity.truncated,
         messages: projectedNewestFirst.reverse(),
         historyTruncated: historyTruncated || projectedNewestFirst.length < newestFirst.length,
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),
@@ -234,9 +270,13 @@ export const SUBAGENT_THREAD_VIEW_LIMITS: Readonly<{
   messageTextBytes: number;
   responseTextBytes: number;
   responseBytes: number;
+  activityItems: number;
+  activityBytes: number;
 }> = {
   messages: MAX_THREAD_MESSAGES,
   messageTextBytes: MAX_MESSAGE_TEXT_BYTES,
   responseTextBytes: MAX_RESPONSE_TEXT_BYTES,
   responseBytes: MAX_RESPONSE_BYTES,
+  activityItems: SUBAGENT_ACTIVITY_LIMITS.items,
+  activityBytes: SUBAGENT_ACTIVITY_LIMITS.bytes,
 };

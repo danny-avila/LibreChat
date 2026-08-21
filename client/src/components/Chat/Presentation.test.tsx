@@ -94,10 +94,16 @@ const OpenSubagentPanel = () => {
     setConversation({ conversationId: 'parent-conversation' } as TConversation);
     setSelection({
       parentConversationId: 'parent-conversation',
-      threadId: 'child-thread',
-      taskId: 'background-task',
+      parentMessageId: 'parent-message',
       toolCallId: 'tool-call',
+      partIndex: 0,
       subagentType: 'researcher',
+      initialProgress: 1,
+      isSubmitting: false,
+      durable: {
+        threadId: 'child-thread',
+        taskId: 'background-task',
+      },
     });
   };
   return (

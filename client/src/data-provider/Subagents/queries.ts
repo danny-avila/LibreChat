@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
@@ -28,6 +28,16 @@ export const subagentThreadRefetchInterval = (
     )
   ) {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
+  }
+  // During a rolling deploy, an older replica can return a thread-wide status
+  // without the task-scoped activity projection. The exact assistant row is
+  // nevertheless authoritative evidence that this selected invocation ended.
+  if (
+    expectedTaskId != null &&
+    view?.activity == null &&
+    view?.messages.some((message) => message.messageId === `${expectedTaskId}:assistant`)
+  ) {
+    return false;
   }
   if (view == null || view.status === 'dispatched') {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
@@ -62,10 +72,9 @@ export const useSubagentThreadQuery = (
     () => ({ key: readinessKey, deadline: Date.now() + CHILD_READY_POLL_WINDOW_MS }),
     [readinessKey],
   );
-  const previousTaskId = useRef(taskId);
   const query = useQuery<SubagentThreadView>(
-    [QueryKeys.subagentThread, parentConversationId, threadId],
-    () => dataService.getSubagentThread(parentConversationId, threadId),
+    [QueryKeys.subagentThread, parentConversationId, threadId, taskId],
+    () => dataService.getSubagentThread(parentConversationId, threadId, taskId),
     {
       enabled: parentConversationId !== '' && threadId !== '',
       retry: false,
@@ -75,12 +84,6 @@ export const useSubagentThreadQuery = (
       ...config,
     },
   );
-  const { refetch } = query;
-  useEffect(() => {
-    if (previousTaskId.current === taskId) return;
-    previousTaskId.current = taskId;
-    void refetch();
-  }, [taskId, refetch]);
 
   return {
     ...query,
