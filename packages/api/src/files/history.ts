@@ -22,6 +22,15 @@ export interface OwnerFileFilter {
  * content (see `stampSteerPartMedia`, which reuses the same lookup).
  */
 export function collectHistoricalFileRefs(message: FileRefBearer): Array<Partial<TFile>> {
+  const refs = collectMessageFileRefs(message);
+  for (const { refs: steerRefs } of collectSteerFileRefs(message)) {
+    refs.push(...steerRefs);
+  }
+  return refs;
+}
+
+/** Only what the MESSAGE itself carries: direct uploads and tool attachments. */
+export function collectMessageFileRefs(message: FileRefBearer): Array<Partial<TFile>> {
   const refs: Array<Partial<TFile>> = [];
   if (Array.isArray(message.files)) {
     refs.push(...message.files);
@@ -29,14 +38,29 @@ export function collectHistoricalFileRefs(message: FileRefBearer): Array<Partial
   if (Array.isArray(message.attachments)) {
     refs.push(...(message.attachments as Array<Partial<TAttachment>> as Array<Partial<TFile>>));
   }
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (part?.type === ContentTypes.STEER && Array.isArray(part.files)) {
-        refs.push(...part.files);
-      }
+  return refs;
+}
+
+/**
+ * Refs carried inside persisted steer parts, with the index of the part that
+ * carries them. A steer is the USER interrupting mid-run, and it replays as its
+ * own message, so anything hydrated from it belongs on that part rather than on
+ * the assistant turn that happens to contain it.
+ */
+export function collectSteerFileRefs(
+  message: FileRefBearer,
+): Array<{ index: number; refs: Array<Partial<TFile>> }> {
+  if (!Array.isArray(message.content)) {
+    return [];
+  }
+  const found: Array<{ index: number; refs: Array<Partial<TFile>> }> = [];
+  for (let index = 0; index < message.content.length; index++) {
+    const part = message.content[index];
+    if (part?.type === ContentTypes.STEER && Array.isArray(part.files) && part.files.length > 0) {
+      found.push({ index, refs: part.files });
     }
   }
-  return refs;
+  return found;
 }
 
 /** De-duplicated file ids across a whole branch, for one batched lookup. */
