@@ -85,7 +85,7 @@ export default async function cleanupUser(user: TUser) {
 
     console.log('🤖:  ✅  Deleted user from Database');
 
-    await db.connection.close();
+    await db.close();
   } catch (error) {
     console.error('Error:', error);
   }
