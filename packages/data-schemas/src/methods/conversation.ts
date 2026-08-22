@@ -1449,9 +1449,7 @@ export function createConversationMethods(
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
-        const result = await retryCascadeOperation(() =>
-          Conversation.deleteMany({ user, conversationId: { $in: waveIds } }),
-        );
+        const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
         for (const conversation of wave) {
