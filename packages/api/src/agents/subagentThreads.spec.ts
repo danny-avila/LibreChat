@@ -486,6 +486,7 @@ describe('SubagentThreadTaskStore', () => {
         subagentRunId: 'child-run',
         subagentType: 'researcher-agent',
         subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
         depth: 1,
         ancestry: [],
         phase: 'start',
