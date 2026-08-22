@@ -296,10 +296,10 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'dispatched');
-    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, false);
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
   });
 
-  it('opens live activity only after the durable child becomes addressable', () => {
+  it('opens live activity before the durable child becomes addressable', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -312,7 +312,7 @@ describe('SubagentThreadPanel', () => {
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,
     );
-    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, false);
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
 
     mockUseSubagentThreadQuery.mockReturnValue({
       data: { ...completedView, status: 'running' },

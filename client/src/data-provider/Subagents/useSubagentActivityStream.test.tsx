@@ -126,7 +126,7 @@ describe('useSubagentActivityStream', () => {
     });
 
     expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Live child output' }]);
-    expect(result.current?.coverage).toBe('suffix');
+    expect(result.current?.coverage).toBe('complete');
     expect(takeRegisteredSubagentProgressKeys()).toEqual([
       subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
     ]);

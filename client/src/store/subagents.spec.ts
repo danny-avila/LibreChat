@@ -40,6 +40,17 @@ describe('reduceSubagentProgress', () => {
     expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.Working.' }]);
   });
 
+  it('marks an accepted run-start frame complete regardless of its delivery transport', () => {
+    const progress = reduceSubagentProgress(
+      null,
+      [update({ activitySequence: 0 })],
+      'detached',
+      false,
+    );
+
+    expect(progress?.coverage).toBe('complete');
+  });
+
   it('orders a same-batch overlap by the host sequence before folding', () => {
     const progress = reduceSubagentProgress(
       null,
@@ -120,6 +131,7 @@ describe('reduceSubagentProgress', () => {
     expect(ordered?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'first second' }]);
     expect(ordered?.pendingSequencedEvents).toBeUndefined();
     expect(ordered?.lastActivitySequence).toBe(1);
+    expect(ordered?.coverage).toBe('complete');
   });
 
   it('uses parent stream closure as the fence for a detached suffix with no earlier frame', () => {
@@ -178,6 +190,38 @@ describe('reduceSubagentProgress', () => {
     expect(
       new TextEncoder().encode(JSON.stringify(waiting?.pendingSequencedEvents)).byteLength,
     ).toBeLessThanOrEqual(128 * 1024);
+  });
+
+  it('accepts the missing expected frame even when the future-frame buffer is full', () => {
+    const waiting = reduceSubagentProgress(
+      null,
+      Array.from({ length: 100 }, (_, index) =>
+        update({
+          activityEventId: `activity-${index + 1}`,
+          activitySequence: index + 1,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'x' }] } },
+        }),
+      ),
+      'detached',
+      true,
+    );
+
+    expect(waiting?.pendingSequencedEvents).toHaveLength(100);
+
+    const ordered = reduceSubagentProgress(waiting, [
+      update({
+        activityEventId: 'activity-0',
+        activitySequence: 0,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'first-' }] } },
+      }),
+    ]);
+
+    expect(ordered?.contentParts).toEqual([
+      { type: ContentTypes.TEXT, text: `first-${'x'.repeat(100)}` },
+    ]);
+    expect(ordered?.pendingSequencedEvents).toBeUndefined();
+    expect(ordered?.lastActivitySequence).toBe(100);
+    expect(ordered?.coverage).toBe('complete');
   });
 
   it('preserves legacy unsequenced foreground updates', () => {

@@ -41,7 +41,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     data?.status === 'failed' ||
     data?.status === 'interrupted' ||
     data?.status === 'cancelled';
-  useSubagentActivityStream(selection, data != null && !durableTerminal);
+  useSubagentActivityStream(selection, !durableTerminal);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&

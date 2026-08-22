@@ -394,6 +394,7 @@ const foldAcceptedSubagentEvents = (
     .map((event) => event.activitySequence)
     .find(validActivitySequence);
   const effectiveActivitySequence = lastActivitySequence ?? previous?.lastActivitySequence;
+  const acceptedRunStart = events.some((event) => event.activitySequence === 0);
   return {
     subagentRunId: last.subagentRunId,
     subagentType: last.subagentType,
@@ -408,7 +409,9 @@ const foldAcceptedSubagentEvents = (
       ? {}
       : { lastActivitySequence: effectiveActivitySequence }),
     ...(pendingSequencedEvents.length === 0 ? {} : { pendingSequencedEvents }),
-    coverage: previous?.coverage ?? (source === 'detached' ? 'suffix' : 'complete'),
+    coverage: acceptedRunStart
+      ? 'complete'
+      : (previous?.coverage ?? (source === 'detached' ? 'suffix' : 'complete')),
   };
 };
 
@@ -456,51 +459,61 @@ export function reduceSubagentProgress(
   const pendingSequences = new Set(
     pending.map((event) => event.activitySequence).filter(validActivitySequence),
   );
-  let pendingBytes = encodedBytes(pending);
   const directEvents: SubagentUpdateEvent[] = [];
+  let expected = lastActivitySequence == null ? 0 : lastActivitySequence + 1;
+  if (!waitForEarlierSequences && lastActivitySequence == null) {
+    const firstSequence = [...pending, ...orderedEvents]
+      .map((event) => event.activitySequence)
+      .filter(validActivitySequence)
+      .sort((left, right) => left - right)[0];
+    if (firstSequence != null) expected = firstSequence;
+  }
+
+  const sanitizeSequencedEvent = (event: SubagentUpdateEvent): SubagentUpdateEvent =>
+    event.phase === 'reasoning_delta' ? { ...event, data: undefined } : event;
+  const drainPending = () => {
+    pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
+    while (pending[0]?.activitySequence === expected) {
+      const event = pending.shift();
+      if (event == null) break;
+      pendingSequences.delete(expected);
+      directEvents.push(event);
+      expected += 1;
+    }
+  };
+
+  drainPending();
   for (const event of orderedEvents) {
     const sequence = event.activitySequence;
-    if (
-      validActivitySequence(sequence) &&
-      lastActivitySequence != null &&
-      sequence <= lastActivitySequence
-    ) {
-      continue;
-    }
     const key = eventKey(event);
     if (key != null && seen.has(key)) continue;
     if (validActivitySequence(sequence)) {
-      const pendingEvent =
-        event.phase === 'reasoning_delta' ? { ...event, data: undefined } : event;
-      const eventBytes = encodedBytes(pendingEvent) + 1;
-      if (
-        pendingSequences.has(sequence) ||
-        pending.length >= MAX_PENDING_SEQUENCE_EVENTS ||
-        pendingBytes + eventBytes > MAX_PENDING_SEQUENCE_BYTES
+      if (sequence < expected || pendingSequences.has(sequence)) continue;
+      const pendingEvent = sanitizeSequencedEvent(event);
+      if (sequence === expected) {
+        directEvents.push(pendingEvent);
+        expected += 1;
+        drainPending();
+      } else if (
+        pending.length < MAX_PENDING_SEQUENCE_EVENTS &&
+        encodedBytes([...pending, pendingEvent]) <= MAX_PENDING_SEQUENCE_BYTES
       ) {
-        continue;
+        pending.push(pendingEvent);
+        pendingSequences.add(sequence);
       }
-      pending.push(pendingEvent);
-      pendingSequences.add(sequence);
-      pendingBytes += eventBytes;
     } else {
       if (key != null) seen.add(key);
       directEvents.push(event);
     }
   }
-  pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
-  let expected = lastActivitySequence == null ? 0 : lastActivitySequence + 1;
+  drainPending();
   if (
     !waitForEarlierSequences &&
     pending[0]?.activitySequence != null &&
     pending[0].activitySequence > expected
   ) {
     expected = pending[0].activitySequence;
-  }
-  while (pending[0]?.activitySequence === expected) {
-    const event = pending.shift();
-    if (event != null) directEvents.push(event);
-    expected += 1;
+    drainPending();
   }
   return foldAcceptedSubagentEvents(previous, directEvents, source, pending);
 }
