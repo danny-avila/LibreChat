@@ -8,7 +8,7 @@ import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
-import { CONVERSATION_DRAG_TYPE, effectiveProjectId, useAssignDroppedConversation } from './dnd';
+import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation, useEffectiveProjectId } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
@@ -166,6 +166,7 @@ const Conversations: FC<ConversationsProps> = ({
   /* Dropping a project conversation on the Chats section files it back out of
    * its project. Root-list chats already live here, so they are rejected. */
   const assignDropped = useAssignDroppedConversation();
+  const effectiveProjectId = useEffectiveProjectId();
   const chatsRegionRef = useRef<HTMLDivElement>(null);
   const [{ isDropOver, canDrop }, dropRef] = useDrop<
     ConversationDragItem,
