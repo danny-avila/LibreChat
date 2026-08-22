@@ -193,6 +193,9 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
     expect((result as unknown as { value: unknown }).value).toBeTruthy();
     expect(resolveMeiliRead).toBeDefined();
     expect(mockAddDocuments).not.toHaveBeenCalled();
+    expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
+      false,
+    );
 
     resolveMeiliRead!({ conversationId, title: 'Original Title' });
     await waitForMock(mockAddDocuments);

@@ -1179,6 +1179,7 @@ describe('Meilisearch Mongoose plugin', () => {
         mongoose,
       ) as unknown as SchemaWithMeiliMethods;
       let rejectMeiliWrite: ((reason?: Error) => void) | undefined;
+      await conversationModel.deleteMany({});
 
       mockAddDocuments.mockImplementationOnce(
         () =>
@@ -1206,6 +1207,7 @@ describe('Meilisearch Mongoose plugin', () => {
       });
       expect(storedConversation?._meiliIndex).toBe(false);
       expect(storedConversation?._meiliIndexAttempted).toBe(true);
+      expect(await conversationModel.getSyncProgress()).toMatchObject({ pendingIndexing: 1 });
     });
 
     test('a failed document update is detached and marked for reconciliation', async () => {
@@ -1213,6 +1215,7 @@ describe('Meilisearch Mongoose plugin', () => {
         mongoose,
       ) as unknown as SchemaWithMeiliMethods;
       let rejectMeiliWrite: ((reason?: Error) => void) | undefined;
+      await conversationModel.deleteMany({});
 
       const conversation = await conversationModel.create({
         conversationId: new mongoose.Types.ObjectId(),
@@ -1233,6 +1236,9 @@ describe('Meilisearch Mongoose plugin', () => {
       conversation.title = 'Updated Conversation';
       await conversation.save();
 
+      expect(
+        (await conversationModel.collection.findOne({ _id: conversation._id }))?._meiliIndex,
+      ).toBe(false);
       await waitForMock(mockUpdateDocuments);
       expect(rejectMeiliWrite).toBeDefined();
       expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
