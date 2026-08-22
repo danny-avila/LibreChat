@@ -1,7 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import type { FileConfig, FiltersConfig } from 'librechat-data-provider';
-import { isBinaryBuffer } from '../skills/binary';
-import { extractFileContent } from '../protection/adapters/submissions';
 import {
   canInspectUploadExtractedTextAfterProcessing,
   ContentFilterInputTooLargeError,
@@ -12,8 +10,10 @@ import {
   isTextualFileMimeType,
   UninspectableFileError,
 } from '../protection/files';
+import { extractFileContent } from '../protection/adapters/submissions';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { inspectContent } from '../protection/runtime';
+import { isBinaryBuffer } from '../skills/binary';
 
 export const MAX_FILTERABLE_TEXT_BYTES: number = 15 * 1024 * 1024;
 

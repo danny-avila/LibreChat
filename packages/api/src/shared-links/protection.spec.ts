@@ -4,8 +4,8 @@ import {
   CONTENT_TRAVERSAL_MAX_NODES,
   ContentTraversalLimitError,
 } from '../protection/adapters/nested';
-import { ContentFilterError } from '../middleware/contentFilter';
 import { assertSharedFileMetadataAllowed, createShareContentPreflight } from './protection';
+import { ContentFilterError } from '../middleware/contentFilter';
 import { UninspectableFileError } from '../protection/files';
 
 const BLOCK_PATTERN = {

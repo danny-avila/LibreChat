@@ -6,13 +6,13 @@ import {
   type MessageFilterPiiConfig,
   type UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
-import type { ConversationImportMessage } from '../imports';
-import type { JsonPointer, TextContentFragment } from '../protection/types';
-import type { FileContentInput } from '../protection/adapters/submissions';
 import type {
   CanonicalFileInspectionUser,
   GetCanonicalFilesForInspection,
 } from '../protection/files';
+import type { JsonPointer, TextContentFragment } from '../protection/types';
+import type { FileContentInput } from '../protection/adapters/submissions';
+import type { ConversationImportMessage } from '../imports';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -33,9 +33,9 @@ import {
 } from '../protection/adapters/submissions';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { getUserSubmittedPathState } from '../protection/provenance';
+import { assertConversationImportContentAllowed } from '../imports';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { inspectContent } from '../protection/runtime';
-import { assertConversationImportContentAllowed } from '../imports';
 
 export interface SerializedSharedFile extends FileContentInput {
   readonly preview?: string;
