@@ -375,7 +375,7 @@ describe('agent event bindings', () => {
 
   it('rejects registration after the parent retention deadline', async () => {
     const deps = dependencies();
-    deps.getConvo.mockResolvedValueOnce({ ...parent(), expiredAt: new Date(0) });
+    deps.getConvo.mockResolvedValueOnce({ ...parent(), expiredAt: new Date(0) } as IConversation);
     const { server } = app(deps);
 
     const response = await request(server)

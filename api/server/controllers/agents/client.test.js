@@ -66,7 +66,6 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
-  getDynamicToolContexts: jest.fn(() => []),
 }));
 
 describe('AgentClient - final model-bound content protection', () => {

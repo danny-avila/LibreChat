@@ -45,6 +45,123 @@ describe('child activity adapters', () => {
     ]);
   });
 
+  it('merges a forward-only detached suffix with the partial parent snapshot', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'latest detached text.' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'suffix',
+      },
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot; ' },
+      ] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'writing', text: 'Dispatch-time snapshot; latest detached text.' },
+    ]);
+  });
+
+  it('uses a complete parent-stream projection without duplicating persistence', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'Complete live text.' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'complete',
+      },
+      persistedContent: [{ type: ContentTypes.TEXT, text: 'Complete ' }] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([{ type: 'writing', text: 'Complete live text.' }]);
+  });
+
+  it('appends coincident text in a forward-only suffix', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'ha' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'suffix',
+      },
+      persistedContent: [{ type: ContentTypes.TEXT, text: 'ha' }] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([{ type: 'writing', text: 'haha' }]);
+  });
+
+  it('preserves persisted tool fields when a sparse completion is the live suffix', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'run_step_completed',
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              id: 'tool-1',
+              name: '',
+              args: '{}',
+              output: 'Found it.',
+              progress: 1,
+            },
+          },
+        ],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'suffix',
+      },
+      persistedContent: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'tool-1',
+            name: 'search',
+            args: '{"query":"release"}',
+            progress: 0.1,
+          },
+        },
+      ] as unknown as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([
+      expect.objectContaining({
+        type: 'tool',
+        name: 'search',
+        input: '{"query":"release"}',
+        output: 'Found it.',
+        status: 'completed',
+      }),
+    ]);
+  });
+
   it('rehydrates the selected detached task from its sanitized durable activity', () => {
     const view: SubagentThreadView = {
       threadId: 'thread',

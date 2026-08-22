@@ -275,7 +275,16 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
       ) {
         const orphan = await deps.getBinding(bindingQuery);
         if (orphan != null) {
-          assertReplay(orphan, expectedBinding(orphan.lineage.parentAgentId));
+          const orphanParentAgentId = orphan.lineage.parentAgentId;
+          if (typeof orphanParentAgentId !== 'string' || orphanParentAgentId === '') {
+            await cleanupBinding(orphan.conversationId);
+            throw new AgentEventBindingError(
+              'Parent agent conversation ended during binding registration',
+              409,
+              'event_binding_parent_ended',
+            );
+          }
+          assertReplay(orphan, expectedBinding(orphanParentAgentId));
           await cleanupBinding(orphan.conversationId);
           throw new AgentEventBindingError(
             'Parent agent conversation ended during binding registration',

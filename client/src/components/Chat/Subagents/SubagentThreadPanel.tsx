@@ -8,9 +8,10 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
+import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
+import { subagentThreadHasTaskEvidence, useSubagentThreadQuery } from '~/data-provider';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
-import { useSubagentThreadQuery } from '~/data-provider';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import SubagentActivity from './SubagentActivity';
 
@@ -35,6 +36,13 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     threadId,
     taskId,
   );
+  const durableTerminal =
+    subagentThreadHasTaskEvidence(data, taskId) &&
+    (data?.status === 'completed' ||
+      data?.status === 'failed' ||
+      data?.status === 'interrupted' ||
+      data?.status === 'cancelled');
+  useSubagentActivityStream(selection, !durableTerminal);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
@@ -73,6 +81,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         prompt: selection.prompt,
         progress,
         persistedContent: selection.persistedContent,
+        isDetached: selection.durable != null,
         legacyOutput: selection.legacyOutput,
         // A detached parent tool step closes as soon as dispatch succeeds;
         // its terminal status does not describe the still-running child.

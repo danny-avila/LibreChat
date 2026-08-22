@@ -13,12 +13,23 @@ import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/su
 import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
+const mockUseSubagentActivityStream = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
+  subagentThreadHasTaskEvidence: (view: SubagentThreadView | undefined, taskId: string): boolean =>
+    view?.messages.some(
+      (message) =>
+        message.messageId === `${taskId}:user` || message.messageId === `${taskId}:assistant`,
+    ) === true,
+}));
+
+jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -156,6 +167,7 @@ describe('SubagentThreadPanel', () => {
       'child-thread',
       'task',
     );
+    expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();
@@ -205,6 +217,46 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
   });
 
+  it('renders newer detached progress instead of a dispatch-time parent snapshot', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', activity: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const progressKey = subagentProgressKey(
+      selection.parentMessageId,
+      selection.toolCallId,
+      selection.partIndex,
+    );
+    const detachedSelection: ActiveSubagentPanel = {
+      ...selection,
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot.' },
+      ] as TMessageContentParts[],
+    };
+
+    render(
+      <RecoilRoot
+        initializeState={({ set }) =>
+          set(subagentProgressByToolCallId(progressKey), {
+            subagentRunId: 'child-run',
+            subagentType: 'researcher',
+            status: 'message_delta',
+            contentParts: [{ type: ContentTypes.TEXT, text: 'latest detached text.' }],
+            aggregatorState: initSubagentAggregatorState(),
+            tickerState: initSubagentTickerState(),
+            coverage: 'suffix',
+          })
+        }
+      >
+        <SubagentThreadPanel selection={detachedSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('Dispatch-time snapshot.latest detached text.')).toBeInTheDocument();
+  });
+
   it('resets invocation-scoped approval state when the selected card changes', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: undefined,
@@ -249,6 +301,57 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'dispatched');
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
+  });
+
+  it('opens live activity before the durable child becomes addressable', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isReadinessPending: true,
+    });
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running' },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
+  });
+
+  it('keeps streaming when terminal thread state belongs to an older task', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        messages: [{ ...completedView.messages[1], messageId: 'older-task:assistant' }],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
   });
 
   it('surfaces a durable read failure after the readiness window', () => {

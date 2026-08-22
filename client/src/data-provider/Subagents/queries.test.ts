@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import type { SubagentThreadView } from 'librechat-data-provider';
 import {
   isSubagentReadinessPending,
+  subagentThreadHasTaskEvidence,
   subagentThreadRefetchInterval,
   useSubagentThreadQuery,
 } from './queries';
@@ -44,6 +45,16 @@ describe('subagent thread refresh policy', () => {
     expect(subagentThreadRefetchInterval(prior, 1_000, 500, 'new-task')).toBe(2_000);
     expect(subagentThreadRefetchInterval(current, 1_000, 500, 'new-task')).toBe(false);
     expect(subagentThreadRefetchInterval(prior, 1_000, 1_000, 'new-task')).toBe(false);
+  });
+
+  it('associates terminal state only with evidence from the selected task', () => {
+    const prior = {
+      ...view('completed'),
+      messages: [{ messageId: 'old-task:assistant' }],
+    } as SubagentThreadView;
+
+    expect(subagentThreadHasTaskEvidence(prior, 'new-task')).toBe(false);
+    expect(subagentThreadHasTaskEvidence(prior, 'old-task')).toBe(true);
   });
 
   it('stops polling an older API view once the exact task response exists', () => {

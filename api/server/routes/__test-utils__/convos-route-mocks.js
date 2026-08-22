@@ -3,10 +3,12 @@ const generationJobManager = {
   getJob: jest.fn().mockResolvedValue(null),
   abortJob: jest.fn().mockResolvedValue({ success: true }),
 };
+const subagentActivityHandlerInputs = [];
 
 module.exports = {
   archiveAllHandler,
   generationJobManager,
+  subagentActivityHandlerInputs,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -42,6 +44,10 @@ module.exports = {
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',
     ),
+    createSubagentActivityStreamHandler: jest.fn((deps, stream) => {
+      subagentActivityHandlerInputs.push({ deps, stream });
+      return (_req, res) => res.status(200).end();
+    }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
@@ -135,6 +141,7 @@ module.exports = {
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
 
   subagentThreadStore: () => ({
+    subscribeActivity: jest.fn(),
     cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
     withOwnerDeletionFence: jest.fn().mockImplementation(async (_userId, _tenantId, deletion) => {
       return deletion();
