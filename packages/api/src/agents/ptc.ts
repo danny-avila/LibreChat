@@ -86,6 +86,15 @@ export interface InstrumentPtcToolMapParams {
   /** The PTC run step's tool call id — the card the trace renders under. */
   toolCallId: string;
   runId?: string;
+  /**
+   * Whether argument and failure previews may ride the stream. False when the
+   * deployment filters tool arguments for PII: inner calls never pass through
+   * `filteredToolArgumentsResult` (the sandbox bridge invokes them directly),
+   * so a preview would put values on the wire that the configured policy
+   * exists to keep off it — and a failure message routinely quotes the very
+   * argument that caused it. The trace still reports name, status and duration.
+   */
+  includePreviews?: boolean;
   emit: (event: PtcToolCallEvent) => void;
 }
 
@@ -101,6 +110,7 @@ export function instrumentPtcToolMap({
   toolMap,
   toolCallId,
   runId,
+  includePreviews = true,
   emit,
 }: InstrumentPtcToolMapParams): Map<string, StructuredToolInterface> {
   let sequence = 0;
@@ -132,7 +142,7 @@ export function instrumentPtcToolMap({
               call_id: callId,
               name,
               status: 'running',
-              args: summarizePtcArgs(input),
+              ...(includePreviews ? { args: summarizePtcArgs(input) } : {}),
               ...(runId != null ? { runId } : {}),
             });
             try {
@@ -154,10 +164,14 @@ export function instrumentPtcToolMap({
                 call_id: callId,
                 name,
                 status: 'error',
-                error: clip(
-                  error instanceof Error ? error.message : String(error),
-                  ERROR_PREVIEW_MAX_CHARS,
-                ),
+                ...(includePreviews
+                  ? {
+                      error: clip(
+                        error instanceof Error ? error.message : String(error),
+                        ERROR_PREVIEW_MAX_CHARS,
+                      ),
+                    }
+                  : {}),
                 durationMs: Date.now() - startedAt,
                 ...(runId != null ? { runId } : {}),
               });

@@ -4986,6 +4986,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * this trace. Instrument the map the sandbox bridge
                          * resolves against — `invoke` is the single seam every
                          * inner call passes through. */
+                        /* Inner calls never reach `filteredToolArgumentsResult`
+                         * — the sandbox bridge invokes them directly — so when
+                         * the deployment filters tool arguments for PII, the
+                         * trace must not put their values on the wire. */
+                        const ptcArgumentPii = (
+                          mergedConfigurable?.req as ServerRequest | undefined
+                        )?.config?.filters?.toolArguments?.pii;
                         toolCallConfig.toolMap = emitPtcProgress
                           ? instrumentPtcToolMap({
                               toolMap: resolvedPtcToolMap,
@@ -4993,6 +5000,11 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               runId: (metadata as Record<string, unknown>)?.run_id as
                                 | string
                                 | undefined,
+                              includePreviews: !hasActivePiiFields(ptcArgumentPii, [
+                                'name',
+                                'arguments',
+                                'output',
+                              ]),
                               emit: emitPtcProgress,
                             })
                           : resolvedPtcToolMap;

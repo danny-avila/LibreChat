@@ -152,7 +152,7 @@ describe('ExecuteCode programmatic tool trace', () => {
       <RecoilRoot
         initializeState={({ set }) => {
           set(store.autoExpandTools, true);
-          set(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)), entries);
+          set(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)), { entries, dropped: 0 });
         }}
       >
         <MessageContext.Provider value={{ messageId: MESSAGE_ID, isExpanded: true }}>

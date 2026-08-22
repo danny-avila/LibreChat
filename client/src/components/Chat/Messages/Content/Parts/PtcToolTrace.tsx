@@ -114,21 +114,32 @@ export default function PtcToolTrace({
   /** Scope to this card's own message: providers reuse `tool_call_id` across
    *  turns, so the raw id alone would show a later program's calls here. */
   const { messageId } = useMessageContext();
-  const entries = useRecoilValue(
+  const trace = useRecoilValue(
     ptcTraceByToolCallId(toolCallId && messageId ? ptcTraceKey(messageId, toolCallId) : ''),
   );
 
-  if (entries.length === 0) {
+  if (trace.entries.length === 0) {
     return null;
   }
 
+  /** No background of its own: the pane inherits the card's surface in both
+   *  themes, which is what the sibling output pane resolves to anyway. A
+   *  `dark:` override here would step outside the semantic roles and lose the
+   *  intended separation under a custom theme. */
   return (
-    <div className={cn('bg-surface-primary-alt p-4 text-xs dark:bg-transparent', className)}>
+    <div className={cn('p-4 text-xs', className)}>
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
         {localize('com_ui_ptc_trace_title')}
       </div>
       <ol className="max-h-[200px] overflow-auto font-mono" aria-live="polite">
-        {entries.map((entry) => (
+        {/* The retained tail is a window, not the whole program — say so
+            rather than let the reader assume these are all the calls. */}
+        {trace.dropped > 0 && (
+          <li className="leading-5 text-text-tertiary">
+            {localize('com_ui_ptc_trace_earlier', { count: trace.dropped })}
+          </li>
+        )}
+        {trace.entries.map((entry) => (
           <PtcTraceLine key={entry.callId} entry={entry} />
         ))}
       </ol>

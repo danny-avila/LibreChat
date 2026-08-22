@@ -181,6 +181,35 @@ describe('instrumentPtcToolMap', () => {
     expect(tool.schema).toEqual({ type: 'object' });
   });
 
+  it('omits argument and failure previews when tool-argument filtering is on', async () => {
+    const { events, emit } = collect();
+    const toolMap = new Map([
+      [
+        'write_file',
+        createTool('write_file', async () => {
+          throw new Error('rejected value 555-01-0000');
+        }),
+      ],
+    ]);
+
+    const instrumented = instrumentPtcToolMap({
+      toolMap,
+      toolCallId: 'call_1',
+      includePreviews: false,
+      emit,
+    });
+
+    await expect(instrumented.get('write_file')?.invoke({ ssn: '555-01-0000' })).rejects.toThrow();
+
+    /** Name, status and duration still report; nothing derived from the
+     *  arguments or the failure text reaches the stream. */
+    expect(events[0].args).toBeUndefined();
+    expect(events[1].error).toBeUndefined();
+    expect(events.map((e) => e.status)).toEqual(['running', 'error']);
+    expect(events[1].durationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(events)).not.toContain('555-01-0000');
+  });
+
   it('runs the inner call even when the emitter throws', async () => {
     const toolMap = new Map([['read_file', createTool('read_file', async () => 'ok')]]);
     const instrumented = instrumentPtcToolMap({

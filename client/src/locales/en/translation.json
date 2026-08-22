@@ -1743,6 +1743,7 @@
   "com_ui_provider_api_keys_description": "Manage API keys for endpoints configured to use a user-provided key.",
   "com_ui_provider_api_keys_not_set": "No key set",
   "com_ui_ptc_trace_done": "done",
+  "com_ui_ptc_trace_earlier": "+{{count}} earlier calls",
   "com_ui_ptc_trace_failed": "failed",
   "com_ui_ptc_trace_running": "running",
   "com_ui_ptc_trace_title": "Tool calls",

@@ -15,6 +15,7 @@ jest.mock('~/hooks', () => ({
         com_ui_ptc_trace_running: 'running',
         com_ui_ptc_trace_failed: 'failed',
         com_ui_ptc_trace_done: 'done',
+        com_ui_ptc_trace_earlier: `+${values?.count} earlier calls`,
         com_ui_tool_name_code: 'Code',
       };
       if (key === 'com_ui_duration_seconds') {
@@ -35,12 +36,12 @@ jest.mock('~/utils', () => ({
 const TOOL_CALL_ID = 'call_ptc_1';
 const MESSAGE_ID = 'response-msg-1';
 
-function renderTrace(entries: PtcTraceEntry[], messageId = MESSAGE_ID) {
+function renderTrace(entries: PtcTraceEntry[], messageId = MESSAGE_ID, dropped = 0) {
   const Seed = () => {
     const set = useSetRecoilState(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)));
     React.useEffect(() => {
       if (entries.length > 0) {
-        set(entries);
+        set({ entries, dropped });
       }
     }, [set]);
     return null;
@@ -108,6 +109,18 @@ describe('PtcToolTrace', () => {
     renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }]);
 
     expect(screen.getByText('done')).toBeInTheDocument();
+  });
+
+  it('says how many calls the cap dropped rather than truncating silently', () => {
+    renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }], MESSAGE_ID, 42);
+
+    expect(screen.getByText('+42 earlier calls')).toBeInTheDocument();
+  });
+
+  it('shows no truncation notice when nothing was dropped', () => {
+    renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }]);
+
+    expect(screen.queryByText(/earlier calls/)).not.toBeInTheDocument();
   });
 
   it('does not show another message\u2019s trace in this card', () => {

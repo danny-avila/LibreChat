@@ -33,6 +33,7 @@ import {
   takeRegisteredSubagentProgressKeys,
   sandboxStartingByToolCallId,
   ptcTraceByToolCallId,
+  PTC_TRACE_MAX_ENTRIES,
   subagentProgressKey,
   ptcTraceKey,
 } from '~/store';
@@ -371,7 +372,7 @@ export default function useStepHandler({
         const atomKey = ptcTraceKey(parentMessageId, toolCallId);
         knownPtcAtomKeys.current.add(atomKey);
         set(ptcTraceByToolCallId(atomKey), (previous) => {
-          const index = previous.findIndex((entry) => entry.callId === callId);
+          const index = previous.entries.findIndex((entry) => entry.callId === callId);
           const entry = {
             callId,
             name,
@@ -380,12 +381,28 @@ export default function useStepHandler({
             ...(event.error ? { error: event.error } : {}),
             ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
           };
-          if (index === -1) {
-            return [...previous, entry];
+
+          if (index !== -1) {
+            const next = [...previous.entries];
+            next[index] = { ...previous.entries[index], ...entry };
+            return { entries: next, dropped: previous.dropped };
           }
-          const next = [...previous];
-          next[index] = { ...previous[index], ...entry };
-          return next;
+
+          /** A settle whose row is gone — evicted by the cap, or pruned across
+           *  a resume gap — must not reappear at the tail out of order. */
+          if (status !== 'running') {
+            return previous;
+          }
+
+          const appended = [...previous.entries, entry];
+          const overflow = appended.length - PTC_TRACE_MAX_ENTRIES;
+          if (overflow <= 0) {
+            return { entries: appended, dropped: previous.dropped };
+          }
+          return {
+            entries: appended.slice(overflow),
+            dropped: previous.dropped + overflow,
+          };
         });
       },
     [],
@@ -414,8 +431,11 @@ export default function useStepHandler({
       (): void => {
         for (const atomKey of knownPtcAtomKeys.current) {
           set(ptcTraceByToolCallId(atomKey), (previous) =>
-            previous.some((entry) => entry.status === 'running')
-              ? previous.filter((entry) => entry.status !== 'running')
+            previous.entries.some((entry) => entry.status === 'running')
+              ? {
+                  ...previous,
+                  entries: previous.entries.filter((entry) => entry.status !== 'running'),
+                }
               : previous,
           );
         }

@@ -26,6 +26,23 @@ export const ptcTraceKey = (parentMessageId: string, toolCallId: string) =>
   `${parentMessageId}\u0000${toolCallId}`;
 
 /**
+ * Rolling cap on retained rows. A program looping over a large collection can
+ * make thousands of inner calls; without a bound, every event would copy an
+ * ever-growing array and the card would render a row per call.
+ */
+export const PTC_TRACE_MAX_ENTRIES = 100;
+
+/** One PTC program's trace: the retained tail plus what the cap discarded. */
+export interface PtcTrace {
+  entries: PtcTraceEntry[];
+  /** Rows evicted by {@link PTC_TRACE_MAX_ENTRIES}, so the cap is never silent. */
+  dropped: number;
+}
+
+/** Shared empty value — one reference, so untouched atoms compare equal. */
+export const EMPTY_PTC_TRACE: PtcTrace = { entries: [], dropped: 0 };
+
+/**
  * Live trace of the inner tool calls made by one PTC run step, in the order
  * the sandbox started them (`on_ptc_tool_call` SSE events). Keyed by
  * {@link ptcTraceKey} — one concrete invocation in one message.
@@ -34,7 +51,7 @@ export const ptcTraceKey = (parentMessageId: string, toolCallId: string) =>
  * nothing persists them on the message. Cleared on conversation switch rather
  * than at run boundaries, so a finished program's trace stays readable.
  */
-export const ptcTraceByToolCallId = atomFamily<PtcTraceEntry[], string>({
+export const ptcTraceByToolCallId = atomFamily<PtcTrace, string>({
   key: 'ptcTraceByToolCallId',
-  default: [],
+  default: EMPTY_PTC_TRACE,
 });
