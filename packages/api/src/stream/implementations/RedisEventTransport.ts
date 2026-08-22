@@ -231,6 +231,13 @@ interface SubscriptionFrontierWaiter {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+interface ChannelSubscriptionState {
+  ready: Promise<void>;
+  phase: 'pending' | 'active';
+  /** A timed-out predecessor became active while this replacement was pending. */
+  fallbackActive: boolean;
+}
+
 /**
  * Subscriber state for a stream
  */
@@ -285,7 +292,7 @@ export class RedisEventTransport implements IEventTransport {
   /** Track subscribers per stream */
   private streams = new Map<string, StreamSubscribers>();
   /** Track channel subscription state: resolved promise = active, pending = in-flight */
-  private channelSubscriptions = new Map<string, Promise<void>>();
+  private channelSubscriptions = new Map<string, ChannelSubscriptionState>();
   /** Counter for generating unique subscriber IDs */
   private subscriberIdCounter = 0;
   /** Coalescable chunk publications awaiting their window flush, per stream */
@@ -636,12 +643,17 @@ export class RedisEventTransport implements IEventTransport {
     const channel = CHANNELS.events(streamId);
     const existing = this.channelSubscriptions.get(channel);
     if (existing) {
-      return existing;
+      return existing.ready;
     }
 
     const operation = this.subscriber.subscribe(channel);
     let expired = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const state: ChannelSubscriptionState = {
+      ready: Promise.resolve(),
+      phase: 'pending',
+      fallbackActive: false,
+    };
     const deadline = new Promise<never>((_, reject) => {
       timeout = setTimeout(() => {
         expired = true;
@@ -650,35 +662,23 @@ export class RedisEventTransport implements IEventTransport {
       timeout.unref?.();
     });
     const ready = Promise.race([operation, deadline]).then(() => {
+      state.phase = 'active';
+      state.fallbackActive = false;
       logger.debug(`[RedisEventTransport] Subscription active for channel ${channel}`);
     });
+    state.ready = ready;
     operation.then(
       () => {
         if (timeout != null) clearTimeout(timeout);
         if (expired) {
           const current = this.channelSubscriptions.get(channel);
-          if (current == null || current === ready) {
-            if (current === ready) this.channelSubscriptions.delete(channel);
-            const state = this.streams.get(streamId);
-            const hasOwner =
-              state != null &&
-              (state.count > 0 ||
-                state.abortCallbacks.size > 0 ||
-                state.abortAckWaiters.size > 0 ||
-                state.preemptCallbacks.size > 0);
-            if (hasOwner) {
-              /** The late command is now active. Re-track it so the surviving owner can
-               * release the channel through the ordinary identity-fenced cleanup path. */
-              this.channelSubscriptions.set(channel, Promise.resolve());
-            } else {
-              /** No replacement and no local owner can observe this late subscription. */
-              this.subscriber.unsubscribe(channel).catch((error) => {
-                logger.error(
-                  `[RedisEventTransport] Failed to release late subscription ${channel}:`,
-                  error,
-                );
-              });
-            }
+          if (current == null || current === state) {
+            if (current === state) this.channelSubscriptions.delete(channel);
+            this.trackOrReleaseActiveChannel(streamId, channel);
+          } else if (current.phase === 'pending') {
+            /** If this replacement later fails, its rejection promotes the known-active
+             * predecessor instead of losing the only tracked channel subscription. */
+            current.fallbackActive = true;
           }
         }
       },
@@ -686,14 +686,37 @@ export class RedisEventTransport implements IEventTransport {
         if (timeout != null) clearTimeout(timeout);
       },
     );
-    this.channelSubscriptions.set(channel, ready);
+    this.channelSubscriptions.set(channel, state);
     void ready.catch((err) => {
-      if (this.channelSubscriptions.get(channel) === ready) {
+      if (this.channelSubscriptions.get(channel) === state) {
         this.channelSubscriptions.delete(channel);
+        if (state.fallbackActive) this.trackOrReleaseActiveChannel(streamId, channel);
       }
       logger.error(`[RedisEventTransport] Failed to subscribe to ${channel}:`, err);
     });
     return ready;
+  }
+
+  private trackOrReleaseActiveChannel(streamId: string, channel: string): void {
+    const streamState = this.streams.get(streamId);
+    const hasOwner =
+      streamState != null &&
+      (streamState.count > 0 ||
+        streamState.abortCallbacks.size > 0 ||
+        streamState.abortAckWaiters.size > 0 ||
+        streamState.preemptCallbacks.size > 0);
+    if (hasOwner) {
+      /** Re-track the active channel so its surviving owner can release it normally. */
+      this.channelSubscriptions.set(channel, {
+        ready: Promise.resolve(),
+        phase: 'active',
+        fallbackActive: false,
+      });
+      return;
+    }
+    this.subscriber.unsubscribe(channel).catch((error) => {
+      logger.error(`[RedisEventTransport] Failed to release late subscription ${channel}:`, error);
+    });
   }
 
   /** Reset subscriber reorder buffer state to initial values */

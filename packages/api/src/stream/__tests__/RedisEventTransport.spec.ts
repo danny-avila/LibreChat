@@ -473,6 +473,60 @@ describe('RedisEventTransport', () => {
     }
   });
 
+  it('promotes a late active predecessor when its pending replacement fails', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    let finishOriginal!: () => void;
+    let failReplacement!: (error: Error) => void;
+    mockSubscriber.subscribe
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (finishOriginal = resolve)))
+      .mockImplementationOnce(() => new Promise<void>((_, reject) => (failReplacement = reject)));
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'late-active-before-replacement-failure';
+
+    try {
+      const original = transport.subscribe(
+        streamId,
+        { onChunk: jest.fn() },
+        { deferSequenceDelivery: true, captureSequenceFrontier: true },
+      );
+      const originalFailure = original.ready?.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      jest.advanceTimersByTime(3_000);
+      await originalFailure;
+
+      const replacement = transport.subscribe(streamId, { onChunk: jest.fn() });
+      const replacementFailure = replacement.ready?.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      finishOriginal();
+      await Promise.resolve();
+      await Promise.resolve();
+      failReplacement(new Error('replacement unavailable'));
+      await replacementFailure;
+      await Promise.resolve();
+
+      const survivor = transport.subscribe(streamId, { onChunk: jest.fn() });
+      await survivor.ready;
+      expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
+
+      original.unsubscribe();
+      replacement.unsubscribe();
+      survivor.unsubscribe();
+      expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
+    } finally {
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
+
   it('releases a surviving subscriber when the initiating frontier capture fails', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
