@@ -28,6 +28,8 @@ let delayDeletes = false;
 let resolvePendingDeletes: Array<() => void> = [];
 let generationTtls: Array<number | undefined> = [];
 let failGenerationReads = false;
+let failGenerationWrites = false;
+let failGenerationDeletes = false;
 let notifyPendingSet: (() => void) | undefined;
 
 const cacheStore: CacheStore = {
@@ -38,6 +40,9 @@ const cacheStore: CacheStore = {
     return cacheMap.get(key);
   },
   set: async (key, value, ttl) => {
+    if (failGenerationWrites && key.includes(':generation')) {
+      return false;
+    }
     /** The generation entry itself must never be held back by the test gate */
     if (delaySets && !key.includes(':generation')) {
       notifyPendingSet?.();
@@ -49,6 +54,9 @@ const cacheStore: CacheStore = {
     cacheMap.set(key, value);
   },
   delete: async (key) => {
+    if (failGenerationDeletes && key.includes(':generation')) {
+      return false;
+    }
     if (delayDeletes) {
       await new Promise<void>((resolve) => resolvePendingDeletes.push(resolve));
     }
@@ -114,6 +122,8 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
+  failGenerationWrites = false;
+  failGenerationDeletes = false;
   await Promise.all([AclEntry.deleteMany({}), Prompt.deleteMany({}), PromptGroup.deleteMany({})]);
   await methods.invalidatePromptGroupAccessContext();
   delaySets = false;
@@ -460,6 +470,50 @@ describe('getPromptGroupAccessContext', () => {
     });
     expect(idStrings(bypassed.accessibleIds)).not.toContain(ownGroup._id.toString());
     failGenerationReads = false;
+  });
+
+  it('removes the old generation before a replacement write can fail', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+
+    failGenerationWrites = true;
+    await methods.invalidatePromptGroupAccessContext();
+    failGenerationWrites = false;
+
+    const fresh = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
+  it('bypasses access caching when the old generation cannot be replaced or removed', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    await methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' });
+    const previousGeneration = cacheMap.get('access:generation');
+    await AclEntry.deleteMany({ resourceId: ownGroup._id });
+
+    failGenerationDeletes = true;
+    failGenerationWrites = true;
+    await expect(methods.invalidatePromptGroupAccessContext()).rejects.toThrow(
+      'Prompt group access generation write failed',
+    );
+    failGenerationDeletes = false;
+    failGenerationWrites = false;
+    expect(cacheMap.get('access:generation')).toBe(previousGeneration);
+
+    const bypassed = await methods.getPromptGroupAccessContext({
+      userId: userId.toString(),
+      role: 'USER',
+    });
+    expect(idStrings(bypassed.accessibleIds)).not.toContain(ownGroup._id.toString());
   });
 
   it('writes the generation marker with a ttl that outlives cached entries', async () => {

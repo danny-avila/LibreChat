@@ -6,8 +6,10 @@ import {
   addGroupToAll,
   addPromptGroup,
   deletePromptGroup,
+  removeGroupFromAll,
   updateGroupFields,
   updateGroupFieldsInPlace,
+  updateGroupInAll,
   updatePromptGroup,
   getSnippet,
   findPromptGroup,
@@ -34,6 +36,34 @@ function makeInfiniteData(
     pages: pages as PromptGroupListResponse[],
     pageParams: pages.map((_, i) => i),
   };
+}
+
+async function expectFirstAllGroupsFetchRestart(
+  mutate: (queryClient: QueryClient) => void,
+  freshList: TPromptGroup[],
+) {
+  const queryClient = new QueryClient();
+  const queryKey = [QueryKeys.allPromptGroups];
+  const staleList = [makeGroup({ _id: 'stale', name: 'Stale Group' })];
+  const deferreds: Array<{ resolve: (value: TPromptGroup[]) => void }> = [];
+  const queryFn = () => new Promise<TPromptGroup[]>((resolve) => deferreds.push({ resolve }));
+  const observer = new QueryObserver<TPromptGroup[]>(queryClient, { queryKey, queryFn });
+  const unsubscribe = observer.subscribe(() => undefined);
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(deferreds).toHaveLength(1);
+
+  mutate(queryClient);
+  deferreds[0].resolve(staleList);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(deferreds).toHaveLength(2);
+
+  deferreds[1].resolve(freshList);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(queryClient.getQueryData<TPromptGroup[]>(queryKey)).toEqual(freshList);
+
+  unsubscribe();
+  queryClient.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -405,5 +435,24 @@ describe('addGroupToAll', () => {
     expect(queryClient.getQueryData<TPromptGroup[]>(queryKey)).toEqual(newList);
     unsubscribe();
     queryClient.clear();
+  });
+});
+
+describe('all-prompt-groups mutation reconciliation', () => {
+  it('restarts a first fetch that would overwrite a group update', async () => {
+    expect.assertions(3);
+    const updatedGroup = makeGroup({ _id: 'stale', name: 'Updated Group' });
+    await expectFirstAllGroupsFetchRestart(
+      (queryClient) => updateGroupInAll(queryClient, { _id: 'stale', name: 'Updated Group' }),
+      [updatedGroup],
+    );
+  });
+
+  it('restarts a first fetch that would restore a deleted group', async () => {
+    expect.assertions(3);
+    await expectFirstAllGroupsFetchRestart(
+      (queryClient) => removeGroupFromAll(queryClient, 'stale'),
+      [],
+    );
   });
 });

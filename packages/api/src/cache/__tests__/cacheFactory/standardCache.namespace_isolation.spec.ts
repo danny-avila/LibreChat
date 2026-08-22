@@ -132,38 +132,4 @@ describe('standardCache - CONFIG_STORE vs TOOL_CACHE namespace isolation', () =>
     standardCache(CacheKeys.CONFIG_STORE);
     expect(MockKeyvRedis).toHaveBeenCalledTimes(1);
   });
-
-  it('does not create a shared cache for a forced in-memory namespace', async () => {
-    jest.doMock('../../cacheConfig', () => ({
-      cacheConfig: {
-        FORCED_IN_MEMORY_CACHE_NAMESPACES: [CacheKeys.PROMPT_GROUPS_ACCESS],
-        REDIS_KEY_PREFIX: '',
-        GLOBAL_PREFIX_SEPARATOR: '>>',
-      },
-    }));
-
-    const { sharedCache } = await import('../../cacheFactory');
-
-    MockKeyvRedis.mockClear();
-
-    expect(sharedCache(CacheKeys.PROMPT_GROUPS_ACCESS)).toBeUndefined();
-    expect(MockKeyvRedis).not.toHaveBeenCalled();
-  });
-
-  it('creates a shared cache for a Redis-backed namespace', async () => {
-    jest.doMock('../../cacheConfig', () => ({
-      cacheConfig: {
-        FORCED_IN_MEMORY_CACHE_NAMESPACES: [],
-        REDIS_KEY_PREFIX: '',
-        GLOBAL_PREFIX_SEPARATOR: '>>',
-      },
-    }));
-
-    const { sharedCache } = await import('../../cacheFactory');
-
-    MockKeyvRedis.mockClear();
-
-    expect(sharedCache(CacheKeys.PROMPT_GROUPS_ACCESS)).toBeDefined();
-    expect(MockKeyvRedis).toHaveBeenCalledTimes(1);
-  });
 });

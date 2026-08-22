@@ -103,14 +103,6 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
   return cache;
 };
 
-/** Creates a cache only when the namespace is backed by Redis and shared across processes. */
-export const sharedCache = (namespace: string, ttl?: number): Keyv | undefined => {
-  if (!keyvRedisClient || cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)) {
-    return undefined;
-  }
-  return standardCache(namespace, ttl);
-};
-
 /** Convenience accessor for the TOKEN_CONFIG cache namespace. */
 export const tokenConfigCache = (): Keyv =>
   standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES);

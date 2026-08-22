@@ -48,6 +48,8 @@ const pendingAccessLookups = new Map<
   string,
   { generationKey: string; promise: Promise<string[]>; markStale: () => void }
 >();
+/** Tenant generation markers whose failed invalidation makes cache reads unsafe. */
+const bypassedAccessGenerationKeys = new Set<string>();
 
 const ACCESS_GENERATION_KEY = 'access:generation';
 
@@ -68,6 +70,9 @@ function isCachedIdArray(value: unknown): value is string[] {
  */
 async function readAccessGeneration(cache: CacheStore): Promise<string | undefined> {
   const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
+  if (bypassedAccessGenerationKeys.has(generationKey)) {
+    return undefined;
+  }
   try {
     const value = await cache.get(generationKey);
     if (typeof value === 'string' && value.length > 0) {
@@ -818,9 +823,10 @@ export function createPromptMethods(
    * user-accessible, publicly accessible, and user-owned group IDs.
    *
    * The public set is identical for every user of a tenant and the per-user sets
-   * only change on prompt or permission mutations, so all three are cached briefly
-   * (PROMPT_GROUPS_ACCESS namespace, TTL-bounded) to spare overlapping requests
-   * (startup, filter changes, reloads, multiple tabs) the repeated ACL queries.
+   * only change on prompt or permission mutations. Hosts may cache all three in
+   * the PROMPT_GROUPS_ACCESS namespace to spare overlapping requests the repeated
+   * ACL queries. Hosts that cannot guarantee shared invalidation can use a no-op
+   * store so authorization IDs are always rebuilt.
    */
   async function getPromptGroupAccessContext({
     userId,
@@ -892,7 +898,9 @@ export function createPromptMethods(
    * writes still in flight from pre-mutation builds, including in other processes
    * sharing the store, while other tenants' entries stay intact. In-flight builds
    * in this process are additionally marked stale so they skip their cache write.
-   * Failures are non-fatal; the cache TTL bounds any residual staleness.
+   * The old generation marker is removed before its replacement is written. If
+   * neither operation succeeds, reads bypass this tenant's cache and the mutation
+   * rejects instead of allowing the old authorization era to remain authoritative.
    */
   async function invalidatePromptGroupAccessContext(): Promise<void> {
     const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
@@ -907,6 +915,18 @@ export function createPromptMethods(
     if (!cache) {
       return;
     }
+    let markerRemoved = false;
+    if (cache.delete) {
+      try {
+        const deleteResult = await cache.delete(generationKey);
+        markerRemoved = deleteResult !== false;
+        if (!markerRemoved) {
+          logger.warn('The previous prompt group access generation was not removed');
+        }
+      } catch (error) {
+        logger.warn('Failed to remove the previous prompt group access generation', error);
+      }
+    }
     try {
       /**
        * A collision-resistant token cannot repeat an evicted era or be restored
@@ -916,9 +936,20 @@ export function createPromptMethods(
        * Keep the marker longer than derived entries so normal expiry does not
        * orphan a warm cache era and force avoidable access-query rebuilds.
        */
-      await cache.set(generationKey, randomUUID(), Time.ONE_DAY);
+      const setResult = await cache.set(generationKey, randomUUID(), Time.ONE_DAY);
+      if (setResult === false) {
+        throw new Error('Prompt group access generation write failed');
+      }
+      bypassedAccessGenerationKeys.delete(generationKey);
     } catch (error) {
+      if (markerRemoved) {
+        bypassedAccessGenerationKeys.delete(generationKey);
+        logger.warn('Failed to restore the removed prompt group access generation', error);
+        return;
+      }
+      bypassedAccessGenerationKeys.add(generationKey);
       logger.warn('Failed to invalidate prompt group access cache', error);
+      throw error;
     }
   }
 
