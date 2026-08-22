@@ -33,8 +33,8 @@ import {
 } from '~/files/history';
 import { extractInvokedSkillsFromPayload, shouldReplayReasoningContent } from '~/agents/run';
 import { createMultiAgentMapper, prependFileContext, prependQuotes } from '~/agents/client';
+import { getProviderConfig, providerConfigMap } from '~/endpoints/config/providers';
 import { stripActivityLabelParts } from '~/agents/activityLabels/wiring';
-import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { extractFileContext } from '~/files/context';
 import { extractLibreChatParams } from '~/utils/llm';
@@ -249,6 +249,30 @@ function separateSummarizationParameters(parameters?: SummarizationConfig['param
 
 function normalizeEndpointName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/** Names the built-in map owns, where case carries no identity. */
+const CANONICAL_ENDPOINT_NAMES = new Set(
+  Object.keys(providerConfigMap).map((key) => key.toLowerCase()),
+);
+
+/**
+ * Whether two endpoint names denote the same endpoint.
+ *
+ * Case folds only for the built-in names, which are canonical. A yaml custom
+ * endpoint's name IS its identity: `loadCustomEndpointsConfig` preserves case
+ * so `Foo` and `foo` can be two endpoints with different credentials, and
+ * `getProviderConfig` gives an exact match precedence for that reason. Folding
+ * case here would leave a configured summarizer unresolved and silently run
+ * compaction on the conversation's own endpoint instead.
+ */
+function isSameEndpoint(left: string, right: string): boolean {
+  if (left === right) {
+    return true;
+  }
+  const a = normalizeEndpointName(left);
+  const b = normalizeEndpointName(right);
+  return a === b && CANONICAL_ENDPOINT_NAMES.has(a) && CANONICAL_ENDPOINT_NAMES.has(b);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -697,8 +721,7 @@ export async function resolveCompactionModel({
   let modelOverrideApplies = true;
   const configuredProvider = summarization?.provider;
   const targetsOtherEndpoint =
-    isNonEmptyString(configuredProvider) &&
-    normalizeEndpointName(configuredProvider) !== normalizeEndpointName(agentEndpoint);
+    isNonEmptyString(configuredProvider) && !isSameEndpoint(configuredProvider, agentEndpoint);
   if (targetsOtherEndpoint && isNonEmptyString(configuredProvider)) {
     try {
       providerConfig = getProviderConfig({ provider: configuredProvider, appConfig });
@@ -746,7 +769,7 @@ export async function resolveCompactionModel({
   /** Whether the call really left the conversation's endpoint: an unresolvable
    *  `summarization.provider` falls back to it, and the request's own marker is
    *  then the right one after all. */
-  const crossEndpoint = normalizeEndpointName(endpoint) !== normalizeEndpointName(agentEndpoint);
+  const crossEndpoint = !isSameEndpoint(endpoint, agentEndpoint);
   /**
    * Shallow clone: `getOptions` reads `body.key`, and the caller's request must
    * not be mutated for the rest of its lifetime.
