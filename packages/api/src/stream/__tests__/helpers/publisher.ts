@@ -77,6 +77,11 @@ export function createMockPublisher(): MockPublisher {
       _allowRetainedEpoch: string,
       _generationEpochGraceTtl: string,
     ) => {
+      if (_numKeys === 1) {
+        const frontier = await publisher.get(seqKey);
+        await publisher.publish(jobKey, _generationEpochKey);
+        return frontier ?? '0';
+      }
       const val = (await publisher.incr(seqKey)) as number;
       let ttl = Number(ttlSeconds);
       const seqTtl = (await publisher.ttl(seqKey)) as number;

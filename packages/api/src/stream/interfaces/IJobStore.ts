@@ -1357,8 +1357,16 @@ export interface IEventTransport {
     options?: {
       /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
       deferSequenceDelivery?: boolean;
+      /** After opening a fresh Pub/Sub channel, atomically capture its sequence frontier
+       * and fence delivery so synchronization cannot lose an attachment-time frame. */
+      captureSequenceFrontier?: boolean;
     },
-  ): { unsubscribe: () => void; ready?: Promise<void> };
+  ): {
+    unsubscribe: () => void;
+    ready?: Promise<void>;
+    /** Synchronize only the transport state captured by this concrete subscription. */
+    syncReorderBuffer?: () => void | Promise<void>;
+  };
 
   /**
    * Publish a chunk event.
@@ -1378,6 +1386,12 @@ export interface IEventTransport {
    * `generationId` is optional for compatibility with legacy, untagged publishers.
    */
   emitError(streamId: string, error: string, generationId?: number): void | Promise<void>;
+
+  /** Optional live-view demand marker used by observational streams that do not replay. */
+  renewDemand?(streamId: string, ttlMs: number): void | Promise<void>;
+
+  /** Returns whether at least one live viewer recently renewed demand for this stream. */
+  hasDemand?(streamId: string): boolean | Promise<boolean>;
 
   /**
    * Publish an abort signal to all replicas (Redis mode).

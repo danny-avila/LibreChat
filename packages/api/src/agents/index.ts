@@ -33,6 +33,7 @@ export * from './skills';
 export * from './phases';
 export * from './startup';
 export * from './subagentThreads';
+export * from './subagentActivity';
 export * from './subagentCompletionWakeup';
 export * from './subagentTaskRouting';
 export * from './skillConfigurable';

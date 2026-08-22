@@ -5,6 +5,7 @@ const {
   isEnabled,
   deleteAgentCheckpoints,
   createArchiveAllHandler,
+  createSubagentActivityStreamHandler,
   createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
@@ -48,6 +49,16 @@ const filterConversationTitle = createContentFilter({
   getFilters: (req) => req.config?.filters,
   extract: (req) => extractConversationTitleContent(req.body),
 });
+const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
+  {
+    getConvoOwnership: db.getConvoOwnership,
+    getSubagentThreadForParent: db.getSubagentThreadForParent,
+    getMessages: db.getMessages,
+  },
+  {
+    subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
+  },
+);
 router.use(requireJwtAuth);
 
 const isValidProjectFilter = (projectId) =>
@@ -94,6 +105,10 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get(
+  '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
+  subagentActivityStreamHandler,
+);
 router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);
 
 router.get('/:conversationId', async (req, res) => {

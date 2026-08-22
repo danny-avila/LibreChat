@@ -294,8 +294,8 @@ export interface SubagentTickerState {
   textLineIdx: number | null;
   /** Index of the in-flight 'reasoning' line. */
   thinkLineIdx: number | null;
-  /** Raw message-delta accumulator — truncated into `writing.body` but
-   *  preserved so subsequent deltas extend the running preview. */
+  /** Whitespace-normalized message-delta accumulator. A trailing separator is
+   *  retained so chunk boundaries still render as one word boundary. */
   textBuffer: string;
   thinkBuffer: string;
 }
@@ -317,10 +317,18 @@ export function initSubagentTickerState(): SubagentTickerState {
  *  CSS ellipsis — double-eliding would render a stray dot character
  *  right next to the "Writing:" / "Reasoning:" label. */
 const PREVIEW_MAX_CHARS = 300;
+const PREVIEW_BUFFER_MAX_CHARS = PREVIEW_MAX_CHARS * 4;
 const truncatePreview = (input: string): string => {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;
   return normalized.slice(-PREVIEW_MAX_CHARS);
+};
+
+const appendPreviewBuffer = (buffer: string, chunk: string): string => {
+  const normalized = `${buffer}${chunk}`.replace(/\s+/g, ' ').trimStart();
+  return normalized.length <= PREVIEW_BUFFER_MAX_CHARS
+    ? normalized
+    : normalized.slice(-PREVIEW_BUFFER_MAX_CHARS);
 };
 
 const SNIPPET_MAX_CHARS = 48;
@@ -396,7 +404,7 @@ export function foldSubagentEventIntoTicker(
       state.thinkLineIdx != null || state.thinkBuffer
         ? { ...state, thinkLineIdx: null, thinkBuffer: '' }
         : state;
-    const textBuffer = afterClose.textBuffer + chunk;
+    const textBuffer = appendPreviewBuffer(afterClose.textBuffer, chunk);
     const body = truncatePreview(textBuffer);
     const line: SubagentTickerLine = { kind: 'writing', body };
     if (afterClose.textLineIdx == null) {
@@ -416,7 +424,7 @@ export function foldSubagentEventIntoTicker(
       state.textLineIdx != null || state.textBuffer
         ? { ...state, textLineIdx: null, textBuffer: '' }
         : state;
-    const thinkBuffer = afterClose.thinkBuffer + chunk;
+    const thinkBuffer = appendPreviewBuffer(afterClose.thinkBuffer, chunk);
     const body = truncatePreview(thinkBuffer);
     const line: SubagentTickerLine = { kind: 'reasoning', body };
     if (afterClose.thinkLineIdx == null) {
@@ -447,7 +455,7 @@ export function foldSubagentEventIntoTicker(
         typeof tc?.name === 'string' && tc.name.length > 0,
     );
     if (named.length === 0) return afterClose;
-    const toolNames = named.map((tc) => tc.name);
+    const toolNames = named.slice(0, 16).map((tc) => truncateSnippet(tc.name));
     const argsSnippet = named.length === 1 ? summarizeArgs(named[0].args) : undefined;
     const line: SubagentTickerLine = {
       kind: 'using_tool',
@@ -464,7 +472,7 @@ export function foldSubagentEventIntoTicker(
     const outputSnippet = tc.output != null ? summarizeOutput(tc.output) : undefined;
     const line: SubagentTickerLine = {
       kind: 'tool_complete',
-      toolName: tc.name,
+      toolName: truncateSnippet(tc.name),
       ...(outputSnippet ? { outputSnippet } : {}),
     };
     return { ...state, lines: state.lines.concat(line) };
@@ -474,7 +482,7 @@ export function foldSubagentEventIntoTicker(
     const data = event.data as ErrorData | undefined;
     const line: SubagentTickerLine = {
       kind: 'error',
-      ...(data?.message ? { message: data.message } : {}),
+      ...(data?.message ? { message: truncatePreview(data.message) } : {}),
     };
     return { ...state, lines: state.lines.concat(line) };
   }

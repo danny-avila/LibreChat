@@ -1,7 +1,9 @@
 const archiveAllHandler = jest.fn();
+const subagentActivityHandlerInputs = [];
 
 module.exports = {
   archiveAllHandler,
+  subagentActivityHandlerInputs,
 
   agents: () => ({ sleep: jest.fn() }),
 
@@ -33,6 +35,10 @@ module.exports = {
       return archiveAllHandler;
     }),
     createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
+    createSubagentActivityStreamHandler: jest.fn((deps, stream) => {
+      subagentActivityHandlerInputs.push({ deps, stream });
+      return (_req, res) => res.status(200).end();
+    }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
@@ -124,6 +130,7 @@ module.exports = {
   assistantEndpoint: () => ({ initializeClient: jest.fn() }),
 
   subagentThreadStore: () => ({
+    subscribeActivity: jest.fn(),
     cancelAndDrainForOwner: jest.fn().mockResolvedValue(undefined),
     withOwnerDeletionFence: jest.fn().mockImplementation(async (_userId, _tenantId, deletion) => {
       return deletion();

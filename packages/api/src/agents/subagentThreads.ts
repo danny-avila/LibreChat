@@ -15,6 +15,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  SubagentUpdateEvent,
 } from '@librechat/agents';
 import type {
   AllMethods,
@@ -26,6 +27,12 @@ import type {
   SubagentTaskResultClaim,
 } from '@librechat/data-schemas';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
+import type {
+  SubagentActivityUpdateEvent,
+  SubagentActivitySubscriber,
+  SubagentActivitySubscription,
+  SubagentActivityTerminalStatus,
+} from './subagentActivity';
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
@@ -35,10 +42,12 @@ import {
   controlFingerprint,
   SubagentTaskOwnerUnavailableError,
 } from './subagentTaskRouting';
+import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
 import { createSubagentAttemptKey, createSubagentThreadId } from './subagentThreadIds';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createConcurrencyLimiter } from '~/utils/promise';
+import { InMemoryEventTransport } from '~/stream';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
@@ -53,6 +62,10 @@ const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 const DELETION_CANCEL_CONCURRENCY = 32;
 /** Bounds retained control invocations; one entry per applied command. */
 const MAX_CONTROL_INVOCATIONS = 4_096;
+/** Bounds retained live-only updates while an event transport is unavailable. */
+const MAX_PENDING_ACTIVITY_EVENTS = 32;
+/** Live activity must never delay terminal notification indefinitely. */
+const ACTIVITY_PUBLICATION_TIMEOUT_MS = 1_000;
 
 /** A cancellation target set resolved before the conversations are removed. */
 export interface SubagentCancellationPlan {
@@ -124,6 +137,13 @@ interface TaskThreadLease {
   taskId: string;
   running: boolean;
   settling: boolean;
+  /** Ordered observational tail; canonical child settlement never awaits it. */
+  activityTail?: Promise<void>;
+  activityPending?: number;
+  /** Terminal settlement stops new admission but must not discard admitted events. */
+  activityAdmissionClosed?: boolean;
+  /** A failed observational publication suppresses the remainder of this task's queue. */
+  activityCircuitOpen?: boolean;
   shared?: {
     token: string;
     lost: boolean;
@@ -132,6 +152,31 @@ interface TaskThreadLease {
     heartbeat?: ReturnType<typeof setInterval>;
     heartbeatInFlight?: Promise<void>;
   };
+}
+
+class SubagentActivityPublicationTimeoutError extends Error {
+  constructor() {
+    super('Subagent activity publication timed out.');
+    this.name = 'SubagentActivityPublicationTimeoutError';
+  }
+}
+
+async function settleActivityWithin(operation: Promise<void>): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<void>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new SubagentActivityPublicationTimeoutError()),
+          ACTIVITY_PUBLICATION_TIMEOUT_MS,
+        );
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout != null) clearTimeout(timeout);
+  }
 }
 
 export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStoreOptions {
@@ -430,6 +475,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
   private readonly onTaskPrepared?: SubagentThreadTaskStoreOptions['onTaskPrepared'];
   private taskControlTransport?: SubagentTaskControlTransport;
+  private activityStream = new SubagentActivityStream(new InMemoryEventTransport());
 
   constructor(
     private readonly methods: SubagentThreadMethods,
@@ -482,6 +528,81 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const transport = this.taskControlTransport;
     this.taskControlTransport = undefined;
     await transport?.destroy();
+  }
+
+  /** Replaces the process-local activity bus after the host's Redis service is ready. */
+  configureActivityStream(stream: SubagentActivityStream): void {
+    const previous = this.activityStream;
+    this.activityStream = stream;
+    previous.destroy();
+  }
+
+  destroyActivityStream(): void {
+    this.activityStream.destroy();
+  }
+
+  prepareActivityForShutdown(): void {
+    this.activityStream.prepareForShutdown();
+  }
+
+  subscribeActivity(
+    threadId: string,
+    taskId: string,
+    subscriber: SubagentActivitySubscriber,
+  ): SubagentActivitySubscription {
+    return this.activityStream.subscribe(threadId, taskId, subscriber);
+  }
+
+  private publishActivity(
+    lease: TaskThreadLease,
+    threadId: string,
+    taskId: string,
+    event: SubagentUpdateEvent,
+  ): void {
+    if (
+      lease.activityAdmissionClosed === true ||
+      lease.activityCircuitOpen === true ||
+      (lease.activityPending ?? 0) >= MAX_PENDING_ACTIVITY_EVENTS
+    ) {
+      return;
+    }
+    lease.activityPending = (lease.activityPending ?? 0) + 1;
+    const boundedEvent = boundSubagentActivityUpdate(event);
+    const publication = (lease.activityTail ?? Promise.resolve())
+      .then(() => {
+        if (lease.activityCircuitOpen === true) return;
+        return settleActivityWithin(this.activityStream.publish(threadId, taskId, boundedEvent));
+      })
+      .catch((error) => {
+        /** Any failed observational command opens the per-task circuit. Retrying every
+         * token during an outage only creates command/log pressure; durable state remains. */
+        lease.activityCircuitOpen = true;
+        logger.warn('[subagentThreads] Failed to publish child activity', error);
+      })
+      .finally(() => {
+        lease.activityPending = Math.max(0, (lease.activityPending ?? 1) - 1);
+      });
+    lease.activityTail = publication;
+  }
+
+  private completeActivity(
+    lease: TaskThreadLease,
+    threadId: string,
+    taskId: string,
+    status: SubagentActivityTerminalStatus,
+  ): void {
+    lease.activityAdmissionClosed = true;
+    const terminal = (lease.activityTail ?? Promise.resolve())
+      .then(() => settleActivityWithin(this.activityStream.complete(threadId, taskId, status)))
+      .catch((error) => {
+        logger.warn('[subagentThreads] Failed to close child activity stream', error);
+      });
+    lease.activityTail = terminal;
+    void terminal.finally(() => {
+      if (lease.activityTail === terminal) {
+        lease.activityTail = undefined;
+      }
+    });
   }
 
   /** Gates child creation on the ordinary parent write without retaining request state. */
@@ -541,6 +662,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             lease.running = true;
             const detachedUsage: UsageMetadata[] = [];
             let prepared: PreparedThread | undefined;
+            let activityTerminal: SubagentActivityTerminalStatus = 'failed';
             try {
               if (runtime.signal.aborted) {
                 throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -584,8 +706,27 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 );
               }
               const preparedThread = prepared;
+              let activitySequence = 0;
+              const activityRuntime: SubagentTaskRuntime = {
+                ...runtime,
+                reportProgress: (event) => {
+                  const sequence = activitySequence++;
+                  const activityEvent: SubagentActivityUpdateEvent = {
+                    ...event,
+                    activityEventId: `${runtime.taskId}:${sequence}`,
+                    activitySequence: sequence,
+                  };
+                  runtime.reportProgress(activityEvent);
+                  this.publishActivity(
+                    lease,
+                    preparedThread.conversation.conversationId,
+                    runtime.taskId,
+                    activityEvent,
+                  );
+                },
+              };
               const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
-                request.run(runtime, preparedThread.initialMessages),
+                request.run(activityRuntime, preparedThread.initialMessages),
               );
               if (runtime.signal.aborted) {
                 throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -604,6 +745,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 result,
                 detachedUsage,
               );
+              activityTerminal = 'completed';
               return result;
             } catch (error) {
               /** A replay is already terminal in Mongo. A temporary wakeup-queue
@@ -615,6 +757,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 lease.shared == null || (await this.renewSharedLease(scope, threadId, lease));
               const terminalTask = this.get(request.scopeId, runtime.taskId);
               if (runtime.signal.aborted && terminalTask?.status === 'cancelled') {
+                activityTerminal = 'cancelled';
                 if (mayPersist) {
                   await this.persistCancellation(
                     scope,
@@ -653,6 +796,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               }
               throw new Error(publicFailureDetail(error));
             } finally {
+              if (prepared != null && prepared.replay == null) {
+                this.completeActivity(
+                  lease,
+                  prepared.conversation.conversationId,
+                  runtime.taskId,
+                  activityTerminal,
+                );
+              }
               await this.stopAndReleaseSharedLease(scope, threadId, lease);
               if (this.activeThreads.get(lockKey) === lease) {
                 this.activeThreads.delete(lockKey);

@@ -23,14 +23,14 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
-  foldSubagentEvent,
-  foldSubagentEventIntoTicker,
-  initSubagentAggregatorState,
-  initSubagentTickerState,
-} from '~/utils/subagentContent';
-import {
+  closeParentSubagentProgress,
+  listRegisteredSubagentProgressKeys,
+  reduceSubagentProgress,
+  registerSubagentProgressKey,
+  subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
+  takeRegisteredSubagentProgressKeys,
   sandboxStartingByToolCallId,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
@@ -183,13 +183,6 @@ export default function useStepHandler({
   const pendingSubagentBuffer = useRef(
     new Map<string, { parentMessageId: string; events: SubagentUpdateEvent[] }>(),
   );
-  /**
-   * Tracked atom keys so `clearStepMaps` can reset them. Without this, each
-   * subagent invocation leaks an `events: SubagentUpdateEvent[]` array in the
-   * `atomFamily` — atoms persist for the app lifetime.
-   */
-  const knownSubagentAtomKeys = useRef(new Set<string>());
-
   const getCurrentMessages = useCallback(
     (messages: TMessage[]) => {
       const freshMessages = getMessages();
@@ -276,35 +269,11 @@ export default function useStepHandler({
         }
         const toApply = pending ? [...pending.events, payload] : [payload];
 
-        knownSubagentAtomKeys.current.add(invocationKey);
-        set(subagentProgressByToolCallId(invocationKey), (prev) => {
-          /** Fold the batch into both aggregators. Pure functions — they
-           *  return a new reference only when something actually changed,
-           *  so React bails out of unnecessary re-renders downstream. */
-          let contentParts = prev?.contentParts ?? [];
-          let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
-          let tickerState = prev?.tickerState ?? initSubagentTickerState();
-          for (const event of toApply) {
-            ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
-              contentParts,
-              aggregatorState,
-              event,
-            ));
-            tickerState = foldSubagentEventIntoTicker(tickerState, event);
-          }
-
-          const last = toApply[toApply.length - 1];
-          return {
-            subagentRunId: payload.subagentRunId,
-            subagentType: payload.subagentType,
-            subagentAgentId: payload.subagentAgentId ?? prev?.subagentAgentId,
-            contentParts,
-            aggregatorState,
-            tickerState,
-            status: last.phase,
-            latestLabel: last.label ?? prev?.latestLabel,
-          };
-        });
+        registerSubagentProgressKey(invocationKey);
+        set(subagentParentStreamOpenByToolCallId(invocationKey), true);
+        set(subagentProgressByToolCallId(invocationKey), (prev) =>
+          reduceSubagentProgress(prev, toApply, 'parent', true),
+        );
       },
     [resolveSubagentInvocationKey],
   );
@@ -323,10 +292,21 @@ export default function useStepHandler({
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
-        for (const invocationKey of knownSubagentAtomKeys.current) {
+        for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
           reset(subagentProgressByToolCallId(invocationKey));
+          reset(subagentParentStreamOpenByToolCallId(invocationKey));
         }
-        knownSubagentAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  const closeParentSubagentStreams = useRecoilCallback(
+    ({ set }) =>
+      (): void => {
+        for (const invocationKey of listRegisteredSubagentProgressKeys()) {
+          set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+          set(subagentProgressByToolCallId(invocationKey), closeParentSubagentProgress);
+        }
       },
     [],
   );
@@ -1437,6 +1417,7 @@ export default function useStepHandler({
     subagentRunToInvocationKey.current.clear();
     claimedSubagentInvocationKeys.current.clear();
     pendingSubagentBuffer.current.clear();
+    closeParentSubagentStreams();
     /** Unlike subagent atoms below, sandbox-starting flags are transient
      *  status with no audit value — reset them at this boundary so an
      *  interrupted cold boot can't leak a stale "starting" label onto a
@@ -1450,7 +1431,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
+  }, [cancelPendingDeltaFlush, closeParentSubagentStreams, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
