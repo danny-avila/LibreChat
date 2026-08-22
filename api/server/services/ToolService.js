@@ -36,6 +36,7 @@ const {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
+  resolveCallerCapabilityProjectionSnapshot,
 } = require('@librechat/api');
 const {
   Time,
@@ -1688,6 +1689,7 @@ async function loadAgentTools({
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string[]} params.toolNames - Names of tools to load
  * @param {Map} [params.toolRegistry] - Tool registry
+ * @param {unknown} [params.callerCapabilityProjection] - SDK-owned live caller projection
  * @param {Record<string, import('@librechat/api').LCAvailableTools>} [params.mcpAvailableTools] - Run-scoped MCP tool definitions
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections] - Run-scoped MCP connections
  * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap] - User MCP auth map
@@ -1708,6 +1710,7 @@ async function loadToolsForExecution({
   agentResourceType,
   toolNames,
   toolRegistry,
+  callerCapabilityProjection,
   backgroundToolNames,
   intentToolNames,
   mcpAvailableTools,
@@ -1729,6 +1732,12 @@ async function loadToolsForExecution({
     requestBody: runtimeRequestBody,
     requestScopedConnections: mcpRequestScopedConnections,
   };
+  const activeCallerCapabilities = resolveCallerCapabilityProjectionSnapshot(
+    callerCapabilityProjection,
+  );
+  const activeCodeExecutionToolNames = activeCallerCapabilities
+    ? new Set(activeCallerCapabilities.codeExecutionToolNames)
+    : undefined;
   /** Per-agent set of tools that received the injected `run_in_background`
    *  param; the event-driven executor gates background dispatch and the
    *  `check_background_task` poll tool on this reliable per-agent channel. */
@@ -1874,7 +1883,8 @@ async function loadToolsForExecution({
       .filter(
         (toolDef) =>
           !specialToolNames.has(toolDef.name) &&
-          (toolDef.allowed_callers ?? ['direct']).includes('code_execution'),
+          (toolDef.allowed_callers ?? ['direct']).includes('code_execution') &&
+          (activeCodeExecutionToolNames == null || activeCodeExecutionToolNames.has(toolDef.name)),
       )
       .map((toolDef) => toolDef.name);
   }
@@ -1969,7 +1979,8 @@ async function loadToolsForExecution({
         tool.name &&
         tool.name !== AgentConstants.PROGRAMMATIC_TOOL_CALLING &&
         tool.name !== AgentConstants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-        (toolRegistry.get(tool.name)?.allowed_callers ?? ['direct']).includes('code_execution')
+        (toolRegistry.get(tool.name)?.allowed_callers ?? ['direct']).includes('code_execution') &&
+        (activeCodeExecutionToolNames == null || activeCodeExecutionToolNames.has(tool.name))
       ) {
         ptcToolMap.set(tool.name, tool);
       }

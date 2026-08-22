@@ -17,6 +17,10 @@ import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
+import {
+  resolveCallerCapabilityProjectionSnapshot,
+  type CallerCapabilityProjectionSnapshot,
+} from './callerCapabilities';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -80,6 +84,8 @@ export interface ToolExecuteOptions {
     agentId?: string,
     /** Immutable run configuration available before deferred tools connect. */
     configurable?: Record<string, unknown>,
+    /** SDK-owned live caller capability projection for this agent context. */
+    callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -3827,6 +3833,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
+        (
+          data as ToolExecuteBatchRequest & {
+            callerCapabilityProjection?: unknown;
+          }
+        ).callerCapabilityProjection,
+      );
       /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
        * installed SDK typings compiling until the release lands. */
       const onResult = (
@@ -3855,6 +3868,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               toolNames,
               agentId,
               sourceConfigurable,
+              callerCapabilityProjection,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -4416,6 +4430,12 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         | Map<string, StructuredToolInterface>
                         | undefined;
                       if (toolRegistry) {
+                        const activeCodeExecutionToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.codeExecutionToolNames)
+                          : undefined;
+                        const activeDirectOnlyToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.directOnlyToolNames)
+                          : undefined;
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
                         const eligibleToolDefs: LCTool[] = [];
@@ -4430,9 +4450,20 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           if (!isInnerTool) {
                             continue;
                           }
-                          if ((toolDef.allowed_callers ?? ['direct']).includes('code_execution')) {
+                          const allowsCodeExecution = (
+                            toolDef.allowed_callers ?? ['direct']
+                          ).includes('code_execution');
+                          if (
+                            allowsCodeExecution &&
+                            (activeCodeExecutionToolNames == null ||
+                              activeCodeExecutionToolNames.has(toolDef.name))
+                          ) {
                             eligibleToolDefs.push(toolDef);
-                          } else {
+                          } else if (
+                            !allowsCodeExecution &&
+                            (activeDirectOnlyToolNames == null ||
+                              activeDirectOnlyToolNames.has(toolDef.name))
+                          ) {
                             disallowedToolDefs.push({
                               name: toolDef.name,
                             });
