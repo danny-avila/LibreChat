@@ -6,6 +6,7 @@ import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
+  closeParentSubagentProgress,
   reduceSubagentProgress,
   registerSubagentProgressKey,
   subagentParentStreamOpenByToolCallId,
@@ -60,7 +61,10 @@ export default function useSubagentActivityStream(
 
   useEffect(() => {
     parentStreamOpenRef.current = parentStreamOpen;
-  }, [parentStreamOpen]);
+    if (!parentStreamOpen) {
+      setProgress(closeParentSubagentProgress);
+    }
+  }, [parentStreamOpen, setProgress]);
 
   useEffect(() => {
     if (!selection.isSubmitting) return;

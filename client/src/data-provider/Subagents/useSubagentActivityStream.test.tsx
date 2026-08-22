@@ -1,6 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { ContentTypes, QueryKeys, StepEvents } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
@@ -192,6 +192,7 @@ describe('useSubagentActivityStream', () => {
         return {
           progress: useRecoilValue(subagentProgressByToolCallId(key)),
           parentOpen: useRecoilValue(subagentParentStreamOpenByToolCallId(key)),
+          closeParent: useSetRecoilState(subagentParentStreamOpenByToolCallId(key)),
         };
       },
       { wrapper },
@@ -222,6 +223,14 @@ describe('useSubagentActivityStream', () => {
     expect(result.current.parentOpen).toBe(true);
     expect(result.current.progress?.contentParts).toEqual([]);
     expect(result.current.progress?.pendingSequencedEvents).toHaveLength(1);
+
+    act(() => result.current.closeParent(false));
+
+    expect(result.current.parentOpen).toBe(false);
+    expect(result.current.progress?.contentParts).toEqual([
+      { type: ContentTypes.TEXT, text: 'suffix' },
+    ]);
+    expect(result.current.progress?.pendingSequencedEvents).toBeUndefined();
   });
 
   it('reconnects with bounded backoff after a transient stream error', () => {
