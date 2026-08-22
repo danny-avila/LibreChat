@@ -14,14 +14,22 @@ const ASSIGN_QUEUE_PREFIX = 'assign-conversation:';
  *  drag item carries the project the row had when the drag started, which goes
  *  stale the moment an earlier drop is accepted: without this, dropping a chat
  *  on B and then dragging it straight back to A reads as a no-op and the
- *  earlier request still lands it on B. */
-const queuedDestination = new Map<string, string | null>();
+ *  earlier request still lands it on B.
+ *
+ *  Each entry carries the identity of the drop that made it, not just where it
+ *  was headed. Comparing destinations alone cannot tell two drops onto the same
+ *  project apart, so a B, A, B run would let the first B's cleanup discard an
+ *  entry that the still-queued later drops own. */
+type QueuedAssignment = { token: number; projectId: string | null };
+
+const queuedDestination = new Map<string, QueuedAssignment>();
+let assignmentToken = 0;
 
 /** The project a conversation will be in once everything queued has settled. */
-export const effectiveProjectId = (item: ConversationDragItem): string | null =>
-  item.conversationId && queuedDestination.has(item.conversationId)
-    ? (queuedDestination.get(item.conversationId) ?? null)
-    : item.chatProjectId;
+export const effectiveProjectId = (item: ConversationDragItem): string | null => {
+  const queued = item.conversationId ? queuedDestination.get(item.conversationId) : undefined;
+  return queued ? queued.projectId : item.chatProjectId;
+};
 
 export type ConversationDragItem = {
   conversationId: string;
@@ -44,7 +52,8 @@ export const useAssignDroppedConversation = () => {
       if (!conversationId || effectiveProjectId(item) === projectId) {
         return;
       }
-      queuedDestination.set(conversationId, projectId);
+      const token = ++assignmentToken;
+      queuedDestination.set(conversationId, { token, projectId });
       /* A slow assignment leaves the row droppable, and every project target
        * owns its own mutation instance, so two quick drops would run
        * concurrently. The write is an unconditional update, so the request that
@@ -65,7 +74,7 @@ export const useAssignDroppedConversation = () => {
             showIcon: true,
           });
         } finally {
-          if (queuedDestination.get(conversationId) === projectId) {
+          if (queuedDestination.get(conversationId)?.token === token) {
             queuedDestination.delete(conversationId);
           }
         }

@@ -71,12 +71,23 @@ function Conversation({
   const previousTitle = useRef(title);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const setRenaming = useCallback(
-    (next: boolean) => {
-      setRenamingState(next);
-      onRenamingChange?.(next);
+  const onRenamingChangeRef = useRef(onRenamingChange);
+  onRenamingChangeRef.current = onRenamingChange;
+
+  const setRenaming = useCallback((next: boolean) => {
+    setRenamingState(next);
+    onRenamingChangeRef.current?.(next);
+  }, []);
+
+  /* A row can be removed mid-rename, for instance by unpinning the same chat
+   * from the project list that renders it too. Without this the owner would
+   * keep treating the row as renaming and, once it came back, leave its drag
+   * source released for the rest of the section's life. */
+  useEffect(
+    () => () => {
+      onRenamingChangeRef.current?.(false);
     },
-    [onRenamingChange],
+    [],
   );
 
   /* HTML5 drag needs a hover-capable pointer: connecting the source on touch
