@@ -2,6 +2,8 @@ import {
   MCPOptionsSchema,
   SSEOptionsSchema,
   StreamableHTTPOptionsSchema,
+  StdioOptionsSchema,
+  WebSocketOptionsSchema,
   MCPServerUserInputSchema,
   MCP_USER_INPUT_FIELDS,
 } from '../src/mcp';
@@ -49,6 +51,21 @@ describe('MCP server title validation', () => {
 });
 
 describe('MCPOptionsSchema', () => {
+  it.each([
+    [StdioOptionsSchema, { command: 'node', args: ['server.js'] }],
+    [SSEOptionsSchema, { type: 'sse', url: 'https://mcp-server.com/sse' }],
+    [WebSocketOptionsSchema, { type: 'websocket', url: 'wss://mcp-server.com/ws' }],
+    [StreamableHTTPOptionsSchema, { type: 'streamable-http', url: 'https://mcp-server.com/mcp' }],
+  ])('preserves the uploaded-image opt-in for every supported transport', (schema, options) => {
+    const enabled = schema.parse({ ...options, forwardUploadedImages: true });
+    const disabled = schema.parse({ ...options, forwardUploadedImages: false });
+    const absent = schema.parse(options);
+
+    expect(enabled.forwardUploadedImages).toBe(true);
+    expect(disabled.forwardUploadedImages).toBe(false);
+    expect(absent.forwardUploadedImages).toBeUndefined();
+  });
+
   describe('OBO transport support', () => {
     it('should accept obo on SSE transport', () => {
       const result = MCPOptionsSchema.safeParse({
