@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import type { ConversationMethods } from '@librechat/data-schemas';
+import type { ConversationMethods, MessageMethods } from '@librechat/data-schemas';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
@@ -46,7 +46,8 @@ export type SubagentActivitySubscriber = {
 type SubagentActivityStreamDependencies = Pick<
   ConversationMethods,
   'getConvoOwnership' | 'getSubagentThreadForParent'
->;
+> &
+  Pick<MessageMethods, 'getMessages'>;
 
 type SubagentActivityStreamParams = {
   parentConversationId?: string;
@@ -187,8 +188,12 @@ export class SubagentActivityStream {
     return demanded;
   }
 
-  private async renewDemand(streamId: string): Promise<void> {
+  private async renewDemand(streamId: string, isActive = () => true): Promise<void> {
     await this.transport.renewDemand?.(streamId, DEMAND_TTL_MS);
+    if (!isActive()) {
+      this.demandCache.delete(streamId);
+      return;
+    }
     this.demandCache.set(streamId, { demanded: true, expiresAt: Date.now() + DEMAND_CACHE_MS });
   }
 
@@ -220,26 +225,30 @@ export class SubagentActivityStream {
         this.demandCache.delete(streamId);
       });
     };
-    const subscription = this.transport.subscribe(streamId, {
-      onChunk: (event) => {
-        if (isActivityEnvelope(event)) subscriber.onEvent(event);
+    const subscription = this.transport.subscribe(
+      streamId,
+      {
+        onChunk: (event) => {
+          if (isActivityEnvelope(event)) subscriber.onEvent(event);
+        },
+        onDone: (event) => {
+          if (!isTerminalEvent(event)) return;
+          try {
+            subscriber.onDone?.(event);
+          } finally {
+            unsubscribe();
+          }
+        },
+        onError: (error) => {
+          try {
+            subscriber.onError?.(error);
+          } finally {
+            unsubscribe();
+          }
+        },
       },
-      onDone: (event) => {
-        if (!isTerminalEvent(event)) return;
-        try {
-          subscriber.onDone?.(event);
-        } finally {
-          unsubscribe();
-        }
-      },
-      onError: (error) => {
-        try {
-          subscriber.onError?.(error);
-        } finally {
-          unsubscribe();
-        }
-      },
-    });
+      { deferSequenceDelivery: true },
+    );
     let closed = false;
     let demandHeartbeat: ReturnType<typeof setInterval> | undefined;
     unsubscribe = () => {
@@ -251,10 +260,15 @@ export class SubagentActivityStream {
     };
     const ready = Promise.resolve(subscription.ready).then(async () => {
       if (closed) return;
-      await this.renewDemand(streamId);
+      await this.transport.syncReorderBuffer?.(streamId);
       if (closed) return;
+      await this.renewDemand(streamId, () => !closed);
+      if (closed) {
+        this.demandCache.delete(streamId);
+        return;
+      }
       demandHeartbeat = setInterval(() => {
-        void this.renewDemand(streamId).catch(() => undefined);
+        void this.renewDemand(streamId, () => !closed).catch(() => undefined);
       }, DEMAND_HEARTBEAT_MS);
       demandHeartbeat.unref?.();
     });
@@ -267,8 +281,6 @@ export class SubagentActivityStream {
     status: SubagentActivityTerminalStatus,
   ): Promise<void> {
     const streamId = subagentActivityStreamId(threadId, taskId);
-    /** Terminal delivery is a one-shot transition; do not let a 250 ms progress cache
-     * hide a subscriber that arrived after the last update. */
     this.demandCache.delete(streamId);
     try {
       if (!(await this.isDemanded(streamId))) return;
@@ -288,15 +300,45 @@ export class SubagentActivityStream {
   }
 }
 
+const terminalStatus = (status: string | undefined): SubagentActivityTerminalStatus | undefined => {
+  switch (status) {
+    case 'completed':
+      return 'completed';
+    case 'error':
+      return 'failed';
+    case 'cancelled':
+      return 'cancelled';
+    default:
+      return undefined;
+  }
+};
+
+const terminalTaskStatus = async (
+  deps: Pick<SubagentActivityStreamDependencies, 'getMessages'>,
+  userId: string,
+  threadId: string,
+  taskId: string,
+  tenantId?: string,
+): Promise<SubagentActivityTerminalStatus | undefined> => {
+  const messages = await deps.getMessages(
+    {
+      user: userId,
+      conversationId: threadId,
+      messageId: `${taskId}:assistant`,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+    },
+    'messageId +subagentTask',
+    { limit: 1 },
+  );
+  return terminalStatus(messages[0]?.subagentTask?.status);
+};
+
 const notFound = (res: Response): void => {
   res.status(404).json({ error: 'Conversation not found' });
 };
 
-const writeSse = (res: Response, value: unknown): void => {
-  if (!res.writableEnded) {
-    res.write(`data: ${JSON.stringify(value)}\n\n`);
-  }
-};
+const writeSse = (res: Response, value: unknown): boolean =>
+  !res.writableEnded && res.write(`data: ${JSON.stringify(value)}\n\n`);
 
 /** Streams one active child task after the same parent/tenant authorization as its durable view. */
 export function createSubagentActivityStreamHandler(
@@ -363,12 +405,20 @@ export function createSubagentActivityStreamHandler(
       res.flushHeaders?.();
 
       heartbeat = setInterval(() => {
-        if (!res.writableEnded) res.write(': keep-alive\n\n');
+        if (!res.writableEnded && !res.write(': keep-alive\n\n')) {
+          close();
+          res.end();
+        }
       }, HEARTBEAT_MS);
       heartbeat.unref?.();
       try {
         subscription = stream.subscribe(threadId, taskId, {
-          onEvent: (event) => writeSse(res, event),
+          onEvent: (event) => {
+            if (!writeSse(res, event)) {
+              close();
+              res.end();
+            }
+          },
           onDone: (event) => {
             close();
             writeSse(res, event);
@@ -386,7 +436,22 @@ export function createSubagentActivityStreamHandler(
         throw error;
       }
       if (closed || res.destroyed) return;
-      writeSse(res, { ready: true });
+      const durableTerminal = await terminalTaskStatus(deps, userId, threadId, taskId, tenantId);
+      if (closed || res.destroyed) return;
+      if (durableTerminal != null) {
+        close();
+        writeSse(res, {
+          final: true,
+          subagentActivity: true,
+          status: durableTerminal,
+        });
+        res.end();
+        return;
+      }
+      if (!writeSse(res, { ready: true })) {
+        close();
+        res.end();
+      }
     } catch (error) {
       if (closed || res.destroyed) return;
       logger.error('[subagentActivity] Failed to open child activity stream', error);

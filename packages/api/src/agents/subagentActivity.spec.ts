@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { IConversation } from '@librechat/data-schemas';
+import type { IConversation, IMessage } from '@librechat/data-schemas';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
@@ -24,15 +24,23 @@ class TestTransport implements IEventTransport {
   readonly emitted: Array<{ streamId: string; event: unknown }> = [];
   readonly completed: Array<{ streamId: string; event: unknown }> = [];
   readonly cleaned: string[] = [];
+  readonly synchronized: string[] = [];
+  readonly subscribeOptions: unknown[] = [];
 
   demanded = true;
 
   subscribe(
     streamId: string,
     handlers: typeof this.handlers extends Map<string, infer T> ? T : never,
+    options?: unknown,
   ) {
+    this.subscribeOptions.push(options);
     this.handlers.set(streamId, handlers);
     return { unsubscribe: () => this.handlers.delete(streamId) };
+  }
+
+  syncReorderBuffer(streamId: string): void {
+    this.synchronized.push(streamId);
   }
 
   emitChunk(streamId: string, event: unknown): void {
@@ -115,10 +123,13 @@ describe('detached subagent activity stream', () => {
     const subscription = stream.subscribe('child-thread', 'task-1', {
       onEvent: (event) => received.push(event),
     });
+    await subscription.ready;
 
     await stream.publish('child-thread', 'task-1', update());
 
     expect(streamId).toMatch(/^subagent-activity:[A-Za-z0-9_-]{32}$/);
+    expect(transport.subscribeOptions).toEqual([{ deferSequenceDelivery: true }]);
+    expect(transport.synchronized).toEqual([streamId]);
     expect(received).toEqual([
       expect.objectContaining({
         event: 'on_subagent_update',
@@ -157,6 +168,31 @@ describe('detached subagent activity stream', () => {
     await stream.publish('child-thread', 'task-1', update());
 
     expect(transport.emitted).toHaveLength(1);
+  });
+
+  it('removes local demand state when renewal finishes after disconnect', async () => {
+    const transport = new TestTransport();
+    let markRenewing!: () => void;
+    let finishRenewal!: () => void;
+    const renewing = new Promise<void>((resolve) => (markRenewing = resolve));
+    transport.renewDemand = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRenewal = resolve;
+          markRenewing();
+        }),
+    );
+    const stream = new SubagentActivityStream(transport);
+
+    const subscription = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    await renewing;
+    subscription.unsubscribe();
+    finishRenewal();
+    await subscription.ready;
+    transport.demanded = false;
+    await stream.publish('child-thread', 'task-1', update());
+
+    expect(transport.emitted).toHaveLength(0);
   });
 
   it('drops oversized payload data while retaining lifecycle identity and bounds', async () => {
@@ -262,6 +298,7 @@ describe('subagent activity stream authorization', () => {
       {
         getConvoOwnership: jest.fn().mockResolvedValue(parent),
         getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest.fn().mockResolvedValue([]),
       },
       stream,
     );
@@ -284,6 +321,7 @@ describe('subagent activity stream authorization', () => {
       {
         getConvoOwnership: jest.fn().mockResolvedValue(parent),
         getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest.fn().mockResolvedValue([]),
       },
       stream,
     );
@@ -309,6 +347,7 @@ describe('subagent activity stream authorization', () => {
         getSubagentThreadForParent: jest.fn(
           () => new Promise<IConversation>((resolve) => (resolveChild = resolve)),
         ),
+        getMessages: jest.fn().mockResolvedValue([]),
       },
       stream,
     );
@@ -323,5 +362,57 @@ describe('subagent activity stream authorization', () => {
 
     expect(stream.subscribe).not.toHaveBeenCalled();
     expect(res.flushHeaders).not.toHaveBeenCalled();
+  });
+
+  it('closes with durable terminal state when completion races stream readiness', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest.fn().mockResolvedValue([
+          {
+            messageId: `${taskId}:assistant`,
+            subagentTask: { status: 'completed' },
+          } as IMessage,
+        ]),
+      },
+      stream,
+    );
+    const res = response();
+
+    await handler(request(), res);
+
+    expect(res.chunks.join('')).toContain('"final":true');
+    expect(res.chunks.join('')).toContain('"status":"completed"');
+    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(transport.handlers.size).toBe(0);
+  });
+
+  it('closes a slow SSE consumer instead of buffering later activity', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest.fn().mockResolvedValue([]),
+      },
+      stream,
+    );
+    const res = response();
+    let writes = 0;
+    (res.write as jest.Mock).mockImplementation((chunk: string) => {
+      res.chunks.push(chunk);
+      writes += 1;
+      return writes === 1;
+    });
+
+    await handler(request(), res);
+    await stream.publish(threadId, taskId, update());
+
+    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(transport.handlers.size).toBe(0);
   });
 });

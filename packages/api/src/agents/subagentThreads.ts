@@ -152,6 +152,13 @@ interface TaskThreadLease {
   };
 }
 
+class SubagentActivityPublicationTimeoutError extends Error {
+  constructor() {
+    super('Subagent activity publication timed out.');
+    this.name = 'SubagentActivityPublicationTimeoutError';
+  }
+}
+
 async function settleActivityWithin(operation: Promise<void>): Promise<void> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -159,7 +166,7 @@ async function settleActivityWithin(operation: Promise<void>): Promise<void> {
       operation,
       new Promise<void>((_, reject) => {
         timeout = setTimeout(
-          () => reject(new Error('Subagent activity publication timed out.')),
+          () => reject(new SubagentActivityPublicationTimeoutError()),
           ACTIVITY_PUBLICATION_TIMEOUT_MS,
         );
         timeout.unref?.();
@@ -560,6 +567,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         return settleActivityWithin(this.activityStream.publish(threadId, taskId, boundedEvent));
       })
       .catch((error) => {
+        if (error instanceof SubagentActivityPublicationTimeoutError) {
+          lease.activityClosed = true;
+        }
         logger.warn('[subagentThreads] Failed to publish child activity', error);
       })
       .finally(() => {

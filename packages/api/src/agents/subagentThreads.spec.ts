@@ -503,6 +503,20 @@ describe('SubagentThreadTaskStore', () => {
           timestamp: '2026-08-21T20:00:00.000Z',
         });
       }
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_100));
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        depth: 1,
+        ancestry: [],
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'after-timeout' }] } },
+        timestamp: '2026-08-21T20:00:01.100Z',
+      });
       return defaultRun(...args);
     });
 

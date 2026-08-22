@@ -53,6 +53,7 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
   {
     getConvoOwnership: db.getConvoOwnership,
     getSubagentThreadForParent: db.getSubagentThreadForParent,
+    getMessages: db.getMessages,
   },
   subagentThreadTaskStore,
 );
