@@ -33,6 +33,13 @@ export const formatScheduleDay = (day: number, locale?: string): string =>
     new Date(SUNDAY_UTC + day * DAY_MS),
   );
 
+/** The pill label. The long name is still the accessible one: "Mon" reads fine at a
+ *  glance but poorly aloud, and seven of them would not fit a phone-width row. */
+export const formatScheduleDayShort = (day: number, locale?: string): string =>
+  new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
+    new Date(SUNDAY_UTC + day * DAY_MS),
+  );
+
 export const describeCadence = (
   cadence: TScheduleCadence,
   localize: LocalizeFunction,
