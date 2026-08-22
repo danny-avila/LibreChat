@@ -2,6 +2,7 @@ import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
+  IAgentEventBindingRecord,
   AppConfig,
   IChatProjectDocument,
   IActiveSubagentThreadLease,
@@ -120,7 +121,12 @@ export interface ConversationMethods {
     messages: { deletedCount?: number };
   }>;
   saveConvo(
-    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
+    ctx: {
+      userId: string;
+      isTemporary?: boolean;
+      expiredAt?: Date;
+      interfaceConfig?: AppConfig['interfaceConfig'];
+    },
     data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
     metadata?: {
       context?: string;
@@ -167,6 +173,12 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
   }): Promise<SubagentThreadReadRecord | null>;
+  getAgentEventBinding(input: {
+    user: string;
+    bindingId: string;
+    sourceKeyId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventBindingRecord | null>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -219,6 +231,7 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
+    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
   archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
@@ -297,6 +310,43 @@ export function createConversationMethods(
     }
   }
 
+  /** Resolves an event target only when the API key, owner, and tenant all match. */
+  async function getAgentEventBinding(input: {
+    user: string;
+    bindingId: string;
+    sourceKeyId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventBindingRecord | null> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversation = await Conversation.findOne({
+      user: input.user,
+      'agentEventBinding.bindingId': input.bindingId,
+      'agentEventBinding.sourceKeyId': input.sourceKeyId,
+      ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
+    })
+      .select(
+        'conversationId agent_id tenantId isTemporary expiredAt subagentThread +agentEventBinding',
+      )
+      .lean<IConversation>();
+    if (
+      conversation?.agentEventBinding == null ||
+      conversation.subagentThread == null ||
+      typeof conversation.agent_id !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      conversationId: conversation.conversationId,
+      agentId: conversation.agent_id,
+      ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
+      ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
+      ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
+      binding: conversation.agentEventBinding,
+      lineage: conversation.subagentThread,
+    };
+  }
+
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
   async function reserveSubagentThread(input: {
     user: string;
@@ -322,7 +372,7 @@ export function createConversationMethods(
           },
         },
         { new: true, upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true },
-      )) as unknown as ConversationUpdateResult;
+      ).select('+agentEventBinding')) as unknown as ConversationUpdateResult;
       if (result.value == null) {
         throw new Error('Unable to reserve the subagent thread.');
       }
@@ -334,7 +384,9 @@ export function createConversationMethods(
       /** Concurrent upserts can race at the unique index. The document that won is
        * the reservation; callers still validate its immutable lineage before use. */
       if ((error as { code?: number }).code === 11000) {
-        const existing = await Conversation.findOne(filter).lean<IConversation>();
+        const existing = await Conversation.findOne(filter)
+          .select('+agentEventBinding')
+          .lean<IConversation>();
         if (existing != null) {
           return { conversation: existing, created: false };
         }
@@ -570,10 +622,12 @@ export function createConversationMethods(
     {
       userId,
       isTemporary,
+      expiredAt,
       interfaceConfig,
     }: {
       userId: string;
       isTemporary?: boolean;
+      expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
     {
@@ -640,7 +694,12 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
+        if (typeof isTemporary === 'boolean') {
+          update.isTemporary = isTemporary;
+        }
+        update.expiredAt = expiredAt;
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }
@@ -1347,16 +1406,56 @@ export function createConversationMethods(
   /**
    * Deletes conversations and their associated messages for a given user and filter.
    */
-  async function deleteConvos(user: string, filter: FilterQuery<IConversation>) {
+  async function deleteConvos(
+    user: string,
+    filter: FilterQuery<IConversation>,
+    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+  ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const { deleteMessages } = getMessageMethods();
+      const { deleteMessages, getMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       type DeletionConversation = Pick<IConversation, 'conversationId' | 'chatProjectId' | 'tags'>;
-      const conversations = await Conversation.find(userFilter)
+      const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            return await operation();
+          } catch (error) {
+            lastError = error;
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+            }
+          }
+        }
+        throw lastError;
+      };
+      let conversations = await Conversation.find(userFilter)
         .select('conversationId chatProjectId tags')
         .lean<DeletionConversation[]>();
-      if (!conversations.length) {
+      const recoveryConversationIds: string[] = [];
+      if (!conversations.length && typeof filter.conversationId === 'string') {
+        /** A prior attempt may have deleted the root before a descendant read failed.
+         * Resume from immutable root lineage and retain the root id for message,
+         * checkpoint, and tool cleanup. The message probe distinguishes that partial
+         * commit from a conversation id that never existed. */
+        const [descendants, rootMessages] = await Promise.all([
+          retryCascadeOperation(() =>
+            Conversation.find({
+              user,
+              'subagentThread.rootConversationId': filter.conversationId,
+            })
+              .select('conversationId chatProjectId tags')
+              .lean<DeletionConversation[]>(),
+          ),
+          getMessages({ user, conversationId: filter.conversationId }, '_id', { limit: 1 }),
+        ]);
+        if (descendants.length === 0 && rootMessages.length === 0) {
+          throw new Error('Conversation not found or already deleted.');
+        }
+        conversations = descendants;
+        recoveryConversationIds.push(filter.conversationId);
+      } else if (!conversations.length) {
         throw new Error('Conversation not found or already deleted.');
       }
 
@@ -1372,72 +1471,72 @@ export function createConversationMethods(
       let pending = conversations;
       let acknowledged = true;
       let deletedCount = 0;
+      const reconcileDeletedWave = async (
+        wave: DeletionConversation[],
+        waveDeletedCount: number,
+      ): Promise<void> => {
+        if (waveDeletedCount === 0) {
+          return;
+        }
+
+        /**
+         * Commit derived metadata while the deleted documents are still available in
+         * memory. Descendant discovery can fail after this point; deferring the
+         * reconciliation until the whole walk completes would make the root's tags and
+         * project impossible to recover on a later retry.
+         */
+        const tagDecrements: string[] = [];
+        for (const conversation of wave) {
+          for (const tag of new Set(conversation.tags ?? [])) {
+            tagDecrements.push(tag);
+          }
+        }
+        await decrementTagCounts(mongoose, user, tagDecrements);
+
+        const waveProjectIds = new Set(
+          wave
+            .map((conversation) => conversation.chatProjectId)
+            .filter((projectId): projectId is string => Boolean(projectId)),
+        );
+        if (waveProjectIds.size > 0) {
+          try {
+            await refreshChatProjectStatsInBatches(mongoose, user, waveProjectIds);
+          } catch (error) {
+            logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
+          }
+        }
+      };
       while (pending.length > 0) {
         const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
         if (wave.length === 0) {
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
-        try {
-          const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
-          acknowledged &&= result.acknowledged;
-          deletedCount += result.deletedCount;
-          for (const conversation of wave) {
-            seen.add(conversation.conversationId);
-            deletedConversations.push(conversation);
-          }
-          pending = await Conversation.find({
+        await options?.beforeDelete?.(waveIds);
+        const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
+        acknowledged &&= result.acknowledged;
+        deletedCount += result.deletedCount;
+        await reconcileDeletedWave(wave, result.deletedCount);
+        for (const conversation of wave) {
+          seen.add(conversation.conversationId);
+          deletedConversations.push(conversation);
+        }
+        pending = await retryCascadeOperation(() =>
+          Conversation.find({
             user,
             'subagentThread.parentConversationId': { $in: waveIds },
           })
             .select('conversationId chatProjectId tags')
-            .lean<DeletionConversation[]>();
-        } catch (error) {
-          if (deletedConversations.length === 0) {
-            throw error;
-          }
-          logger.error('[deleteConvos] Root deleted but child-thread cascade failed', error);
-          break;
-        }
+            .lean<DeletionConversation[]>(),
+        );
       }
 
-      const conversationIds = deletedConversations.map((c) => c.conversationId);
-      const projectIds = new Set(
-        deletedConversations
-          .map((conversation) => conversation.chatProjectId)
-          .filter((projectId): projectId is string => Boolean(projectId)),
-      );
-
-      /**
-       * One entry per (conversation, tag) association: each conversation's tags are
-       * deduped so a duplicate tag entry within a single conversation only decrements
-       * the bookmark count once.
-       */
-      const tagDecrements: string[] = [];
-      for (const conversation of deletedConversations) {
-        if (!conversation.tags?.length) {
-          continue;
-        }
-        for (const tag of new Set(conversation.tags)) {
-          tagDecrements.push(tag);
-        }
-      }
+      const conversationIds = [
+        ...recoveryConversationIds,
+        ...deletedConversations.map((conversation) => conversation.conversationId),
+      ];
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
-      const deleted = deleteConvoResult.deletedCount > 0;
-
-      /**
-       * Reconcile bookmark counts from the deletion before message cleanup: if
-       * `deleteMessages` later throws, the conversation is already gone and a retry
-       * finds nothing, so the count must be reconciled here or it would stay stale.
-       * The decrement is best-effort and never throws, so it cannot block message
-       * cleanup. The `deletedCount` guard skips a losing concurrent delete whose
-       * pre-delete snapshot would otherwise decrement a conversation it did not
-       * actually remove.
-       */
-      if (deleted) {
-        await decrementTagCounts(mongoose, user, tagDecrements);
-      }
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a
@@ -1453,19 +1552,6 @@ export function createConversationMethods(
         });
       } catch (error) {
         logger.error('[deleteConvos] Conversations deleted but message cleanup failed', error);
-      }
-
-      /**
-       * Refresh project stats after message cleanup so a stats-refresh error cannot
-       * prevent `deleteMessages` from running, which would orphan the deleted
-       * conversations' messages.
-       */
-      if (deleted && projectIds.size > 0) {
-        try {
-          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
-        } catch (error) {
-          logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
-        }
       }
 
       // conversationIds lets callers run sibling cleanup that lives in higher layers
@@ -1617,6 +1703,7 @@ export function createConversationMethods(
     getConvosQueried,
     getConvo,
     getSubagentThreadForParent,
+    getAgentEventBinding,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,

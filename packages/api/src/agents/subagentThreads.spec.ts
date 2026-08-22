@@ -2925,6 +2925,62 @@ describe('SubagentThreadTaskStore', () => {
     ]);
   });
 
+  it('delegates an owner drain for host work that is not in the task store', async () => {
+    const userId = 'host-generation-drain-user';
+    const parentConversationId = randomUUID();
+    const conversationId = randomUUID();
+    const taskId = randomUUID();
+    const token = randomUUID();
+    await saveParent(userId, parentConversationId);
+    await methods.saveConvo(
+      { userId },
+      {
+        conversationId,
+        endpoint: EModelEndpoint.agents,
+        title: 'Event actor',
+        agent_id: 'child-agent',
+        subagentThread: {
+          rootConversationId: parentConversationId,
+          parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'parent-agent',
+          subagentType: 'child-agent',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      },
+    );
+    await methods.acquireSubagentThreadLease({
+      user: userId,
+      conversationId,
+      taskId,
+      token,
+      now: new Date(),
+      expiresAt: new Date(Date.now() + 30_000),
+    });
+    const cancelUnroutedTask = jest.fn(async () => {
+      await methods.releaseSubagentThreadLease({ user: userId, conversationId, token });
+      return true;
+    });
+    const deletingStore = new SubagentThreadTaskStore(methods, {
+      cancelUnroutedTask,
+      ownerDrainPollMs: 1,
+    });
+
+    await deletingStore.cancelAndDrainForOwner(userId);
+
+    expect(cancelUnroutedTask).toHaveBeenCalledWith({
+      userId,
+      parentConversationId,
+      taskId,
+      tenantId: undefined,
+    });
+    expect(await methods.countActiveSubagentThreadLeases({ user: userId, now: new Date() })).toBe(
+      0,
+    );
+  });
+
   it('bounds durable delegation depth to one by default', async () => {
     const userId = 'depth-user';
     const rootConversationId = randomUUID();

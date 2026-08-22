@@ -20,6 +20,7 @@ function childConversation(): IConversation {
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       parentToolCallId: 'parent-tool-call',
+      parentAgentId: 'parent-agent',
       subagentType: 'child-agent',
       subagentKind: 'agent',
       depth: 1,
@@ -46,20 +47,43 @@ function makeStore(): SubagentThreadTaskStore {
   });
 }
 
-function createApp(getConvo: AllMethods['getConvo'], store: SubagentThreadTaskStore) {
+function createApp(
+  getConvo: AllMethods['getConvo'],
+  store: SubagentThreadTaskStore,
+  getEventBinding?: AllMethods['getAgentEventBinding'],
+  isHumanResumeAllowed?: () => Promise<boolean>,
+) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = { id: 'user-1', tenantId: 'tenant-1' };
+    (req as typeof req & { _isAgentTrigger?: boolean })._isAgentTrigger =
+      req.get('x-test-trigger') === '1';
     next();
   });
-  app.post('/chat', createSubagentThreadTurnGuard({ getConvo, store }), (req, res) => {
+  const guard = createSubagentThreadTurnGuard({
+    getConvo,
+    store,
+    getEventBinding,
+    isHumanResumeAllowed,
+  });
+  const handler = (req: express.Request, res: express.Response) => {
     res.json({
       ok: true,
       resolvedConversationId: (req as typeof req & { resolvedConversation?: IConversation | null })
         .resolvedConversation?.conversationId,
+      parentConversationId: (
+        req as typeof req & { _agentEventBindingParentConversationId?: string }
+      )._agentEventBindingParentConversationId,
+      retention: (
+        req as typeof req & {
+          _agentEventBindingRetention?: { isTemporary?: boolean; expiredAt?: Date };
+        }
+      )._agentEventBindingRetention,
     });
-  });
+  };
+  app.post('/chat', guard, handler);
+  app.post('/resume', guard, handler);
   return app;
 }
 
@@ -98,6 +122,145 @@ describe('subagent child-thread write policy', () => {
     expect(response.body).toEqual({ error: CHILD_THREAD_READ_ONLY_ERROR });
   });
 
+  it('allows only the authenticated trigger bound to this child conversation', async () => {
+    const store = makeStore();
+    const getEventBinding = jest.fn(async () => ({
+      conversationId: 'child-conversation',
+      agentId: 'child-agent',
+      tenantId: 'tenant-1',
+      isTemporary: true,
+      expiredAt: new Date('2099-08-22T00:00:00.000Z'),
+      binding: {
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+      lineage: childConversation().subagentThread!,
+    }));
+    const app = createApp(
+      jest.fn(async (_user, conversationId) =>
+        conversationId === 'parent-conversation'
+          ? ({
+              conversationId,
+              agent_id: 'parent-agent',
+              tenantId: 'tenant-1',
+            } as IConversation)
+          : childConversation(),
+      ),
+      store,
+      getEventBinding as AllMethods['getAgentEventBinding'],
+    );
+
+    const response = await request(app)
+      .post('/chat')
+      .set('x-test-trigger', '1')
+      .set('x-lc-agent-event-binding', `evtbind_${'a'.repeat(48)}`)
+      .set('x-lc-agent-event-source-key', 'source-key')
+      .send({ conversationId: 'child-conversation' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      parentConversationId: 'parent-conversation',
+      retention: { isTemporary: true, expiredAt: '2099-08-22T00:00:00.000Z' },
+    });
+    expect(getEventBinding).toHaveBeenCalledWith({
+      user: 'user-1',
+      tenantId: 'tenant-1',
+      bindingId: `evtbind_${'a'.repeat(48)}`,
+      sourceKeyId: 'source-key',
+    });
+  });
+
+  it('allows only an exact pending human resume for a bound child', async () => {
+    const store = makeStore();
+    const reservedThreadId = createSubagentThreadId('scope', 'bound-child');
+    const boundChild = {
+      ...childConversation(),
+      conversationId: reservedThreadId,
+      tenantId: 'tenant-1',
+      isTemporary: true,
+      agentEventBinding: {
+        bindingId: `evtbind_${'b'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+    } as unknown as IConversation;
+    const isHumanResumeAllowed = jest.fn(async () => true);
+    const app = createApp(
+      jest.fn(async (_user, conversationId) =>
+        conversationId === 'parent-conversation'
+          ? ({ conversationId, agent_id: 'parent-agent', tenantId: 'tenant-1' } as IConversation)
+          : boundChild,
+      ),
+      store,
+      undefined,
+      isHumanResumeAllowed,
+    );
+
+    const response = await request(app)
+      .post('/resume')
+      .send({ conversationId: reservedThreadId, actionId: 'action-1' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      resolvedConversationId: reservedThreadId,
+      parentConversationId: 'parent-conversation',
+      retention: { isTemporary: true },
+    });
+    expect(isHumanResumeAllowed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      conversationId: reservedThreadId,
+    });
+  });
+
+  it('rejects trigger continuations and human resumes after binding retention expires', async () => {
+    const store = makeStore();
+    const expiredChild = {
+      ...childConversation(),
+      tenantId: 'tenant-1',
+      expiredAt: new Date(0),
+      agentEventBinding: {
+        bindingId: `evtbind_${'c'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+    } as unknown as IConversation;
+    const getEventBinding = jest.fn(async () => ({
+      conversationId: expiredChild.conversationId,
+      agentId: expiredChild.agent_id,
+      tenantId: 'tenant-1',
+      expiredAt: expiredChild.expiredAt,
+      binding: expiredChild.agentEventBinding,
+      lineage: expiredChild.subagentThread!,
+    }));
+    const getConvo = jest.fn(async (_user, conversationId) =>
+      conversationId === 'parent-conversation'
+        ? ({ conversationId, agent_id: 'parent-agent', tenantId: 'tenant-1' } as IConversation)
+        : expiredChild,
+    );
+    const isHumanResumeAllowed = jest.fn(async () => true);
+    const testApp = createApp(
+      getConvo,
+      store,
+      getEventBinding as AllMethods['getAgentEventBinding'],
+      isHumanResumeAllowed,
+    );
+
+    const trigger = await request(testApp)
+      .post('/chat')
+      .set('x-test-trigger', '1')
+      .set('x-lc-agent-event-binding', `evtbind_${'c'.repeat(48)}`)
+      .set('x-lc-agent-event-source-key', 'source-key')
+      .send({ conversationId: 'child-conversation' });
+    const human = await request(testApp)
+      .post('/resume')
+      .send({ conversationId: 'child-conversation', actionId: 'action-1' });
+
+    expect(trigger.status).toBe(409);
+    expect(human.status).toBe(409);
+  });
+
   it('rejects a provisional child before its conversation becomes durable', async () => {
     const store = makeStore();
     jest.spyOn(store, 'isThreadActiveForOwner').mockReturnValue(true);
@@ -128,7 +291,7 @@ describe('subagent child-thread write policy', () => {
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ error: CHILD_THREAD_READ_ONLY_ERROR });
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvo).toHaveBeenCalledWith('user-1', reservedThreadId);
   });
 
   it('keeps the shared policy owner-scoped and treats child lineage as immutable', async () => {

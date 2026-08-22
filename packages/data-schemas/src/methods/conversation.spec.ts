@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import mongoose, { type FilterQuery } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
 import type {
@@ -114,6 +114,7 @@ describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
@@ -984,6 +985,18 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveConvo(mockCtx, mockConversationData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
+    });
+
     it('should save a conversation without expiredAt when isTemporary is false', async () => {
       mockCtx.isTemporary = false;
 
@@ -1727,17 +1740,99 @@ describe('Conversation Operations', () => {
         },
       ]);
       deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 3 });
+      const beforeDelete = jest.fn(async (conversationIds: string[]) => {
+        expect(
+          await Conversation.countDocuments({ conversationId: { $in: conversationIds } }),
+        ).toBe(conversationIds.length);
+      });
 
-      const result = await deleteConvos('user123', { conversationId: parentId });
+      const result = await deleteConvos('user123', { conversationId: parentId }, { beforeDelete });
 
       expect(result.deletedCount).toBe(3);
       expect(result.conversationIds).toEqual([parentId, childId, grandchildId]);
+      expect(beforeDelete.mock.calls).toEqual([[[parentId]], [[childId]], [[grandchildId]]]);
       expect(deleteMessages).toHaveBeenCalledWith({
         conversationId: { $in: [parentId, childId, grandchildId] },
         user: 'user123',
       });
       expect(await Conversation.find({ user: 'user123' })).toHaveLength(0);
       expect(await Conversation.findOne({ conversationId: otherUsersChildId })).not.toBeNull();
+    });
+
+    it('reports a partial cascade failure instead of silently succeeding', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const project = await ChatProject.create({
+        user: 'user123',
+        name: 'Partial Cascade',
+        conversationCount: 1,
+        lastConversationId: parentId,
+      });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 1, position: 1 });
+      await Conversation.create([
+        {
+          conversationId: parentId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          chatProjectId: project._id!.toString(),
+          tags: ['work'],
+        },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+      const realFind = Conversation.find.bind(Conversation);
+      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter) => {
+        if (
+          filter != null &&
+          Object.prototype.hasOwnProperty.call(filter, 'subagentThread.parentConversationId')
+        ) {
+          return {
+            select: () => ({ lean: () => Promise.reject(new Error('stepdown')) }),
+          };
+        }
+        return realFind(filter as FilterQuery<IConversation>);
+      }) as typeof Conversation.find);
+
+      await expect(deleteConvos('user123', { conversationId: parentId })).rejects.toThrow(
+        'stepdown',
+      );
+      expect(findSpy).toHaveBeenCalledTimes(4);
+      expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
+      expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
+      expect(deleteMessages).not.toHaveBeenCalled();
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect(
+        (await ChatProject.findById(project._id).lean<IChatProject>())?.conversationCount,
+      ).toBe(0);
+
+      findSpy.mockRestore();
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 2 });
+      const recovered = await deleteConvos('user123', { conversationId: parentId });
+
+      expect(recovered.conversationIds).toEqual([parentId, childId]);
+      expect(await Conversation.findOne({ conversationId: childId })).toBeNull();
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId] },
+        user: 'user123',
+      });
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      findSpy.mockRestore();
     });
 
     it('does not delete a parent when deleting one child thread', async () => {
@@ -3491,6 +3586,70 @@ describe('Conversation Operations', () => {
       ).resolves.toBeNull();
       expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
         'subagentThreadLease',
+      );
+    });
+
+    it('resolves an event binding only through its owner, tenant, and API key', async () => {
+      const conversationId = uuidv4();
+      const bindingId = `evtbind_${'a'.repeat(48)}`;
+      await Conversation.create({
+        conversationId,
+        user: 'binding-user',
+        tenantId: 'tenant-a',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toMatchObject({
+        conversationId,
+        agentId: 'agent-player',
+        binding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+      });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-b',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-b',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      await Conversation.updateOne({ conversationId }, { expiredAt: new Date(0) });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('binding-user', conversationId)).not.toHaveProperty(
+        'agentEventBinding',
       );
     });
 

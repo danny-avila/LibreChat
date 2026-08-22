@@ -1230,7 +1230,9 @@ class BaseClient {
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const reqCtx = {
       userId: options?.req?.user?.id,
-      isTemporary: options?.req?.body?.isTemporary,
+      isTemporary:
+        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
+      expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
       interfaceConfig: options?.req?.config?.interfaceConfig,
     };
     const savedMessage = await db.saveMessage(
@@ -1306,6 +1308,7 @@ class BaseClient {
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
       context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
+      noUpsert: req?._agentEventBindingParentConversationId != null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
     });
 

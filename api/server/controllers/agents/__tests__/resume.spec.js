@@ -99,6 +99,9 @@ const mockClaimScheduleResume = jest.fn();
 const mockReleaseScheduleResumeClaim = jest.fn();
 const mockFinalizeScheduleResumeClaim = jest.fn();
 const mockReleaseScheduleResumeFence = jest.fn();
+const mockAcquireEventChildGenerationLease = jest.fn();
+const mockReleaseEventChildLease = jest.fn();
+const mockIsSubagentOwnerAdmissible = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -131,6 +134,11 @@ jest.mock('~/models', () => ({
   getActions: (...args) => mockGetActions(...args),
   getUserMemories: (...args) => mockGetUserMemories(...args),
   getRoleByName: (...args) => mockGetRoleByName(...args),
+  isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
+  acquireEventChildGenerationLease: (...args) => mockAcquireEventChildGenerationLease(...args),
 }));
 
 jest.mock('~/server/services/ActionService', () => ({
@@ -259,6 +267,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   let mockAddTitle;
   let capturedInit;
   let requestConfigOverrides;
+  let requestStateOverrides;
   let endpointAgent;
   let settle;
   let settled;
@@ -268,6 +277,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     capturedInit = null;
     requestConfigOverrides = {};
+    requestStateOverrides = {};
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
@@ -338,6 +348,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockReleaseScheduleResumeClaim.mockResolvedValue(true);
     mockFinalizeScheduleResumeClaim.mockResolvedValue(true);
     mockReleaseScheduleResumeFence.mockResolvedValue(undefined);
+    mockAcquireEventChildGenerationLease.mockResolvedValue(mockReleaseEventChildLease);
+    mockReleaseEventChildLease.mockResolvedValue(undefined);
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
     endpointAgent = {
       _id: 'mongo-agent-abc',
       id: AGENT_ID,
@@ -388,6 +401,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         model_parameters: {},
         agent: Promise.resolve(endpointAgent),
       };
+      Object.assign(req, requestStateOverrides);
       next();
     });
     app.post('/api/agents/chat/resume', (req, res, next) =>
@@ -404,6 +418,149 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     endpoint: 'agents',
     decisions: [{ tool_call_id: 'tc1', decision: 'approve' }],
     ...extra,
+  });
+
+  const configureEventActorResume = (expiredAt = new Date(Date.now() + 60_000)) => {
+    requestStateOverrides = {
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: TENANT_ID,
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
+    };
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: TENANT_ID,
+      createdAt: new Date('2026-08-22T00:00:00.000Z'),
+    });
+    return expiredAt;
+  };
+
+  describe('event-bound actor resume lifecycle', () => {
+    it('leaves the approval pending when the previous segment still owns the lease', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalled();
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('classifies an expired binding as ended when no lease can be acquired', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('owns the lease before consuming approval and preserves the inherited deadline', async () => {
+      const expiredAt = configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { isTemporary: true } }),
+      );
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockAcquireEventChildGenerationLease.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockIsSubagentOwnerAdmissible.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({ retentionExpiresAt: expiredAt }),
+      );
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(mockReleaseEventChildLease).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves the inherited deadline when the resumed actor pauses again', async () => {
+      const expiredAt = configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({ metadata: { isTemporary: true } }),
+      );
+      mockInitializeClient.mockResolvedValue({
+        client: makeClient({
+          pendingApproval: { actionId: NEXT_ACTION_ID },
+          contentParts: [{ type: 'text', text: 'partial' }],
+        }),
+        userMCPAuthMap: {},
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockSaveMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ isTemporary: true, expiredAt }),
+        expect.objectContaining({ unfinished: true }),
+        expect.objectContaining({
+          context: 'api/server/controllers/agents/resume.js - re-pause progress persist',
+        }),
+      );
+    });
+
+    it('defers a resume when the owner admission fence is temporarily closed', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockIsSubagentOwnerAdmissible.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('rejects a binding that expires after the route guard but before approval consumption', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(res.status).toBe(409);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {
+      const expiredAt = configureEventActorResume();
+      requestStateOverrides._agentEventBindingTenantId = undefined;
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'parent-conversation',
+        agent_id: 'parent-agent',
+      });
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: undefined, retentionExpiresAt: expiredAt }),
+      );
+    });
   });
 
   describe('scheduled occurrence lifecycle', () => {
