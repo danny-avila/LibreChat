@@ -1,3 +1,4 @@
+import { isCronCadence } from 'librechat-data-provider';
 import type { TScheduleCadence } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 
@@ -35,6 +36,12 @@ export const describeCadence = (
   localize: LocalizeFunction,
   locale?: string,
 ): string => {
+  if (isCronCadence(cadence)) {
+    // Shown verbatim rather than translated into prose. A five-field expression can
+    // say things no sentence template covers, and a wrong summary of the cadence a
+    // user typed themselves is worse than the expression they already understand.
+    return localize('com_ui_schedule_runs_cron', { expression: cadence.expression });
+  }
   const { frequency, hour, minute, daysOfWeek } = cadence;
   if (frequency === 'hourly') {
     return localize('com_ui_schedule_runs_hourly', {
@@ -56,3 +63,14 @@ export const describeCadence = (
   }
   return localize('com_ui_schedule_runs_daily', { time });
 };
+
+/** One previewed occurrence, in the schedule's own zone. */
+export const formatRunInstant = (date: Date, timezone: string, locale?: string): string =>
+  new Intl.DateTimeFormat(locale, {
+    timeZone: timezone,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
