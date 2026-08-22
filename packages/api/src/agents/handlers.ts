@@ -12,6 +12,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  CallerCapabilityProjectionSnapshot,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
@@ -59,10 +60,7 @@ import {
   contentFilterModelBoundBlockResponse,
   isContentFilterError,
 } from '~/middleware/contentFilter';
-import {
-  resolveCallerCapabilityProjectionSnapshot,
-  type CallerCapabilityProjectionSnapshot,
-} from './callerCapabilities';
+import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import {
   hasIntentArg,
   stripIntentArg,

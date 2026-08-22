@@ -1,10 +1,4 @@
-export type CallerCapabilityProjectionSnapshot = {
-  version: 1;
-  directToolNames: string[];
-  codeExecutionToolNames: string[];
-  directOnlyToolNames: string[];
-  codeExecutionOnlyToolNames: string[];
-};
+import type { CallerCapabilityProjectionSnapshot } from '@librechat/agents';
 
 /**
  * Accepts only complete snapshots for the version this host understands.
