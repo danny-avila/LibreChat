@@ -981,7 +981,11 @@ describe('createToolExecuteHandler', () => {
     it('instruments the PTC tool map so inner calls report progress', async () => {
       const capturedConfigs: Record<string, unknown>[] = [];
       const ptcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
-      const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+      /** `allowed_callers` must admit code execution, or the caller-capability
+       *  filter drops the tool before the trace ever sees it. */
+      const toolRegistry = new Map([
+        ['custom_tool', { name: 'custom_tool', allowed_callers: ['code_execution'] }],
+      ]);
       const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [ptcTool] as never[],
@@ -1018,6 +1022,39 @@ describe('createToolExecuteHandler', () => {
         name: 'custom_tool',
         args: 'path=a.ts',
       });
+    });
+
+    it('instruments only the tools the caller-capability filter admits', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const ptcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
+      const toolRegistry = new Map([
+        ['code_tool', { name: 'code_tool', allowed_callers: ['code_execution'] }],
+        ['direct_tool', { name: 'direct_tool', allowed_callers: ['direct'] }],
+      ]);
+      const ptcToolMap = new Map([
+        ['code_tool', createMockTool('code_tool', [])],
+        ['direct_tool', createMockTool('direct_tool', [])],
+      ]);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [ptcTool] as never[],
+        configurable: { toolRegistry, ptcToolMap },
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        emitPtcProgress: () => {},
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_ptc',
+          name: Constants.PROGRAMMATIC_TOOL_CALLING,
+          args: { code: 'code_tool "{}"' },
+        },
+      ]);
+
+      /** Tracing must not widen what the sandbox can reach. */
+      const injectedMap = capturedConfigs[0].toolMap as Map<string, unknown>;
+      expect([...injectedMap.keys()]).toEqual(['code_tool']);
     });
   });
 
