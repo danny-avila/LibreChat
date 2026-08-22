@@ -296,6 +296,18 @@ describe('detached subagent activity stream', () => {
     expect(transport.cleaned).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
   });
 
+  it('does not cache a replica-local no-demand observation', async () => {
+    const transport = new TestTransport();
+    transport.demanded = false;
+    const stream = new SubagentActivityStream(transport);
+
+    await stream.publish('child-thread', 'task-1', update());
+    transport.demanded = true;
+    await stream.publish('child-thread', 'task-1', update());
+
+    expect(transport.emitted).toHaveLength(1);
+  });
+
   it('evicts cached no-demand state when a task reaches terminal state', async () => {
     const transport = new TestTransport();
     transport.demanded = false;

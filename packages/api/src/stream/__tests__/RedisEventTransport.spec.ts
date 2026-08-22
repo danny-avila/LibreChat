@@ -361,6 +361,46 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('times out a hung channel subscription and releases deferred delivery', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    mockSubscriber.subscribe.mockImplementationOnce(() => new Promise(() => undefined));
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'hung-channel-attachment';
+    const received: object[] = [];
+    const messageHandler = getMessageHandler(mockSubscriber);
+
+    try {
+      const subscription = transport.subscribe(
+        streamId,
+        { onChunk: (event) => received.push(event as object) },
+        { deferSequenceDelivery: true, captureSequenceFrontier: true },
+      );
+      deliverSequencedMessage(messageHandler, streamId, {
+        type: 'chunk',
+        seq: 0,
+        data: { index: 0 },
+      });
+      expect(received).toEqual([]);
+
+      jest.advanceTimersByTime(3_000);
+      await expect(subscription.ready).rejects.toThrow(
+        'Timed out synchronizing Redis subscription',
+      );
+      expect(received).toEqual([{ index: 0 }]);
+
+      subscription.unsubscribe();
+      expect(transport.getSubscriberCount(streamId)).toBe(0);
+    } finally {
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
+
   it('releases a surviving subscriber when the initiating frontier capture fails', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
@@ -433,8 +473,9 @@ describe('RedisEventTransport', () => {
         { onChunk: jest.fn() },
         { deferSequenceDelivery: true, captureSequenceFrontier: true },
       );
-      await Promise.resolve();
-      await Promise.resolve();
+      while (mockPublisher.eval.mock.calls.length === 0) {
+        await Promise.resolve();
+      }
 
       const received: object[] = [];
       const survivor = transport.subscribe(streamId, {

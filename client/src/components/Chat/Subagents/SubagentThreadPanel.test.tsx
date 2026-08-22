@@ -20,6 +20,11 @@ let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
+  subagentThreadHasTaskEvidence: (view: SubagentThreadView | undefined, taskId: string): boolean =>
+    view?.messages.some(
+      (message) =>
+        message.messageId === `${taskId}:user` || message.messageId === `${taskId}:assistant`,
+    ) === true,
 }));
 
 jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
@@ -321,6 +326,26 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
+  });
+
+  it('keeps streaming when terminal thread state belongs to an older task', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        messages: [{ ...completedView.messages[1], messageId: 'older-task:assistant' }],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
       <RecoilRoot>
         <SubagentThreadPanel selection={selection} />
       </RecoilRoot>,

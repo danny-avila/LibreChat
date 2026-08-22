@@ -191,7 +191,14 @@ export class SubagentActivityStream {
     const cached = this.demandCache.get(streamId);
     if (cached != null && cached.expiresAt > Date.now()) return cached.demanded;
     const demanded = await this.transport.hasDemand(streamId);
-    this.demandCache.set(streamId, { demanded, expiresAt: Date.now() + DEMAND_CACHE_MS });
+    /** A negative observation is replica-local and can become stale as soon as a panel on
+     * another owner renews the shared lease. Cache only positive demand so attachment never
+     * creates a forward-only delivery hole on a remote producer. */
+    if (demanded) {
+      this.demandCache.set(streamId, { demanded: true, expiresAt: Date.now() + DEMAND_CACHE_MS });
+    } else {
+      this.demandCache.delete(streamId);
+    }
     return demanded;
   }
 

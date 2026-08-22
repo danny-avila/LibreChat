@@ -470,7 +470,9 @@ export function reduceSubagentProgress(
   }
 
   const sanitizeSequencedEvent = (event: SubagentUpdateEvent): SubagentUpdateEvent =>
-    event.phase === 'reasoning_delta' ? { ...event, data: undefined } : event;
+    source === 'detached' && event.phase === 'reasoning_delta'
+      ? { ...event, data: undefined }
+      : event;
   const drainPending = () => {
     pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
     while (pending[0]?.activitySequence === expected) {

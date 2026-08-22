@@ -235,19 +235,40 @@ describe('reduceSubagentProgress', () => {
   });
 
   it('preserves a reasoning activity marker without retaining private reasoning text', () => {
-    const progress = reduceSubagentProgress(null, [
-      update({
-        phase: 'reasoning_delta',
-        data: undefined,
-        label: 'Reasoning',
-      }),
-    ]);
+    const progress = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activitySequence: 0,
+          phase: 'reasoning_delta',
+          data: { delta: { content: [{ type: ContentTypes.THINK, think: 'private' }] } },
+          label: 'Reasoning',
+        }),
+      ],
+      'detached',
+      false,
+    );
 
     expect(progress?.contentParts).toEqual([{ type: ContentTypes.THINK, think: '…' }]);
     expect(progress?.tickerState.lines).toEqual([
       expect.objectContaining({ kind: 'reasoning', body: '…' }),
     ]);
     expect(JSON.stringify(progress)).not.toContain('private');
+  });
+
+  it('preserves visible reasoning on the authoritative parent delivery path', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({
+        activitySequence: 0,
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ type: ContentTypes.THINK, think: 'Visible reasoning' }] } },
+        label: 'Reasoning',
+      }),
+    ]);
+
+    expect(progress?.contentParts).toEqual([
+      { type: ContentTypes.THINK, think: 'Visible reasoning' },
+    ]);
   });
 
   it('bounds accumulated live text to the durable activity byte budget', () => {

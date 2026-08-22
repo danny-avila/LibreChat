@@ -13,20 +13,22 @@ const isTerminal = (status: SubagentThreadView['status']): boolean =>
   status === 'interrupted' ||
   status === 'cancelled';
 
+export const subagentThreadHasTaskEvidence = (
+  view: SubagentThreadView | undefined,
+  taskId: string,
+): boolean =>
+  view?.messages.some(
+    (message) =>
+      message.messageId === `${taskId}:user` || message.messageId === `${taskId}:assistant`,
+  ) === true;
+
 export const subagentThreadRefetchInterval = (
   view: SubagentThreadView | undefined,
   readinessDeadline: number,
   now = Date.now(),
   expectedTaskId?: string,
 ): number | false => {
-  if (
-    expectedTaskId != null &&
-    !view?.messages.some(
-      (message) =>
-        message.messageId === `${expectedTaskId}:user` ||
-        message.messageId === `${expectedTaskId}:assistant`,
-    )
-  ) {
+  if (expectedTaskId != null && !subagentThreadHasTaskEvidence(view, expectedTaskId)) {
     return now < readinessDeadline ? ACTIVE_THREAD_REFRESH_MS : false;
   }
   // During a rolling deploy, an older replica can return a thread-wide status

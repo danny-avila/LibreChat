@@ -1167,8 +1167,27 @@ export class RedisEventTransport implements IEventTransport {
     const captureSequenceFrontier =
       options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
     const channelReady = this.ensureChannelSubscription(channel);
+    const boundedChannelReady = captureSequenceFrontier
+      ? new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
+            SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
+          );
+          timeout.unref?.();
+          channelReady.then(
+            () => {
+              clearTimeout(timeout);
+              resolve();
+            },
+            (error) => {
+              clearTimeout(timeout);
+              reject(error);
+            },
+          );
+        })
+      : channelReady;
     const attachmentFrontier = captureSequenceFrontier
-      ? channelReady
+      ? boundedChannelReady
           .then(() => {
             if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
             return this.captureSubscriptionFrontier(streamId);
@@ -1180,7 +1199,7 @@ export class RedisEventTransport implements IEventTransport {
             throw error;
           })
       : undefined;
-    const readyPromise = attachmentFrontier?.then(() => undefined) ?? channelReady;
+    const readyPromise = attachmentFrontier?.then(() => undefined) ?? boundedChannelReady;
 
     return {
       ready: readyPromise,
