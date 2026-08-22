@@ -45,26 +45,48 @@ describe('child activity adapters', () => {
     ]);
   });
 
-  it('prefers replayed detached progress over a partial parent snapshot', () => {
+  it('merges a forward-only detached suffix with the partial parent snapshot', () => {
     const activity = adaptLivePersistedActivity({
       title: 'researcher',
       progress: {
         subagentRunId: 'run',
         subagentType: 'researcher',
         status: 'message_delta',
-        contentParts: [{ type: ContentTypes.TEXT, text: 'Latest detached text.' }],
+        contentParts: [{ type: ContentTypes.TEXT, text: 'latest detached text.' }],
         aggregatorState: initSubagentAggregatorState(),
         tickerState: initSubagentTickerState(),
       },
       persistedContent: [
-        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot.' },
+        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot; ' },
       ] as TMessageContentParts[],
-      preferLive: true,
+      mergeLive: true,
       initialProgress: 1,
       isSubmitting: true,
     });
 
-    expect(activity.items).toEqual([{ type: 'writing', text: 'Latest detached text.' }]);
+    expect(activity.items).toEqual([
+      { type: 'writing', text: 'Dispatch-time snapshot; latest detached text.' },
+    ]);
+  });
+
+  it('does not duplicate a persisted prefix replayed by live progress', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'Complete live text.' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+      },
+      persistedContent: [{ type: ContentTypes.TEXT, text: 'Complete ' }] as TMessageContentParts[],
+      mergeLive: true,
+      initialProgress: 1,
+      isSubmitting: true,
+    });
+
+    expect(activity.items).toEqual([{ type: 'writing', text: 'Complete live text.' }]);
   });
 
   it('rehydrates the selected detached task from its sanitized durable activity', () => {

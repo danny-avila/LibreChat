@@ -238,7 +238,7 @@ describe('SubagentThreadPanel', () => {
             subagentRunId: 'child-run',
             subagentType: 'researcher',
             status: 'message_delta',
-            contentParts: [{ type: ContentTypes.TEXT, text: 'Latest detached text.' }],
+            contentParts: [{ type: ContentTypes.TEXT, text: 'latest detached text.' }],
             aggregatorState: initSubagentAggregatorState(),
             tickerState: initSubagentTickerState(),
           })
@@ -248,8 +248,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByText('Latest detached text.')).toBeInTheDocument();
-    expect(screen.queryByText('Dispatch-time snapshot.')).not.toBeInTheDocument();
+    expect(screen.getByText('Dispatch-time snapshot.latest detached text.')).toBeInTheDocument();
   });
 
   it('resets invocation-scoped approval state when the selected card changes', () => {

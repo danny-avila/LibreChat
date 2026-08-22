@@ -191,6 +191,28 @@ describe('useSubagentActivityStream', () => {
     jest.useRealTimers();
   });
 
+  it('preserves reconnect backoff after a stream-unavailable envelope', () => {
+    jest.useFakeTimers();
+    const { unmount } = renderHook(() => useSubagentActivityStream(selection), { wrapper });
+
+    act(() => streams[0]?.emit('error', {}));
+    act(() => jest.advanceTimersByTime(500));
+    expect(streams).toHaveLength(2);
+
+    act(() => {
+      streams[1]?.emit('message', { error: 'Subagent activity stream unavailable' });
+      streams[1]?.emit('error', {});
+      jest.advanceTimersByTime(999);
+    });
+    expect(streams).toHaveLength(2);
+
+    act(() => jest.advanceTimersByTime(1));
+    expect(streams).toHaveLength(3);
+
+    unmount();
+    jest.useRealTimers();
+  });
+
   it('never opens the private task stream for shares or foreground children', () => {
     const { rerender } = renderHook(({ value }) => useSubagentActivityStream(value), {
       initialProps: { value: { ...selection, host: 'share' } as ActiveSubagentPanel },

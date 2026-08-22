@@ -102,6 +102,66 @@ const publicActivityToChildActivity = (items: SubagentActivityItem[]): ChildActi
     };
   });
 
+const itemExtends = (prefix: ChildActivityItem, candidate: ChildActivityItem): boolean => {
+  if (prefix.type !== candidate.type) return false;
+  if (prefix.type === 'writing' && candidate.type === 'writing') {
+    return candidate.text.startsWith(prefix.text);
+  }
+  if (prefix.type === 'reasoning' && candidate.type === 'reasoning') {
+    return prefix.text == null || candidate.text?.startsWith(prefix.text) === true;
+  }
+  if (prefix.type === 'tool' && candidate.type === 'tool') {
+    return prefix.toolCallId === candidate.toolCallId;
+  }
+  return false;
+};
+
+/** A selected detached stream starts at subscription time, so after reload its
+ * live projection is a suffix. In an uninterrupted parent run it can instead
+ * contain the persisted prefix. Merge both shapes without duplicating a replay. */
+const mergePersistedAndLiveActivity = (
+  persisted: ChildActivityItem[],
+  live: ChildActivityItem[],
+): ChildActivityItem[] => {
+  if (persisted.length === 0) return live;
+  if (live.length === 0) return persisted;
+  if (
+    live.length >= persisted.length &&
+    persisted.every((item, index) => itemExtends(item, live[index]))
+  ) {
+    return live;
+  }
+
+  const merged = [...persisted];
+  for (const item of live) {
+    if (item.type === 'tool') {
+      const existingIndex = merged.findIndex(
+        (candidate) => candidate.type === 'tool' && candidate.toolCallId === item.toolCallId,
+      );
+      if (existingIndex >= 0) {
+        merged[existingIndex] = { ...merged[existingIndex], ...item };
+      } else {
+        merged.push(item);
+      }
+      continue;
+    }
+
+    const previous = merged.at(-1);
+    if (previous?.type !== item.type) {
+      merged.push(item);
+      continue;
+    }
+    const previousText = previous.text ?? '';
+    const nextText = item.text ?? '';
+    if (nextText.startsWith(previousText)) {
+      merged[merged.length - 1] = item;
+    } else if (!previousText.endsWith(nextText)) {
+      merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
+    }
+  }
+  return merged;
+};
+
 const liveStatus = ({
   progress,
   initialProgress,
@@ -131,25 +191,22 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
-  /** Detached streams replay the selected task and therefore supersede a
-   *  parent-message snapshot that may have been persisted during dispatch. */
-  preferLive?: boolean;
+  /** Detached streams begin at subscription time, so merge their live suffix
+   *  with any parent-message snapshot persisted during dispatch. */
+  mergeLive?: boolean;
   reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
-  let parts = live;
-  if (input.preferLive !== true && persisted.length > 0) {
-    parts = persisted;
-  } else if (live.length === 0) {
-    parts = persisted;
+  const reasoningVisibility = input.reasoningVisibility ?? 'visible';
+  const approvalVisibility = input.approvalVisibility ?? 'visible';
+  const persistedItems = contentPartsToActivity(persisted, reasoningVisibility, approvalVisibility);
+  const liveItems = contentPartsToActivity(live, reasoningVisibility, approvalVisibility);
+  let items = persistedItems.length > 0 ? persistedItems : liveItems;
+  if (input.mergeLive === true) {
+    items = mergePersistedAndLiveActivity(persistedItems, liveItems);
   }
-  const items = contentPartsToActivity(
-    parts,
-    input.reasoningVisibility ?? 'visible',
-    input.approvalVisibility ?? 'visible',
-  );
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
   }

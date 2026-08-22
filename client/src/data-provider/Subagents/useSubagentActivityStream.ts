@@ -96,7 +96,6 @@ export default function useSubagentActivityStream(
         } catch {
           return;
         }
-        retryAttempt = 0;
         if (envelope.final === true && envelope.subagentActivity === true) {
           terminal = true;
           closeCurrent();
@@ -110,6 +109,7 @@ export default function useSubagentActivityStream(
         if (event.parentToolCallId != null && event.parentToolCallId !== selection.toolCallId) {
           return;
         }
+        retryAttempt = 0;
         registerSubagentProgressKey(key);
         setProgress((previous) => reduceSubagentProgress(previous, [event]));
       });
