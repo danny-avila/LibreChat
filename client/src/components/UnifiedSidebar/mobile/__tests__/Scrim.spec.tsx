@@ -33,7 +33,7 @@ describe('mobile drawer Scrim', () => {
 
     expect(scrim).toHaveAttribute('tabindex', '0');
     expect(scrim).not.toHaveAttribute('aria-hidden');
-    expect(scrim).toHaveClass('opacity-100');
+    expect(scrim.style.opacity).toBe('1');
     expect(scrim).not.toHaveClass('pointer-events-none');
   });
 
@@ -42,7 +42,24 @@ describe('mobile drawer Scrim', () => {
 
     expect(scrim).toHaveAttribute('tabindex', '-1');
     expect(scrim).toHaveAttribute('aria-hidden', 'true');
-    expect(scrim).toHaveClass('opacity-0', 'pointer-events-none');
+    expect(scrim.style.opacity).toBe('0');
+    expect(scrim).toHaveClass('pointer-events-none');
+  });
+
+  /**
+   * The parent shell is overflow-hidden and the global :focus-visible outline
+   * sits 2px outside the box, so an inset ring is the only indicator that
+   * actually paints.
+   */
+  it('keeps the focus ring inside the overflow-hidden shell', () => {
+    const { scrim } = setup({ expanded: true });
+
+    expect(scrim).toHaveClass(
+      'focus-visible:outline-none',
+      'focus-visible:ring-2',
+      'focus-visible:ring-inset',
+      'focus-visible:ring-text-primary',
+    );
   });
 
   /**

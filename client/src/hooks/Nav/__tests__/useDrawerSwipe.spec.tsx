@@ -4,7 +4,11 @@ import useDrawerSwipe, {
   getPendingDrawerFlip,
   kickDrawerAnimation,
 } from '../useDrawerSwipe';
-import { MOBILE_DRAWER_ID, MOBILE_PANE_SHIFT } from '~/components/UnifiedSidebar/constants';
+import {
+  MOBILE_DRAWER_ID,
+  MOBILE_PANE_SHIFT,
+  MOBILE_SCRIM_ID,
+} from '~/components/UnifiedSidebar/constants';
 
 const DRAWER_WIDTH = 375;
 
@@ -97,8 +101,17 @@ const setup = (open: boolean, reducedMotion = false, viewportWidth = DRAWER_WIDT
   };
 };
 
+function attachScrim(opacity: string) {
+  const scrim = document.createElement('button');
+  scrim.id = MOBILE_SCRIM_ID;
+  scrim.style.opacity = opacity;
+  document.body.append(scrim);
+  return scrim;
+}
+
 afterEach(() => {
   document.getElementById(MOBILE_DRAWER_ID)?.remove();
+  document.getElementById(MOBILE_SCRIM_ID)?.remove();
 });
 
 describe('useDrawerSwipe — opening from the chat pane', () => {
@@ -288,6 +301,20 @@ describe('useDrawerSwipe — closing from the drawer', () => {
     expect(harness.onOpenChange).toHaveBeenCalledWith(false);
     expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
     expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+    harness.unmount();
+  });
+
+  it('starts the scrim fade when a swipe commits the close', () => {
+    const harness = setup(true, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('1');
+    harness.swipe(harness.drawer, [
+      { x: 350, y: 100, t: 0 },
+      { x: 250, y: 100, t: 50 },
+      { x: 150, y: 100, t: 100 },
+    ]);
+
+    expect(scrim.style.opacity).toBe('0');
+    expect(harness.onOpenChange).toHaveBeenCalledWith(false);
     harness.unmount();
   });
 
@@ -791,6 +818,40 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
 
     expect(applyState).toHaveBeenCalledTimes(1);
     jest.runAllTimers();
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /**
+   * The drawer slide starts in the kick's frame; Recoil commits three frames
+   * later (longer on a large conversation). Driving the scrim from expanded
+   * would leave it opaque over a drawer that has already gone, then fade it
+   * for another 300ms.
+   */
+  it('starts the scrim fade with the drawer slide, before the state flip', () => {
+    jest.useFakeTimers();
+    const harness = setup(true, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('1');
+    const opacityAtApply: string[] = [];
+    kickDrawerAnimation(false, () => {
+      opacityAtApply.push(scrim.style.opacity);
+    });
+
+    expect(opacityAtApply).toEqual(['0']);
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('starts the scrim fade-in with the open slide', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('0');
+    const opacityAtApply: string[] = [];
+    kickDrawerAnimation(true, () => {
+      opacityAtApply.push(scrim.style.opacity);
+    });
+
+    expect(opacityAtApply).toEqual(['1']);
     jest.useRealTimers();
     harness.unmount();
   });

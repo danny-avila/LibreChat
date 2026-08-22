@@ -4,6 +4,7 @@ import {
   MOBILE_DRAWER_ID,
   MOBILE_DRAWER_TRANSITION,
   MOBILE_PANE_SHIFT,
+  MOBILE_SCRIM_ID,
   SIDEBAR_TRANSITION,
 } from '~/components/UnifiedSidebar/constants';
 
@@ -30,6 +31,16 @@ const SETTLE_BUFFER_MS = 80;
  */
 const drawerCoversPane = (drawer: HTMLElement): boolean =>
   (drawer.clientWidth || window.innerWidth) >= window.innerWidth;
+
+/** Same kick as the drawer/pane transforms: the scrim must not wait for the
+ *  Recoil commit, which a large conversation can delay past the slide. */
+const setScrimOpacity = (open: boolean) => {
+  const scrim = document.getElementById(MOBILE_SCRIM_ID);
+  if (scrim == null) {
+    return;
+  }
+  scrim.style.opacity = open ? '1' : '0';
+};
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
@@ -326,6 +337,7 @@ export default function useDrawerSwipe({
       paneEl.style.transition = SIDEBAR_TRANSITION;
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
+      setScrimOpacity(next);
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
@@ -394,6 +406,7 @@ export default function useDrawerSwipe({
         }
         drawer.style.transition = MOBILE_DRAWER_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+        setScrimOpacity(next);
         if (next) {
           pane.style.transition = SIDEBAR_TRANSITION;
           pane.style.transform = MOBILE_PANE_SHIFT;

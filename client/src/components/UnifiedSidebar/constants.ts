@@ -61,3 +61,9 @@ export const DRAWER_Z_INDEX = 110;
  * the drawer element without threading a ref across sibling trees.
  */
 export const MOBILE_DRAWER_ID = 'mobile-drawer';
+
+/**
+ * Lets a kicked toggle start the scrim fade with the drawer, rather than
+ * waiting for the deferred Recoil commit that a large conversation stalls.
+ */
+export const MOBILE_SCRIM_ID = 'mobile-drawer-scrim';
