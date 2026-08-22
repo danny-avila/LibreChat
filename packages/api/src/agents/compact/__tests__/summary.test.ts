@@ -1441,6 +1441,43 @@ describe('compactConversation', () => {
     expect(inlined).toContain('spec.md');
   });
 
+  it('treats two custom endpoints differing only in case as different', async () => {
+    /** `loadCustomEndpointsConfig` preserves case so `Foo` and `foo` can be two
+     *  endpoints with different credentials; folding case would leave the
+     *  configured summarizer unresolved and silently use the conversation's. */
+    const appConfig = {
+      endpoints: {
+        custom: [
+          { name: 'Foo', apiKey: 'foo-key', baseURL: 'https://foo.example', models: {} },
+          { name: 'foo', apiKey: 'lower-key', baseURL: 'https://lower.example', models: {} },
+        ],
+      },
+      summarization: { provider: 'foo', model: 'summarizer-model' },
+    } as unknown as AppConfig;
+    mockInitializeModel.mockClear();
+
+    await compactConversation({
+      req: {
+        body: {},
+        user: { id: 'user_1' },
+        config: appConfig,
+      } as unknown as ServerRequest,
+      agent: { provider: 'Foo', endpoint: 'Foo', model: 'run-model' },
+      branch,
+      ids,
+      db: dbMethods,
+    });
+
+    const clientOptions = mockInitializeModel.mock.calls[0][0].clientOptions as {
+      model?: string;
+      configuration?: { baseURL?: string };
+    };
+    /** Resolved to the lowercase endpoint the configuration names, not the
+     *  conversation's `Foo`. */
+    expect(clientOptions.model).toBe('summarizer-model');
+    expect(clientOptions.configuration?.baseURL).toBe('https://lower.example');
+  });
+
   it('does not carry run parameters into a cross-endpoint summarizer', async () => {
     /** `getGoogleConfig` spreads whatever it is handed into the client config,
      *  so an OpenAI conversation's parameters would reach a Google summarizer
