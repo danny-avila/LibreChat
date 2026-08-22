@@ -19,7 +19,9 @@ import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMess
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
 import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
+import ClockFormatSelector from '../SettingsTabs/General/ClockFormatSelector';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
+import WeekStartSelector from '../SettingsTabs/General/WeekStartSelector';
 import { ArchiveAllChats } from '../SettingsTabs/Data/ArchiveAllChats';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
@@ -86,6 +88,22 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_nav_chat_direction',
     keywords: ['rtl', 'ltr'],
     Component: ChatDirection,
+  },
+  {
+    id: 'clockFormat',
+    tab: GENERAL,
+    section: 'appearance',
+    labelKey: 'com_nav_clock_format',
+    keywords: ['time', '12-hour', '24-hour', 'am', 'pm', 'meridiem'],
+    Component: ClockFormatSelector,
+  },
+  {
+    id: 'weekStart',
+    tab: GENERAL,
+    section: 'appearance',
+    labelKey: 'com_nav_week_start',
+    keywords: ['week', 'calendar', 'sunday', 'monday'],
+    Component: WeekStartSelector,
   },
   // General · Layout
   {

@@ -473,6 +473,7 @@ const formatRelativeTime = (from: Date, to: Date, locale?: string): string => {
 export const getMessageTimestamp = (
   value?: string | null,
   locale?: string,
+  hour12?: boolean,
 ): MessageTimestamp | null => {
   if (!isValidTimestamp(value)) {
     return null;
@@ -488,6 +489,7 @@ export const getMessageTimestamp = (
     absolute: new Intl.DateTimeFormat(safeLocale, {
       dateStyle: 'medium',
       timeStyle: 'short',
+      hour12,
     }).format(date),
     isRecent: Math.abs(now.getTime() - date.getTime()) < RECENT_THRESHOLD_MS,
   };

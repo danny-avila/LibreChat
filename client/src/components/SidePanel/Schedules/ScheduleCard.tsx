@@ -22,7 +22,7 @@ import {
   useUpdateScheduleMutation,
   useRunScheduleNowMutation,
 } from '~/data-provider';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
 import { useAgentsMapContext } from '~/Providers';
 import { getMessageTimestamp } from '~/utils';
 import ScheduleDialog from './ScheduleDialog';
@@ -132,18 +132,26 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
     });
   }, [schedule.id, deleteSchedule, showToast, localize]);
 
-  const cadenceText = describeCadence(schedule.cadence, localize, i18n.language);
+  const hour12 = useClockFormat();
+  const weekStartsOn = useWeekStart();
+  const cadenceText = describeCadence(
+    schedule.cadence,
+    localize,
+    i18n.language,
+    hour12,
+    weekStartsOn,
+  );
 
   const nextRunText = useMemo(() => {
     if (!schedule.enabled || schedule.nextRunAt == null) {
       return null;
     }
-    const timestamp = getMessageTimestamp(schedule.nextRunAt, i18n.language);
+    const timestamp = getMessageTimestamp(schedule.nextRunAt, i18n.language, hour12);
     if (!timestamp) {
       return null;
     }
     return localize('com_ui_schedule_next_run', { time: timestamp.relative });
-  }, [schedule.enabled, schedule.nextRunAt, i18n.language, localize]);
+  }, [schedule.enabled, schedule.nextRunAt, i18n.language, hour12, localize]);
 
   const dropdownItems = useMemo(
     () => [
