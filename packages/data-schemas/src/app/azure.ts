@@ -1,10 +1,10 @@
-import logger from '~/config/winston';
 import {
   EModelEndpoint,
   validateAzureGroups,
   mapModelToAzureConfig,
 } from 'librechat-data-provider';
 import type { TCustomConfig, TAzureConfig } from 'librechat-data-provider';
+import logger from '~/config/winston';
 
 /**
  * Sets up the Azure OpenAI configuration from the config (`librechat.yaml`) file.
@@ -17,7 +17,8 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
     throw new Error('Azure OpenAI configuration is missing.');
   }
   const { groups, ...azureConfiguration } = azureConfig;
-  const { isValid, modelNames, modelGroupMap, groupMap, errors } = validateAzureGroups(groups);
+  const { isValid, modelNames, priorityModels, modelGroupMap, groupMap, errors } =
+    validateAzureGroups(groups);
 
   if (!isValid) {
     const errorString = errors.join('\n');
@@ -28,10 +29,33 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
 
   const assistantModels: string[] = [];
   const assistantGroups = new Set<string>();
+  const envBalanceEnabled =
+    config.balance == null && process.env.CHECK_BALANCE?.toLowerCase().trim() === 'true';
+  const requiresPriorityRates =
+    config.balance?.enabled === true || envBalanceEnabled || config.interface?.contextCost === true;
   for (const modelName of modelNames) {
     mapModelToAzureConfig({ modelName, modelGroupMap, groupMap });
     const groupName = modelGroupMap?.[modelName]?.group;
     const modelGroup = groupMap?.[groupName];
+    if (priorityModels.includes(modelName)) {
+      const priorityConfig = modelGroup?.models[modelName];
+      if (
+        requiresPriorityRates &&
+        (typeof priorityConfig !== 'object' ||
+          typeof priorityConfig.priority !== 'object' ||
+          !priorityConfig.priority.tokenConfig)
+      ) {
+        throw new Error(
+          `Azure priority model "${modelName}" requires priority.tokenConfig while balance or context-cost accounting is enabled.`,
+        );
+      }
+      mapModelToAzureConfig({
+        modelName,
+        modelGroupMap,
+        groupMap,
+        serviceTier: 'priority',
+      });
+    }
     const supportsAssistants = modelGroup?.assistants || modelGroup?.[modelName]?.assistants;
     if (supportsAssistants) {
       assistantModels.push(modelName);
@@ -63,9 +87,11 @@ export function azureConfigSetup(config: Partial<TCustomConfig>): TAzureConfig {
     isValid,
     groupMap,
     modelNames,
+    priorityModels,
     modelGroupMap,
     assistantModels,
     assistantGroups: Array.from(assistantGroups),
     ...azureConfiguration,
+    tokenConfig: azureConfiguration.tokenConfig as TAzureConfig['tokenConfig'],
   };
 }

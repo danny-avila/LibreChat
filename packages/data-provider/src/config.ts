@@ -522,11 +522,34 @@ export function getSchemaDefaults<Schema extends z.AnyZodObject>(
   return Object.fromEntries(entries) as ExtractDefaults<SchemaShape<Schema>>;
 }
 
+export const tokenConfigEntrySchema = z.object({
+  prompt: z.number(),
+  completion: z.number(),
+  context: z.number(),
+  cacheRead: z.number().optional(),
+  cacheWrite: z.number().optional(),
+});
+
+export type TAzureTokenConfig = z.infer<typeof tokenConfigEntrySchema>;
+
+export const azurePriorityConfigSchema = z.object({
+  deploymentName: z.string().optional(),
+  version: z.string().optional(),
+  instanceName: z.string().optional(),
+  apiKey: z.string().optional(),
+  baseURL: z.string().optional(),
+  additionalHeaders: z.record(z.string()).optional(),
+  tokenConfig: tokenConfigEntrySchema.optional(),
+});
+
+export type TAzurePriorityConfig = z.infer<typeof azurePriorityConfigSchema>;
+
 export const modelConfigSchema = z
   .object({
     deploymentName: z.string().optional(),
     version: z.string().optional(),
     assistants: z.boolean().optional(),
+    priority: z.union([z.literal(true), azurePriorityConfigSchema]).optional(),
   })
   .or(z.boolean());
 
@@ -598,6 +621,7 @@ export type TAzureGroupMap = Record<
 
 export type TValidatedAzureConfig = {
   modelNames: string[];
+  priorityModels: string[];
   groupMap: TAzureGroupMap;
   assistantModels?: string[];
   assistantGroups?: string[];
@@ -1145,17 +1169,7 @@ export const endpointSchema = baseEndpointSchema.merge(
     directEndpoint: z.boolean().optional(),
     titleMessageRole: z.enum(['system', 'user', 'assistant']).optional(),
     /** Static per-model token config: context window and per-million-token rates */
-    tokenConfig: z
-      .record(
-        z.object({
-          prompt: z.number(),
-          completion: z.number(),
-          context: z.number(),
-          cacheRead: z.number().optional(),
-          cacheWrite: z.number().optional(),
-        }),
-      )
-      .optional(),
+    tokenConfig: z.record(tokenConfigEntrySchema).optional(),
   }),
 );
 
@@ -1202,6 +1216,7 @@ export const azureEndpointSchema = z
         reasoningLabelUpdateChars: true,
         reasoningLabelUpdateIntervalMs: true,
         reasoningLabelMaxPerRun: true,
+        tokenConfig: true,
       })
       .partial(),
   );
@@ -2379,6 +2394,7 @@ export const alternateName = {
 
 const sharedOpenAIModels = [
   'gpt-5.6',
+  'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
   'gpt-5.5',

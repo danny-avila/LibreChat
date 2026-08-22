@@ -918,6 +918,27 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         handle: (_event, data, metadata) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
+            const reportedTier = data?.output?.response_metadata?.service_tier;
+            const requestedTierValue = primaryConfig.model_parameters?.service_tier;
+            let requestedTier;
+            if (requestedTierValue === 'default') {
+              requestedTier = 'default';
+            } else if (requestedTierValue === 'fast' || requestedTierValue === 'priority') {
+              requestedTier = 'priority';
+            }
+            if (reportedTier === 'default' || reportedTier === 'priority') {
+              usage.serviceTier = reportedTier;
+            } else if (requestedTier) {
+              usage.serviceTier = requestedTier;
+              usage.serviceTierInferred = true;
+              logger.warn(
+                '[OpenAIChatCompletionController] Provider omitted service_tier; using requested tier',
+                {
+                  model: primaryConfig.model_parameters?.model,
+                  requestedServiceTier: requestedTier,
+                },
+              );
+            }
             const taggedUsage = markSummarizationUsage(usage, metadata);
             collectedUsage.push(taggedUsage);
             accumulateResponseUsage(taggedUsage);

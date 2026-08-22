@@ -156,6 +156,24 @@ class ModelEndHandler {
       if (agentContext.provider) {
         usage.provider = agentContext.provider;
       }
+      const reportedServiceTier = data?.output?.response_metadata?.service_tier;
+      const requestedTierValue = agentContext.clientOptions?.service_tier;
+      let requestedServiceTier;
+      if (requestedTierValue === 'default') {
+        requestedServiceTier = 'default';
+      } else if (requestedTierValue === 'fast' || requestedTierValue === 'priority') {
+        requestedServiceTier = 'priority';
+      }
+      if (reportedServiceTier === 'default' || reportedServiceTier === 'priority') {
+        usage.serviceTier = reportedServiceTier;
+      } else if (requestedServiceTier) {
+        usage.serviceTier = requestedServiceTier;
+        usage.serviceTierInferred = true;
+        logger.warn('[ModelEndHandler] Provider omitted service_tier; using requested tier', {
+          model: usage.model,
+          requestedServiceTier,
+        });
+      }
       /** Tag the producing agent so multi-endpoint graphs can price each call
        *  with its own endpoint token config (recordCollectedUsage resolver). */
       if (agentContext.agentId) {
@@ -199,6 +217,7 @@ class ModelEndHandler {
                 : undefined,
             model: taggedUsage.model,
             provider: taggedUsage.provider,
+            serviceTier: taggedUsage.serviceTier,
             usage_type: taggedUsage.usage_type,
             /** Producing agent for per-endpoint pricing; consumed by the emit
              *  cost resolver and not included in the emitted/persisted payload. */

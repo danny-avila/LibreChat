@@ -423,6 +423,18 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gemini-3.7-flash': { write: 0.75, read: 0.075 },
 };
 
+export const priorityTokenValues: Record<string, { prompt: number; completion: number }> = {
+  'gpt-5.6': { prompt: 8, completion: 40 },
+  'gpt-5.6-terra': { prompt: 4, completion: 24 },
+  'gpt-5.6-luna': { prompt: 0.4, completion: 2.4 },
+};
+
+export const priorityCacheTokenValues: Record<string, { write: number; read: number }> = {
+  'gpt-5.6': { write: 10, read: 0.8 },
+  'gpt-5.6-terra': { write: 5, read: 0.4 },
+  'gpt-5.6-luna': { write: 0.5, read: 0.04 },
+};
+
 /**
  * Premium (tiered) pricing for models whose rates change based on prompt size.
  */
@@ -480,6 +492,13 @@ export function createTxMethods(
       completion: number;
     }
   >;
+  priorityTokenValues: Record<
+    string,
+    {
+      prompt: number;
+      completion: number;
+    }
+  >;
   getValueKey: (model: string, endpoint?: string) => string | undefined;
   getMultiplier: ({
     model,
@@ -488,6 +507,7 @@ export function createTxMethods(
     tokenType,
     inputTokenCount,
     endpointTokenConfig,
+    serviceTier,
   }: {
     model?: string;
     valueKey?: string;
@@ -495,6 +515,7 @@ export function createTxMethods(
     tokenType?: 'prompt' | 'completion';
     inputTokenCount?: number;
     endpointTokenConfig?: Record<string, Record<string, number>>;
+    serviceTier?: 'default' | 'priority';
   }) => number;
   getPremiumRate: (
     valueKey: string,
@@ -508,6 +529,7 @@ export function createTxMethods(
     endpoint,
     endpointTokenConfig,
     inputTokenCount,
+    serviceTier,
   }: {
     valueKey?: string;
     cacheType?: 'write' | 'read';
@@ -515,9 +537,17 @@ export function createTxMethods(
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
     inputTokenCount?: number | null;
+    serviceTier?: 'default' | 'priority';
   }) => number | null;
   defaultRate: number;
   cacheTokenValues: Record<
+    string,
+    {
+      write: number;
+      read: number;
+    }
+  >;
+  priorityCacheTokenValues: Record<
     string,
     {
       write: number;
@@ -584,6 +614,23 @@ export function createTxMethods(
     return premiumEntry[tokenType as 'prompt' | 'completion'] ?? null;
   }
 
+  function applyPremiumRatio(
+    rate: number,
+    valueKey: string | undefined,
+    tokenType: 'prompt' | 'completion',
+    inputTokenCount?: number,
+  ): number {
+    if (!valueKey) {
+      return rate;
+    }
+    const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+    const standardRate = tokenValues[valueKey]?.[tokenType];
+    if (premiumRate == null || standardRate == null || standardRate === 0) {
+      return rate;
+    }
+    return rate * (premiumRate / standardRate);
+  }
+
   /**
    * Retrieves the multiplier for a given value key and token type.
    */
@@ -594,6 +641,7 @@ export function createTxMethods(
     tokenType,
     inputTokenCount,
     endpointTokenConfig,
+    serviceTier,
   }: {
     model?: string;
     valueKey?: string;
@@ -601,9 +649,11 @@ export function createTxMethods(
     tokenType?: 'prompt' | 'completion';
     inputTokenCount?: number;
     endpointTokenConfig?: Record<string, Record<string, number>>;
+    serviceTier?: 'default' | 'priority';
   }): number {
     if (endpointTokenConfig && model) {
-      const modelConfig = endpointTokenConfig[model];
+      const configKey = serviceTier === 'priority' ? `${model}:priority` : model;
+      const modelConfig = endpointTokenConfig[configKey];
       /** A partial override only prices the models it lists; others fall
        *  through to the standard tables so billing matches the advertised
        *  token config instead of charging defaultRate */
@@ -613,6 +663,12 @@ export function createTxMethods(
     }
 
     if (valueKey && tokenType) {
+      if (serviceTier === 'priority') {
+        const priorityRate = priorityTokenValues[valueKey]?.[tokenType];
+        if (priorityRate != null) {
+          return applyPremiumRatio(priorityRate, valueKey, tokenType, inputTokenCount);
+        }
+      }
       const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
       if (premiumRate != null) {
         return premiumRate;
@@ -627,6 +683,13 @@ export function createTxMethods(
     valueKey = getValueKey(model, endpoint);
     if (!valueKey) {
       return defaultRate;
+    }
+
+    if (serviceTier === 'priority') {
+      const priorityRate = priorityTokenValues[valueKey]?.[tokenType];
+      if (priorityRate != null) {
+        return applyPremiumRatio(priorityRate, valueKey, tokenType, inputTokenCount);
+      }
     }
 
     const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
@@ -655,6 +718,23 @@ export function createTxMethods(
     return premiumEntry[cacheType] ?? null;
   }
 
+  function applyPremiumCacheRatio(
+    rate: number,
+    valueKey: string | undefined,
+    cacheType: 'write' | 'read',
+    inputTokenCount?: number | null,
+  ): number {
+    if (!valueKey) {
+      return rate;
+    }
+    const premiumRate = getPremiumCacheRate(valueKey, cacheType, inputTokenCount);
+    const standardRate = cacheTokenValues[valueKey]?.[cacheType];
+    if (premiumRate == null || standardRate == null || standardRate === 0) {
+      return rate;
+    }
+    return rate * (premiumRate / standardRate);
+  }
+
   /**
    * Retrieves the cache multiplier for a given value key and token type.
    * When `inputTokenCount` crosses a model's long-context threshold, the
@@ -667,6 +747,7 @@ export function createTxMethods(
     endpoint,
     endpointTokenConfig,
     inputTokenCount,
+    serviceTier,
   }: {
     valueKey?: string;
     cacheType?: 'write' | 'read';
@@ -674,9 +755,11 @@ export function createTxMethods(
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
     inputTokenCount?: number | null;
+    serviceTier?: 'default' | 'priority';
   }): number | null {
     if (endpointTokenConfig && model) {
-      const modelConfig = endpointTokenConfig[model];
+      const configKey = serviceTier === 'priority' ? `${model}:priority` : model;
+      const modelConfig = endpointTokenConfig[configKey];
       /** Models absent from a partial override fall through to standard
        *  cache rates rather than reporting no cache pricing */
       if (modelConfig) {
@@ -685,6 +768,12 @@ export function createTxMethods(
     }
 
     if (valueKey && cacheType) {
+      if (serviceTier === 'priority') {
+        const priorityRate = priorityCacheTokenValues[valueKey]?.[cacheType];
+        if (priorityRate != null) {
+          return applyPremiumCacheRatio(priorityRate, valueKey, cacheType, inputTokenCount);
+        }
+      }
       return (
         getPremiumCacheRate(valueKey, cacheType, inputTokenCount) ??
         cacheTokenValues[valueKey]?.[cacheType] ??
@@ -701,6 +790,13 @@ export function createTxMethods(
       return null;
     }
 
+    if (serviceTier === 'priority') {
+      const priorityRate = priorityCacheTokenValues[valueKey]?.[cacheType];
+      if (priorityRate != null) {
+        return applyPremiumCacheRatio(priorityRate, valueKey, cacheType, inputTokenCount);
+      }
+    }
+
     return (
       getPremiumCacheRate(valueKey, cacheType, inputTokenCount) ??
       cacheTokenValues[valueKey]?.[cacheType] ??
@@ -710,6 +806,7 @@ export function createTxMethods(
 
   return {
     tokenValues,
+    priorityTokenValues,
     premiumTokenValues,
     getValueKey,
     getMultiplier,
@@ -717,6 +814,7 @@ export function createTxMethods(
     getCacheMultiplier,
     defaultRate,
     cacheTokenValues,
+    priorityCacheTokenValues,
   };
 }
 
