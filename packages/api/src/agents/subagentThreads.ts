@@ -140,7 +140,10 @@ interface TaskThreadLease {
   /** Ordered observational tail; canonical child settlement never awaits it. */
   activityTail?: Promise<void>;
   activityPending?: number;
-  activityClosed?: boolean;
+  /** Terminal settlement stops new admission but must not discard admitted events. */
+  activityAdmissionClosed?: boolean;
+  /** A failed observational publication suppresses the remainder of this task's queue. */
+  activityCircuitOpen?: boolean;
   shared?: {
     token: string;
     lost: boolean;
@@ -553,7 +556,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     event: SubagentUpdateEvent,
   ): void {
     if (
-      lease.activityClosed === true ||
+      lease.activityAdmissionClosed === true ||
+      lease.activityCircuitOpen === true ||
       (lease.activityPending ?? 0) >= MAX_PENDING_ACTIVITY_EVENTS
     ) {
       return;
@@ -562,13 +566,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     const boundedEvent = boundSubagentActivityUpdate(event);
     const publication = (lease.activityTail ?? Promise.resolve())
       .then(() => {
-        if (lease.activityClosed === true) return;
+        if (lease.activityCircuitOpen === true) return;
         return settleActivityWithin(this.activityStream.publish(threadId, taskId, boundedEvent));
       })
       .catch((error) => {
         /** Any failed observational command opens the per-task circuit. Retrying every
          * token during an outage only creates command/log pressure; durable state remains. */
-        lease.activityClosed = true;
+        lease.activityCircuitOpen = true;
         logger.warn('[subagentThreads] Failed to publish child activity', error);
       })
       .finally(() => {
@@ -583,7 +587,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     status: SubagentActivityTerminalStatus,
   ): void {
-    lease.activityClosed = true;
+    lease.activityAdmissionClosed = true;
     const terminal = (lease.activityTail ?? Promise.resolve())
       .then(() => settleActivityWithin(this.activityStream.complete(threadId, taskId, status)))
       .catch((error) => {

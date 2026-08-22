@@ -650,6 +650,22 @@ export class RedisEventTransport implements IEventTransport {
     }
   }
 
+  /** Release a deferred attachment into the ordinary ordered-delivery fallback.
+   * The state identity fence prevents a failed stale attachment from touching a
+   * replacement lifecycle that happens to reuse the same stream ID. */
+  private releaseDeferredDelivery(streamId: string, expectedState: StreamSubscribers): void {
+    const state = this.streams.get(streamId);
+    if (state !== expectedState || !state.reorderBuffer.deliveryDeferred) {
+      return;
+    }
+    const buffer = state.reorderBuffer;
+    buffer.deliveryDeferred = false;
+    this.flushPendingMessages(streamId, state);
+    if (buffer.pending.size > 0) {
+      this.scheduleFlushTimeout(streamId, state);
+    }
+  }
+
   /**
    * Advance subscriber reorder buffer to the authoritative Redis sequence counter
    * (cross-replica safe).
@@ -747,11 +763,7 @@ export class RedisEventTransport implements IEventTransport {
           }
           buffer.nextSeq = Math.max(buffer.nextSeq, replayedNextSeq);
         }
-        buffer.deliveryDeferred = false;
-        this.flushPendingMessages(streamId, state);
-        if (buffer.pending.size > 0) {
-          this.scheduleFlushTimeout(streamId, state);
-        }
+        this.releaseDeferredDelivery(streamId, state);
       }
       throw err;
     }
@@ -1141,10 +1153,17 @@ export class RedisEventTransport implements IEventTransport {
       options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
     const channelReady = this.ensureChannelSubscription(channel);
     const attachmentFrontier = captureSequenceFrontier
-      ? channelReady.then(() => {
-          if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
-          return this.captureSubscriptionFrontier(streamId);
-        })
+      ? channelReady
+          .then(() => {
+            if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
+            return this.captureSubscriptionFrontier(streamId);
+          })
+          .catch((error) => {
+            /** The initiating route may leave while another local viewer remains.
+             * A failed fence must not strand that survivor behind shared deferral. */
+            this.releaseDeferredDelivery(streamId, streamState);
+            throw error;
+          })
       : undefined;
     const readyPromise = attachmentFrontier?.then(() => undefined) ?? channelReady;
 

@@ -361,6 +361,55 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('releases a surviving subscriber when the initiating frontier capture fails', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'failed-frontier-survivor';
+    const messageHandler = getMessageHandler(mockSubscriber);
+    let rejectFrontier!: (error: Error) => void;
+    mockPublisher.eval.mockImplementationOnce(
+      () => new Promise((_, reject) => (rejectFrontier = reject)),
+    );
+
+    const failed = transport.subscribe(
+      streamId,
+      { onChunk: jest.fn() },
+      { deferSequenceDelivery: true, captureSequenceFrontier: true },
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    const received: object[] = [];
+    const survivor = transport.subscribe(streamId, {
+      onChunk: (event) => received.push(event as object),
+    });
+    await survivor.ready;
+    deliverSequencedMessage(messageHandler, streamId, {
+      type: 'chunk',
+      seq: 0,
+      data: { index: 0 },
+    });
+    expect(received).toEqual([]);
+
+    rejectFrontier(new Error('frontier unavailable'));
+    await expect(failed.ready).rejects.toThrow('frontier unavailable');
+    failed.unsubscribe();
+
+    expect(received).toEqual([{ index: 0 }]);
+    deliverSequencedMessage(messageHandler, streamId, {
+      type: 'chunk',
+      seq: 1,
+      data: { index: 1 },
+    });
+    expect(received).toEqual([{ index: 0 }, { index: 1 }]);
+
+    survivor.unsubscribe();
+    transport.destroy();
+  });
+
   it('releases each generation abort subscription after successful completion', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();

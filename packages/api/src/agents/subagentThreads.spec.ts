@@ -417,6 +417,68 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages[0]?.subagentTask?.status).toBe('completed');
   });
 
+  it('drains admitted activity before publishing the terminal event', async () => {
+    const userId = 'activity-stream-drain-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const publicationOrder: string[] = [];
+    let releaseFirst!: () => void;
+    const firstPublication = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const emitChunk = jest.fn((_streamId: string, event: unknown) => {
+      const label = (event as { data?: { label?: string } }).data?.label ?? 'unknown';
+      publicationOrder.push(label);
+      return emitChunk.mock.calls.length === 1 ? firstPublication : Promise.resolve();
+    });
+    const emitDone = jest.fn(async () => {
+      publicationOrder.push('done');
+    });
+    const transport = {
+      emitChunk,
+      emitDone,
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(transport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      for (const label of ['first', 'second']) {
+        args[0].reportProgress({
+          runId: 'root-run',
+          parentRunId: 'parent-run',
+          subagentRunId: 'child-run',
+          subagentType: 'researcher-agent',
+          subagentKind: 'agent',
+          subagentAgentId: 'agent-1',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          label,
+          timestamp: '2026-08-21T20:00:00.000Z',
+        });
+      }
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitUntil(() => emitChunk.mock.calls.length === 1, 'first activity publication');
+    await waitForSettled(store, config.scopeId, started);
+    expect(emitChunk).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    await waitUntil(() => emitDone.mock.calls.length === 1, 'terminal activity delivery');
+
+    expect(emitChunk).toHaveBeenCalledTimes(2);
+    expect(publicationOrder).toEqual(['first', 'second', 'done']);
+  });
+
   it('keeps activity delivery observational when its transport is unavailable', async () => {
     const userId = 'activity-stream-failure-user';
     const parentConversationId = randomUUID();
