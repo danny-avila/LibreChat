@@ -396,8 +396,8 @@ export function foldSubagentEventIntoTicker(
       state.thinkLineIdx != null || state.thinkBuffer
         ? { ...state, thinkLineIdx: null, thinkBuffer: '' }
         : state;
-    const textBuffer = afterClose.textBuffer + chunk;
-    const body = truncatePreview(textBuffer);
+    const textBuffer = truncatePreview(afterClose.textBuffer + chunk);
+    const body = textBuffer;
     const line: SubagentTickerLine = { kind: 'writing', body };
     if (afterClose.textLineIdx == null) {
       const lines = afterClose.lines.concat(line);
@@ -416,8 +416,8 @@ export function foldSubagentEventIntoTicker(
       state.textLineIdx != null || state.textBuffer
         ? { ...state, textLineIdx: null, textBuffer: '' }
         : state;
-    const thinkBuffer = afterClose.thinkBuffer + chunk;
-    const body = truncatePreview(thinkBuffer);
+    const thinkBuffer = truncatePreview(afterClose.thinkBuffer + chunk);
+    const body = thinkBuffer;
     const line: SubagentTickerLine = { kind: 'reasoning', body };
     if (afterClose.thinkLineIdx == null) {
       const lines = afterClose.lines.concat(line);
@@ -447,7 +447,7 @@ export function foldSubagentEventIntoTicker(
         typeof tc?.name === 'string' && tc.name.length > 0,
     );
     if (named.length === 0) return afterClose;
-    const toolNames = named.map((tc) => tc.name);
+    const toolNames = named.slice(0, 16).map((tc) => truncateSnippet(tc.name));
     const argsSnippet = named.length === 1 ? summarizeArgs(named[0].args) : undefined;
     const line: SubagentTickerLine = {
       kind: 'using_tool',
@@ -464,7 +464,7 @@ export function foldSubagentEventIntoTicker(
     const outputSnippet = tc.output != null ? summarizeOutput(tc.output) : undefined;
     const line: SubagentTickerLine = {
       kind: 'tool_complete',
-      toolName: tc.name,
+      toolName: truncateSnippet(tc.name),
       ...(outputSnippet ? { outputSnippet } : {}),
     };
     return { ...state, lines: state.lines.concat(line) };
@@ -474,7 +474,7 @@ export function foldSubagentEventIntoTicker(
     const data = event.data as ErrorData | undefined;
     const line: SubagentTickerLine = {
       kind: 'error',
-      ...(data?.message ? { message: data.message } : {}),
+      ...(data?.message ? { message: truncatePreview(data.message) } : {}),
     };
     return { ...state, lines: state.lines.concat(line) };
   }

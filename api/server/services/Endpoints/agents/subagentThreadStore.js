@@ -48,6 +48,12 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
   },
 );
 
+registerShutdownTask(
+  'subagent activity streams prepare',
+  () => subagentThreadTaskStore.prepareActivityForShutdown(),
+  { phase: 'pre-drain', priority: 100 },
+);
+
 let taskRoutingConfigured = false;
 
 /** Starts the optional Redis owner directory before HTTP admission opens. */

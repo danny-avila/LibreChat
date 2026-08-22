@@ -29,6 +29,7 @@ class TestTransport implements IEventTransport {
   readonly cleaned: string[] = [];
   readonly synchronized: string[] = [];
   readonly subscribeOptions: unknown[] = [];
+  readonly closed: Array<{ streamId: string; error: string }> = [];
 
   demanded = true;
   subscriptionReady?: Promise<void>;
@@ -112,6 +113,15 @@ class TestTransport implements IEventTransport {
     return [...this.handlers.keys()];
   }
 
+  closeLocalSubscribers(streamId: string, error: string): void {
+    this.closed.push({ streamId, error });
+    const subscribers = this.handlers.get(streamId);
+    if (subscribers == null) return;
+    for (const handlers of [...subscribers.values()]) {
+      handlers.onError?.(error);
+    }
+  }
+
   destroy(): void {
     this.handlers.clear();
   }
@@ -185,6 +195,24 @@ describe('detached subagent activity stream', () => {
     expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
     first.unsubscribe();
     second.unsubscribe();
+  });
+
+  it('closes local activity subscribers before HTTP drain', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const onError = jest.fn();
+    const streamId = subagentActivityStreamId('child-thread', 'task-1');
+    const subscription = stream.subscribe('child-thread', 'task-1', {
+      onEvent: jest.fn(),
+      onError,
+    });
+    await subscription.ready;
+
+    stream.prepareForShutdown();
+
+    expect(transport.closed).toEqual([{ streamId, error: 'Server is shutting down' }]);
+    expect(onError).toHaveBeenCalledWith('Server is shutting down');
+    expect(transport.getSubscriberCount(streamId)).toBe(0);
   });
 
   it('finishes first-attachment synchronization for a surviving second subscriber', async () => {

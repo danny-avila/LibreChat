@@ -323,6 +323,7 @@ export class RedisEventTransport implements IEventTransport {
 
   private async captureSubscriptionFrontier(streamId: string): Promise<number> {
     const subscriptionFrontierId = randomUUID();
+    let operationTimeout: ReturnType<typeof setTimeout> | undefined;
     const observed = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.subscriptionFrontierWaiters.delete(subscriptionFrontierId);
@@ -339,17 +340,30 @@ export class RedisEventTransport implements IEventTransport {
     /** The timeout can win while EVAL is still pending; attach rejection handling now. */
     void observed.catch(() => undefined);
     try {
-      const raw = await this.publisher.eval(
-        CAPTURE_SUBSCRIPTION_FRONTIER_LUA,
-        1,
-        KEYS.sequence(streamId),
-        CHANNELS.events(streamId),
-        JSON.stringify({
-          type: EventTypes.SUBSCRIPTION_FRONTIER,
-          subscriptionFrontierId,
-        }),
-      );
-      await observed;
+      /** Wait for the Redis command and its published marker concurrently. If the command
+       * commits but its promise never settles, the marker timeout still releases attachment
+       * admission instead of leaving every surviving local subscriber deferred forever. */
+      const operation = Promise.all([
+        this.publisher.eval(
+          CAPTURE_SUBSCRIPTION_FRONTIER_LUA,
+          1,
+          KEYS.sequence(streamId),
+          CHANNELS.events(streamId),
+          JSON.stringify({
+            type: EventTypes.SUBSCRIPTION_FRONTIER,
+            subscriptionFrontierId,
+          }),
+        ),
+        observed,
+      ]);
+      const operationDeadline = new Promise<never>((_, reject) => {
+        operationTimeout = setTimeout(
+          () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
+          SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
+        );
+        operationTimeout.unref?.();
+      });
+      const [raw] = await Promise.race([operation, operationDeadline]);
       const parsed = raw != null ? parseInt(String(raw), 10) : 0;
       return Number.isNaN(parsed) ? 0 : parsed;
     } catch (error) {
@@ -359,6 +373,7 @@ export class RedisEventTransport implements IEventTransport {
       }
       throw error;
     } finally {
+      if (operationTimeout != null) clearTimeout(operationTimeout);
       const waiter = this.subscriptionFrontierWaiters.get(subscriptionFrontierId);
       if (waiter != null) {
         clearTimeout(waiter.timeout);

@@ -541,6 +541,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.activityStream.destroy();
   }
 
+  prepareActivityForShutdown(): void {
+    this.activityStream.prepareForShutdown();
+  }
+
   subscribeActivity(
     threadId: string,
     taskId: string,

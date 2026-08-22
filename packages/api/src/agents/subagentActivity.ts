@@ -16,6 +16,7 @@ const HEARTBEAT_MS = 15_000;
 const DEMAND_TTL_MS = 30_000;
 const DEMAND_HEARTBEAT_MS = 10_000;
 const DEMAND_CACHE_MS = 250;
+const SHUTDOWN_SUBSCRIBER_ERROR = 'Server is shutting down';
 
 export type SubagentActivityTerminalStatus = 'completed' | 'failed' | 'cancelled';
 
@@ -301,6 +302,14 @@ export class SubagentActivityStream {
       });
     } finally {
       this.demandCache.delete(streamId);
+    }
+  }
+
+  /** Close this process's SSE responses before HTTP drain. Durable child execution and
+   * cross-replica activity remain untouched; clients reconnect to another live owner. */
+  prepareForShutdown(): void {
+    for (const streamId of this.transport.getTrackedStreamIds()) {
+      this.transport.closeLocalSubscribers?.(streamId, SHUTDOWN_SUBSCRIBER_ERROR);
     }
   }
 

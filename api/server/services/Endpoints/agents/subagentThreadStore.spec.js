@@ -1,6 +1,7 @@
 const mockTaskStore = {
   configureTaskControlTransport: jest.fn().mockResolvedValue(undefined),
   configureActivityStream: jest.fn(),
+  prepareActivityForShutdown: jest.fn(),
   destroyTaskControlTransport: jest.fn().mockResolvedValue(undefined),
   destroyActivityStream: jest.fn(),
 };
@@ -45,9 +46,12 @@ jest.mock('../../Agents/triggers', () => ({
 
 const { ioredisClient, registerShutdownTask, duplicateIoRedisClient } = require('@librechat/api');
 const { configureSubagentTaskRouting } = require('./subagentThreadStore');
+const activityPrepareRegistration = registerShutdownTask.mock.calls.find(
+  ([name]) => name === 'subagent activity streams prepare',
+);
 
 describe('subagent thread Redis lifecycle', () => {
-  it('disconnects the dedicated activity subscriber during graceful shutdown', async () => {
+  it('closes activity SSE before drain and disconnects its subscriber after drain', async () => {
     const taskSubscriber = { disconnect: jest.fn() };
     const activitySubscriber = { disconnect: jest.fn() };
     const taskPublisher = { disconnect: jest.fn() };
@@ -61,12 +65,23 @@ describe('subagent thread Redis lifecycle', () => {
 
     await configureSubagentTaskRouting();
 
+    expect(activityPrepareRegistration).toEqual([
+      'subagent activity streams prepare',
+      expect.any(Function),
+      { phase: 'pre-drain', priority: 100 },
+    ]);
     expect(registerShutdownTask).toHaveBeenCalledWith(
       'subagent task control transport',
       expect.any(Function),
       { priority: 90 },
     );
-    const shutdown = registerShutdownTask.mock.calls[0][1];
+    const prepare = activityPrepareRegistration[1];
+    prepare();
+    expect(mockTaskStore.prepareActivityForShutdown).toHaveBeenCalledTimes(1);
+
+    const shutdown = registerShutdownTask.mock.calls.find(
+      ([name]) => name === 'subagent task control transport',
+    )[1];
     await shutdown();
 
     expect(mockTaskStore.destroyTaskControlTransport).toHaveBeenCalledTimes(1);
