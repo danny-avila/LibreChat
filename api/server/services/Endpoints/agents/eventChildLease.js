@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
 const { logger } = require('@librechat/data-schemas');
-const { GenerationJobManager } = require('@librechat/api');
+const { GenerationJobManager, isStopConfirmed } = require('@librechat/api');
 const {
   acquireSubagentThreadLease,
   renewSubagentThreadLease,
@@ -9,6 +9,7 @@ const {
 
 const EVENT_CHILD_LEASE_TTL_MS = 30_000;
 const EVENT_CHILD_LEASE_HEARTBEAT_MS = 10_000;
+const EVENT_CHILD_ABORT_RETRY_MS = 250;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 /** Makes an event-driven child generation visible to the durable deletion protocol. */
@@ -52,18 +53,40 @@ async function acquireEventChildGenerationLease({
   let leaseLost = false;
   let heldUntil = initialLeaseDeadline;
   let renewalInFlight;
-  let deadlineAbortInFlight;
+  let abortInFlight;
   let deadlineTimer;
-  const abortForLostLease = async (message, error) => {
-    if (leaseLost || stopped) return;
+  const abortForLostLease = (message, error) => {
+    if (stopped) return Promise.resolve();
+    if (abortInFlight != null) return abortInFlight;
     leaseLost = true;
     logger.warn(message, error);
-    await GenerationJobManager.abortJob(streamId, {
-      expectedCreatedAt: jobCreatedAt,
-      awaitProviderDrain: true,
-    }).catch((abortError) => {
-      logger.warn('[EventChildLease] Failed to stop generation after lease loss', abortError);
-    });
+    /** Retain the durable fence until the exact generation is confirmed stopped.
+     * An abort reply can be ambiguous (`job_still_active`, `job_not_found`) and a
+     * store/provider failure can throw after the deadline has already fired. The
+     * owner therefore retries until abort is authoritative or its own provider
+     * finishes and calls `release`, which is the alternate proof of drain. */
+    abortInFlight = (async () => {
+      while (!stopped) {
+        try {
+          const result = await GenerationJobManager.abortJob(streamId, {
+            expectedCreatedAt: jobCreatedAt,
+            awaitProviderDrain: true,
+          });
+          if (isStopConfirmed(result)) return;
+          logger.warn('[EventChildLease] Generation stop was not confirmed; retrying', {
+            streamId,
+            failureReason: result?.failureReason,
+          });
+        } catch (abortError) {
+          logger.warn('[EventChildLease] Failed to stop generation after lease loss; retrying', {
+            streamId,
+            error: abortError,
+          });
+        }
+        await new Promise((resolve) => setTimeout(resolve, EVENT_CHILD_ABORT_RETRY_MS));
+      }
+    })();
+    return abortInFlight;
   };
   const renew = () => {
     if (stopped || leaseLost || renewalInFlight != null) return;
@@ -104,7 +127,7 @@ async function acquireEventChildGenerationLease({
     if (retentionDeadline == null || stopped || leaseLost) return;
     const remaining = retentionDeadline - Date.now();
     if (remaining <= 0) {
-      deadlineAbortInFlight = abortForLostLease(
+      void abortForLostLease(
         '[EventChildLease] Generation reached its inherited retention deadline',
       );
       return;
@@ -120,7 +143,7 @@ async function acquireEventChildGenerationLease({
     clearInterval(heartbeat);
     clearTimeout(deadlineTimer);
     await renewalInFlight;
-    await deadlineAbortInFlight;
+    await abortInFlight;
     await releaseSubagentThreadLease(input).catch((error) => {
       logger.warn('[EventChildLease] Release failed', error);
     });

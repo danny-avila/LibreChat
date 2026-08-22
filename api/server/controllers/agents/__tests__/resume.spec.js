@@ -451,6 +451,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
     });
 
+    it('classifies an expired binding as ended when no lease can be acquired', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockAcquireEventChildGenerationLease.mockResolvedValue(null);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
     it('owns the lease before consuming approval and preserves the inherited deadline', async () => {
       const expiredAt = configureEventActorResume();
       mockGenerationJobManager.getJob.mockResolvedValue(
@@ -463,6 +475,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
 
       expect(mockAcquireEventChildGenerationLease.mock.invocationCallOrder[0]).toBeLessThan(
+        mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
+      );
+      expect(mockIsSubagentOwnerAdmissible.mock.invocationCallOrder[0]).toBeLessThan(
         mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
       );
       expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
@@ -512,10 +527,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
-      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
-        expectedCreatedAt: 1000,
-        awaitProviderDrain: true,
-      });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
     });
 
     it('rejects a binding that expires after the route guard but before approval consumption', async () => {
@@ -526,10 +539,27 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
       expect(res.status).toBe(409);
-      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
-        expectedCreatedAt: 1000,
-        awaitProviderDrain: true,
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+    });
+
+    it('uses the guard-normalized tenant for a legacy untenanted event actor', async () => {
+      const expiredAt = configureEventActorResume();
+      requestStateOverrides._agentEventBindingTenantId = undefined;
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'parent-conversation',
+        agent_id: 'parent-agent',
       });
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: undefined, retentionExpiresAt: expiredAt }),
+      );
     });
   });
 

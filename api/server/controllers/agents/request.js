@@ -1137,17 +1137,27 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        * wins and this run stops here, or the deletion observes and drains this job. */
       releaseEventChildLease = await acquireEventChildGenerationLease({
         userId,
-        tenantId: req.user?.tenantId,
+        tenantId: req._agentEventBindingTenantId,
         conversationId,
         streamId,
         jobCreatedAt,
         retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
       });
       if (releaseEventChildLease == null) {
-        throw Object.assign(new Error('The event actor is already handling another turn'), {
-          code: 'EVENT_ACTOR_NOT_READY',
-          status: 409,
-        });
+        const bindingActive = isAgentEventRetentionActive(
+          req._agentEventBindingRetention?.expiredAt,
+        );
+        throw Object.assign(
+          new Error(
+            bindingActive
+              ? 'The event actor is already handling another turn'
+              : 'The event binding parent is no longer available',
+          ),
+          {
+            code: bindingActive ? 'EVENT_ACTOR_NOT_READY' : 'EVENT_BINDING_PARENT_ENDED',
+            status: 409,
+          },
+        );
       }
       const [eventParent, ownerAdmissible] = await Promise.all([
         getConvo(userId, req._agentEventBindingParentConversationId),
@@ -1164,6 +1174,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         eventParent.subagentThread != null ||
         eventParent.agent_id !== req._agentEventBindingParentAgentId ||
         (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+        !isAgentEventRetentionActive(req._agentEventBindingRetention?.expiredAt) ||
         !isAgentEventRetentionActive(eventParent.expiredAt)
       ) {
         throw Object.assign(new Error('The event binding parent is no longer available'), {

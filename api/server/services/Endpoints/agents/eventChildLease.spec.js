@@ -2,11 +2,13 @@ const mockAcquireLease = jest.fn();
 const mockRenewLease = jest.fn();
 const mockReleaseLease = jest.fn();
 const mockAbortJob = jest.fn();
+const mockIsStopConfirmed = jest.fn();
 const mockLogger = { warn: jest.fn() };
 
 jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
 jest.mock('@librechat/api', () => ({
   GenerationJobManager: { abortJob: (...args) => mockAbortJob(...args) },
+  isStopConfirmed: (...args) => mockIsStopConfirmed(...args),
 }));
 jest.mock('~/models', () => ({
   acquireSubagentThreadLease: (...args) => mockAcquireLease(...args),
@@ -25,6 +27,7 @@ describe('event child generation lease', () => {
     mockAcquireLease.mockResolvedValue(true);
     mockReleaseLease.mockResolvedValue(true);
     mockAbortJob.mockResolvedValue({ success: true });
+    mockIsStopConfirmed.mockImplementation((result) => result?.success === true);
   });
 
   afterEach(() => {
@@ -101,6 +104,45 @@ describe('event child generation lease', () => {
       expectedCreatedAt: 123,
       awaitProviderDrain: true,
     });
+    await release();
+  });
+
+  it('retains the fence and retries an unconfirmed deadline abort', async () => {
+    mockAbortJob
+      .mockResolvedValueOnce({ success: false, failureReason: 'job_still_active' })
+      .mockResolvedValueOnce({ success: true });
+    const release = await acquireEventChildGenerationLease({
+      userId: 'user-1',
+      conversationId: 'child-1',
+      streamId: 'child-1',
+      jobCreatedAt: 123,
+      retentionExpiresAt: new Date('2026-08-22T00:00:05.000Z'),
+    });
+
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(mockAbortJob).toHaveBeenCalledTimes(1);
+    expect(mockReleaseLease).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(250);
+    expect(mockAbortJob).toHaveBeenCalledTimes(2);
+    await release();
+  });
+
+  it('retains the fence and retries when the deadline abort throws', async () => {
+    mockAbortJob
+      .mockRejectedValueOnce(new Error('abort store unavailable'))
+      .mockResolvedValueOnce({ success: true });
+    const release = await acquireEventChildGenerationLease({
+      userId: 'user-1',
+      conversationId: 'child-1',
+      streamId: 'child-1',
+      jobCreatedAt: 123,
+      retentionExpiresAt: new Date('2026-08-22T00:00:05.000Z'),
+    });
+
+    await jest.advanceTimersByTimeAsync(5_250);
+    expect(mockAbortJob).toHaveBeenCalledTimes(2);
+    expect(mockReleaseLease).not.toHaveBeenCalled();
     await release();
   });
 });

@@ -1110,7 +1110,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       try {
         releaseEventChildLease = await acquireEventChildGenerationLease({
           userId,
-          tenantId: req.user?.tenantId,
+          tenantId: req._agentEventBindingTenantId,
           conversationId,
           streamId,
           jobCreatedAt: job.createdAt,
@@ -1134,20 +1134,71 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         );
       }
       if (releaseEventChildLease == null) {
+        const bindingActive = isAgentEventRetentionActive(
+          req._agentEventBindingRetention?.expiredAt,
+        );
         const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
         await rollbackUnconsumedScheduleClaim(currentJob);
         await releaseScheduleFence();
         await decrementPendingRequest(userId);
-        res.set('Retry-After', '1');
+        if (bindingActive) {
+          res.set('Retry-After', '1');
+        }
         return sendGenerationJson(
           res,
           409,
           {
-            code: 'EVENT_ACTOR_NOT_READY',
-            error: 'The event actor is still finishing its previous segment',
+            code: bindingActive ? 'EVENT_ACTOR_NOT_READY' : 'EVENT_BINDING_PARENT_ENDED',
+            error: bindingActive
+              ? 'The event actor is still finishing its previous segment'
+              : 'The event binding parent is no longer available',
           },
           generationProtocolVersion,
         );
+      }
+
+      /** Validate the durable parent/owner fence before consuming the HITL action.
+       * Once `approvals.resolve` wins its CAS, the action is irreversibly spent; a
+       * retryable fence rejection after that point could never replay the user's
+       * decision. A deletion that starts after this check observes the generation
+       * job plus the event-child lease and owns the corresponding abort. */
+      let eventActorRejection;
+      try {
+        const [eventParent, ownerAdmissible] = await Promise.all([
+          getConvo(userId, req._agentEventBindingParentConversationId),
+          isSubagentOwnerAdmissible(userId),
+        ]);
+        if (!ownerAdmissible) {
+          eventActorRejection = {
+            code: 'EVENT_ACTOR_NOT_READY',
+            error: 'The event actor owner is temporarily unavailable',
+          };
+        } else if (
+          eventParent == null ||
+          eventParent.subagentThread != null ||
+          eventParent.agent_id !== req._agentEventBindingParentAgentId ||
+          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+          !isAgentEventRetentionActive(req._agentEventBindingRetention?.expiredAt) ||
+          !isAgentEventRetentionActive(eventParent.expiredAt)
+        ) {
+          eventActorRejection = {
+            code: 'EVENT_BINDING_PARENT_ENDED',
+            error: 'The event binding parent is no longer available',
+          };
+        }
+      } catch (error) {
+        logger.warn('[ResumeAgentController] Event actor fence recheck failed', error);
+        eventActorRejection = {
+          code: 'EVENT_ACTOR_NOT_READY',
+          error: 'The event actor owner is temporarily unavailable',
+        };
+      }
+      if (eventActorRejection != null) {
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
+        return sendGenerationJson(res, 409, eventActorRejection, generationProtocolVersion);
       }
     }
 
@@ -1268,56 +1319,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       }
     }
 
-    if (req._agentEventBindingParentConversationId != null) {
-      let eventActorRejection;
-      try {
-        const [eventParent, ownerAdmissible] = await Promise.all([
-          getConvo(userId, req._agentEventBindingParentConversationId),
-          isSubagentOwnerAdmissible(userId),
-        ]);
-        if (!ownerAdmissible) {
-          eventActorRejection = {
-            code: 'EVENT_ACTOR_NOT_READY',
-            error: 'The event actor owner is temporarily unavailable',
-          };
-        } else if (
-          eventParent == null ||
-          eventParent.subagentThread != null ||
-          eventParent.agent_id !== req._agentEventBindingParentAgentId ||
-          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
-          !isAgentEventRetentionActive(req._agentEventBindingRetention?.expiredAt) ||
-          !isAgentEventRetentionActive(eventParent.expiredAt)
-        ) {
-          eventActorRejection = {
-            code: 'EVENT_BINDING_PARENT_ENDED',
-            error: 'The event binding parent is no longer available',
-          };
-        }
-      } catch (error) {
-        logger.warn('[ResumeAgentController] Event actor fence recheck failed', error);
-        eventActorRejection = {
-          code: 'EVENT_ACTOR_NOT_READY',
-          error: 'The event actor owner is temporarily unavailable',
-        };
-      }
-      if (eventActorRejection != null) {
-        logger.warn(
-          '[ResumeAgentController] Event actor resume lost its binding fence',
-          eventActorRejection,
-        );
-        await GenerationJobManager.abortJob(streamId, {
-          expectedCreatedAt: job.createdAt,
-          awaitProviderDrain: true,
-        }).catch((abortError) => {
-          logger.warn(
-            '[ResumeAgentController] Failed to stop rejected event actor resume',
-            abortError,
-          );
-        });
-        await decrementPendingRequest(userId);
-        return sendGenerationJson(res, 409, eventActorRejection, generationProtocolVersion);
-      }
-    }
     eventLeaseTransferredToRun = true;
   } finally {
     if (!eventLeaseTransferredToRun) {
