@@ -179,6 +179,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     pinnedOrder: {
       type: [String],
       default: [],
+      /** Display-only, and allowed to grow large. Every authentication request
+       *  loads the user document, so leaving this selected would put hundreds
+       *  of kilobytes on paths that never read it. The pinned-order handler
+       *  asks for it explicitly with `+pinnedOrder`. */
+      select: false,
     },
     skillStates: {
       type: Map,

@@ -1,23 +1,30 @@
+import { useRecoilValue } from 'recoil';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient, UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
 import { enqueue } from '~/utils';
+import store from '~/store';
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
 
-/** The signed-in account, read from the cache rather than a hook so a queued
- *  write can still check it after its component has unmounted. */
+/** The signed-in account, tracked at module scope so a queued write can still
+ *  check it after its component has unmounted. AuthContext is the authoritative
+ *  source: right after login it already holds the user while `[QueryKeys.user]`
+ *  is still fetching, and an ownership check that read undefined there would
+ *  mis-attribute writes made in that window. */
+let signedInUserId: string | undefined;
+
 const currentUserId = (queryClient: QueryClient): string | undefined =>
-  queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id;
+  signedInUserId ?? queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id;
 
 /** Whether the account that started a write is still the one signed in. The
  *  pinned-order cache key is not scoped by user, so a response arriving after a
  *  session change would otherwise publish one account's order to the next, and
  *  this query has every automatic refetch trigger disabled to correct it. */
 const ownsCache = (queryClient: QueryClient, context?: { owner?: string }): boolean =>
-  context?.owner === currentUserId(queryClient);
+  context?.owner != null && context.owner === currentUserId(queryClient);
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -78,6 +85,11 @@ let latestPinnedOrder: string[] | null = null;
 
 export const useUpdatePinnedOrderMutation = () => {
   const queryClient = useQueryClient();
+  /* The same atom `AuthContext` populates from the login response, which is set
+   * before the user query resolves, so ownership is known from the first
+   * authenticated render rather than only once that fetch lands. */
+  const user = useRecoilValue(store.user);
+  signedInUserId = user?.id;
 
   return useMutation(
     /* Two drags completed inside one round trip would otherwise race, and the

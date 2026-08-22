@@ -10,6 +10,19 @@ export const CONVERSATION_DRAG_TYPE = 'conversation-item';
 /** One queue per conversation: drops onto different chats stay independent. */
 const ASSIGN_QUEUE_PREFIX = 'assign-conversation:';
 
+/** Where each conversation is headed while its assignment is still queued. A
+ *  drag item carries the project the row had when the drag started, which goes
+ *  stale the moment an earlier drop is accepted: without this, dropping a chat
+ *  on B and then dragging it straight back to A reads as a no-op and the
+ *  earlier request still lands it on B. */
+const queuedDestination = new Map<string, string | null>();
+
+/** The project a conversation will be in once everything queued has settled. */
+export const effectiveProjectId = (item: ConversationDragItem): string | null =>
+  item.conversationId && queuedDestination.has(item.conversationId)
+    ? (queuedDestination.get(item.conversationId) ?? null)
+    : item.chatProjectId;
+
 export type ConversationDragItem = {
   conversationId: string;
   chatProjectId: string | null;
@@ -28,9 +41,10 @@ export const useAssignDroppedConversation = () => {
   return useCallback(
     (item: ConversationDragItem, projectId: string | null) => {
       const conversationId = item.conversationId;
-      if (!conversationId || item.chatProjectId === projectId) {
+      if (!conversationId || effectiveProjectId(item) === projectId) {
         return;
       }
+      queuedDestination.set(conversationId, projectId);
       /* A slow assignment leaves the row droppable, and every project target
        * owns its own mutation instance, so two quick drops would run
        * concurrently. The write is an unconditional update, so the request that
@@ -50,6 +64,10 @@ export const useAssignDroppedConversation = () => {
             severity: NotificationSeverity.ERROR,
             showIcon: true,
           });
+        } finally {
+          if (queuedDestination.get(conversationId) === projectId) {
+            queuedDestination.delete(conversationId);
+          }
         }
       });
     },
