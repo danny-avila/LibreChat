@@ -1,0 +1,80 @@
+import {
+  resolveHour12,
+  localeUsesMeridiem,
+  resolveWeekStartsOn,
+  localeWeekStartsOn,
+  rotateWeekFrom,
+} from '../clock';
+
+describe('resolveHour12', () => {
+  it('forces true for the 12h preference regardless of locale', () => {
+    expect(resolveHour12('12h', 'de-DE')).toBe(true);
+  });
+
+  it('forces false for the 24h preference regardless of locale', () => {
+    expect(resolveHour12('24h', 'en-US')).toBe(false);
+  });
+
+  it('defers to the locale for the system preference', () => {
+    expect(resolveHour12('system', 'en-US')).toBe(true);
+    expect(resolveHour12('system', 'de-DE')).toBe(false);
+  });
+});
+
+describe('localeUsesMeridiem', () => {
+  it('does not throw on a garbage locale tag, and returns a boolean', () => {
+    expect(typeof localeUsesMeridiem('not-a-real-locale')).toBe('boolean');
+  });
+});
+
+describe('resolveWeekStartsOn', () => {
+  it('forces Sunday (0) for the sunday preference regardless of locale', () => {
+    expect(resolveWeekStartsOn('sunday', 'fr-FR')).toBe(0);
+  });
+
+  it('forces Monday (1) for the monday preference regardless of locale', () => {
+    expect(resolveWeekStartsOn('monday', 'en-US')).toBe(1);
+  });
+
+  it('defers to the locale for the system preference', () => {
+    // en-US: Sunday-first; fr-FR/de-DE/en-GB: Monday-first (CLDR week data)
+    expect(resolveWeekStartsOn('system', 'en-US')).toBe(0);
+    expect(resolveWeekStartsOn('system', 'fr-FR')).toBe(1);
+    expect(resolveWeekStartsOn('system', 'de-DE')).toBe(1);
+  });
+});
+
+describe('localeWeekStartsOn', () => {
+  it('does not throw on a garbage locale tag, and returns a day index', () => {
+    expect([0, 1, 2, 3, 4, 5, 6]).toContain(localeWeekStartsOn('not-a-real-locale'));
+  });
+
+  it('reports Saturday for locales whose week starts there, not a folded 0 or 1', () => {
+    // Only meaningful where the engine ships week data; older engines fall back
+    // to the region heuristic, which has no Saturday entry.
+    const resolved = new Intl.Locale('ar-EG') as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const weekInfo =
+      typeof resolved.getWeekInfo === 'function' ? resolved.getWeekInfo() : resolved.weekInfo;
+    if (weekInfo?.firstDay !== 6) {
+      return;
+    }
+    expect(localeWeekStartsOn('ar-EG')).toBe(6);
+  });
+});
+
+describe('rotateWeekFrom', () => {
+  it('is a no-op rotation for Sunday-first (identity)', () => {
+    expect(rotateWeekFrom(0)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it('rotates to start at Monday, wrapping Sunday to the end', () => {
+    expect(rotateWeekFrom(1)).toEqual([1, 2, 3, 4, 5, 6, 0]);
+  });
+
+  it('rotates to start at Saturday, wrapping Sunday through Friday to the end', () => {
+    expect(rotateWeekFrom(6)).toEqual([6, 0, 1, 2, 3, 4, 5]);
+  });
+});

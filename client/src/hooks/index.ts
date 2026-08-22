@@ -49,3 +49,5 @@ export {
   resetCatalogWarmup,
 } from './useCatalogWarmup';
 export type { CatalogId } from './useCatalogWarmup';
+export { default as useClockFormat } from './useClockFormat';
+export { default as useWeekStart } from './useWeekStart';

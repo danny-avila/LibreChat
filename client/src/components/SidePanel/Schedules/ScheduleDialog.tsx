@@ -51,9 +51,10 @@ import {
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
+import { useLocalize, useClockFormat, useWeekStart } from '~/hooks';
 import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
-import { useLocalize } from '~/hooks';
+import { rotateWeekFrom } from '~/utils/clock';
 import { cn } from '~/utils';
 
 interface ScheduleDialogProps {
@@ -97,9 +98,6 @@ const DEFAULT_CRON = '0 9 * * 1-5';
 /** Mirrors the server's default weekly day (Monday) when a weekly cadence carries no
  *  days, so a new weekly schedule opens on the same day an API-created one fires. */
 const DEFAULT_WEEKLY_DAYS = [1];
-
-/** Sunday-first, matching the numeric day indices the cadence stores. */
-const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
 
 /** Enough previewed occurrences to show the SHAPE of a cadence (that `0 9,17 * * 1-5`
  *  fires twice a day), which a single row cannot. Kept small deliberately: the dialog
@@ -224,6 +222,13 @@ export default function ScheduleDialog({
   const daysOfWeek = watch('daysOfWeek');
   const expression = watch('expression');
   const timezone = watch('timezone');
+  /** Not named `hour12`: that is already the form's own 12-hour clock VALUE (1-12).
+   *  This is the preference deciding whether a time is written with a meridiem. */
+  const prefersMeridiem = useClockFormat();
+  const weekStartsOn = useWeekStart();
+  /** The day pills read in the user's own week order. Their VALUES are still the
+   *  Sunday-first indices the cadence stores; only the presentation rotates. */
+  const weekdayIndexes = useMemo(() => rotateWeekFrom(weekStartsOn), [weekStartsOn]);
 
   const { data: agents } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
@@ -523,7 +528,7 @@ export default function ScheduleDialog({
    *  something the user picks rather than the browser's own. Memoized because it
    *  builds an Intl formatter and the dialog re-renders per keystroke. */
   const timezoneOffset = useMemo(() => formatTimezoneOffset(timezone, locale), [timezone, locale]);
-  const summary = `${describeCadence(previewCadence, localize, locale)} · ${
+  const summary = `${describeCadence(previewCadence, localize, locale, prefersMeridiem, weekStartsOn)} · ${
     timezoneOffset ? `${timezone} (${timezoneOffset})` : timezone
   }`;
 
@@ -842,7 +847,7 @@ export default function ScheduleDialog({
                       control={control}
                       render={({ field }) => (
                         <div className="flex flex-wrap gap-1.5">
-                          {WEEKDAY_INDEXES.map((day) => {
+                          {weekdayIndexes.map((day) => {
                             const selected = field.value.includes(day);
                             return (
                               <button
@@ -963,7 +968,9 @@ export default function ScheduleDialog({
                   </p>
                   <ul className="space-y-0.5 text-xs text-text-secondary">
                     {previewRuns.map((run) => (
-                      <li key={run.getTime()}>{formatRunInstant(run, timezone, locale)}</li>
+                      <li key={run.getTime()}>
+                        {formatRunInstant(run, timezone, locale, prefersMeridiem)}
+                      </li>
                     ))}
                   </ul>
                 </div>
