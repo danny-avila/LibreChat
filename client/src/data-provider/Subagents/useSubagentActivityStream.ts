@@ -1,13 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { SSE } from 'sse.js';
-import { useSetRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   reduceSubagentProgress,
   registerSubagentProgressKey,
+  subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
@@ -50,9 +51,23 @@ export default function useSubagentActivityStream(
     selection.partIndex,
   );
   const setProgress = useSetRecoilState(subagentProgressByToolCallId(key));
+  const parentStreamOpen = useRecoilValue(subagentParentStreamOpenByToolCallId(key));
+  const setParentStreamOpen = useSetRecoilState(subagentParentStreamOpenByToolCallId(key));
+  const parentStreamOpenRef = useRef(parentStreamOpen);
   const durable = selection.durable;
   const threadId = durable?.threadId;
   const taskId = durable?.taskId;
+
+  useEffect(() => {
+    parentStreamOpenRef.current = parentStreamOpen;
+  }, [parentStreamOpen]);
+
+  useEffect(() => {
+    if (!selection.isSubmitting) return;
+    registerSubagentProgressKey(key);
+    parentStreamOpenRef.current = true;
+    setParentStreamOpen(true);
+  }, [key, selection.isSubmitting, setParentStreamOpen]);
 
   useEffect(() => {
     if (
@@ -111,7 +126,9 @@ export default function useSubagentActivityStream(
         }
         retryAttempt = 0;
         registerSubagentProgressKey(key);
-        setProgress((previous) => reduceSubagentProgress(previous, [event], 'detached'));
+        setProgress((previous) =>
+          reduceSubagentProgress(previous, [event], 'detached', parentStreamOpenRef.current),
+        );
       });
       next.addEventListener('error', () => {
         if (stream !== next || disposed || terminal || retryTimer != null) return;

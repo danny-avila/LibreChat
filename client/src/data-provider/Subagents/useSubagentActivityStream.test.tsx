@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { ContentTypes, QueryKeys, StepEvents } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
+  subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
   takeRegisteredSubagentProgressKeys,
@@ -176,6 +177,51 @@ describe('useSubagentActivityStream', () => {
     });
 
     expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Compatible update' }]);
+  });
+
+  it('buffers the first detached suffix while the parent stream is still open', () => {
+    const activeSelection = { ...selection, isSubmitting: true };
+    const key = subagentProgressKey(
+      activeSelection.parentMessageId,
+      activeSelection.toolCallId,
+      activeSelection.partIndex,
+    );
+    const { result } = renderHook(
+      () => {
+        useSubagentActivityStream(activeSelection);
+        return {
+          progress: useRecoilValue(subagentProgressByToolCallId(key)),
+          parentOpen: useRecoilValue(subagentParentStreamOpenByToolCallId(key)),
+        };
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      streams[0]?.emit('message', {
+        event: StepEvents.ON_SUBAGENT_UPDATE,
+        data: {
+          runId: 'root',
+          parentRunId: 'parent',
+          subagentRunId: 'child',
+          activityEventId: 'task-1:5',
+          activitySequence: 5,
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          subagentAgentId: 'agent-1',
+          parentToolCallId: 'tool-call',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'suffix' }] } },
+          timestamp: '2026-08-21T20:00:00.000Z',
+        },
+      });
+    });
+
+    expect(result.current.parentOpen).toBe(true);
+    expect(result.current.progress?.contentParts).toEqual([]);
+    expect(result.current.progress?.pendingSequencedEvents).toHaveLength(1);
   });
 
   it('reconnects with bounded backoff after a transient stream error', () => {

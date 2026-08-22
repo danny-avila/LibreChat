@@ -3532,6 +3532,42 @@ describe('useStepHandler', () => {
 
       expect(getProgress('call_keep')).not.toBeNull();
     });
+
+    it('uses parent stream closure to release a detached sequence waiting at handoff', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, ['call_handoff']);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              parentToolCallId: 'call_handoff',
+              activityEventId: 'task:5',
+              activitySequence: 5,
+              phase: 'message_delta',
+              data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'suffix' }] } },
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('call_handoff')).toEqual(
+        expect.objectContaining({ contentParts: [], pendingSequencedEvents: [expect.any(Object)] }),
+      );
+
+      act(() => {
+        (result.current as any).clearStepMaps();
+      });
+
+      expect(getProgress('call_handoff')).toEqual(
+        expect.objectContaining({
+          contentParts: [{ type: ContentTypes.TEXT, text: 'suffix' }],
+          lastActivitySequence: 5,
+        }),
+      );
+    });
   });
 
   /**

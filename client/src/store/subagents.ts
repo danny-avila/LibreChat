@@ -54,12 +54,16 @@ export interface SubagentProgress {
   recentEventKeys?: string[];
   /** Highest host sequence folded for this child run. Older overlap frames are ignored. */
   lastActivitySequence?: number;
+  /** Bounded future frames waiting for an earlier sequence at the parent/detached handoff. */
+  pendingSequencedEvents?: SubagentUpdateEvent[];
   /** Whether the folded events cover the run from its beginning or only the
    *  forward-only suffix observed after opening a detached task stream. */
   coverage?: 'complete' | 'suffix';
 }
 
 const MAX_RECENT_EVENT_KEYS = 256;
+const MAX_PENDING_SEQUENCE_EVENTS = 100;
+const MAX_PENDING_SEQUENCE_BYTES = 128 * 1024;
 const MAX_LIVE_ACTIVITY_ITEMS = 100;
 const MAX_LIVE_ACTIVITY_BYTES = 64 * 1024;
 const MAX_SINGLE_ACTIVITY_ENCODED_BYTES = MAX_LIVE_ACTIVITY_BYTES - 2;
@@ -282,6 +286,12 @@ export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, 
   default: null,
 });
 
+/** Parent delivery remains authoritative until its ordered SSE close boundary. */
+export const subagentParentStreamOpenByToolCallId = atomFamily<boolean, string>({
+  key: 'subagentParentStreamOpenByToolCallId',
+  default: false,
+});
+
 /**
  * Invocation atoms populated by either the parent generation stream or the selected detached
  * task stream. The conversation host drains this registry on navigation so both transports share
@@ -299,55 +309,60 @@ export function takeRegisteredSubagentProgressKeys(): string[] {
   return keys;
 }
 
-/** Shared reducer for foreground chat SSE and task-scoped detached activity SSE. */
-export function reduceSubagentProgress(
+export function listRegisteredSubagentProgressKeys(): string[] {
+  return [...registeredSubagentProgressKeys];
+}
+
+const validActivitySequence = (value: number | undefined): value is number =>
+  Number.isSafeInteger(value) && value != null && value >= 0;
+
+const foldAcceptedSubagentEvents = (
   previous: SubagentProgress | null,
   events: SubagentUpdateEvent[],
-  source: 'parent' | 'detached' = 'parent',
-): SubagentProgress | null {
-  if (events.length === 0) return previous;
-  const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
-  const seen = new Set(recentEventKeys);
-  const sequenced = events.every(
-    (event) => Number.isSafeInteger(event.activitySequence) && (event.activitySequence ?? -1) >= 0,
-  );
-  const orderedEvents = sequenced
-    ? [...events].sort((left, right) =>
-        (left.activitySequence ?? 0) === (right.activitySequence ?? 0)
-          ? 0
-          : (left.activitySequence ?? 0) - (right.activitySequence ?? 0),
-      )
-    : events;
-  let lastActivitySequence =
-    previous?.subagentRunId === orderedEvents[0]?.subagentRunId
-      ? previous.lastActivitySequence
-      : undefined;
-  const uniqueEvents: SubagentUpdateEvent[] = [];
-  for (const event of orderedEvents) {
-    const sequence = event.activitySequence;
+  source: 'parent' | 'detached',
+  pendingSequencedEvents: SubagentUpdateEvent[],
+): SubagentProgress | null => {
+  if (events.length === 0) {
+    if (previous == null) {
+      const first = pendingSequencedEvents[0];
+      if (first == null) return null;
+      return {
+        subagentRunId: first.subagentRunId,
+        subagentType: first.subagentType,
+        subagentAgentId: first.subagentAgentId,
+        contentParts: [],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        status: first.phase,
+        recentEventKeys: [],
+        pendingSequencedEvents,
+        coverage: source === 'detached' ? 'suffix' : 'complete',
+      };
+    }
     if (
-      Number.isSafeInteger(sequence) &&
-      (sequence ?? -1) >= 0 &&
-      lastActivitySequence != null &&
-      (sequence ?? -1) <= lastActivitySequence
+      (previous.pendingSequencedEvents == null && pendingSequencedEvents.length === 0) ||
+      (previous.pendingSequencedEvents?.length === pendingSequencedEvents.length &&
+        previous.pendingSequencedEvents.every(
+          (event, index) => event === pendingSequencedEvents[index],
+        ))
     ) {
-      continue;
+      return previous;
     }
+    return {
+      ...previous,
+      ...(pendingSequencedEvents.length === 0 ? {} : { pendingSequencedEvents }),
+    };
+  }
+  const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
+  for (const event of events) {
     const key = eventKey(event);
-    if (key != null && seen.has(key)) continue;
-    if (key != null) seen.add(key);
-    uniqueEvents.push(event);
-    if (Number.isSafeInteger(sequence) && (sequence ?? -1) >= 0) {
-      lastActivitySequence = sequence;
-    }
     if (key != null) recentEventKeys.push(key);
   }
-  if (uniqueEvents.length === 0) return previous;
   const boundedEventKeys = recentEventKeys.slice(-MAX_RECENT_EVENT_KEYS);
   let contentParts = previous?.contentParts ?? [];
   let aggregatorState = previous?.aggregatorState ?? initSubagentAggregatorState();
   let tickerState = previous?.tickerState ?? initSubagentTickerState();
-  for (const event of uniqueEvents) {
+  for (const event of events) {
     const foldEvent =
       event.phase === 'reasoning_delta' &&
       event.data == null &&
@@ -373,7 +388,12 @@ export function reduceSubagentProgress(
     aggregatorState,
   ));
   tickerState = boundTickerState(tickerState);
-  const last = uniqueEvents[uniqueEvents.length - 1];
+  const last = events[events.length - 1];
+  const lastActivitySequence = [...events]
+    .reverse()
+    .map((event) => event.activitySequence)
+    .find(validActivitySequence);
+  const effectiveActivitySequence = lastActivitySequence ?? previous?.lastActivitySequence;
   return {
     subagentRunId: last.subagentRunId,
     subagentType: last.subagentType,
@@ -384,7 +404,99 @@ export function reduceSubagentProgress(
     status: last.phase,
     latestLabel: last.label ?? previous?.latestLabel,
     recentEventKeys: boundedEventKeys,
-    ...(lastActivitySequence == null ? {} : { lastActivitySequence }),
+    ...(effectiveActivitySequence == null
+      ? {}
+      : { lastActivitySequence: effectiveActivitySequence }),
+    ...(pendingSequencedEvents.length === 0 ? {} : { pendingSequencedEvents }),
     coverage: previous?.coverage ?? (source === 'detached' ? 'suffix' : 'complete'),
   };
+};
+
+/** Parent SSE close is an ordering fence: all its earlier frames have already been handled. */
+export function closeParentSubagentProgress(
+  previous: SubagentProgress | null,
+): SubagentProgress | null {
+  if (previous?.pendingSequencedEvents == null || previous.pendingSequencedEvents.length === 0) {
+    return previous;
+  }
+  const pending = [...previous.pendingSequencedEvents].sort(
+    (left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0),
+  );
+  return foldAcceptedSubagentEvents(
+    { ...previous, pendingSequencedEvents: undefined },
+    pending,
+    previous.coverage === 'suffix' ? 'detached' : 'parent',
+    [],
+  );
+}
+
+/** Shared reducer for foreground chat SSE and task-scoped detached activity SSE. */
+export function reduceSubagentProgress(
+  previous: SubagentProgress | null,
+  events: SubagentUpdateEvent[],
+  source: 'parent' | 'detached' = 'parent',
+  waitForEarlierSequences = source === 'parent',
+): SubagentProgress | null {
+  if (events.length === 0) return previous;
+  const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
+  const seen = new Set(recentEventKeys);
+  const sequenced = events.every(
+    (event) => Number.isSafeInteger(event.activitySequence) && (event.activitySequence ?? -1) >= 0,
+  );
+  const orderedEvents = sequenced
+    ? [...events].sort((left, right) =>
+        (left.activitySequence ?? 0) === (right.activitySequence ?? 0)
+          ? 0
+          : (left.activitySequence ?? 0) - (right.activitySequence ?? 0),
+      )
+    : events;
+  const sameRun = previous?.subagentRunId === orderedEvents[0]?.subagentRunId;
+  const lastActivitySequence = sameRun ? previous.lastActivitySequence : undefined;
+  const pending = sameRun ? [...(previous.pendingSequencedEvents ?? [])] : [];
+  const pendingSequences = new Set(
+    pending.map((event) => event.activitySequence).filter(validActivitySequence),
+  );
+  let pendingBytes = encodedBytes(pending);
+  const directEvents: SubagentUpdateEvent[] = [];
+  for (const event of orderedEvents) {
+    const sequence = event.activitySequence;
+    if (
+      validActivitySequence(sequence) &&
+      lastActivitySequence != null &&
+      sequence <= lastActivitySequence
+    ) {
+      continue;
+    }
+    const key = eventKey(event);
+    if (key != null && seen.has(key)) continue;
+    if (validActivitySequence(sequence)) {
+      const pendingEvent =
+        event.phase === 'reasoning_delta' ? { ...event, data: undefined } : event;
+      const eventBytes = encodedBytes(pendingEvent) + 1;
+      if (
+        pendingSequences.has(sequence) ||
+        pending.length >= MAX_PENDING_SEQUENCE_EVENTS ||
+        pendingBytes + eventBytes > MAX_PENDING_SEQUENCE_BYTES
+      ) {
+        continue;
+      }
+      pending.push(pendingEvent);
+      pendingSequences.add(sequence);
+      pendingBytes += eventBytes;
+    } else {
+      if (key != null) seen.add(key);
+      directEvents.push(event);
+    }
+  }
+  pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
+  let expected = lastActivitySequence == null ? 0 : lastActivitySequence + 1;
+  if (lastActivitySequence == null && !waitForEarlierSequences && pending.length > 0) {
+    expected = pending[0].activitySequence ?? 0;
+  }
+  while (pending[0]?.activitySequence === expected) {
+    const event = pending.shift();
+    if (event != null) directEvents.push(event);
+    expected += 1;
+  }
+  return foldAcceptedSubagentEvents(previous, directEvents, source, pending);
 }

@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
-import { reduceSubagentProgress } from './subagents';
+import { closeParentSubagentProgress, reduceSubagentProgress } from './subagents';
 
 const update = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
   runId: 'root-run',
@@ -41,31 +41,41 @@ describe('reduceSubagentProgress', () => {
   });
 
   it('orders a same-batch overlap by the host sequence before folding', () => {
-    const progress = reduceSubagentProgress(null, [
-      update({
-        activityEventId: 'activity-2',
-        activitySequence: 2,
-        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'second' }] } },
-      }),
-      update({
-        activityEventId: 'activity-1',
-        activitySequence: 1,
-        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'first ' }] } },
-      }),
-    ]);
+    const progress = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activityEventId: 'activity-2',
+          activitySequence: 2,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'second' }] } },
+        }),
+        update({
+          activityEventId: 'activity-1',
+          activitySequence: 1,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'first ' }] } },
+        }),
+      ],
+      'detached',
+      false,
+    );
 
     expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'first second' }]);
     expect(progress?.lastActivitySequence).toBe(2);
   });
 
   it('rejects older overlap events and duplicates beyond the replay-key window', () => {
-    const initial = reduceSubagentProgress(null, [
-      update({
-        activityEventId: 'activity-300',
-        activitySequence: 300,
-        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'latest' }] } },
-      }),
-    ]);
+    const initial = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activityEventId: 'activity-300',
+          activitySequence: 300,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'latest' }] } },
+        }),
+      ],
+      'detached',
+      false,
+    );
     const delayed = reduceSubagentProgress(initial, [
       update({
         activityEventId: 'activity-1',
@@ -81,6 +91,76 @@ describe('reduceSubagentProgress', () => {
 
     expect(delayed).toBe(initial);
     expect(delayed?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'latest' }]);
+  });
+
+  it('buffers a detached frame until a lagging parent delivers the missing sequence', () => {
+    const detached = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activityEventId: 'activity-1',
+          activitySequence: 1,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'second' }] } },
+        }),
+      ],
+      'detached',
+      true,
+    );
+    expect(detached?.contentParts).toEqual([]);
+    expect(detached?.pendingSequencedEvents).toHaveLength(1);
+
+    const ordered = reduceSubagentProgress(detached, [
+      update({
+        activityEventId: 'activity-0',
+        activitySequence: 0,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'first ' }] } },
+      }),
+    ]);
+
+    expect(ordered?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'first second' }]);
+    expect(ordered?.pendingSequencedEvents).toBeUndefined();
+    expect(ordered?.lastActivitySequence).toBe(1);
+  });
+
+  it('uses parent stream closure as the fence for a detached suffix with no earlier frame', () => {
+    const waiting = reduceSubagentProgress(
+      null,
+      [
+        update({
+          activityEventId: 'activity-5',
+          activitySequence: 5,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'suffix' }] } },
+        }),
+      ],
+      'detached',
+      true,
+    );
+
+    const closed = closeParentSubagentProgress(waiting);
+
+    expect(closed?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'suffix' }]);
+    expect(closed?.pendingSequencedEvents).toBeUndefined();
+    expect(closed?.lastActivitySequence).toBe(5);
+  });
+
+  it('bounds future sequence buffering while an earlier parent frame is missing', () => {
+    const waiting = reduceSubagentProgress(
+      null,
+      Array.from({ length: 140 }, (_, index) =>
+        update({
+          activityEventId: `activity-${index + 1}`,
+          activitySequence: index + 1,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'x'.repeat(2048) }] } },
+        }),
+      ),
+      'detached',
+      true,
+    );
+
+    expect(waiting?.pendingSequencedEvents?.length).toBeLessThanOrEqual(100);
+    expect(
+      new TextEncoder().encode(JSON.stringify(waiting?.pendingSequencedEvents)).byteLength,
+    ).toBeLessThanOrEqual(128 * 1024);
   });
 
   it('preserves legacy unsequenced foreground updates', () => {

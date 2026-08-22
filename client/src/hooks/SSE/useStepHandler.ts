@@ -23,8 +23,11 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
+  closeParentSubagentProgress,
+  listRegisteredSubagentProgressKeys,
   reduceSubagentProgress,
   registerSubagentProgressKey,
+  subagentParentStreamOpenByToolCallId,
   subagentProgressByToolCallId,
   subagentProgressKey,
   takeRegisteredSubagentProgressKeys,
@@ -267,8 +270,9 @@ export default function useStepHandler({
         const toApply = pending ? [...pending.events, payload] : [payload];
 
         registerSubagentProgressKey(invocationKey);
+        set(subagentParentStreamOpenByToolCallId(invocationKey), true);
         set(subagentProgressByToolCallId(invocationKey), (prev) =>
-          reduceSubagentProgress(prev, toApply),
+          reduceSubagentProgress(prev, toApply, 'parent', true),
         );
       },
     [resolveSubagentInvocationKey],
@@ -290,6 +294,18 @@ export default function useStepHandler({
       (): void => {
         for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
           reset(subagentProgressByToolCallId(invocationKey));
+          reset(subagentParentStreamOpenByToolCallId(invocationKey));
+        }
+      },
+    [],
+  );
+
+  const closeParentSubagentStreams = useRecoilCallback(
+    ({ set }) =>
+      (): void => {
+        for (const invocationKey of listRegisteredSubagentProgressKeys()) {
+          set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+          set(subagentProgressByToolCallId(invocationKey), closeParentSubagentProgress);
         }
       },
     [],
@@ -1401,6 +1417,7 @@ export default function useStepHandler({
     subagentRunToInvocationKey.current.clear();
     claimedSubagentInvocationKeys.current.clear();
     pendingSubagentBuffer.current.clear();
+    closeParentSubagentStreams();
     /** Unlike subagent atoms below, sandbox-starting flags are transient
      *  status with no audit value — reset them at this boundary so an
      *  interrupted cold boot can't leak a stale "starting" label onto a
@@ -1414,7 +1431,7 @@ export default function useStepHandler({
      *  persisted `subagent_content` takes over for historical messages
      *  once the conversation is saved, and we prevent unbounded
      *  atomFamily growth across multi-conversation sessions. */
-  }, [cancelPendingDeltaFlush, resetSandboxAtoms]);
+  }, [cancelPendingDeltaFlush, closeParentSubagentStreams, resetSandboxAtoms]);
 
   /**
    * Sync a message into the step handler's messageMap.
