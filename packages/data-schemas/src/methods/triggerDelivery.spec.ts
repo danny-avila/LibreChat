@@ -110,7 +110,7 @@ describe('agent trigger delivery methods', () => {
         user,
         tenantId: 'tenant-1',
         envelope: {
-          event: { source: { id: 'source-key-1' } },
+          event: { source: { id: 'source-key-1', type: 'remote_api_key' } },
           privatePayload: 'x'.repeat(1024),
         },
       }),
@@ -137,6 +137,22 @@ describe('agent trigger delivery methods', () => {
       methods.getAgentTriggerDeliveryStatus(
         queued.delivery.deliveryKey,
         new mongoose.Types.ObjectId(),
+        'source-key-1',
+        'tenant-1',
+      ),
+    ).resolves.toBeNull();
+
+    const internal = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        tenantId: 'tenant-1',
+        envelope: { event: { source: { id: 'source-key-1', type: 'schedule' } } },
+      }),
+    );
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        internal.delivery.deliveryKey,
+        user,
         'source-key-1',
         'tenant-1',
       ),

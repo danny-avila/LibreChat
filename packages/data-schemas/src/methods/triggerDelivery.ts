@@ -830,7 +830,13 @@ export function createAgentTriggerDeliveryMethods(
     const tenantScope =
       tenantId == null ? { tenantId: null } : { $or: [{ tenantId: null }, { tenantId }] };
     const delivery = await Delivery()
-      .findOne({ deliveryKey, user, 'envelope.event.source.id': sourceKeyId, ...tenantScope })
+      .findOne({
+        deliveryKey,
+        user,
+        'envelope.event.source.id': sourceKeyId,
+        'envelope.event.source.type': 'remote_api_key',
+        ...tenantScope,
+      })
       .select('-_id deliveryKey status attempts availableAt createdAt settledAt result lastError')
       .lean<AgentTriggerDeliveryStatusRecord>();
     return delivery;
