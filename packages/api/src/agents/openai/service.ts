@@ -20,7 +20,12 @@
  */
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
-import type { StatefulCodeEnvironment } from 'librechat-data-provider';
+import type {
+  FiltersConfig,
+  MessageFilterConfig,
+  MessageFilterPiiConfig,
+  StatefulCodeEnvironment,
+} from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -31,9 +36,25 @@ import type {
   ChatMessage,
   ToolCall,
 } from './types';
+import type {
+  ExternalChatMessage,
+  ExternalMessagePart,
+  ContentTraversalLimitError,
+  TextContentFragment,
+  FileContentInput,
+} from '~/protection';
 import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
+import {
+  extractMessageContent,
+  extractModelParameterContent,
+  getBlockedOpaqueFileField,
+  getContentTraversalFragments,
+  inspectContent,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+} from '~/protection';
 import {
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
@@ -42,8 +63,25 @@ import {
   createChunk,
   writeSSE,
 } from './handlers';
+import {
+  assertModelBoundContent,
+  hasModelBoundContentProtection,
+} from '~/middleware/modelBoundContent';
+import { contentFilterBlockResponse, isContentFilterError } from '~/middleware/contentFilter';
+import { contentFilterUninspectableResponse } from '~/protection/files';
 import { createMCPRuntimeRequestBody } from '~/mcp/request';
+import { collectReachableAgents } from '../traversal';
+import { getDynamicToolContexts } from '../hitl';
 import { createSafeUser } from '~/utils';
+
+const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
+
+function getUserFacingProviderError(error: unknown, protectionEnabled: boolean): string {
+  if (protectionEnabled) {
+    return GENERIC_PROVIDER_ERROR;
+  }
+  return error instanceof Error ? error.message : 'An error occurred';
+}
 
 /**
  * Dependencies for the chat completion service
@@ -72,10 +110,10 @@ export interface ChatCompletionDependencies {
   /** Create agent run */
   createRun?: CreateRunFn;
   /**
-   * App config. Optional for basic chat, but required for tenant-scoped
-   * Langfuse fanout and for agents with `execute_code` in their tools:
-   * tenant Langfuse keys are forwarded to `createRun`, and the helper derives
-   * `codeEnvAvailable` from
+   * App config. Optional for basic chat, but required for source-aware content
+   * protection, tenant-scoped Langfuse fanout, and agents with `execute_code`
+   * in their tools. Filter policy and tenant Langfuse keys are forwarded to
+   * `createRun`, and the helper derives `codeEnvAvailable` from
    * `appConfig?.endpoints?.agents?.capabilities` and forwards it into
    * `deps.initializeAgent`. When `appConfig` is omitted, the resolved
    * `codeEnvAvailable` is `undefined`, so `initializeAgent` skips the
@@ -105,6 +143,10 @@ interface Agent {
   [key: string]: unknown;
 }
 
+interface InitializedFile extends FileContentInput {
+  file_id?: string;
+}
+
 /**
  * Initialized agent type - note: after initialization, tools become structured tool objects
  */
@@ -119,10 +161,14 @@ interface InitializedAgent {
   model_parameters?: Record<string, unknown>;
   tool_resources?: Record<string, unknown>;
   tool_options?: Record<string, unknown>;
-  attachments: unknown[];
+  attachments: InitializedFile[];
+  requestAttachments?: InitializedFile[];
+  agentContextAttachments?: InitializedFile[];
   toolContextMap: Record<string, unknown>;
+  dynamicToolContextMap?: Record<string, unknown>;
   maxContextTokens: number;
   userMCPAuthMap?: Record<string, Record<string, string>>;
+  subagentAgentConfigs?: InitializedAgent[];
   /** Names of tools with the host-injected `intent` label param (see `agents/intent.ts`). */
   intentToolNames?: string[];
   [key: string]: unknown;
@@ -204,6 +250,8 @@ type LoadToolsFn = (params: {
 /**
  * Create run function type
  */
+type CreateRunAppConfig = Pick<AppConfig, 'endpoints' | 'filters' | 'langfuse' | 'messageFilter'>;
+
 type CreateRunFn = (params: {
   agents: unknown[];
   messages: unknown[];
@@ -213,7 +261,7 @@ type CreateRunFn = (params: {
   requestBody: Record<string, unknown>;
   user: Record<string, unknown>;
   tenantId?: string;
-  appConfig?: Pick<AppConfig, 'endpoints' | 'langfuse'>;
+  appConfig?: CreateRunAppConfig;
   tokenCounter?: (message: unknown) => number;
 }) => Promise<{
   Graph?: unknown;
@@ -229,7 +277,105 @@ type CreateRunFn = (params: {
  */
 interface AppConfig {
   endpoints?: Record<string, unknown>;
+  filters?: FiltersConfig;
+  langfuse?: Record<string, unknown>;
+  messageFilter?: MessageFilterConfig;
   [key: string]: unknown;
+}
+
+function selectCreateRunAppConfig(
+  appConfig: AppConfig | undefined,
+): CreateRunAppConfig | undefined {
+  if (appConfig == null) {
+    return undefined;
+  }
+  return {
+    ...(appConfig.endpoints !== undefined && { endpoints: appConfig.endpoints }),
+    ...(appConfig.filters !== undefined && { filters: appConfig.filters }),
+    ...(appConfig.langfuse !== undefined && { langfuse: appConfig.langfuse }),
+    ...(appConfig.messageFilter !== undefined && { messageFilter: appConfig.messageFilter }),
+  };
+}
+
+function inspectSubmittedRequest(
+  res: ServerResponse,
+  request: ChatCompletionRequest,
+  messages: readonly ExternalChatMessage[],
+  filters: FiltersConfig | undefined,
+  legacyPii: MessageFilterPiiConfig | undefined,
+): boolean {
+  if (filters == null && legacyPii == null) {
+    return false;
+  }
+
+  const uninspectableField = getBlockedOpaqueFileField(filters, messages);
+  if (uninspectableField != null) {
+    const response = contentFilterUninspectableResponse(uninspectableField);
+    sendErrorResponse(res, 400, response.message, 'invalid_request_error', response.error);
+    return true;
+  }
+
+  const messageFragments: TextContentFragment[] = [];
+  const traversalErrors: ContentTraversalLimitError[] = [];
+  try {
+    for (const fragment of extractMessageContent(messages)) {
+      messageFragments.push(fragment);
+    }
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+  try {
+    messageFragments.push(...extractModelParameterContent(request));
+  } catch (error) {
+    if (!isContentTraversalLimitError(error)) {
+      throw error;
+    }
+    messageFragments.push(...getContentTraversalFragments(error));
+    traversalErrors.push(error);
+  }
+
+  const finding = inspectContent(messageFragments, {
+    filters,
+    legacyPii,
+  });
+  if (finding != null) {
+    const isLegacyFilter = finding.detectorId === 'legacy-pattern';
+    const response = contentFilterBlockResponse(finding);
+    sendErrorResponse(
+      res,
+      400,
+      isLegacyFilter
+        ? `Message contains a ${finding.label}. Remove it and try again.`
+        : response.message,
+      'invalid_request_error',
+      isLegacyFilter ? 'message_filter_pii_block' : response.error,
+    );
+    return true;
+  }
+
+  const traversalError = traversalErrors.find((error) =>
+    isContentTraversalProtected({
+      error,
+      filters,
+      legacyPii,
+      roles: messages.map((message) => message.role),
+    }),
+  );
+  if (traversalError != null) {
+    sendErrorResponse(
+      res,
+      traversalError.statusCode,
+      traversalError.body.message,
+      'invalid_request_error',
+      traversalError.body.error,
+    );
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -347,6 +493,30 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
         error: `messages[${i}].role must be one of: system, user, assistant, tool`,
       };
     }
+    const toolCalls = msg.tool_calls;
+    if (toolCalls === undefined) {
+      continue;
+    }
+    if (!Array.isArray(toolCalls)) {
+      return { valid: false, error: `messages[${i}].tool_calls must be an array` };
+    }
+    for (let callIndex = 0; callIndex < toolCalls.length; callIndex++) {
+      const toolCall = toolCalls[callIndex];
+      if (toolCall == null || typeof toolCall !== 'object') {
+        continue;
+      }
+      const toolFunction = (toolCall as Record<string, unknown>).function;
+      if (toolFunction == null || typeof toolFunction !== 'object') {
+        continue;
+      }
+      const args = (toolFunction as Record<string, unknown>).arguments;
+      if (args !== undefined && typeof args !== 'string') {
+        return {
+          valid: false,
+          error: `messages[${i}].tool_calls[${callIndex}].function.arguments must be a string`,
+        };
+      }
+    }
   }
 
   if (request.conversation_id !== undefined && typeof request.conversation_id !== 'string') {
@@ -422,6 +592,18 @@ export async function createAgentChatCompletion(
   const request = validation.request;
   const agentId = request.model;
   const requestedStreaming = request.stream === true;
+  const filters = deps.appConfig?.filters;
+  const legacyPii = deps.appConfig?.messageFilter?.pii;
+  const submittedMessages: readonly ExternalChatMessage[] = request.messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? message.content.map<ExternalMessagePart>((part) => ({ ...part }))
+      : (message.content ?? undefined),
+  }));
+
+  if (inspectSubmittedRequest(res, request, submittedMessages, filters, legacyPii)) {
+    return;
+  }
 
   // Look up the agent
   const agent = await deps.getAgent({ id: agentId });
@@ -532,6 +714,23 @@ export async function createAgentChatCompletion(
       toolIntentsAvailable,
     });
 
+    const modelBoundAgents = collectReachableAgents([initializedAgent]);
+    const modelBoundFiles: InitializedFile[] = [];
+    for (const modelBoundAgent of modelBoundAgents) {
+      modelBoundFiles.push(
+        ...(modelBoundAgent.attachments ?? []),
+        ...(modelBoundAgent.requestAttachments ?? []),
+        ...(modelBoundAgent.agentContextAttachments ?? []),
+      );
+    }
+    assertModelBoundContent({
+      filters,
+      legacyPii,
+      submittedMessages,
+      agents: modelBoundAgents,
+      files: [...modelBoundFiles, ...getDynamicToolContexts(modelBoundAgents)],
+    });
+
     // Determine if streaming is enabled (check both request and agent config)
     const streamingDisabled = !!(initializedAgent.model_parameters as Record<string, unknown>)
       ?.disableStreaming;
@@ -595,12 +794,7 @@ export async function createAgentChatCompletion(
         requestBody: mcpRequestBody,
         user: safeUser,
         tenantId: typeof reqUser?.tenantId === 'string' ? reqUser.tenantId : undefined,
-        appConfig: deps.appConfig
-          ? {
-              endpoints: deps.appConfig.endpoints,
-              langfuse: deps.appConfig.langfuse,
-            }
-          : undefined,
+        appConfig: selectCreateRunAppConfig(deps.appConfig),
       });
 
       if (run) {
@@ -654,8 +848,20 @@ export async function createAgentChatCompletion(
       res.json(response);
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-
+    if (isContentFilterError(error) && !res.headersSent) {
+      sendErrorResponse(
+        res,
+        error.statusCode,
+        error.body.message,
+        'invalid_request_error',
+        error.body.error,
+      );
+      return;
+    }
+    const errorMessage = getUserFacingProviderError(
+      error,
+      hasModelBoundContentProtection(filters, legacyPii),
+    );
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
       // Headers already sent, try to send error in stream format

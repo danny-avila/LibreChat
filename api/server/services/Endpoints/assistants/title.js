@@ -4,6 +4,7 @@ const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
 const initializeClient = require('./initalize');
 const { saveConvo } = require('~/models');
+const { resolveConversationTitle } = require('../titlePolicy');
 
 /**
  * Generates a conversation title using OpenAI SDK
@@ -60,7 +61,11 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
 
   try {
     const { openai } = await initializeClient({ req });
-    const title = await generateTitle({ openai, text, responseText });
+    const generatedTitle = await generateTitle({ openai, text, responseText });
+    const title = resolveConversationTitle(req, generatedTitle);
+    if (title == null) {
+      return;
+    }
     await titleCache.set(key, title, 120000);
 
     const reqCtx = {
@@ -88,8 +93,12 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     if (!fallbackSource) {
       return;
     }
-    const fallbackTitle =
+    const submittedFallback =
       fallbackSource.length > 40 ? fallbackSource.substring(0, 37) + '...' : fallbackSource;
+    const fallbackTitle = resolveConversationTitle(req, submittedFallback);
+    if (fallbackTitle == null) {
+      return;
+    }
     await titleCache.set(key, fallbackTitle, 120000);
     await saveConvo(
       {

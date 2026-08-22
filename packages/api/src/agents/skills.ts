@@ -31,6 +31,8 @@ export type TGetSkillByName = (
   name: string;
   body: string;
   author: Types.ObjectId;
+  /** Structured SKILL.md metadata retained for model-bound policy checks. */
+  frontmatter?: Record<string, unknown>;
   /**
    * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
    * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
@@ -280,18 +282,13 @@ export async function resolveModelSpecSkillIds({
         preferModelInvocable: true,
       });
       if (!skill) {
-        logger.warn(
-          `[resolveModelSpecSkillIds] Skill "${name}" not found or not accessible for this user`,
-        );
+        logger.warn('[resolveModelSpecSkillIds] Requested skill not found or not accessible');
         resolved.push(null);
         continue;
       }
       resolved.push(skill._id);
-    } catch (err) {
-      logger.warn(
-        `[resolveModelSpecSkillIds] Failed to resolve skill "${name}":`,
-        err instanceof Error ? err.message : err,
-      );
+    } catch {
+      logger.warn('[resolveModelSpecSkillIds] Failed to resolve a requested skill');
       resolved.push(null);
     }
   }
@@ -424,6 +421,28 @@ export interface InjectSkillCatalogParams {
   defaultActiveOnShare?: boolean;
   /** Admin-configured cap on the model-visible catalog. Defaults to 100. */
   maxCatalogSkills?: number;
+  /** Read-only catalog snapshot preloaded for current-policy inspection. */
+  resolvedCatalog?: ResolvedSkillCatalog;
+}
+
+export type SkillCatalogSummary = Awaited<
+  ReturnType<NonNullable<TListSkillsByAccess>>
+>['skills'][number];
+
+export interface ResolvedSkillCatalog {
+  activeSkills: SkillCatalogSummary[];
+  catalogLimit: number;
+  visibleCount: number;
+  reachedEnd: boolean;
+}
+
+export interface ResolveSkillCatalogParams {
+  accessibleSkillIds: Types.ObjectId[];
+  listSkillsByAccess: TListSkillsByAccess | undefined;
+  userId?: string;
+  skillStates?: Record<string, boolean>;
+  defaultActiveOnShare?: boolean;
+  maxCatalogSkills?: number;
 }
 
 export interface InjectSkillCatalogResult {
@@ -460,28 +479,17 @@ export interface InjectSkillCatalogResult {
 }
 
 /**
- * Queries accessible skills, formats a budget-aware catalog, appends it to the
- * agent's additional_instructions, and registers the SkillTool definition.
- * Returns updated toolDefinitions and the skill count.
- *
- * No tool instance is created — SkillTool is event-driven only. The tool
- * definition in toolDefinitions is sufficient for the LLM to see and call it;
- * the host handler intercepts the call via ON_TOOL_EXECUTE.
- *
- * The caller is responsible for gating on the skills capability before calling.
+ * Loads the exact active catalog snapshot without mutating an agent or tool
+ * registry. Callers may inspect this user-authored content before performing
+ * provider/resource side effects, then pass the snapshot to
+ * `injectSkillCatalog` to avoid a second query and TOCTOU drift.
  */
-export async function injectSkillCatalog(
-  params: InjectSkillCatalogParams,
-): Promise<InjectSkillCatalogResult> {
+export async function resolveSkillCatalog(
+  params: ResolveSkillCatalogParams,
+): Promise<ResolvedSkillCatalog> {
   const {
-    agent,
-    toolDefinitions: inputDefs,
-    toolRegistry,
     accessibleSkillIds,
-    contextWindowTokens,
     listSkillsByAccess,
-    codeEnvAvailable,
-    statefulSessions,
     userId,
     skillStates,
     defaultActiveOnShare = false,
@@ -491,20 +499,17 @@ export async function injectSkillCatalog(
 
   if (!listSkillsByAccess || accessibleSkillIds.length === 0) {
     return {
-      toolDefinitions: inputDefs,
-      skillCount: 0,
-      toolNames: [],
-      activeSkillIds: [],
-      activeSkillNames: new Set<string>(),
+      activeSkills: [],
+      catalogLimit,
+      visibleCount: 0,
+      reachedEnd: true,
     };
   }
 
-  type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
+  const isActive = (skill: SkillCatalogSummary): boolean =>
+    resolveSkillActive({ skill, skillStates, userId, defaultActiveOnShare });
 
-  const isActive = (s: SkillSummary): boolean =>
-    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
-
-  const activeSkills: SkillSummary[] = [];
+  const activeSkills: SkillCatalogSummary[] = [];
   /**
    * Catalog cap counts only model-visible (non-`disable-model-invocation`)
    * skills. Counting against the merged active set would let a tenant
@@ -554,6 +559,54 @@ export async function injectSkillCatalog(
     cursor = page.after;
     pages += 1;
   }
+
+  return {
+    activeSkills,
+    catalogLimit,
+    visibleCount,
+    reachedEnd,
+  };
+}
+
+/**
+ * Queries accessible skills, formats a budget-aware catalog, appends it to the
+ * agent's additional_instructions, and registers the SkillTool definition.
+ * Returns updated toolDefinitions and the skill count.
+ *
+ * No tool instance is created — SkillTool is event-driven only. The tool
+ * definition in toolDefinitions is sufficient for the LLM to see and call it;
+ * the host handler intercepts the call via ON_TOOL_EXECUTE.
+ *
+ * The caller is responsible for gating on the skills capability before calling.
+ */
+export async function injectSkillCatalog(
+  params: InjectSkillCatalogParams,
+): Promise<InjectSkillCatalogResult> {
+  const {
+    agent,
+    toolDefinitions: inputDefs,
+    toolRegistry,
+    accessibleSkillIds,
+    contextWindowTokens,
+    listSkillsByAccess,
+    codeEnvAvailable,
+    statefulSessions,
+    userId,
+    skillStates,
+    defaultActiveOnShare = false,
+    maxCatalogSkills,
+    resolvedCatalog,
+  } = params;
+  const { activeSkills, catalogLimit, visibleCount, reachedEnd } =
+    resolvedCatalog ??
+    (await resolveSkillCatalog({
+      accessibleSkillIds,
+      listSkillsByAccess,
+      userId,
+      skillStates,
+      defaultActiveOnShare,
+      maxCatalogSkills,
+    }));
 
   if (activeSkills.length === 0) {
     return {
@@ -747,6 +800,8 @@ export interface ResolveManualSkillsParams {
     body: string;
     author: Types.ObjectId | string;
     deployment?: boolean;
+    /** Structured SKILL.md metadata retained for model-bound policy checks. */
+    frontmatter?: Record<string, unknown>;
     /**
      * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
      * Surfaced on `ResolvedManualSkill` so future runtime enforcement can
@@ -791,6 +846,8 @@ export interface ResolvedSkillPrime {
   _id: Types.ObjectId;
   name: string;
   body: string;
+  /** Structured SKILL.md metadata retained for model-bound policy checks. */
+  frontmatter?: Record<string, unknown>;
   /**
    * Skill-declared tool allowlist passed through from the skill doc. Present
    * only when the skill author declared `allowed-tools` in frontmatter.
@@ -861,15 +918,8 @@ export async function resolveManualSkills(
    */
   let boundedNames = uniqueNames;
   if (uniqueNames.length > MAX_MANUAL_SKILLS) {
-    const droppedAll = uniqueNames.slice(MAX_MANUAL_SKILLS);
-    const DROPPED_LOG_SAMPLE = 5;
-    const droppedSample = droppedAll.slice(0, DROPPED_LOG_SAMPLE).join(', ');
-    const droppedSuffix =
-      droppedAll.length > DROPPED_LOG_SAMPLE
-        ? `, ... (${droppedAll.length - DROPPED_LOG_SAMPLE} more)`
-        : '';
     logger.warn(
-      `[resolveManualSkills] Truncating manual skill list from ${uniqueNames.length} to ${MAX_MANUAL_SKILLS}: dropped [${droppedSample}${droppedSuffix}]`,
+      `[resolveManualSkills] Truncating manual skill list from ${uniqueNames.length} to ${MAX_MANUAL_SKILLS}`,
     );
     boundedNames = uniqueNames.slice(0, MAX_MANUAL_SKILLS);
   }
@@ -891,7 +941,7 @@ export async function resolveManualSkills(
           preferUserInvocable: true,
         });
         if (!skill) {
-          logger.warn(`[resolveManualSkills] Skill "${name}" not found or not accessible`);
+          logger.warn('[resolveManualSkills] Requested skill not found or not accessible');
           return null;
         }
         /**
@@ -909,11 +959,11 @@ export async function resolveManualSkills(
          * operators triage faster.
          */
         if (skill.userInvocable === false) {
-          logger.warn(`[resolveManualSkills] Skill "${name}" is not user-invocable — skipping`);
+          logger.warn('[resolveManualSkills] Requested skill is not user-invocable — skipping');
           return null;
         }
         if (!skill.body) {
-          logger.warn(`[resolveManualSkills] Skill "${name}" has empty body — skipping`);
+          logger.warn('[resolveManualSkills] Requested skill has empty body — skipping');
           return null;
         }
         const active = resolveSkillActive({
@@ -923,23 +973,21 @@ export async function resolveManualSkills(
           defaultActiveOnShare,
         });
         if (!active) {
-          logger.warn(`[resolveManualSkills] Skill "${name}" is inactive for this user — skipping`);
+          logger.warn('[resolveManualSkills] Requested skill is inactive for this user — skipping');
           return null;
         }
         const resolved: ResolvedManualSkill = {
           _id: skill._id,
           name: skill.name,
           body: skill.body,
+          frontmatter: skill.frontmatter,
         };
         if (skill.allowedTools !== undefined) {
           resolved.allowedTools = skill.allowedTools;
         }
         return resolved;
-      } catch (err) {
-        logger.warn(
-          `[resolveManualSkills] Failed to resolve skill "${name}":`,
-          err instanceof Error ? err.message : err,
-        );
+      } catch {
+        logger.warn('[resolveManualSkills] Failed to resolve a requested skill');
         return null;
       }
     }),
@@ -966,6 +1014,7 @@ export interface ResolveAlwaysApplySkillsParams {
       name: string;
       body: string;
       author: Types.ObjectId | string;
+      frontmatter?: Record<string, unknown>;
       allowedTools?: string[];
       deployment?: boolean;
     }>;
@@ -1062,7 +1111,7 @@ export async function resolveAlwaysApplySkills(
         break;
       }
       if (!skill.body) {
-        logger.warn(`[resolveAlwaysApplySkills] Skill "${skill.name}" has empty body — skipping`);
+        logger.warn('[resolveAlwaysApplySkills] Skill has empty body — skipping');
         continue;
       }
       const active = resolveSkillActive({
@@ -1091,6 +1140,7 @@ export async function resolveAlwaysApplySkills(
         _id: skill._id,
         name: skill.name,
         body: skill.body,
+        frontmatter: skill.frontmatter,
       };
       if (skill.allowedTools !== undefined) {
         prime.allowedTools = skill.allowedTools;
@@ -1271,6 +1321,58 @@ export interface InjectSkillPrimesResult {
   alwaysApplyDedupedFromManual: number;
 }
 
+export interface SelectSkillPrimesForTurnResult<ManualPrime, AlwaysApplyPrime> {
+  manualSkillPrimes: ManualPrime[];
+  alwaysApplySkillPrimes: AlwaysApplyPrime[];
+  alwaysApplyDropped: number;
+  alwaysApplyDedupedFromManual: number;
+}
+
+/**
+ * Resolves the one authoritative set of skill primes for a turn. Keeping this
+ * selection separate from message injection lets every earlier consumer
+ * (content inspection, allowed-tool union, persisted pills) operate on exactly
+ * the same deduped and capped lists that the model will eventually receive.
+ */
+export function selectSkillPrimesForTurn<
+  ManualPrime extends Pick<ResolvedManualSkill, 'name'>,
+  AlwaysApplyPrime extends Pick<ResolvedAlwaysApplySkill, 'name'>,
+>(params: {
+  manualSkillPrimes: readonly ManualPrime[];
+  alwaysApplySkillPrimes: readonly AlwaysApplyPrime[];
+  maxPrimesPerTurn?: number;
+}): SelectSkillPrimesForTurnResult<ManualPrime, AlwaysApplyPrime> {
+  const {
+    manualSkillPrimes,
+    alwaysApplySkillPrimes,
+    maxPrimesPerTurn = MAX_PRIMED_SKILLS_PER_TURN,
+  } = params;
+  let alwaysApply = [...alwaysApplySkillPrimes];
+  let alwaysApplyDedupedFromManual = 0;
+
+  if (alwaysApply.length > 0 && manualSkillPrimes.length > 0) {
+    const manualNames = new Set(manualSkillPrimes.map((prime) => prime.name));
+    const deduped = alwaysApply.filter((prime) => !manualNames.has(prime.name));
+    alwaysApplyDedupedFromManual = alwaysApply.length - deduped.length;
+    alwaysApply = deduped;
+  }
+
+  let alwaysApplyDropped = 0;
+  const total = manualSkillPrimes.length + alwaysApply.length;
+  if (total > maxPrimesPerTurn) {
+    const budgetForAlwaysApply = Math.max(0, maxPrimesPerTurn - manualSkillPrimes.length);
+    alwaysApplyDropped = alwaysApply.length - budgetForAlwaysApply;
+    alwaysApply = alwaysApply.slice(0, budgetForAlwaysApply);
+  }
+
+  return {
+    manualSkillPrimes: [...manualSkillPrimes],
+    alwaysApplySkillPrimes: alwaysApply,
+    alwaysApplyDropped,
+    alwaysApplyDedupedFromManual,
+  };
+}
+
 /**
  * Splices manual + always-apply skill prime messages into a formatted
  * message array just before the latest user message. Ordering: always-apply
@@ -1300,26 +1402,23 @@ export function injectSkillPrimes(params: InjectSkillPrimesParams): InjectSkillP
   } = params;
   let { indexTokenCountMap } = params;
 
-  let alwaysApply = alwaysApplySkillPrimes;
-  let alwaysApplyDedupedFromManual = 0;
-  if (alwaysApply.length > 0 && manualSkillPrimes.length > 0) {
-    const manualNames = new Set(manualSkillPrimes.map((p) => p.name));
-    const deduped = alwaysApply.filter((p) => !manualNames.has(p.name));
-    alwaysApplyDedupedFromManual = alwaysApply.length - deduped.length;
-    if (alwaysApplyDedupedFromManual > 0) {
-      logger.info(
-        `[injectSkillPrimes] Dropped ${alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills are primed only once per turn.`,
-      );
-      alwaysApply = deduped;
-    }
+  const selected = selectSkillPrimesForTurn({
+    manualSkillPrimes,
+    alwaysApplySkillPrimes,
+    maxPrimesPerTurn,
+  });
+  const {
+    alwaysApplySkillPrimes: alwaysApply,
+    alwaysApplyDropped,
+    alwaysApplyDedupedFromManual,
+  } = selected;
+  if (alwaysApplyDedupedFromManual > 0) {
+    logger.info(
+      `[injectSkillPrimes] Dropped ${alwaysApplyDedupedFromManual} always-apply prime(s) already present in the manual list; same-named skills are primed only once per turn.`,
+    );
   }
-
-  let alwaysApplyDropped = 0;
-  const total = manualSkillPrimes.length + alwaysApply.length;
-  if (total > maxPrimesPerTurn) {
-    const budgetForAlwaysApply = Math.max(0, maxPrimesPerTurn - manualSkillPrimes.length);
-    alwaysApplyDropped = alwaysApply.length - budgetForAlwaysApply;
-    alwaysApply = alwaysApply.slice(0, budgetForAlwaysApply);
+  if (alwaysApplyDropped > 0) {
+    const total = manualSkillPrimes.length + alwaysApplySkillPrimes.length;
     logger.warn(
       `[injectSkillPrimes] Combined primes ${total} exceeds cap ${maxPrimesPerTurn}; dropping ${alwaysApplyDropped} always-apply prime(s) to preserve manual invocations.`,
     );

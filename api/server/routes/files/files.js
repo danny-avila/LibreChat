@@ -3,14 +3,19 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getSafeErrorMetadata,
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
   shouldUseUploadSse,
   startUploadSseStream,
+  sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
+  assertUploadContentAllowed,
+  hasActiveFilePolicy,
+  sanitizeFilename,
 } = require('@librechat/api');
 const {
   Time,
@@ -23,6 +28,8 @@ const {
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
+  hasActivePiiPatterns,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -697,7 +704,19 @@ router.post('/', async (req, res) => {
   };
 
   try {
+    req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req });
+
+    await assertUploadContentAllowed({
+      filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: metadata.tool_resource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      readFile: fs.readFile,
+    });
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
@@ -711,7 +730,7 @@ router.post('/', async (req, res) => {
     try {
       skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
     } catch (err) {
-      logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
+      logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
     }
 
     if (!skipUploadAuth) {
@@ -730,20 +749,38 @@ router.post('/', async (req, res) => {
     openSseStreamIfRequested();
     return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
-    const message = resolveUploadErrorMessage(error);
-    logger.error('[/files] Error processing file:', error);
+    if (
+      sendUploadPolicyError(res, sseStream, error, {
+        tempFileId: metadata.temp_file_id,
+        toolResource: metadata.tool_resource,
+      })
+    ) {
+      return;
+    }
+    const contentProtectionActive =
+      hasActiveFilePolicy(req.config?.filters) ||
+      hasActivePiiPatterns(req.config?.messageFilter?.pii);
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
+    logger.error('[/files] Error processing file:', getSafeErrorMetadata(error));
 
     try {
       await fs.unlink(req.file.path);
       cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
+    } catch (cleanupError) {
+      logger.error('[/files] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
 
-    let errorStatusCode = 500;
-    if (error.userErrorStatusCode) {
-      errorStatusCode = error.userErrorStatusCode;
-    }
+    const userErrorStatusCode = error?.userErrorStatusCode;
+    const errorStatusCode =
+      Number.isInteger(userErrorStatusCode) &&
+      userErrorStatusCode >= 400 &&
+      userErrorStatusCode <= 599
+        ? userErrorStatusCode
+        : 500;
 
     if (sseStream) {
       sseStream.sendError({
@@ -761,7 +798,10 @@ router.post('/', async (req, res) => {
       try {
         await fs.unlink(req.file.path);
       } catch (error) {
-        logger.error('[/files] Error deleting file after file processing:', error);
+        logger.error(
+          '[/files] Error deleting file after file processing:',
+          getSafeErrorMetadata(error),
+        );
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');

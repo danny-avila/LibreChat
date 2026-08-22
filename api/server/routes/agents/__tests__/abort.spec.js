@@ -378,6 +378,10 @@ describe('Agent Abort Endpoint', () => {
             endpoint: 'anthropic',
             iconURL: 'https://example.com/spec-icon.png',
             model: 'claude-3',
+            userSubmittedPaths: ['/content/0/tool_call/args'],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'decision_response' },
+            ],
           },
           content: [{ type: 'text', text: 'Partial response...' }],
           text: 'Partial response...',
@@ -407,6 +411,10 @@ describe('Agent Abort Endpoint', () => {
             unfinished: true,
             error: false,
             isCreatedByUser: false,
+            userSubmittedPaths: ['/content/0/tool_call/args'],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'decision_response' },
+            ],
             user: 'test-user-123',
           }),
           expect.objectContaining({

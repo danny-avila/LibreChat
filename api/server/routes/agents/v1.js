@@ -113,6 +113,7 @@ router.patch(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.updateAgent,
 );
 
@@ -130,6 +131,7 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.duplicateAgent,
 );
 
@@ -164,6 +166,7 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.revertAgentVersion,
 );
 

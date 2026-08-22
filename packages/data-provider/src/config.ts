@@ -2,6 +2,15 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  filtersConfigSchema,
+  MAX_PII_CUSTOM_REGEX_CHARACTERS,
+  MAX_PII_CUSTOM_REGEX_INSTRUCTIONS,
+  MAX_PII_PATTERN_ID_LENGTH,
+  MAX_PII_PATTERN_LABEL_LENGTH,
+  MAX_PII_PATTERNS_PER_SOURCE,
+  MAX_PII_PATTERN_LENGTH,
+} from './filters';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -30,7 +39,7 @@ export {
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
-export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -2065,7 +2074,16 @@ const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
  * (backreferences, lookaround, control escapes, and so on) is rejected at load rather than
  * silently dropped at request time.
  */
-let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
+interface MessageFilterRegexValidation {
+  readonly supported: boolean;
+  readonly programSize?: number;
+}
+
+type MessageFilterRegexValidationResult = boolean | MessageFilterRegexValidation;
+
+let messageFilterRegexValidator: (pattern: string) => MessageFilterRegexValidationResult = (
+  value,
+) => {
   try {
     new RegExp(value, 'g');
     return true;
@@ -2074,26 +2092,68 @@ let messageFilterRegexValidator: (pattern: string) => boolean = (value) => {
   }
 };
 
-export const setMessageFilterRegexValidator = (validate: (pattern: string) => boolean): void => {
+export const setMessageFilterRegexValidator = (
+  validate: (pattern: string) => MessageFilterRegexValidationResult,
+): void => {
   messageFilterRegexValidator = validate;
 };
 
 const messageFilterPiiCustomPatternSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1),
-  regex: z
-    .string()
-    .min(1)
-    .refine((value) => messageFilterRegexValidator(value), {
-      message:
-        'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
-    }),
+  id: z.string().min(1).max(MAX_PII_PATTERN_ID_LENGTH),
+  label: z.string().min(1).max(MAX_PII_PATTERN_LABEL_LENGTH),
+  regex: z.string().min(1).max(MAX_PII_PATTERN_LENGTH),
 });
 
-export const messageFilterPiiSchema = z.object({
-  starterPatterns: z.array(z.string()).optional(),
-  customPatterns: z.array(messageFilterPiiCustomPatternSchema).optional(),
-});
+export const messageFilterPiiSchema = z
+  .object({
+    starterPatterns: z
+      .array(z.string().max(MAX_PII_PATTERN_ID_LENGTH))
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+    customPatterns: z
+      .array(messageFilterPiiCustomPatternSchema)
+      .max(MAX_PII_PATTERNS_PER_SOURCE)
+      .optional(),
+  })
+  .superRefine((pii, context) => {
+    let regexCharacters = 0;
+    let regexInstructions = 0;
+    for (let index = 0; index < (pii.customPatterns?.length ?? 0); index++) {
+      const pattern = pii.customPatterns?.[index];
+      if (pattern == null) {
+        continue;
+      }
+      regexCharacters += pattern.regex.length;
+      const result = messageFilterRegexValidator(pattern.regex);
+      const supported = typeof result === 'boolean' ? result : result.supported;
+      if (!supported) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['customPatterns', index, 'regex'],
+          message:
+            'Unsupported regex: not compatible with the RE2 engine (no backreferences, lookaround, or control escapes)',
+        });
+        continue;
+      }
+      if (typeof result !== 'boolean' && result.programSize != null) {
+        regexInstructions += result.programSize;
+      }
+    }
+    if (regexCharacters > MAX_PII_CUSTOM_REGEX_CHARACTERS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may contain at most ${MAX_PII_CUSTOM_REGEX_CHARACTERS} characters in total`,
+      });
+    }
+    if (regexInstructions > MAX_PII_CUSTOM_REGEX_INSTRUCTIONS) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['customPatterns'],
+        message: `Custom PII regexes may compile to at most ${MAX_PII_CUSTOM_REGEX_INSTRUCTIONS} instructions in total`,
+      });
+    }
+  });
 
 export type MessageFilterPiiConfig = z.infer<typeof messageFilterPiiSchema>;
 
@@ -2188,6 +2248,7 @@ export const configSchema = z.object({
   rateLimits: rateLimitSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
+  filters: filtersConfigSchema.optional(),
   messageFilter: messageFilterSchema.optional(),
   endpoints: z
     .object({

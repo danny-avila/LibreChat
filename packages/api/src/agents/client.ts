@@ -11,7 +11,7 @@ import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
-import { logAxiosError, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
+import { getSafeErrorMetadata, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import Tokenizer from '~/utils/tokenizer';
 
@@ -402,10 +402,10 @@ export function logToolError(_graph: unknown, error: unknown, toolId: string): v
   if ((error as Error | undefined)?.name === 'GraphInterrupt') {
     return;
   }
-  logAxiosError({
-    error,
-    message: `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
-  });
+  logger.error(
+    `[api/server/controllers/agents/client.js #chatCompletion] Tool Error "${toolId}"`,
+    getSafeErrorMetadata(error),
+  );
 }
 
 const AGENT_SUFFIX_PATTERN = /____(\d+)$/;
@@ -522,7 +522,10 @@ export function createMultiAgentMapper(primaryAgent: Agent, agentConfigs?: Map<s
 
       return { ...message, content: finalContent as TMessage['content'] };
     } catch (error) {
-      logger.error('[AgentClient] Error processing multi-agent message:', error);
+      logger.error(
+        '[AgentClient] Error processing multi-agent message:',
+        getSafeErrorMetadata(error),
+      );
       return message;
     }
   };

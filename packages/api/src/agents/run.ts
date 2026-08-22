@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ensureHandler } from '@langchain/core/callbacks/manager';
 import { Run, Providers, Constants, HookRegistry } from '@librechat/agents';
 import {
   KnownEndpoints,
@@ -22,6 +23,7 @@ import type {
   SubagentConfigEntry,
   HookCallback,
   AgentInputs,
+  FallbackConfig,
   GenericTool,
   RunConfig,
   IState,
@@ -37,8 +39,11 @@ import type {
   ReasoningResponseKey,
   SummarizationConfig,
 } from 'librechat-data-provider';
+import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -786,6 +791,55 @@ function computeEffectiveMaxContextTokens(
   return Math.min(maxContextTokens ?? ratioComputed, ratioComputed);
 }
 
+type CallbackClientOptions = {
+  callbacks?: Callbacks;
+  fallbacks?: FallbackConfig[];
+};
+
+/**
+ * Installs run-stable callbacks on the model client itself. Subagent child
+ * graphs intentionally replace invocation callbacks with their own event
+ * forwarders, while intrinsic client callbacks survive root, child, detached,
+ * and summarization calls.
+ */
+function withModelCallbacks<T extends object>(
+  options: T,
+  modelCallbacks: readonly ModelBoundChatModelCallback[] | undefined,
+): T {
+  if (!modelCallbacks?.length) {
+    return options;
+  }
+
+  const callbackOptions = options as T & CallbackClientOptions;
+  const existingCallbacks = callbackOptions.callbacks;
+  /** The domain callback consumes only the model-bound message prefix of
+   *  LangChain's callback arguments; the trailing run metadata is ignored. */
+  const modelHandlers = modelCallbacks as unknown as readonly CallbackHandlerMethods[];
+  let callbacks: CallbackClientOptions['callbacks'];
+  if (existingCallbacks == null || Array.isArray(existingCallbacks)) {
+    callbacks = [...(existingCallbacks ?? []), ...modelHandlers];
+  } else {
+    const manager = existingCallbacks.copy();
+    for (const callback of modelHandlers) {
+      manager.addHandler(ensureHandler(callback), true);
+    }
+    callbacks = manager;
+  }
+  const withCallbacks = {
+    ...callbackOptions,
+    callbacks,
+  } as T & CallbackClientOptions;
+
+  if (Array.isArray(callbackOptions.fallbacks)) {
+    withCallbacks.fallbacks = callbackOptions.fallbacks.map((fallback) => ({
+      ...fallback,
+      clientOptions: withModelCallbacks({ ...(fallback.clientOptions ?? {}) }, modelCallbacks),
+    }));
+  }
+
+  return withCallbacks;
+}
+
 /** Identifier for the self-spawn subagent (reuses parent's AgentInputs in an isolated child graph). */
 const SELF_SUBAGENT_TYPE = 'self';
 
@@ -1259,6 +1313,7 @@ export async function createRun({
   initialSessions,
   summarizationConfig,
   initialSummary,
+  modelCallbacks,
   calibrationRatio,
   appConfig,
   subagentUsageSink,
@@ -1300,6 +1355,8 @@ export async function createRun({
   summarizationConfig?: SummarizationConfig;
   /** Cross-run summary from formatAgentMessages, forwarded to AgentContext */
   initialSummary?: { text: string; tokenCount: number };
+  /** Model-level guards inherited by root, summary, fallback, and subagent clients. */
+  modelCallbacks?: readonly ModelBoundChatModelCallback[];
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**
@@ -1404,7 +1461,7 @@ export async function createRun({
       ] as unknown as Providers) ?? agent.provider;
     const selfModel = agent.model_parameters?.model ?? (agent.model as string | undefined);
 
-    const summarization = shapeSummarizationConfig(
+    const shapedSummarization = shapeSummarizationConfig(
       agent.summarization ?? summarizationConfig,
       provider as string,
       selfModel,
@@ -1412,20 +1469,35 @@ export async function createRun({
       agent.endpoint ?? undefined,
       { user, requestBody },
     );
+    const summarization = modelCallbacks?.length
+      ? {
+          ...shapedSummarization,
+          config: {
+            ...shapedSummarization.config,
+            parameters: withModelCallbacks(
+              { ...(shapedSummarization.config.parameters ?? {}) },
+              modelCallbacks,
+            ),
+          },
+        }
+      : shapedSummarization;
 
     const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
     const hasExplicitStreamUsage = Object.prototype.hasOwnProperty.call(
       modelParameters ?? {},
       'streamUsage',
     );
-    const llmConfig = Object.assign(
-      {
-        provider,
-        streaming,
-        streamUsage,
-      },
-      modelParameters,
-    ) as t.RunLLMConfig;
+    const llmConfig = withModelCallbacks(
+      Object.assign(
+        {
+          provider,
+          streaming,
+          streamUsage,
+        },
+        modelParameters,
+      ) as t.RunLLMConfig,
+      modelCallbacks,
+    );
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})
@@ -1917,6 +1989,6 @@ export async function createRun({
   const run = await Run.create(runConfig);
 
   applyCustomHandoffPromptKeyCompatibility(run, runConfig.graphConfig);
-  applyTestRunHook(run, { messages, agents });
+  applyTestRunHook(run, { messages, agents, modelCallbacks });
   return run;
 }

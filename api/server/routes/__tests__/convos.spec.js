@@ -5,7 +5,15 @@ const MOCKS = '../__test-utils__/convos-route-mocks';
 const { archiveAllHandler } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
-jest.mock('@librechat/api', () => require(MOCKS).api());
+jest.mock('@librechat/api', () =>
+  require(MOCKS).api({
+    createContentFilter: jest.fn(() => (req, res, next) => next()),
+    inspectContent: jest.fn(() => null),
+    extractConversationTitleContent: jest.fn(() => []),
+    contentFilterBlockResponse: jest.fn(),
+    isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  }),
+);
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
 jest.mock('~/models', () => require(MOCKS).sharedModels());
@@ -41,7 +49,22 @@ describe('Convos Routes', () => {
 
     /** Mock authenticated user */
     app.use((req, res, next) => {
-      req.user = { id: 'test-user-123' };
+      req.user = { id: 'test-user-123', role: 'USER' };
+      req.config = {
+        messageFilter: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
       next();
     });
 
@@ -78,6 +101,170 @@ describe('Convos Routes', () => {
       expect(childResponse.status).toBe(missingResponse.status);
       expect(childResponse.text).toBe(missingResponse.text);
       expect(getConvo).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
+    });
+  });
+
+  describe('POST /import', () => {
+    const { importConversations } = require('~/server/utils/import');
+
+    it('passes source-aware filters into conversation import', async () => {
+      importConversations.mockResolvedValue();
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(201);
+      expect(importConversations).toHaveBeenCalledWith({
+        filepath: '/tmp/test-file.json',
+        requestUserId: 'test-user-123',
+        userRole: 'USER',
+        interfaceConfig: undefined,
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+        legacyPii: {
+          starterPatterns: ['sk_prefix'],
+        },
+      });
+    });
+
+    it('returns only metadata-safe filter details for a blocked import', async () => {
+      const error = Object.assign(new Error('blocked'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      importConversations.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(response.body).not.toHaveProperty('detectorId');
+      expect(response.body).not.toHaveProperty('ruleId');
+      expect(response.body).not.toHaveProperty('fragmentPath');
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /fork', () => {
+    const { forkConversation } = require('~/server/utils/import/fork');
+
+    it('passes source-aware filters into the fork preflight', async () => {
+      forkConversation.mockResolvedValue({ conversation: { conversationId: 'forked-convo' } });
+
+      const response = await request(app).post('/api/convos/fork').send({
+        conversationId: 'source-convo',
+        messageId: 'source-message',
+      });
+
+      expect(response.status).toBe(200);
+      expect(forkConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestUserId: 'test-user-123',
+          originalConvoId: 'source-convo',
+          targetMessageId: 'source-message',
+          filters: {
+            messages: {
+              pii: {
+                fields: ['text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        }),
+      );
+    });
+
+    it('returns a raw-free 400 when cloned content is blocked', async () => {
+      const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      forkConversation.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/fork').send({
+        conversationId: 'source-convo',
+        messageId: 'source-message',
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    });
+  });
+
+  describe('POST /duplicate', () => {
+    const { duplicateConversation } = require('~/server/utils/import/fork');
+
+    it('passes source-aware filters into the duplicate preflight', async () => {
+      duplicateConversation.mockResolvedValue({
+        conversation: { conversationId: 'duplicated-convo' },
+      });
+
+      const response = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'source-convo' });
+
+      expect(response.status).toBe(201);
+      expect(duplicateConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-123',
+          conversationId: 'source-convo',
+          filters: {
+            messages: {
+              pii: {
+                fields: ['text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        }),
+      );
+    });
+
+    it('returns a raw-free 400 when cloned content is blocked', async () => {
+      const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      duplicateConversation.mockRejectedValue(error);
+
+      const response = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'source-convo' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
     });
   });
 

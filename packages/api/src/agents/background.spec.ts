@@ -757,6 +757,7 @@ describe('BackgroundTaskRegistryClass', () => {
       artifact: { session_id: 'exec-1', files: [{ id: 'f1' }] },
       harvestStarted: true,
     });
+    registry.finishHarvest('u1', 'c1', created.task.id);
 
     const claimed = registry.claimArtifact('u1', 'c1', created.task.id);
     expect(claimed).toEqual({
@@ -776,7 +777,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
-  it('revokeHarvest hands delivery back to the fallback path, restoring a claimed artifact', () => {
+  it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
       userId: 'u1',
@@ -794,15 +795,71 @@ describe('BackgroundTaskRegistryClass', () => {
       harvestStarted: true,
     });
 
-    /** Poll claimed the artifact while the harvest was in flight… */
-    expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBe(true);
-    /** …then the harvest failed: revoke restores the artifact for the
-     *  legacy fallback and clears the suppression flag. */
+    /** Pending inspection prevents poll delivery until the harvest settles. */
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    /** A transient harvest failure unlocks the artifact for the legacy
+     *  fallback and clears the suppression flag. */
     registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
     const task = registry.get('u1', 'c1', created.task.id);
     expect(task?.harvestStarted).toBeUndefined();
     expect(task?.artifact).toEqual(artifact);
     expect(registry.claimArtifact('u1', 'c1', created.task.id)?.harvestStarted).toBeUndefined();
+  });
+
+  it('keeps a policy-blocked artifact terminal across later registry mutations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c1',
+      toolCallId: 'call_code_blocked',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = {
+      session_id: 'exec-blocked',
+      files: [{ id: 'f1', opaqueBytes: 'PROTECTED-REGISTRY-BYTES' }],
+    };
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'safe stdout',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.blockArtifact(
+      'u1',
+      'c1',
+      created.task.id,
+      'Submitted content could not be completely inspected before processing.',
+    );
+
+    registry.restoreArtifact('u1', 'c1', created.task.id, artifact);
+    registry.revokeHarvest('u1', 'c1', created.task.id, artifact);
+    registry.finishHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.attachHarvest('u1', 'c1', created.task.id, [{ opaqueBytes: artifact }]);
+    registry.complete('u1', 'c1', created.task.id, {
+      content: 'unsafe replacement',
+      artifact,
+      harvestStarted: true,
+    });
+    registry.fail('u1', 'c1', created.task.id, 'raw failure');
+
+    const task = registry.get('u1', 'c1', created.task.id);
+    expect(task).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        error: 'Submitted content could not be completely inspected before processing.',
+        artifactBlocked: true,
+      }),
+    );
+    expect(task?.result).toBeUndefined();
+    expect(task?.artifact).toBeUndefined();
+    expect(task?.attachments).toBeUndefined();
+    expect(task?.harvestStarted).toBeUndefined();
+    expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
+    expect(JSON.stringify(task)).not.toContain('PROTECTED-REGISTRY-BYTES');
+    expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
   it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
@@ -1030,7 +1087,7 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
       artifact: { session_id: 'exec-1' },
       harvestStarted: true,
     });
-    backgroundTaskRegistry.attachHarvest('delivery_user', 'delivery_convo', created.task.id, [
+    backgroundTaskRegistry.finishHarvest('delivery_user', 'delivery_convo', created.task.id, [
       { file_id: 'f1' },
     ]);
 

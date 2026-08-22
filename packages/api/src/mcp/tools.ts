@@ -127,11 +127,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     try {
       const appConfigs = await getAllServerConfigs();
       return appConfigs[serverName] != null;
-    } catch (error) {
-      logger.debug(
-        `[MCP Cache] Could not verify app ownership for ${serverName}; using user scope:`,
-        error,
-      );
+    } catch {
+      logger.debug('[MCP Cache] Could not verify app ownership; using user scope');
       return false;
     }
   }
@@ -229,7 +226,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
       const mcpDelimiter = Constants.mcp_delimiter;
 
       if (tools == null) {
-        logger.debug(`[MCP Cache] No tools to update for server ${serverName} (user: ${userId})`);
+        logger.debug('[MCP Cache] No tools to update');
         return serverTools;
       }
 
@@ -267,18 +264,14 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         ? getMCPAppToolsPublicationGeneration(resolvedConfig)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
-        logger.debug(
-          `[MCP Cache] Built ${tools.length} tools for request-scoped server ${serverName} (user: ${userId}) without caching`,
-        );
+        logger.debug(`[MCP Cache] Built ${tools.length} request-scoped tool(s) without caching`);
         return serverTools;
       }
 
       if (userId && !(await isAppSharedConfig(serverName, resolvedConfig))) {
         if (setCachedToolsIfCurrent) {
           if (!publicationGeneration || !configGeneration) {
-            logger.debug(
-              `[MCP Cache] Skipped unfenced or unaddressed tool publication for ${serverName} (user: ${userId})`,
-            );
+            logger.debug('[MCP Cache] Skipped unfenced or unaddressed tool publication');
             return null;
           }
           const current = await setCachedToolsIfCurrent(serverTools, {
@@ -288,9 +281,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
             publicationGeneration,
           });
           if (!current) {
-            logger.debug(
-              `[MCP Cache] Ignored stale tool publication for ${serverName} (user: ${userId})`,
-            );
+            logger.debug('[MCP Cache] Ignored stale tool publication');
             return null;
           }
         } else {
@@ -322,15 +313,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           return null;
         }
       }
-      logger.debug(
-        `[MCP Cache] Updated ${tools.length} tools for server ${serverName}${userId ? ` (user: ${userId})` : ' (app-level)'}`,
-      );
+      logger.debug(`[MCP Cache] Updated ${tools.length} server tool(s)`);
       return serverTools;
     } catch (error) {
-      logger.error(
-        `[MCP Cache] Failed to update tools for ${serverName} (user: ${userId}):`,
-        error,
-      );
+      logger.error('[MCP Cache] Failed to update server tools');
       throw error;
     }
   }
@@ -457,9 +443,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         ? getMCPAppToolsPublicationGeneration(resolvedConfig)
         : undefined;
       if (resolvedConfig && requiresEphemeralUserConnection(resolvedConfig)) {
-        logger.debug(
-          `[MCP Cache] Skipped caching ${count} tools for request-scoped server ${serverName} (user: ${userId})`,
-        );
+        logger.debug(`[MCP Cache] Skipped caching ${count} request-scoped tool(s)`);
         return;
       }
       if (await isAppSharedConfig(serverName, resolvedConfig)) {
@@ -476,14 +460,12 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         if (!replaced) {
           return;
         }
-        logger.debug(`Refreshed app-level MCP tools for ${serverName}`);
+        logger.debug('[MCP Cache] Refreshed app-level server tools');
         return;
       }
       if (setCachedToolsIfCurrent) {
         if (!publicationGeneration || !configGeneration) {
-          logger.debug(
-            `[MCP Cache] Skipped unfenced or unaddressed discovered tools for ${serverName} (user: ${userId})`,
-          );
+          logger.debug('[MCP Cache] Skipped unfenced or unaddressed discovered tools');
           return;
         }
         const current = await setCachedToolsIfCurrent(serverTools, {
@@ -493,17 +475,15 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           publicationGeneration,
         });
         if (!current) {
-          logger.debug(
-            `[MCP Cache] Ignored stale discovered tools for ${serverName} (user: ${userId})`,
-          );
+          logger.debug('[MCP Cache] Ignored stale discovered tools');
           return;
         }
       } else {
         await writeCachedTools(serverTools, { userId, serverName, configGeneration });
       }
-      logger.debug(`Cached ${count} MCP server tools for ${serverName} (user: ${userId})`);
+      logger.debug(`[MCP Cache] Cached ${count} server tool(s)`);
     } catch (error) {
-      logger.error(`Failed to cache MCP server tools for ${serverName} (user: ${userId}):`, error);
+      logger.error('[MCP Cache] Failed to cache server tools');
       throw error;
     }
   }
@@ -575,8 +555,8 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         return null;
       }
       return normalizeCachedToolKeys(cached, serverName);
-    } catch (error) {
-      logger.error(`[getMCPServerTools] Error fetching cached tools for ${serverName}:`, error);
+    } catch {
+      logger.error('[MCP Cache] Error fetching cached server tools');
       return null;
     }
   }

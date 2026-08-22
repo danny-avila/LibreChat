@@ -1,7 +1,14 @@
 const { randomUUID } = require('crypto');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EModelEndpoint, ViolationTypes } = require('librechat-data-provider');
 const {
+  Constants,
+  ResourceType,
+  EModelEndpoint,
+  ViolationTypes,
+  PermissionBits,
+} = require('librechat-data-provider');
+const {
+  checkAccess,
   GenerationJobManager,
   isPendingActionStale,
   mapToolApprovalResolutions,
@@ -19,19 +26,36 @@ const {
   buildAbortedResponseMetadata,
   sanitizeMessageForTransmit,
   filterMalformedContentParts,
+  getAgentCheckpointer,
+  isContentFilterError,
+  preflightResumeContent,
+  getResumeProvenance,
+  getUserFacingResumeError,
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
   isSteerPreemptSupported,
   isStopConfirmed,
   toPendingSteer,
   createMCPRuntimeRequestBody,
+  getSafeErrorMetadata,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
+const { decryptMetadata } = require('~/server/services/ActionService');
+const { checkPermission } = require('~/server/services/PermissionService');
 const {
   getMCPRequestContext,
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
-const { saveMessage, getConvo, getMessages } = require('~/models');
+const {
+  saveMessage,
+  getConvo,
+  getMessages,
+  getFiles,
+  getAgent,
+  getActions,
+  getUserMemories,
+  getRoleByName,
+} = require('~/models');
 const {
   recordScheduleOutcome,
   claimScheduleResume,
@@ -91,9 +115,34 @@ async function deleteFailedResumeCheckpoint(args, context) {
   try {
     await deleteResumedGenerationCheckpoint(args);
   } catch (error) {
-    logger.error(`[ResumeAgentController] Failed to prune checkpoint after ${context}`, error);
+    logger.error(
+      `[ResumeAgentController] Failed to prune checkpoint after ${context}`,
+      getSafeErrorMetadata(error),
+    );
   }
 }
+
+const GENERIC_RESUME_ERROR = 'Resume failed';
+
+const resumeContentProtectionDependencies = {
+  getAgentCheckpointer,
+  checkAccess,
+  getMessages,
+  getFiles,
+  getAgent,
+  getActions,
+  getUserMemories,
+  getRoleByName,
+  decryptMetadata,
+  canAccessAgent: (agent, user) =>
+    checkPermission({
+      userId: user.id,
+      role: user.role,
+      resourceType: ResourceType.AGENT,
+      resourceId: agent._id,
+      requiredPermission: PermissionBits.VIEW,
+    }),
+};
 
 /** De-duplicate a merged attachment list by a stable artifact identity. */
 function mergeAttachments(existing, incoming) {
@@ -138,7 +187,7 @@ async function resolveAccumulatedAttachments({ client, conversationId, responseM
     } catch (err) {
       logger.warn(
         '[ResumeAgentController] Failed to read prior attachments for merge',
-        err?.message ?? err,
+        getSafeErrorMetadata(err),
       );
     }
   }
@@ -172,6 +221,13 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
     return;
   }
   const content = await resolveSegmentContent(client, streamId, job.createdAt);
+  const { userSubmittedPaths, userSubmittedMessageFieldPaths } = getResumeProvenance({
+    content,
+    pendingAction: meta.pendingAction,
+    body: req.body,
+    existingPaths: meta.userSubmittedPaths,
+    existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
+  });
   const attachments = await resolveAccumulatedAttachments({
     client,
     conversationId,
@@ -191,6 +247,8 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
       conversationId,
       ...(content.length > 0 && { content }),
       ...(attachments.length > 0 && { attachments }),
+      ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
+      ...(userSubmittedMessageFieldPaths.length > 0 && { userSubmittedMessageFieldPaths }),
       unfinished: true,
       user: userId,
     },
@@ -300,6 +358,13 @@ async function finalizeResumedTurn({
   // drop empty/malformed tool_call parts so a resumed turn can't persist an invalid
   // part that breaks reload/rendering.
   const content = filterMalformedContentParts(rawContent);
+  const { userSubmittedPaths, userSubmittedMessageFieldPaths } = getResumeProvenance({
+    content,
+    pendingAction: meta.pendingAction,
+    body: req.body,
+    existingPaths: meta.userSubmittedPaths,
+    existingMessageFieldPaths: meta.userSubmittedMessageFieldPaths,
+  });
 
   /**
    * A resumed segment can end on an empty preempt boundary just as a fresh
@@ -325,6 +390,8 @@ async function finalizeResumedTurn({
     error: false,
     isCreatedByUser: false,
     user: userId,
+    ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
+    ...(userSubmittedMessageFieldPaths.length > 0 && { userSubmittedMessageFieldPaths }),
   };
   if (meta.agent_id ?? req.body?.agent_id) {
     responseMessage.agent_id = meta.agent_id ?? req.body.agent_id;
@@ -427,7 +494,10 @@ async function finalizeResumedTurn({
           },
         });
       } catch (err) {
-        logger.error('[ResumeAgentController] Title generation failed after resume', err);
+        logger.error(
+          '[ResumeAgentController] Title generation failed after resume',
+          getSafeErrorMetadata(err),
+        );
       }
     }
     conversation.title = conversation.title || 'New Chat';
@@ -477,7 +547,7 @@ async function finalizeResumedTurn({
       } catch (publishError) {
         logger.error(
           '[ResumeAgentController] Failed to publish terminal persistence reconciliation',
-          publishError,
+          getSafeErrorMetadata(publishError),
         );
       }
     }
@@ -683,7 +753,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     } catch (err) {
       logger.warn(
         '[ResumeAgentController] Failed to expire stale action on submit',
-        err?.message ?? err,
+        getSafeErrorMetadata(err),
       );
     }
     return sendGenerationJson(
@@ -792,12 +862,118 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     checkpointNamespace !== ''
       ? Promise.resolve(undefined)
       : captureAgentCheckpointGeneration(conversationId, checkpointerCfg).catch((err) => {
-          logger.warn('[ResumeAgentController] Failed to capture checkpoint generation', err);
+          logger.warn(
+            '[ResumeAgentController] Failed to capture checkpoint generation',
+            getSafeErrorMetadata(err),
+          );
           return {
             threadId: conversationId,
             checkpointIds: [],
           };
         });
+
+  // Reconstruct and inspect the exact paused input before acquiring a slot,
+  // consuming the pending action, seeding MCP state, or acknowledging success.
+  // A rejected answer/checkpoint therefore leaves the approval live and
+  // retryable, with no resource initialization or externally visible side
+  // effect beyond owner-scoped reads.
+  req.body.parentMessageId = job.metadata.userMessage?.parentMessageId ?? Constants.NO_PARENT;
+  // Rebuild the same persistence/retention mode as the paused turn. The resume body
+  // is not authoritative: tools inspect this field during client initialization.
+  req.body.isTemporary = job.metadata.isTemporary === true;
+  const metaFiles = job.metadata.userMessage?.files;
+  if (Array.isArray(metaFiles) && metaFiles.length > 0) {
+    req.body.files = metaFiles;
+  } else {
+    let restoredFiles = false;
+    const pausedUserMessageId = job.metadata.userMessage?.messageId;
+    if (pausedUserMessageId) {
+      try {
+        const [row] = await getMessages(
+          { conversationId, messageId: pausedUserMessageId },
+          'files',
+        );
+        if (Array.isArray(row?.files) && row.files.length > 0) {
+          req.body.files = row.files;
+          restoredFiles = true;
+        }
+      } catch (err) {
+        logger.warn(
+          '[ResumeAgentController] Failed to restore paused user message files',
+          getSafeErrorMetadata(err),
+        );
+      }
+    }
+    if (!restoredFiles) {
+      req.body.files = [];
+    }
+  }
+
+  let resumeState;
+  let preparedContent;
+  try {
+    resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    const batchedAnswer =
+      mapped.resumeValue?.answers != null &&
+      typeof mapped.resumeValue.answers === 'object' &&
+      !Array.isArray(mapped.resumeValue.answers)
+        ? JSON.stringify({ answers: mapped.resumeValue.answers })
+        : undefined;
+    const provenanceBody =
+      batchedAnswer === undefined ? req.body : { ...req.body, answer: batchedAnswer };
+    const resumeValueForInspection =
+      batchedAnswer === undefined
+        ? mapped.resumeValue
+        : { ...mapped.resumeValue, answer: batchedAnswer };
+    const retainedAskAnswers = job.metadata.resolvedAskUserQuestions;
+    const initialSeedContent = resumeState?.aggregatedContent ?? [];
+    const preflightResumeState =
+      Array.isArray(retainedAskAnswers) && retainedAskAnswers.length > 0
+        ? {
+            ...(resumeState ?? {}),
+            aggregatedContent: attachAskUserQuestionAnswers(initialSeedContent, retainedAskAnswers),
+          }
+        : resumeState;
+    const preflightPendingAction =
+      batchedAnswer !== undefined && Array.isArray(pendingAction.payload.questions)
+        ? {
+            ...pendingAction,
+            payload: {
+              ...pendingAction.payload,
+              question: { questions: pendingAction.payload.questions },
+            },
+          }
+        : pendingAction;
+    preparedContent = await preflightResumeContent(
+      {
+        appConfig: req.config,
+        endpointOption: req.body.endpointOption,
+        conversationId,
+        user: req.user,
+        jobMetadata: job.metadata,
+        pendingAction: preflightPendingAction,
+        body: provenanceBody,
+        resumeValue: resumeValueForInspection,
+        resumeState: preflightResumeState,
+        liveFiles: Array.isArray(req.body.files) ? req.body.files : [],
+        isTemporary: job.metadata.isTemporary === true,
+        checkpointNamespace,
+        resolvedAddedAgent: req.resolvedAddedAgent,
+      },
+      resumeContentProtectionDependencies,
+    );
+  } catch (err) {
+    logger.warn(
+      '[ResumeAgentController] Resume content preflight failed',
+      getSafeErrorMetadata(err),
+    );
+    if (isContentFilterError(err)) {
+      return sendGenerationJson(res, err.statusCode, err.body, generationProtocolVersion);
+    }
+    return sendGenerationJson(res, 500, { error: GENERIC_RESUME_ERROR }, generationProtocolVersion);
+  }
+  const { seedContent, storedMessages, userSubmittedPaths, userSubmittedMessageFieldPaths } =
+    preparedContent;
 
   // Count the resume against the concurrency limit. The original turn released its slot
   // when it paused, so resuming must re-acquire one — otherwise pausing several turns
@@ -945,7 +1121,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     await rollbackUnconsumedScheduleClaim(currentJob);
     await releaseScheduleFence();
     await decrementPendingRequest(userId);
-    logger.error('[ResumeAgentController] Failed to claim resume', err);
+    logger.error('[ResumeAgentController] Failed to claim resume', getSafeErrorMetadata(err));
     return sendGenerationJson(res, 500, { error: 'Failed to resume' }, generationProtocolVersion);
   }
   if (!claimed) {
@@ -1041,7 +1217,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
    */
   const preemptRearm = GenerationJobManager.rearmQueuedPreempts(streamId, job.createdAt).catch(
     (error) => {
-      logger.error('[ResumeAgentController] Failed to re-arm queued preempts', error);
+      logger.error(
+        '[ResumeAgentController] Failed to re-arm queued preempts',
+        getSafeErrorMetadata(error),
+      );
     },
   );
 
@@ -1092,62 +1271,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     generationProtocolVersion,
   );
 
-  // Seed the original thread parent BEFORE initializeClient: initializeAgent scopes
-  // thread files / code artifacts off `req.body.parentMessageId`, and the resume body
-  // doesn't carry it. This is the user message's parent (the thread position);
-  // `client.parentMessageId` below is a different value — the response's parent, i.e.
-  // the user message id.
-  req.body.parentMessageId = job.metadata.userMessage?.parentMessageId ?? Constants.NO_PARENT;
-
-  // Rebuild the same persistence/retention mode as the paused turn. The resume body is
-  // not authoritative here: image/code tools inspect `req.body.isTemporary` during
-  // initializeClient, and a missing or crafted value must not make a temporary chat's
-  // artifacts durable (or make a durable chat's artifacts ephemeral).
-  req.body.isTemporary = job.metadata.isTemporary === true;
-
-  // Restore the paused user message's OWN uploaded files. initializeAgent rebuilds
-  // code/file sessions by walking the conversation from `parentMessageId`, but
-  // execute-code files are excluded from that lookup, so files uploaded on the paused
-  // turn would be dropped — an approved code/read-file tool would resume without them.
-  //
-  // SECURITY: ALWAYS source files from the paused job, never from the `/resume` body.
-  // `files` is not pinned by the resume fingerprint or replayed via resumeContext, so
-  // honoring a client-supplied `files` array would let a crafted/buggy client resume an
-  // approved code/read-file tool against a DIFFERENT file set than the one the user
-  // approved. A resume reconstructs the SAME paused turn, so there is no legitimate
-  // reason for the client to supply its own files. Prefer the files persisted on the JOB
-  // at onStart (race-free), fall back to the DB row for older jobs, and CLEAR otherwise
-  // so a client-supplied set can never leak through.
-  const metaFiles = job.metadata.userMessage?.files;
-  if (Array.isArray(metaFiles) && metaFiles.length > 0) {
-    req.body.files = metaFiles;
-  } else {
-    let restoredFiles = false;
-    const pausedUserMessageId = job.metadata.userMessage?.messageId;
-    if (pausedUserMessageId) {
-      try {
-        const [row] = await getMessages(
-          { conversationId, messageId: pausedUserMessageId },
-          'files',
-        );
-        if (Array.isArray(row?.files) && row.files.length > 0) {
-          req.body.files = row.files;
-          restoredFiles = true;
-        }
-      } catch (err) {
-        logger.warn(
-          '[ResumeAgentController] Failed to restore paused user message files',
-          err?.message ?? err,
-        );
-      }
-    }
-    if (!restoredFiles) {
-      // No paused files (or the lookup failed): drop any client-supplied files so a
-      // crafted resume body can't inject a file set the paused turn never had.
-      req.body.files = [];
-    }
-  }
-
   // Restore the conversation's createdAt so temporal prompt vars ({{current_datetime}},
   // {{iso_datetime}}, ...) resolve against the SAME anchor the paused graph used rather
   // than the resume wall-clock. initializeAgent reads `req.conversationCreatedAt`; the
@@ -1162,7 +1285,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   } catch (err) {
     logger.warn(
       '[ResumeAgentController] Failed to restore conversation timestamp anchor',
-      err?.message ?? err,
+      getSafeErrorMetadata(err),
     );
   }
 
@@ -1184,6 +1307,25 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         code: 'RUN_REPLACED',
       });
     }
+    if (userSubmittedPaths.length > 0) {
+      job.metadata.userSubmittedPaths = userSubmittedPaths;
+    }
+    if (userSubmittedMessageFieldPaths.length > 0) {
+      job.metadata.userSubmittedMessageFieldPaths = userSubmittedMessageFieldPaths;
+    }
+    if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
+      await GenerationJobManager.getJobStore().updateJob(
+        streamId,
+        {
+          ...(userSubmittedPaths.length > 0 && { userSubmittedPaths }),
+          ...(userSubmittedMessageFieldPaths.length > 0 && {
+            userSubmittedMessageFieldPaths,
+          }),
+        },
+        job.createdAt,
+      );
+    }
+
     const result = await initializeClient({
       req,
       res,
@@ -1210,19 +1352,6 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     client.checkpointNamespace = checkpointNamespace;
     client.responseMessageId = job.metadata.responseMessageId;
     client.parentMessageId = job.metadata.userMessage?.messageId ?? Constants.NO_PARENT;
-    // Read the pre-pause content BEFORE swapping the store's content reference: the
-    // in-memory store's setContentParts REPLACES the stored array, so reading the
-    // resume state afterward would see the new (empty) client array and lose the seed.
-    const resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
-    let seedContent = resumeState?.aggregatedContent ?? [];
-    // Stamp retained answers onto their paused ask_user_question tool-call parts
-    // (args = the pendingAction's authoritative question, output = the user's answer):
-    // the streamed arg chunks carry no tool name so the aggregator dropped them, and
-    // no completion event ever fires for this tool — without this the saved part is
-    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswers.
-    if (resolvedAskUserQuestions) {
-      seedContent = attachAskUserQuestionAnswers(seedContent, resolvedAskUserQuestions);
-    }
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
     }
@@ -1231,6 +1360,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       resumeValue: mapped.resumeValue,
       seedContent,
       runSteps: resumeState?.runSteps ?? [],
+      storedMessages,
       abortController: job.abortController,
       // Carry the user's MCP auth so approved MCP tools run with their credentials.
       userMCPAuthMap: result.userMCPAuthMap,
@@ -1266,7 +1396,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
               (await GenerationJobManager.failPausePersistence(
                 streamId,
                 pauseActionId,
-                pausePersistenceError?.message ?? 'Re-pause persistence failed',
+                getUserFacingResumeError(pausePersistenceError, req.config),
                 pauseCreatedAt,
               )) === true;
             if (!pausePersistenceFailureFinalized) {
@@ -1277,7 +1407,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           } catch (failError) {
             logger.error(
               `[ResumeAgentController] Failed to terminalize re-pause persistence error for ${streamId}`,
-              failError,
+              getSafeErrorMetadata(failError),
             );
           }
           throw pausePersistenceError;
@@ -1343,7 +1473,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       checkpointGeneration,
     });
   } catch (err) {
-    logger.error('[ResumeAgentController] Resume failed', err);
+    logger.error('[ResumeAgentController] Resume failed', getSafeErrorMetadata(err));
     if (pausePersistenceFailed) {
       // failPausePersistence already performed the exact requires_action ->
       // error transition. Only its CAS winner owns this generation's checkpoint
@@ -1372,6 +1502,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       }
       return;
     }
+    const errorMessage = getUserFacingResumeError(err, req.config);
     // Job-replacement guard (mirrors finalizeResumedTurn's success-path guard): if a
     // newer request reused this conversationId while the resume was failing, do NOT emit
     // the error to / complete / prune the NEWER turn's job. The finally still releases
@@ -1381,7 +1512,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       const liveJob = await GenerationJobManager.getJobStore().getJob(streamId);
       stillLive = !!liveJob && liveJob.createdAt === job.createdAt;
     } catch (readErr) {
-      logger.warn('[ResumeAgentController] Replacement check failed; finalizing anyway', readErr);
+      logger.warn(
+        '[ResumeAgentController] Replacement check failed; finalizing anyway',
+        getSafeErrorMetadata(readErr),
+      );
     }
     if (!stillLive) {
       logger.warn(
@@ -1394,13 +1528,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       let errorFinalized = false;
       try {
         errorFinalized =
-          (await GenerationJobManager.completeJob(
-            streamId,
-            err?.message ?? 'Resume failed',
-            job.createdAt,
-          )) === true;
+          (await GenerationJobManager.completeJob(streamId, errorMessage, job.createdAt)) === true;
       } catch (completeErr) {
-        logger.error('[ResumeAgentController] Failed to finalize failed resume', completeErr);
+        logger.error(
+          '[ResumeAgentController] Failed to finalize failed resume',
+          getSafeErrorMetadata(completeErr),
+        );
       }
       if (errorFinalized) {
         await deleteFailedResumeCheckpoint(

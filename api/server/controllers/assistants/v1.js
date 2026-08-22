@@ -1,5 +1,13 @@
 const fs = require('fs').promises;
 const { logger } = require('@librechat/data-schemas');
+const {
+  inspectContent,
+  extractFileContent,
+  hasActiveFileFieldPolicy,
+  contentFilterBlockResponse,
+  contentFilterUninspectableResponse,
+  getBlockedUninspectableFileField,
+} = require('@librechat/api');
 const { FileContext } = require('librechat-data-provider');
 const { deleteFileByFilter, updateAssistantDoc, getAssistants } = require('~/models');
 const { uploadImageBuffer, filterFile } = require('~/server/services/Files/process');
@@ -51,9 +59,9 @@ const createAssistant = async (req, res) => {
          *  the assistants runtime — drop them even when posted directly, since
          *  the tools-dialog scoping doesn't gate REST clients or stale payloads. */
         if (isAgentsOnlyTool(tool)) {
-          logger.warn(
-            `[/assistants] Dropping agents-only tool from assistant payload: ${typeof tool === 'string' ? tool : tool?.function?.name}`,
-          );
+          logger.warn('[/assistants] Dropping agents-only tool from assistant payload', {
+            toolShape: typeof tool === 'string' ? 'name' : 'definition',
+          });
           return undefined;
         }
         if (typeof tool !== 'string') {
@@ -109,7 +117,11 @@ const createAssistant = async (req, res) => {
       assistant.append_current_datetime = append_current_datetime;
     }
 
-    logger.debug('/assistants/', assistant);
+    logger.debug('[/assistants] Assistant created', {
+      assistantId: assistant.id,
+      toolCount: assistantData.tools.length,
+      hasConversationStarters: Array.isArray(document.conversation_starters),
+    });
     res.status(201).json(assistant);
   } catch (error) {
     logger.error('[/assistants] Error creating assistant', error);
@@ -340,6 +352,19 @@ const uploadAssistantAvatar = async (req, res) => {
   try {
     const appConfig = req.config;
     filterFile({ req, file: req.file, image: true, isAvatar: true });
+    if (hasActiveFileFieldPolicy(req.config?.filters, ['name', 'content'])) {
+      const finding = inspectContent(extractFileContent({ name: req.file.originalname }), {
+        filters: req.config.filters,
+      });
+      if (finding != null) {
+        return res.status(400).json(contentFilterBlockResponse(finding));
+      }
+      const uninspectableField = getBlockedUninspectableFileField(req.config.filters, ['content']);
+      if (uninspectableField != null) {
+        return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
+      }
+    }
+
     const { assistant_id } = req.params;
     if (!assistant_id) {
       return res.status(400).json({ message: 'Assistant ID is required' });

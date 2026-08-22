@@ -57,6 +57,26 @@ async function findOlderActiveShare(
   return rivals.some((rival) => isEarlierShare(rival, created));
 }
 
+export interface SharedLinkContentSnapshot {
+  readonly title: string;
+  readonly messages: readonly t.IMessage[];
+}
+
+export type SharedLinkContentPreflight = (
+  snapshot: SharedLinkContentSnapshot,
+) => void | Promise<void>;
+
+export type SharedMessagesPreflight = (snapshot: t.SharedMessagesResult) => void | Promise<void>;
+
+export interface GetSharedMessagesOptions {
+  readonly snapshotFiles?: boolean;
+  /**
+   * Runs against the exact public projection before a legacy file snapshot is
+   * persisted. This keeps a policy-rejected read side-effect free.
+   */
+  readonly preflight?: SharedMessagesPreflight;
+}
+
 function memoizedAnonymizeId(prefix: string) {
   const memo = new Map<string, string>();
   return (id: string) => {
@@ -234,6 +254,7 @@ async function buildFileSnapshots(
       height: file.height,
       model: file.model,
       previewRevision: file.previewRevision,
+      sourceDispatchedAt: file.metadata?.sourceDispatchedAt,
       tenantId: file.tenantId,
     });
   }
@@ -371,16 +392,19 @@ function applyShareFileRoute(
       // clients must preview the database-backed payload as text, not the original MIME.
       ...(textSourceIds?.has(fileId) && { source: FileSources.text }),
     };
-    if (file.preview !== undefined) {
-      next.preview = route;
+    for (const key of ['preview', 'uri', 'url'] as const) {
+      if (file[key] !== undefined) {
+        next[key] = route;
+      }
     }
     return next;
   }
   // Not snapshotted (e.g. a non-streamable source on an included link): neutralize
   // the render URLs so the owner's original path can't be loaded through the share.
   const next: t.SharedFile = { ...file };
-  delete next.filepath;
-  delete next.preview;
+  for (const key of ['filepath', 'preview', 'uri', 'url'] as const) {
+    delete next[key];
+  }
   return next;
 }
 
@@ -537,6 +561,15 @@ function anonymizeMessages(
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
       isCreatedByUser: message.isCreatedByUser,
+      ...(typeof message.isUserSubmitted === 'boolean' && {
+        isUserSubmitted: message.isUserSubmitted,
+      }),
+      ...(Array.isArray(message.userSubmittedPaths) && {
+        userSubmittedPaths: message.userSubmittedPaths,
+      }),
+      ...(Array.isArray(message.userSubmittedMessageFieldPaths) && {
+        userSubmittedMessageFieldPaths: message.userSubmittedMessageFieldPaths,
+      }),
       createdAt: message.createdAt,
       updatedAt: message.updatedAt,
       tokenCount: message.tokenCount,
@@ -750,6 +783,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     targetMessageId?: string,
     expiredAt?: Date,
     snapshotFiles?: boolean,
+    preflight?: SharedLinkContentPreflight,
   ) => Promise<t.CreateShareResult>;
   updateSharedLink: (
     user: string,
@@ -757,12 +791,14 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     targetMessageId?: string,
     expiredAt?: Date | null,
     snapshotFiles?: boolean,
+    preflight?: SharedLinkContentPreflight,
+    beforePublish?: () => void | Promise<void>,
   ) => Promise<t.UpdateShareResult>;
   deleteSharedLink: (user: string, shareId: string) => Promise<t.DeleteShareResult | null>;
   getSharedMessages: (
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean },
+    options?: GetSharedMessagesOptions,
   ) => Promise<t.SharedMessagesResult | null>;
   getSharedLinkFile: (
     shareId: string,
@@ -786,8 +822,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   async function getSharedMessages(
     shareId: string,
     shareObjectId?: string,
-    options?: { snapshotFiles?: boolean },
+    options?: GetSharedMessagesOptions,
   ): Promise<t.SharedMessagesResult | null> {
+    let preflightFailed = false;
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const query = shareObjectId
@@ -834,12 +871,10 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const perLinkEnabled = share.snapshotFiles !== false;
       const includeFiles = adminEnabled && perLinkEnabled;
       let fileSnapshots = share.fileSnapshots;
+      let shouldPersistFileSnapshots = false;
       if (includeFiles && fileSnapshots === undefined && share._id) {
-        fileSnapshots = await persistBackfilledSnapshots(
-          SharedLink,
-          { _id: share._id },
-          await buildFileSnapshots(mongoose, messagesToShare, share.user),
-        );
+        fileSnapshots = await buildFileSnapshots(mongoose, messagesToShare, share.user);
+        shouldPersistFileSnapshots = true;
       }
       const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
@@ -869,8 +904,22 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         ),
       };
 
+      try {
+        await options?.preflight?.(result);
+      } catch (error) {
+        preflightFailed = true;
+        throw error;
+      }
+
+      if (shouldPersistFileSnapshots) {
+        await persistBackfilledSnapshots(SharedLink, { _id: share._id }, fileSnapshots ?? []);
+      }
+
       return result;
     } catch (error) {
+      if (preflightFailed) {
+        throw error;
+      }
       logger.error('[getSharedMessages] Error getting share link', {
         error: error instanceof Error ? error.message : 'Unknown error',
         shareId,
@@ -1045,10 +1094,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     targetMessageId?: string,
     expiredAt?: Date,
     snapshotFiles: boolean = true,
+    preflight?: SharedLinkContentPreflight,
   ): Promise<t.CreateShareResult> {
     if (!user || !conversationId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
     }
+    let preflightFailed = false;
     try {
       const Message = mongoose.models.Message as SchemaWithMeiliMethods;
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
@@ -1102,14 +1153,17 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const title = conversation.title || 'Untitled';
 
       const messagesForSnapshot = conversationMessages as unknown as t.IMessage[];
+      const messagesToShare = targetMessageId
+        ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
+        : messagesForSnapshot;
+      try {
+        await preflight?.({ title, messages: messagesToShare });
+      } catch (error) {
+        preflightFailed = true;
+        throw error;
+      }
       const fileSnapshots = snapshotFiles
-        ? await buildFileSnapshots(
-            mongoose,
-            targetMessageId
-              ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
-              : messagesForSnapshot,
-            user,
-          )
+        ? await buildFileSnapshots(mongoose, messagesToShare, user)
         : [];
 
       const shareId = nanoid();
@@ -1142,6 +1196,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       return { _id: created._id.toString(), shareId, conversationId, targetMessageId };
     } catch (error) {
+      if (preflightFailed) {
+        throw error;
+      }
       if (error instanceof ShareServiceError) {
         throw error;
       }
@@ -1212,11 +1269,14 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     targetMessageId?: string,
     expiredAt?: Date | null,
     snapshotFiles: boolean = true,
+    preflight?: SharedLinkContentPreflight,
+    beforePublish?: () => void | Promise<void>,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
     }
 
+    let preflightFailed = false;
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
       const Message = mongoose.models.Message as SchemaWithMeiliMethods;
@@ -1253,14 +1313,20 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
             )
           : undefined);
       const messagesForSnapshot = updatedMessages as unknown as t.IMessage[];
+      const messagesToShare = resolvedTargetMessageId
+        ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
+        : messagesForSnapshot;
+      try {
+        await preflight?.({
+          title: share.title || 'Untitled',
+          messages: messagesToShare,
+        });
+      } catch (error) {
+        preflightFailed = true;
+        throw error;
+      }
       const fileSnapshots = snapshotFiles
-        ? await buildFileSnapshots(
-            mongoose,
-            resolvedTargetMessageId
-              ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
-              : messagesForSnapshot,
-            user,
-          )
+        ? await buildFileSnapshots(mongoose, messagesToShare, user)
         : [];
       // Clear any prior snapshot when snapshotting is off so a disabled-feature
       // update can't keep serving stale file ids that the update dropped.
@@ -1280,6 +1346,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
       };
 
+      await beforePublish?.();
+
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
         new: true,
         upsert: false,
@@ -1297,6 +1365,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         targetMessageId: updatedShare.targetMessageId,
       };
     } catch (error) {
+      if (preflightFailed) {
+        throw error;
+      }
       logger.error('[updateSharedLink] Error updating shared link', {
         error: error instanceof Error ? error.message : 'Unknown error',
         user,

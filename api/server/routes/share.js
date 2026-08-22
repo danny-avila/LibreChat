@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
 const express = require('express');
 const {
+  assertModelBoundContent,
+  createShareContentPreflight,
   isEnabled,
+  isContentFilterError,
   generateCheckAccess,
   grantCreationPermissions,
   ensureLinkPermissions,
@@ -16,13 +19,12 @@ const {
   parseSharedLinksPageSize,
   isValidSharedLinksCursor,
   MAX_SHARED_LINK_SEARCH_LENGTH,
+  createSharedLinkConfigMiddleware,
 } = require('@librechat/api');
 const {
   logger,
-  getTenantId,
   runAsSystem,
   tenantStorage,
-  SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -49,6 +51,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
+const sharedLinkConfigMiddleware = createSharedLinkConfigMiddleware({ getAppConfig });
 
 const SHARE_SERVICE_ERROR_STATUS = {
   INVALID_PARAMS: 400,
@@ -102,12 +105,19 @@ const runWithTenant = (tenantId, fn) =>
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
 
-const getShareStartupPayload = async () => {
-  const tenantId = getTenantId();
-  const appConfig = await getAppConfig(
-    tenantId && tenantId !== SYSTEM_TENANT_ID ? { tenantId } : { baseOnly: true },
-  );
-  return buildSharedLinkStartupPayload(appConfig);
+const enforceSharedFileContentPolicy = (req, res, next) => {
+  try {
+    assertModelBoundContent({
+      filters: req.config?.filters,
+      files: [req.liveFile],
+    });
+    return next();
+  } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
+    return next(error);
+  }
 };
 
 /**
@@ -170,15 +180,17 @@ const resolveShareFile = async (req, res, next) => {
 
     // Pin to the snapshotted version so an old link can't surface post-share content
     // after a reused file_id (e.g. code-exec same-filename outputs) is overwritten.
-    // previewRevision changes for deferred/office files; `bytes` catches other
-    // overwrites that change size, and is stable across S3 URL refresh and the
-    // pending->ready transition (which don't alter file size). Same-size content
-    // swaps remain a best-effort gap inherent to the no-byte-copy design.
+    // sourceDispatchedAt changes for every source artifact emit; previewRevision
+    // covers deferred/office generations, while `bytes` covers legacy records
+    // without either marker and stays stable across URL refresh/preview updates.
     const revisionChanged =
       (snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null);
+    const sourceGenerationChanged =
+      snapshot.sourceDispatchedAt != null &&
+      snapshot.sourceDispatchedAt !== (liveFile.metadata?.sourceDispatchedAt ?? null);
     const bytesChanged =
       snapshot.bytes != null && liveFile.bytes != null && snapshot.bytes !== liveFile.bytes;
-    if (revisionChanged || bytesChanged) {
+    if (revisionChanged || sourceGenerationChanged || bytesChanged) {
       logger.warn(
         `[shareFileAccess] Snapshot version mismatch for file ${file_id} (share ${shareId})`,
       );
@@ -295,28 +307,39 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 
-  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
-    try {
-      const payload = await getShareStartupPayload();
-      res.set('Cache-Control', 'private, no-store');
-      res.status(200).json(payload);
-    } catch (error) {
-      logger.error('Error getting shared startup config:', error);
-      res.status(500).json({ message: 'Error getting shared startup config' });
-    }
-  });
+  router.get(
+    '/:shareId/config',
+    optionalJwtAuth,
+    canAccessSharedLink,
+    sharedLinkConfigMiddleware,
+    (req, res) => {
+      try {
+        const payload = buildSharedLinkStartupPayload(req.config);
+        res.set('Cache-Control', 'private, no-store');
+        res.status(200).json(payload);
+      } catch (error) {
+        logger.error('Error getting shared startup config:', error);
+        res.status(500).json({ message: 'Error getting shared startup config' });
+      }
+    },
+  );
 
   router.get(
     '/:shareId',
     optionalJwtAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
+        const contentPreflight = createShareContentPreflight(req.config?.filters, {
+          sharedFileMetadata: true,
+          legacyPii: req.config?.messageFilter?.pii,
+        });
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
           // Viewer-independent: the per-link choice (stored on the share) decides
           // file inclusion; only a global env kill switch can force it off here.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          preflight: contentPreflight,
         });
         if (share) {
           res.set('Cache-Control', 'private, no-store');
@@ -325,6 +348,9 @@ if (allowSharedLinks) {
           res.status(404).end();
         }
       } catch (error) {
+        if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
         logger.error('Error getting shared messages:', error);
         res.status(500).json({ message: 'Error getting shared messages' });
       }
@@ -337,6 +363,7 @@ if (allowSharedLinks) {
     forkIpLimiter,
     forkUserLimiter,
     canAccessSharedLink,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
         const result = await forkSharedConversation({
@@ -350,12 +377,19 @@ if (allowSharedLinks) {
           // Viewer-independent: honor the global shared-file kill switch, matching
           // the GET share route so disabled file snapshots aren't copied into forks.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          sharedContentPreflight: createShareContentPreflight(req.config?.filters, {
+            sharedFileMetadata: true,
+            legacyPii: req.config?.messageFilter?.pii,
+          }),
         });
         if (!result) {
           return res.status(404).json({ message: 'Shared conversation not found' });
         }
         return res.status(201).json(result);
       } catch (error) {
+        if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
         if (error?.code !== 'SHARE_REVISION_MISMATCH') {
           logger.error('Error forking shared conversation:', error);
         }
@@ -374,8 +408,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         const { file_id } = req.params;
@@ -417,8 +452,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         await runWithTenant(req.shareFile.tenantId, () =>
@@ -440,8 +476,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         await runWithTenant(req.shareFile.tenantId, () =>
@@ -561,6 +598,14 @@ router.post(
       // Per-link opt-out: snapshot only when the feature is enabled AND the user
       // did not uncheck "share files" (body flag absent defaults to enabled).
       const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+        getFiles,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
+        legacyPii: req.config?.messageFilter?.pii,
+      });
 
       const created = await createSharedLink(
         req.user.id,
@@ -568,6 +613,7 @@ router.post(
         targetMessageId,
         expiredAt,
         snapshotFiles,
+        ...(contentPreflight == null ? [] : [contentPreflight]),
       );
       if (created) {
         await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
@@ -576,6 +622,9 @@ router.post(
         res.status(404).end();
       }
     } catch (error) {
+      if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
       logger.error('Error creating shared link:', error);
       return sendShareServiceError(res, error, 'Error creating shared link');
     }
@@ -616,19 +665,27 @@ router.patch(
         return res.status(404).end();
       }
 
-      // Re-scope the grants before re-publishing. The shareId survives an update, so a
-      // failed ACL write after the write-through would leave the new messages and file
-      // snapshot readable at the same URL while the owner is told the update failed.
-      if (existing?._id && expiredAt !== undefined) {
-        await updateSharedLinkPermissionsExpiration(existing._id, expiredAt);
-      }
-
+      const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+        getFiles,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
+        legacyPii: req.config?.messageFilter?.pii,
+      });
+      const beforePublish =
+        existing?._id && expiredAt !== undefined
+          ? () => updateSharedLinkPermissionsExpiration(existing._id, expiredAt)
+          : undefined;
       const updatedShare = await updateSharedLink(
         req.user.id,
         req.params.shareId,
         targetMessageId,
         expiredAt,
-        isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false,
+        snapshotFiles,
+        contentPreflight,
+        beforePublish,
       );
       if (!updatedShare) {
         return res.status(404).end();
@@ -636,6 +693,9 @@ router.patch(
 
       return res.status(200).json(updatedShare);
     } catch (error) {
+      if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
       logger.error('Error updating shared link:', error);
       return sendShareServiceError(res, error, 'Error updating shared link');
     }
