@@ -505,7 +505,11 @@ function canReleasePreparedResult(error: AgentTriggerExecutionError): boolean {
   if (error.code === 'START_ABORTED' || error.status == null) {
     return true;
   }
-  if (error.code === 'PARENT_NOT_READY' || error.code === 'PARENT_STATE_UNAVAILABLE') {
+  if (
+    error.code === 'PARENT_NOT_READY' ||
+    error.code === 'PARENT_STATE_UNAVAILABLE' ||
+    error.code === 'EVENT_ACTOR_NOT_READY'
+  ) {
     return true;
   }
   return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 409;
@@ -673,18 +677,15 @@ async function startRun(
     if (!response.ok) {
       const message =
         errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
+      const deferredContinue =
+        mode === 'continue' &&
+        response.status === 409 &&
+        ['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'].includes(errorCode(payload) ?? '');
       throw executionError(`Agent trigger ${mode} was rejected (${response.status}): ${message}`, {
         mode,
         certainty: 'definite',
-        retryable:
-          isRetryableStatus(response.status) ||
-          (mode === 'continue' &&
-            response.status === 409 &&
-            errorCode(payload) === 'PARENT_NOT_READY'),
-        deferWithoutAttempt:
-          mode === 'continue' &&
-          response.status === 409 &&
-          errorCode(payload) === 'PARENT_NOT_READY',
+        retryable: isRetryableStatus(response.status) || deferredContinue,
+        deferWithoutAttempt: deferredContinue,
         code: errorCode(payload) ?? (mode === 'fire' ? 'FIRE_REJECTED' : 'CONTINUE_REJECTED'),
         status: response.status,
         ...(response.headers.get('retry-after') != null && {

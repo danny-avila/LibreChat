@@ -1,4 +1,4 @@
-import { AIMessage, HumanMessage } from '@langchain/core/messages';
+import { AIMessage } from '@langchain/core/messages';
 import type { IConversation } from '@librechat/data-schemas';
 import { createAgentTriggerEnvelope, type AgentContinueTriggerEnvelope } from './envelope';
 import { createAgentEventContinueResolver } from './bindingResolver';
@@ -51,6 +51,13 @@ describe('agent event continuation resolver', () => {
   });
 
   it('re-resolves the latest assistant leaf immediately before dispatch', async () => {
+    const getMessages = jest.fn(async () => [
+      Object.assign(new AIMessage('done'), {
+        messageId: 'assistant-1',
+        isCreatedByUser: false,
+        createdAt: new Date(2),
+      }),
+    ]) as never;
     const resolver = createAgentEventContinueResolver({
       enabled: () => true,
       methods: {
@@ -72,18 +79,7 @@ describe('agent event continuation resolver', () => {
               tenantId: 'tenant-1',
             }) as IConversation,
         ),
-        getMessages: jest.fn(async () => [
-          Object.assign(new HumanMessage('first'), {
-            messageId: 'user-1',
-            isCreatedByUser: true,
-            createdAt: new Date(1),
-          }),
-          Object.assign(new AIMessage('done'), {
-            messageId: 'assistant-1',
-            isCreatedByUser: false,
-            createdAt: new Date(2),
-          }),
-        ]) as never,
+        getMessages,
       },
     });
 
@@ -92,6 +88,11 @@ describe('agent event continuation resolver', () => {
       input: 'Your turn.',
       parentMessageId: 'assistant-1',
     });
+    expect(getMessages).toHaveBeenCalledWith(
+      { user: 'user-1', conversationId: 'child-thread', isCreatedByUser: false },
+      'messageId createdAt',
+      { sort: { createdAt: -1, _id: -1 }, limit: 1 },
+    );
   });
 
   it('fails closed when the durable binding target changed', async () => {

@@ -600,30 +600,30 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
   });
 
-  it('retries without consuming the logical delivery when the parent is not settled', async () => {
-    expect.hasAssertions();
-    const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () =>
-          response(
-            { code: 'PARENT_NOT_READY', error: 'The parent is still running.' },
-            { status: 409 },
+  it.each(['PARENT_NOT_READY', 'EVENT_ACTOR_NOT_READY'])(
+    'retries without consuming the logical delivery for temporary admission code %s',
+    async (code) => {
+      expect.hasAssertions();
+      const host = createAgentTriggerExecutionHost(
+        deps(
+          fetchMock(async () =>
+            response({ code, error: 'The actor is still busy.' }, { status: 409 }),
           ),
         ),
-      ),
-    );
+      );
 
-    await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
-      expectExecutionError(error, {
-        mode: 'continue',
-        certainty: 'definite',
-        retryable: true,
-        deferWithoutAttempt: true,
-        code: 'PARENT_NOT_READY',
-        status: 409,
+      await host.dispatch(createContinueEnvelope()).catch((error: unknown) => {
+        expectExecutionError(error, {
+          mode: 'continue',
+          certainty: 'definite',
+          retryable: true,
+          deferWithoutAttempt: true,
+          code,
+          status: 409,
+        });
       });
-    });
-  });
+    },
+  );
 
   it('releases a prepared durable result after a definite admission rejection', async () => {
     const releaseOnDefiniteFailure = jest.fn(async () => undefined);
