@@ -294,8 +294,8 @@ export interface SubagentTickerState {
   textLineIdx: number | null;
   /** Index of the in-flight 'reasoning' line. */
   thinkLineIdx: number | null;
-  /** Raw message-delta accumulator — truncated into `writing.body` but
-   *  preserved so subsequent deltas extend the running preview. */
+  /** Whitespace-normalized message-delta accumulator. A trailing separator is
+   *  retained so chunk boundaries still render as one word boundary. */
   textBuffer: string;
   thinkBuffer: string;
 }
@@ -324,8 +324,12 @@ const truncatePreview = (input: string): string => {
   return normalized.slice(-PREVIEW_MAX_CHARS);
 };
 
-const truncatePreviewBuffer = (input: string): string =>
-  input.length <= PREVIEW_BUFFER_MAX_CHARS ? input : input.slice(-PREVIEW_BUFFER_MAX_CHARS);
+const appendPreviewBuffer = (buffer: string, chunk: string): string => {
+  const normalized = `${buffer}${chunk}`.replace(/\s+/g, ' ').trimStart();
+  return normalized.length <= PREVIEW_BUFFER_MAX_CHARS
+    ? normalized
+    : normalized.slice(-PREVIEW_BUFFER_MAX_CHARS);
+};
 
 const SNIPPET_MAX_CHARS = 48;
 /** Short head-truncation for tool args/output — caller labels what each
@@ -400,7 +404,7 @@ export function foldSubagentEventIntoTicker(
       state.thinkLineIdx != null || state.thinkBuffer
         ? { ...state, thinkLineIdx: null, thinkBuffer: '' }
         : state;
-    const textBuffer = truncatePreviewBuffer(afterClose.textBuffer + chunk);
+    const textBuffer = appendPreviewBuffer(afterClose.textBuffer, chunk);
     const body = truncatePreview(textBuffer);
     const line: SubagentTickerLine = { kind: 'writing', body };
     if (afterClose.textLineIdx == null) {
@@ -420,7 +424,7 @@ export function foldSubagentEventIntoTicker(
       state.textLineIdx != null || state.textBuffer
         ? { ...state, textLineIdx: null, textBuffer: '' }
         : state;
-    const thinkBuffer = truncatePreviewBuffer(afterClose.thinkBuffer + chunk);
+    const thinkBuffer = appendPreviewBuffer(afterClose.thinkBuffer, chunk);
     const body = truncatePreview(thinkBuffer);
     const line: SubagentTickerLine = { kind: 'reasoning', body };
     if (afterClose.thinkLineIdx == null) {

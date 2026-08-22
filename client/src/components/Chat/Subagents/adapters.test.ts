@@ -45,6 +45,28 @@ describe('child activity adapters', () => {
     ]);
   });
 
+  it('prefers replayed detached progress over a partial parent snapshot', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'Latest detached text.' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+      },
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot.' },
+      ] as TMessageContentParts[],
+      preferLive: true,
+      initialProgress: 1,
+      isSubmitting: true,
+    });
+
+    expect(activity.items).toEqual([{ type: 'writing', text: 'Latest detached text.' }]);
+  });
+
   it('rehydrates the selected detached task from its sanitized durable activity', () => {
     const view: SubagentThreadView = {
       threadId: 'thread',

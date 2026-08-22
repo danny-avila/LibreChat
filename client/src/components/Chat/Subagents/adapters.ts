@@ -131,12 +131,20 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  /** Detached streams replay the selected task and therefore supersede a
+   *  parent-message snapshot that may have been persisted during dispatch. */
+  preferLive?: boolean;
   reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
-  const parts = persisted.length > 0 ? persisted : live;
+  let parts = live;
+  if (input.preferLive !== true && persisted.length > 0) {
+    parts = persisted;
+  } else if (live.length === 0) {
+    parts = persisted;
+  }
   const items = contentPartsToActivity(
     parts,
     input.reasoningVisibility ?? 'visible',

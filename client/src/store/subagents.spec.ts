@@ -70,6 +70,59 @@ describe('reduceSubagentProgress', () => {
     expect(progress?.contentParts[0]).toEqual(expect.objectContaining({ type: ContentTypes.TEXT }));
   });
 
+  it('retains an encoded-byte-bounded singleton containing escaped text', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({
+        activityEventId: 'escaped-activity',
+        data: { delta: { content: [{ type: 'text', text: '\\"'.repeat(48 * 1024) }] } },
+      }),
+    ]);
+
+    expect(progress?.contentParts).toHaveLength(1);
+    expect(progress?.contentParts[0]).toEqual(expect.objectContaining({ type: ContentTypes.TEXT }));
+    expect(
+      new TextEncoder().encode(JSON.stringify(progress?.contentParts)).byteLength,
+    ).toBeLessThanOrEqual(64 * 1024);
+  });
+
+  it('retains an encoded-byte-bounded singleton tool projection', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({
+        activityEventId: 'escaped-tool-start',
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'tool', name: 'search', args: '\\"'.repeat(48 * 1024) }],
+          },
+        },
+      }),
+      update({
+        activityEventId: 'escaped-tool-complete',
+        phase: 'run_step_completed',
+        data: {
+          result: {
+            type: 'tool_call',
+            tool_call: {
+              id: 'tool',
+              name: 'search',
+              output: '\\\\'.repeat(48 * 1024),
+              progress: 1,
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(progress?.contentParts).toHaveLength(1);
+    expect(progress?.contentParts[0]).toEqual(
+      expect.objectContaining({ type: ContentTypes.TOOL_CALL }),
+    );
+    expect(
+      new TextEncoder().encode(JSON.stringify(progress?.contentParts)).byteLength,
+    ).toBeLessThanOrEqual(64 * 1024);
+  });
+
   it('keeps only the newest bounded activity and continues folding afterward', () => {
     const toolEvents = Array.from({ length: 120 }, (_, index) =>
       update({

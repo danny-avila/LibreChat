@@ -212,6 +212,46 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
   });
 
+  it('renders newer detached progress instead of a dispatch-time parent snapshot', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', activity: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const progressKey = subagentProgressKey(
+      selection.parentMessageId,
+      selection.toolCallId,
+      selection.partIndex,
+    );
+    const detachedSelection: ActiveSubagentPanel = {
+      ...selection,
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Dispatch-time snapshot.' },
+      ] as TMessageContentParts[],
+    };
+
+    render(
+      <RecoilRoot
+        initializeState={({ set }) =>
+          set(subagentProgressByToolCallId(progressKey), {
+            subagentRunId: 'child-run',
+            subagentType: 'researcher',
+            status: 'message_delta',
+            contentParts: [{ type: ContentTypes.TEXT, text: 'Latest detached text.' }],
+            aggregatorState: initSubagentAggregatorState(),
+            tickerState: initSubagentTickerState(),
+          })
+        }
+      >
+        <SubagentThreadPanel selection={detachedSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByText('Latest detached text.')).toBeInTheDocument();
+    expect(screen.queryByText('Dispatch-time snapshot.')).not.toBeInTheDocument();
+  });
+
   it('resets invocation-scoped approval state when the selected card changes', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: undefined,

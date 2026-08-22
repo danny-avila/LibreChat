@@ -57,6 +57,7 @@ export interface SubagentProgress {
 const MAX_RECENT_EVENT_KEYS = 256;
 const MAX_LIVE_ACTIVITY_ITEMS = 100;
 const MAX_LIVE_ACTIVITY_BYTES = 64 * 1024;
+const MAX_SINGLE_ACTIVITY_ENCODED_BYTES = MAX_LIVE_ACTIVITY_BYTES - 2;
 const MAX_SINGLE_ACTIVITY_TEXT_BYTES = 60 * 1024;
 const REDACTED_REASONING_MARKER = '…';
 
@@ -77,14 +78,51 @@ const truncateUtf8 = (value: string, maxBytes: number, keepTail = false): string
   return keepTail ? chars.slice(-low).join('') : chars.slice(0, low).join('');
 };
 
+const fitStringField = <T>(
+  value: string,
+  candidate: (bounded: string) => T,
+  maxBytes: number,
+  keepTail = false,
+): T => {
+  const chars = [...value];
+  let low = 0;
+  let high = chars.length;
+  let result = candidate('');
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const bounded = keepTail ? chars.slice(-mid).join('') : chars.slice(0, mid).join('');
+    const next = candidate(bounded);
+    if (encodedBytes(next) <= maxBytes) {
+      low = mid;
+      result = next;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return result;
+};
+
 const boundSingletonPart = (part: SubagentContentPart): SubagentContentPart => {
   if (part.type === ContentTypes.TEXT) {
-    return { ...part, text: truncateUtf8(part.text, MAX_SINGLE_ACTIVITY_TEXT_BYTES, true) };
+    const rawBounded = truncateUtf8(part.text, MAX_SINGLE_ACTIVITY_TEXT_BYTES, true);
+    return fitStringField(
+      rawBounded,
+      (text) => ({ ...part, text }),
+      MAX_SINGLE_ACTIVITY_ENCODED_BYTES,
+      true,
+    );
   }
   if (part.type === ContentTypes.THINK) {
-    return { ...part, think: truncateUtf8(part.think, MAX_SINGLE_ACTIVITY_TEXT_BYTES, true) };
+    const rawBounded = truncateUtf8(part.think, MAX_SINGLE_ACTIVITY_TEXT_BYTES, true);
+    return fitStringField(
+      rawBounded,
+      (think) => ({ ...part, think }),
+      MAX_SINGLE_ACTIVITY_ENCODED_BYTES,
+      true,
+    );
   }
-  return {
+
+  let bounded: SubagentContentPart = {
     ...part,
     tool_call: {
       ...part.tool_call,
@@ -94,6 +132,29 @@ const boundSingletonPart = (part: SubagentContentPart): SubagentContentPart => {
         : { output: truncateUtf8(part.tool_call.output, 24 * 1024, true) }),
     },
   };
+  if (encodedBytes(bounded) <= MAX_SINGLE_ACTIVITY_ENCODED_BYTES) return bounded;
+
+  const fitToolField = (field: 'output' | 'args' | 'name' | 'id' | 'type', keepTail = false) => {
+    if (bounded.type !== ContentTypes.TOOL_CALL) return;
+    const current = bounded;
+    const value = current.tool_call[field];
+    if (typeof value !== 'string') return;
+    bounded = fitStringField(
+      value,
+      (nextValue) => ({
+        ...current,
+        tool_call: { ...current.tool_call, [field]: nextValue },
+      }),
+      MAX_SINGLE_ACTIVITY_ENCODED_BYTES,
+      keepTail,
+    ) as SubagentContentPart;
+  };
+  fitToolField('output', true);
+  if (encodedBytes(bounded) > MAX_SINGLE_ACTIVITY_ENCODED_BYTES) fitToolField('args');
+  if (encodedBytes(bounded) > MAX_SINGLE_ACTIVITY_ENCODED_BYTES) fitToolField('name');
+  if (encodedBytes(bounded) > MAX_SINGLE_ACTIVITY_ENCODED_BYTES) fitToolField('id');
+  if (encodedBytes(bounded) > MAX_SINGLE_ACTIVITY_ENCODED_BYTES) fitToolField('type');
+  return bounded;
 };
 
 const boundContentParts = (

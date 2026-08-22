@@ -269,6 +269,25 @@ describe('buildSubagentTickerLines', () => {
     expect(lines[0]).toEqual({ kind: 'writing', body: 'Hello world' });
   });
 
+  it('retains meaningful text across a whitespace-heavy stream', () => {
+    const lines = buildSubagentTickerLines([
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Visible' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: ' \n'.repeat(1200) }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'again' }] } },
+      }),
+    ]);
+
+    expect(lines[0]).toEqual({ kind: 'writing', body: 'Visible again' });
+  });
+
   it('truncates the writing body to the tail when it grows past the cap', () => {
     const longText = 'x'.repeat(1000);
     const lines = buildSubagentTickerLines([
