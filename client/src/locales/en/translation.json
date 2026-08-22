@@ -1909,6 +1909,8 @@
   "com_ui_schedule_runs_weekly": "Runs weekly on {{days}} at {{time}}",
   "com_ui_schedule_target_new_chat": "Each run starts a new chat with this agent",
   "com_ui_schedule_time": "Time",
+  "com_ui_schedule_timezone": "Time zone",
+  "com_ui_schedule_timezone_search": "Search time zones",
   "com_ui_schedule_updated": "Schedule updated",
   "com_ui_schedule_weekdays": "Weekdays",
   "com_ui_schedule_weekly": "Weekly",
