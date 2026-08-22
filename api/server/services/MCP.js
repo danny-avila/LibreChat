@@ -1,6 +1,7 @@
 const { tool } = require('@librechat/agents/langchain/tools');
 const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Providers, Constants: AgentConstants } = require('@librechat/agents');
+const mongoose = require('mongoose');
 const {
   sendEvent,
   PENDING_STALE_MS,
@@ -1222,6 +1223,7 @@ function createToolInstance({
       if (isAssistantsEndpoint(provider) && Array.isArray(result)) {
         return result[0];
       }
+
       return result;
     } catch (error) {
       logger.error(
