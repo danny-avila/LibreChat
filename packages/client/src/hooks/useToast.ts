@@ -39,6 +39,8 @@ export default function useToast(showDelay = 100): {
       clearTimeout(hideTimerRef.current);
     }
 
+    const closeAfter = Number.isFinite(duration) && duration > 0 ? duration : Infinity;
+
     // Timeout to show the toast
     showTimerRef.current = window.setTimeout(() => {
       setToast({
@@ -46,11 +48,17 @@ export default function useToast(showDelay = 100): {
         message,
         severity: (status as NotificationSeverity) ?? severity,
         showIcon,
+        duration: closeAfter,
       });
+
+      if (closeAfter === Infinity) {
+        return;
+      }
+
       // Hides the toast after the specified duration
       hideTimerRef.current = window.setTimeout(() => {
         setToast((prevToast: ToastState) => ({ ...prevToast, open: false }));
-      }, duration);
+      }, closeAfter);
     }, showDelay);
   };
 
