@@ -12,6 +12,13 @@ const PINNED_ORDER_QUEUE = 'pinnedOrder';
 const currentUserId = (queryClient: QueryClient): string | undefined =>
   queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id;
 
+/** Whether the account that started a write is still the one signed in. The
+ *  pinned-order cache key is not scoped by user, so a response arriving after a
+ *  session change would otherwise publish one account's order to the next, and
+ *  this query has every automatic refetch trigger disabled to correct it. */
+const ownsCache = (queryClient: QueryClient, context?: { owner?: string }): boolean =>
+  context?.owner === currentUserId(queryClient);
+
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
 
@@ -90,11 +97,16 @@ export const useUpdatePinnedOrderMutation = () => {
     },
     {
       onMutate: async (newOrder) => {
+        const owner = currentUserId(queryClient);
         latestPinnedOrder = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
+        return { owner };
       },
-      onError: (_err, newOrder) => {
+      onError: (_err, newOrder, context) => {
+        if (!ownsCache(queryClient, context)) {
+          return;
+        }
         if (latestPinnedOrder !== newOrder) {
           return;
         }
@@ -105,7 +117,10 @@ export const useUpdatePinnedOrderMutation = () => {
          * Refetching is the only answer that is right in every case. */
         queryClient.resetQueries([QueryKeys.pinnedOrder]);
       },
-      onSuccess: (savedOrder, newOrder) => {
+      onSuccess: (savedOrder, newOrder, context) => {
+        if (!ownsCache(queryClient, context)) {
+          return;
+        }
         if (latestPinnedOrder !== newOrder) {
           return;
         }

@@ -187,4 +187,31 @@ describe('useUpdatePinnedOrderMutation', () => {
 
     await waitFor(() => expect(updatePinnedOrder).toHaveBeenCalledTimes(2));
   });
+
+  it('does not publish a response that arrives after the account changed', async () => {
+    const inFlight = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(inFlight.promise);
+
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+
+    let write!: Promise<unknown>;
+    await act(async () => {
+      write = result.current.mutateAsync(['b', 'a', 'c']).catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    /* The request had already left, so the pre-send owner check passed. The
+     * cache key is not scoped by user, so publishing this response now would
+     * hand account A's order to account B. */
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-b' });
+    queryClient.setQueryData([QueryKeys.pinnedOrder], ['b-order']);
+
+    await act(async () => {
+      inFlight.resolve(['a-order']);
+      await write;
+    });
+
+    expect(cached(queryClient)).toEqual(['b-order']);
+  });
 });
