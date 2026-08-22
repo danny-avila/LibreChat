@@ -1,11 +1,16 @@
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { UseQueryOptions } from '@tanstack/react-query';
+import type { QueryClient, UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
 import { enqueue } from '~/utils';
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
+
+/** The signed-in account, read from the cache rather than a hook so a queued
+ *  write can still check it after its component has unmounted. */
+const currentUserId = (queryClient: QueryClient): string | undefined =>
+  queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id;
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -71,8 +76,18 @@ export const useUpdatePinnedOrderMutation = () => {
     /* Two drags completed inside one round trip would otherwise race, and the
      * server would keep whichever request happened to land last rather than the
      * order the user finished on. */
-    (pinnedOrder: string[]) =>
-      enqueue(PINNED_ORDER_QUEUE, () => dataService.updatePinnedOrder(pinnedOrder)),
+    (pinnedOrder: string[]) => {
+      const owner = currentUserId(queryClient);
+      return enqueue(`${PINNED_ORDER_QUEUE}:${owner ?? ''}`, () => {
+        /* A queued write runs later and carries whatever Authorization header
+         * is current by then. If the session changed while it waited, sending
+         * it would write one account's order into another's document. */
+        if (currentUserId(queryClient) !== owner) {
+          throw new Error('pinnedOrder write abandoned: the signed-in user changed');
+        }
+        return dataService.updatePinnedOrder(pinnedOrder);
+      });
+    },
     {
       onMutate: async (newOrder) => {
         latestPinnedOrder = newOrder;

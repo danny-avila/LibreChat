@@ -161,7 +161,6 @@ const ConversationsSection = memo(() => {
           conversations={pinnedConversations}
           toggleNav={toggleNav}
           isSmallScreen={isSmallScreen}
-          isFiltered={tags.length > 0}
         />
       )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
