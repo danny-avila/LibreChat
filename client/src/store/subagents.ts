@@ -490,8 +490,12 @@ export function reduceSubagentProgress(
   }
   pending.sort((left, right) => (left.activitySequence ?? 0) - (right.activitySequence ?? 0));
   let expected = lastActivitySequence == null ? 0 : lastActivitySequence + 1;
-  if (lastActivitySequence == null && !waitForEarlierSequences && pending.length > 0) {
-    expected = pending[0].activitySequence ?? 0;
+  if (
+    !waitForEarlierSequences &&
+    pending[0]?.activitySequence != null &&
+    pending[0].activitySequence > expected
+  ) {
+    expected = pending[0].activitySequence;
   }
   while (pending[0]?.activitySequence === expected) {
     const event = pending.shift();

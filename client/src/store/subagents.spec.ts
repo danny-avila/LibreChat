@@ -141,6 +141,23 @@ describe('reduceSubagentProgress', () => {
     expect(closed?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'suffix' }]);
     expect(closed?.pendingSequencedEvents).toBeUndefined();
     expect(closed?.lastActivitySequence).toBe(5);
+
+    const afterMissedFrames = reduceSubagentProgress(
+      closed,
+      [
+        update({
+          activityEventId: 'activity-8',
+          activitySequence: 8,
+          data: { delta: { content: [{ type: ContentTypes.TEXT, text: ' resumed' }] } },
+        }),
+      ],
+      'detached',
+      false,
+    );
+    expect(afterMissedFrames?.contentParts).toEqual([
+      { type: ContentTypes.TEXT, text: 'suffix resumed' },
+    ]);
+    expect(afterMissedFrames?.lastActivitySequence).toBe(8);
   });
 
   it('bounds future sequence buffering while an earlier parent frame is missing', () => {
