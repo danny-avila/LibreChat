@@ -227,7 +227,9 @@ function TokenUsageIndicator({
           'data-[leave]:translate-y-1 data-[leave]:scale-95 data-[leave]:opacity-0',
         )}
       >
-        <div className="space-y-3">
+        {/* The popover owns its width so the compaction copy below wraps inside
+            it instead of stretching the breakdown to its own line length. */}
+        <div className="w-72 space-y-3">
           <Breakdown
             view={view}
             showCost={showCost}
