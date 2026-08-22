@@ -262,8 +262,9 @@ export class SubagentActivityStream {
       cleanupIfIdle();
     };
     const ready = Promise.resolve(subscription.ready).then(async () => {
-      if (closed) return;
       if (synchronizeAttachment) {
+        /** The attachment that deferred the shared buffer owns synchronization even if
+         * its panel closes meanwhile; a surviving local subscriber still needs release. */
         await this.transport.syncReorderBuffer?.(streamId);
       }
       if (closed) return;

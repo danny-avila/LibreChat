@@ -14,11 +14,14 @@ import {
 class TestTransport implements IEventTransport {
   readonly handlers = new Map<
     string,
-    {
-      onChunk: (event: unknown) => void;
-      onDone?: (event: unknown) => void;
-      onError?: (error: string) => void;
-    }
+    Map<
+      number,
+      {
+        onChunk: (event: unknown) => void;
+        onDone?: (event: unknown) => void;
+        onError?: (error: string) => void;
+      }
+    >
   >();
 
   readonly emitted: Array<{ streamId: string; event: unknown }> = [];
@@ -28,15 +31,30 @@ class TestTransport implements IEventTransport {
   readonly subscribeOptions: unknown[] = [];
 
   demanded = true;
+  subscriptionReady?: Promise<void>;
+  private nextSubscriberId = 0;
 
   subscribe(
     streamId: string,
-    handlers: typeof this.handlers extends Map<string, infer T> ? T : never,
+    handlers: {
+      onChunk: (event: unknown) => void;
+      onDone?: (event: unknown) => void;
+      onError?: (error: string) => void;
+    },
     options?: unknown,
   ) {
     this.subscribeOptions.push(options);
-    this.handlers.set(streamId, handlers);
-    return { unsubscribe: () => this.handlers.delete(streamId) };
+    const subscribers = this.handlers.get(streamId) ?? new Map();
+    const subscriberId = ++this.nextSubscriberId;
+    subscribers.set(subscriberId, handlers);
+    this.handlers.set(streamId, subscribers);
+    return {
+      ...(this.subscriptionReady == null ? {} : { ready: this.subscriptionReady }),
+      unsubscribe: () => {
+        subscribers.delete(subscriberId);
+        if (subscribers.size === 0) this.handlers.delete(streamId);
+      },
+    };
   }
 
   syncReorderBuffer(streamId: string): void {
@@ -45,16 +63,22 @@ class TestTransport implements IEventTransport {
 
   emitChunk(streamId: string, event: unknown): void {
     this.emitted.push({ streamId, event });
-    this.handlers.get(streamId)?.onChunk(event);
+    for (const handlers of this.handlers.get(streamId)?.values() ?? []) {
+      handlers.onChunk(event);
+    }
   }
 
   emitDone(streamId: string, event: unknown): void {
     this.completed.push({ streamId, event });
-    this.handlers.get(streamId)?.onDone?.(event);
+    for (const handlers of this.handlers.get(streamId)?.values() ?? []) {
+      handlers.onDone?.(event);
+    }
   }
 
   emitError(streamId: string, error: string): void {
-    this.handlers.get(streamId)?.onError?.(error);
+    for (const handlers of this.handlers.get(streamId)?.values() ?? []) {
+      handlers.onError?.(error);
+    }
   }
 
   renewDemand(): void {
@@ -66,11 +90,11 @@ class TestTransport implements IEventTransport {
   }
 
   getSubscriberCount(streamId: string): number {
-    return this.handlers.has(streamId) ? 1 : 0;
+    return this.handlers.get(streamId)?.size ?? 0;
   }
 
   isFirstSubscriber(streamId: string): boolean {
-    return this.handlers.has(streamId);
+    return this.getSubscriberCount(streamId) === 1;
   }
 
   onAllSubscribersLeft(): void {}
@@ -154,6 +178,25 @@ describe('detached subagent activity stream', () => {
     ]);
     expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
     first.unsubscribe();
+    second.unsubscribe();
+  });
+
+  it('finishes first-attachment synchronization for a surviving second subscriber', async () => {
+    const transport = new TestTransport();
+    let markReady!: () => void;
+    transport.subscriptionReady = new Promise<void>((resolve) => (markReady = resolve));
+    const stream = new SubagentActivityStream(transport);
+    const first = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    const second = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+
+    first.unsubscribe();
+    markReady();
+    await Promise.all([first.ready, second.ready]);
+
+    expect(transport.getSubscriberCount(subagentActivityStreamId('child-thread', 'task-1'))).toBe(
+      1,
+    );
+    expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
     second.unsubscribe();
   });
 
