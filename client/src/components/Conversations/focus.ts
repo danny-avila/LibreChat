@@ -16,7 +16,11 @@ const focusableWithin = (row: HTMLElement): HTMLElement | null => {
  * removal: once the row unmounts there is no longer a position to search from.
  */
 export const resolveRowBeside = (row: HTMLElement | null): HTMLElement | null => {
-  const scope = row?.closest('[role="region"]') ?? row?.closest('ul');
+  /* Scoped to the Pinned section by its own marker, not by role: the whole
+   * conversations pane is a labelled region too, and the project lists inside
+   * it render this same row. Unpinning a chat there only clears its pinned
+   * flag, so that row stays put and its focus must stay with it. */
+  const scope = row?.closest('[data-pinned-section]');
   if (row && scope) {
     const rows = Array.from(scope.querySelectorAll<HTMLElement>(PINNED_ROW_SELECTOR));
     const current = rows.indexOf(row);
@@ -27,6 +31,9 @@ export const resolveRowBeside = (row: HTMLElement | null): HTMLElement | null =>
     }
   }
 
+  if (!scope) {
+    return null;
+  }
   return document.querySelector<HTMLElement>('[data-testid="nav-new-chat-button"]');
 };
 
