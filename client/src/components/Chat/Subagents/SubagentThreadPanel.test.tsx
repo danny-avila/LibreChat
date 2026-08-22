@@ -20,7 +20,11 @@ let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
-  useSubagentActivityStream: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
+}));
+
+jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
+  __esModule: true,
+  default: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
 }));
 
 jest.mock('~/hooks', () => ({

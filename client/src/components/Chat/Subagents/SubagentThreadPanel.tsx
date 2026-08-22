@@ -8,8 +8,9 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
+import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
-import { useSubagentActivityStream, useSubagentThreadQuery } from '~/data-provider';
+import { useSubagentThreadQuery } from '~/data-provider';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import SubagentActivity from './SubagentActivity';
