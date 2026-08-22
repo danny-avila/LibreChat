@@ -425,10 +425,12 @@ describe('SubagentThreadTaskStore', () => {
     const publicationOrder: string[] = [];
     let releaseFirst!: () => void;
     const firstPublication = new Promise<void>((resolve) => (releaseFirst = resolve));
-    const emitChunk = jest.fn((_streamId: string, event: unknown) => {
+    let publicationCount = 0;
+    const emitChunk = jest.fn((_streamId: string, event: unknown): Promise<void> => {
+      publicationCount += 1;
       const label = (event as { data?: { label?: string } }).data?.label ?? 'unknown';
       publicationOrder.push(label);
-      return emitChunk.mock.calls.length === 1 ? firstPublication : Promise.resolve();
+      return publicationCount === 1 ? firstPublication : Promise.resolve();
     });
     const emitDone = jest.fn(async () => {
       publicationOrder.push('done');
