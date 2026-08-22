@@ -5,6 +5,7 @@ import type {
   ConversationMethods,
   IAgentEventBindingRecord,
   IConversation,
+  MessageMethods,
 } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
 import { createSubagentThreadId } from '../subagentThreadIds';
@@ -37,6 +38,8 @@ export interface AgentEventBindingDependencies {
   getAgent: AgentMethods['getAgent'];
   getConvo: ConversationMethods['getConvo'];
   getBinding: ConversationMethods['getAgentEventBinding'];
+  getMessage: MessageMethods['getMessage'];
+  deleteConvos: ConversationMethods['deleteConvos'];
   reserveThread: ConversationMethods['reserveSubagentThread'];
   enabled?: () => boolean;
 }
@@ -134,7 +137,7 @@ function publicBinding(record: IAgentEventBindingRecord) {
 }
 
 function assertReplay(
-  conversation: IConversation,
+  record: IAgentEventBindingRecord,
   expected: {
     bindingId: string;
     sourceKeyId: string;
@@ -145,13 +148,13 @@ function assertReplay(
     targetAgentId: string;
   },
 ): void {
-  const binding = conversation.agentEventBinding;
-  const lineage = conversation.subagentThread;
+  const binding = record.binding;
+  const lineage = record.lineage;
   if (
     binding?.bindingId !== expected.bindingId ||
     binding.sourceKeyId !== expected.sourceKeyId ||
     binding.actorId !== expected.actorId ||
-    conversation.agent_id !== expected.targetAgentId ||
+    record.agentId !== expected.targetAgentId ||
     lineage?.parentConversationId !== expected.parentConversationId ||
     lineage.parentMessageId !== expected.parentMessageId ||
     lineage.parentAgentId !== expected.parentAgentId ||
@@ -165,6 +168,25 @@ function assertReplay(
       'idempotency_conflict',
     );
   }
+}
+
+function bindingRecord(conversation: IConversation): IAgentEventBindingRecord {
+  if (
+    conversation.agentEventBinding == null ||
+    conversation.subagentThread == null ||
+    typeof conversation.agent_id !== 'string'
+  ) {
+    throw new AgentEventBindingError('Reserved event binding is incomplete', 500);
+  }
+  return {
+    conversationId: conversation.conversationId,
+    agentId: conversation.agent_id,
+    ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
+    ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
+    ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
+    binding: conversation.agentEventBinding,
+    lineage: conversation.subagentThread,
+  };
 }
 
 function sendError(res: Response, error: unknown): void {
@@ -201,7 +223,10 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
       const parentConversationId = requireString(body.parentConversationId, 'parentConversationId');
       const parentMessageId = requireString(body.parentMessageId, 'parentMessageId');
       const targetAgentId = requireString(body.target?.agentId, 'target.agentId');
-      const parent = await deps.getConvo(principal.userId, parentConversationId);
+      const [parent, parentMessage] = await Promise.all([
+        deps.getConvo(principal.userId, parentConversationId),
+        deps.getMessage({ user: principal.userId, messageId: parentMessageId }),
+      ]);
       if (
         parent == null ||
         parent.subagentThread != null ||
@@ -209,6 +234,9 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         typeof parent.agent_id !== 'string'
       ) {
         throw new AgentEventBindingError('Parent agent conversation was not found', 404);
+      }
+      if (parentMessage?.conversationId !== parentConversationId) {
+        throw new AgentEventBindingError('Parent agent message was not found', 404);
       }
       const resolvedParentAgent = await deps.getAgent({ id: parent.agent_id });
       if (resolvedParentAgent == null || !configuredChild(resolvedParentAgent, targetAgentId)) {
@@ -240,41 +268,82 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         parentAgentId: parent.agent_id,
         targetAgentId,
       };
-      const reserved = await deps.reserveThread({
+      const replay = await deps.getBinding({
         user: principal.userId,
-        conversationId: threadId,
+        bindingId: id,
+        sourceKeyId: principal.sourceKeyId,
         ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
-        conversation: {
-          conversationId: threadId,
-          endpoint: EModelEndpoint.agents,
-          title: `Agent actor: ${actorId}`.slice(0, 120),
-          agent_id: targetAgentId,
-          ...(parent.isTemporary == null ? {} : { isTemporary: parent.isTemporary }),
-          ...(parent.expiredAt == null ? {} : { expiredAt: parent.expiredAt }),
-          ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
-          agentEventBinding: { bindingId: id, sourceKeyId: principal.sourceKeyId, actorId },
-          subagentThread: {
-            rootConversationId: parentConversationId,
-            parentConversationId,
-            parentMessageId,
-            parentToolCallId: `event-binding:${id}`,
-            parentAgentId: parent.agent_id,
-            subagentType: targetAgentId,
-            subagentKind: 'agent',
-            depth: 1,
-          },
-        },
       });
-      assertReplay(reserved.conversation, expected);
-      res.status(reserved.created ? 201 : 200).json(
-        publicBinding({
+      if (replay != null) {
+        assertReplay(replay, expected);
+        res.status(200).json(publicBinding(replay));
+        return;
+      }
+      let reserved;
+      try {
+        reserved = await deps.reserveThread({
+          user: principal.userId,
           conversationId: threadId,
-          agentId: targetAgentId,
           ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
-          binding: reserved.conversation.agentEventBinding!,
-          lineage: reserved.conversation.subagentThread!,
-        }),
-      );
+          conversation: {
+            conversationId: threadId,
+            endpoint: EModelEndpoint.agents,
+            title: `Agent actor: ${actorId}`.slice(0, 120),
+            agent_id: targetAgentId,
+            ...(parent.isTemporary == null ? {} : { isTemporary: parent.isTemporary }),
+            ...(parent.expiredAt == null ? {} : { expiredAt: parent.expiredAt }),
+            ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
+            agentEventBinding: { bindingId: id, sourceKeyId: principal.sourceKeyId, actorId },
+            subagentThread: {
+              rootConversationId: parentConversationId,
+              parentConversationId,
+              parentMessageId,
+              parentToolCallId: `event-binding:${id}`,
+              parentAgentId: parent.agent_id,
+              subagentType: targetAgentId,
+              subagentKind: 'agent',
+              depth: 1,
+            },
+          },
+        });
+      } catch (error) {
+        if ((error as { code?: number }).code !== 11000) {
+          throw error;
+        }
+        const winner = await deps.getBinding({
+          user: principal.userId,
+          bindingId: id,
+          sourceKeyId: principal.sourceKeyId,
+          ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
+        });
+        if (winner == null) {
+          throw error;
+        }
+        assertReplay(winner, expected);
+        res.status(200).json(publicBinding(winner));
+        return;
+      }
+      const record = bindingRecord(reserved.conversation);
+      assertReplay(record, expected);
+      const currentParent = await deps.getConvo(principal.userId, parentConversationId);
+      if (
+        currentParent == null ||
+        currentParent.subagentThread != null ||
+        currentParent.agent_id !== parent.agent_id ||
+        !tenantMatches(currentParent.tenantId, principal.tenantId)
+      ) {
+        if (reserved.created) {
+          await deps
+            .deleteConvos(principal.userId, { conversationId: threadId })
+            .catch(() => undefined);
+        }
+        throw new AgentEventBindingError(
+          'Parent agent conversation ended during binding registration',
+          409,
+          'event_binding_parent_ended',
+        );
+      }
+      res.status(reserved.created ? 201 : 200).json(publicBinding(record));
     } catch (error) {
       try {
         sendError(res, error);
@@ -316,7 +385,7 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
       }
       req.body = {
         ...body,
-        orderingKey: typeof body.orderingKey === 'string' ? body.orderingKey : id,
+        orderingKey: id,
         mode: 'continue',
         target: {
           agentId: binding.agentId,

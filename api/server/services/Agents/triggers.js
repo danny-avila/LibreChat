@@ -17,6 +17,7 @@ const service = createAgentTriggerService({
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   prepareContinue: createAgentEventContinueResolver({
     methods,
+    getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
     fallback: completionResolver,
     enabled: () => isEnabled(process.env.ENABLE_AGENT_EVENT_CHILD_TURNS),
   }),

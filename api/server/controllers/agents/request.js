@@ -37,7 +37,16 @@ const {
 } = require('~/server/services/MCPRequestContext');
 const { logViolation } = require('~/cache');
 const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
-const { saveMessage, getMessages, getConvo, isAgentTriggerPrincipalActive } = require('~/models');
+const {
+  saveMessage,
+  getMessages,
+  getConvo,
+  acquireSubagentThreadLease,
+  renewSubagentThreadLease,
+  releaseSubagentThreadLease,
+  isAgentTriggerPrincipalActive,
+  isSubagentOwnerAdmissible,
+} = require('~/models');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -71,6 +80,79 @@ function getInitializationFailure(error) {
     status: candidateStatus,
     ...(typeof error?.code === 'string' ? { code: error.code } : {}),
     error: error?.message || 'Failed to start generation',
+  };
+}
+
+const EVENT_CHILD_LEASE_TTL_MS = 30_000;
+const EVENT_CHILD_LEASE_HEARTBEAT_MS = 10_000;
+
+/** Makes an event-driven child generation visible to the same durable deletion
+ * protocol used by detached subagents. The generation job exists before this lease,
+ * so any deletion that observes the lease can route an abort to the exact run. */
+async function acquireEventChildGenerationLease({
+  userId,
+  tenantId,
+  conversationId,
+  streamId,
+  jobCreatedAt,
+}) {
+  const token = crypto.randomUUID();
+  const input = {
+    user: userId,
+    conversationId,
+    token,
+    taskId: streamId,
+    ...(tenantId == null ? {} : { tenantId }),
+  };
+  const now = new Date();
+  const acquired = await acquireSubagentThreadLease({
+    ...input,
+    now,
+    expiresAt: new Date(now.getTime() + EVENT_CHILD_LEASE_TTL_MS),
+  });
+  if (!acquired) {
+    return null;
+  }
+
+  let stopped = false;
+  let renewalInFlight;
+  const renew = () => {
+    if (stopped || renewalInFlight != null) {
+      return;
+    }
+    renewalInFlight = (async () => {
+      const renewalTime = new Date();
+      const held = await renewSubagentThreadLease({
+        ...input,
+        now: renewalTime,
+        expiresAt: new Date(renewalTime.getTime() + EVENT_CHILD_LEASE_TTL_MS),
+      });
+      if (!held) {
+        await GenerationJobManager.abortJob(streamId, {
+          expectedCreatedAt: jobCreatedAt,
+          awaitProviderDrain: true,
+        });
+      }
+    })()
+      .catch((error) => {
+        logger.warn('[ResumableAgentController] Event child lease renewal failed', error);
+      })
+      .finally(() => {
+        renewalInFlight = undefined;
+      });
+  };
+  const heartbeat = setInterval(renew, EVENT_CHILD_LEASE_HEARTBEAT_MS);
+
+  return async () => {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
+    clearInterval(heartbeat);
+    await renewalInFlight;
+    await releaseSubagentThreadLease(input).catch((error) => {
+      logger.warn('[ResumableAgentController] Event child lease release failed', error);
+    });
   };
 }
 
@@ -1022,6 +1104,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   let client = null;
   let jobCreatedAt;
   let providerExecutionId;
+  let releaseEventChildLease;
   let scheduleTerminalOutcomeRecorded = false;
   const settleScheduledRun = async ({ status, error, clearConversationId = false }) => {
     if (!scheduleId) {
@@ -1119,6 +1202,34 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         code: 'ACCOUNT_DELETION_IN_PROGRESS',
         status: 409,
       });
+    }
+    if (req._agentEventBindingParentConversationId != null) {
+      /** The generation job is the durable marker that a deletion on another replica
+       * can abort. Recheck only after that marker exists: either the deletion fence
+       * wins and this run stops here, or the deletion observes and drains this job. */
+      releaseEventChildLease = await acquireEventChildGenerationLease({
+        userId,
+        tenantId: req.user?.tenantId,
+        conversationId,
+        streamId,
+        jobCreatedAt,
+      });
+      if (releaseEventChildLease == null) {
+        throw Object.assign(new Error('The event actor is already handling another turn'), {
+          code: 'EVENT_ACTOR_NOT_READY',
+          status: 409,
+        });
+      }
+      const [eventParent, ownerAdmissible] = await Promise.all([
+        getConvo(userId, req._agentEventBindingParentConversationId),
+        isSubagentOwnerAdmissible(userId),
+      ]);
+      if (eventParent == null || eventParent.subagentThread != null || !ownerAdmissible) {
+        throw Object.assign(new Error('The event binding parent is no longer available'), {
+          code: 'EVENT_BINDING_PARENT_ENDED',
+          status: 409,
+        });
+      }
     }
     if (
       scheduleId &&
@@ -1249,6 +1360,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             {
               userId,
               isTemporary: req?.body?.isTemporary,
+              expiredAt: req?._agentEventBindingRetention?.expiredAt,
               interfaceConfig: req?.config?.interfaceConfig,
             },
             partialMessage,
@@ -1677,6 +1789,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     {
                       userId,
                       isTemporary: req?.body?.isTemporary,
+                      expiredAt: req?._agentEventBindingRetention?.expiredAt,
                       interfaceConfig: req?.config?.interfaceConfig,
                     },
                     userMessage,
@@ -1697,6 +1810,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 {
                   userId,
                   isTemporary: req?.body?.isTemporary,
+                  expiredAt: req?._agentEventBindingRetention?.expiredAt,
                   interfaceConfig: req?.config?.interfaceConfig,
                 },
                 {
@@ -1856,6 +1970,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const reqCtx = {
           userId: req?.user?.id,
           isTemporary: req?.body?.isTemporary,
+          expiredAt: req?._agentEventBindingRetention?.expiredAt,
           interfaceConfig: req?.config?.interfaceConfig,
         };
 
@@ -2162,6 +2277,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             providerExecutionId,
           );
         }
+        await releaseEventChildLease?.();
       })
       .catch((drainError) => {
         logger.warn(
@@ -2302,6 +2418,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
       });
     }
+    await releaseEventChildLease?.();
   }
 };
 

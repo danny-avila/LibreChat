@@ -121,7 +121,12 @@ export interface ConversationMethods {
     messages: { deletedCount?: number };
   }>;
   saveConvo(
-    ctx: { userId: string; isTemporary?: boolean; interfaceConfig?: AppConfig['interfaceConfig'] },
+    ctx: {
+      userId: string;
+      isTemporary?: boolean;
+      expiredAt?: Date;
+      interfaceConfig?: AppConfig['interfaceConfig'];
+    },
     data: { conversationId: string; newConversationId?: string; [key: string]: unknown },
     metadata?: {
       context?: string;
@@ -318,7 +323,9 @@ export function createConversationMethods(
       'agentEventBinding.sourceKeyId': input.sourceKeyId,
       ...subagentLeaseTenantFilter(input.tenantId),
     })
-      .select('conversationId agent_id tenantId subagentThread +agentEventBinding')
+      .select(
+        'conversationId agent_id tenantId isTemporary expiredAt subagentThread +agentEventBinding',
+      )
       .lean<IConversation>();
     if (
       conversation?.agentEventBinding == null ||
@@ -331,6 +338,8 @@ export function createConversationMethods(
       conversationId: conversation.conversationId,
       agentId: conversation.agent_id,
       ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
+      ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
+      ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
       binding: conversation.agentEventBinding,
       lineage: conversation.subagentThread,
     };
@@ -611,10 +620,12 @@ export function createConversationMethods(
     {
       userId,
       isTemporary,
+      expiredAt,
       interfaceConfig,
     }: {
       userId: string;
       isTemporary?: boolean;
+      expiredAt?: Date;
       interfaceConfig?: AppConfig['interfaceConfig'];
     },
     {
@@ -681,7 +692,12 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (expiredAt instanceof Date && !Number.isNaN(expiredAt.getTime())) {
+        if (typeof isTemporary === 'boolean') {
+          update.isTemporary = isTemporary;
+        }
+        update.expiredAt = expiredAt;
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }

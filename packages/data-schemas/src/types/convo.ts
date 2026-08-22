@@ -18,6 +18,8 @@ export interface IAgentEventBindingRecord {
   conversationId: string;
   agentId: string;
   tenantId?: string;
+  isTemporary?: boolean;
+  expiredAt?: Date;
   binding: IAgentEventBinding;
   lineage: TSubagentThreadLineage;
 }

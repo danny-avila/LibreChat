@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
-const { archiveAllHandler } = require(MOCKS);
+const { archiveAllHandler, generationJobManager } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () =>
@@ -33,7 +33,13 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, getConvo, saveConvo } = require('~/models');
+  const {
+    deleteToolCalls,
+    deleteConvos,
+    deleteMessages,
+    getConvo,
+    saveConvo,
+  } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
@@ -73,6 +79,8 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    generationJobManager.getJob.mockResolvedValue(null);
+    generationJobManager.abortJob.mockResolvedValue({ success: true });
   });
 
   describe('GET /:conversationId', () => {
@@ -530,6 +538,36 @@ describe('Convos Routes', () => {
         'parent-conversation',
         'child-conversation',
       ]);
+    });
+
+    it('drains an active child generation and removes persistence that races deletion', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'child-conversation'
+          ? { userId: 'test-user-123', status: 'running', createdAt }
+          : null,
+      );
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('child-conversation', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(deleteConvos).toHaveBeenNthCalledWith(2, 'test-user-123', {
+        conversationId: { $in: ['parent-conversation', 'child-conversation'] },
+      });
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'test-user-123',
+        conversationId: { $in: ['parent-conversation', 'child-conversation'] },
+      });
     });
 
     it('should delete a single conversation, tool calls, and associated shared links', async () => {

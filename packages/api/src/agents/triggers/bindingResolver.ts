@@ -1,14 +1,23 @@
 import { Constants } from 'librechat-data-provider';
 import type { ConversationMethods, IMessage, MessageMethods } from '@librechat/data-schemas';
-import type { AgentTriggerDispatchContext } from './dispatch';
-import type { AgentContinueTriggerEnvelope } from './envelope';
 import type { AgentTriggerContinuePreparation, AgentTriggerExecutionHostDeps } from './host';
+import type { AgentContinueTriggerEnvelope } from './envelope';
+import type { AgentTriggerDispatchContext } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
 type ContinueResolver = NonNullable<AgentTriggerExecutionHostDeps['prepareContinue']>;
 
 export interface AgentEventContinueResolverDeps {
-  methods: Pick<ConversationMethods, 'getAgentEventBinding'> & Pick<MessageMethods, 'getMessages'>;
+  methods: Pick<ConversationMethods, 'getAgentEventBinding' | 'getConvo'> &
+    Pick<MessageMethods, 'getMessages'>;
+  getGenerationJob?: (conversationId: string) => Promise<
+    | {
+        status?: string;
+        metadata?: { terminalPersistencePending?: boolean };
+      }
+    | null
+    | undefined
+  >;
   fallback?: ContinueResolver;
   enabled?: () => boolean;
 }
@@ -41,6 +50,7 @@ function invalidBinding(message: string, retryable = false): AgentTriggerExecuti
 /** Resolves the branch leaf at dispatch time so queued events never persist a stale parent. */
 export function createAgentEventContinueResolver({
   methods,
+  getGenerationJob,
   fallback,
   enabled,
 }: AgentEventContinueResolverDeps): ContinueResolver {
@@ -91,6 +101,55 @@ export function createAgentEventContinueResolver({
       binding.binding.sourceKeyId !== sourceKeyId
     ) {
       throw invalidBinding('The event binding no longer authorizes this child thread.');
+    }
+    let parent;
+    try {
+      parent = await methods.getConvo(
+        envelope.principal.userId,
+        binding.lineage.parentConversationId,
+      );
+    } catch (error) {
+      throw invalidBinding(
+        `Event binding parent state is temporarily unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        true,
+      );
+    }
+    if (
+      parent == null ||
+      parent.subagentThread != null ||
+      parent.agent_id !== binding.lineage.parentAgentId ||
+      (parent.tenantId ?? undefined) !== envelope.principal.tenantId
+    ) {
+      throw invalidBinding('The event binding parent no longer authorizes this child thread.');
+    }
+    if (getGenerationJob != null) {
+      let active;
+      try {
+        active = await getGenerationJob(binding.conversationId);
+      } catch (error) {
+        throw invalidBinding(
+          `Event actor generation state is temporarily unavailable: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          true,
+        );
+      }
+      if (
+        active?.status === 'running' ||
+        active?.status === 'requires_action' ||
+        active?.metadata?.terminalPersistencePending === true
+      ) {
+        throw new AgentTriggerExecutionError('The event actor is still handling an earlier turn.', {
+          mode: 'continue',
+          certainty: 'definite',
+          retryable: true,
+          deferWithoutAttempt: true,
+          code: 'EVENT_ACTOR_NOT_READY',
+          status: 409,
+        });
+      }
     }
     try {
       messages = await methods.getMessages({

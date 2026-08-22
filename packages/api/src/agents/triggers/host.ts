@@ -554,7 +554,8 @@ async function startRun(
         conversationId: envelope.target.conversationId,
       };
     }
-    const input = preparation?.status === 'ready' ? preparation.input : envelope.input;
+    const readyPreparation = preparation?.status === 'ready' ? preparation : undefined;
+    const input = readyPreparation?.input ?? envelope.input;
     const parentMessageId = resolveParentMessageId(preparation, envelope);
     const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(

@@ -20,6 +20,7 @@ function childConversation(): IConversation {
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       parentToolCallId: 'parent-tool-call',
+      parentAgentId: 'parent-agent',
       subagentType: 'child-agent',
       subagentKind: 'agent',
       depth: 1,
@@ -68,6 +69,14 @@ function createApp(
         resolvedConversationId: (
           req as typeof req & { resolvedConversation?: IConversation | null }
         ).resolvedConversation?.conversationId,
+        parentConversationId: (
+          req as typeof req & { _agentEventBindingParentConversationId?: string }
+        )._agentEventBindingParentConversationId,
+        retention: (
+          req as typeof req & {
+            _agentEventBindingRetention?: { isTemporary?: boolean; expiredAt?: Date };
+          }
+        )._agentEventBindingRetention,
       });
     },
   );
@@ -114,6 +123,9 @@ describe('subagent child-thread write policy', () => {
     const getEventBinding = jest.fn(async () => ({
       conversationId: 'child-conversation',
       agentId: 'child-agent',
+      tenantId: 'tenant-1',
+      isTemporary: true,
+      expiredAt: new Date('2026-08-22T00:00:00.000Z'),
       binding: {
         bindingId: `evtbind_${'a'.repeat(48)}`,
         sourceKeyId: 'source-key',
@@ -122,7 +134,15 @@ describe('subagent child-thread write policy', () => {
       lineage: childConversation().subagentThread!,
     }));
     const app = createApp(
-      jest.fn().mockResolvedValue(childConversation()),
+      jest.fn(async (_user, conversationId) =>
+        conversationId === 'parent-conversation'
+          ? ({
+              conversationId,
+              agent_id: 'parent-agent',
+              tenantId: 'tenant-1',
+            } as IConversation)
+          : childConversation(),
+      ),
       store,
       getEventBinding as AllMethods['getAgentEventBinding'],
     );
@@ -135,6 +155,10 @@ describe('subagent child-thread write policy', () => {
       .send({ conversationId: 'child-conversation' });
 
     expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      parentConversationId: 'parent-conversation',
+      retention: { isTemporary: true, expiredAt: '2026-08-22T00:00:00.000Z' },
+    });
     expect(getEventBinding).toHaveBeenCalledWith({
       user: 'user-1',
       tenantId: 'tenant-1',

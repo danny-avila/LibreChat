@@ -53,6 +53,8 @@ const eventBindingHandlers = createAgentEventBindingHandlers({
   getAgent: db.getAgent,
   getConvo: db.getConvo,
   getBinding: db.getAgentEventBinding,
+  getMessage: db.getMessage,
+  deleteConvos: db.deleteConvos,
   reserveThread: db.reserveSubagentThread,
   enabled: () => isEnabled(process.env.ENABLE_AGENT_EVENT_CHILD_TURNS),
 });

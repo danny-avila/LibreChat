@@ -114,6 +114,7 @@ describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
@@ -982,6 +983,18 @@ describe('Conversation Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         new Date(afterSave.getTime() + 24 * 60 * 60 * 1000 + 1000).getTime(),
       );
+    });
+
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveConvo(mockCtx, mockConversationData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
     });
 
     it('should save a conversation without expiredAt when isTemporary is false', async () => {

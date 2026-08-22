@@ -35,6 +35,7 @@ describe('agent event continuation resolver', () => {
       enabled: () => false,
       methods: {
         getAgentEventBinding: jest.fn(),
+        getConvo: jest.fn(),
         getMessages: jest.fn(),
       } as never,
     });
@@ -57,7 +58,15 @@ describe('agent event continuation resolver', () => {
           agentId: 'agent-player',
           tenantId: 'tenant-1',
           binding: { bindingId, sourceKeyId, actorId: 'player' },
-          lineage: {} as never,
+          lineage: {
+            parentConversationId: 'parent-thread',
+            parentAgentId: 'agent-director',
+          } as never,
+        })),
+        getConvo: jest.fn(async () => ({
+          conversationId: 'parent-thread',
+          agent_id: 'agent-director',
+          tenantId: 'tenant-1',
         })),
         getMessages: jest.fn(async () => [
           Object.assign(new HumanMessage('first'), {
@@ -91,7 +100,62 @@ describe('agent event continuation resolver', () => {
           binding: { bindingId, sourceKeyId, actorId: 'player' },
           lineage: {} as never,
         })),
+        getConvo: jest.fn(),
         getMessages: jest.fn(async () => []) as never,
+      },
+    });
+
+    await expect(
+      resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
+    ).rejects.toMatchObject({ code: 'EVENT_BINDING_INVALID', retryable: false });
+  });
+
+  it('defers an event while the actor has an active generation', async () => {
+    const resolver = createAgentEventContinueResolver({
+      enabled: () => true,
+      getGenerationJob: jest.fn(async () => ({ status: 'running' })),
+      methods: {
+        getAgentEventBinding: jest.fn(async () => ({
+          conversationId: 'child-thread',
+          agentId: 'agent-player',
+          tenantId: 'tenant-1',
+          binding: { bindingId, sourceKeyId, actorId: 'player' },
+          lineage: {
+            parentConversationId: 'parent-thread',
+            parentAgentId: 'agent-director',
+          } as never,
+        })),
+        getConvo: jest.fn(async () => ({
+          conversationId: 'parent-thread',
+          agent_id: 'agent-director',
+          tenantId: 'tenant-1',
+        })),
+        getMessages: jest.fn(),
+      },
+    });
+
+    await expect(
+      resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
+    ).rejects.toMatchObject({
+      code: 'EVENT_ACTOR_NOT_READY',
+      retryable: true,
+      deferWithoutAttempt: true,
+    });
+  });
+
+  it('fails closed after the binding parent is removed', async () => {
+    const resolver = createAgentEventContinueResolver({
+      enabled: () => true,
+      methods: {
+        getAgentEventBinding: jest.fn(async () => ({
+          conversationId: 'child-thread',
+          agentId: 'agent-player',
+          tenantId: 'tenant-1',
+          binding: { bindingId, sourceKeyId, actorId: 'player' },
+          lineage: { parentConversationId: 'missing-parent' } as never,
+        })),
+        getConvo: jest.fn(async () => null),
+        getMessages: jest.fn(),
       },
     });
 

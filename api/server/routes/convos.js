@@ -15,6 +15,7 @@ const {
   isContentFilterError,
   contentFilterBlockResponse,
   extractConversationTitleContent,
+  GenerationJobManager,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
@@ -155,6 +156,51 @@ async function retryPostDeleteCancellation(cancellationPlan, deletedConversation
   }
 }
 
+/** Stops event-bound child generations on their owning replica and then removes
+ * persistence that raced the first conversation cascade. */
+async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = []) {
+  let foundActiveGeneration = false;
+  const generationIds = [...new Set([...conversationIds, ...leaseTaskIds])];
+  await Promise.all(
+    generationIds.map(async (conversationId) => {
+      let job;
+      try {
+        job = await GenerationJobManager.getJob(conversationId);
+      } catch (error) {
+        logger.warn('Deleted child generation lookup failed', error);
+        return;
+      }
+      if (
+        job == null ||
+        job.userId !== userId ||
+        (job.status !== 'running' && job.status !== 'requires_action')
+      ) {
+        return;
+      }
+      foundActiveGeneration = true;
+      try {
+        await GenerationJobManager.abortJob(conversationId, {
+          expectedCreatedAt: job.createdAt,
+          awaitProviderDrain: true,
+        });
+      } catch (error) {
+        logger.warn('Deleted child generation drain failed', error);
+      }
+    }),
+  );
+  if (!foundActiveGeneration) {
+    return;
+  }
+  try {
+    await db.deleteConvos(userId, { conversationId: { $in: conversationIds } });
+  } catch {
+    // Expected when no generation raced the first cascade.
+  }
+  await db
+    .deleteMessages({ user: userId, conversationId: { $in: conversationIds } })
+    .catch((error) => logger.warn('Deleted child message remnant cleanup failed', error));
+}
+
 router.delete('/', configMiddleware, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
@@ -220,6 +266,11 @@ router.delete('/', configMiddleware, async (req, res) => {
        * stop a child admitted after the first one. It cannot fail the request — the
        * deletion already committed — so it retries briefly before giving up. */
       await retryPostDeleteCancellation(cancellationPlan, deletedConversationIds);
+      await drainDeletedAgentGenerations(
+        req.user.id,
+        deletedConversationIds,
+        cancellationPlan.leases.map((lease) => lease.taskId),
+      );
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.

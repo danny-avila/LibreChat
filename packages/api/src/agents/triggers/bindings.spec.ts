@@ -39,6 +39,12 @@ function dependencies() {
     ),
     getConvo: jest.fn(async () => parent()),
     getBinding: jest.fn(async () => null),
+    getMessage: jest.fn(async () => ({
+      messageId: PARENT_MESSAGE_ID,
+      conversationId: PARENT_ID,
+      user: USER_ID,
+    })),
+    deleteConvos: jest.fn(async () => ({ deletedCount: 1 })),
     reserveThread,
     enabled: () => true,
   };
@@ -166,6 +172,7 @@ describe('agent event bindings', () => {
       .send({
         mode: 'continue',
         bindingId: `evtbind_${'a'.repeat(48)}`,
+        orderingKey: 'attacker-selected-lane',
         target: { agentId: 'agent_attacker', conversationId: 'foreign-thread' },
       });
 
@@ -181,12 +188,98 @@ describe('agent event bindings', () => {
       },
     });
     expect(response.body.target.agentId).not.toBe('agent_attacker');
+    expect(response.body.orderingKey).not.toBe('attacker-selected-lane');
     expect(deps.getBinding).toHaveBeenCalledWith({
       user: USER_ID,
       tenantId: 'tenant-1',
       bindingId: `evtbind_${'a'.repeat(48)}`,
       sourceKeyId: SOURCE_KEY_ID,
     });
+  });
+
+  it('rejects a parent message outside the selected conversation', async () => {
+    const deps = dependencies();
+    deps.getMessage.mockResolvedValueOnce({
+      messageId: PARENT_MESSAGE_ID,
+      conversationId: 'another-conversation',
+      user: USER_ID,
+    });
+    const { server } = app(deps);
+    const response = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'bad-parent-message')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(response.status).toBe(404);
+    expect(deps.reserveThread).not.toHaveBeenCalled();
+  });
+
+  it('returns an idempotency conflict before reserving under a different parent', async () => {
+    const deps = dependencies();
+    const { server } = app(deps);
+    const first = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'cross-parent-replay')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(first.status).toBe(201);
+    const reservation = await deps.reserveThread.mock.results[0].value;
+    deps.getConvo.mockResolvedValueOnce({ ...parent(), conversationId: 'other-parent' });
+    deps.getMessage.mockResolvedValueOnce({
+      messageId: PARENT_MESSAGE_ID,
+      conversationId: 'other-parent',
+      user: USER_ID,
+    });
+    deps.getBinding.mockResolvedValueOnce({
+      conversationId: reservation.conversation.conversationId,
+      agentId: reservation.conversation.agent_id,
+      tenantId: reservation.conversation.tenantId,
+      binding: reservation.conversation.agentEventBinding,
+      lineage: reservation.conversation.subagentThread,
+    });
+    const response = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'cross-parent-replay')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: 'other-parent',
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(response.status).toBe(409);
+    expect(deps.reserveThread).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back a new binding when its parent loses the registration race', async () => {
+    const deps = dependencies();
+    deps.getConvo.mockResolvedValueOnce(parent()).mockResolvedValueOnce(null);
+    const { server } = app(deps);
+    const response = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'parent-delete-race')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(response.status).toBe(409);
+    expect(deps.deleteConvos).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ conversationId: expect.any(String) }),
+    );
   });
 
   it('leaves fire and steer deliveries unchanged', async () => {
