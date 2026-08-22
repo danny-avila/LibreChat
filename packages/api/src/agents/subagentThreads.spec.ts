@@ -1681,29 +1681,36 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'timeout-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const store = new SubagentThreadTaskStore(methods, { taskTimeoutMs: 20 });
+    const taskTimeoutMs = 60_000;
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
+    const store = new SubagentThreadTaskStore(methods, { taskTimeoutMs });
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
     const started = store.start(
       taskRequest(config.scopeId, {
         input: 'Run until timeout.',
         run: async (runtime) =>
           new Promise((_resolve, reject) => {
+            markEntered();
             runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
               once: true,
             });
           }),
       }),
     );
+    await entered;
+    const taskTimeout = timeoutSpy.mock.calls.find((call) => call[1] === taskTimeoutMs)?.[0];
+    timeoutSpy.mockRestore();
+    expect(taskTimeout).toBeDefined();
+    (taskTimeout as () => void)();
     await waitForSettled(store, config.scopeId, started);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (!store.isThreadActiveForOwner(userId, requireThreadId(started))) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-      if (attempt === 199) {
-        throw new Error('Timed-out child execution did not finish durable settlement.');
-      }
-    }
+    await waitUntil(
+      () => !store.isThreadActiveForOwner(userId, requireThreadId(started)),
+      'timed-out child durable settlement',
+    );
 
     expect(store.claim(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
       status: 'error',
