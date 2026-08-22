@@ -14,6 +14,7 @@ import useFollowScroll from './useFollowScroll';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
+import PtcToolTrace from './PtcToolTrace';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -176,6 +177,11 @@ export default function BashCall({
                 </pre>
               </div>
             )}
+            <PtcToolTrace
+              toolCallId={toolCallId}
+              expanded={showCode}
+              className={cn(command && 'border-t border-border-light')}
+            />
             {hasOutput && backgroundHandle == null && (
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre

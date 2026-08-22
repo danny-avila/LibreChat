@@ -39,6 +39,7 @@ const {
 const {
   createToolEndCallback,
   createAttachmentEmitter,
+  createPtcProgressEmitter,
   createBackgroundCodeResultHandler,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
@@ -374,6 +375,7 @@ const initializeClient = async ({
       updateToolCallResult: db.updateToolCallResult,
     }),
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
+    emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
     ...getSkillToolDeps(),
   };
 

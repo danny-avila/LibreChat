@@ -11,6 +11,7 @@ import CodeWindowHeader from './CodeWindowHeader';
 import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
+import PtcToolTrace from './PtcToolTrace';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -177,6 +178,11 @@ export default function ExecuteCode({
                 <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}
+            <PtcToolTrace
+              toolCallId={toolCallId}
+              expanded={showCode}
+              className={cn(code && 'border-t border-border-light')}
+            />
             {hasOutput && backgroundHandle == null && (
               <div
                 className={cn(

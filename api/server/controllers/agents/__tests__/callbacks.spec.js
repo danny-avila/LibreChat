@@ -1,4 +1,4 @@
-const { Tools } = require('librechat-data-provider');
+const { Tools, StepEvents } = require('librechat-data-provider');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
@@ -141,6 +141,82 @@ describe('resumable event generation fencing', () => {
       { event: 'attachment', data: attachment },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('createPtcProgressEmitter', () => {
+  const ptcEvent = {
+    tool_call_id: 'call_ptc',
+    call_id: 'call_ptc:0',
+    name: 'read_file',
+    status: 'running',
+    args: 'path=a.ts',
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('emits the inner tool-call event on the resumable job stream', () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    emit(ptcEvent);
+
+    expect(GenerationJobManager.emitChunk).toHaveBeenCalledWith(
+      'conversation-1',
+      { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent },
+      { expectedCreatedAt: 1234 },
+    );
+  });
+
+  it('writes to the live response when no stream id is in play', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const res = { write: jest.fn(), headersSent: true, writableEnded: false };
+    const emit = createPtcProgressEmitter({ res });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).toHaveBeenCalledWith(res, {
+      event: StepEvents.ON_PTC_TOOL_CALL,
+      data: ptcEvent,
+    });
+  });
+
+  it('absorbs a rejected resumable emit instead of leaving an unhandled rejection', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    GenerationJobManager.emitChunk.mockRejectedValueOnce(new Error('transport down'));
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    expect(() => emit(ptcEvent)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    process.off('unhandledRejection', unhandled);
+
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('drops the event once the response has closed', () => {
+    const { sendEvent } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn(), headersSent: true, writableEnded: true },
+    });
+
+    emit(ptcEvent);
+
+    expect(sendEvent).not.toHaveBeenCalled();
   });
 });
 

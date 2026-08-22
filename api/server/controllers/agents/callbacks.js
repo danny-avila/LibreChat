@@ -1085,6 +1085,44 @@ function createAttachmentEmitter({ res, streamId = null, jobCreatedAt }) {
 }
 
 /**
+ * Streams `on_ptc_tool_call` lifecycle events for the tool calls a
+ * programmatic tool-calling program makes from inside the sandbox. Those
+ * inner calls open no run step of their own, so without this the card shows
+ * a running spinner for the whole program with no sign of what it is doing.
+ *
+ * Fire-and-forget like the attachment emitter: a closed stream drops the
+ * event rather than failing the tool call that produced it.
+ *
+ * @param {Object} params
+ * @param {ServerResponse} params.res
+ * @param {string | null} [params.streamId]
+ * @param {number} [params.jobCreatedAt]
+ * @returns {(event: import('librechat-data-provider').PtcToolCallEvent) => void}
+ */
+function createPtcProgressEmitter({ res, streamId = null, jobCreatedAt }) {
+  return (event) => {
+    if (!event || !isStreamWritable(res, streamId)) {
+      return;
+    }
+    const payload = { event: StepEvents.ON_PTC_TOOL_CALL, data: event };
+    if (streamId) {
+      /* Absorb a rejected transport here. The emitter is called from a
+       * synchronous try/catch inside `instrumentPtcToolMap`, which cannot
+       * observe a rejected promise — without this catch a failed emit would
+       * surface as an unhandled rejection on every affected inner call
+       * instead of being dropped as the telemetry it is. */
+      Promise.resolve(
+        GenerationJobManager.emitChunk(streamId, payload, { expectedCreatedAt: jobCreatedAt }),
+      ).catch(() => {
+        /* dropped: the trace is best-effort */
+      });
+      return;
+    }
+    sendEvent(res, payload);
+  };
+}
+
+/**
  * Leading sub-second retries cover the common case of a fast background task
  * settling moments before the dispatch turn finalizes its message row — an
  * immediate follow-up turn should find the attachments already anchored.
@@ -1438,6 +1476,7 @@ module.exports = {
   getDefaultHandlers,
   createToolEndCallback,
   createAttachmentEmitter,
+  createPtcProgressEmitter,
   createBackgroundCodeResultHandler,
   isStreamWritable,
   markSummarizationUsage,
