@@ -225,7 +225,9 @@ export class SubagentActivityStream {
         this.demandCache.delete(streamId);
       });
     };
-    const synchronizeAttachment = this.transport.isFirstSubscriber(streamId);
+    /** subscribe() registers synchronously. Sampling zero before it distinguishes a fresh
+     * local attachment without moving an already-active shared reorder frontier. */
+    const synchronizeAttachment = this.transport.getSubscriberCount(streamId) === 0;
     const subscription = this.transport.subscribe(
       streamId,
       {

@@ -70,7 +70,7 @@ class TestTransport implements IEventTransport {
   }
 
   isFirstSubscriber(streamId: string): boolean {
-    return !this.handlers.has(streamId);
+    return this.handlers.has(streamId);
   }
 
   onAllSubscribersLeft(): void {}
