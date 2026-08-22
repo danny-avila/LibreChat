@@ -189,7 +189,7 @@ export default function Breakdown({
     hoveredSegment != null && hoverIsValid(hoveredSegment) ? hoveredSegment : null;
 
   return (
-    <div className="w-72" role="region" aria-label={localize('com_ui_context_usage')}>
+    <div role="region" aria-label={localize('com_ui_context_usage')}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger
           className="group flex w-full items-center justify-between gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
