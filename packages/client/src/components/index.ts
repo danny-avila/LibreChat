@@ -58,6 +58,13 @@ export { default as CheckboxButton } from './CheckboxButton';
 export { default as DialogTemplate } from './DialogTemplate';
 export { default as SelectDropDown } from './SelectDropDown';
 export { default as ControlCombobox } from './ControlCombobox';
+export { default as TimePicker, MinutePicker, TimeColumn } from './TimePicker';
+export type {
+  TimePickerProps,
+  TimePickerLabels,
+  MinutePickerProps,
+  TimeColumnProps,
+} from './TimePicker';
 export { default as OGDialogTemplate } from './OGDialogTemplate';
 export { default as InputWithDropdown } from './InputWithDropDown';
 export { default as AnimatedSearchInput } from './AnimatedSearchInput';

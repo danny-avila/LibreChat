@@ -8,9 +8,10 @@ import {
   Label,
   Radio,
   Button,
+  TimePicker,
+  MinutePicker,
   FieldMessage,
   Spinner,
-  Dropdown,
   OGDialog,
   ControlCombobox,
   OGDialogTemplate,
@@ -32,10 +33,7 @@ import type {
   ScheduleFrequency,
 } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
-import type { Meridiem } from './cadence';
 import {
-  to12Hour,
-  to24Hour,
   describeCadence,
   formatRunInstant,
   formatScheduleDay,
@@ -71,9 +69,8 @@ type ScheduleFormValues = {
   /** `''` means unscoped; the picker has no null option of its own. */
   chatProjectId: string;
   frequency: ScheduleFrequency;
-  hour12: number;
+  hour: number;
   minute: number;
-  meridiem: Meridiem;
   daysOfWeek: number[];
   /** Only read when `frequency` is `cron`; held across a switch away and back so a
    *  user who tries a preset does not lose the expression they typed. */
@@ -88,8 +85,6 @@ const FREQUENCY_LABELS: Record<ScheduleFrequency, TranslationKeys> = {
   weekly: 'com_ui_schedule_weekly',
   cron: 'com_ui_schedule_cron',
 };
-
-const BASE_MINUTES = [0, 15, 30, 45];
 
 /** Every weekday at 09:00: a recognisable starting point to edit rather than an
  *  empty field the user has to guess the field order from. */
@@ -116,9 +111,8 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       agent_id: '',
       chatProjectId: '',
       frequency: 'daily',
-      hour12: 9,
+      hour: 9,
       minute: 0,
-      meridiem: 'AM',
       daysOfWeek: DEFAULT_WEEKLY_DAYS,
       expression: DEFAULT_CRON,
       timezone: localTimezone,
@@ -141,20 +135,17 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     return {
       ...identity,
       frequency: 'cron',
-      hour12: 9,
+      hour: 9,
       minute: 0,
-      meridiem: 'AM',
       daysOfWeek: DEFAULT_WEEKLY_DAYS,
       expression: cadence.expression,
     };
   }
-  const { hour12, meridiem } = to12Hour(cadence.hour);
   return {
     ...identity,
     frequency: cadence.frequency,
-    hour12,
+    hour: cadence.hour,
     minute: cadence.minute,
-    meridiem,
     daysOfWeek: cadence.daysOfWeek?.length
       ? [...cadence.daysOfWeek].sort((a, b) => a - b)
       : DEFAULT_WEEKLY_DAYS,
@@ -164,7 +155,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
 
 type CadenceFormValues = Pick<
   ScheduleFormValues,
-  'frequency' | 'hour12' | 'minute' | 'meridiem' | 'daysOfWeek' | 'expression'
+  'frequency' | 'hour' | 'minute' | 'daysOfWeek' | 'expression'
 >;
 
 const buildCadence = (values: CadenceFormValues): TScheduleCadence => {
@@ -174,18 +165,17 @@ const buildCadence = (values: CadenceFormValues): TScheduleCadence => {
   if (values.frequency === 'hourly') {
     return { frequency: 'hourly', hour: 0, minute: values.minute };
   }
-  const hour = to24Hour(values.hour12, values.meridiem);
   if (values.frequency === 'weekly') {
     return {
       frequency: 'weekly',
-      hour,
+      hour: values.hour,
       minute: values.minute,
       daysOfWeek: values.daysOfWeek.length
         ? [...values.daysOfWeek].sort((a, b) => a - b)
         : DEFAULT_WEEKLY_DAYS,
     };
   }
-  return { frequency: values.frequency, hour, minute: values.minute };
+  return { frequency: values.frequency, hour: values.hour, minute: values.minute };
 };
 
 export default function ScheduleDialog({
@@ -203,6 +193,7 @@ export default function ScheduleDialog({
     control,
     register,
     watch,
+    setValue,
     handleSubmit,
     formState: { dirtyFields, errors },
   } = useForm<ScheduleFormValues>({
@@ -216,9 +207,8 @@ export default function ScheduleDialog({
    *  the overwrite the fence exists to refuse. */
   const openedConfigRevision = useRef(schedule?.configRevision);
   const frequency = watch('frequency');
-  const hour12 = watch('hour12');
+  const hour = watch('hour');
   const minute = watch('minute');
-  const meridiem = watch('meridiem');
   const daysOfWeek = watch('daysOfWeek');
   const expression = watch('expression');
   const timezone = watch('timezone');
@@ -295,26 +285,16 @@ export default function ScheduleDialog({
     [localize],
   );
 
-  const hourOptions = useMemo(
-    () => Array.from({ length: 12 }, (_, index) => String(index + 1)),
-    [],
-  );
-
-  const minuteOptions = useMemo(() => {
-    const minutes = new Set(BASE_MINUTES);
-    if (schedule && !isCronCadence(schedule.cadence)) {
-      minutes.add(schedule.cadence.minute);
-    }
-    return [...minutes]
-      .sort((a, b) => a - b)
-      .map((minute) => ({ value: String(minute), label: String(minute).padStart(2, '0') }));
-  }, [schedule]);
-
-  const meridiemOptions = useMemo(
-    () => [
-      { value: 'AM', label: localize('com_ui_schedule_am') },
-      { value: 'PM', label: localize('com_ui_schedule_pm') },
-    ],
+  /** The picker takes its wording as props so the primitive carries no translation
+   *  keys of its own. */
+  const timeLabels = useMemo(
+    () => ({
+      hour: localize('com_ui_schedule_hour'),
+      minute: localize('com_ui_schedule_minute'),
+      meridiem: localize('com_ui_schedule_meridiem'),
+      am: localize('com_ui_schedule_am'),
+      pm: localize('com_ui_schedule_pm'),
+    }),
     [localize],
   );
 
@@ -371,9 +351,8 @@ export default function ScheduleDialog({
    *  API-created hourly cadence's nonzero hour, for one). */
   const cadenceTouched =
     dirtyFields.frequency === true ||
-    dirtyFields.hour12 === true ||
+    dirtyFields.hour === true ||
     dirtyFields.minute === true ||
-    dirtyFields.meridiem === true ||
     dirtyFields.daysOfWeek != null ||
     dirtyFields.expression === true;
   /** Whether this submit changes the schedule's TIMING. The zone alone re-times
@@ -464,9 +443,9 @@ export default function ScheduleDialog({
   /** Read by the summary, the preview and the interval floor, each of which walks
    *  croner. Memoized so a name or prompt keystroke does not re-derive all three. */
   const previewCadence = useMemo(
-    () => buildCadence({ frequency, hour12, minute, meridiem, daysOfWeek, expression }),
+    () => buildCadence({ frequency, hour, minute, daysOfWeek, expression }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `daysKey` IS `daysOfWeek`
-    [frequency, hour12, minute, meridiem, daysKey, expression],
+    [frequency, hour, minute, daysKey, expression],
   );
 
   /** Weekly with nothing selected is expressible in the form but not on the wire (the
@@ -924,62 +903,38 @@ export default function ScheduleDialog({
                       )}
                     </Label>
                   </legend>
-                  <div
-                    className={cn(
-                      'grid gap-2',
-                      frequency === 'hourly' ? 'max-w-[8rem] grid-cols-1' : 'grid-cols-3',
-                    )}
-                  >
-                    {frequency !== 'hourly' && (
-                      <Controller
-                        name="hour12"
-                        control={control}
-                        render={({ field }) => (
-                          <Dropdown
-                            value={String(field.value)}
-                            onChange={(value) => field.onChange(Number(value))}
-                            options={hourOptions}
-                            variant="field"
-                            portal={false}
-                            ariaLabel={localize('com_ui_schedule_hour')}
-                            testId="schedule-hour-select"
-                          />
-                        )}
-                      />
-                    )}
+                  {frequency === 'hourly' ? (
                     <Controller
                       name="minute"
                       control={control}
                       render={({ field }) => (
-                        <Dropdown
-                          value={String(field.value)}
-                          onChange={(value) => field.onChange(Number(value))}
-                          options={minuteOptions}
-                          variant="field"
-                          portal={false}
-                          ariaLabel={localize('com_ui_schedule_minute')}
-                          testId="schedule-minute-select"
+                        <MinutePicker
+                          minute={field.value}
+                          onChange={field.onChange}
+                          label={localize('com_ui_schedule_minute')}
+                          labelledBy="schedule-time-label"
+                          className="max-w-[8rem]"
                         />
                       )}
                     />
-                    {frequency !== 'hourly' && (
-                      <Controller
-                        name="meridiem"
-                        control={control}
-                        render={({ field }) => (
-                          <Dropdown
-                            value={field.value}
-                            onChange={field.onChange}
-                            options={meridiemOptions}
-                            variant="field"
-                            portal={false}
-                            ariaLabel={localize('com_ui_schedule_meridiem')}
-                            testId="schedule-meridiem-select"
-                          />
-                        )}
-                      />
-                    )}
-                  </div>
+                  ) : (
+                    <TimePicker
+                      hour={hour}
+                      minute={minute}
+                      /* One control, so one change: setting hour and minute through
+                         separate fields let a half-applied edit submit a time the user
+                         never picked. */
+                      onChange={(next) => {
+                        setValue('hour', next.hour, { shouldDirty: true });
+                        setValue('minute', next.minute, { shouldDirty: true });
+                      }}
+                      labels={timeLabels}
+                      labelledBy="schedule-time-label"
+                      locale={locale}
+                      hour12={prefersMeridiem}
+                      className="max-w-[16rem]"
+                    />
+                  )}
                 </fieldset>
                 {timezoneField}
               </div>
