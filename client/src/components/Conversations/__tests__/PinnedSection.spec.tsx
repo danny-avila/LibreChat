@@ -54,27 +54,41 @@ jest.mock('~/components/Nav/Favorites/useFavoritesData', () => ({
   default: () => mockFavoritesData,
 }));
 
-jest.mock('../Convo', () => ({
-  __esModule: true,
-  default: ({
+jest.mock('../Convo', () => {
+  /* A mock factory cannot close over imports, so React is required in here. */
+  const { useEffect, useRef } = jest.requireActual<typeof import('react')>('react');
+  function MockConvo({
     conversation,
     onRenamingChange,
   }: {
     conversation: { title: string };
     onRenamingChange?: (renaming: boolean) => void;
-  }) => (
-    <div data-testid="pinned-convo">
-      <button type="button">{conversation.title}</button>
-      {/* No text content: `itemLabels` reads the row's text to assert order. */}
-      <button
-        type="button"
-        aria-label="rename"
-        data-testid={`rename-${conversation.title}`}
-        onClick={() => onRenamingChange?.(true)}
-      />
-    </div>
-  ),
-}));
+  }) {
+    /* Mirrors the real row's contract: a row removed mid-rename reports the
+     * rename ending on its way out. */
+    const report = useRef(onRenamingChange);
+    report.current = onRenamingChange;
+    useEffect(
+      () => () => {
+        report.current?.(false);
+      },
+      [],
+    );
+    return (
+      <div data-testid="pinned-convo">
+        <button type="button">{conversation.title}</button>
+        {/* No text content: `itemLabels` reads the row's text to assert order. */}
+        <button
+          type="button"
+          aria-label="rename"
+          data-testid={`rename-${conversation.title}`}
+          onClick={() => onRenamingChange?.(true)}
+        />
+      </div>
+    );
+  }
+  return { __esModule: true, default: MockConvo };
+});
 
 jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
   __esModule: true,
@@ -334,6 +348,31 @@ describe('PinnedSection unified list', () => {
     renderSection([]);
 
     expect(screen.getAllByTestId('favorite-item')).toHaveLength(1);
+  });
+
+  /* A row removed mid-rename never reports the rename ending, so the owner
+   * would keep its drag source released even after it came back. */
+  it('reconnects the drag source when a renaming row is removed and returns', () => {
+    const { rerender } = renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+    fireEvent.click(screen.getByTestId('rename-Pinned Chat'));
+    expect(screen.getByTestId('pinned-convo').parentElement).not.toHaveAttribute(
+      'draggable',
+      'true',
+    );
+
+    rerender(
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection conversations={[]} toggleNav={jest.fn()} />
+      </DndProvider>,
+    );
+    rerender(
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection conversations={[pinnedConvo('c1', 'Pinned Chat')]} toggleNav={jest.fn()} />
+      </DndProvider>,
+    );
+
+    expect(screen.getByTestId('pinned-convo').parentElement).toHaveAttribute('draggable', 'true');
   });
 
   it('releases the drag source while a row title is being edited', () => {
