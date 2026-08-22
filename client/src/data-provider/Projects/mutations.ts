@@ -11,6 +11,7 @@ import type {
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { enqueue } from '~/utils';
 import store from '~/store';
 
 export const useCreateProjectMutation = (): UseMutationResult<
@@ -80,6 +81,9 @@ export const useDeleteProjectMutation = (): UseMutationResult<
   });
 };
 
+/** One queue per conversation: assignments to different chats stay independent. */
+const ASSIGN_CONVERSATION_QUEUE = 'assign-conversation:';
+
 export const useAssignConversationToProjectMutation = (): UseMutationResult<
   TAssignConversationToProjectResponse,
   unknown,
@@ -102,8 +106,15 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
   );
 
   return useMutation(
+    /* Serialized per conversation, and here rather than at any one caller: the
+     * drag targets, the row menu and the project dialog each hold their own
+     * mutation instance, and the write is an unconditional update, so two of
+     * them racing let whichever request reached the database last decide the
+     * project regardless of which the user asked for first. */
     (payload: TAssignConversationToProjectRequest) =>
-      dataService.assignConversationToProject(payload),
+      enqueue(`${ASSIGN_CONVERSATION_QUEUE}${payload.conversationId}`, () =>
+        dataService.assignConversationToProject(payload),
+      ),
     {
       onSuccess: (result) => {
         updateActiveConversation(result.conversation);

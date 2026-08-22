@@ -10,6 +10,8 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
+/* The real mutation serializes per conversation internally; this stands in for
+ * it so the destination bookkeeping can be exercised on its own. */
 jest.mock('~/data-provider', () => ({
   useAssignConversationToProjectMutation: () => ({ mutateAsync: mockMutateAsync }),
 }));
