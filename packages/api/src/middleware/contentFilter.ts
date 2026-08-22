@@ -11,6 +11,7 @@ import {
   getBlockedOpaqueFileField,
   hasActiveFilePolicy,
   resolveCanonicalFileReferences,
+  ContentFilterInputTooLargeError,
   UninspectableFileError,
   type CanonicalFileInspectionFile,
   type GetCanonicalFilesForInspection,
@@ -67,12 +68,14 @@ export class ContentFilterError extends Error {
 
 export type ContentPolicyError =
   | ContentFilterError
+  | ContentFilterInputTooLargeError
   | ContentTraversalLimitError
   | UninspectableFileError;
 
 export function getContentFilterError(error: unknown): ContentPolicyError | null {
   const isDirectContentFilterError = (candidate: unknown): candidate is ContentPolicyError =>
     candidate instanceof ContentFilterError ||
+    candidate instanceof ContentFilterInputTooLargeError ||
     candidate instanceof ContentTraversalLimitError ||
     candidate instanceof UninspectableFileError;
   if (isDirectContentFilterError(error)) {
@@ -85,7 +88,11 @@ export function getContentFilterError(error: unknown): ContentPolicyError | null
 
 export function isContentFilterError(
   error: unknown,
-): error is ContentFilterError | ContentTraversalLimitError | UninspectableFileError {
+): error is
+  | ContentFilterError
+  | ContentFilterInputTooLargeError
+  | ContentTraversalLimitError
+  | UninspectableFileError {
   return getContentFilterError(error) != null;
 }
 

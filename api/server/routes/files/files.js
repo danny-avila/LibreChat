@@ -13,16 +13,8 @@ const {
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
-  inspectContent,
-  extractFileContent,
-  isBinaryBuffer,
+  assertUploadContentAllowed,
   hasActiveFilePolicy,
-  hasActiveFileFieldPolicy,
-  contentFilterBlockResponse,
-  contentFilterUninspectableResponse,
-  getBlockedUninspectableFileField,
-  getBlockedUploadTranscriptField,
-  canInspectUploadExtractedTextAfterProcessing,
   sanitizeFilename,
 } = require('@librechat/api');
 const {
@@ -66,20 +58,6 @@ const AGENT_TOOL_RESOURCE_KEYS = new Set([
 
 const isAgentToolResourceKey = (toolResource) =>
   typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
-
-const TEXT_UPLOAD_MIME_TYPES = new Set([
-  'application/json',
-  'application/javascript',
-  'application/sql',
-  'application/xml',
-  'application/x-yaml',
-  'application/yaml',
-]);
-const MAX_FILTERABLE_TEXT_BYTES = 15 * 1024 * 1024;
-
-const isTextUpload = (file) =>
-  typeof file?.mimetype === 'string' &&
-  (file.mimetype.startsWith('text/') || TEXT_UPLOAD_MIME_TYPES.has(file.mimetype));
 
 router.get('/', async (req, res) => {
   try {
@@ -729,81 +707,16 @@ router.post('/', async (req, res) => {
     req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req });
 
-    const submittedFile = { name: req.file?.originalname };
-    const filters = req.config?.filters;
-    const inspectRawContent = hasActiveFileFieldPolicy(filters, ['content']);
-    const inspectExtractedText = hasActiveFileFieldPolicy(filters, ['extracted_text']);
-    const inspectTranscript = hasActiveFileFieldPolicy(filters, ['transcript']);
-    const canInspectExtractedTextAfterProcessing =
-      inspectExtractedText && typeof req.file?.mimetype === 'string'
-        ? canInspectUploadExtractedTextAfterProcessing({
-            endpoint: metadata.endpoint,
-            toolResource: metadata.tool_resource,
-            mimeType: req.file.mimetype,
-            fileConfig: mergeFileConfig(req.config?.fileConfig),
-            ocrConfigured: req.config?.ocr != null,
-            ragConfigured: !!process.env.RAG_API_URL,
-          })
-        : false;
-    if (inspectTranscript && typeof req.file?.mimetype === 'string') {
-      const fileConfig = mergeFileConfig(req.config?.fileConfig);
-      const shouldTranscribe = fileConfig.checkType(
-        req.file.mimetype,
-        fileConfig.stt?.supportedMimeTypes || [],
-      );
-      const blockedTranscriptField = getBlockedUploadTranscriptField({
-        filters,
-        endpoint: metadata.endpoint,
-        toolResource: metadata.tool_resource,
-        mimeType: req.file.mimetype,
-        sttSupported: shouldTranscribe,
-      });
-      if (blockedTranscriptField != null) {
-        return res.status(400).json(contentFilterUninspectableResponse(blockedTranscriptField));
-      }
-    }
-    if ((inspectRawContent || inspectExtractedText) && typeof req.file?.path === 'string') {
-      const uninspectableField = getBlockedUninspectableFileField(filters, [
-        'content',
-        'extracted_text',
-      ]);
-      const deferExtractedTextFailClose =
-        uninspectableField === 'extracted_text' && canInspectExtractedTextAfterProcessing;
-      if (req.file.size > MAX_FILTERABLE_TEXT_BYTES) {
-        if (uninspectableField != null && isTextUpload(req.file)) {
-          return res.status(413).json({
-            error: 'content_filter_input_too_large',
-            message: 'Text file exceeds the 15 MB content inspection limit.',
-            source: 'file',
-            field: inspectRawContent ? 'content' : 'extracted_text',
-          });
-        }
-        if (uninspectableField != null && !deferExtractedTextFailClose) {
-          return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
-        }
-      } else {
-        const buffer = await fs.readFile(req.file.path);
-        if (isBinaryBuffer(buffer)) {
-          if (uninspectableField != null && !deferExtractedTextFailClose) {
-            return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
-          }
-        } else {
-          const text = buffer.toString('utf8');
-          if (inspectRawContent) {
-            submittedFile.content = text;
-          }
-          if (inspectExtractedText) {
-            submittedFile.extractedText = text;
-          }
-        }
-      }
-    }
-    const contentFinding = inspectContent(extractFileContent(submittedFile), {
-      filters,
+    await assertUploadContentAllowed({
+      filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: metadata.tool_resource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      readFile: fs.readFile,
     });
-    if (contentFinding != null) {
-      return res.status(400).json(contentFilterBlockResponse(contentFinding));
-    }
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;

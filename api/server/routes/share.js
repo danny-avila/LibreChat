@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const express = require('express');
 const {
   assertModelBoundContent,
-  assertSharedFileMetadataAllowed,
+  createShareContentPreflight,
   isEnabled,
   isContentFilterError,
   generateCheckAccess,
@@ -44,7 +44,6 @@ const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const canAccessSharedLink = require('~/server/middleware/canAccessSharedLink');
 const { forkSharedConversation } = require('~/server/utils/import/fork');
-const { assertConversationContentAllowed } = require('~/server/utils/import/importBatchBuilder');
 const { createForkLimiters } = require('~/server/middleware/limiters');
 const optionalShareFileAuth = require('~/server/middleware/optionalShareFileAuth');
 const optionalJwtAuth = require('~/server/middleware/optionalJwtAuth');
@@ -105,63 +104,6 @@ const runWithTenant = (tenantId, fn) =>
 /** Mirrors the owner preview route: pending records older than this are swept to
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
-
-const omitUnsharedMessageFiles = (messages) =>
-  messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
-    ...message,
-    ...(Array.isArray(message.content)
-      ? {
-          content: message.content.map((part) => {
-            if (part?.type !== 'steer' || part.files === undefined) {
-              return part;
-            }
-            const { files: _partFiles, ...rest } = part;
-            return rest;
-          }),
-        }
-      : {}),
-  }));
-
-const createShareContentPreflight = (filters, options = {}) => {
-  const legacyPii = options.legacyPii;
-  if (filters == null && legacyPii == null) {
-    return undefined;
-  }
-  return async ({ title, messages, shareId }) => {
-    const inspectSharedFileMetadata = options.sharedFileMetadata === true;
-    const inspectSharedFiles =
-      inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
-    const snapshot = {
-      conversations: [{ title }],
-      messages:
-        options.snapshotFiles === false || inspectSharedFiles
-          ? omitUnsharedMessageFiles(messages)
-          : messages,
-    };
-    if (options.user == null) {
-      if (legacyPii == null) {
-        await assertConversationContentAllowed(filters, snapshot);
-      } else {
-        await assertConversationContentAllowed(filters, snapshot, { legacyPii });
-      }
-    } else {
-      await assertConversationContentAllowed(filters, snapshot, {
-        user: options.user,
-        getFiles,
-        ...(legacyPii == null ? {} : { legacyPii }),
-      });
-    }
-    if (!inspectSharedFileMetadata) {
-      return;
-    }
-    assertSharedFileMetadataAllowed({
-      filters,
-      messages: options.snapshotFiles === false ? omitUnsharedMessageFiles(messages) : messages,
-      shareId,
-      ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
-    });
-  };
-};
 
 const enforceSharedFileContentPolicy = (req, res, next) => {
   try {
@@ -659,6 +601,7 @@ router.post(
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
         snapshotFiles,
         user: req.user,
+        getFiles,
         sharedFileMetadata: true,
         sharedFileMetadataFiles: false,
         legacyPii: req.config?.messageFilter?.pii,
@@ -726,6 +669,7 @@ router.patch(
       const contentPreflight = createShareContentPreflight(req.config?.filters, {
         snapshotFiles,
         user: req.user,
+        getFiles,
         sharedFileMetadata: true,
         sharedFileMetadataFiles: false,
         legacyPii: req.config?.messageFilter?.pii,

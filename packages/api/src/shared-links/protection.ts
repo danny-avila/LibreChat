@@ -3,10 +3,16 @@ import {
   hasActivePiiPatterns,
   type FileFilterField,
   type FiltersConfig,
+  type MessageFilterPiiConfig,
   type UserSubmittedMessageFieldPath,
 } from 'librechat-data-provider';
+import type { ConversationImportMessage } from '../imports';
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { FileContentInput } from '../protection/adapters/submissions';
+import type {
+  CanonicalFileInspectionUser,
+  GetCanonicalFilesForInspection,
+} from '../protection/files';
 import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
@@ -29,6 +35,7 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { getUserSubmittedPathState } from '../protection/provenance';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { inspectContent } from '../protection/runtime';
+import { assertConversationImportContentAllowed } from '../imports';
 
 export interface SerializedSharedFile extends FileContentInput {
   readonly preview?: string;
@@ -81,6 +88,86 @@ export interface SharedFileMetadataPolicyInput {
    * not yet been projected onto share-scoped locators; canonical file policy
    * is enforced separately on that exact durable snapshot. */
   readonly includeFiles?: boolean;
+}
+
+export type ShareContentPreflightMessage = ConversationImportMessage & SerializedSharedMessage;
+
+export interface ShareContentPreflightInput {
+  readonly title?: string;
+  readonly messages: readonly ShareContentPreflightMessage[];
+  readonly shareId?: string;
+}
+
+export interface ShareContentPreflightOptions {
+  readonly legacyPii?: MessageFilterPiiConfig | null;
+  readonly snapshotFiles?: boolean;
+  readonly user?: CanonicalFileInspectionUser;
+  readonly getFiles?: GetCanonicalFilesForInspection;
+  readonly sharedFileMetadata?: boolean;
+  readonly sharedFileMetadataFiles?: boolean;
+}
+
+export type ShareContentPreflight = (input: ShareContentPreflightInput) => Promise<void>;
+
+function omitUnsharedMessageFiles(
+  messages: readonly ShareContentPreflightMessage[],
+): ShareContentPreflightMessage[] {
+  return messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+    ...message,
+    ...(Array.isArray(message.content)
+      ? {
+          content: message.content.map((part) => {
+            if (part?.type !== 'steer' || part.files === undefined) {
+              return part;
+            }
+            const { files: _partFiles, ...rest } = part;
+            return rest;
+          }),
+        }
+      : {}),
+  }));
+}
+
+/** Builds the exact read/publish preflight shared by every shared-link route. */
+export function createShareContentPreflight(
+  filters: FiltersConfig | null | undefined,
+  options: ShareContentPreflightOptions = {},
+): ShareContentPreflight | undefined {
+  const legacyPii = options.legacyPii ?? undefined;
+  if (filters == null && legacyPii == null) {
+    return undefined;
+  }
+
+  return async ({ title, messages, shareId }) => {
+    const inspectSharedFileMetadata = options.sharedFileMetadata === true;
+    const inspectSharedFiles =
+      inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
+    const omitFilesFromSnapshot = options.snapshotFiles === false || inspectSharedFiles;
+    const omitFilesFromMetadata = options.snapshotFiles === false;
+    const messagesWithoutUnsharedFiles = omitFilesFromSnapshot
+      ? omitUnsharedMessageFiles(messages)
+      : messages;
+    const snapshotMessages = omitFilesFromSnapshot ? messagesWithoutUnsharedFiles : messages;
+
+    await assertConversationImportContentAllowed(
+      filters,
+      { conversations: [{ title }], messages: snapshotMessages },
+      {
+        legacyPii,
+        user: options.user,
+        getFiles: options.getFiles,
+      },
+    );
+    if (!inspectSharedFileMetadata) {
+      return;
+    }
+    assertSharedFileMetadataAllowed({
+      filters: filters ?? undefined,
+      messages: omitFilesFromMetadata ? messagesWithoutUnsharedFiles : messages,
+      shareId,
+      ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
+    });
+  };
 }
 
 const SERIALIZED_LOCATOR_KEYS = [

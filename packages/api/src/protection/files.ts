@@ -29,6 +29,13 @@ export interface UninspectableFileBlockResponse {
   readonly field: FileFilterField;
 }
 
+export interface ContentFilterInputTooLargeResponse {
+  readonly error: 'content_filter_input_too_large';
+  readonly message: string;
+  readonly source: 'file';
+  readonly field: 'content' | 'extracted_text';
+}
+
 interface PendingOpaqueValue {
   readonly value: unknown;
   readonly path: string;
@@ -133,6 +140,11 @@ function getNormalizedTranscriptApplicability(normalized: string): boolean | nul
 
 export function getTranscriptApplicability(mimeType: unknown): boolean | null {
   return getNormalizedTranscriptApplicability(normalizeMimeType(mimeType));
+}
+
+export function isTextualFileMimeType(mimeType: unknown): boolean {
+  const normalized = normalizeMimeType(mimeType);
+  return normalized.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(normalized);
 }
 
 function captureOpaqueArrayLength(value: readonly unknown[]): number {
@@ -382,6 +394,25 @@ export class UninspectableFileError extends Error {
     this.name = 'UninspectableFileError';
     this.body = body;
     Object.setPrototypeOf(this, UninspectableFileError.prototype);
+  }
+}
+
+export class ContentFilterInputTooLargeError extends Error {
+  public readonly code = 'content_filter_input_too_large';
+  public readonly statusCode = 413;
+  public readonly body: ContentFilterInputTooLargeResponse;
+
+  constructor(field: ContentFilterInputTooLargeResponse['field']) {
+    const body: ContentFilterInputTooLargeResponse = {
+      error: 'content_filter_input_too_large',
+      message: 'Text file exceeds the 15 MB content inspection limit.',
+      source: 'file',
+      field,
+    };
+    super(body.message);
+    this.name = 'ContentFilterInputTooLargeError';
+    this.body = body;
+    Object.setPrototypeOf(this, ContentFilterInputTooLargeError.prototype);
   }
 }
 

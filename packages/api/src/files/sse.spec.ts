@@ -6,7 +6,7 @@ import {
   shouldUseUploadSse,
   startUploadSseStream,
 } from './sse';
-import { UninspectableFileError } from '~/protection/files';
+import { ContentFilterInputTooLargeError, UninspectableFileError } from '~/protection/files';
 
 describe('sse', () => {
   const createMockReq = (accept?: string): Request =>
@@ -235,6 +235,21 @@ describe('sse', () => {
         message: 'Submitted file content could not be inspected before processing.',
         source: 'file',
         field: 'extracted_text',
+      });
+    });
+
+    it('preserves the upload inspection limit status and raw-free body', () => {
+      const res = createMockRes();
+
+      expect(sendUploadPolicyError(res, null, new ContentFilterInputTooLargeError('content'))).toBe(
+        true,
+      );
+      expect(res.status).toHaveBeenCalledWith(413);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'content_filter_input_too_large',
+        message: 'Text file exceeds the 15 MB content inspection limit.',
+        source: 'file',
+        field: 'content',
       });
     });
 

@@ -9,13 +9,8 @@ const {
   sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
-  inspectContent,
-  extractFileContent,
+  assertUploadContentAllowed,
   hasActiveFilePolicy,
-  contentFilterBlockResponse,
-  contentFilterUninspectableResponse,
-  getBlockedUninspectableFileField,
-  canInspectUploadExtractedTextAfterProcessing,
   sanitizeFilename,
 } = require('@librechat/api');
 const {
@@ -50,30 +45,16 @@ router.post('/', async (req, res) => {
     req.file.originalname = sanitizeFilename(req.file.originalname);
     filterFile({ req, image: true });
 
-    const contentFinding = inspectContent(extractFileContent({ name: req.file?.originalname }), {
+    await assertUploadContentAllowed({
       filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: metadata.tool_resource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      rawFileMode: 'opaque',
     });
-    if (contentFinding != null) {
-      return res.status(400).json(contentFilterBlockResponse(contentFinding));
-    }
-    const uninspectableField = getBlockedUninspectableFileField(req.config?.filters, [
-      'content',
-      'extracted_text',
-    ]);
-    const deferExtractedTextFailClose =
-      uninspectableField === 'extracted_text' &&
-      typeof req.file?.mimetype === 'string' &&
-      canInspectUploadExtractedTextAfterProcessing({
-        endpoint: metadata.endpoint,
-        toolResource: metadata.tool_resource,
-        mimeType: req.file.mimetype,
-        fileConfig: mergeFileConfig(req.config?.fileConfig),
-        ocrConfigured: req.config?.ocr != null,
-        ragConfigured: !!process.env.RAG_API_URL,
-      });
-    if (uninspectableField != null && !deferExtractedTextFailClose) {
-      return res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
-    }
 
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;

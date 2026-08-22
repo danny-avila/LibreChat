@@ -20,10 +20,59 @@ const mockIsValidSharedLinksCursor = jest.fn(() => true);
 const mockAssertConversationContentAllowed = jest.fn();
 const mockAssertModelBoundContent = jest.fn();
 const mockAssertSharedFileMetadataAllowed = jest.fn();
+const mockCreateShareContentPreflight = jest.fn((filters, options = {}) => {
+  const legacyPii = options.legacyPii;
+  if (filters == null && legacyPii == null) {
+    return undefined;
+  }
+  const omitFiles = (messages) =>
+    messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+      ...message,
+      ...(Array.isArray(message.content)
+        ? {
+            content: message.content.map((part) => {
+              if (part?.type !== 'steer' || part.files === undefined) {
+                return part;
+              }
+              const { files: _partFiles, ...rest } = part;
+              return rest;
+            }),
+          }
+        : {}),
+    }));
+  return async ({ title, messages, shareId }) => {
+    const inspectSharedFileMetadata = options.sharedFileMetadata === true;
+    const inspectSharedFiles =
+      inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
+    const snapshot = {
+      conversations: [{ title }],
+      messages:
+        options.snapshotFiles === false || inspectSharedFiles ? omitFiles(messages) : messages,
+    };
+    const context = {
+      ...(options.user == null ? {} : { user: options.user, getFiles: options.getFiles }),
+      ...(legacyPii == null ? {} : { legacyPii }),
+    };
+    await mockAssertConversationContentAllowed(
+      filters,
+      snapshot,
+      ...(Object.keys(context).length === 0 ? [] : [context]),
+    );
+    if (inspectSharedFileMetadata) {
+      mockAssertSharedFileMetadataAllowed({
+        filters,
+        messages: options.snapshotFiles === false ? omitFiles(messages) : messages,
+        shareId,
+        ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
+      });
+    }
+  };
+});
 
 jest.mock('@librechat/api', () => ({
   assertModelBoundContent: (...args) => mockAssertModelBoundContent(...args),
   assertSharedFileMetadataAllowed: (...args) => mockAssertSharedFileMetadataAllowed(...args),
+  createShareContentPreflight: (...args) => mockCreateShareContentPreflight(...args),
   isEnabled: jest.fn(() => true),
   generateCheckAccess: jest.fn(() => mockSharedLinksAccess),
   grantCreationPermissions: (...args) => mockGrantCreationPermissions(...args),

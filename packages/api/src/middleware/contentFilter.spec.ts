@@ -13,7 +13,7 @@ import {
   getContentTraversalFragments,
 } from '../protection/adapters/nested';
 import { extractAssistantContent, extractPresetContent } from '../protection/adapters/submissions';
-import { UninspectableFileError } from '../protection/files';
+import { ContentFilterInputTooLargeError, UninspectableFileError } from '../protection/files';
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -401,6 +401,7 @@ describe('contentFilter middleware', () => {
 
   it('classifies the raw-free opaque error for existing import error handling', () => {
     expect(isContentFilterError(new UninspectableFileError('content'))).toBe(true);
+    expect(isContentFilterError(new ContentFilterInputTooLargeError('content'))).toBe(true);
     expect(isContentFilterError(new ContentTraversalLimitError())).toBe(true);
     const policyError = new UninspectableFileError('transcript');
     const wrapped = new Error('wrapped', { cause: policyError });

@@ -5,7 +5,7 @@ import {
   ContentTraversalLimitError,
 } from '../protection/adapters/nested';
 import { ContentFilterError } from '../middleware/contentFilter';
-import { assertSharedFileMetadataAllowed } from './protection';
+import { assertSharedFileMetadataAllowed, createShareContentPreflight } from './protection';
 import { UninspectableFileError } from '../protection/files';
 
 const BLOCK_PATTERN = {
@@ -1692,5 +1692,53 @@ describe('shared file metadata protection', () => {
       field: 'content',
     });
     expect(JSON.stringify(error.body)).not.toContain('PRIVATE-SENTINEL');
+  });
+});
+
+describe('shared content preflight', () => {
+  const titleFilters: FiltersConfig = {
+    conversationTitles: {
+      pii: { starterPatterns: [], customPatterns: [BLOCK_PATTERN] },
+    },
+  };
+  const fileNameFilters: FiltersConfig = {
+    files: {
+      pii: { fields: ['name'], starterPatterns: [], customPatterns: [BLOCK_PATTERN] },
+    },
+  };
+  const fileMessage = {
+    isCreatedByUser: true,
+    files: [{ file_id: 'file-1', filename: 'PRIVATE-REPORT.pdf' }],
+  };
+
+  it('avoids allocating a callback when no source-aware or legacy policy exists', () => {
+    expect(createShareContentPreflight(undefined)).toBeUndefined();
+  });
+
+  it('applies conversation policy to the exact shared snapshot', async () => {
+    const preflight = createShareContentPreflight(titleFilters);
+
+    await expect(
+      preflight?.({ title: 'PRIVATE-TITLE', messages: [], shareId: 'share-123' }),
+    ).rejects.toBeInstanceOf(ContentFilterError);
+  });
+
+  it('omits opted-out file references before snapshot inspection', async () => {
+    const preflight = createShareContentPreflight(fileNameFilters, { snapshotFiles: false });
+
+    await expect(
+      preflight?.({ title: 'Safe title', messages: [fileMessage], shareId: 'share-123' }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps shared metadata policy separate from canonical snapshot hydration', async () => {
+    const preflight = createShareContentPreflight(fileNameFilters, {
+      snapshotFiles: true,
+      sharedFileMetadata: true,
+    });
+
+    await expect(
+      preflight?.({ title: 'Safe title', messages: [fileMessage], shareId: 'share-123' }),
+    ).rejects.toBeInstanceOf(ContentFilterError);
   });
 });
