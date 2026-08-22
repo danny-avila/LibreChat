@@ -47,7 +47,7 @@ function dependencies(
       availableAt: AVAILABLE_AT,
       replayed: false,
     })),
-    getDelivery: jest.fn(async () => delivery()),
+    getDeliveryStatus: jest.fn(async () => delivery()),
     now: () => 1_755_430_000_000,
     createRequestId: () => 'generated-request-id',
     ...overrides,
@@ -221,7 +221,7 @@ describe('agent trigger event ingress', () => {
     const settledAt = new Date('2026-08-17T12:00:01.000Z');
     const attemptedAt = new Date('2026-08-17T12:00:00.500Z');
     const deps = dependencies({
-      getDelivery: jest.fn(async () =>
+      getDeliveryStatus: jest.fn(async () =>
         delivery({
           status: 'dead',
           attempts: 3,
@@ -262,27 +262,13 @@ describe('agent trigger event ingress', () => {
     expect(response.body).not.toHaveProperty('orderingKey');
   });
 
-  it('hides missing, foreign-user, and cross-tenant deliveries', async () => {
-    const missing = dependencies({ getDelivery: jest.fn(async () => null) });
-    const foreign = dependencies({
-      getDelivery: jest.fn(async () => delivery({ user: '507f191e810c19729de860ea' })),
-    });
-    const crossTenant = dependencies({
-      getDelivery: jest.fn(async () => delivery({ tenantId: 'tenant-2' })),
-    });
+  it('uses an owner-and-tenant-scoped status projection and hides missing deliveries', async () => {
+    const deps = dependencies({ getDeliveryStatus: jest.fn(async () => null) });
+    const response = await request(createApp(deps)).get(`/api/agents/v1/events/${DELIVERY_KEY}`);
 
-    const responses = await Promise.all(
-      [missing, foreign, crossTenant].map((deps) =>
-        request(createApp(deps)).get(`/api/agents/v1/events/${DELIVERY_KEY}`),
-      ),
-    );
-
-    expect(responses.map((response) => response.status)).toEqual([404, 404, 404]);
-    expect(responses.map((response) => response.body.error.code)).toEqual([
-      'event_not_found',
-      'event_not_found',
-      'event_not_found',
-    ]);
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('event_not_found');
+    expect(deps.getDeliveryStatus).toHaveBeenCalledWith(DELIVERY_KEY, USER_ID, 'tenant-1');
   });
 
   it('rejects malformed delivery ids without querying storage', async () => {
@@ -291,7 +277,7 @@ describe('agent trigger event ingress', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('invalid_event');
-    expect(deps.getDelivery).not.toHaveBeenCalled();
+    expect(deps.getDeliveryStatus).not.toHaveBeenCalled();
   });
 
   it('requires an authenticated principal even when mounted incorrectly', async () => {

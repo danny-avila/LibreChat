@@ -3,6 +3,7 @@ import type {
   AgentTriggerDeliveryClaim,
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryRecord,
+  AgentTriggerDeliveryStatusRecord,
   AgentTriggerOrderingBlock,
   IAgentTriggerDelivery,
   IAgentTriggerDeliveryDocument,
@@ -94,6 +95,11 @@ export interface AgentTriggerDeliveryMethods {
     },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
+  getAgentTriggerDeliveryStatus: (
+    deliveryKey: string,
+    user: string | Types.ObjectId,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerDeliveryRecord[]>;
   requeueAgentTriggerDelivery: (
     id: string,
@@ -814,6 +820,20 @@ export function createAgentTriggerDeliveryMethods(
     return delivery == null ? null : toRecord(delivery);
   }
 
+  async function getAgentTriggerDeliveryStatus(
+    deliveryKey: string,
+    user: string | Types.ObjectId,
+    tenantId?: string,
+  ): Promise<AgentTriggerDeliveryStatusRecord | null> {
+    const tenantScope =
+      tenantId == null ? { tenantId: null } : { $or: [{ tenantId: null }, { tenantId }] };
+    const delivery = await Delivery()
+      .findOne({ deliveryKey, user, ...tenantScope })
+      .select('-_id deliveryKey status attempts availableAt createdAt settledAt result lastError')
+      .lean<AgentTriggerDeliveryStatusRecord>();
+    return delivery;
+  }
+
   async function getAgentTriggerDeadLetters(limit = 50): Promise<AgentTriggerDeliveryRecord[]> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger dead-letter limit must be a positive integer');
@@ -982,6 +1002,7 @@ export function createAgentTriggerDeliveryMethods(
     retryAgentTriggerDelivery,
     deadLetterAgentTriggerDelivery,
     getAgentTriggerDelivery,
+    getAgentTriggerDeliveryStatus,
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
     countActiveAgentTriggerDeliveriesByUser,

@@ -39,7 +39,7 @@ interface AgentTriggerIngressBody {
 
 export interface AgentTriggerIngressDependencies {
   enqueue: AgentTriggerService['enqueue'];
-  getDelivery: AgentTriggerService['getDelivery'];
+  getDeliveryStatus: AgentTriggerService['getDeliveryStatus'];
   now?: () => number;
   createRequestId?: () => string;
 }
@@ -125,7 +125,7 @@ function enqueueOptions(body: AgentTriggerIngressBody): AgentTriggerEnqueueOptio
   return body.orderingKey == null ? {} : { orderingKey: body.orderingKey };
 }
 
-function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getDelivery']>>) {
+function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getDeliveryStatus']>>) {
   if (delivery == null) {
     return null;
   }
@@ -148,16 +148,6 @@ function toPublicDelivery(delivery: Awaited<ReturnType<AgentTriggerService['getD
       },
     }),
   };
-}
-
-function ownsDelivery(
-  delivery: NonNullable<Awaited<ReturnType<AgentTriggerService['getDelivery']>>>,
-  user: AgentTriggerIngressUser,
-): boolean {
-  if (String(delivery.user) !== user.id) {
-    return false;
-  }
-  return delivery.tenantId == null || delivery.tenantId === user.tenantId;
 }
 
 function handleIngressError(res: Response, error: unknown): void {
@@ -256,8 +246,8 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
       if (!DELIVERY_KEY_PATTERN.test(deliveryKey)) {
         throw new AgentTriggerIngressError('Event delivery id is invalid');
       }
-      const delivery = await deps.getDelivery(deliveryKey);
-      if (delivery == null || !ownsDelivery(delivery, user)) {
+      const delivery = await deps.getDeliveryStatus(deliveryKey, user.id, user.tenantId);
+      if (delivery == null) {
         sendError(res, 404, 'event_not_found', 'Agent event delivery not found');
         return;
       }

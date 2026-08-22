@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const mockEnqueueAgentTrigger = jest.fn();
-const mockGetAgentTriggerDelivery = jest.fn();
+const mockGetAgentTriggerDeliveryStatus = jest.fn();
 const mockEnqueueEvent = jest.fn((_req, res) => res.status(202).json({ id: 'trigger-1' }));
 const mockGetEvent = jest.fn((_req, res) => res.status(200).json({ status: 'succeeded' }));
 let mockIngressDependencies;
@@ -16,6 +16,7 @@ const mockCreateAgentTriggerIngressHandlers = jest.fn((dependencies) => {
 
 jest.mock('@librechat/api', () => ({
   createAgentTriggerIngressHandlers: mockCreateAgentTriggerIngressHandlers,
+  createMessageFilterPii: () => (_req, _res, next) => next(),
 }));
 
 jest.mock('~/server/controllers/agents/openai', () => ({
@@ -26,12 +27,12 @@ jest.mock('~/server/controllers/agents/openai', () => ({
 
 jest.mock('~/server/services/Agents/triggers', () => ({
   enqueueAgentTrigger: mockEnqueueAgentTrigger,
-  getAgentTriggerDelivery: mockGetAgentTriggerDelivery,
+  getAgentTriggerDeliveryStatus: mockGetAgentTriggerDeliveryStatus,
 }));
 
 jest.mock('~/server/middleware', () => ({
+  agentEventUserLimiter: (_req, _res, next) => next(),
   configMiddleware: (_req, _res, next) => next(),
-  messageUserLimiter: (_req, _res, next) => next(),
 }));
 
 jest.mock('../middleware', () => ({
@@ -67,7 +68,7 @@ describe('Remote Agents event routes', () => {
     expect(response.status).toBe(202);
     expect(mockIngressDependencies).toEqual({
       enqueue: mockEnqueueAgentTrigger,
-      getDelivery: mockGetAgentTriggerDelivery,
+      getDeliveryStatus: mockGetAgentTriggerDeliveryStatus,
     });
     expect(mockEnqueueEvent).toHaveBeenCalledTimes(1);
   });

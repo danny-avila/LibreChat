@@ -19,16 +19,16 @@
  *   }
  */
 const express = require('express');
-const { createAgentTriggerIngressHandlers } = require('@librechat/api');
+const { createAgentTriggerIngressHandlers, createMessageFilterPii } = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
   GetModelController,
 } = require('~/server/controllers/agents/openai');
-const { configMiddleware, messageUserLimiter } = require('~/server/middleware');
+const { agentEventUserLimiter, configMiddleware } = require('~/server/middleware');
 const {
   enqueueAgentTrigger,
-  getAgentTriggerDelivery,
+  getAgentTriggerDeliveryStatus,
 } = require('~/server/services/Agents/triggers');
 const {
   checkAgentPermission,
@@ -41,7 +41,7 @@ const {
 const router = express.Router();
 const eventHandlers = createAgentTriggerIngressHandlers({
   enqueue: enqueueAgentTrigger,
-  getDelivery: getAgentTriggerDelivery,
+  getDeliveryStatus: getAgentTriggerDeliveryStatus,
 });
 
 router.use(preAuthTenantMiddleware);
@@ -54,7 +54,13 @@ router.use(checkRemoteAgentsFeature);
  * @desc Durably deliver a source-neutral event to an agent
  * @access Private (API key auth required)
  */
-router.post('/events', messageUserLimiter, checkAgentTriggerPermission, eventHandlers.enqueueEvent);
+router.post(
+  '/events',
+  agentEventUserLimiter,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  checkAgentTriggerPermission,
+  eventHandlers.enqueueEvent,
+);
 
 /**
  * @route GET /v1/events/:id
