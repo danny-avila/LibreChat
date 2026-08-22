@@ -305,7 +305,7 @@ describe('RedisEventTransport', () => {
     const streamId = 'fresh-attachment-frontier';
     const received: object[] = [];
     const messageHandler = getMessageHandler(mockSubscriber);
-    mockPublisher.get.mockResolvedValueOnce('6').mockResolvedValueOnce('6');
+    mockPublisher.get.mockResolvedValueOnce('6');
     mockPublisher.publish.mockImplementation(async (channel: string, payload: string) => {
       const parsed = JSON.parse(payload) as { type?: string };
       if (parsed.type === 'subscription_frontier') {
@@ -330,6 +330,7 @@ describe('RedisEventTransport', () => {
     await subscription.syncReorderBuffer?.();
 
     expect(received).toEqual([{ index: 5 }]);
+    expect(mockPublisher.get).toHaveBeenCalledTimes(1);
     subscription.unsubscribe();
     transport.destroy();
   });

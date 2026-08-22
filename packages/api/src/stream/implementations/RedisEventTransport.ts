@@ -670,7 +670,12 @@ export class RedisEventTransport implements IEventTransport {
     const initialState = this.streams.get(streamId);
     try {
       const key = KEYS.sequence(streamId);
-      const rawStr = await this.publisher.get(key);
+      /** The atomic post-SUBSCRIBE marker already returned an authoritative frontier;
+       * another GET would add a new failure/race point before releasing delivery. */
+      const rawStr =
+        preserveBufferedBeforeFrontier && replayedNextSeq != null
+          ? String(replayedNextSeq)
+          : await this.publisher.get(key);
       const parsed = rawStr != null ? parseInt(rawStr, 10) : 0;
       const currentSeq = Number.isNaN(parsed) ? 0 : parsed;
       const state = this.streams.get(streamId);
