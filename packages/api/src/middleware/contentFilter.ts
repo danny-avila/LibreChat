@@ -88,12 +88,13 @@ export function getContentFilterError(error: unknown): ContentPolicyError | null
 
 export function isContentFilterError(
   error: unknown,
-): error is
-  | ContentFilterError
-  | ContentFilterInputTooLargeError
-  | ContentTraversalLimitError
-  | UninspectableFileError {
-  return getContentFilterError(error) != null;
+): error is ContentFilterError | ContentTraversalLimitError | UninspectableFileError {
+  const policyError = getContentFilterError(error);
+  return (
+    policyError instanceof ContentFilterError ||
+    policyError instanceof ContentTraversalLimitError ||
+    policyError instanceof UninspectableFileError
+  );
 }
 
 export interface CreateContentFilterOptions {
