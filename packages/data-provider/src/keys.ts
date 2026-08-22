@@ -140,6 +140,7 @@ export enum MutationKeys {
   updateSkillNode = 'updateSkillNode',
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
+  compactConversation = 'compactConversation',
   convoPin = 'convoPin',
   archiveAllConversations = 'archiveAllConversations',
   createSchedule = 'createSchedule',

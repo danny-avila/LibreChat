@@ -21,6 +21,7 @@ const { initializeClient } = require('~/server/services/Endpoints/agents');
 const guardSubagentThreadTurn = require('~/server/middleware/validate/subagentThreadTurn');
 const AgentController = require('~/server/controllers/agents/request');
 const ResumeController = require('~/server/controllers/agents/resume');
+const CompactController = require('~/server/controllers/agents/compact');
 const addTitle = require('~/server/services/Endpoints/agents/title');
 const { getFiles, getRoleByName } = require('~/models');
 
@@ -102,6 +103,18 @@ const resumeController = async (req, res, next) => {
  * @returns {void}
  */
 router.post('/resume', resumeController);
+
+/**
+ * @route POST /compact
+ * @desc Manually compact the active branch of a conversation into a summary
+ *       that replaces the history on every later turn. Shares this router's
+ *       middleware so the agent/endpoint resolve exactly like a normal turn.
+ *       Declared before `/:endpoint` so it is not captured as an ephemeral
+ *       endpoint name.
+ * @access Private
+ * @returns {void}
+ */
+router.post('/compact', CompactController);
 
 /**
  * @route POST / (regular endpoint)

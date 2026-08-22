@@ -274,10 +274,12 @@ export default function useTokenUsage({
      *  the prune budget and add it to used — making over-window pruning faithful and
      *  the gauge consistent with snapshots. Skipped when a summary baseline exists:
      *  `computeSummaryUsedTokens` already folds the overhead into that marker, so
-     *  adding it again would double-count. 0 until the agent has run once this
-     *  session (then falls back to message-only, as before). */
+     *  adding it again would double-count. A manual compaction on a branch with
+     *  no context snapshot to read it from says so, and then the cached value is
+     *  the only source there is. 0 until the agent has run once this session
+     *  (then falls back to message-only, as before). */
     const overheadTokens =
-      branchTotals.summaryBaseline > 0
+      branchTotals.summaryBaseline > 0 && !branchTotals.summaryExcludesOverhead
         ? 0
         : getModelOverhead(
             overheadKey(

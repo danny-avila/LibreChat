@@ -831,8 +831,73 @@ describe('per-message usage index (branch + total)', () => {
     expect(sumTotalUsage(CONVO).costKnown).toBe(false);
   });
 
+  it('does not double-count a manual compaction message against its own baseline', () => {
+    /** The summary-only message carries `tokenCount: 0` AND the baseline that
+     *  already includes the summary. Its text lives in the summary part's
+     *  `content[]`, which the char estimator does not read, so the branch must
+     *  see the baseline once and no separate estimated output on top. */
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      msg('a1', 'u1', false, 20),
+      {
+        messageId: 'compact1',
+        parentMessageId: 'a1',
+        isCreatedByUser: false,
+        conversationId: CONVO,
+        tokenCount: 0,
+        content: [
+          {
+            type: 'summary',
+            content: [{ type: 'text', text: 'X'.repeat(4000) }],
+            tokenCount: 1000,
+          },
+        ],
+        metadata: { summaryUsedTokens: 1400 },
+      } as unknown as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'compact1');
+    expect(totals.summaryBaseline).toBe(1400);
+    expect(totals.estTokens).toBe(0);
+    expect(totals.output).toBe(0);
+  });
+
   it('EMPTY_BRANCH carries an empty usage record', () => {
     expect(sumBranch('missing-convo', 'x')).toBe(EMPTY_BRANCH);
     expect(EMPTY_BRANCH.usage).toEqual(EMPTY_USAGE);
+  });
+});
+
+describe('summary baselines that exclude overhead', () => {
+  afterEach(() => {
+    clearIndex(CONVO);
+  });
+
+  it('flags a compaction whose baseline could not include instruction overhead', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      {
+        ...msg('a1', 'u1', false, 0),
+        metadata: { summaryUsedTokens: 300, summaryExcludesOverhead: true },
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.summaryBaseline).toBe(300);
+    expect(totals.summaryExcludesOverhead).toBe(true);
+  });
+
+  it('leaves the flag off for a baseline that carries overhead', () => {
+    buildIndex(CONVO, [
+      msg('u1', Constants.NO_PARENT, true, 10),
+      {
+        ...msg('a1', 'u1', false, 0),
+        metadata: { summaryUsedTokens: 300 },
+      } as TMessage,
+    ]);
+
+    const totals = sumBranch(CONVO, 'a1');
+    expect(totals.summaryBaseline).toBe(300);
+    expect(totals.summaryExcludesOverhead).toBe(false);
   });
 });
