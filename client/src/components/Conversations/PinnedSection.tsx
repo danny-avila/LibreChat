@@ -71,7 +71,7 @@ interface DraggablePinnedRowProps {
   indexOfKey: (key: string) => number;
   moveEntry: (dragKey: string, hoverKey: string) => void;
   moveEntryBy: (key: string, delta: number) => void;
-  onDrop: () => void;
+  onDrop: (handledElsewhere: boolean) => void;
   /** Released while the row's title is being edited, so a drag-select inside
    *  the rename input is not swallowed by the drag source. */
   canDrag?: boolean;
@@ -134,8 +134,12 @@ const DraggablePinnedRow = ({
           }
         : { key: entry.key, conversationId: '', chatProjectId: null, pinned: false },
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-    end: () => {
-      onDrop();
+    /* A drop the pinned rows did not handle went to a project row or the Chats
+     * section instead. Rows carry no drop handler of their own, so `didDrop`
+     * distinguishes a reorder from a filing action that merely dragged past
+     * these rows on its way. */
+    end: (_item, monitor) => {
+      onDrop(monitor.didDrop());
     },
   });
 
@@ -421,43 +425,53 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
     [localize],
   );
 
-  const commitOrder = useCallback(() => {
-    if (!hasReorderedRef.current) {
-      return;
-    }
-    hasReorderedRef.current = false;
-    const entries = dragEntriesRef.current;
-    /* Always a merge, never a replacement. The visible list is not always the
-     * whole list: a bookmark filter hides rows, and the pinned query publishes
-     * partial results while it drains its cursor. Persisting only what is on
-     * screen would drop every key it could not see, losing those positions for
-     * good. Keys whose item is gone are inert on read and bounded by the
-     * endpoint's size guard, so leaving them costs nothing. */
-    const nextOrder = mergeVisibleOrder(
-      storedOrder ?? [],
-      entries.map((entry) => entry.key),
-    );
-
-    updatePinnedOrder.mutate(nextOrder, {
-      /* `pinnedOrder` is the only ordering the section reads: no consumer of
-       * the favorites array depends on its order, so writing the arrangement
-       * back there a second time bought nothing and raced the membership
-       * mutations that share that array. */
-      onError: () => {
-        showToast({
-          message: localize('com_ui_reorder_error'),
-          severity: NotificationSeverity.ERROR,
-          showIcon: true,
-        });
-      },
-      /* Release the local arrangement once the write resolves either way: by
-       * then the optimistic cache carries it, or the rollback has replaced it
-       * with what the server actually holds. */
-      onSettled: () => {
+  const commitOrder = useCallback(
+    (handledElsewhere = false) => {
+      if (!hasReorderedRef.current) {
+        return;
+      }
+      hasReorderedRef.current = false;
+      if (handledElsewhere) {
+        /* The drop filed the chat into a project or back into Chats. The rows
+         * the pointer crossed on the way shifted only incidentally, so that
+         * movement is discarded rather than saved as a deliberate reorder. */
         setLiveEntries(null);
-      },
-    });
-  }, [updatePinnedOrder, storedOrder, showToast, localize]);
+        return;
+      }
+      const entries = dragEntriesRef.current;
+      /* Always a merge, never a replacement. The visible list is not always the
+       * whole list: a bookmark filter hides rows, and the pinned query publishes
+       * partial results while it drains its cursor. Persisting only what is on
+       * screen would drop every key it could not see, losing those positions for
+       * good. Keys whose item is gone are inert on read and bounded by the
+       * endpoint's size guard, so leaving them costs nothing. */
+      const nextOrder = mergeVisibleOrder(
+        storedOrder ?? [],
+        entries.map((entry) => entry.key),
+      );
+
+      updatePinnedOrder.mutate(nextOrder, {
+        /* `pinnedOrder` is the only ordering the section reads: no consumer of
+         * the favorites array depends on its order, so writing the arrangement
+         * back there a second time bought nothing and raced the membership
+         * mutations that share that array. */
+        onError: () => {
+          showToast({
+            message: localize('com_ui_reorder_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+        /* Release the local arrangement once the write resolves either way: by
+         * then the optimistic cache carries it, or the rollback has replaced it
+         * with what the server actually holds. */
+        onSettled: () => {
+          setLiveEntries(null);
+        },
+      });
+    },
+    [updatePinnedOrder, storedOrder, showToast, localize],
+  );
 
   /* `moveEntryBy` is declared above `commitOrder` and both are stable across a
    * drag, so the commit is reached through a ref rather than reordering them
