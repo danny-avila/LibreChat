@@ -32,6 +32,12 @@ const wavespeedJsonSchema = {
   required: ['prompt'],
 };
 
+/** Model ids are slash-separated slugs, e.g. `wavespeed-ai/flux-dev`. */
+const MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$/;
+
+/** Documented as "width*height" in pixels. */
+const SIZE_PATTERN = /^[1-9]\d{1,4}\*[1-9]\d{1,4}$/;
+
 const displayMessage =
   "WaveSpeed displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
 
@@ -135,8 +141,25 @@ class WaveSpeedAPI extends Tool {
     const requestApiKey = this.apiKey || this.getApiKey();
     const modelId = model || DEFAULT_MODEL;
 
+    /**
+     * `model` is tool input and is interpolated into the request path, so a
+     * crafted value could reach unintended WaveSpeed routes with the caller's
+     * API key. Model ids are slash-separated slugs (`wavespeed-ai/flux-dev`),
+     * so anything outside that shape is rejected rather than escaped.
+     */
+    if (!MODEL_ID_PATTERN.test(modelId)) {
+      throw new Error(
+        `Invalid model id: ${modelId}. Expected a WaveSpeed model id such as "${DEFAULT_MODEL}".`,
+      );
+    }
+
     const payload = { prompt };
     if (size) {
+      if (!SIZE_PATTERN.test(size)) {
+        throw new Error(
+          `Invalid size: ${size}. Expected "width*height" in pixels, e.g. "2048*2048".`,
+        );
+      }
       payload.size = size;
     }
 
@@ -210,8 +233,20 @@ class WaveSpeedAPI extends Tool {
       }
     }
 
+    /**
+     * Exhausting the poll loop is a timeout, not a missing-output error; the
+     * job may well still be running. Reporting it as "no image data" sends the
+     * model down the wrong path.
+     */
+    if (!resultData) {
+      logger.error('[WaveSpeedAPI] Timed out waiting for the prediction to finish.');
+      return this.returnValue(
+        'Timed out waiting for the WaveSpeed prediction to finish. The job may still be running; please try again.',
+      );
+    }
+
     // If no result data
-    if (!resultData || !resultData.outputs || !resultData.outputs.length) {
+    if (!resultData.outputs || !resultData.outputs.length) {
       logger.error('[WaveSpeedAPI] No image data received from API. Response:', resultData);
       return this.returnValue('No image data received from the WaveSpeed API.');
     }
@@ -229,9 +264,26 @@ class WaveSpeedAPI extends Tool {
           fetchOptions.agent = agent;
         }
         const imageResponse = await fetch(imageUrl, fetchOptions);
+        /**
+         * fetch resolves on 4xx/5xx, so an expired signed URL would otherwise
+         * be base64-encoded and handed back as an IMAGE_URL artifact — the
+         * model would be told an image was displayed while the user sees an
+         * encoded error page.
+         */
+        if (!imageResponse.ok) {
+          logger.error(
+            `[WaveSpeedAPI] Failed to download the generated image: HTTP ${imageResponse.status}`,
+          );
+          return this.returnValue('Failed to download the generated image.');
+        }
+        const contentType = imageResponse.headers?.get?.('content-type') || '';
+        if (contentType && !contentType.startsWith('image/')) {
+          logger.error(`[WaveSpeedAPI] Expected an image but received "${contentType}".`);
+          return this.returnValue('Failed to download the generated image.');
+        }
         const arrayBuffer = await imageResponse.arrayBuffer();
         const base64 = Buffer.from(arrayBuffer).toString('base64');
-        const mimeType = imageResponse.headers?.get?.('content-type') || 'image/png';
+        const mimeType = contentType || 'image/png';
         const content = [
           {
             type: ContentTypes.IMAGE_URL,

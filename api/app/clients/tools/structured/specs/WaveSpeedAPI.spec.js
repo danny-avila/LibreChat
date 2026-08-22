@@ -52,6 +52,10 @@ describe('WaveSpeedAPI', () => {
       },
     });
     fetch.mockResolvedValue({
+      // Real node-fetch responses always carry `ok`; the download path checks
+      // it so an expired signed URL is not encoded as an image.
+      ok: true,
+      status: 200,
       arrayBuffer: () => Promise.resolve(Buffer.from(FAKE_BASE64, 'base64')),
       headers: { get: () => 'image/png' },
     });
@@ -210,6 +214,61 @@ describe('WaveSpeedAPI', () => {
         },
       }),
     );
+  });
+
+  it('rejects a model id that could escape the request path', async () => {
+    // `model` is tool input and is interpolated into /api/v3/${modelId}, so a
+    // crafted value could reach unintended routes with the caller's API key.
+    // Rejected like the other input-validation failures (missing prompt), not
+    // surfaced as a tool result.
+    const wavespeed = new WaveSpeedAPI({ isAgent: true });
+    await expect(
+      wavespeed.invoke(
+        makeToolCall('wavespeed', { prompt: 'a box', model: '../../predictions/other/result' }),
+      ),
+    ).rejects.toThrow('Invalid model id');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects a size that is not width*height', async () => {
+    const wavespeed = new WaveSpeedAPI({ isAgent: true });
+    await expect(
+      wavespeed.invoke(makeToolCall('wavespeed', { prompt: 'a box', size: 'huge' })),
+    ).rejects.toThrow('Invalid size');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('reports a poll timeout as a timeout rather than missing image data', async () => {
+    // The job may still be running; calling it "no image data" sends the model
+    // down the wrong path.
+    axios.get.mockResolvedValue({ data: { data: { status: 'processing' } } });
+
+    const wavespeed = new WaveSpeedAPI({ isAgent: true });
+    const invokePromise = wavespeed.invoke(makeToolCall('wavespeed', { prompt: 'a box' }));
+    await jest.runAllTimersAsync();
+    const result = await invokePromise;
+
+    expect(JSON.stringify(result)).toContain('Timed out');
+  });
+
+  it('does not encode a failed image download as an image artifact', async () => {
+    // fetch resolves on 4xx/5xx, so an expired signed URL would otherwise be
+    // base64-encoded and returned as an IMAGE_URL artifact.
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: { get: () => 'application/xml' },
+      arrayBuffer: async () => new ArrayBuffer(8),
+    });
+
+    const wavespeed = new WaveSpeedAPI({ isAgent: true });
+    const invokePromise = wavespeed.invoke(makeToolCall('wavespeed', { prompt: 'a box' }));
+    await jest.runAllTimersAsync();
+    const result = await invokePromise;
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).toContain('Failed to download');
+    expect(serialized).not.toContain('data:application/xml;base64');
   });
 
   it('invoke() returns ToolMessage with error string in content when task submission fails', async () => {
