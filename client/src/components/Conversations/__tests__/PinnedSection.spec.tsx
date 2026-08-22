@@ -137,7 +137,7 @@ describe('PinnedSection unified list', () => {
   it('interleaves favorites and conversations by the stored order', () => {
     mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }, { agentId: 'agent-1' }];
     mockFavoritesData.agentsMap = { 'agent-1': { id: 'agent-1' } };
-    mockPinnedOrder = ['convo:c1', 'agent:agent-1', 'model:openAI::gpt-4o'];
+    mockPinnedOrder = ['convo:c1', 'agent:agent-1', 'model:6:openAI:gpt-4o'];
     renderSection([pinnedConvo('c1', 'Pinned Chat')]);
     expect(itemLabels()).toEqual(['Pinned Chat', 'agent-1', 'gpt-4o']);
   });
@@ -145,7 +145,7 @@ describe('PinnedSection unified list', () => {
   it('appends items missing from the stored order and ignores stale keys', () => {
     mockFavoritesData.favorites = [{ spec: 'fast' }];
     mockFavoritesData.specsMap = { fast: { name: 'fast', label: 'Fast' } };
-    mockPinnedOrder = ['convo:gone', 'model:openAI::removed'];
+    mockPinnedOrder = ['convo:gone', 'model:6:openAI:removed'];
     renderSection([pinnedConvo('c1', 'Pinned Chat')]);
     expect(itemLabels()).toEqual(['Fast', 'Pinned Chat']);
   });
@@ -184,7 +184,7 @@ describe('PinnedSection unified list', () => {
 
       expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:c1', 'model:openAI::gpt-4o'],
+        ['convo:c1', 'model:6:openAI:gpt-4o'],
         expect.anything(),
       );
     });
@@ -230,20 +230,20 @@ describe('PinnedSection unified list', () => {
     /* A bookmark filter hides part of the list; persisting only what is on
      * screen would drop every hidden pin from the stored order. */
     it('merges into the stored order while filtered', () => {
-      mockPinnedOrder = ['convo:hidden', 'model:openAI::gpt-4o', 'convo:c1'];
+      mockPinnedOrder = ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c1'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       renderSection([pinnedConvo('c1', 'Pinned Chat')], true);
 
       moveFocusedRow('gpt-4o', 'ArrowDown');
 
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:hidden', 'convo:c1', 'model:openAI::gpt-4o'],
+        ['convo:hidden', 'convo:c1', 'model:6:openAI:gpt-4o'],
         expect.anything(),
       );
     });
 
     it('replaces the stored order when nothing is filtered out', () => {
-      mockPinnedOrder = ['convo:gone', 'model:openAI::gpt-4o', 'convo:c1'];
+      mockPinnedOrder = ['convo:gone', 'model:6:openAI:gpt-4o', 'convo:c1'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       renderSection([pinnedConvo('c1', 'Pinned Chat')]);
 
@@ -251,7 +251,7 @@ describe('PinnedSection unified list', () => {
 
       /* Unfiltered, replacing also prunes `convo:gone`, whose chat is no longer pinned. */
       expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:c1', 'model:openAI::gpt-4o'],
+        ['convo:c1', 'model:6:openAI:gpt-4o'],
         expect.anything(),
       );
     });
@@ -280,5 +280,18 @@ describe('PinnedSection unified list', () => {
 
     /* A `draggable` ancestor swallows drag-select inside the rename input. */
     expect(row).not.toHaveAttribute('draggable', 'true');
+  });
+
+  it('keeps two model favorites distinct when a component contains the delimiter', () => {
+    /* The favorites API accepts any string for either half, so joining them on
+     * `::` collides: `a::b` + `c` and `a` + `b::c` would key the same and the
+     * dedupe would hide one of two genuinely different favorites. */
+    mockFavoritesData.favorites = [
+      { endpoint: 'a::b', model: 'c' },
+      { endpoint: 'a', model: 'b::c' },
+    ];
+    renderSection([]);
+
+    expect(screen.getAllByTestId('favorite-item')).toHaveLength(2);
   });
 });

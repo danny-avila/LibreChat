@@ -63,6 +63,10 @@ export const useUpdatePinnedOrderMutation = () => {
    *  order the user finished on. Chaining the requests makes arrival order
    *  match intent order. */
   const pending = useRef<Promise<unknown>>(Promise.resolve());
+  /** The order the user last asked for. Only its outcome may touch the cache:
+   *  an earlier write failing must not undo a newer arrangement that is already
+   *  on screen and still in flight. */
+  const latest = useRef<string[] | null>(null);
 
   return useMutation(
     (pinnedOrder: string[]) => {
@@ -74,22 +78,26 @@ export const useUpdatePinnedOrderMutation = () => {
     },
     {
       onMutate: async (newOrder) => {
+        latest.current = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
-        const previousOrder = queryClient.getQueryData<string[]>([QueryKeys.pinnedOrder]);
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
-        return { previousOrder };
       },
-      onError: (_err, _newOrder, context) => {
-        if (context?.previousOrder !== undefined) {
-          queryClient.setQueryData([QueryKeys.pinnedOrder], context.previousOrder);
+      onError: (_err, newOrder) => {
+        if (latest.current !== newOrder) {
           return;
         }
-        /* The first write can land before the initial fetch has populated the
-         * cache, and `onMutate` cancelled that fetch. With every automatic
-         * refetch trigger disabled, leaving the optimistic value behind would
-         * pass an order that was never persisted off as server data for the
-         * rest of the session, so discard it and fetch the real one. */
+        /* The newest write failed, so the cache holds an order the server never
+         * accepted. Restoring a captured previous value is not safe here: with
+         * writes queued behind each other it may itself be unpersisted, and
+         * before the first fetch resolves there is no previous value at all.
+         * Refetching is the only answer that is right in every case. */
         queryClient.resetQueries([QueryKeys.pinnedOrder]);
+      },
+      onSuccess: (savedOrder, newOrder) => {
+        if (latest.current !== newOrder) {
+          return;
+        }
+        queryClient.setQueryData([QueryKeys.pinnedOrder], savedOrder);
       },
     },
   );
