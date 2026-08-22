@@ -325,7 +325,52 @@ describe('agent event bindings', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('event_binding_parent_ended');
+    expect(deps.deleteConvos).toHaveBeenCalledWith(USER_ID, {
+      conversationId: 'child-thread',
+    });
     expect(deps.reserveThread).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a failed rollback and lets a retry reconcile the orphan', async () => {
+    const deps = dependencies();
+    deps.getConvo.mockResolvedValueOnce(parent()).mockResolvedValueOnce(null);
+    deps.deleteConvos
+      .mockRejectedValueOnce(new Error('stepdown'))
+      .mockRejectedValueOnce(new Error('stepdown'))
+      .mockRejectedValueOnce(new Error('stepdown'));
+    const { server } = app(deps);
+    const body = {
+      actorId: 'player-a',
+      parentConversationId: PARENT_ID,
+      parentMessageId: PARENT_MESSAGE_ID,
+      target: { agentId: CHILD_AGENT_ID },
+    };
+
+    const first = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'rollback-recovery')
+      .send(body);
+
+    expect(first.status).toBe(503);
+    expect(first.body.error.code).toBe('event_binding_cleanup_failed');
+    const reservation = await deps.reserveThread.mock.results[0].value;
+    deps.getConvo.mockResolvedValue(null);
+    deps.getBinding.mockResolvedValue({
+      conversationId: reservation.conversation.conversationId,
+      agentId: reservation.conversation.agent_id,
+      tenantId: reservation.conversation.tenantId,
+      binding: reservation.conversation.agentEventBinding,
+      lineage: reservation.conversation.subagentThread,
+    } as never);
+
+    const retry = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'rollback-recovery')
+      .send(body);
+
+    expect(retry.status).toBe(409);
+    expect(retry.body.error.code).toBe('event_binding_parent_ended');
+    expect(deps.deleteConvos).toHaveBeenCalledTimes(4);
   });
 
   it('rejects registration after the parent retention deadline', async () => {

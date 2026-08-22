@@ -231,6 +231,7 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
+    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
   archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
@@ -1405,16 +1406,56 @@ export function createConversationMethods(
   /**
    * Deletes conversations and their associated messages for a given user and filter.
    */
-  async function deleteConvos(user: string, filter: FilterQuery<IConversation>) {
+  async function deleteConvos(
+    user: string,
+    filter: FilterQuery<IConversation>,
+    options?: { beforeDelete?: (conversationIds: string[]) => Promise<void> },
+  ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      const { deleteMessages } = getMessageMethods();
+      const { deleteMessages, getMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       type DeletionConversation = Pick<IConversation, 'conversationId' | 'chatProjectId' | 'tags'>;
-      const conversations = await Conversation.find(userFilter)
+      const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            return await operation();
+          } catch (error) {
+            lastError = error;
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+            }
+          }
+        }
+        throw lastError;
+      };
+      let conversations = await Conversation.find(userFilter)
         .select('conversationId chatProjectId tags')
         .lean<DeletionConversation[]>();
-      if (!conversations.length) {
+      const recoveryConversationIds: string[] = [];
+      if (!conversations.length && typeof filter.conversationId === 'string') {
+        /** A prior attempt may have deleted the root before a descendant read failed.
+         * Resume from immutable root lineage and retain the root id for message,
+         * checkpoint, and tool cleanup. The message probe distinguishes that partial
+         * commit from a conversation id that never existed. */
+        const [descendants, rootMessages] = await Promise.all([
+          retryCascadeOperation(() =>
+            Conversation.find({
+              user,
+              'subagentThread.rootConversationId': filter.conversationId,
+            })
+              .select('conversationId chatProjectId tags')
+              .lean<DeletionConversation[]>(),
+          ),
+          getMessages({ user, conversationId: filter.conversationId }, '_id', { limit: 1 }),
+        ]);
+        if (descendants.length === 0 && rootMessages.length === 0) {
+          throw new Error('Conversation not found or already deleted.');
+        }
+        conversations = descendants;
+        recoveryConversationIds.push(filter.conversationId);
+      } else if (!conversations.length) {
         throw new Error('Conversation not found or already deleted.');
       }
 
@@ -1430,26 +1471,13 @@ export function createConversationMethods(
       let pending = conversations;
       let acknowledged = true;
       let deletedCount = 0;
-      const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
-        let lastError: unknown;
-        for (let attempt = 1; attempt <= 3; attempt += 1) {
-          try {
-            return await operation();
-          } catch (error) {
-            lastError = error;
-            if (attempt < 3) {
-              await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
-            }
-          }
-        }
-        throw lastError;
-      };
       while (pending.length > 0) {
         const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
         if (wave.length === 0) {
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
+        await options?.beforeDelete?.(waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
@@ -1467,7 +1495,10 @@ export function createConversationMethods(
         );
       }
 
-      const conversationIds = deletedConversations.map((c) => c.conversationId);
+      const conversationIds = [
+        ...recoveryConversationIds,
+        ...deletedConversations.map((conversation) => conversation.conversationId),
+      ];
       const projectIds = new Set(
         deletedConversations
           .map((conversation) => conversation.chatProjectId)

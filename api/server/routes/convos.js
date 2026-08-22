@@ -175,9 +175,8 @@ async function retryPostDeleteCancellation(cancellationPlan, deletedConversation
   }
 }
 
-/** Stops event-bound child generations on their owning replica and then removes
- * persistence that raced the first conversation cascade. */
-async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = []) {
+/** Confirms every exact generation is stopped before its conversation wave is removed. */
+async function confirmAgentGenerationsDrained(userId, conversationIds, leaseTaskIds = []) {
   let foundActiveGeneration = false;
   const drainErrors = [];
   const generationIds = [...new Set([...conversationIds, ...leaseTaskIds])];
@@ -233,10 +232,24 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
     }),
   );
   if (!foundActiveGeneration) {
-    return;
+    return false;
   }
   if (drainErrors.length > 0) {
     throw new Error('One or more deleted child generations could not be confirmed drained.');
+  }
+  return true;
+}
+
+/** Stops event-bound child generations on their owning replica and then removes
+ * persistence that raced the first conversation cascade. */
+async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = []) {
+  const foundActiveGeneration = await confirmAgentGenerationsDrained(
+    userId,
+    conversationIds,
+    leaseTaskIds,
+  );
+  if (!foundActiveGeneration) {
+    return;
   }
   try {
     await db.deleteConvos(userId, { conversationId: { $in: conversationIds } });
@@ -295,12 +308,18 @@ router.delete('/', configMiddleware, async (req, res) => {
         tenantId,
       );
       await subagentThreadTaskStore.cancelPlan(cancellationPlan);
-      dbResponse = await db.deleteConvos(req.user.id, filter);
+      dbResponse = await db.deleteConvos(req.user.id, filter, {
+        beforeDelete: (conversationIds) =>
+          confirmAgentGenerationsDrained(req.user.id, conversationIds),
+      });
     } else {
       /** An empty filter deletes every conversation this owner has, so it runs behind
        * the same admission fence as `DELETE /all` rather than a bare drain. */
       dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(req.user.id, tenantId, () =>
-        db.deleteConvos(req.user.id, filter),
+        db.deleteConvos(req.user.id, filter, {
+          beforeDelete: (conversationIds) =>
+            confirmAgentGenerationsDrained(req.user.id, conversationIds),
+        }),
       );
     }
     const deletedConversationIds =
@@ -362,7 +381,15 @@ router.delete('/all', configMiddleware, async (req, res) => {
     const dbResponse = await subagentThreadTaskStore.withOwnerDeletionFence(
       req.user.id,
       tenantId,
-      () => db.deleteConvos(req.user.id, {}),
+      () =>
+        db.deleteConvos(
+          req.user.id,
+          {},
+          {
+            beforeDelete: (conversationIds) =>
+              confirmAgentGenerationsDrained(req.user.id, conversationIds),
+          },
+        ),
     );
     await drainDeletedAgentGenerations(req.user.id, dbResponse.conversationIds ?? []);
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.

@@ -225,6 +225,43 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
       const parentConversationId = requireString(body.parentConversationId, 'parentConversationId');
       const parentMessageId = requireString(body.parentMessageId, 'parentMessageId');
       const targetAgentId = requireString(body.target?.agentId, 'target.agentId');
+      const id = bindingId(
+        principal.userId,
+        principal.tenantId,
+        principal.sourceKeyId,
+        registrationKey(req),
+      );
+      const bindingQuery = {
+        user: principal.userId,
+        bindingId: id,
+        sourceKeyId: principal.sourceKeyId,
+        ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
+      };
+      const cleanupBinding = async (conversationId: string): Promise<void> => {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            await deps.deleteConvos(principal.userId, { conversationId });
+            return;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        throw new AgentEventBindingError(
+          `Reserved event binding cleanup failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+          503,
+          'event_binding_cleanup_failed',
+        );
+      };
+      const expectedBinding = (parentAgentId: string) => ({
+        bindingId: id,
+        sourceKeyId: principal.sourceKeyId,
+        actorId,
+        parentConversationId,
+        parentMessageId,
+        parentAgentId,
+        targetAgentId,
+      });
       const [parent, parentMessage] = await Promise.all([
         deps.getConvo(principal.userId, parentConversationId),
         deps.getMessage({ user: principal.userId, messageId: parentMessageId }),
@@ -236,6 +273,16 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         typeof parent.agent_id !== 'string' ||
         !isAgentEventRetentionActive(parent.expiredAt)
       ) {
+        const orphan = await deps.getBinding(bindingQuery);
+        if (orphan != null) {
+          assertReplay(orphan, expectedBinding(orphan.lineage.parentAgentId));
+          await cleanupBinding(orphan.conversationId);
+          throw new AgentEventBindingError(
+            'Parent agent conversation ended during binding registration',
+            409,
+            'event_binding_parent_ended',
+          );
+        }
         throw new AgentEventBindingError('Parent agent conversation was not found', 404);
       }
       if (parentMessage?.conversationId !== parentConversationId) {
@@ -250,27 +297,13 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         );
       }
 
-      const id = bindingId(
-        principal.userId,
-        principal.tenantId,
-        principal.sourceKeyId,
-        registrationKey(req),
-      );
       const scopeId = JSON.stringify({
         userId: principal.userId,
         parentConversationId,
         ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
       });
       const threadId = createSubagentThreadId(scopeId, id);
-      const expected = {
-        bindingId: id,
-        sourceKeyId: principal.sourceKeyId,
-        actorId,
-        parentConversationId,
-        parentMessageId,
-        parentAgentId: parent.agent_id,
-        targetAgentId,
-      };
+      const expected = expectedBinding(parent.agent_id);
       const assertCurrentParent = async (): Promise<void> => {
         const currentParent = await deps.getConvo(principal.userId, parentConversationId);
         if (
@@ -287,15 +320,26 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
           );
         }
       };
-      const replay = await deps.getBinding({
-        user: principal.userId,
-        bindingId: id,
-        sourceKeyId: principal.sourceKeyId,
-        ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
-      });
+      const assertCurrentParentOrCleanup = async (
+        record: IAgentEventBindingRecord,
+      ): Promise<void> => {
+        try {
+          await assertCurrentParent();
+        } catch (error) {
+          if (
+            !(error instanceof AgentEventBindingError) ||
+            error.code !== 'event_binding_parent_ended'
+          ) {
+            throw error;
+          }
+          await cleanupBinding(record.conversationId);
+          throw error;
+        }
+      };
+      const replay = await deps.getBinding(bindingQuery);
       if (replay != null) {
         assertReplay(replay, expected);
-        await assertCurrentParent();
+        await assertCurrentParentOrCleanup(replay);
         res.status(200).json(publicBinding(replay));
         return;
       }
@@ -330,32 +374,18 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         if ((error as { code?: number }).code !== 11000) {
           throw error;
         }
-        const winner = await deps.getBinding({
-          user: principal.userId,
-          bindingId: id,
-          sourceKeyId: principal.sourceKeyId,
-          ...(principal.tenantId == null ? {} : { tenantId: principal.tenantId }),
-        });
+        const winner = await deps.getBinding(bindingQuery);
         if (winner == null) {
           throw error;
         }
         assertReplay(winner, expected);
-        await assertCurrentParent();
+        await assertCurrentParentOrCleanup(winner);
         res.status(200).json(publicBinding(winner));
         return;
       }
       const record = bindingRecord(reserved.conversation);
       assertReplay(record, expected);
-      try {
-        await assertCurrentParent();
-      } catch (error) {
-        if (reserved.created) {
-          await deps
-            .deleteConvos(principal.userId, { conversationId: threadId })
-            .catch(() => undefined);
-        }
-        throw error;
-      }
+      await assertCurrentParentOrCleanup(record);
       res.status(reserved.created ? 201 : 200).json(publicBinding(record));
     } catch (error) {
       try {

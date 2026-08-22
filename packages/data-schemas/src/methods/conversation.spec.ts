@@ -1740,11 +1740,17 @@ describe('Conversation Operations', () => {
         },
       ]);
       deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 3 });
+      const beforeDelete = jest.fn(async (conversationIds: string[]) => {
+        expect(
+          await Conversation.countDocuments({ conversationId: { $in: conversationIds } }),
+        ).toBe(conversationIds.length);
+      });
 
-      const result = await deleteConvos('user123', { conversationId: parentId });
+      const result = await deleteConvos('user123', { conversationId: parentId }, { beforeDelete });
 
       expect(result.deletedCount).toBe(3);
       expect(result.conversationIds).toEqual([parentId, childId, grandchildId]);
+      expect(beforeDelete.mock.calls).toEqual([[[parentId]], [[childId]], [[grandchildId]]]);
       expect(deleteMessages).toHaveBeenCalledWith({
         conversationId: { $in: [parentId, childId, grandchildId] },
         user: 'user123',
@@ -1793,6 +1799,17 @@ describe('Conversation Operations', () => {
       expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
       expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
       expect(deleteMessages).not.toHaveBeenCalled();
+
+      findSpy.mockRestore();
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 2 });
+      const recovered = await deleteConvos('user123', { conversationId: parentId });
+
+      expect(recovered.conversationIds).toEqual([parentId, childId]);
+      expect(await Conversation.findOne({ conversationId: childId })).toBeNull();
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId] },
+        user: 'user123',
+      });
       findSpy.mockRestore();
     });
 

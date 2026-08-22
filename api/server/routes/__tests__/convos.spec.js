@@ -342,7 +342,11 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockDbResponse);
 
       /** Verify deleteConvos was called with correct userId */
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        {},
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
       expect(deleteConvos).toHaveBeenCalledTimes(1);
 
       /** Verify deleteToolCalls was called with correct userId */
@@ -521,7 +525,11 @@ describe('Convos Routes', () => {
       expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
       expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
       expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        {},
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
     });
 
     it('drains a paused event actor after an empty-filter deletion removes it', async () => {
@@ -640,9 +648,14 @@ describe('Convos Routes', () => {
 
     it('does not prune generation persistence when provider stop is unconfirmed', async () => {
       const createdAt = Date.now();
-      deleteConvos.mockResolvedValue({
-        deletedCount: 2,
-        conversationIds: ['parent-conversation', 'child-conversation'],
+      let deletionCommitted = false;
+      deleteConvos.mockImplementation(async (_userId, _filter, options) => {
+        await options.beforeDelete(['child-conversation']);
+        deletionCommitted = true;
+        return {
+          deletedCount: 2,
+          conversationIds: ['parent-conversation', 'child-conversation'],
+        };
       });
       generationJobManager.getJob.mockImplementation(async (conversationId) =>
         conversationId === 'child-conversation'
@@ -660,6 +673,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(500);
       expect(deleteConvos).toHaveBeenCalledTimes(1);
+      expect(deletionCommitted).toBe(false);
       expect(deleteMessages).not.toHaveBeenCalled();
     });
 
@@ -739,9 +753,11 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockDbResponse);
 
       /** Verify deleteConvos was called with correct parameters */
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {
-        conversationId: mockConversationId,
-      });
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        { conversationId: mockConversationId },
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
 
       /** Verify deleteToolCalls was called */
       expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', mockConversationId);
