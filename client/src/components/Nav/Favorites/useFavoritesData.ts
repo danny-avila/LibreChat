@@ -32,6 +32,8 @@ export type SelectSpecHandler = (spec: TModelSpec) => void;
 export type FavoritesData = {
   favorites: Favorite[];
   isLoading: boolean;
+  /** Whether the favorites membership is known to be complete. */
+  isLoaded: boolean;
   isAgentsLoading: boolean;
   agentsMap: Record<string, Agent>;
   specsMap: Record<string, TModelSpec>;
@@ -50,7 +52,7 @@ export type FavoritesData = {
  */
 export default function useFavoritesData(): FavoritesData {
   const getConversation = useGetConversation(0);
-  const { favorites, reorderFavorites, isLoading } = useFavorites();
+  const { favorites, reorderFavorites, isLoading, isSuccess: isLoaded } = useFavorites();
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();
@@ -194,6 +196,7 @@ export default function useFavoritesData(): FavoritesData {
   return {
     favorites: safeFavorites,
     isLoading,
+    isLoaded,
     isAgentsLoading,
     agentsMap: combinedAgentsMap,
     specsMap,
