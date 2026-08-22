@@ -87,6 +87,9 @@ export interface SegmentedMeterProps extends React.ComponentPropsWithoutRef<'div
   segments: MeterSegment[];
   /** Denominator for every segment width; the shortfall renders as free track */
   max: number;
+  /** Segment id the caller considers active; every other segment recedes.
+   *  Pairs a legend row with its slice of the bar on hover. */
+  highlightId?: string | null;
 }
 
 /** Surface gap between touching fills, and the floor that keeps a present
@@ -112,7 +115,7 @@ const SEGMENT_MIN = 2;
 export const SegmentedMeter: React.ForwardRefExoticComponent<
   SegmentedMeterProps & React.RefAttributes<HTMLDivElement>
 > = React.forwardRef<HTMLDivElement, SegmentedMeterProps>(
-  ({ segments, max, className, ...props }, ref) => {
+  ({ segments, max, highlightId, className, ...props }, ref) => {
     const rendered = segments.filter((segment) => segment.value > 0);
     const gapBudget = Math.max(rendered.length - 1, 0) * SEGMENT_GAP;
     const fractions = rendered.map((segment) => Math.min(segment.value / max, 1));
@@ -141,8 +144,9 @@ export const SegmentedMeter: React.ForwardRefExoticComponent<
               key={segment.id}
               aria-hidden="true"
               className={cn(
-                'h-full transition-[width] duration-300 motion-reduce:transition-none',
+                'h-full transition-[width,opacity] duration-300 motion-reduce:transition-none',
                 seriesSwatchClass(segment),
+                highlightId != null && segment.id !== highlightId && 'opacity-40',
               )}
               style={{
                 width: `calc(${fraction} * 100% - ${gapShare.toFixed(3)}px)`,

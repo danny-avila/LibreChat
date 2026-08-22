@@ -60,6 +60,7 @@ const {
   createActivityLabelWiring,
   createActivityPhaseWiring,
   createReasoningLabelHostWiring,
+  createMCPRuntimeRequestBody,
   generateReasoningLabelRevision,
   getLabelUsageSequenceSeed,
   createAssistantPhaseStampingHandlers,
@@ -2952,11 +2953,13 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
-          requestBody: {
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            parentMessageId: this.parentMessageId,
-          },
+          requestBody:
+            this.options.mcpRequestBody ??
+            createMCPRuntimeRequestBody({
+              messageId: this.responseMessageId,
+              conversationId: this.conversationId,
+              parentMessageId: this.parentMessageId,
+            }),
           user: createSafeUser(this.options.req.user),
         },
         recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),
@@ -3541,11 +3544,13 @@ class AgentClient extends BaseClient {
           last_agent_index: this.agentConfigs?.size ?? 0,
           user_id: this.user ?? this.options.req.user?.id,
           hide_sequential_outputs: this.options.agent.hide_sequential_outputs,
-          requestBody: {
-            messageId: this.responseMessageId,
-            conversationId: this.conversationId,
-            parentMessageId: this.parentMessageId,
-          },
+          requestBody:
+            this.options.mcpRequestBody ??
+            createMCPRuntimeRequestBody({
+              messageId: this.responseMessageId,
+              conversationId: this.conversationId,
+              parentMessageId: this.parentMessageId,
+            }),
           user: createSafeUser(this.options.req.user),
         },
         recursionLimit: resolveRecursionLimit(agentsEConfig, this.options.agent),

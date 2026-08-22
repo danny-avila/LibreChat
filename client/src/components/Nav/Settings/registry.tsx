@@ -281,6 +281,19 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
+    id: 'collapseLongUserMessages',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_collapse_user_messages',
+    keywords: ['collapse', 'expand', 'long', 'user', 'message', 'truncate', 'show', 'more'],
+    Component: toggleControl({
+      stateAtom: store.collapseLongUserMessages,
+      localizationKey: 'com_nav_collapse_user_messages',
+      switchId: 'collapseLongUserMessages',
+      hoverCardText: 'com_nav_info_collapse_user_messages',
+    }),
+  },
+  {
     id: 'usernameDisplay',
     tab: CHAT,
     section: 'messages',

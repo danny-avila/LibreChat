@@ -22,7 +22,9 @@ const {
   decrementPendingRequest,
   checkAndIncrementPendingRequest,
   isSteerPreemptSupported,
+  isStopConfirmed,
   toPendingSteer,
+  createMCPRuntimeRequestBody,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -600,6 +602,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     !(await isScheduleLive(scheduleId, job.metadata?.scheduleConfigRevision, {
       automatic: job.metadata?.scheduleManual !== true,
       policy: true,
+      // Re-validate the destination THIS occurrence recorded, not the schedule's
+      // current one: a later fire can have redirected the schedule while this run sat
+      // paused, and its conversation stays where it was filed.
+      scheduledFor,
     }))
   ) {
     let stopped = false;
@@ -608,7 +614,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         expectedCreatedAt: job.createdAt,
         awaitProviderDrain: true,
       });
-      stopped = abortResult != null && abortResult.failureReason == null;
+      // `success` is the authoritative signal, exactly as the abort route gates. A
+      // `success: false` result WITHOUT a failure reason no longer exists — an
+      // unreached job, a replacement, or a lost CAS all report one — so the old
+      // `failureReason == null` test settled the occurrence and pruned the
+      // checkpoint on aborts that were never confirmed.
+      stopped = isStopConfirmed(abortResult);
     } catch (error) {
       logger.warn('[ResumeAgentController] Failed to stop inactive scheduled run', error);
     }
@@ -979,7 +990,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
         });
-        stopped = abortResult != null && abortResult.failureReason == null;
+        // Same authoritative gate as the inactive-schedule path above: only a landed
+        // abort (or an already-terminal, drained generation) may settle this occurrence.
+        stopped = isStopConfirmed(abortResult);
       } catch (error) {
         logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
       }
@@ -1178,6 +1191,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       signal: job.abortController.signal,
       jobCreatedAt: job.createdAt,
       checkpointNamespace,
+      requestBody:
+        job.metadata.mcpRequestBody ??
+        createMCPRuntimeRequestBody({
+          messageId: job.metadata.responseMessageId,
+          conversationId: streamId,
+          parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
+        }),
     });
     client = result.client;
 

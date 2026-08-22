@@ -12,6 +12,7 @@ import type {
   UpdateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { RepoTreeEntry, GitRepoAdapter } from './adapters/types';
 import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
@@ -270,6 +271,8 @@ function createDeps(
         deletedFileCount: input.deletedFileCount ?? 0,
         skippedSkillCount: input.skippedSkillCount ?? 0,
         skippedSkills: input.skippedSkills,
+        skippedFileCount: input.skippedFileCount ?? 0,
+        skippedFiles: input.skippedFiles,
       };
       statuses.push(status);
       return status;
@@ -3416,5 +3419,269 @@ describe('createGitHubSkillSyncRunner', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+/** Stands in for any provider: a flat repository held in memory. */
+function createFakeAdapter(files: Record<string, string>): GitRepoAdapter {
+  const entries: RepoTreeEntry[] = Object.entries(files).map(([path, content]) => ({
+    path,
+    type: 'blob',
+    id: `${path}@1`,
+    size: Buffer.byteLength(content),
+  }));
+  return {
+    resolveCommit: async () => ({ id: 'fake-commit', treeId: 'fake-tree' }),
+    fetchTreeEntries: async (_commit, { pathPrefix }) =>
+      entries.filter((entry) => !pathPrefix || entry.path.startsWith(`${pathPrefix}/`)),
+    fetchFileContent: async (_commit, entry) => Buffer.from(files[entry.path]),
+  };
+}
+
+describe('repository adapter seam', () => {
+  it('publishes skills read through any repository client, with no provider requests', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md':
+            '---\nname: research\ndescription: Research things\n---\nBody',
+          'skills/research/scripts/run.sh': 'echo hi',
+        }),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.fetchFn).not.toHaveBeenCalled();
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'research',
+        sourceMetadata: expect.objectContaining({
+          commitSha: 'fake-commit',
+          skillBlobSha: 'skills/research/SKILL.md@1',
+        }),
+      }),
+    );
+    expect(deps.upsertSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relativePath: 'scripts/run.sh',
+        sourceMetadata: expect.objectContaining({
+          commitSha: 'fake-commit',
+          blobSha: 'skills/research/scripts/run.sh@1',
+        }),
+      }),
+    );
+  });
+
+  it('re-downloads a file only when the adapter reports a new content id', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md':
+            '---\nname: research\ndescription: Research things\n---\nBody',
+          'skills/research/scripts/run.sh': 'echo hi',
+        }),
+      getSkillFileByPath: jest.fn(async () => ({
+        _id: new Types.ObjectId(),
+        skillId: new Types.ObjectId(),
+        relativePath: 'scripts/run.sh',
+        file_id: 'existing-file-id',
+        filename: 'run.sh',
+        filepath: '/uploads/existing-file-id__run.sh',
+        source: 'local',
+        sourceMetadata: { blobSha: 'skills/research/scripts/run.sh@1' },
+        mimeType: 'application/x-sh',
+        bytes: 7,
+        category: 'script' as const,
+        isExecutable: false,
+        author: new Types.ObjectId(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('files whose paths cannot be mirrored', () => {
+  const skillMarkdown = '---\nname: research\ndescription: Research things\n---\nBody';
+
+  it('publishes the skill but reports the run partial and names the dropped file', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md': skillMarkdown,
+          'skills/research/scripts/run.sh': 'echo hi',
+          'skills/research/Skill Card Generator Card': 'card',
+        }),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledTimes(1);
+    expect(deps.upsertSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({ relativePath: 'scripts/run.sh' }),
+    );
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 1,
+        skippedSkillCount: 0,
+        skippedFileCount: 1,
+        skippedFiles: [
+          {
+            path: 'skills/research/Skill Card Generator Card',
+            skillPath: 'skills/research',
+            errorCode: 'SKILL_FILE_PATH_UNSUPPORTED',
+            errorMessage: expect.stringContaining('cannot represent'),
+          },
+        ],
+      }),
+    );
+  });
+
+  it('never mirrors the unsupported file itself', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md': skillMarkdown,
+          'skills/research/Skill Card Generator Card': 'card',
+        }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+  });
+
+  it('does not downgrade a source that mirrored everything it found', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md': skillMarkdown,
+          'skills/research/scripts/run.sh': 'echo hi',
+        }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'succeeded', skippedFileCount: 0 }),
+    );
+  });
+
+  it('does not charge a dropped file to a skill that never published', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/broken/SKILL.md': '---\nname: [\n---\nBody',
+          'skills/broken/bad name': 'x',
+          'skills/research/SKILL.md': skillMarkdown,
+        }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        skippedSkillCount: 1,
+        skippedFileCount: 0,
+      }),
+    );
+  });
+
+  it('keeps the recorded sample for skills that published, not skills that were skipped', async () => {
+    const files: Record<string, string> = {
+      'skills/broken/SKILL.md': '---\nname: [\n---\nBody',
+      'skills/research/SKILL.md': skillMarkdown,
+      'skills/research/bad name': 'x',
+    };
+    for (let i = 0; i < 25; i++) {
+      files[`skills/broken/bad name ${i}`] = 'x';
+    }
+    const deps = createDeps({ createAdapter: () => createFakeAdapter(files) });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1][0] as SkillSyncStatusInput;
+    expect(status.skippedFileCount).toBe(1);
+    expect(status.skippedFiles).toEqual([
+      expect.objectContaining({ path: 'skills/research/bad name', skillPath: 'skills/research' }),
+    ]);
+  });
+
+  it('keeps counting past the recorded sample so the total stays truthful', async () => {
+    const files: Record<string, string> = { 'skills/research/SKILL.md': skillMarkdown };
+    for (let i = 0; i < 25; i++) {
+      files[`skills/research/bad name ${i}`] = 'x';
+    }
+    const deps = createDeps({ createAdapter: () => createFakeAdapter(files) });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1][0] as SkillSyncStatusInput;
+    expect(status.skippedFileCount).toBe(25);
+    expect(status.skippedFiles).toHaveLength(20);
+  });
+
+  it('records an empty skill path for a skill mirrored from the repository root', async () => {
+    const deps = createDeps({
+      getConfig: () => ({
+        github: {
+          enabled: true,
+          intervalMinutes: 60,
+          runOnStartup: false,
+          sources: [
+            {
+              id: 'librechat-skills',
+              owner: 'LibreChat',
+              repo: 'skills',
+              ref: 'main',
+              paths: [''],
+              credentialKey: 'github-skills-prod',
+            },
+          ],
+        },
+      }),
+      createAdapter: () => createFakeAdapter({ 'SKILL.md': skillMarkdown, 'bad name': 'x' }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        skippedFileCount: 1,
+        skippedFiles: [expect.objectContaining({ path: 'bad name', skillPath: '' })],
+      }),
+    );
+  });
+
+  it('attributes a dropped file to the nested skill that owns it', async () => {
+    const deps = createDeps({
+      createAdapter: () =>
+        createFakeAdapter({
+          'skills/research/SKILL.md': skillMarkdown,
+          'skills/research/nested/SKILL.md':
+            '---\nname: nested\ndescription: Nested things\n---\nBody',
+          'skills/research/nested/bad name': 'x',
+        }),
+    });
+
+    await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        skippedFileCount: 1,
+        skippedFiles: [expect.objectContaining({ skillPath: 'skills/research/nested' })],
+      }),
+    );
   });
 });

@@ -34,6 +34,7 @@ jest.mock('@librechat/api', () => ({
   isPendingActionStale: jest.fn(() => false),
   CHILD_THREAD_READ_ONLY_ERROR: 'Child thread is view-only.',
   isSubagentThreadWriteBlocked: jest.fn().mockResolvedValue(false),
+  requireFeedbackEnabled: (req, res, next) => next(),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({}));
@@ -168,5 +169,31 @@ describe('GET /api/messages/:conversationId with real validation middleware', ()
     );
     expect(response.status).toBe(200);
     expect(response.body).toEqual([{ messageId: 'message-1', conversationId: 'convo-1' }]);
+  });
+
+  it('does not return messages for a directly addressed child thread', async () => {
+    getConvoOwnership.mockResolvedValue({
+      conversationId: 'child-convo',
+      user: authenticatedUserId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+    getMessages.mockResolvedValue([{ messageId: 'child-message', conversationId: 'child-convo' }]);
+
+    const response = await request(app).get('/api/messages/child-convo');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: 'Conversation not found' });
+  });
+
+  it('does not expose a directly addressed child thread through HEAD', async () => {
+    getConvoOwnership.mockResolvedValue({
+      conversationId: 'child-convo',
+      user: authenticatedUserId,
+      subagentThread: { parentConversationId: 'parent-convo' },
+    });
+
+    const response = await request(app).head('/api/messages/child-convo');
+
+    expect(response.status).toBe(404);
   });
 });

@@ -1,12 +1,16 @@
 import React from 'react';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { TConversation } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { activeSubagentPanel } from '~/store/subagents';
 import Presentation from './Presentation';
 import store from '~/store';
 
 const mockArtifactPanelLabel = 'Artifact panel loaded';
 const mockOpenArtifactLabel = 'Open Artifact';
+const mockChildPanelLabel = 'Child activity panel loaded';
+const mockOpenChildLabel = 'Open Child Activity';
 
 jest.mock('~/components/Artifacts/Artifacts', () => {
   const artifactPanelLabel = 'Artifact panel loaded';
@@ -21,22 +25,21 @@ jest.mock('~/components/Artifacts/Artifacts', () => {
   };
 });
 
+jest.mock('~/components/Chat/Subagents/SubagentThreadPanel', () => ({
+  __esModule: true,
+  default: () => <aside>{mockChildPanelLabel}</aside>,
+}));
+
 jest.mock('~/components/Chat/Input/Files/DragDropWrapper', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 jest.mock('~/components/SidePanel', () => ({
-  SidePanelGroup: ({
-    artifacts,
-    children,
-  }: {
-    artifacts: React.ReactNode;
-    children: React.ReactNode;
-  }) => (
+  SidePanelGroup: ({ panel, children }: { panel: React.ReactNode; children: React.ReactNode }) => (
     <div>
       {children}
-      {artifacts}
+      {panel}
     </div>
   ),
 }));
@@ -84,6 +87,33 @@ const OpenArtifactPanel = () => {
   );
 };
 
+const OpenSubagentPanel = () => {
+  const setConversation = useSetRecoilState(store.conversationByIndex(0));
+  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const open = () => {
+    setConversation({ conversationId: 'parent-conversation' } as TConversation);
+    setSelection({
+      host: 'conversation',
+      parentConversationId: 'parent-conversation',
+      parentMessageId: 'parent-message',
+      toolCallId: 'tool-call',
+      partIndex: 0,
+      subagentType: 'researcher',
+      initialProgress: 1,
+      isSubmitting: false,
+      durable: {
+        threadId: 'child-thread',
+        taskId: 'background-task',
+      },
+    });
+  };
+  return (
+    <button type="button" onClick={open}>
+      {mockOpenChildLabel}
+    </button>
+  );
+};
+
 describe('Presentation Artifact loading', () => {
   it('loads the Artifact panel bundle only when the panel is opened', async () => {
     const testGlobal = globalThis as typeof globalThis & {
@@ -104,5 +134,23 @@ describe('Presentation Artifact loading', () => {
 
     expect(await screen.findByText(mockArtifactPanelLabel)).toBeInTheDocument();
     expect(testGlobal.presentationArtifactModuleEvaluations).toBe(1);
+  });
+
+  it('uses one panel slot and lets an opened artifact replace child activity', async () => {
+    render(
+      <RecoilRoot>
+        <Presentation>
+          <OpenSubagentPanel />
+          <OpenArtifactPanel />
+        </Presentation>
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));
+    expect(await screen.findByText(mockChildPanelLabel)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: mockOpenArtifactLabel }));
+    expect(await screen.findByText(mockArtifactPanelLabel)).toBeInTheDocument();
+    expect(screen.queryByText(mockChildPanelLabel)).not.toBeInTheDocument();
   });
 });

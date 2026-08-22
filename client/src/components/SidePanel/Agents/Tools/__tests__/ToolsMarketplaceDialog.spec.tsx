@@ -229,7 +229,7 @@ describe('ToolsMarketplaceDialog', () => {
     );
   });
 
-  test('clicking a connected request-scoped zero-tool server attaches its runtime wildcard', () => {
+  test('clicking a ready request-scoped zero-tool server attaches its runtime wildcard', () => {
     mockMcpServersMap = new Map([
       [
         'runtime',
@@ -237,7 +237,8 @@ describe('ToolsMarketplaceDialog', () => {
           serverName: 'runtime',
           tools: [],
           isConfigured: true,
-          isConnected: true,
+          isConnected: false,
+          isReadyForAgent: true,
           requestScoped: true,
           metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
         },
@@ -272,6 +273,7 @@ describe('ToolsMarketplaceDialog', () => {
           tools: [],
           isConfigured: true,
           isConnected: true,
+          isReadyForAgent: true,
           requestScoped: true,
           metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
         },

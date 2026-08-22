@@ -195,6 +195,11 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
+    messageId,
+    conversationId,
+    parentMessageId,
+  }),
 }));
 
 jest.mock('~/server/cleanup', () => ({
@@ -376,6 +381,35 @@ describe('ResumableAgentController resume metadata', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ code: 'INVALID_GENERATION_PREDECESSOR' }),
+      );
+      expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
+      expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['overrideUserMessageId', 'overrideConvoId'])(
+    'rejects a non-string %s before admission',
+    async (field) => {
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Invalid override identity',
+          messageId: 'user-message',
+          clientRequestId: 'override-request',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          [field]: { malformed: true },
+        },
+        config: {},
+      };
+      const res = { json: jest.fn(), status: jest.fn(() => res) };
+
+      await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'INVALID_OVERRIDE_ID' }),
       );
       expect(mockGenerationJobManager.claimGeneration).not.toHaveBeenCalled();
       expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
@@ -695,9 +729,14 @@ describe('ResumableAgentController resume metadata', () => {
           preemptCapable: true,
           agent_id: undefined,
           isTemporary: true,
-          responseMessageId: 'follow-up-user_',
+          responseMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          mcpRequestBody: {
+            messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            conversationId,
+            parentMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          },
           userMessage: {
-            messageId: 'follow-up-user',
+            messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
             parentMessageId: 'original-response',
             conversationId,
             text: 'Check Google Workspace availability.',
@@ -856,9 +895,14 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       }),
     );
+    // `scheduledFor` identifies the OCCURRENCE, matching the resume path: the run row
+    // is reserved before this loopback request is dispatched, so a pin introduced while
+    // it sat queued must not be validated in place of the destination the envelope was
+    // already built with.
     expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 7, {
       automatic: true,
       policy: true,
+      scheduledFor: '2026-08-17T12:00:00.000Z',
     });
     expect(initializeClient).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(409);
@@ -1018,6 +1062,89 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('preallocates response-scoped MCP identities before native Agent initialization', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Use request-scoped headers.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    expect(initializeClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestBody: {
+          messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          conversationId: 'conversation-123',
+          parentMessageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        },
+      }),
+    );
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(jobOptions.initialMetadata.responseMessageId).toBe(requestBody.messageId);
+    expect(jobOptions.initialMetadata.userMessage.messageId).toBe(requestBody.parentMessageId);
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+    expect(requestBody.messageId).not.toBe(req.body.messageId);
+  });
+
+  it('uses the effective overridden conversation in the MCP request body', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Continue in the overridden conversation.',
+        messageId: 'incoming-client-message',
+        parentMessageId: 'previous-response',
+        conversationId: 'source-conversation',
+        overrideConvoId: 'overridden-conversation__0',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(requestBody.conversationId).toBe('overridden-conversation');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+  });
+
+  it('preallocates the replacement response as the MCP parent for edited content', async () => {
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop after MCP discovery'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Edited response text.',
+        messageId: 'existing-user-message',
+        responseMessageId: 'existing-response-message',
+        parentMessageId: 'previous-response',
+        overrideParentMessageId: 'existing-user-message',
+        editedContent: { index: 0, type: 'text', text: 'Edited response text.' },
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+
+    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+    const [{ requestBody }] = initializeClient.mock.calls[0];
+    const jobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(requestBody.messageId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requestBody.parentMessageId).toBe(requestBody.messageId);
+    expect(requestBody.messageId).not.toBe('existing-response-message');
+    expect(jobOptions.initialMetadata.mcpRequestBody).toBe(requestBody);
+  });
+
   it('stores model spec icon fallbacks and agent ids in early resume metadata', async () => {
     const conversationId = 'conversation-123';
     const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
@@ -1070,6 +1197,48 @@ describe('ResumableAgentController resume metadata', () => {
           model: 'agent_resume_spec',
           agent_id: 'agent_resume_spec',
           isTemporary: true,
+        }),
+      }),
+    );
+  });
+
+  it('records regeneration ownership for exact-ID resume reconstruction', async () => {
+    const conversationId = 'conversation-123';
+    const initializeClient = jest.fn().mockRejectedValue(new Error('stop before tool loading'));
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Regenerate the edited response.',
+        messageId: 'user-message',
+        parentMessageId: 'parent-message',
+        responseMessageId: 'edited-response',
+        isRegenerate: true,
+        conversationId,
+        endpointOption: {
+          endpoint: 'agents',
+          modelOptions: { model: 'gpt-4.1' },
+        },
+      },
+      config: {},
+    };
+    const res = {
+      headersSent: true,
+      json: jest.fn(() => {
+        res.headersSent = true;
+      }),
+      status: jest.fn(() => res),
+    };
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          responseMessageId: 'edited-response',
+          isRegenerate: true,
         }),
       }),
     );

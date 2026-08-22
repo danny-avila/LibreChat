@@ -1,41 +1,30 @@
-import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
-import { ContentTypes, EModelEndpoint } from 'librechat-data-provider';
-import { ArrowDown, ChevronRight, Maximize2, Minimize2, Users } from 'lucide-react';
-import {
-  Button,
-  OGDialog,
-  OGDialogTitle,
-  OGDialogContent,
-  OGDialogDescription,
-} from '@librechat/client';
+import { useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
+import { ChevronRight, Users } from 'lucide-react';
+import { EModelEndpoint } from 'librechat-data-provider';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type {
-  Agents,
+  PartMetadata,
   TAttachment,
   TMessage,
   TMessageContentParts,
-  PartMetadata,
 } from 'librechat-data-provider';
-import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { SubagentTickerLine } from '~/utils/subagentContent';
-import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
-import SubagentThreadLink from '~/components/Chat/SubagentThreadLink';
-import { cn, groupSequentialToolCalls, parseToolName } from '~/utils';
-import Container from '~/components/Chat/Messages/Content/Container';
-import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
+import store, {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store';
+import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
 import { MessageContext } from '~/Providers/MessageContext';
+import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
-import { subagentProgressByToolCallId } from '~/store';
 import { useAgentsMapContext } from '~/Providers';
 import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
+import { cn, parseToolName } from '~/utils';
 import { useLocalize } from '~/hooks';
-import Reasoning from './Reasoning';
-import Text from './Text';
 
 interface SubagentCallProps {
   toolCallId: string;
@@ -70,11 +59,6 @@ export const SUBAGENT_TICKER_THROTTLE_MS = 400;
  *  tokens appear right away, and throttling only kicks in once the
  *  preview is long enough to "fill the container". */
 const TICKER_PASSTHROUGH_CHARS = 120;
-/** Distance from the dialog scroller's bottom that still counts as
- *  "following along". Inside this window new content auto-scrolls; past
- *  it we pause so the user can read. Slightly looser than the main
- *  messages view since the dialog is a smaller scroller. */
-const DIALOG_AT_BOTTOM_THRESHOLD_PX = 120;
 
 /**
  * Trailing-edge throttle. Forwards `value` at most once per `intervalMs`
@@ -164,13 +148,13 @@ function useThrottledValue<T>(value: T, intervalMs: number, enabled: boolean): T
  * doing right now" ticker. The collapsed view shows short, user-readable
  * status lines — streaming text/reasoning previews plus tool-call lifecycle
  * markers — built from the `SubagentUpdateEvent` stream. Clicking opens a
- * dialog that renders the child's aggregated content parts through the same
- * `<Part />` pipeline the main conversation uses, so tool calls, reasoning
- * blocks, and the final response all look like a regular assistant message.
+ * artifacts-style panel that renders the child's aggregated activity through
+ * the shared child-activity module, so every subagent mode uses one deep view.
  *
  * Progress is sourced from the `subagentProgressByToolCallId` Recoil atom
  * family, populated by `useStepHandler` as `ON_SUBAGENT_UPDATE` SSE
- * envelopes arrive. The atom is keyed by the parent's `tool_call_id`.
+ * envelopes arrive. The atom is keyed by the parent message and
+ * `tool_call_id`, since providers may reuse tool IDs across turns.
  */
 export default function SubagentCall({
   toolCallId,
@@ -184,14 +168,24 @@ export default function SubagentCall({
   hideAttachments = false,
 }: SubagentCallProps) {
   const localize = useLocalize();
-  const progress = useRecoilValue(subagentProgressByToolCallId(toolCallId));
+  const { isSharedConvo, shareId } = useShareContext();
+  const parentMessageContext = useContext(MessageContext);
+  const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
+  const partIndex = parentMessageContext.partIndex ?? 0;
+  const progress = useRecoilValue(
+    subagentProgressByToolCallId(subagentProgressKey(parentMessageId, toolCallId, partIndex)),
+  );
+  const setSelectedSubagent = useSetRecoilState(activeSubagentPanel);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
+  const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const agentsMap = useAgentsMapContext();
-  const [open, setOpen] = useState(false);
-  const [promptExpanded, setPromptExpanded] = useState(false);
   const backgroundHandle = useMemo(
     () => parseSubagentBackgroundHandle(output, args),
     [output, args],
   );
+  const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
+  const canOpenDurablePanel =
+    isSharedConvo !== true && backgroundHandle != null && parentConversationId !== '';
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
@@ -234,29 +228,7 @@ export default function SubagentCall({
     : initialProgress >= 1 || progress?.status === 'stop' || hasError;
   const cancelled = isClosed ? runStepStatus === 'cancelled' : !isSubmitting && !finished;
   const running = !finished && !cancelled;
-
-  /**
-   * Content parts for the dialog. Preference order:
-   *
-   *   1. **Persisted** `subagent_content` on the parent `tool_call`
-   *      when available. Written by the backend at message-save time
-   *      and refreshed on sync / reconnect — the canonical record of
-   *      the run. After a disconnect the client's live atom may have
-   *      missed events, so trusting `persistedContent` prevents the
-   *      dialog from showing a stale/partial view of a completed
-   *      subagent.
-   *   2. **Live atom** incrementally built by `foldSubagentEvent` as
-   *      each `ON_SUBAGENT_UPDATE` arrives. Used while the subagent
-   *      is mid-run (before the parent message saves, the persisted
-   *      snapshot is empty) and as a fallback for older runs recorded
-   *      before the persistence path landed.
-   */
-  const liveParts = progress?.contentParts as TMessageContentParts[] | undefined;
-  const contentParts = useMemo<TMessageContentParts[]>(() => {
-    if (persistedContent && persistedContent.length > 0) return persistedContent;
-    if (liveParts && liveParts.length > 0) return liveParts;
-    return [];
-  }, [liveParts, persistedContent]);
+  const detachedStatusUnknown = backgroundHandle != null && progress == null && !isSubmitting;
 
   /** Last `TICKER_MAX_LINES` lines from the atom's incrementally-built
    *  ticker state, so history isn't lost to any event trimming. */
@@ -297,6 +269,7 @@ export default function SubagentCall({
   const getHeaderText = () => {
     if (hasError) return localize('com_ui_subagent_errored');
     if (cancelled) return localize('com_ui_subagent_cancelled');
+    if (detachedStatusUnknown) return localize('com_ui_subagent_activity');
     if (intent != null) return intent;
     if (running) return localize('com_ui_subagent_running');
     return localize('com_ui_subagent_complete');
@@ -308,200 +281,104 @@ export default function SubagentCall({
    *  the name isn't resolvable (agent map miss). */
   const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
-  /**
-   * Minimal `MessageContext` for the dialog's `<Part />` tree. Subagent
-   * content rendering needs the same context the main conversation uses
-   * (reasoning expand state, latest-message cursor, etc.) — synthesizing
-   * a scoped context lets us reuse the real part renderers without
-   * pulling the full `ChatView` / `MessagesView` tree into the dialog.
-   */
-  const dialogMessageContext = useMemo(
+  const canOpenDetails = useMemo(
+    () =>
+      isSharedConvo !== true ||
+      adaptLivePersistedActivity({
+        title: '',
+        progress: null,
+        persistedContent,
+        legacyOutput: backgroundHandle == null ? output : undefined,
+        initialProgress,
+        isSubmitting: false,
+        runStepStatus,
+        approvalVisibility: 'hidden',
+      }).items.length > 0,
+    [backgroundHandle, initialProgress, isSharedConvo, output, persistedContent, runStepStatus],
+  );
+
+  const panelSelection = useMemo(
     () => ({
-      messageId: `subagent-${toolCallId}`,
-      isExpanded: true,
-      isSubmitting: running,
-      isLatestMessage: running,
-      conversationId: null,
+      host: isSharedConvo === true ? ('share' as const) : ('conversation' as const),
+      ...(isSharedConvo === true && shareId != null ? { shareId } : {}),
+      parentConversationId,
+      parentMessageId,
+      toolCallId,
+      partIndex,
+      subagentType,
+      ...(prompt == null ? {} : { prompt }),
+      ...(backgroundHandle == null ? { legacyOutput: output } : {}),
+      ...(persistedContent == null ? {} : { persistedContent }),
+      initialProgress,
+      isSubmitting,
+      ...(runStepStatus == null ? {} : { runStepStatus }),
+      ...(backgroundHandle != null && canOpenDurablePanel
+        ? {
+            durable: {
+              threadId: backgroundHandle.subagent_thread_id,
+              taskId: backgroundHandle.background_task_id,
+            },
+          }
+        : {}),
     }),
-    [toolCallId, running],
+    [
+      backgroundHandle,
+      canOpenDurablePanel,
+      initialProgress,
+      isSharedConvo,
+      isSubmitting,
+      output,
+      parentConversationId,
+      parentMessageId,
+      partIndex,
+      persistedContent,
+      prompt,
+      runStepStatus,
+      shareId,
+      subagentType,
+      toolCallId,
+    ],
   );
 
-  const lastPartIndex = contentParts.length - 1;
-
-  /**
-   * Dialog renderer used by {@link ToolCallGroup} (for grouped tool_call
-   * batches) and by the per-part map (for single parts). Mirrors the
-   * main `<Part />` dispatch table but stays scoped to the three types
-   * a subagent run emits — avoiding the import cycle that would come
-   * from routing through `Parts/index`.
-   */
-  const renderDialogPart = useCallback(
-    (
-      part: TMessageContentParts,
-      idx: number,
-      isLastPart: boolean,
-      onToolExpand?: () => void,
-    ): JSX.Element | null => {
-      return (
-        <SubagentDialogPart
-          key={`${toolCallId}-part-${idx}`}
-          part={part}
-          isSubmitting={running}
-          showCursor={running && isLastPart}
-          isLast={isLastPart}
-          onToolExpand={onToolExpand}
-        />
-      );
-    },
-    [toolCallId, running],
-  );
-
-  /**
-   * Apply the same consecutive-tool-call batching the main `ContentParts`
-   * uses so the dialog renders with visual parity: grouped tools collapse
-   * into a single `Used N tools` header, single parts wrap in `Container`
-   * for the same `gap-3` flex column spacing the main conversation has.
-   */
-  const groupedParts = useMemo(() => {
-    const withIdx: PartWithIndex[] = contentParts.map((part, idx) => ({ part, idx }));
-    return groupSequentialToolCalls(withIdx);
-  }, [contentParts]);
-
-  /**
-   * Auto-scroll the dialog's content area as new parts / delta chunks
-   * stream in. Same pattern as `MessagesView` but with a dialog-tuned
-   * threshold — the user can scroll up to read back without auto-scroll
-   * snatching control. Explicit "jump to bottom" button lets them resume
-   * following along without having to scroll all the way down.
-   */
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
-
-  /** React `onScroll` prop instead of manual `addEventListener` so the
-   *  handler attaches as part of DOM commit — no race with Radix's
-   *  portal-mount timing that would leave `scrollRef.current` null when
-   *  the effect runs and silently skip the listener. */
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const el = event.currentTarget;
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
-  }, []);
-
-  /** Reset to the compact prompt preview every time the dialog closes. */
   useEffect(() => {
-    if (open) return;
-    setPromptExpanded(false);
-  }, [open]);
-
-  /** Start at the top every time the dialog opens so the prompt reads as the
-   *  first item in the scrollable trace instead of a fixed header. */
-  useEffect(() => {
-    if (!open) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = 0;
-    const distance = el.scrollHeight - el.clientHeight;
-    setIsAtBottom(distance <= DIALOG_AT_BOTTOM_THRESHOLD_PX);
-  }, [open]);
-
-  /** Keep the view pinned to the bottom while the user is at/near it —
-   *  including during delta streams that grow the last TEXT/THINK part
-   *  without changing `contentParts.length`. A `ResizeObserver` on the
-   *  inner content div catches every height change, whether structural
-   *  (new tool call) or incremental (writing text grows in-place), so
-   *  auto-scroll doesn't desync just because tokens are piling into an
-   *  existing part. */
-  useEffect(() => {
-    if (!open) return;
-    const scrollEl = scrollRef.current;
-    const contentEl = contentRef.current;
-    if (!scrollEl || !contentEl) return;
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      if (!isAtBottom) return;
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-    });
-    observer.observe(contentEl);
-    return () => observer.disconnect();
-  }, [open, isAtBottom]);
-
-  const scrollDialogToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    setIsAtBottom(true);
-  }, []);
-
-  const renderDialogBody = () => {
-    if (contentParts.length > 0) {
-      return (
-        <MessageContext.Provider value={dialogMessageContext}>
-          {groupedParts.map((group) => {
-            if (group.type === 'single') {
-              const { part, idx } = group.part;
-              /** Per-type dispatch handles wrapping: TEXT goes
-               *  through `Container`, THINK/TOOL_CALL render
-               *  directly so their own wrappers set the width
-               *  and spacing. */
-              return renderDialogPart(part, idx, idx === lastPartIndex);
-            }
-            /** Consecutive tool_calls (2+) collapse into a
-             *  `Used N tools` group — same behavior as the main
-             *  message view. */
-            return (
-              <ToolCallGroup
-                key={`${toolCallId}-group-${group.parts[0].idx}`}
-                parts={group.parts}
-                isSubmitting={running}
-                isLast={group.parts.some((p) => p.idx === lastPartIndex)}
-                renderPart={renderDialogPart}
-                lastContentIdx={lastPartIndex}
-              />
-            );
-          })}
-        </MessageContext.Provider>
-      );
-    }
-    if (output && backgroundHandle == null) {
-      /** Fallback: no aggregated content parts but the backend
-       *  wrote a final tool_call output. Happens for older
-       *  subagent runs recorded before the event forwarder
-       *  existed. Route through the same leaf renderer so
-       *  markdown renders properly. */
-      return (
-        <MessageContext.Provider value={dialogMessageContext}>
-          <SubagentDialogPart
-            part={
-              {
-                type: ContentTypes.TEXT,
-                text: output,
-              } as unknown as TMessageContentParts
-            }
-            isSubmitting={false}
-            showCursor={false}
-            isLast
-          />
-        </MessageContext.Provider>
-      );
-    }
-    return (
-      <div className="text-sm italic text-text-secondary">
-        {running
-          ? localize('com_ui_subagent_no_result_yet')
-          : localize('com_ui_subagent_empty_result')}
-      </div>
+    setSelectedSubagent((current) =>
+      current?.parentMessageId === parentMessageId &&
+      current.toolCallId === toolCallId &&
+      current.partIndex === partIndex
+        ? panelSelection
+        : current,
     );
-  };
+  }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
+
+  const openDetails = useCallback(() => {
+    if (!canOpenDetails) return;
+    resetCurrentArtifactId();
+    setArtifactsVisible(false);
+    setSelectedSubagent(panelSelection);
+  }, [
+    canOpenDetails,
+    panelSelection,
+    resetCurrentArtifactId,
+    setArtifactsVisible,
+    setSelectedSubagent,
+  ]);
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDetails}
+        disabled={!canOpenDetails}
+        data-subagent-thread={
+          canOpenDurablePanel ? backgroundHandle?.subagent_thread_id : undefined
+        }
+        data-subagent-tool-call={toolCallId}
+        data-subagent-parent-message={parentMessageId}
+        data-subagent-part-index={partIndex}
         className={cn(
-          'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
-          running && 'animate-pulse-slow',
+          'my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition',
+          canOpenDetails ? 'group hover:bg-surface-tertiary' : 'cursor-default opacity-80',
+          running && !detachedStatusUnknown && 'animate-pulse-slow',
         )}
         aria-label={headerText}
       >
@@ -540,11 +417,13 @@ export default function SubagentCall({
           ) : (
             <span className="flex-1" />
           )}
-          <ChevronRight
-            size={14}
-            className="shrink-0 text-text-secondary transition group-hover:translate-x-0.5"
-            aria-hidden="true"
-          />
+          {canOpenDetails && (
+            <ChevronRight
+              size={14}
+              className="shrink-0 text-text-secondary transition group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
+          )}
         </div>
 
         <ul className="w-full space-y-0.5 pl-5 font-mono text-xs text-text-secondary">
@@ -556,77 +435,6 @@ export default function SubagentCall({
           ))}
         </ul>
       </button>
-
-      <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogContent
-          className={cn(
-            'flex h-[min(85vh,56rem)] flex-col overflow-hidden p-0',
-            /** Tighter inter-row gap than the dialog default (`gap-4`)
-             *  — title + description + scroll area read as one block
-             *  rather than three separated panels. */
-            'gap-0',
-            /** Responsive width: narrow on phones, scales up to ~80rem on
-             *  widescreens. Viewport-relative max keeps margin on the
-             *  edges while still using real estate on laptops / large
-             *  displays — noticeably wider than the default dialog. */
-            'w-[min(96vw,80rem)] max-w-[min(96vw,80rem)]',
-          )}
-        >
-          <div className="shrink-0 px-6 pb-3 pr-14 pt-6">
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <OGDialogTitle>
-                {isSelfSpawn
-                  ? localize('com_ui_subagent_dialog_title_self')
-                  : localize('com_ui_subagent_dialog_title', { 0: subagentType })}
-              </OGDialogTitle>
-              {backgroundHandle != null && (
-                <SubagentThreadLink
-                  threadId={backgroundHandle.subagent_thread_id}
-                  relation="child"
-                />
-              )}
-            </div>
-            <OGDialogDescription className="sr-only">
-              {localize('com_ui_subagent_dialog_description')}
-            </OGDialogDescription>
-          </div>
-
-          <div className="relative min-h-0 flex-1 border-t border-border-light bg-surface-primary">
-            {!isAtBottom && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={scrollDialogToBottom}
-                aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-                className="absolute bottom-3 right-4 z-10 h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md transition hover:bg-surface-tertiary hover:text-text-primary"
-              >
-                <ArrowDown size={16} aria-hidden="true" />
-              </Button>
-            )}
-            <div
-              ref={scrollRef}
-              onScroll={handleScroll}
-              /** The prompt and activity trace share one scroller so expanded
-               *  prompt content participates in the same reading flow as the
-               *  subagent output instead of reserving fixed dialog space.
-               *  Part-specific wrappers (`Container`, `Reasoning`,
-               *  `ToolCallGroup`) handle their own widths and spacing. */
-              className="h-full overflow-y-auto px-3 py-3"
-            >
-              <div ref={contentRef} className="flex max-w-full flex-grow flex-col gap-0">
-                {prompt ? (
-                  <SubagentPrompt
-                    prompt={prompt}
-                    expanded={promptExpanded}
-                    onToggle={() => setPromptExpanded((expanded) => !expanded)}
-                  />
-                ) : null}
-                {renderDialogBody()}
-              </div>
-            </div>
-          </div>
-        </OGDialogContent>
-      </OGDialog>
 
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
@@ -663,68 +471,6 @@ function tryPrompt(args: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function SubagentPrompt({
-  prompt,
-  expanded,
-  onToggle,
-}: {
-  prompt: string;
-  expanded: boolean;
-  onToggle: () => void;
-}): JSX.Element {
-  const localize = useLocalize();
-  const headingId = useId();
-  const contentId = useId();
-  const toggleLabel = expanded ? localize('com_ui_collapse') : localize('com_ui_expand');
-
-  return (
-    <section
-      aria-labelledby={headingId}
-      className="mb-3 shrink-0 overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-text-primary"
-    >
-      <div className="flex min-h-[2.75rem] items-center justify-between gap-3 border-b border-border-light px-3 py-2">
-        <h3 id={headingId} className="text-sm font-medium text-text-primary">
-          {localize('com_ui_prompt')}
-        </h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onToggle}
-          aria-controls={contentId}
-          aria-expanded={expanded}
-          aria-label={toggleLabel}
-          title={toggleLabel}
-          className="h-8 gap-1.5 rounded-md px-2 text-xs font-medium text-text-secondary transition hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-text-primary"
-        >
-          {expanded ? (
-            <Minimize2 size={14} aria-hidden="true" />
-          ) : (
-            <Maximize2 size={14} aria-hidden="true" />
-          )}
-          <span className="hidden sm:inline">{toggleLabel}</span>
-        </Button>
-      </div>
-      <div
-        id={contentId}
-        className={cn(
-          'relative min-w-0 px-4 py-3',
-          expanded ? 'overflow-visible' : 'max-h-32 overflow-hidden',
-        )}
-      >
-        <div className="markdown prose prose-sm message-content light dark:prose-invert w-full max-w-none break-words text-text-primary">
-          <MarkdownLite content={prompt} codeExecution={false} />
-        </div>
-        {!expanded && (
-          <div
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface-secondary to-transparent"
-            aria-hidden="true"
-          />
-        )}
-      </div>
-    </section>
-  );
 }
 
 /** Stable key for a ticker line — helps React reuse the DOM node across
@@ -861,83 +607,4 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
       <span className="min-w-0 flex-1 truncate">{line.message ?? ''}</span>
     </li>
   );
-}
-
-/**
- * Per-part renderer for the dialog. Mirrors the wrapper choices `<Part>`
- * makes in regular messages so subagent content matches the visual width
- * and spacing the user already knows: TEXT wraps in `Container` (which
- * provides `gap-3` column spacing and the `mt-5` sibling margin), while
- * THINK and TOOL_CALL render bare — their own wrappers (`Reasoning`'s
- * `mb-2 pb-2 pt-2` box, `ToolCall`'s own margins) control their layout
- * and full-column width. Staying inline (vs. calling `<Part>`) avoids
- * the `Parts/index.ts → SubagentCall → Part` import cycle and keeps us
- * from accidentally rendering a nested subagent dialog.
- */
-function SubagentDialogPart({
-  part,
-  isSubmitting,
-  showCursor,
-  isLast,
-  onToolExpand,
-}: {
-  part: TMessageContentParts;
-  isSubmitting: boolean;
-  showCursor: boolean;
-  isLast: boolean;
-  onToolExpand?: () => void;
-}): JSX.Element | null {
-  if (part.type === ContentTypes.TEXT) {
-    const text = (part as { text: string }).text;
-    return (
-      <Container>
-        <Text text={text} showCursor={showCursor} isCreatedByUser={false} />
-      </Container>
-    );
-  }
-  if (part.type === ContentTypes.THINK) {
-    const think = (part as { think: string }).think;
-    return <Reasoning reasoning={think} isLast={isLast} />;
-  }
-  if (part.type === ContentTypes.TOOL_CALL) {
-    const tc = (
-      part as {
-        [ContentTypes.TOOL_CALL]?: {
-          id?: string;
-          args?: string | Record<string, unknown>;
-          output?: string;
-          name?: string;
-          progress?: number;
-          approval?: Agents.ToolCall['approval'];
-        };
-      }
-    )[ContentTypes.TOOL_CALL];
-    if (!tc) return null;
-    const toolCall = (
-      <ToolCall
-        args={tc.args ?? ''}
-        output={tc.output ?? ''}
-        initialProgress={tc.progress ?? 0.1}
-        isSubmitting={isSubmitting}
-        isLast={isLast}
-        toolCallId={tc.id}
-        name={tc.name ?? ''}
-        onExpand={onToolExpand}
-      />
-    );
-    // Surface approve/reject/edit controls for a tool paused INSIDE this subagent —
-    // its tool_call lives in subagent_content, not as a top-level message part, so the
-    // top-level Part.tsx render never sees it. Only while unresolved (no output yet).
-    // The dialog portals but React context still flows, so ToolApproval resolves here.
-    if (tc.approval != null && (tc.output?.length ?? 0) === 0) {
-      return (
-        <>
-          {toolCall}
-          <ToolApproval approval={tc.approval} toolCallId={tc.id ?? ''} args={tc.args} />
-        </>
-      );
-    }
-    return toolCall;
-  }
-  return null;
 }

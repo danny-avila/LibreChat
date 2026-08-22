@@ -13,6 +13,7 @@ const LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  requireProject: false,
 };
 
 function makeSchedule(overrides: Partial<FireableSchedule> = {}): FireableSchedule {

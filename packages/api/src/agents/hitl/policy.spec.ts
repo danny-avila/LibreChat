@@ -2,6 +2,9 @@ import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import {
   resolveToolApprovalPolicy,
   isHITLEnabled,
+  healToolApprovalPolicy,
+  collectAliasMatcherNames,
+  buildAliasMatcherPattern,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
@@ -771,5 +774,89 @@ describe('exemptAskUserQuestionFromApproval', () => {
   });
   it('passes undefined through', () => {
     expect(exemptAskUserQuestionFromApproval(undefined, NAME)).toBeUndefined();
+  });
+});
+
+describe('healToolApprovalPolicy', () => {
+  const aliases = [
+    { name: 'delete_thing_mcp_acme', aliasName: 'acme_delete_thing_mcp_acme' },
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+  ];
+
+  it('appends current names to lists whose patterns match only the legacy spelling', () => {
+    /** Admin YAML written against upstream naming must keep applying — a
+     *  non-matching deny fails OPEN. */
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['acme_delete_*'], ask: ['acme_search_mcp_acme'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['acme_delete_*', 'delete_thing_mcp_acme']);
+    expect(healed?.ask).toEqual(['acme_search_mcp_acme', 'search_mcp_acme']);
+  });
+
+  it('heals list-level so allow semantics are preserved, not tightened', () => {
+    const healed = healToolApprovalPolicy({ enabled: true, allow: ['acme_search_*'] }, aliases);
+
+    expect(healed?.allow).toEqual(['acme_search_*', 'search_mcp_acme']);
+  });
+
+  it('skips names the list already matches and leaves non-matching lists untouched', () => {
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['*_mcp_acme'], allow: ['unrelated_tool'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['*_mcp_acme']);
+    expect(healed?.allow).toEqual(['unrelated_tool']);
+  });
+
+  it('passes through without aliases or policy', () => {
+    expect(healToolApprovalPolicy(undefined, aliases)).toBeUndefined();
+    const policy: TToolApprovalPolicy = { enabled: true, deny: ['x'] };
+    expect(healToolApprovalPolicy(policy, [])).toBe(policy);
+  });
+});
+
+describe('healToolApprovalPolicy reverse direction', () => {
+  it('appends a legacy-named instance when the pattern targets the current catalog name', () => {
+    /** An unedited agent retains the pre-strip instance name — a deny written
+     *  against the current catalog name must still reach it. */
+    const aliases = [{ name: 'acme_search_mcp_acme', aliasName: 'search_mcp_acme' }];
+    const healed = healToolApprovalPolicy(
+      { enabled: true, mode: 'bypass', deny: ['search_mcp_acme'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['search_mcp_acme', 'acme_search_mcp_acme']);
+  });
+});
+
+describe('collectAliasMatcherNames', () => {
+  const aliases = [
+    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
+    { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
+  ];
+
+  it('returns names whose alias matches the regex while the name does not', () => {
+    expect(collectAliasMatcherNames('^acme_search_mcp_acme$', aliases)).toEqual([
+      'search_mcp_acme',
+    ]);
+    expect(collectAliasMatcherNames('^list_mcp_acme$', aliases)).toEqual(['acme_list_mcp_acme']);
+  });
+
+  it('skips names the matcher already matches and invalid patterns', () => {
+    expect(collectAliasMatcherNames('_mcp_acme$', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames('(unclosed', aliases)).toEqual([]);
+    expect(collectAliasMatcherNames(undefined, aliases)).toEqual([]);
+  });
+
+  it('builds an anchored exact-name pattern with escaped names', () => {
+    const pattern = buildAliasMatcherPattern(['a.b_mcp_acme', 'c_mcp_acme']);
+    const regex = new RegExp(pattern);
+    expect(regex.test('a.b_mcp_acme')).toBe(true);
+    expect(regex.test('axb_mcp_acme')).toBe(false);
+    expect(regex.test('c_mcp_acme')).toBe(true);
+    expect(regex.test('xc_mcp_acme')).toBe(false);
   });
 });

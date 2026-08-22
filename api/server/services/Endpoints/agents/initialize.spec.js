@@ -617,7 +617,7 @@ describe('initializeClient — subagent loading', () => {
     agentClientArgs = undefined;
     capturedToolExecuteOptions = undefined;
     mockLoadToolsForExecution.mockReset();
-    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [] });
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
 
     testUser = await User.create({
       email: 'subagent@example.com',
@@ -739,6 +739,32 @@ describe('initializeClient — subagent loading', () => {
       userId: testUser._id.toString(),
       parentConversationId: 'conv_sub',
     });
+  });
+
+  it('uses one normalized MCP body for discovery, deferred execution, and AgentClient', async () => {
+    const requestBody = Object.freeze({
+      messageId: 'response-message',
+      conversationId: 'conv_sub',
+      parentMessageId: 'user-message',
+    });
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    mockLoadToolsForExecution.mockResolvedValue({ loadedTools: [], configurable: {} });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+      requestBody,
+    });
+
+    expect(mockInitializeAgent.mock.calls[0][0].requestBody).toBe(requestBody);
+    expect(agentClientArgs.mcpRequestBody).toBe(requestBody);
+
+    await capturedToolExecuteOptions.loadTools([], PRIMARY_ID);
+    expect(mockLoadToolsForExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ requestBody }),
+    );
   });
 
   it('keeps an existing detached task controllable after subagent config is disabled', async () => {

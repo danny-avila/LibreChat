@@ -32,6 +32,7 @@ function makeService(base: Cfg, merged: Cfg = base) {
     upsertBalance: jest.fn(async () => null),
     initializeNullBalance: jest.fn(async () => null),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
+    getChatProject: jest.fn(async () => ({ _id: 'proj-1' })),
     isUserDeleting: jest.fn(async () => false),
     enqueueAgentTrigger: jest.fn(async () => undefined),
     getTriggerDelivery: jest.fn(async () => null),
@@ -46,6 +47,7 @@ const limits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  requireProject: false,
 };
 
 describe('v1 experimental gate, asserted at real entry points', () => {
@@ -156,6 +158,7 @@ describe('v1 experimental gate, asserted at real entry points', () => {
         upsertBalance: jest.fn(),
         initializeNullBalance: jest.fn(),
         resolveAgentFireAccess: jest.fn(),
+        getChatProject: jest.fn(),
       } as unknown as SchedulesServiceDeps),
     ).toThrow(/isUserDeleting/);
   });

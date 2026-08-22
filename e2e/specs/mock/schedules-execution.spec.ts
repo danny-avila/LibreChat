@@ -226,7 +226,13 @@ test.describe('scheduled chat execution', () => {
     const renamed = `${name} edited`;
     await editDialog.locator('#schedule-name').fill(renamed);
     await editDialog.getByRole('radio', { name: 'Daily' }).click();
-    await editDialog.getByRole('button', { name: 'Save' }).click();
+    // The dialog does not scroll at `md` and up, so its content has to fit the
+    // viewport: a field that adds a ROW pushes Save out of a 720px-tall window with
+    // no way to scroll it back. Asserted explicitly because the bare click below
+    // reports that as a 2-minute timeout on a visible, enabled button.
+    const save = editDialog.getByRole('button', { name: 'Save' });
+    await expect(save).toBeInViewport();
+    await save.click();
 
     await page.reload();
     await openSchedulesPanel(page);

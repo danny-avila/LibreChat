@@ -2794,11 +2794,15 @@ describe('Share Methods', () => {
       expect(result?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
     });
 
-    test('does not snapshot transient text-source files', async () => {
+    test('snapshots database-backed text-source files without embedding their text', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
-      const textId = await createFile(userId, { source: 'text' });
+      const textId = await createFile(userId, {
+        source: 'text',
+        filepath: 'mistral_ocr',
+        text: 'Extracted text',
+      });
       await Message.create({
         messageId: `msg_${nanoid()}`,
         conversationId,
@@ -2810,7 +2814,20 @@ describe('Share Methods', () => {
 
       const result = await shareMethods.createSharedLink(userId, conversationId);
       const saved = await SharedLink.findOne({ shareId: result.shareId }).lean();
-      expect(saved?.fileSnapshots ?? []).toHaveLength(0);
+      expect(saved?.fileSnapshots).toHaveLength(1);
+      expect(saved?.fileSnapshots?.[0]).toMatchObject({
+        file_id: textId,
+        source: 'text',
+        filepath: 'mistral_ocr',
+      });
+      expect(saved?.fileSnapshots?.[0]).not.toHaveProperty('text');
+
+      const shared = await shareMethods.getSharedMessages(result.shareId);
+      expect(shared?.messages[0].files?.[0]).toMatchObject({
+        file_id: textId,
+        source: 'text',
+        filepath: `/api/share/${result.shareId}/files/${textId}`,
+      });
     });
 
     test('updateSharedLink clears snapshots when snapshotFiles is disabled', async () => {

@@ -47,7 +47,9 @@ import { createConversationTagMethods, type ConversationTagMethods } from './con
 import {
   createMessageMethods,
   CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   type MessageMethods,
+  type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
 } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
@@ -145,7 +147,7 @@ export {
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
-export { CLIENT_MESSAGE_SELECT };
+export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
   partitionIssues,
   validateSkillName,
@@ -376,6 +378,7 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
   ConversationMethods,
   ChatProjectMethods,

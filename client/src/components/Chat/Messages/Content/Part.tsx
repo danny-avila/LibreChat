@@ -255,6 +255,7 @@ const Part = memo(function Part({
               isSubmitting={isSubmitting}
               showCursor={showCursor}
               failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
+              onExpand={onToolExpand}
             />
           );
         } else if (toolCall.name === 'skill') {

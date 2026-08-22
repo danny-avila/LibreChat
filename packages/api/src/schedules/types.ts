@@ -15,6 +15,13 @@ export interface ScheduleLimits {
   minIntervalMinutes: number;
   autoDisableAfterFailures: number;
   fireConcurrency: number;
+  /** Every schedule must be filed under a chat project. A pinned `projectId`
+   *  implies this, so callers only ever have to read one flag. */
+  requireProject: boolean;
+  /** Operator-pinned destination project. When set it OVERRIDES whatever the row
+   *  stores, at write time and at fire time alike — the pin is a policy about where
+   *  scheduled runs land, and a stored id from before the pin must not outrank it. */
+  projectId?: string;
 }
 
 export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
@@ -23,7 +30,22 @@ export const DEFAULT_SCHEDULE_LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  requireProject: false,
 };
+
+/**
+ * The project a schedule's runs must land in under the CURRENT policy: an operator
+ * pin outranks the stored choice, otherwise the owner's own selection stands.
+ * Single source of truth for the write handlers, the fire path, and the wire
+ * projection, so the form, the precheck, and the dispatched conversation can never
+ * disagree about the destination.
+ */
+export function resolveScheduleProjectId(
+  limits: Pick<ScheduleLimits, 'projectId'>,
+  stored?: string | null,
+): string | undefined {
+  return limits.projectId ?? stored ?? undefined;
+}
 
 export interface ScheduleUserContext {
   id: string;
@@ -160,6 +182,13 @@ export interface ScheduleEngineDeps {
     agentId: string,
     user: ScheduleUserContext,
   ) => Promise<'ok' | 'missing' | 'forbidden'>;
+  /**
+   * Whether the owner still owns the schedule's destination chat project. Projects
+   * are user-owned, so 'missing' covers both deletion and a pinned id belonging to
+   * someone else — the fire path treats them identically because the observable
+   * outcome is the same: the conversation would be filed nowhere.
+   */
+  projectAccess: (projectId: string, user: ScheduleUserContext) => Promise<'ok' | 'missing'>;
   /** Whether the owning user's current role still grants SCHEDULES access. */
   hasScheduleAccess: (user: ScheduleUserContext) => Promise<boolean>;
   /** Re-resolves stored file_ids to attachment payloads; missing files are simply absent. */
@@ -274,6 +303,8 @@ export interface FireResult {
     | 'user_missing'
     | 'user_deleting'
     | 'permission_revoked'
+    | 'project_deleted'
+    | 'project_required'
     | 'rate_limited'
     | 'disabled';
   error?: string;

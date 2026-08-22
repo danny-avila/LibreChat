@@ -63,11 +63,10 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
       );
       await runAsSystem(async () => {
         for (const run of runs) {
-          // PER-ROW isolation. A single throwing row used to abort the whole pass, and
-          // since this query returns the OLDEST rows first, that row came back every
-          // tick and starved every run behind it indefinitely. Reconciliation is the
-          // backstop for exactly the states nothing else settles, so it has to make
-          // progress on the rest.
+          // PER-ROW isolation. A single throwing row used to abort the whole pass.
+          // Reconciliation is the backstop for exactly the states nothing else
+          // settles, so it has to make progress on the rest; the examined-at stamp
+          // below then rotates failures behind rows this pass did not inspect.
           try {
             // Identity-fence the job lookup: a replacement user turn reuses this
             // conversationId but sheds the scheduleId/scheduledFor metadata. Only

@@ -116,6 +116,11 @@ export const conversations = (params: q.ConversationListParams) => {
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
+export const subagentThread = (parentConversationId: string, threadId: string, taskId?: string) => {
+  const endpoint = `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}`;
+  return taskId == null ? endpoint : `${endpoint}?taskId=${encodeURIComponent(taskId)}`;
+};
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 

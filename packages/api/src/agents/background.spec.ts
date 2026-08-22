@@ -1,6 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import { InMemorySubagentTaskStore } from '@librechat/agents';
-import type { LCTool, LCToolRegistry, SubagentTaskConfig } from '@librechat/agents';
+import type {
+  LCTool,
+  LCToolRegistry,
+  SubagentTaskConfig,
+  SubagentTaskRuntime,
+} from '@librechat/agents';
+import type { HostSubagentTaskConfig } from './subagentDelivery';
 import {
   isBackgroundEligibleToolName,
   isBackgroundRequested,
@@ -19,6 +25,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { SUBAGENT_COMPLETION_DELIVERY, SUBAGENT_WAKEUP_GUIDANCE } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { TOOL_SELECTION_WILDCARD } from './selection';
 import { toolOptionsSchema } from './validation';
@@ -304,6 +311,26 @@ describe('registerBackgroundTaskTool', () => {
     expect(matching[0].description).not.toBe(collidingDef.description);
     expect(registry.get(CHECK_BACKGROUND_TASK_NAME)?.description).not.toBe(
       collidingDef.description,
+    );
+  });
+
+  it('advertises automatic delivery only for wakeup-enabled subagents', () => {
+    const registry: LCToolRegistry = new Map();
+    const manual = registerBackgroundTaskTool({ toolRegistry: registry, toolDefinitions: [] });
+    const manualDescription = manual.toolDefinitions[0].description ?? '';
+    expect(manualDescription).toContain('Results are not pushed to you');
+
+    const automatic = registerBackgroundTaskTool({
+      toolRegistry: registry,
+      toolDefinitions: manual.toolDefinitions,
+      subagentCompletionWakeups: true,
+    });
+    expect(automatic.toolDefinitions).toHaveLength(1);
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'Detached subagent tasks use automatic completion delivery',
+    );
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'Ordinary background tool tasks require polling',
     );
   });
 });
@@ -1289,6 +1316,97 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
+  });
+
+  it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: HostSubagentTaskConfig = {
+      store,
+      scopeId: 'owner:wakeup-parent',
+      completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+    };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-wakeup',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-wakeup',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: (runtime: SubagentTaskRuntime) =>
+        new Promise((_, reject) => {
+          runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+            once: true,
+          });
+        }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(polled).toMatchObject({
+      status: 'running',
+      message: SUBAGENT_WAKEUP_GUIDANCE,
+    });
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        args: {},
+        subagentTasks,
+      }),
+    );
+    expect(listed.message).toBe(SUBAGENT_WAKEUP_GUIDANCE);
+    expect(listed.tasks[0].message).toBeUndefined();
+
+    store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
+  });
+
+  it('preserves poll-first running status when automatic delivery is disabled', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:manual-parent' };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-manual',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-manual',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: (runtime: SubagentTaskRuntime) =>
+        new Promise((_, reject) => {
+          runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+            once: true,
+          });
+        }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'manual-parent',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(polled).toMatchObject({ status: 'running' });
+    expect(polled.message).toBeUndefined();
+
+    store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
   });
 
   it('routes parent control actions only to detached subagent tasks', async () => {

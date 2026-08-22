@@ -293,6 +293,7 @@ export async function loadWebSearchAuth({
   }
   authResult.scraperTimeout = webSearchConfig?.scraperTimeout ?? scraperOptionsTimeout ?? 7500;
   authResult.firecrawlOptions = webSearchConfig?.firecrawlOptions;
+  authResult.searxngSearchOptions = webSearchConfig?.searxngSearchOptions;
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
 

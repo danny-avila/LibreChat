@@ -3,7 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+} from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -21,6 +25,9 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessagesForSubagentThreadView: ReturnType<
+  typeof createMessageMethods
+>['getMessagesForSubagentThreadView'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -44,6 +51,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -621,7 +629,7 @@ describe('Message Operations', () => {
     it('declares the compound index that serves the conversation fetch and its sort', () => {
       const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
       expect(indexes).toContainEqual([
-        { conversationId: 1, user: 1, createdAt: 1 },
+        { conversationId: 1, user: 1, createdAt: 1, _id: 1 },
         expect.anything(),
       ]);
     });
@@ -681,6 +689,103 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+  });
+
+  describe('getMessagesForSubagentThreadView', () => {
+    it('bounds text in MongoDB before returning the public projection', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'bounded-message',
+        conversationId,
+        text: '🧵'.repeat(20_000),
+        user: 'user123',
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(Array.from(messages[0].text ?? '')).toHaveLength(8_192);
+      expect(Buffer.byteLength(messages[0].text ?? '', 'utf8')).toBeLessThanOrEqual(32 * 1024);
+      expect(messages[0].textProjectionTruncated).toBe(true);
+      expect(messages[0]).not.toHaveProperty('user');
+      expect(messages[0]).not.toHaveProperty('conversationId');
+    });
+
+    it('projects the private transcript only for the explicitly selected task', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-a:assistant',
+        conversationId,
+        text: 'A',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-a',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"A"}}]',
+        },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-b:assistant',
+        conversationId,
+        text: 'B',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-b',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"B"}}]',
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 10,
+        textCodePointLimit: 8_192,
+        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
+      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
+
+    it('omits an oversized private transcript before returning the application result', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-large:assistant',
+        conversationId,
+        text: 'The bounded public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-large',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'x'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT + 1) },
+            },
+          ]),
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+        taskId: 'task-large',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].text).toBe('The bounded public answer remains available.');
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
     });
   });
 

@@ -222,6 +222,18 @@ export type ScheduleMethods = {
     counterGuard?: Record<string, unknown>,
   ) => Promise<void>;
   insertScheduleRun: (data: Partial<IScheduleRun>) => Promise<IScheduleRun | null>;
+  /** Converges the schedule row on the destination a fire resolved; claim-token
+   *  fenced, and never bumps configRevision (this is not an owner edit). */
+  persistResolvedProject: (
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ) => Promise<void>;
+  /** The destination one occurrence used; null when the row is absent. */
+  getScheduleRunProject: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<{ recorded: boolean; chatProjectId?: string } | null>;
   reserveStartedRun: (data: Partial<IScheduleRun>) => Promise<StartedRunReservation>;
   getCapacityOccupancy: () => Promise<{ takenSlots: number[]; unslotted: number }>;
   requestRunAbort: (
@@ -339,7 +351,9 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       const taken = new Set(
         used.map((s) => s.slot).filter((s): s is number => typeof s === 'number'),
       );
-      if (taken.size >= maxPerUser) {
+      // Every live row consumes capacity, including legacy/internal rows created
+      // before the slot allocator existed. Slots remain the atomic collision key.
+      if (used.length >= maxPerUser) {
         return 'limit';
       }
       let slot = 0;
@@ -785,6 +799,59 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       $set: { enabled: false, disabledReason: reason },
       $unset: { leaseUntil: 1, leaseBy: 1 },
     });
+  }
+
+  /**
+   * Converges the row on the destination a fire actually RESOLVED, so the stored id
+   * never lies about where this schedule's conversations are going.
+   *
+   * An operator pin outranks the stored id at fire time, and the wire projection
+   * already reports the pin — but the row kept its old value, so a paused occurrence
+   * could only be re-validated against a project its conversation was never filed
+   * under. Claim-token fenced like every other worker-side write, and deliberately
+   * WITHOUT a configRevision bump: this is the server reconciling itself to policy,
+   * not an owner edit, and bumping would fence an in-flight occurrence off its own run.
+   */
+  /**
+   * The destination one OCCURRENCE actually used, for re-validating a paused run.
+   *
+   * `recorded` is the load-bearing part. A reservation ALWAYS writes the field (null
+   * when deliberately unscoped), so a row missing the key is one written before this
+   * existed — "unknown", not "no project". Callers fall back to the schedule-level
+   * resolution only for unknown, and treat a recorded null as the genuinely unscoped
+   * occurrence it is. Returns null when there is no row at all.
+   */
+  async function getScheduleRunProject(
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ): Promise<{ recorded: boolean; chatProjectId?: string } | null> {
+    const run = await ScheduleRun()
+      .findOne({ scheduleId, scheduledFor: new Date(scheduledFor) })
+      .select('chatProjectId')
+      .lean<{ chatProjectId?: string | null } | null>();
+    if (run == null) {
+      return null;
+    }
+    // Key PRESENCE, not truthiness: `null` is a recorded decision, absent is not.
+    const recorded = Object.prototype.hasOwnProperty.call(run, 'chatProjectId');
+    return recorded && run.chatProjectId != null
+      ? { recorded, chatProjectId: run.chatProjectId }
+      : { recorded };
+  }
+
+  async function persistResolvedProject(
+    id: string,
+    chatProjectId: string | undefined,
+    expectedClaimToken?: string,
+  ): Promise<void> {
+    const filter: Record<string, unknown> = { id };
+    if (expectedClaimToken !== undefined) {
+      filter.claimToken = expectedClaimToken;
+    }
+    await Schedule().updateOne(
+      filter,
+      chatProjectId == null ? { $unset: { chatProjectId: 1 } } : { $set: { chatProjectId } },
+    );
   }
 
   /**
@@ -1505,16 +1572,17 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   /**
    * Non-terminal runs old enough to need a job-store status check. Fetches
    * `started` (capacity-consuming) and `requires_action` (paused) in separate
-   * budgeted, firedAt-ordered buckets so a backlog of long-lived paused rows
-   * can't starve orphaned `started` runs out of every sweep.
+   * budgeted round-robin buckets so a backlog of live rows in either state
+   * cannot starve an orphaned run out of every sweep.
    */
   async function getRunsForReconciliation(olderThan: Date, limit: number): Promise<IScheduleRun[]> {
     const [started, paused] = await Promise.all([
-      // `started` runs are bounded by the global fireConcurrency cap, so this window
-      // can never fill with rows that have nothing to do — oldest-first is right here.
+      // A deployment may intentionally set fireConcurrency above the reconciliation
+      // batch. Rotate started rows as well, otherwise a full oldest-first window of
+      // legitimate long-running generations can hide a newer abandoned run forever.
       ScheduleRun()
         .find({ status: 'started', firedAt: { $lt: olderThan } })
-        .sort({ firedAt: 1 })
+        .sort({ reconciledAt: 1, firedAt: 1 })
         .limit(limit)
         .lean<IScheduleRun[]>(),
       // ROUND-ROBIN, not oldest-first. A paused run holds no capacity slot and does not
@@ -1534,8 +1602,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     return [...started, ...paused];
   }
 
-  /** Stamps rows as examined, so the paused window rotates instead of re-serving the
-   *  same rows forever. Bookkeeping only: never touches `updatedAt`. */
+  /** Stamps rows as examined, so each bounded reconciliation window rotates instead
+   *  of re-serving the same rows forever. Bookkeeping only: never touches `updatedAt`. */
   async function markRunsReconciled(runs: Array<Pick<IScheduleRun, '_id'>>): Promise<void> {
     const ids = runs.map((run) => run._id).filter((id) => id != null);
     if (ids.length === 0) {
@@ -2028,6 +2096,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     reserveStartedRun,
     getCapacityOccupancy,
     requestRunAbort,
+    persistResolvedProject,
+    getScheduleRunProject,
     getScheduleRunAbortState,
     markRunResumeClaimed,
     releaseRunResumeClaim,

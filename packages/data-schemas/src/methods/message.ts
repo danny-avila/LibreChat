@@ -10,6 +10,14 @@ import logger from '~/config/winston';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Maximum private transcript JSON that may cross the MongoDB projection seam
+ * for the bounded public subagent-activity view. This gives the sanitizer
+ * enough source headroom while preventing multi-megabyte transcripts from
+ * being materialized merely to produce a 64 KiB public activity response.
+ */
+export const SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: number = 256 * 1024;
+
+/**
  * Exclusion projection for message reads that feed the chat client (the
  * conversation GET and shared-link reads). Every excluded field is either
  * server-internal (ids, replay signatures, legacy summarization state) or a
@@ -52,6 +60,21 @@ export type SubagentTaskResultClaim =
   | { status: 'not_found' }
   | { status: 'claimed'; message: IMessage }
   | { status: 'acquired'; message: IMessage };
+
+export type SubagentThreadViewMessageRecord = Pick<
+  IMessage,
+  | 'messageId'
+  | 'parentMessageId'
+  | 'isCreatedByUser'
+  | 'text'
+  | 'createdAt'
+  | 'error'
+  | 'subagentTranscript'
+  | 'subagentTask'
+> & {
+  textProjectionTruncated?: boolean;
+  subagentTranscriptProjectionTruncated?: boolean;
+};
 
 export interface MessageMethods {
   saveMessage(
@@ -110,6 +133,14 @@ export interface MessageMethods {
     select?: string,
     options?: MessageQueryOptions,
   ): Promise<IMessage[]>;
+  getMessagesForSubagentThreadView(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    limit: number;
+    textCodePointLimit: number;
+    taskId?: string;
+  }): Promise<SubagentThreadViewMessageRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -718,6 +749,139 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }
 
   /**
+   * Reads the fixed public child-thread projection and truncates text inside
+   * MongoDB so oversized persisted messages are never materialized by the API.
+   */
+  async function getMessagesForSubagentThreadView(input: {
+    user: string;
+    conversationId: string;
+    tenantId?: string;
+    limit: number;
+    textCodePointLimit: number;
+    taskId?: string;
+  }): Promise<SubagentThreadViewMessageRecord[]> {
+    try {
+      const Message = mongoose.models.Message as Model<IMessage>;
+      const selectedAssistantMessageId =
+        input.taskId == null ? undefined : `${input.taskId}:assistant`;
+      const transcriptJsonBytes = {
+        $strLenBytes: {
+          $convert: {
+            input: '$subagentTranscript.messagesJson',
+            to: 'string',
+            onError: '',
+            onNull: '',
+          },
+        },
+      };
+      const transcriptIsString = {
+        $eq: [{ $type: '$subagentTranscript.messagesJson' }, 'string'],
+      };
+      return await Message.aggregate<SubagentThreadViewMessageRecord>([
+        {
+          $match: {
+            user: input.user,
+            conversationId: input.conversationId,
+            ...(input.tenantId == null
+              ? { tenantId: { $exists: false } }
+              : { tenantId: input.tenantId }),
+            ...(input.taskId == null
+              ? {}
+              : {
+                  messageId: {
+                    $in: [`${input.taskId}:user`, `${input.taskId}:assistant`],
+                  },
+                }),
+          },
+        },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: input.limit },
+        ...(input.taskId == null
+          ? []
+          : [
+              {
+                $set: {
+                  _subagentTranscriptSourceBytes: transcriptJsonBytes,
+                  _subagentTranscriptSourceIsString: transcriptIsString,
+                },
+              },
+            ]),
+        {
+          $project: {
+            _id: 0,
+            messageId: 1,
+            parentMessageId: 1,
+            isCreatedByUser: 1,
+            text: {
+              $substrCP: [{ $ifNull: ['$text', ''] }, 0, input.textCodePointLimit],
+            },
+            textProjectionTruncated: {
+              $gt: [{ $strLenCP: { $ifNull: ['$text', ''] } }, input.textCodePointLimit],
+            },
+            createdAt: 1,
+            error: 1,
+            ...(input.taskId == null
+              ? {}
+              : {
+                  subagentTranscript: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$messageId', selectedAssistantMessageId] },
+                          '$_subagentTranscriptSourceIsString',
+                          {
+                            $lte: [
+                              '$_subagentTranscriptSourceBytes',
+                              SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                            ],
+                          },
+                        ],
+                      },
+                      {
+                        taskId: '$subagentTranscript.taskId',
+                        mode: '$subagentTranscript.mode',
+                        messagesJson: '$subagentTranscript.messagesJson',
+                      },
+                      '$$REMOVE',
+                    ],
+                  },
+                  subagentTranscriptProjectionTruncated: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$messageId', selectedAssistantMessageId] },
+                          {
+                            $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'],
+                          },
+                          {
+                            $or: [
+                              { $eq: ['$_subagentTranscriptSourceIsString', false] },
+                              {
+                                $gt: [
+                                  '$_subagentTranscriptSourceBytes',
+                                  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                      true,
+                      '$$REMOVE',
+                    ],
+                  },
+                }),
+            subagentTask: 1,
+          },
+        },
+      ]);
+    } catch (err) {
+      logger.error('Error getting bounded subagent thread messages:', err);
+      throw err;
+    }
+  }
+
+  /**
    * Retrieves a single message from the database.
    */
   async function getMessage({ user, messageId }: { user: string; messageId: string }) {
@@ -806,6 +970,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,
     getMessages,
+    getMessagesForSubagentThreadView,
     getMessage,
     getMessagesByCursor,
     searchMessages,

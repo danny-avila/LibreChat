@@ -135,8 +135,8 @@ function sanitizeSharedAttachments(attachments: unknown): t.SharedFile[] | undef
  * stream with only `storageKey`/`filepath` + the request. Sources requiring
  * owner-specific credentials (openai/azure assistants, execute_code, vectordb,
  * OCR/parser pipelines) are skipped — those files degrade to a 404 in the share
- * view. `FileSources.text` is intentionally excluded: its `filepath` is a Multer
- * temp path that the upload route deletes, so there is nothing durable to stream.
+ * view. Text-source files are eligible because the share route serves their
+ * database-backed extracted text instead of the deleted Multer temp path.
  */
 const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.local,
@@ -144,6 +144,7 @@ const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
   FileSources.cloudfront,
   FileSources.azure_blob,
   FileSources.firebase,
+  FileSources.text,
 ]);
 
 /** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
@@ -358,11 +359,18 @@ function applyShareFileRoute(
   file: t.SharedFile,
   shareId: string,
   snapshotIds: Set<string>,
+  textSourceIds?: Set<string>,
 ): t.SharedFile {
   const fileId = file.file_id;
   if (typeof fileId === 'string' && snapshotIds.has(fileId)) {
     const route = shareFileRoute(shareId, fileId);
-    const next: t.SharedFile = { ...file, filepath: route };
+    const next: t.SharedFile = {
+      ...file,
+      filepath: route,
+      // General storage sources stay private, but `text` is a render semantic:
+      // clients must preview the database-backed payload as text, not the original MIME.
+      ...(textSourceIds?.has(fileId) && { source: FileSources.text }),
+    };
     if (file.preview !== undefined) {
       next.preview = route;
     }
@@ -390,6 +398,7 @@ export function anonymizeSharedContent(
     newMessageId: string;
     shareId: string;
     snapshotIds: Set<string>;
+    textSourceIds?: Set<string>;
     includeFiles: boolean;
     sanitizeUIResourceMarkers?: boolean;
   },
@@ -420,6 +429,7 @@ export function anonymizeSharedContent(
             },
             params.shareId,
             params.snapshotIds,
+            params.textSourceIds,
           ),
         )
       : undefined;
@@ -456,6 +466,7 @@ function anonymizeMessages(
   newConvoId: string,
   shareId: string,
   snapshotIds: Set<string>,
+  textSourceIds: Set<string>,
   includeFiles: boolean,
   anonymizeMessageId: (id: string) => string,
   anonymizeAssistantId: (id: string) => string,
@@ -481,6 +492,7 @@ function anonymizeMessages(
             },
             shareId,
             snapshotIds,
+            textSourceIds,
           ),
         )
       : undefined;
@@ -496,6 +508,7 @@ function anonymizeMessages(
             },
             shareId,
             snapshotIds,
+            textSourceIds,
           ),
         )
       : undefined;
@@ -517,6 +530,7 @@ function anonymizeMessages(
         newMessageId,
         shareId,
         snapshotIds,
+        textSourceIds,
         includeFiles,
         sanitizeUIResourceMarkers: message.isCreatedByUser !== true,
       }),
@@ -830,6 +844,13 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const snapshotIds = includeFiles
         ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
         : new Set<string>();
+      const textSourceIds = includeFiles
+        ? new Set<string>(
+            (fileSnapshots ?? [])
+              .filter((snapshot) => snapshot.source === FileSources.text)
+              .map((snapshot) => snapshot.file_id),
+          )
+        : new Set<string>();
       const result: t.SharedMessagesResult = {
         shareId: resolvedShareId,
         title: share.title,
@@ -841,6 +862,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           newConvoId,
           resolvedShareId,
           snapshotIds,
+          textSourceIds,
           includeFiles,
           anonymizeMessageId,
           anonymizeAssistantId,

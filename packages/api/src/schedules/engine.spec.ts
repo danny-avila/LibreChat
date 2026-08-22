@@ -10,6 +10,7 @@ const LIMITS: ScheduleLimits = {
   minIntervalMinutes: 60,
   autoDisableAfterFailures: 5,
   fireConcurrency: 5,
+  requireProject: false,
 };
 
 /**
@@ -314,9 +315,9 @@ describe('reconciliation consults the durable trigger delivery', () => {
 
 describe('reconciliation is isolated per row', () => {
   /**
-   * getRunsForReconciliation returns the OLDEST rows first, so a row that always throws
-   * came back every tick and starved every run behind it — in the one component whose
-   * entire job is settling states nothing else will.
+   * A row that always throws must not abort the pass. The store stamps every examined
+   * row afterward so persistent failures rotate behind rows the bounded window has not
+   * inspected yet.
    */
   it('keeps reconciling after a row throws', async () => {
     const methods = makeMethods(makeClaimedSchedule());

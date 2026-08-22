@@ -11,6 +11,7 @@ import {
   useSearchEnabled,
   useAssistantsMap,
   useAuthContext,
+  useCatalogWarmup,
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
@@ -58,6 +59,8 @@ export default function Root() {
     [setSidebarExpanded],
   );
   const { isAuthenticated, logout } = useAuthContext();
+  /** Releases feature-catalog queries after first paint on browser idle. */
+  useCatalogWarmup(isAuthenticated);
 
   useDrawerSwipe({
     paneRef,
