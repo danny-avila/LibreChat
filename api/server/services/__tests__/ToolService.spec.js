@@ -2586,7 +2586,9 @@ describe('ToolService - Action Capability Gating', () => {
           },
         },
       };
-      const toolRegistry = new Map([[mcpTool, { name: mcpTool }]]);
+      const toolRegistry = new Map([
+        [mcpTool, { name: mcpTool, allowed_callers: ['code_execution'] }],
+      ]);
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
 
       await loadToolsForExecution({
@@ -2606,6 +2608,169 @@ describe('ToolService - Action Capability Gating', () => {
             mcpAvailableTools,
           }),
         }),
+      );
+    });
+
+    it('loads only code_execution tools into the PTC execution map', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const programmaticTool = {
+        name: 'programmatic_tool',
+        invoke: jest.fn(),
+      };
+      const toolRegistry = new Map([
+        [
+          programmaticTool.name,
+          { name: programmaticTool.name, allowed_callers: ['code_execution'] },
+        ],
+        ['direct_tool', { name: 'direct_tool', allowed_callers: ['direct'] }],
+      ]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [programmaticTool],
+        toolContextMap: {},
+      });
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: ['programmatic_tool'] }),
+      );
+      expect([...result.configurable.ptcToolMap.keys()]).toEqual(['programmatic_tool']);
+    });
+
+    it('intersects PTC loading with the SDK live caller projection', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const activeTool = { name: 'active_programmatic_tool', invoke: jest.fn() };
+      const deferredTool = { name: 'deferred_programmatic_tool', invoke: jest.fn() };
+      const toolRegistry = new Map([
+        [activeTool.name, { name: activeTool.name, allowed_callers: ['code_execution'] }],
+        [
+          deferredTool.name,
+          {
+            name: deferredTool.name,
+            allowed_callers: ['code_execution'],
+            defer_loading: true,
+          },
+        ],
+      ]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [activeTool],
+        toolContextMap: {},
+      });
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        callerCapabilityProjection: {
+          version: 1,
+          directToolNames: [],
+          codeExecutionToolNames: [activeTool.name],
+          directOnlyToolNames: [],
+          codeExecutionOnlyToolNames: [activeTool.name],
+        },
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [activeTool.name] }),
+      );
+      expect([...result.configurable.ptcToolMap.keys()]).toEqual([activeTool.name]);
+    });
+
+    it('treats an empty versioned caller projection as authoritative', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const toolRegistry = new Map([
+        [
+          'deferred_programmatic_tool',
+          { name: 'deferred_programmatic_tool', allowed_callers: ['code_execution'] },
+        ],
+      ]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      const result = await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        callerCapabilityProjection: {
+          version: 1,
+          directToolNames: [],
+          codeExecutionToolNames: [],
+          directOnlyToolNames: [],
+          codeExecutionOnlyToolNames: [],
+        },
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+      expect(result.configurable.ptcToolMap).toEqual(new Map());
+    });
+
+    it('falls back to registry projection for unknown snapshot versions', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.programmatic_tools,
+        AgentCapabilities.execute_code,
+      ];
+      const req = createMockReq(capabilities);
+      const programmaticTool = { name: 'programmatic_tool', invoke: jest.fn() };
+      const toolRegistry = new Map([
+        [
+          programmaticTool.name,
+          { name: programmaticTool.name, allowed_callers: ['code_execution'] },
+        ],
+      ]);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      mockLoadToolsUtil.mockResolvedValue({
+        loadedTools: [programmaticTool],
+        toolContextMap: {},
+      });
+
+      await loadToolsForExecution({
+        req,
+        res: {},
+        agent: { id: 'agent_ptc', tools: [Tools.execute_code] },
+        toolNames: [Constants.BASH_PROGRAMMATIC_TOOL_CALLING],
+        toolRegistry,
+        callerCapabilityProjection: {
+          version: 2,
+          directToolNames: [],
+          codeExecutionToolNames: [],
+          directOnlyToolNames: [],
+          codeExecutionOnlyToolNames: [],
+        },
+        actionsEnabled: false,
+      });
+
+      expect(mockLoadToolsUtil).toHaveBeenCalledWith(
+        expect.objectContaining({ tools: [programmaticTool.name] }),
       );
     });
 
