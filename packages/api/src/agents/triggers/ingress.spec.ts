@@ -7,6 +7,7 @@ import { AgentTriggerServiceUnavailableError } from './service';
 import { createAgentTriggerIngressHandlers } from './ingress';
 
 const USER_ID = '507f1f77bcf86cd799439011';
+const API_KEY_ID = '68a1c312abc123abc123abcf';
 const DELIVERY_KEY = `trigger_${'a'.repeat(64)}`;
 const AVAILABLE_AT = new Date('2026-08-17T12:00:00.000Z');
 const CREATED_AT = new Date('2026-08-17T11:59:59.000Z');
@@ -66,7 +67,11 @@ function createApp(
   const handlers = createAgentTriggerIngressHandlers(deps);
   app.use(express.json());
   app.use((req, _res, next) => {
-    Object.assign(req, { user: user ?? undefined, requestId: 'request-from-context' });
+    Object.assign(req, {
+      user: user ?? undefined,
+      apiKeyId: API_KEY_ID,
+      requestId: 'request-from-context',
+    });
     next();
   });
   app.post('/api/agents/v1/events', handlers.enqueueEvent);
@@ -115,7 +120,10 @@ describe('agent trigger event ingress', () => {
         deliveryId: 'source-delivery-1',
         receivedAt: 1_755_430_000_000,
         principal: { userId: USER_ID, role: 'USER', tenantId: 'tenant-1' },
-        event: fireEvent().event,
+        event: {
+          ...fireEvent().event,
+          source: { id: API_KEY_ID, type: 'remote_api_key' },
+        },
         target: { agentId: 'agent-1' },
         input: 'Handle resource-1.',
       },

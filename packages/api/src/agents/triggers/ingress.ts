@@ -25,6 +25,7 @@ interface AgentTriggerIngressUser {
 }
 
 interface AgentTriggerIngressRequest extends Request {
+  apiKeyId?: { toString(): string } | string;
   requestId?: string;
   user?: AgentTriggerIngressUser;
 }
@@ -111,6 +112,14 @@ function requireUser(req: AgentTriggerIngressRequest): AgentTriggerIngressUser {
   return req.user;
 }
 
+function requireSourceKeyId(req: AgentTriggerIngressRequest): string {
+  const sourceKeyId = req.apiKeyId?.toString().trim();
+  if (sourceKeyId == null || sourceKeyId === '') {
+    throw new AgentTriggerAuthenticationError();
+  }
+  return sourceKeyId;
+}
+
 function requireBody(value: object | null | undefined): AgentTriggerIngressBody {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     throw new AgentTriggerIngressError('Event body must be an object');
@@ -186,6 +195,7 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
     const req = baseReq as AgentTriggerIngressRequest;
     try {
       const user = requireUser(req);
+      const sourceKeyId = requireSourceKeyId(req);
       const body = requireBody(req.body);
       const requestId = req.requestId?.trim() || createRequestId();
       const deliveryId = requireIdempotencyKey(req);
@@ -200,7 +210,10 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
         deliveryId,
         receivedAt,
         principal,
-        event: body.event as AgentTriggerEvent,
+        event: {
+          ...(body.event as AgentTriggerEvent),
+          source: { id: sourceKeyId, type: 'remote_api_key' },
+        },
         input: body.input as string,
       };
       const envelope =

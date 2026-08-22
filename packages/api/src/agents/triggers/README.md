@@ -75,7 +75,10 @@ Authenticated controllers and source adapters can enqueue the same durable envel
 `POST /api/agents/v1/events`. The endpoint uses Remote Agents API-key authentication, the remote
 agents feature permission, and the target agent's existing remote-view ACL. Send exactly one
 `Idempotency-Key` header and keep it stable when retrying the same source-event-to-target delivery.
-The authenticated user, tenant, request id, and receive time are always supplied by LibreChat.
+The authenticated user, tenant, API-key source identity, request id, and receive time are always
+supplied by LibreChat. Remote callers do not choose `event.source`; provider-specific webhook
+adapters may verify their native signature and map verified provider metadata into the trusted
+in-process adapter contract above.
 
 ```http
 POST /api/agents/v1/events
@@ -89,7 +92,6 @@ Content-Type: application/json
     "id": "resource-7-ready-3",
     "type": "resource.ready",
     "occurredAt": 1786967999000,
-    "source": { "id": "webhook-42", "type": "webhook" },
     "payload": { "resourceId": "resource-7" }
   },
   "target": { "agentId": "agent-id" },
