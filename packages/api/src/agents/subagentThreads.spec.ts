@@ -19,6 +19,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  SubagentUpdateEvent,
 } from '@librechat/agents';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
@@ -27,6 +28,7 @@ import type {
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
@@ -36,6 +38,7 @@ import {
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
+import { SubagentActivityStream } from './subagentActivity';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
@@ -344,6 +347,269 @@ describe('SubagentThreadTaskStore', () => {
       subagentType: 'researcher-agent',
       createdAt: expect.any(Number),
     });
+  });
+
+  it('streams child activity and closes only after the terminal result is durable', async () => {
+    const userId = 'activity-stream-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const progress: SubagentUpdateEvent = {
+      runId: 'root-run',
+      parentRunId: 'parent-run',
+      subagentRunId: 'child-run',
+      subagentType: 'researcher-agent',
+      subagentKind: 'agent',
+      subagentAgentId: 'agent-1',
+      parentToolCallId: 'tool-call',
+      depth: 1,
+      ancestry: [
+        {
+          subagentRunId: 'parent-run',
+          subagentType: 'parent',
+          subagentKind: 'agent',
+          subagentAgentId: 'parent-agent',
+          parentRunId: 'root-run',
+        },
+      ],
+      phase: 'message_delta',
+      data: { delta: { content: [{ type: 'text', text: 'Working.' }] } },
+      timestamp: '2026-08-21T20:00:00.000Z',
+    };
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      args[0].reportProgress(progress);
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    const accepted = requireAccepted(started);
+    const events: unknown[] = [];
+    let resolveTerminal!: (status: string) => void;
+    const terminal = new Promise<string>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    store.subscribeActivity(requireThreadId(started), accepted.task.taskId, {
+      onEvent: (event) => events.push(event),
+      onDone: (event) => resolveTerminal(event.status),
+    });
+
+    await expect(terminal).resolves.toBe('completed');
+    expect(events).toEqual([
+      {
+        event: 'on_subagent_update',
+        data: expect.objectContaining({
+          activityEventId: `${accepted.task.taskId}:0`,
+          activitySequence: 0,
+          data: progress.data,
+        }),
+      },
+    ]);
+    const messages = await methods.getMessages(
+      {
+        user: userId,
+        conversationId: requireThreadId(started),
+        messageId: `${accepted.task.taskId}:assistant`,
+      },
+      '+subagentTask',
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.subagentTask?.status).toBe('completed');
+  });
+
+  it('drains admitted activity before publishing the terminal event', async () => {
+    const userId = 'activity-stream-drain-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const publicationOrder: string[] = [];
+    let releaseFirst!: () => void;
+    const firstPublication = new Promise<void>((resolve) => (releaseFirst = resolve));
+    let publicationCount = 0;
+    const emitChunk = jest.fn((_streamId: string, event: unknown): Promise<void> => {
+      publicationCount += 1;
+      const label = (event as { data?: { label?: string } }).data?.label ?? 'unknown';
+      publicationOrder.push(label);
+      return publicationCount === 1 ? firstPublication : Promise.resolve();
+    });
+    const emitDone = jest.fn(async () => {
+      publicationOrder.push('done');
+    });
+    const transport = {
+      emitChunk,
+      emitDone,
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(transport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      for (const label of ['first', 'second']) {
+        args[0].reportProgress({
+          runId: 'root-run',
+          parentRunId: 'parent-run',
+          subagentRunId: 'child-run',
+          subagentType: 'researcher-agent',
+          subagentKind: 'agent',
+          subagentAgentId: 'agent-1',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          label,
+          timestamp: '2026-08-21T20:00:00.000Z',
+        });
+      }
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitUntil(() => emitChunk.mock.calls.length === 1, 'first activity publication');
+    await waitForSettled(store, config.scopeId, started);
+    expect(emitChunk).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    await waitUntil(() => emitDone.mock.calls.length === 1, 'terminal activity delivery');
+
+    expect(emitChunk).toHaveBeenCalledTimes(2);
+    expect(publicationOrder).toEqual(['first', 'second', 'done']);
+  });
+
+  it('keeps activity delivery observational when its transport is unavailable', async () => {
+    const userId = 'activity-stream-failure-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const emitChunk = jest.fn(() => {
+      throw new Error('activity transport unavailable');
+    });
+    const unavailableTransport = {
+      emitChunk,
+      emitDone: async () => Promise.reject(new Error('activity transport unavailable')),
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(unavailableTransport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        parentToolCallId: 'tool-call',
+        depth: 1,
+        ancestry: [],
+        phase: 'start',
+        timestamp: '2026-08-21T20:00:00.000Z',
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        parentToolCallId: 'tool-call',
+        depth: 1,
+        ancestry: [],
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'after-error' }] } },
+        timestamp: '2026-08-21T20:00:00.010Z',
+      });
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
+      'completed',
+    );
+    expect(emitChunk).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds stalled activity and still attempts terminal delivery', async () => {
+    const userId = 'activity-stream-stalled-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const never = () => new Promise<void>(() => undefined);
+    const emitChunk = jest.fn(never);
+    const emitDone = jest.fn(async () => undefined);
+    const stalledTransport = {
+      emitChunk,
+      emitDone,
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(stalledTransport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      for (let index = 0; index < 100; index += 1) {
+        args[0].reportProgress({
+          runId: 'root-run',
+          parentRunId: 'parent-run',
+          subagentRunId: 'child-run',
+          subagentType: 'researcher-agent',
+          subagentKind: 'agent',
+          subagentAgentId: 'agent-1',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          data: { delta: { content: [{ type: 'text', text: `chunk-${index}` }] } },
+          timestamp: '2026-08-21T20:00:00.000Z',
+        });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_100));
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        depth: 1,
+        ancestry: [],
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'after-timeout' }] } },
+        timestamp: '2026-08-21T20:00:01.100Z',
+      });
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
+      'completed',
+    );
+    await waitUntil(() => emitDone.mock.calls.length === 1, 'terminal activity delivery');
+    expect(emitChunk).toHaveBeenCalledTimes(1);
   });
 
   it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {
@@ -1480,29 +1746,36 @@ describe('SubagentThreadTaskStore', () => {
     const userId = 'timeout-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const store = new SubagentThreadTaskStore(methods, { taskTimeoutMs: 20 });
+    const taskTimeoutMs = 60_000;
+    const timeoutSpy = jest.spyOn(global, 'setTimeout');
+    const store = new SubagentThreadTaskStore(methods, { taskTimeoutMs });
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
     const started = store.start(
       taskRequest(config.scopeId, {
         input: 'Run until timeout.',
         run: async (runtime) =>
           new Promise((_resolve, reject) => {
+            markEntered();
             runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
               once: true,
             });
           }),
       }),
     );
+    await entered;
+    const taskTimeout = timeoutSpy.mock.calls.find((call) => call[1] === taskTimeoutMs)?.[0];
+    timeoutSpy.mockRestore();
+    expect(taskTimeout).toBeDefined();
+    (taskTimeout as () => void)();
     await waitForSettled(store, config.scopeId, started);
-    for (let attempt = 0; attempt < 200; attempt += 1) {
-      if (!store.isThreadActiveForOwner(userId, requireThreadId(started))) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-      if (attempt === 199) {
-        throw new Error('Timed-out child execution did not finish durable settlement.');
-      }
-    }
+    await waitUntil(
+      () => !store.isThreadActiveForOwner(userId, requireThreadId(started)),
+      'timed-out child durable settlement',
+    );
 
     expect(store.claim(config.scopeId, requireAccepted(started).task.taskId)).toMatchObject({
       status: 'error',

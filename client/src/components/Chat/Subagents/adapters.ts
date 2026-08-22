@@ -102,6 +102,50 @@ const publicActivityToChildActivity = (items: SubagentActivityItem[]): ChildActi
     };
   });
 
+/** Merge activity whose transport explicitly declares it is a forward-only
+ * suffix. Complete parent-stream projections bypass this function entirely. */
+const mergePersistedAndLiveActivity = (
+  persisted: ChildActivityItem[],
+  live: ChildActivityItem[],
+): ChildActivityItem[] => {
+  if (persisted.length === 0) return live;
+  if (live.length === 0) return persisted;
+
+  const merged = [...persisted];
+  for (const item of live) {
+    if (item.type === 'tool') {
+      const existingIndex = merged.findIndex(
+        (candidate) => candidate.type === 'tool' && candidate.toolCallId === item.toolCallId,
+      );
+      if (existingIndex >= 0) {
+        const existing = merged[existingIndex] as Extract<ChildActivityItem, { type: 'tool' }>;
+        const next = { ...existing, ...item };
+        if (item.name === '') next.name = existing.name;
+        if (
+          existing.input != null &&
+          (item.input == null || item.input === '' || item.input === '{}')
+        ) {
+          next.input = existing.input;
+        }
+        merged[existingIndex] = next;
+      } else {
+        merged.push(item);
+      }
+      continue;
+    }
+
+    const previous = merged.at(-1);
+    if (previous?.type !== item.type) {
+      merged.push(item);
+      continue;
+    }
+    const previousText = previous.text ?? '';
+    const nextText = item.text ?? '';
+    merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
+  }
+  return merged;
+};
+
 const liveStatus = ({
   progress,
   initialProgress,
@@ -131,17 +175,22 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  isDetached?: boolean;
   reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
-  const parts = persisted.length > 0 ? persisted : live;
-  const items = contentPartsToActivity(
-    parts,
-    input.reasoningVisibility ?? 'visible',
-    input.approvalVisibility ?? 'visible',
-  );
+  const reasoningVisibility = input.reasoningVisibility ?? 'visible';
+  const approvalVisibility = input.approvalVisibility ?? 'visible';
+  const persistedItems = contentPartsToActivity(persisted, reasoningVisibility, approvalVisibility);
+  const liveItems = contentPartsToActivity(live, reasoningVisibility, approvalVisibility);
+  let items = persistedItems.length > 0 ? persistedItems : liveItems;
+  if (input.isDetached === true && input.progress?.coverage === 'suffix') {
+    items = mergePersistedAndLiveActivity(persistedItems, liveItems);
+  } else if (input.isDetached === true && liveItems.length > 0) {
+    items = liveItems;
+  }
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
   }
