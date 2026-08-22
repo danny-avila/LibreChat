@@ -638,6 +638,31 @@ describe('Convos Routes', () => {
       });
     });
 
+    it('does not prune generation persistence when provider stop is unconfirmed', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'child-conversation'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      generationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'job_still_active',
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(500);
+      expect(deleteConvos).toHaveBeenCalledTimes(1);
+      expect(deleteMessages).not.toHaveBeenCalled();
+    });
+
     it('drains terminal persistence only for leases removed by this deletion', async () => {
       const createdAt = Date.now();
       deleteConvos.mockResolvedValue({

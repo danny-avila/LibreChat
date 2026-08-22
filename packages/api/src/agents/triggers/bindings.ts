@@ -9,6 +9,7 @@ import type {
   MessageMethods,
 } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
+import { isAgentEventRetentionActive } from '../eventRetention';
 import { createSubagentThreadId } from '../subagentThreadIds';
 
 const BINDING_ID_PATTERN = /^evtbind_[a-f0-9]{48}$/;
@@ -232,7 +233,8 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         parent == null ||
         parent.subagentThread != null ||
         !tenantMatches(parent.tenantId, principal.tenantId) ||
-        typeof parent.agent_id !== 'string'
+        typeof parent.agent_id !== 'string' ||
+        !isAgentEventRetentionActive(parent.expiredAt)
       ) {
         throw new AgentEventBindingError('Parent agent conversation was not found', 404);
       }
@@ -269,6 +271,22 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         parentAgentId: parent.agent_id,
         targetAgentId,
       };
+      const assertCurrentParent = async (): Promise<void> => {
+        const currentParent = await deps.getConvo(principal.userId, parentConversationId);
+        if (
+          currentParent == null ||
+          currentParent.subagentThread != null ||
+          currentParent.agent_id !== parent.agent_id ||
+          !tenantMatches(currentParent.tenantId, principal.tenantId) ||
+          !isAgentEventRetentionActive(currentParent.expiredAt)
+        ) {
+          throw new AgentEventBindingError(
+            'Parent agent conversation ended during binding registration',
+            409,
+            'event_binding_parent_ended',
+          );
+        }
+      };
       const replay = await deps.getBinding({
         user: principal.userId,
         bindingId: id,
@@ -277,6 +295,7 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
       });
       if (replay != null) {
         assertReplay(replay, expected);
+        await assertCurrentParent();
         res.status(200).json(publicBinding(replay));
         return;
       }
@@ -321,28 +340,21 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
           throw error;
         }
         assertReplay(winner, expected);
+        await assertCurrentParent();
         res.status(200).json(publicBinding(winner));
         return;
       }
       const record = bindingRecord(reserved.conversation);
       assertReplay(record, expected);
-      const currentParent = await deps.getConvo(principal.userId, parentConversationId);
-      if (
-        currentParent == null ||
-        currentParent.subagentThread != null ||
-        currentParent.agent_id !== parent.agent_id ||
-        !tenantMatches(currentParent.tenantId, principal.tenantId)
-      ) {
+      try {
+        await assertCurrentParent();
+      } catch (error) {
         if (reserved.created) {
           await deps
             .deleteConvos(principal.userId, { conversationId: threadId })
             .catch(() => undefined);
         }
-        throw new AgentEventBindingError(
-          'Parent agent conversation ended during binding registration',
-          409,
-          'event_binding_parent_ended',
-        );
+        throw error;
       }
       res.status(reserved.created ? 201 : 200).json(publicBinding(record));
     } catch (error) {

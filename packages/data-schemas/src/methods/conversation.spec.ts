@@ -3600,6 +3600,15 @@ describe('Conversation Operations', () => {
           sourceKeyId: 'key-a',
         }),
       ).resolves.toBeNull();
+      await Conversation.updateOne({ conversationId }, { expiredAt: new Date(0) });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
       expect(await methods.getConvo('binding-user', conversationId)).not.toHaveProperty(
         'agentEventBinding',
       );

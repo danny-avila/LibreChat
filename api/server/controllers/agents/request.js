@@ -29,6 +29,7 @@ const {
   deleteAgentCheckpoint,
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
+  isAgentEventRetentionActive,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1151,12 +1152,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         getConvo(userId, req._agentEventBindingParentConversationId),
         isSubagentOwnerAdmissible(userId),
       ]);
+      if (!ownerAdmissible) {
+        throw Object.assign(new Error('The event actor is temporarily unavailable'), {
+          code: 'EVENT_ACTOR_NOT_READY',
+          status: 409,
+        });
+      }
       if (
         eventParent == null ||
         eventParent.subagentThread != null ||
         eventParent.agent_id !== req._agentEventBindingParentAgentId ||
         (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
-        !ownerAdmissible
+        !isAgentEventRetentionActive(eventParent.expiredAt)
       ) {
         throw Object.assign(new Error('The event binding parent is no longer available'), {
           code: 'EVENT_BINDING_PARENT_ENDED',

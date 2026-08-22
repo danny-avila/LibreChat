@@ -3,6 +3,7 @@ import type { ConversationMethods, IConversation } from '@librechat/data-schemas
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { SubagentThreadTaskStore } from './subagentThreads';
 import { isReservedSubagentThreadId } from './subagentThreadIds';
+import { isAgentEventRetentionActive } from './eventRetention';
 
 export const CHILD_THREAD_READ_ONLY_ERROR =
   'This subagent thread is view-only. Continue it from its parent agent or create a separate chat.';
@@ -82,7 +83,10 @@ async function isBoundEventContinuation(
     sourceKeyId,
     ...(target.tenantId == null ? {} : { tenantId: target.tenantId }),
   });
-  if (binding?.conversationId !== target.conversationId) {
+  if (
+    binding?.conversationId !== target.conversationId ||
+    !isAgentEventRetentionActive(binding?.expiredAt)
+  ) {
     return null;
   }
   const parent = await deps.getConvo(target.userId, binding.lineage.parentConversationId);
@@ -90,7 +94,8 @@ async function isBoundEventContinuation(
     parent == null ||
     parent.subagentThread != null ||
     parent.agent_id !== binding.lineage.parentAgentId ||
-    (parent.tenantId ?? undefined) !== target.tenantId
+    (parent.tenantId ?? undefined) !== target.tenantId ||
+    !isAgentEventRetentionActive(parent.expiredAt)
   ) {
     return null;
   }
@@ -167,20 +172,33 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
         return;
       }
       const resolvedRequest = request as ResolvedConversationRequest;
+      const resolvedConversation = resolved.conversation;
+      const lineage = resolvedConversation?.subagentThread;
+      const humanResume = deps.isHumanResumeAllowed;
       if (
         request.path === '/resume' &&
-        resolved.conversation?.agentEventBinding != null &&
-        resolved.conversation.subagentThread != null &&
-        deps.isHumanResumeAllowed != null &&
-        (await deps.isHumanResumeAllowed({
+        resolvedConversation?.agentEventBinding != null &&
+        lineage != null &&
+        isAgentEventRetentionActive(resolvedConversation.expiredAt) &&
+        humanResume != null &&
+        (await humanResume({
           userId,
           conversationId: candidateConversationId,
           ...(tenantId == null ? {} : { tenantId }),
         }))
       ) {
-        applyEventBindingContext(resolvedRequest, resolved.conversation);
-        next();
-        return;
+        const parent = await deps.getConvo(userId, lineage.parentConversationId);
+        if (
+          parent != null &&
+          parent.subagentThread == null &&
+          parent.agent_id === lineage.parentAgentId &&
+          (parent.tenantId ?? undefined) === tenantId &&
+          isAgentEventRetentionActive(parent.expiredAt)
+        ) {
+          applyEventBindingContext(resolvedRequest, resolvedConversation);
+          next();
+          return;
+        }
       }
       const boundConversation = await isBoundEventContinuation(
         deps,

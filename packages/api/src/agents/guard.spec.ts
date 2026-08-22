@@ -129,7 +129,7 @@ describe('subagent child-thread write policy', () => {
       agentId: 'child-agent',
       tenantId: 'tenant-1',
       isTemporary: true,
-      expiredAt: new Date('2026-08-22T00:00:00.000Z'),
+      expiredAt: new Date('2099-08-22T00:00:00.000Z'),
       binding: {
         bindingId: `evtbind_${'a'.repeat(48)}`,
         sourceKeyId: 'source-key',
@@ -161,7 +161,7 @@ describe('subagent child-thread write policy', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       parentConversationId: 'parent-conversation',
-      retention: { isTemporary: true, expiredAt: '2026-08-22T00:00:00.000Z' },
+      retention: { isTemporary: true, expiredAt: '2099-08-22T00:00:00.000Z' },
     });
     expect(getEventBinding).toHaveBeenCalledWith({
       user: 'user-1',
@@ -187,7 +187,11 @@ describe('subagent child-thread write policy', () => {
     } as unknown as IConversation;
     const isHumanResumeAllowed = jest.fn(async () => true);
     const app = createApp(
-      jest.fn().mockResolvedValue(boundChild),
+      jest.fn(async (_user, conversationId) =>
+        conversationId === 'parent-conversation'
+          ? ({ conversationId, agent_id: 'parent-agent', tenantId: 'tenant-1' } as IConversation)
+          : boundChild,
+      ),
       store,
       undefined,
       isHumanResumeAllowed,
@@ -208,6 +212,53 @@ describe('subagent child-thread write policy', () => {
       tenantId: 'tenant-1',
       conversationId: reservedThreadId,
     });
+  });
+
+  it('rejects trigger continuations and human resumes after binding retention expires', async () => {
+    const store = makeStore();
+    const expiredChild = {
+      ...childConversation(),
+      tenantId: 'tenant-1',
+      expiredAt: new Date(0),
+      agentEventBinding: {
+        bindingId: `evtbind_${'c'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+    } as unknown as IConversation;
+    const getEventBinding = jest.fn(async () => ({
+      conversationId: expiredChild.conversationId,
+      agentId: expiredChild.agent_id,
+      tenantId: 'tenant-1',
+      expiredAt: expiredChild.expiredAt,
+      binding: expiredChild.agentEventBinding,
+      lineage: expiredChild.subagentThread!,
+    }));
+    const getConvo = jest.fn(async (_user, conversationId) =>
+      conversationId === 'parent-conversation'
+        ? ({ conversationId, agent_id: 'parent-agent', tenantId: 'tenant-1' } as IConversation)
+        : expiredChild,
+    );
+    const isHumanResumeAllowed = jest.fn(async () => true);
+    const testApp = createApp(
+      getConvo,
+      store,
+      getEventBinding as AllMethods['getAgentEventBinding'],
+      isHumanResumeAllowed,
+    );
+
+    const trigger = await request(testApp)
+      .post('/chat')
+      .set('x-test-trigger', '1')
+      .set('x-lc-agent-event-binding', `evtbind_${'c'.repeat(48)}`)
+      .set('x-lc-agent-event-source-key', 'source-key')
+      .send({ conversationId: 'child-conversation' });
+    const human = await request(testApp)
+      .post('/resume')
+      .send({ conversationId: 'child-conversation', actionId: 'action-1' });
+
+    expect(trigger.status).toBe(409);
+    expect(human.status).toBe(409);
   });
 
   it('rejects a provisional child before its conversation becomes durable', async () => {

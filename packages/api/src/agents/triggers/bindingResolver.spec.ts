@@ -171,4 +171,30 @@ describe('agent event continuation resolver', () => {
       resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
     ).rejects.toMatchObject({ code: 'EVENT_BINDING_INVALID', retryable: false });
   });
+
+  it('fails closed when the binding or its parent passed its retention deadline', async () => {
+    const getAgentEventBinding = jest.fn(async () => ({
+      conversationId: 'child-thread',
+      agentId: 'agent-player',
+      tenantId: 'tenant-1',
+      expiredAt: new Date(0),
+      binding: { bindingId, sourceKeyId, actorId: 'player' },
+      lineage: {
+        parentConversationId: 'parent-thread',
+        parentAgentId: 'agent-director',
+      } as never,
+    }));
+    const resolver = createAgentEventContinueResolver({
+      enabled: () => true,
+      methods: {
+        getAgentEventBinding,
+        getConvo: jest.fn(),
+        getMessages: jest.fn(),
+      },
+    });
+
+    await expect(
+      resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
+    ).rejects.toMatchObject({ code: 'EVENT_BINDING_INVALID', retryable: false });
+  });
 });

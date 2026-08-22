@@ -16,6 +16,7 @@ const {
   contentFilterBlockResponse,
   extractConversationTitleContent,
   GenerationJobManager,
+  isStopConfirmed,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
@@ -201,10 +202,15 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
       if (!needsDrain) return;
       foundActiveGeneration = true;
       try {
-        await GenerationJobManager.abortJob(conversationId, {
+        const abortResult = await GenerationJobManager.abortJob(conversationId, {
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
         });
+        if (!isStopConfirmed(abortResult)) {
+          throw new Error(
+            `Could not confirm generation stop for ${conversationId}: ${abortResult?.failureReason ?? 'unknown'}`,
+          );
+        }
         const deadline = Date.now() + GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS;
         while (true) {
           const current = await GenerationJobManager.getJob(conversationId);
@@ -229,6 +235,9 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
   if (!foundActiveGeneration) {
     return;
   }
+  if (drainErrors.length > 0) {
+    throw new Error('One or more deleted child generations could not be confirmed drained.');
+  }
   try {
     await db.deleteConvos(userId, { conversationId: { $in: conversationIds } });
   } catch {
@@ -237,9 +246,6 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
   await db
     .deleteMessages({ user: userId, conversationId: { $in: conversationIds } })
     .catch((error) => logger.warn('Deleted child message remnant cleanup failed', error));
-  if (drainErrors.length > 0) {
-    throw new Error('One or more deleted child generations could not be confirmed drained.');
-  }
 }
 
 router.delete('/', configMiddleware, async (req, res) => {

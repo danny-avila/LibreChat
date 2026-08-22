@@ -3,6 +3,7 @@ import type { ConversationMethods, MessageMethods } from '@librechat/data-schema
 import type { AgentTriggerContinuePreparation, AgentTriggerExecutionHostDeps } from './host';
 import type { AgentContinueTriggerEnvelope } from './envelope';
 import type { AgentTriggerDispatchContext } from './dispatch';
+import { isAgentEventRetentionActive } from '../eventRetention';
 import { AgentTriggerExecutionError } from './host';
 
 type ContinueResolver = NonNullable<AgentTriggerExecutionHostDeps['prepareContinue']>;
@@ -83,7 +84,8 @@ export function createAgentEventContinueResolver({
       binding.conversationId !== envelope.target.conversationId ||
       binding.agentId !== envelope.target.agentId ||
       binding.binding.bindingId !== bindingId ||
-      binding.binding.sourceKeyId !== sourceKeyId
+      binding.binding.sourceKeyId !== sourceKeyId ||
+      !isAgentEventRetentionActive(binding.expiredAt)
     ) {
       throw invalidBinding('The event binding no longer authorizes this child thread.');
     }
@@ -105,7 +107,8 @@ export function createAgentEventContinueResolver({
       parent == null ||
       parent.subagentThread != null ||
       parent.agent_id !== binding.lineage.parentAgentId ||
-      (parent.tenantId ?? undefined) !== envelope.principal.tenantId
+      (parent.tenantId ?? undefined) !== envelope.principal.tenantId ||
+      !isAgentEventRetentionActive(parent.expiredAt)
     ) {
       throw invalidBinding('The event binding parent no longer authorizes this child thread.');
     }

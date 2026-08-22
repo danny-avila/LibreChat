@@ -322,6 +322,7 @@ export function createConversationMethods(
       'agentEventBinding.bindingId': input.bindingId,
       'agentEventBinding.sourceKeyId': input.sourceKeyId,
       ...subagentLeaseTenantFilter(input.tenantId),
+      ...activeExpirationFilter<IConversation>(),
     })
       .select(
         'conversationId agent_id tenantId isTemporary expiredAt subagentThread +agentEventBinding',

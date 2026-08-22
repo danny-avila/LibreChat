@@ -287,6 +287,66 @@ describe('agent event bindings', () => {
     );
   });
 
+  it('rejects an idempotent replay when the parent disappears after the first read', async () => {
+    const deps = dependencies();
+    /** Fill the deterministic binding id after the request computes it. */
+    deps.getBinding.mockImplementationOnce(async (input) => ({
+      conversationId: 'child-thread',
+      agentId: CHILD_AGENT_ID,
+      tenantId: 'tenant-1',
+      binding: {
+        bindingId: input.bindingId,
+        sourceKeyId: SOURCE_KEY_ID,
+        actorId: 'player-a',
+      },
+      lineage: {
+        rootConversationId: PARENT_ID,
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        parentToolCallId: `event-binding:${input.bindingId}`,
+        parentAgentId: PARENT_AGENT_ID,
+        subagentType: CHILD_AGENT_ID,
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    }));
+    deps.getConvo.mockResolvedValueOnce(parent()).mockResolvedValueOnce(null);
+    const { server } = app(deps);
+
+    const response = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'parent-replay-race')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('event_binding_parent_ended');
+    expect(deps.reserveThread).not.toHaveBeenCalled();
+  });
+
+  it('rejects registration after the parent retention deadline', async () => {
+    const deps = dependencies();
+    deps.getConvo.mockResolvedValueOnce({ ...parent(), expiredAt: new Date(0) });
+    const { server } = app(deps);
+
+    const response = await request(server)
+      .post('/bindings')
+      .set('Idempotency-Key', 'expired-parent')
+      .send({
+        actorId: 'player-a',
+        parentConversationId: PARENT_ID,
+        parentMessageId: PARENT_MESSAGE_ID,
+        target: { agentId: CHILD_AGENT_ID },
+      });
+
+    expect(response.status).toBe(404);
+    expect(deps.reserveThread).not.toHaveBeenCalled();
+  });
+
   it('leaves fire and steer deliveries unchanged', async () => {
     const { server, deps } = app();
     const response = await request(server)

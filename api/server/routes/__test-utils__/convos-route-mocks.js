@@ -39,6 +39,9 @@ module.exports = {
     }),
     createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
     GenerationJobManager: generationJobManager,
+    isStopConfirmed: jest.fn(
+      (result) => result?.success === true || result?.failureReason === 'already_settled',
+    ),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),

@@ -155,7 +155,7 @@ const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMC
 function getInterruptTtlMs(checkpointerCfg, req) {
   const configuredTtlMs = getApprovalTtlMs(checkpointerCfg);
   const retention = req?._agentEventBindingRetention;
-  if (retention?.isTemporary !== true || retention.expiredAt == null) {
+  if (retention?.expiredAt == null) {
     return configuredTtlMs;
   }
   const bindingDeadline = new Date(retention.expiredAt).getTime();

@@ -15,7 +15,7 @@ const { getRetentionExpiry, getAgentFileRetentionExpiry } = require('./retention
 
 describe('event-bound file retention', () => {
   const expiredAt = new Date('2026-08-22T12:00:00.000Z');
-  const req = { _agentEventBindingRetention: { isTemporary: true, expiredAt } };
+  const req = { _agentEventBindingRetention: { isTemporary: false, expiredAt } };
 
   beforeEach(() => jest.clearAllMocks());
 

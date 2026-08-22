@@ -64,6 +64,8 @@ const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
+const mockIsSubagentOwnerAdmissible = jest.fn();
+const mockAcquireEventChildGenerationLease = jest.fn();
 const mockIsScheduleFireRequest = jest.fn();
 const mockExemptFromConcurrencyLimiter = jest.fn();
 const mockRecordScheduleOutcome = jest.fn();
@@ -195,6 +197,8 @@ jest.mock('@librechat/api', () => ({
     return messages.length === 0;
   },
   deleteAgentCheckpoint: (...args) => mockDeleteAgentCheckpoint(...args),
+  isAgentEventRetentionActive: (expiredAt) =>
+    expiredAt == null || new Date(expiredAt).getTime() > Date.now(),
   createMCPRuntimeRequestBody: ({ messageId, conversationId, parentMessageId }) => ({
     messageId,
     conversationId,
@@ -223,6 +227,11 @@ jest.mock('~/models', () => ({
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
+  isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
+}));
+
+jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
+  acquireEventChildGenerationLease: (...args) => mockAcquireEventChildGenerationLease(...args),
 }));
 
 jest.mock('~/server/services/Schedules', () => ({
@@ -266,6 +275,8 @@ describe('ResumableAgentController resume metadata', () => {
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
     mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(true);
+    mockAcquireEventChildGenerationLease.mockResolvedValue(jest.fn());
     mockIsScheduleFireRequest.mockImplementation((req) => req?._isScheduledFire === true);
     mockExemptFromConcurrencyLimiter.mockImplementation(
       (req) => req?._isScheduledFire === true && req?._isManualScheduledFire !== true,
@@ -3597,6 +3608,44 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       }),
     );
+  });
+
+  it('reports a temporary event-actor fence as retryable rather than ending the binding', async () => {
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({
+        streamId: 'child-conversation',
+        conversationId: 'child-conversation',
+      }),
+    );
+    mockGetConvo.mockResolvedValue({
+      conversationId: 'parent-conversation',
+      agent_id: 'parent-agent',
+      tenantId: 'tenant-1',
+    });
+    mockIsSubagentOwnerAdmissible.mockResolvedValue(false);
+    const req = {
+      user: { id: 'user-123', tenantId: 'tenant-1' },
+      body: {
+        text: 'Continue from event.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-event',
+        conversationId: 'child-conversation',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+      _agentEventBindingParentConversationId: 'parent-conversation',
+      _agentEventBindingParentAgentId: 'parent-agent',
+      _agentEventBindingTenantId: 'tenant-1',
+    };
+    const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'EVENT_ACTOR_NOT_READY' }),
+    );
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
   });
 
   it('releases the idempotency claim on a 429 only when it won the claim', async () => {

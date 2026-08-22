@@ -66,6 +66,7 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
+  getDynamicToolContexts: jest.fn(() => []),
 }));
 
 describe('AgentClient - final model-bound content protection', () => {
@@ -527,7 +528,8 @@ describe('AgentClient - interrupt discovery persistence', () => {
         body: { endpoint: EModelEndpoint.agents, agent_id: 'agent-123' },
         config: { endpoints: { [EModelEndpoint.agents]: { checkpointer: { ttl: 3600 } } } },
         _agentEventBindingRetention: {
-          isTemporary: true,
+          /** RetentionMode.ALL conversations are not temporary but still have a deadline. */
+          isTemporary: false,
           expiredAt: new Date(now + 5_000),
         },
       },

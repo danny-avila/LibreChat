@@ -15,7 +15,7 @@ const getRetentionDependencies = () => ({
  * extend files beyond the child conversation that makes them addressable. */
 function getEventBindingRetention(req) {
   const retention = req?._agentEventBindingRetention;
-  if (retention?.isTemporary !== true || retention.expiredAt == null) {
+  if (retention?.expiredAt == null) {
     return null;
   }
   const expiredAt =
