@@ -551,6 +551,22 @@ describe('Convos Routes', () => {
       });
     });
 
+    it('fails closed before checkpoint pruning when generation lookup stays unavailable', async () => {
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockRejectedValue(new Error('generation store unavailable'));
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(500);
+      expect(generationJobManager.getJob).toHaveBeenCalledTimes(3);
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+    });
+
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
       deleteConvos.mockResolvedValue({
         deletedCount: 2,

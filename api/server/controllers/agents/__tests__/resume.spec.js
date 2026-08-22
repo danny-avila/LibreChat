@@ -499,6 +499,21 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         }),
       );
     });
+
+    it('defers a resume when the owner admission fence is temporarily closed', async () => {
+      configureEventActorResume();
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+      mockIsSubagentOwnerAdmissible.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
+        expectedCreatedAt: 1000,
+        awaitProviderDrain: true,
+      });
+    });
   });
 
   describe('scheduled occurrence lifecycle', () => {

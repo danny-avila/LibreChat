@@ -173,8 +173,10 @@ describe('subagent child-thread write policy', () => {
 
   it('allows only an exact pending human resume for a bound child', async () => {
     const store = makeStore();
+    const reservedThreadId = createSubagentThreadId('scope', 'bound-child');
     const boundChild = {
       ...childConversation(),
+      conversationId: reservedThreadId,
       tenantId: 'tenant-1',
       isTemporary: true,
       agentEventBinding: {
@@ -193,18 +195,18 @@ describe('subagent child-thread write policy', () => {
 
     const response = await request(app)
       .post('/resume')
-      .send({ conversationId: 'child-conversation', actionId: 'action-1' });
+      .send({ conversationId: reservedThreadId, actionId: 'action-1' });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      resolvedConversationId: 'child-conversation',
+      resolvedConversationId: reservedThreadId,
       parentConversationId: 'parent-conversation',
       retention: { isTemporary: true },
     });
     expect(isHumanResumeAllowed).toHaveBeenCalledWith({
       userId: 'user-1',
       tenantId: 'tenant-1',
-      conversationId: 'child-conversation',
+      conversationId: reservedThreadId,
     });
   });
 
@@ -238,7 +240,7 @@ describe('subagent child-thread write policy', () => {
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ error: CHILD_THREAD_READ_ONLY_ERROR });
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvo).toHaveBeenCalledWith('user-1', reservedThreadId);
   });
 
   it('keeps the shared policy owner-scoped and treats child lineage as immutable', async () => {

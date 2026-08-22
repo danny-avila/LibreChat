@@ -1267,22 +1267,40 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
 
     if (req._agentEventBindingParentConversationId != null) {
+      let eventActorRejection;
       try {
         const [eventParent, ownerAdmissible] = await Promise.all([
           getConvo(userId, req._agentEventBindingParentConversationId),
           isSubagentOwnerAdmissible(userId),
         ]);
-        if (
+        if (!ownerAdmissible) {
+          eventActorRejection = {
+            code: 'EVENT_ACTOR_NOT_READY',
+            error: 'The event actor owner is temporarily unavailable',
+          };
+        } else if (
           eventParent == null ||
           eventParent.subagentThread != null ||
           eventParent.agent_id !== req._agentEventBindingParentAgentId ||
-          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
-          !ownerAdmissible
+          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId
         ) {
-          throw new Error('The event binding parent is no longer available');
+          eventActorRejection = {
+            code: 'EVENT_BINDING_PARENT_ENDED',
+            error: 'The event binding parent is no longer available',
+          };
         }
       } catch (error) {
-        logger.warn('[ResumeAgentController] Event actor resume lost its binding fence', error);
+        logger.warn('[ResumeAgentController] Event actor fence recheck failed', error);
+        eventActorRejection = {
+          code: 'EVENT_ACTOR_NOT_READY',
+          error: 'The event actor owner is temporarily unavailable',
+        };
+      }
+      if (eventActorRejection != null) {
+        logger.warn(
+          '[ResumeAgentController] Event actor resume lost its binding fence',
+          eventActorRejection,
+        );
         await GenerationJobManager.abortJob(streamId, {
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
@@ -1293,15 +1311,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           );
         });
         await decrementPendingRequest(userId);
-        return sendGenerationJson(
-          res,
-          409,
-          {
-            code: 'EVENT_BINDING_PARENT_ENDED',
-            error: 'The event binding parent is no longer available',
-          },
-          generationProtocolVersion,
-        );
+        return sendGenerationJson(res, 409, eventActorRejection, generationProtocolVersion);
       }
     }
     eventLeaseTransferredToRun = true;

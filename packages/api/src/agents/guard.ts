@@ -112,7 +112,8 @@ async function resolveSubagentThreadWrite(
   /** New child IDs are returned synchronously by the SDK before Mongo creation can
    * finish. Their reserved UUID namespace closes that brief window on every replica. */
   if (isReservedSubagentThreadId(conversationId)) {
-    return { blocked: true };
+    const conversation = await getConvo(userId, conversationId);
+    return { blocked: true, conversation };
   }
   if (store.isThreadActiveForOwner(userId, conversationId, tenantId)) {
     return { blocked: true };

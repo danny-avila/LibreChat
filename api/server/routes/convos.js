@@ -140,6 +140,22 @@ const POST_DELETE_CANCEL_ATTEMPTS = 3;
 const POST_DELETE_CANCEL_BACKOFF_MS = 250;
 const GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS = 45_000;
 const GENERATION_PERSISTENCE_DRAIN_POLL_MS = 100;
+const GENERATION_LOOKUP_ATTEMPTS = 3;
+
+async function readGenerationForDeletion(conversationId) {
+  let lastError;
+  for (let attempt = 1; attempt <= GENERATION_LOOKUP_ATTEMPTS; attempt += 1) {
+    try {
+      return await GenerationJobManager.getJob(conversationId);
+    } catch (error) {
+      lastError = error;
+      if (attempt < GENERATION_LOOKUP_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
 
 /** Replays a cancellation plan after deletion, retrying a transiently unreachable
  * owner rather than losing the only pass that can stop a late-admitted child. */
@@ -168,9 +184,11 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
     generationIds.map(async (conversationId) => {
       let job;
       try {
-        job = await GenerationJobManager.getJob(conversationId);
+        job = await readGenerationForDeletion(conversationId);
       } catch (error) {
         logger.warn('Deleted child generation lookup failed', error);
+        foundActiveGeneration = true;
+        drainErrors.push(error);
         return;
       }
       if (job == null || job.metadata?.userId !== userId) {

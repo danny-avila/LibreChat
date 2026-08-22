@@ -1753,6 +1753,46 @@ describe('Conversation Operations', () => {
       expect(await Conversation.findOne({ conversationId: otherUsersChildId })).not.toBeNull();
     });
 
+    it('reports a partial cascade failure instead of silently succeeding', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      await Conversation.create([
+        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+      const realFind = Conversation.find.bind(Conversation);
+      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter, ...args) => {
+        if (filter?.['subagentThread.parentConversationId'] != null) {
+          return {
+            select: () => ({ lean: () => Promise.reject(new Error('stepdown')) }),
+          };
+        }
+        return realFind(filter, ...args);
+      }) as typeof Conversation.find);
+
+      await expect(deleteConvos('user123', { conversationId: parentId })).rejects.toThrow(
+        'stepdown',
+      );
+      expect(findSpy).toHaveBeenCalledTimes(4);
+      expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
+      expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
+      expect(deleteMessages).not.toHaveBeenCalled();
+      findSpy.mockRestore();
+    });
+
     it('does not delete a parent when deleting one child thread', async () => {
       const parentId = uuidv4();
       const childId = uuidv4();

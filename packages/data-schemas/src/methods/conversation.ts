@@ -1429,33 +1429,43 @@ export function createConversationMethods(
       let pending = conversations;
       let acknowledged = true;
       let deletedCount = 0;
+      const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            return await operation();
+          } catch (error) {
+            lastError = error;
+            if (attempt < 3) {
+              await new Promise((resolve) => setTimeout(resolve, 25 * attempt));
+            }
+          }
+        }
+        throw lastError;
+      };
       while (pending.length > 0) {
         const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
         if (wave.length === 0) {
           break;
         }
         const waveIds = wave.map((conversation) => conversation.conversationId);
-        try {
-          const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
-          acknowledged &&= result.acknowledged;
-          deletedCount += result.deletedCount;
-          for (const conversation of wave) {
-            seen.add(conversation.conversationId);
-            deletedConversations.push(conversation);
-          }
-          pending = await Conversation.find({
+        const result = await retryCascadeOperation(() =>
+          Conversation.deleteMany({ user, conversationId: { $in: waveIds } }),
+        );
+        acknowledged &&= result.acknowledged;
+        deletedCount += result.deletedCount;
+        for (const conversation of wave) {
+          seen.add(conversation.conversationId);
+          deletedConversations.push(conversation);
+        }
+        pending = await retryCascadeOperation(() =>
+          Conversation.find({
             user,
             'subagentThread.parentConversationId': { $in: waveIds },
           })
             .select('conversationId chatProjectId tags')
-            .lean<DeletionConversation[]>();
-        } catch (error) {
-          if (deletedConversations.length === 0) {
-            throw error;
-          }
-          logger.error('[deleteConvos] Root deleted but child-thread cascade failed', error);
-          break;
-        }
+            .lean<DeletionConversation[]>(),
+        );
       }
 
       const conversationIds = deletedConversations.map((c) => c.conversationId);
