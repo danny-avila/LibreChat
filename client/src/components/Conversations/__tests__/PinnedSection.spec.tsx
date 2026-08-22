@@ -9,6 +9,7 @@ import PinnedSection from '../PinnedSection';
 const mockSetExpanded = jest.fn();
 let mockIsExpanded = true;
 let mockPinnedOrder: string[] | undefined;
+let mockOrderFetched = true;
 const mockReorderFavorites = jest.fn();
 const mockUpdatePinnedOrder = jest.fn();
 
@@ -36,7 +37,7 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/data-provider', () => ({
   useActiveJobs: () => ({ data: undefined }),
-  useGetPinnedOrderQuery: () => ({ data: mockPinnedOrder }),
+  useGetPinnedOrderQuery: () => ({ data: mockPinnedOrder, isFetched: mockOrderFetched }),
   useUpdatePinnedOrderMutation: () => ({ mutate: mockUpdatePinnedOrder }),
   usePinConversationMutation: () => ({ mutate: jest.fn() }),
 }));
@@ -113,6 +114,7 @@ describe('PinnedSection unified list', () => {
   beforeEach(() => {
     mockIsExpanded = true;
     mockPinnedOrder = undefined;
+    mockOrderFetched = true;
     mockSetExpanded.mockReset();
     mockReorderFavorites.mockReset();
     mockUpdatePinnedOrder.mockReset();
@@ -196,6 +198,43 @@ describe('PinnedSection unified list', () => {
       moveFocusedRow('Pinned Chat', 'ArrowUp');
 
       expect(itemLabels()).toEqual(['Pinned Chat', 'gpt-4o']);
+    });
+
+    /* Reordering against an order that has not arrived yet would merge into
+     * `[]` and, since `onMutate` cancels that GET, post only what is on screen,
+     * discarding the saved positions of everything else. */
+    it('refuses to reorder before the stored order has loaded', () => {
+      mockOrderFetched = false;
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
+      expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+    });
+
+    it('prunes keys that are gone once the whole list is known', () => {
+      mockPinnedOrder = ['convo:gone', 'model:6:openAI:gpt-4o', 'convo:c1'];
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      render(
+        <DndProvider backend={HTML5Backend}>
+          <PinnedSection
+            conversations={[pinnedConvo('c1', 'Pinned Chat')]}
+            toggleNav={jest.fn()}
+            membershipComplete
+          />
+        </DndProvider>,
+      );
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+
+      /* Merging forever would grow the array until the size guard rejected
+       * every write, so a complete membership load compacts it. */
+      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+        ['convo:c1', 'model:6:openAI:gpt-4o'],
+        expect.anything(),
+      );
     });
 
     it('does nothing at the ends of the list', () => {

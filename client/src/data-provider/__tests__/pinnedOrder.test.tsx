@@ -1,9 +1,12 @@
-import { createElement } from 'react';
+import { RecoilRoot } from 'recoil';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { TUser } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import { useUpdatePinnedOrderMutation } from '../Favorites';
+import store from '~/store';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -35,14 +38,33 @@ const deferred = <T,>() => {
   return { promise, resolve, reject };
 };
 
-const setup = () => {
+/* Ownership comes from the Recoil user atom, the same one AuthContext fills
+ * from the login response. */
+const wrapperFor = (queryClient: QueryClient, userId: string) =>
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <RecoilRoot
+        initializeState={({ set }: MutableSnapshot) => set(store.user, { id: userId } as TUser)}
+      >
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </RecoilRoot>
+    );
+  };
+
+const setup = (userId = 'user-a') => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(QueryClientProvider, { client: queryClient }, children);
-  const { result } = renderHook(() => useUpdatePinnedOrderMutation(), { wrapper });
-  return { queryClient, result };
+  const { result } = renderHook(() => useUpdatePinnedOrderMutation(), {
+    wrapper: wrapperFor(queryClient, userId),
+  });
+  /** Signing in as someone else: the tree re-renders and the hook observes the
+   *  new account, exactly as it would after a real session change. */
+  const signInAs = (nextUserId: string) =>
+    renderHook(() => useUpdatePinnedOrderMutation(), {
+      wrapper: wrapperFor(queryClient, nextUserId),
+    });
+  return { queryClient, result, signInAs };
 };
 
 const cached = (queryClient: QueryClient) =>
@@ -139,8 +161,7 @@ describe('useUpdatePinnedOrderMutation', () => {
     const first = deferred<string[]>();
     updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
 
-    const { queryClient, result } = setup();
-    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+    const { result, signInAs } = setup('user-a');
 
     await act(async () => {
       result.current.mutate(['b', 'a', 'c']);
@@ -156,7 +177,7 @@ describe('useUpdatePinnedOrderMutation', () => {
 
     /* The session turns over while the second write is still waiting its turn:
      * sending it would put one account's order in the other's document. */
-    queryClient.setQueryData([QueryKeys.user], { id: 'user-b' });
+    signInAs('user-b');
 
     await act(async () => {
       first.resolve(['b', 'a', 'c']);
@@ -171,8 +192,7 @@ describe('useUpdatePinnedOrderMutation', () => {
     const first = deferred<string[]>();
     updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
 
-    const { queryClient, result } = setup();
-    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+    const { result } = setup('user-a');
 
     await act(async () => {
       result.current.mutate(['b', 'a', 'c']);
@@ -192,8 +212,7 @@ describe('useUpdatePinnedOrderMutation', () => {
     const inFlight = deferred<string[]>();
     updatePinnedOrder.mockReturnValueOnce(inFlight.promise);
 
-    const { queryClient, result } = setup();
-    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+    const { queryClient, result, signInAs } = setup('user-a');
 
     let write!: Promise<unknown>;
     await act(async () => {
@@ -204,7 +223,7 @@ describe('useUpdatePinnedOrderMutation', () => {
     /* The request had already left, so the pre-send owner check passed. The
      * cache key is not scoped by user, so publishing this response now would
      * hand account A's order to account B. */
-    queryClient.setQueryData([QueryKeys.user], { id: 'user-b' });
+    signInAs('user-b');
     queryClient.setQueryData([QueryKeys.pinnedOrder], ['b-order']);
 
     await act(async () => {
