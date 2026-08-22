@@ -55,7 +55,7 @@ const setup = (userId = 'user-a') => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const { result } = renderHook(() => useUpdatePinnedOrderMutation(), {
+  const { result, unmount } = renderHook(() => useUpdatePinnedOrderMutation(), {
     wrapper: wrapperFor(queryClient, userId),
   });
   /** Signing in as someone else: the tree re-renders and the hook observes the
@@ -64,7 +64,7 @@ const setup = (userId = 'user-a') => {
     renderHook(() => useUpdatePinnedOrderMutation(), {
       wrapper: wrapperFor(queryClient, nextUserId),
     });
-  return { queryClient, result, signInAs };
+  return { queryClient, result, signInAs, unmount };
 };
 
 const cached = (queryClient: QueryClient) =>
@@ -72,7 +72,9 @@ const cached = (queryClient: QueryClient) =>
 
 describe('useUpdatePinnedOrderMutation', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    /* `reset`, not `clear`: a queued `mockResolvedValueOnce` that a test never
+     * consumed would otherwise be handed to the next one. */
+    jest.resetAllMocks();
     getPinnedOrder.mockResolvedValue(['a', 'b', 'c']);
   });
 
@@ -232,5 +234,59 @@ describe('useUpdatePinnedOrderMutation', () => {
     });
 
     expect(cached(queryClient)).toEqual(['b-order']);
+  });
+
+  /* The sidebar drops the section that owns this hook whenever a search is
+   * active, while its queued writes keep running. Losing the identity there
+   * must not strand work that belongs to the very same account. */
+  it('still sends a queued write after the owning section unmounts', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { result, unmount } = setup('user-a');
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    await act(async () => {
+      result.current.mutate(['c', 'b', 'a']);
+    });
+
+    unmount();
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+    });
+
+    await waitFor(() => expect(updatePinnedOrder).toHaveBeenCalledTimes(2));
+    expect(updatePinnedOrder.mock.calls[1][0]).toEqual(['c', 'b', 'a']);
+  });
+
+  it('rolls back a failed write after the owning section unmounts', async () => {
+    const inFlight = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(inFlight.promise);
+
+    const { queryClient, result, unmount } = setup('user-a');
+    queryClient.setQueryData([QueryKeys.pinnedOrder], ['a', 'b', 'c']);
+
+    let write!: Promise<unknown>;
+    await act(async () => {
+      write = result.current.mutateAsync(['b', 'a', 'c']).catch(() => undefined);
+      await Promise.resolve();
+    });
+    /* The optimistic order is on screen and the request has left. */
+    expect(cached(queryClient)).toEqual(['b', 'a', 'c']);
+
+    unmount();
+
+    await act(async () => {
+      inFlight.reject(new Error('rejected'));
+      await write;
+    });
+
+    /* Observer callbacks no longer run, so the correction has to come from the
+     * request itself; skipping it would leave an order cached that the server
+     * never accepted, on a query that refetches on nothing. */
+    await waitFor(() => expect(cached(queryClient)).toBeUndefined());
   });
 });

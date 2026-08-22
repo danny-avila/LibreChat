@@ -17,15 +17,26 @@ const PINNED_ORDER_QUEUE = 'pinnedOrder';
  *  mis-attribute writes made in that window. */
 let signedInUserId: string | undefined;
 
+/** The user query is authoritative once it has an answer; the atom covers the
+ *  window before that, and outlives the hook so queued work can still be
+ *  attributed after the sidebar has dropped the section it lives in. */
 const currentUserId = (queryClient: QueryClient): string | undefined =>
-  signedInUserId ?? queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id;
+  queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id ?? signedInUserId;
 
-/** Whether the account that started a write is still the one signed in. The
- *  pinned-order cache key is not scoped by user, so a response arriving after a
- *  session change would otherwise publish one account's order to the next, and
- *  this query has every automatic refetch trigger disabled to correct it. */
-const ownsCache = (queryClient: QueryClient, context?: { owner?: string }): boolean =>
-  context?.owner != null && context.owner === currentUserId(queryClient);
+/**
+ * Whether a write started by `owner` may still touch the shared pinned-order
+ * cache, which is not scoped by user.
+ *
+ * Only a positively different account refuses it. Refusing whenever the current
+ * account cannot be read would strand legitimate work instead: the section is
+ * unmounted during a search, and a queued write for the very same account would
+ * then be abandoned and, worse, denied its rollback, leaving an order on screen
+ * that was never stored.
+ */
+const isForeignSession = (queryClient: QueryClient, owner?: string): boolean => {
+  const current = currentUserId(queryClient);
+  return current != null && current !== owner;
+};
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -92,14 +103,11 @@ export const useUpdatePinnedOrderMutation = () => {
   const user = useRecoilValue(store.user);
   const observedUserId = user?.id;
   useEffect(() => {
+    /* Deliberately not cleared on unmount: the section goes away during a
+     * search while its writes are still queued, and dropping the identity there
+     * is what stranded them. The query cache above takes precedence once it has
+     * an answer, so a session change is still seen. */
     signedInUserId = observedUserId;
-    /* This hook lives in a section the sidebar unmounts during a search, and it
-     * is the only thing feeding the tracker. A value left behind would go stale
-     * across a session change and, being non-null, would also shadow the cache
-     * fallback, so an unverifiable owner refuses the write instead. */
-    return () => {
-      signedInUserId = undefined;
-    };
   }, [observedUserId]);
 
   return useMutation(
@@ -108,14 +116,29 @@ export const useUpdatePinnedOrderMutation = () => {
      * order the user finished on. */
     (pinnedOrder: string[]) => {
       const owner = currentUserId(queryClient);
-      return enqueue(`${PINNED_ORDER_QUEUE}:${owner ?? ''}`, () => {
+      return enqueue(`${PINNED_ORDER_QUEUE}:${owner ?? ''}`, async () => {
         /* A queued write runs later and carries whatever Authorization header
          * is current by then. If the session changed while it waited, sending
          * it would write one account's order into another's document. */
-        if (currentUserId(queryClient) !== owner) {
+        if (isForeignSession(queryClient, owner)) {
           throw new Error('pinnedOrder write abandoned: the signed-in user changed');
         }
-        return dataService.updatePinnedOrder(pinnedOrder);
+        try {
+          return await dataService.updatePinnedOrder(pinnedOrder);
+        } catch (error) {
+          /* Corrected here rather than in `onError` because the section that
+           * owns this hook is unmounted while a search is active, and the
+           * observer callbacks do not run once it is. The cache holds an order
+           * the server never accepted, and this query refetches on nothing, so
+           * leaving it would pass it off as stored for the rest of the session.
+           * Restoring a captured previous value is not safe either: queued
+           * behind another write it may itself be unpersisted, and before the
+           * first fetch resolves there is none. */
+          if (latestPinnedOrder === pinnedOrder && !isForeignSession(queryClient, owner)) {
+            queryClient.resetQueries([QueryKeys.pinnedOrder]);
+          }
+          throw error;
+        }
       });
     },
     {
@@ -126,22 +149,8 @@ export const useUpdatePinnedOrderMutation = () => {
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
         return { owner };
       },
-      onError: (_err, newOrder, context) => {
-        if (!ownsCache(queryClient, context)) {
-          return;
-        }
-        if (latestPinnedOrder !== newOrder) {
-          return;
-        }
-        /* The newest write failed, so the cache holds an order the server never
-         * accepted. Restoring a captured previous value is not safe here: with
-         * writes queued behind each other it may itself be unpersisted, and
-         * before the first fetch resolves there is no previous value at all.
-         * Refetching is the only answer that is right in every case. */
-        queryClient.resetQueries([QueryKeys.pinnedOrder]);
-      },
       onSuccess: (savedOrder, newOrder, context) => {
-        if (!ownsCache(queryClient, context)) {
+        if (isForeignSession(queryClient, context?.owner)) {
           return;
         }
         if (latestPinnedOrder !== newOrder) {
