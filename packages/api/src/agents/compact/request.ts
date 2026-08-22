@@ -378,19 +378,22 @@ export async function handleCompactRequest(
      *  agent, is what makes compaction run the same model and generation
      *  settings as the turns it is summarizing. The validation below then sees
      *  the model that will ACTUALLY be used. */
-    const { modelOptions, maxContextTokens, resendFiles } = resolveAgentModelParameters(
-      loadedAgent,
-      endpointOption?.model_parameters,
-    );
+    const { modelOptions, maxContextTokens, resendFiles, fileTokenLimit } =
+      resolveAgentModelParameters(loadedAgent, endpointOption?.model_parameters);
     /** `maxContextTokens` and `resendFiles` are LibreChat-only settings, kept
      *  off the provider parameters but carried through: a normal turn treats
      *  the first as its authoritative context budget and the second as
      *  permission to re-send earlier uploads, and compaction has to as well. */
-    const agent: Agent & { maxContextTokens?: number; resendFiles?: boolean } = {
+    const agent: Agent & {
+      maxContextTokens?: number;
+      resendFiles?: boolean;
+      fileTokenLimit?: number;
+    } = {
       ...loadedAgent,
       model: modelOptions.model ?? loadedAgent.model,
       model_parameters: modelOptions as Agent['model_parameters'],
       ...(maxContextTokens != null && { maxContextTokens }),
+      ...(fileTokenLimit != null && { fileTokenLimit }),
       resendFiles,
     };
 

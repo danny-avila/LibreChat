@@ -1346,6 +1346,105 @@ describe('compactConversation', () => {
     expect(JSON.stringify(sent[0].content)).toContain('RFC-9110 defines GET.');
   });
 
+  it('does not enrich history the summary boundary discards', async () => {
+    /** Everything before the newest checkpoint is dropped by formatting, so
+     *  loading its documents and agents is wasted work that can also fail. */
+    const getFiles = jest.fn().mockResolvedValue([]);
+    const getAgent = jest.fn().mockResolvedValue(null);
+    const branchWithBoundary: TMessage[] = [
+      {
+        ...userMessage('p1', Constants.NO_PARENT, 'older turn'),
+        files: [{ file_id: 'file_old' }],
+      } as TMessage,
+      assistantMessage('p2', 'p1', [
+        {
+          type: ContentTypes.SUMMARY,
+          content: [{ type: ContentTypes.TEXT, text: 'earlier checkpoint' }],
+        },
+      ] as TMessage['content']),
+      userMessage('p3', 'p2', 'newer turn'),
+    ];
+
+    await compactConversation({
+      req: makeReq(),
+      agent,
+      branch: branchWithBoundary,
+      ids: { ...ids, parentMessageId: 'p3' },
+      db: dbMethods,
+      getFiles,
+      getAgent,
+    });
+
+    /** The only file lives before the boundary, so nothing is looked up. */
+    expect(getFiles).not.toHaveBeenCalled();
+    expect(getAgent).not.toHaveBeenCalled();
+  });
+
+  it('inlines historical files under the resolved file token limit', async () => {
+    const longText = bulk('doc', 600);
+    const getFiles = jest
+      .fn()
+      .mockResolvedValue([
+        { file_id: 'file_big', filename: 'spec.md', source: 'text', text: longText },
+      ]);
+    const withFile = {
+      ...userMessage('g1', Constants.NO_PARENT, 'summarize this'),
+      files: [{ file_id: 'file_big' }],
+    } as TMessage;
+
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...agent, fileTokenLimit: 50 },
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles,
+    });
+
+    /** Truncated to the resolved budget rather than the request-controlled
+     *  field or the global default. */
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const inlined = JSON.stringify(sent[0].content);
+    expect(inlined).toContain('doc');
+    expect(inlined.length).toBeLessThan(longText.length);
+  });
+
+  it('does not carry run parameters into a cross-endpoint summarizer', async () => {
+    /** `getGoogleConfig` spreads whatever it is handed into the client config,
+     *  so an OpenAI conversation's parameters would reach a Google summarizer
+     *  as generation settings it never asked for. */
+    mockInitializeModel.mockClear();
+    const originalKey = process.env.GOOGLE_KEY;
+    process.env.GOOGLE_KEY = 'test-google-key';
+    try {
+      await compactConversation({
+        req: makeReq({ provider: 'google', model: 'gemini-2.0-flash' }),
+        agent: {
+          provider: 'openAI',
+          endpoint: 'openAI',
+          model: 'gpt-4o-mini',
+          model_parameters: { model: 'gpt-4o-mini', frequency_penalty: 0.7 },
+        },
+        branch,
+        ids,
+        db: dbMethods,
+      });
+    } finally {
+      if (originalKey == null) {
+        delete process.env.GOOGLE_KEY;
+      } else {
+        process.env.GOOGLE_KEY = originalKey;
+      }
+    }
+
+    const clientOptions = mockInitializeModel.mock.calls[0][0].clientOptions as Record<
+      string,
+      unknown
+    >;
+    expect(clientOptions.frequency_penalty).toBeUndefined();
+    expect(clientOptions.model).toBe('gemini-2.0-flash');
+  });
+
   it('reads an output cap the endpoint relocated into modelKwargs', async () => {
     /** `getOpenAILLMConfig` MOVES a GPT-5 model's cap into
      *  `modelKwargs.max_completion_tokens` and deletes the top-level key, so

@@ -202,6 +202,8 @@ export interface CompactionAgent {
   /** Resolved `resendFiles`. False means the user turned OFF re-sending
    *  previously uploaded files, which historical hydration must respect. */
   resendFiles?: boolean;
+  /** Resolved `fileTokenLimit`, which an enforced model spec may set. */
+  fileTokenLimit?: number;
 }
 
 /** Stored user-key expiry lookup, used to build the freshness marker. */
@@ -390,10 +392,30 @@ async function resolveInvokedSkillBodies(
  * saw the document. The lookup is owner-scoped through `buildOwnerFileFilter`,
  * so a forged reference cannot pull another user's file into the transcript.
  */
+/**
+ * The messages that survive formatting: the newest checkpoint and everything
+ * after it, or the whole branch when there is none. The checkpoint message
+ * itself is kept, since its text is what the next pass consolidates.
+ */
+function retainedSegment(branch: TMessage[]): TMessage[] {
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const content = branch[index].content;
+    if (Array.isArray(content) && content.some((part) => part?.type === ContentTypes.SUMMARY)) {
+      return branch.slice(index);
+    }
+  }
+  return branch;
+}
+
 async function hydrateAttachments(
   branch: TMessage[],
   req: ServerRequest,
   getFiles?: GetFilesFn,
+  /** Resolved `fileTokenLimit`: an enforced model spec can set one, and
+   *  `extractFileContext` would otherwise read the client-controlled request
+   *  field or the global default and inline more than the administrator
+   *  allowed. */
+  fileTokenLimit?: number,
 ): Promise<HydratedAttachments> {
   const contextByMessageId = new Map<string, string>();
   const contextBySteerPart = new Map<string, string>();
@@ -407,6 +429,13 @@ async function hydrateAttachments(
   }
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
+  /** Shallow clone rather than a mutation: the caller's request must keep its
+   *  own body for the rest of its lifetime. */
+  const extractionReq = (
+    fileTokenLimit != null && fileTokenLimit > 0
+      ? { ...req, body: { ...(req.body ?? {}), fileTokenLimit } }
+      : req
+  ) as ServerRequest;
   /**
    * Deduplicated across the RETAINED segment, as the normal history path
    * deduplicates across a branch: a document reattached to several turns would
@@ -440,12 +469,15 @@ async function hydrateAttachments(
     /** Steer refs FIRST, so a file the user attached mid-run is claimed by the
      *  part that replays it rather than by the enclosing assistant turn. */
     for (const { index, refs } of collectSteerFileRefs(message)) {
-      const combined = await describeAttachments(resolve(refs), req);
+      const combined = await describeAttachments(resolve(refs), extractionReq);
       if (combined) {
         contextBySteerPart.set(`${message.messageId}#${index}`, combined);
       }
     }
-    const combined = await describeAttachments(resolve(collectMessageFileRefs(message)), req);
+    const combined = await describeAttachments(
+      resolve(collectMessageFileRefs(message)),
+      extractionReq,
+    );
     if (combined) {
       contextByMessageId.set(message.messageId, combined);
     }
@@ -591,6 +623,8 @@ export interface ResolvedAgentParameters {
   maxContextTokens?: number;
   /** False when the user turned off re-sending previously uploaded files. */
   resendFiles: boolean;
+  /** Per-file inlining budget, when the conversation or spec sets one. */
+  fileTokenLimit?: number;
 }
 
 export function resolveAgentModelParameters(
@@ -602,13 +636,14 @@ export function resolveAgentModelParameters(
     agent.model_parameters ?? {},
     endpointParameters ?? {},
   );
-  const { modelOptions, maxContextTokens, resendFiles } = extractLibreChatParams(
+  const { modelOptions, maxContextTokens, resendFiles, fileTokenLimit } = extractLibreChatParams(
     merged as Record<string, unknown>,
   );
   return {
     modelOptions: modelOptions as Partial<AgentModelParameters> & { model?: string },
     maxContextTokens,
     resendFiles,
+    fileTokenLimit,
   };
 }
 
@@ -734,7 +769,13 @@ export async function resolveCompactionModel({
   const options = await providerConfig.getOptions({
     req: optionsReq,
     endpoint,
-    model_parameters: { ...(agent.model_parameters ?? {}), model },
+    /** The run's generation settings belong to the conversation's OWN provider.
+     *  Carrying an OpenAI `frequency_penalty` or `response_format` into a
+     *  configured Google summarizer spreads unsupported fields into its client
+     *  config, and an inherited output cap would size the call against a
+     *  parameter the target never honors. A redirected summarizer starts from
+     *  its endpoint defaults, with `summarization.parameters` applied below. */
+    model_parameters: crossEndpoint ? { model } : { ...(agent.model_parameters ?? {}), model },
     db,
   });
 
@@ -1331,6 +1372,14 @@ export async function compactConversation({
     replaysReasoningContent,
   } = await resolveCompactionModel({ req, agent, ids, db });
 
+  /**
+   * Everything before the newest checkpoint is discarded by
+   * `formatAgentMessages`, so enriching it would reload and tokenize documents
+   * and query agents that can never reach the summarizer. Worse, a transient
+   * lookup failure for that dead history would abort a compaction that does not
+   * depend on it.
+   */
+  const retained = retainedSegment(branch);
   /** `resendFiles: false` means the user turned off re-sending previously
    *  uploaded files, and the normal history path returns before loading any.
    *  Re-inlining them here would send those documents again, possibly to a
@@ -1338,11 +1387,11 @@ export async function compactConversation({
   const { contextByMessageId, contextBySteerPart } =
     agent.resendFiles === false
       ? { contextByMessageId: new Map<string, string>(), contextBySteerPart: new Map() }
-      : await hydrateAttachments(branch, req, getFiles);
-  const agentConfigs = await resolveHistoryAgents(branch, getAgent);
+      : await hydrateAttachments(retained, req, getFiles, agent.fileTokenLimit);
+  const agentConfigs = await resolveHistoryAgents(retained, getAgent);
   const payload = stripActivityLabelParts(
     toPayload(
-      branch,
+      retained,
       contextByMessageId,
       contextBySteerPart,
       createMultiAgentMapper(agent as Agent, agentConfigs),
