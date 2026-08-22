@@ -42,6 +42,7 @@ export function isLegacyPiiFragment(fragment: TextContentFragment): boolean {
   }
   return (
     fragment.id === 'chat.text' ||
+    fragment.id === 'chat.input' ||
     fragment.id === 'chat.answer' ||
     /^chat\.quote\.\d+$/.test(fragment.id) ||
     /^chat\.decision\.\d+\.(?:response|reason)$/.test(fragment.id) ||
