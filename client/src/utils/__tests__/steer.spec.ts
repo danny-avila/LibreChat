@@ -7,6 +7,7 @@ import {
   findSteerMessageIndex,
   appendAppliedSteerIds,
   resolveAbortSteerTarget,
+  insertQueuedOrigin,
 } from '../steer';
 
 const buildEvent = (overrides: Partial<TSteerAppliedEvent> = {}): TSteerAppliedEvent => ({
@@ -180,11 +181,40 @@ describe('appendAppliedSteerIds', () => {
     expect(appendAppliedSteerIds(prev, [])).toBe(prev);
   });
 
-  it('caps the set at 100 ids, dropping the oldest', () => {
-    const prev = Array.from({ length: 100 }, (_, i) => `id-${i}`);
+  it('retains both correlation ids for all 100 server receipt slots', () => {
+    const prev = Array.from({ length: 200 }, (_, i) => `id-${i}`);
     const next = appendAppliedSteerIds(prev, ['id-new']);
-    expect(next).toHaveLength(100);
+    expect(next).toHaveLength(200);
     expect(next[0]).toBe('id-1');
     expect(next[next.length - 1]).toBe('id-new');
+  });
+});
+
+describe('insertQueuedOrigin', () => {
+  const staleOrigin = {
+    item: {
+      id: 'queued-c',
+      text: 'send C',
+      createdAt: 3,
+      expectedPredecessorCreatedAt: 1000,
+    },
+    beforeIds: [],
+    afterIds: ['queued-d'],
+  };
+
+  it('rebases an already-restored row so its next resend targets the terminal winner', () => {
+    const restored = insertQueuedOrigin(
+      [{ id: 'queued-d', text: 'send D', createdAt: 4 }],
+      staleOrigin,
+    );
+    const rebased = insertQueuedOrigin(restored, staleOrigin, 2000);
+
+    expect(rebased).toEqual([
+      expect.objectContaining({
+        id: 'queued-c',
+        expectedPredecessorCreatedAt: 2000,
+      }),
+      expect.objectContaining({ id: 'queued-d' }),
+    ]);
   });
 });

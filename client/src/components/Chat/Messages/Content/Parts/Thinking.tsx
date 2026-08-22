@@ -1,11 +1,12 @@
 import { useState, useMemo, memo, useCallback, useRef, useId, type MouseEvent } from 'react';
 import { useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
+import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import { AnimatedText } from '../animate';
 import { cn } from '~/utils';
 
 /**
@@ -14,12 +15,15 @@ import { cn } from '~/utils';
  */
 export const ThinkingContent: FC<{
   children: React.ReactNode;
-}> = memo(({ children }) => {
+  animate?: boolean;
+}> = memo(({ children, animate = false }) => {
   const fontSize = useAtomValue(fontSizeAtom);
+  const content =
+    animate && typeof children === 'string' ? <AnimatedText text={children} /> : children;
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
     </div>
   );
 });
@@ -37,6 +41,7 @@ export const ThinkingButton = memo(
     content,
     contentId,
     showCopyButton = true,
+    animateLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -44,6 +49,7 @@ export const ThinkingButton = memo(
     content?: string;
     contentId: string;
     showCopyButton?: boolean;
+    animateLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -87,11 +93,21 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
-          {label}
+          <span
+            key={label}
+            className={cn(
+              'min-w-0 truncate text-left',
+              animateLabel &&
+                'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
+            )}
+          >
+            {label}
+          </span>
         </button>
         {content && showCopyButton && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleCopy}
             aria-label={
               isCopied
@@ -99,12 +115,12 @@ export const ThinkingButton = memo(
                 : localize('com_ui_copy_thoughts_to_clipboard')
             }
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt',
+              'size-auto gap-0 rounded-lg p-1.5 text-text-secondary-alt',
               isExpanded
                 ? 'opacity-0 group-focus-within/thinking-container:opacity-100 group-hover/thinking-container:opacity-100'
                 : 'opacity-0',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             )}
           >
             <span className="sr-only">
@@ -117,7 +133,7 @@ export const ThinkingButton = memo(
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
-          </button>
+          </Button>
         )}
       </div>
     );

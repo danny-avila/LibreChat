@@ -76,10 +76,12 @@ export interface SteerDrainHookOptions {
  * PreemptBoundary) — the provider-safety argument rests on the two sites
  * emitting identical `InjectedMessage` shapes, so they must share one body.
  *
- * The injections array builds incrementally under a swallow-all catch: once a
- * steer leaves the durable queue its part is persisted by `applySteer`
- * first, so a mid-loop throw must still inject whatever was already applied
- * rather than dropping the batch. `noteSteersRemoved` runs in `finally` —
+ * Every part is durably applied before ANY slow media encoding begins. A
+ * failed applied write restores that claimed item at the queue front; a crash
+ * before restoration leaves its receipt `claimed`, which repairs to leftover
+ * when the generation dies instead of claiming false delivery. The injections
+ * array then builds from only the durably applied items. `noteSteersRemoved`
+ * runs in `finally` —
  * the drained items are out of the queue no matter what, so any armed
  * preempt request for them must clear even on the failure path, or a
  * satisfied preempt could seal a later, unrelated stretch of generation.
@@ -109,16 +111,52 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
     return [];
   }
   const injectedMessages: InjectedMessage[] = [];
+  const appliedSteers: SteerQueueItem[] = [];
+  const restoredIds = new Set<string>();
   try {
-    for (const item of steers) {
+    let failedSteers: SteerQueueItem[] = [];
+    for (let i = 0; i < steers.length; i++) {
+      const item = steers[i];
       try {
         await applySteer(item);
+        appliedSteers.push(item);
       } catch (error) {
         logger.error(
           `[steering] Failed to apply steer part for ${streamId} steer=${item.steerId}:`,
           error,
         );
+        /** FIFO is semantic instruction order. Once one durable write fails,
+         * no later item may overtake it; restore the failed item plus the
+         * untouched suffix as one ordered front batch. */
+        failedSteers = steers.slice(i);
+        break;
       }
+    }
+
+    if (failedSteers.length > 0) {
+      try {
+        if (
+          await GenerationJobManager.steering.restoreClaimed(streamId, failedSteers, jobCreatedAt)
+        ) {
+          for (const item of failedSteers) {
+            restoredIds.add(item.steerId);
+          }
+        } else {
+          logger.error(
+            `[steering] Could not restore ${failedSteers.length} claimed steer(s) for ${streamId}; ` +
+              'their receipts remain recoverable after this generation ends',
+          );
+        }
+      } catch (error) {
+        logger.error(
+          `[steering] Failed to restore claimed steers for ${streamId}; ` +
+            'their receipts remain recoverable after this generation ends:',
+          error,
+        );
+      }
+    }
+
+    for (const item of appliedSteers) {
       let media: SteerMediaResult | undefined;
       if (buildMedia != null && (item.files?.length ?? 0) > 0) {
         try {
@@ -156,9 +194,11 @@ async function drainAndBuildInjections(opts: SteerDrainHookOptions): Promise<Inj
      * synchronous and already effective — the publish only informs other
      * replicas, and blocking a boundary drain on it would delay injection.
      */
-    const spent = new Set(armedBeforeDrain);
+    const spent = new Set(armedBeforeDrain.filter((steerId) => !restoredIds.has(steerId)));
     for (const item of steers) {
-      spent.add(item.steerId);
+      if (!restoredIds.has(item.steerId)) {
+        spent.add(item.steerId);
+      }
     }
     void GenerationJobManager.noteSteersRemoved(streamId, [...spent], jobCreatedAt);
   }

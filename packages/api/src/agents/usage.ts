@@ -11,6 +11,7 @@ import type {
   TContextUsageEvent,
   TTransactionsConfig,
 } from 'librechat-data-provider';
+import type { SubagentUsageEvent as AgentsSubagentUsageEvent } from '@librechat/agents';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -26,6 +27,7 @@ import {
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
+import { collectDetachedSubagentUsage } from './subagentTaskContext';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -135,6 +137,7 @@ export interface RecordUsageDeps {
   spendStructuredTokens: SpendStructuredTokensFn;
   pricing?: PricingFns;
   bulkWriteOps?: BulkWriteDeps;
+  isPrincipalActive?: (userId: string) => Promise<boolean>;
 }
 
 /**
@@ -513,6 +516,17 @@ export interface RecordUsageResult {
   output_tokens: number;
 }
 
+export interface DetachedSubagentUsageRecorderParams {
+  user: string;
+  conversationId: string;
+  model?: string;
+  messageId?: string;
+  balance?: Partial<TCustomConfig['balance']> | null;
+  transactions?: Partial<TTransactionsConfig>;
+  endpointTokenConfig?: EndpointTokenConfig;
+  endpointTokenConfigByAgentId?: Map<string, EndpointTokenConfig | undefined>;
+}
+
 /**
  * Records token usage for collected LLM calls and spends tokens against balance.
  * This handles both sequential execution (tool calls) and parallel execution (multiple agents).
@@ -690,43 +704,68 @@ export async function recordCollectedUsage(
 }
 
 /**
- * Structural mirror of the agents SDK's `SubagentUsageEvent` (added after
- * `@librechat/agents` 3.2.33). Defined locally so type-checking does not
- * depend on the unreleased SDK — replace with
- * `import type { SubagentUsageEvent } from '@librechat/agents'` once the
- * dependency is bumped.
+ * Creates an immutable, request-independent billing adapter for detached child
+ * calls. The recorder owns pricing selection and failure isolation so legacy
+ * controllers only provide their database dependencies and request snapshot.
  */
-export interface SubagentUsageEvent {
-  /** Usage metadata reported by the child's model call. */
-  usage: UsageMetadata;
-  /** Model that produced this usage (per-call, falls back to the child config's model). */
-  model?: string;
-  /** Provider enum value of the subagent's configured agent. */
-  provider?: string;
-  /** Subagent `type` identifier from the SubagentConfig. */
-  subagentType: string;
-  /** Child run ID (unique per subagent execution). */
-  subagentRunId: string;
-  /** Child agent ID assigned to this subagent execution. */
-  subagentAgentId: string;
-  /** Parent run ID under which the subagent was spawned. */
-  runId: string;
+export function createDetachedSubagentUsageRecorder(
+  deps: RecordUsageDeps,
+  params: DetachedSubagentUsageRecorderParams,
+): (usage: UsageMetadata) => Promise<void> {
+  const billing = {
+    ...params,
+    endpointTokenConfigByAgentId:
+      params.endpointTokenConfigByAgentId == null
+        ? undefined
+        : new Map(params.endpointTokenConfigByAgentId),
+  };
+  return async (usage) => {
+    try {
+      if (deps.isPrincipalActive != null && !(await deps.isPrincipalActive(billing.user))) {
+        return;
+      }
+      await recordCollectedUsage(deps, {
+        user: billing.user,
+        conversationId: billing.conversationId,
+        collectedUsage: [usage],
+        model: billing.model,
+        context: 'subagent',
+        messageId: billing.messageId,
+        balance: billing.balance,
+        transactions: billing.transactions,
+        endpointTokenConfig: billing.endpointTokenConfig,
+        resolveEndpointTokenConfig: (entry) =>
+          resolveAgentTokenConfig({
+            agentId: entry.agentId,
+            byAgentId: billing.endpointTokenConfigByAgentId,
+            fallback: billing.endpointTokenConfig,
+          }),
+      });
+    } catch (error) {
+      logger.error('[agents/usage] Failed to record detached subagent usage', error);
+    }
+  };
 }
+
+/** SDK-owned usage envelope re-exported for host billing consumers. */
+export type SubagentUsageEvent = AgentsSubagentUsageEvent;
 
 /**
  * Builds the host-side `subagentUsageSink` for `Run.create`. Subagent child
  * graphs execute outside the run's `streamEvents` loop, so their model calls
  * never reach the `CHAT_MODEL_END` handler (`ModelEndHandler`) — the SDK
  * reports them through this sink instead. Each event is tagged
- * `usage_type: 'subagent'` with the child's model/provider and pushed onto
- * the same `collectedUsage` array the handler fills, so
- * {@link recordCollectedUsage} bills child calls (transactions + balance)
- * alongside the parent's.
+ * `usage_type: 'subagent'` with the child's model/provider. Foreground child
+ * calls join the parent `collectedUsage` batch. Detached calls are recognized
+ * through their task-local context, billed immediately through
+ * `recordDetachedUsage`, and persisted with the durable child result instead
+ * of depending on a parent turn that may already have closed.
  */
 export function createSubagentUsageSink(
   collectedUsage: UsageMetadata[],
-  onUsage?: (usage: UsageMetadata) => void,
-): (event: SubagentUsageEvent) => void {
+  onUsage?: (usage: UsageMetadata) => void | Promise<void>,
+  recordDetachedUsage?: (usage: UsageMetadata) => void | Promise<void>,
+): (event: SubagentUsageEvent) => void | Promise<void> {
   return (event) => {
     if (event?.usage == null) {
       return;
@@ -741,13 +780,45 @@ export function createSubagentUsageSink(
     /** Tag the child's agent id so the host can price this usage with the
      *  subagent's own endpoint token config (its endpoint may differ from the
      *  parent's). The same tagged object is pushed AND handed to `onUsage`. */
-    if (event.subagentAgentId != null && event.subagentAgentId !== '') {
-      usage.agentId = event.subagentAgentId;
+    const billingAgentId =
+      event.memberAgentId != null && event.memberAgentId !== ''
+        ? event.memberAgentId
+        : event.subagentAgentId;
+    if (billingAgentId != null && billingAgentId !== '') {
+      usage.agentId = billingAgentId;
+    }
+    /** Usage emission is observability/UI plumbing. It must never prevent the
+     * authoritative billing path from running when a detached child outlives
+     * its parent transport. The host emitter normally contains its own error
+     * handling; this boundary also protects custom hosts and synchronous
+     * lifecycle failures. */
+    const emitUsage = () => {
+      try {
+        const emitted = onUsage?.(usage);
+        if (emitted != null) {
+          void Promise.resolve(emitted).catch((err) => {
+            logger.warn('[createSubagentUsageSink] Failed to emit subagent usage', err);
+          });
+        }
+      } catch (err) {
+        logger.warn('[createSubagentUsageSink] Failed to emit subagent usage', err);
+      }
+    };
+    /** A detached task can finish after its parent turn's one-time billing
+     * flush. Its AsyncLocalStorage context therefore owns the usage: persist
+     * it with the child transcript and bill it immediately. Foreground child
+     * calls retain the existing parent-turn batch path. */
+    if (recordDetachedUsage != null && collectDetachedSubagentUsage(usage)) {
+      /** Emission is already retained/flushed by the host and must not add
+       * transport latency to the child model loop. Billing is the durable
+       * side effect the SDK needs to await. */
+      emitUsage();
+      return Promise.resolve(recordDetachedUsage(usage)).then(() => undefined);
     }
     collectedUsage.push(usage);
     /** Lets the host stream the billed child usage to the client (tagged
      *  `subagent`, so it folds into session cost/totals but not the live
      *  gauge) — child runs never reach ModelEndHandler's emit path. */
-    onUsage?.(usage);
+    emitUsage();
   };
 }

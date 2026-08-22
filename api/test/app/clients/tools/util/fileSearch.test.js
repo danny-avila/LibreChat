@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
 jest.mock('@librechat/api', () => ({
@@ -22,8 +23,32 @@ jest.mock('~/server/services/Files/permissions', () => ({
   filterFilesByAgentAccess: jest.fn((options) => Promise.resolve(options.files)),
 }));
 
-const { createFileSearchTool } = require('~/app/clients/tools/util/fileSearch');
+const { createFileSearchTool, primeFiles } = require('~/app/clients/tools/util/fileSearch');
 const { generateShortLivedToken } = require('@librechat/api');
+
+describe('fileSearch.js - agent file authorization', () => {
+  it('uses the permission resource type established by the calling route', async () => {
+    const { getFiles } = require('~/models');
+    const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+    const files = [{ file_id: 'owner-file', filename: 'owner.pdf', user: 'agent-owner' }];
+    getFiles.mockResolvedValueOnce(files);
+
+    await primeFiles({
+      req: { user: { id: 'remote-viewer', role: 'USER' } },
+      agentId: 'agent-123',
+      agentResourceType: ResourceType.REMOTE_AGENT,
+      tool_resources: { file_search: { file_ids: ['owner-file'] } },
+    });
+
+    expect(filterFilesByAgentAccess).toHaveBeenCalledWith({
+      files,
+      userId: 'remote-viewer',
+      role: 'USER',
+      agentId: 'agent-123',
+      resourceType: ResourceType.REMOTE_AGENT,
+    });
+  });
+});
 
 describe('fileSearch.js - tuple return validation', () => {
   beforeEach(() => {

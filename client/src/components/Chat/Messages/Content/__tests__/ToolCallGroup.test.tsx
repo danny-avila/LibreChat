@@ -65,8 +65,9 @@ jest.mock('~/utils', () => ({
       : name,
   /** Real implementations: the group header resolves its text through these,
    *  so stubbing them out would hide the header logic under test. */
-  getActivityLabelPart: jest.requireActual('~/utils/activityLabels').getActivityLabelPart,
+  getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
   getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
+  hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
 }));
 
 jest.mock('../Parts', () => ({
@@ -507,7 +508,7 @@ describe('ToolCallGroup image hoisting', () => {
       ],
     });
 
-    expect(screen.getByText('— Code')).toBeInTheDocument();
+    expect(screen.getByText('· Code')).toBeInTheDocument();
     expect(screen.queryByText(/Code, bash_tool/)).not.toBeInTheDocument();
     expect(screen.getByTestId('stacked-icons')).toHaveAttribute(
       'data-tool-names',
@@ -530,7 +531,7 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.queryByText('Used 2 tools')).not.toBeInTheDocument();
     expect(screen.getByTestId('question-icon')).toBeInTheDocument();
     expect(screen.queryByTestId('stacked-icons')).not.toBeInTheDocument();
-    expect(screen.queryByText(/— ask_user_question/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/· ask_user_question/)).not.toBeInTheDocument();
   });
 
   it('uses the present tense while a multi-question turn is still streaming', () => {

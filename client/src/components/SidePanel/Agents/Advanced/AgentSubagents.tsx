@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Switch } from '@librechat/client';
 import { Network, Users } from 'lucide-react';
-import { MAX_SUBAGENTS } from 'librechat-data-provider';
 import type { ControllerRenderProps } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import { StaticAgentRow, AddAgentSelect, ListMeta, useSelectableAgents } from './AgentList';
@@ -12,9 +11,10 @@ import { ToggleSetting } from './ui';
 interface AgentSubagentsProps {
   field: ControllerRenderProps<AgentForm, 'subagents'>;
   currentAgentId: string;
+  maxSubagents: number;
 }
 
-const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }) => {
+const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId, maxSubagents }) => {
   const localize = useLocalize();
   const [newAgentId, setNewAgentId] = useState('');
 
@@ -23,6 +23,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
   const enabled = value.enabled === true;
   const allowSelf = value.allowSelf !== false;
   const agentIds = useMemo(() => value.agent_ids ?? [], [value.agent_ids]);
+  const graphCount = value.graphs?.length ?? 0;
 
   const { options, getAgent } = useSelectableAgents({ currentAgentId, exclude: agentIds });
 
@@ -36,12 +37,13 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
        * `enabled: false` flows through as a real update.
        */
       field.onChange({
+        ...value,
         enabled: next,
         allowSelf: value.allowSelf ?? true,
         agent_ids: value.agent_ids ?? [],
       });
     },
-    [field, value.allowSelf, value.agent_ids],
+    [field, value],
   );
 
   const setAllowSelf = useCallback(
@@ -64,20 +66,20 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
   );
 
   useEffect(() => {
-    if (newAgentId && agentIds.length < MAX_SUBAGENTS && !agentIds.includes(newAgentId)) {
+    if (newAgentId && agentIds.length < maxSubagents && !agentIds.includes(newAgentId)) {
       setAgentIds([...agentIds, newAgentId]);
       setNewAgentId('');
     } else if (newAgentId) {
       setNewAgentId('');
     }
-  }, [newAgentId, agentIds, setAgentIds]);
+  }, [newAgentId, agentIds, maxSubagents, setAgentIds]);
 
   const removeAgentAt = (index: number) => {
     setAgentIds(agentIds.filter((_, i) => i !== index));
   };
 
   const selfId = 'subagents-self-toggle';
-  const nothingToSpawn = enabled && !allowSelf && agentIds.length === 0;
+  const nothingToSpawn = enabled && !allowSelf && agentIds.length === 0 && graphCount === 0;
 
   return (
     <OrchestrationPattern
@@ -117,7 +119,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
             <ListMeta
               label={localize('com_ui_agent_subagents_agents')}
               count={agentIds.length}
-              max={MAX_SUBAGENTS}
+              max={maxSubagents}
             />
 
             {agentIds.map((agentId, idx) => {
@@ -135,7 +137,7 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
               );
             })}
 
-            {agentIds.length < MAX_SUBAGENTS && (
+            {agentIds.length < maxSubagents && (
               <AddAgentSelect
                 options={options}
                 onSelect={setNewAgentId}
@@ -144,9 +146,9 @@ const AgentSubagents: React.FC<AgentSubagentsProps> = ({ field, currentAgentId }
               />
             )}
 
-            {agentIds.length >= MAX_SUBAGENTS && (
+            {agentIds.length >= maxSubagents && (
               <p className="pt-1 text-center text-xs italic text-text-tertiary">
-                {localize('com_ui_agent_subagents_max', { 0: MAX_SUBAGENTS })}
+                {localize('com_ui_agent_subagents_max', { 0: maxSubagents })}
               </p>
             )}
           </div>

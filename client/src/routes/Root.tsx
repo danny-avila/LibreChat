@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useState, useEffect, useRef, useCallback, startTransition } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
   AssistantsMapContext,
@@ -13,18 +11,20 @@ import {
   useSearchEnabled,
   useAssistantsMap,
   useAuthContext,
+  useCatalogWarmup,
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
+import { UnifiedSidebar, SIDEBAR_TRANSITION } from '~/components/UnifiedSidebar';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
-import { UnifiedSidebar } from '~/components/UnifiedSidebar';
+import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
+import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
-import store from '~/store';
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -40,10 +40,37 @@ function KeyboardShortcutsProvider() {
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
-  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-
+  /** Shared with the drawer so the two agree on the breakpoint-transition frame. */
+  const {
+    isSmallScreen,
+    expanded: sidebarExpanded,
+    setExpanded: setSidebarExpanded,
+  } = useSidebarState();
+  const paneRef = useRef<HTMLDivElement>(null);
+  /** Focus handoff lives in the drawer header's own expanded-effect — the
+   * commit drives it, so every opener (button, swipe) is covered without a
+   * timer racing the deferred state flip. */
+  const handleDrawerOpenChange = useCallback(
+    (next: boolean) => {
+      startTransition(() => {
+        setSidebarExpanded(next);
+      });
+    },
+    [setSidebarExpanded],
+  );
   const { isAuthenticated, logout } = useAuthContext();
+  /** Releases feature-catalog queries after first paint on browser idle. */
+  useCatalogWarmup(isAuthenticated);
+
+  useDrawerSwipe({
+    paneRef,
+    /** Auth gates the whole tree below (`return null`), so the swipe surfaces
+     * only exist once authenticated — enabling earlier would attach to
+     * nothing and never re-run when they mount. */
+    enabled: isSmallScreen && isAuthenticated,
+    open: sidebarExpanded,
+    onOpenChange: handleDrawerOpenChange,
+  });
 
   useHealthCheck(isAuthenticated);
 
@@ -88,11 +115,12 @@ export default function Root() {
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <UnifiedSidebar />
                   <div
+                    ref={paneRef}
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
-                      transform:
-                        isSmallScreen && sidebarExpanded ? 'translateX(min(85vw, 380px))' : 'none',
-                      transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
+                      /** Self-referential, so it needs no width literal and survives rotation. */
+                      transform: isSmallScreen && sidebarExpanded ? 'translateX(100%)' : 'none',
+                      transition: SIDEBAR_TRANSITION,
                     }}
                     inert={isSmallScreen && sidebarExpanded ? '' : undefined}
                   >
@@ -101,6 +129,7 @@ export default function Root() {
                 </div>
               </div>
             </PromptGroupsProvider>
+            <KeyboardShortcutsProvider />
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal
@@ -112,7 +141,6 @@ export default function Root() {
               modalContent={config.interface.termsOfService.modalContent}
             />
           )}
-          <KeyboardShortcutsProvider />
         </AssistantsMapContext.Provider>
       </FileMapContext.Provider>
     </SetConvoProvider>

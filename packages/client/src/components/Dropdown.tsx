@@ -4,6 +4,7 @@ import { matchSorter } from 'match-sorter';
 import * as Select from '@ariakit/react/select';
 import * as Combobox from '@ariakit/react/combobox';
 import type { Option } from '~/common';
+import { fieldControl } from './Field';
 import { cn } from '~/utils/';
 import './Dropdown.css';
 
@@ -12,7 +13,11 @@ interface DropdownProps {
   label?: string;
   onChange: (value: string) => void;
   options: (string | Option | { divider: true })[];
+  /** Applied to the positioning wrapper */
   className?: string;
+  /** Applied to the trigger button */
+  triggerClassName?: string;
+  /** Applied to the popover */
   sizeClasses?: string;
   testId?: string;
   icon?: React.ReactNode;
@@ -21,6 +26,10 @@ interface DropdownProps {
   ariaLabel?: string;
   'aria-labelledby'?: string;
   portal?: boolean;
+  /** `field` matches the `Input` primitive so this can sit in a form row. */
+  variant?: 'default' | 'field';
+  /** Renders the popover into this element instead of document.body */
+  portalElement?: ((element: HTMLElement) => HTMLElement | null) | HTMLElement | null;
   disabled?: boolean;
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -42,6 +51,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   onChange,
   options,
   className = '',
+  triggerClassName,
   sizeClasses,
   testId = 'dropdown-menu',
   icon,
@@ -50,6 +60,8 @@ const Dropdown: React.FC<DropdownProps> = ({
   ariaLabel,
   'aria-labelledby': ariaLabelledBy,
   portal = true,
+  variant = 'default',
+  portalElement,
   disabled = false,
   searchable = false,
   searchPlaceholder,
@@ -132,21 +144,23 @@ const Dropdown: React.FC<DropdownProps> = ({
   );
 
   return (
-    <div className={cn('relative', className)}>
+    <div className={cn('relative', variant === 'field' && 'w-full', className)}>
       <Select.Select
         store={selectProps}
         disabled={disabled}
         className={cn(
-          'focus:ring-offset-ring-offset relative inline-flex items-center justify-between rounded-xl border border-input bg-background px-3 py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-accent hover:text-accent-foreground focus:ring-ring-primary',
-          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background disabled:hover:text-text-primary',
-          iconOnly ? 'size-10' : 'w-fit gap-2',
-          className,
+          'relative inline-flex items-center justify-between rounded-xl border border-border-light bg-transparent py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-surface-hover hover:text-text-primary',
+          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-primary',
+          /** Horizontal padding would squeeze the icon, which flex-shrinks to fit */
+          iconOnly ? 'size-10 justify-center px-0' : 'w-fit gap-2 px-3',
+          variant === 'field' && fieldControl,
+          triggerClassName,
         )}
         data-testid={testId}
         aria-label={ariaLabel}
         aria-labelledby={ariaLabelledBy}
       >
-        <div className="flex w-full items-center gap-2">
+        <div className={cn('flex items-center gap-2', iconOnly ? 'shrink-0' : 'w-full')}>
           {icon}
           {!iconOnly && (
             <span className="block truncate">
@@ -165,18 +179,17 @@ const Dropdown: React.FC<DropdownProps> = ({
       </Select.Select>
       <Select.SelectPopover
         portal={portal}
+        portalElement={portalElement}
         store={selectProps}
         className={cn(
           'popover-ui z-40 text-sm',
-          sizeClasses,
-          className,
-          'max-h-[80vh] overflow-y-auto',
           '[pointer-events:auto]', // Override body's pointer-events:none when in modal
+          sizeClasses,
         )}
       >
         {searchable ? (
           <>
-            <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 bg-surface-primary px-2 pb-1.5 pt-2 dark:bg-surface-secondary">
+            <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 bg-inherit px-2 pb-1.5 pt-2">
               <div className="relative">
                 <Search
                   className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"
@@ -187,7 +200,7 @@ const Dropdown: React.FC<DropdownProps> = ({
                   autoSelect
                   placeholder={searchPlaceholder}
                   aria-label={searchPlaceholder}
-                  className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                  className="w-full rounded-lg border border-border-light bg-inherit py-1.5 pl-8 pr-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none"
                 />
               </div>
             </div>

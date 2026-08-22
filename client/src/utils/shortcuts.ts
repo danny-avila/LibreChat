@@ -70,18 +70,42 @@ export function isModifierKey(key: string): boolean {
 export type KeyChordSource = Pick<
   KeyboardEvent,
   'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'
->;
+> &
+  Partial<Pick<KeyboardEvent, 'code'>>;
+
+/**
+ * Punctuation shortcuts should follow the physical key advertised by the UI.
+ * `KeyboardEvent.key` reports the character produced by the active layout, so
+ * the physical Period key can report `:` (or another character) on a non-US
+ * layout even though the displayed/ARIA shortcut is still `.`. `code` is
+ * layout-independent and keeps those bindings usable without changing how
+ * letter shortcuts follow the user's chosen layout.
+ */
+const PUNCTUATION_KEY_BY_CODE: Readonly<Record<string, string>> = {
+  Backquote: '`',
+  Minus: '-',
+  Equal: '=',
+  BracketLeft: '[',
+  BracketRight: ']',
+  Backslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+};
 
 export function bindingFromEvent(e: KeyChordSource): ShortcutBinding | null {
   if (isModifierKey(e.key)) {
     return null;
   }
+  const key = (e.code && PUNCTUATION_KEY_BY_CODE[e.code]) || e.key;
   return {
     meta: e.metaKey,
     ctrl: e.ctrlKey,
     alt: e.altKey,
     shift: e.shiftKey,
-    key: normalizeKey(e.key, e.shiftKey),
+    key: normalizeKey(key, e.shiftKey),
   };
 }
 
@@ -222,6 +246,7 @@ export interface ComposerKeyContext {
   isSubmitting: boolean;
   allowSubmitWhileGenerating: boolean;
   hasDuringRunModifier: boolean;
+  shortcutsEnabled: boolean;
   enterToSend: boolean;
   submitOverride: ShortcutBinding | null | undefined;
   /** `bindingHash`es of chords bound to global shortcuts that run while typing. */
@@ -232,9 +257,10 @@ export interface ComposerKeyContext {
  * The composer's entire Enter decision table. Every verdict is terminal — no
  * interpretation falls through into another, which is what previously let a
  * chord that one branch declined reach a branch it never should have.
- * `yieldedChords` belong to the document-level handler in
- * `useKeyboardShortcuts`, which runs after the composer and does not check
- * `defaultPrevented`, so the composer must not act on them at all. `block`
+ * `yieldedChords` belong to the window-level handler in
+ * `useKeyboardShortcuts`, which runs after the composer and yields any
+ * keypress already claimed via `preventDefault` — so the composer must not
+ * act on them at all, or the global action is silently swallowed. `block`
  * means preventDefault with no action.
  */
 export function resolveComposerKeyDown(
@@ -251,7 +277,11 @@ export function resolveComposerKeyDown(
   if (binding != null && ctx.yieldedChords.has(bindingHash(binding))) {
     return 'none';
   }
-  const duringRun = ctx.isSubmitting && ctx.allowSubmitWhileGenerating && ctx.hasDuringRunModifier;
+  const duringRun =
+    ctx.shortcutsEnabled &&
+    ctx.isSubmitting &&
+    ctx.allowSubmitWhileGenerating &&
+    ctx.hasDuringRunModifier;
   if (duringRun && !ctx.isComposing) {
     if (e.altKey && !bindingsMatch(binding, ctx.submitOverride)) {
       return 'interrupt';

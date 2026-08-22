@@ -1,5 +1,4 @@
 import { useCallback, useMemo, memo } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon, TMessageChatContext } from '~/common';
@@ -9,16 +8,16 @@ import {
   getHeaderPrefixForScreenReader,
   getMessageAriaLabel,
 } from '~/utils';
+import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
-import PlaceholderRow from '~/components/Chat/Messages/ui/PlaceholderRow';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
+import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { fontSizeAtom } from '~/store/fontSize';
 import store from '~/store';
 
 type ContentRenderProps = {
@@ -93,6 +92,7 @@ const ContentRender = memo(function ContentRender({
     handleFeedback,
     latestMessageId,
     copyToClipboard,
+    getCanCopy,
     regenerateMessage,
     latestMessageDepth,
   } = useMessageActions({
@@ -102,7 +102,6 @@ const ContentRender = memo(function ContentRender({
     setCurrentEditId,
     chatContext,
   });
-  const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
@@ -110,7 +109,6 @@ const ContentRender = memo(function ContentRender({
     () => !(msg?.children?.length ?? 0) && (msg?.depth === latestMessageDepth || msg?.depth === -1),
     [msg?.children, msg?.depth, latestMessageDepth],
   );
-  const hasNoChildren = !(msg?.children?.length ?? 0);
   const isLatestMessage = msg?.messageId === latestMessageId;
 
   const iconData: TMessageIcon = useMemo(
@@ -149,108 +147,72 @@ const ContentRender = memo(function ContentRender({
     return null;
   }
 
-  const getChatWidthClass = () => {
-    if (maximizeChatSpace) {
-      return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
-    }
-    if (hasParallelContent) {
-      return 'md:max-w-[58rem] xl:max-w-[70rem]';
-    }
-    return 'md:max-w-[47rem] xl:max-w-[55rem]';
-  };
-
-  const baseClasses = {
-    common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu ',
-    chat: getChatWidthClass(),
-  };
-
-  const conditionalClasses = {
-    focus: 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-  };
-
   return (
-    <div
+    <MessageRow
       id={msg.messageId}
-      aria-label={getMessageAriaLabel(msg, localize)}
-      className={cn(
-        baseClasses.common,
-        baseClasses.chat,
-        conditionalClasses.focus,
-        'message-render',
+      icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
+      label={messageLabel ?? ''}
+      hoverLabel={getHeaderModelName(
+        agent?.model,
+        assistant?.model,
+        msg.model,
+        conversation?.model,
       )}
+      timestamp={msg.createdAt ?? msg.clientTimestamp}
+      ariaLabel={getMessageAriaLabel(msg, localize)}
+      headerPrefix={getHeaderPrefixForScreenReader(msg, localize)}
+      isCreatedByUser={msg.isCreatedByUser === true}
+      hasParallelContent={hasParallelContent}
+      fullWidth={maximizeChatSpace}
+      isEditing={edit}
+      footer={
+        <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
+          {/* While the answer is generating every other action is withheld, which
+              would otherwise leave this counter sitting alone under a half-written
+              response. It reveals on hover there, like the actions it sits with. */}
+          <SiblingSwitch
+            siblingIdx={siblingIdx}
+            siblingCount={siblingCount}
+            setSiblingIdx={setSiblingIdx}
+            className={cn(isSubmitting && isLatestMessage && revealOnRowHoverClasses)}
+          />
+          <HoverButtons
+            index={index}
+            message={msg}
+            isEditing={edit}
+            enterEdit={enterEdit}
+            isSubmitting={chatContext.isSubmitting}
+            conversation={conversation ?? null}
+            regenerate={handleRegenerateMessage}
+            copyToClipboard={copyToClipboard}
+            getCanCopy={getCanCopy}
+            handleContinue={handleContinue}
+            latestMessageId={latestMessageId}
+            handleFeedback={handleFeedback}
+            isLast={isLast}
+          />
+        </SubRow>
+      }
     >
-      {!hasParallelContent && (
-        <div className="relative flex flex-shrink-0 flex-col items-center">
-          <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-            <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
-          </div>
-        </div>
-      )}
-
-      <div
-        className={cn(
-          'relative flex flex-col',
-          hasParallelContent ? 'w-full' : 'w-11/12',
-          msg.isCreatedByUser ? 'user-turn' : 'agent-turn',
-        )}
-      >
-        {!hasParallelContent && (
-          <h2 className={cn('select-none font-semibold', fontSize)}>
-            <span className="sr-only">{getHeaderPrefixForScreenReader(msg, localize)}</span>
-            {messageLabel}
-            <MessageTimestamp value={msg.createdAt ?? msg.clientTimestamp} />
-          </h2>
-        )}
-
-        <div className="flex flex-col gap-1">
-          <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
-            <ContentParts
-              edit={edit}
-              isLast={isLast}
-              enterEdit={enterEdit}
-              siblingIdx={siblingIdx}
-              messageId={msg.messageId}
-              attachments={attachments}
-              searchResults={searchResults}
-              manualSkills={msg.manualSkills}
-              authorHeader={authorHeader}
-              setSiblingIdx={setSiblingIdx}
-              isLatestMessage={isLatestMessage}
-              isSubmitting={isSubmitting}
-              isCreatedByUser={msg.isCreatedByUser}
-              createdAt={msg.createdAt ?? msg.clientTimestamp}
-              conversationId={conversation?.conversationId}
-              content={msg.content as Array<TMessageContentParts | undefined>}
-            />
-          </div>
-          {hasNoChildren && isSubmitting ? (
-            <PlaceholderRow />
-          ) : (
-            <SubRow classes="text-xs">
-              <SiblingSwitch
-                siblingIdx={siblingIdx}
-                siblingCount={siblingCount}
-                setSiblingIdx={setSiblingIdx}
-              />
-              <HoverButtons
-                index={index}
-                message={msg}
-                isEditing={edit}
-                enterEdit={enterEdit}
-                isSubmitting={chatContext.isSubmitting}
-                conversation={conversation ?? null}
-                regenerate={handleRegenerateMessage}
-                copyToClipboard={copyToClipboard}
-                handleContinue={handleContinue}
-                latestMessageId={latestMessageId}
-                handleFeedback={handleFeedback}
-                isLast={isLast}
-              />
-            </SubRow>
-          )}
-        </div>
-      </div>
-    </div>
+      <ContentParts
+        edit={edit}
+        isLast={isLast}
+        enterEdit={enterEdit}
+        siblingIdx={siblingIdx}
+        messageId={msg.messageId}
+        attachments={attachments}
+        searchResults={searchResults}
+        manualSkills={msg.manualSkills}
+        authorHeader={authorHeader}
+        setSiblingIdx={setSiblingIdx}
+        isLatestMessage={isLatestMessage}
+        isSubmitting={isSubmitting}
+        isCreatedByUser={msg.isCreatedByUser}
+        createdAt={msg.createdAt ?? msg.clientTimestamp}
+        conversationId={conversation?.conversationId}
+        content={msg.content as Array<TMessageContentParts | undefined>}
+      />
+    </MessageRow>
   );
 }, areContentRenderPropsEqual);
 ContentRender.displayName = 'ContentRender';

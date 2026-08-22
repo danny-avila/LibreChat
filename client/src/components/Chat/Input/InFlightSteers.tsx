@@ -1,5 +1,5 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
-import { useSetAtom } from 'jotai';
+import { useSetAtom, useAtomValue } from 'jotai';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
@@ -7,13 +7,19 @@ import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
+import {
+  RowMenu,
+  EscalateNowButton,
+  useDefaultToggleEntry,
+  useInterruptToggleEntry,
+} from './SteerMenu';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
+import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
+import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { RowMenu, useDefaultToggleEntry } from './SteerMenu';
-import { steerOverlayHeightFamily } from '~/store/steer';
 import { carriedSteerContext, cn } from '~/utils';
 import store from '~/store';
 
@@ -42,6 +48,35 @@ const splitFiles = (files?: TMessage['files']) => {
  *  for its own bottom margin does not trip a pointless toggle. */
 const STEER_COLLAPSED_MAX_HEIGHT = 128;
 const STEER_OVERFLOW_TOLERANCE = 8;
+/** Axios has no default request timeout. Bound the UI lock while preserving an
+ *  honest unknown outcome; the idempotent arm may still complete server-side. */
+const ARM_CONFIRM_TIMEOUT_MS = 10_000;
+
+/** The control rail flanking a bubble. `py-3` reproduces the bubble's own
+ *  first-line band — its `py-2.5` padding, its 1px border, and half the gap
+ *  between the 24px control and the taller text line box — so a 24px control
+ *  centers on the first line: visually centered beside a one-line steer, and
+ *  aligned to the opening line of a tall one rather than adrift in its middle.
+ *  `sticky` then keeps it in view while a tall steer scrolls past (the stack
+ *  scrolls once it passes 35vh); the matching `pt-2` on the overlay means the
+ *  topmost rail already clears the sticky inset, so it is not shoved down at
+ *  rest while the rails below it — which never trip the inset — stay put. */
+const STEER_CONTROL_RAIL = 'sticky top-2 flex shrink-0 items-center py-3';
+
+type ArmFailure = {
+  name?: string;
+  response?: { data?: { code?: string } };
+};
+
+/** Only a failure without an HTTP response leaves the server-side outcome
+ * unknown. An HTTP rejection is a known response and must not replay the arm. */
+const isAmbiguousArmFailure = (error: unknown): boolean => {
+  const failure = error as ArmFailure | null | undefined;
+  return failure?.name !== 'AbortError' && failure?.response == null;
+};
+
+const armFailureCode = (error: unknown): string | undefined =>
+  (error as ArmFailure | null | undefined)?.response?.data?.code;
 
 /**
  * One steer on its way into the run, anchored above the composer as a message
@@ -64,11 +99,13 @@ const InFlightSteer = memo(function InFlightSteer({
   steer,
   steering,
   conversationId,
+  interruptPending,
   onRestoreToComposer,
 }: {
   steer: PendingSteer;
   steering: SteeringControls;
   conversationId: string;
+  interruptPending: boolean;
   onRestoreToComposer: RestoreToComposer;
 }) {
   const localize = useLocalize();
@@ -76,8 +113,17 @@ const InFlightSteer = memo(function InFlightSteer({
   const cancelSteer = useSteerCancel(conversationId);
   const reclaimSteer = useSteerReclaim(conversationId);
   const toggleEntry = useDefaultToggleEntry(steering);
+  const interruptToggle = useInterruptToggleEntry();
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
+  const activeGenerationCreatedAt = useRecoilValue(
+    store.activeGenerationCreatedAtByConvoId(conversationId),
+  );
+  const activeGenerationProtocolVersion = useRecoilValue(
+    store.activeGenerationProtocolVersionByConvoId(conversationId),
+  );
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
+  const optionsButtonRef = useRef<HTMLButtonElement>(null);
+  const [escalationAnnouncement, setEscalationAnnouncement] = useState('');
   const handlePreviewClose = useCallback((open: boolean) => {
     if (!open) {
       setSelectedFile(null);
@@ -113,18 +159,153 @@ const InFlightSteer = memo(function InFlightSteer({
     return () => observer.disconnect();
   }, []);
 
-  /** Whether the words have already been re-homed by a terminal conversion (a
-   *  run that ended/errored mid-reclaim queues the still-present chip). The
-   *  queue action is safe either way — the conversion dedupes by id — but a
-   *  composer restore would leave one copy queued and another in the draft. */
-  const hasSettled = useRecoilCallback(
-    ({ snapshot }) =>
-      (steerId: string) =>
-        snapshot
-          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
-          .getValue()
-          .includes(steerId),
+  /** Relabels the chip in place once the server confirms the durable arm —
+   *  same steerId, same position, only the `preempt` flag flips. */
+  const markSteerPreempt = useRecoilCallback(
+    ({ set }) =>
+      (steerId: string, revision: number) =>
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.map((item) =>
+            item.steerId === steerId && revision >= (item.preemptRevision ?? 0)
+              ? { ...item, preempt: true, preemptRevision: revision }
+              : item,
+          ),
+        ),
     [conversationId],
+  );
+  const { mutateAsync: armSteer } = useArmSteerMutation();
+  const setEscalating = useSetAtom(escalatingSteerFamily(conversationId));
+
+  /**
+   * Escalate this waiting steer to an interrupt: one idempotent server op
+   * flips `preempt` on the EXISTING queued item, so its FIFO position, id, and
+   * timestamp survive and there is no reclaim window to race. A transport
+   * failure is retried once because the first request may have committed even
+   * though its response was lost. Every "too late" interleaving (drained,
+   * cancelled, run ended or replaced) is the same honest `armed: false`, and
+   * the chip is only relabelled on a confirmed durable arm. The escalating
+   * flag flips synchronously, before the request: the chip-derived gate cannot
+   * see this arm until the response lands, and the other escalation controls
+   * advertise "one interrupt at a time".
+   */
+  const escalate = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      const generationCreatedAt =
+        steer.generationCreatedAt ?? activeGenerationCreatedAt ?? undefined;
+      if (generationCreatedAt == null) {
+        return;
+      }
+      const trigger = event.currentTarget;
+      setEscalationAnnouncement('');
+      setEscalating(true);
+      const params = {
+        conversationId,
+        steerId: steer.steerId,
+        ...(generationCreatedAt != null && { generationCreatedAt }),
+      };
+      const requestArm = async () => {
+        let firstResponseWasLost = false;
+        let acceptingRetry = true;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const firstAttempt = armSteer(params);
+          const attempts =
+            activeGenerationProtocolVersion === 2
+              ? firstAttempt.catch((error) => {
+                  /** If the overall confirmation window already closed, do not let a
+                   *  very late rejection launch a detached retry behind the user's
+                   *  back. The first request itself may still have committed. */
+                  if (!acceptingRetry) {
+                    throw error;
+                  }
+                  if (!isAmbiguousArmFailure(error)) {
+                    throw error;
+                  }
+                  firstResponseWasLost = true;
+                  return armSteer(params);
+                })
+              : firstAttempt;
+          const response = await Promise.race([
+            attempts,
+            new Promise<never>((_resolve, reject) => {
+              timeout = setTimeout(
+                () => reject(new Error('Steer arm confirmation timed out')),
+                ARM_CONFIRM_TIMEOUT_MS,
+              );
+            }),
+          ]);
+          const responseSupportsNegotiatedProtocol =
+            activeGenerationProtocolVersion === 1 || supportsGenerationProtocolV2(response);
+          if (responseSupportsNegotiatedProtocol && response.armed === true) {
+            /** The successful state removes the arm button. Move focus to the
+             * stable options control only if the user has not moved elsewhere
+             * while the request was pending. */
+            if (document.activeElement === trigger) {
+              optionsButtonRef.current?.focus();
+            }
+            setEscalationAnnouncement(localize('com_ui_steer_in_flight_preempt'));
+            markSteerPreempt(steer.steerId, response.preemptRevision ?? 0);
+            return;
+          }
+          if (!responseSupportsNegotiatedProtocol) {
+            showToast({ message: localize('com_ui_steer_arm_unconfirmed'), status: 'warning' });
+            return;
+          }
+          /** Once a response was lost, a later `armed: false` cannot prove the
+           *  first request did not commit: the steer may have drained or the job
+           *  may have paused between attempts. Keep the chip event-driven and
+           *  report the result as unknown instead of claiming a lost race. */
+          if (firstResponseWasLost) {
+            showToast({ message: localize('com_ui_steer_arm_unconfirmed'), status: 'warning' });
+            return;
+          }
+          /* `armed: false` is deliberately ambiguous — injected, cancelled,
+           * re-homed, or run over — so the message only says the escalation
+           * lost, and the chip defers to the events for what happened. */
+          showToast({
+            message: localize(
+              response.code === 'PREEMPT_UNSUPPORTED'
+                ? 'com_ui_steer_preempt_unsupported'
+                : 'com_ui_steer_arm_lost_race',
+            ),
+            status: 'info',
+          });
+        } catch (error) {
+          const ambiguous = isAmbiguousArmFailure(error);
+          if (ambiguous) {
+            showToast({
+              message: localize('com_ui_steer_arm_unconfirmed'),
+              status: 'warning',
+            });
+            return;
+          }
+          showToast({
+            message: localize(
+              armFailureCode(error) === 'PREEMPT_UNSUPPORTED'
+                ? 'com_ui_steer_preempt_unsupported'
+                : 'com_ui_steer_arm_lost_race',
+            ),
+            status: 'info',
+          });
+        } finally {
+          acceptingRetry = false;
+          clearTimeout(timeout);
+        }
+      };
+      void requestArm().finally(() => setEscalating(false));
+    },
+    [
+      armSteer,
+      conversationId,
+      steer.steerId,
+      steer.generationCreatedAt,
+      activeGenerationCreatedAt,
+      activeGenerationProtocolVersion,
+      setEscalating,
+      markSteerPreempt,
+      showToast,
+      localize,
+    ],
   );
 
   /**
@@ -157,12 +338,6 @@ const InFlightSteer = memo(function InFlightSteer({
           if (!reclaimed) {
             return;
           }
-          if (hasSettled(steer.steerId)) {
-            /* The run ended while the reclaim was in flight and its terminal
-             * conversion already queued these words. */
-            showToast({ message: localize('com_ui_steer_run_ended_queued'), status: 'info' });
-            return;
-          }
           const restored = onRestoreToComposer(
             steer.text,
             steer.files,
@@ -182,18 +357,6 @@ const InFlightSteer = memo(function InFlightSteer({
       },
     },
     {
-      key: 'queue',
-      label: localize('com_ui_convert_to_queue'),
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
-      onClick: () => {
-        void reclaim().then((reclaimed) => {
-          if (reclaimed) {
-            steering.queueReclaimedSteer(steer);
-          }
-        });
-      },
-    },
-    {
       /* Non-destructive, but only when it is safe: cancel reliably first (the
        * optimistic hook removes the chip and restores it if the server would
        * still inject), then hand the words back to the composer ONLY on a
@@ -209,6 +372,8 @@ const InFlightSteer = memo(function InFlightSteer({
           if (outcome !== 'reclaimed') {
             return;
           }
+          // useSteerReclaim has tombstoned both ids and removed any terminal
+          // recovery copy, so exactly one client destination is restored here.
           const restored = onRestoreToComposer(
             steer.text,
             steer.files,
@@ -225,8 +390,20 @@ const InFlightSteer = memo(function InFlightSteer({
         });
       },
     },
-    toggleEntry,
+    {
+      key: 'queue',
+      label: localize('com_ui_convert_to_queue'),
+      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      onClick: () => {
+        void reclaim().then((reclaimed) => {
+          if (reclaimed) {
+            steering.queueReclaimedSteer(steer);
+          }
+        });
+      },
+    },
   ];
+  const preferences: MenuEntry[] = [toggleEntry, interruptToggle];
 
   return (
     <div
@@ -237,10 +414,10 @@ const InFlightSteer = memo(function InFlightSteer({
       /* pointer-events-auto: the overlay container disables events so wheeling
        * over the gaps reaches the messages behind; each bubble re-enables them
        * for its own controls and internal scroll. */
-      className="group pointer-events-auto flex flex-col items-start gap-1.5"
+      className="group pointer-events-auto flex flex-col items-end gap-1.5"
     >
       {(images.length > 0 || others.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {others.map((file) => (
             <FileContainer
               key={file.file_id}
@@ -261,14 +438,38 @@ const InFlightSteer = memo(function InFlightSteer({
           ))}
         </div>
       )}
-      {/* items-start so the sticky controls have room to travel — see below. */}
+      {/* Mirrors the user turn: the whole group hugs the right edge like every
+       *  other message the user wrote. The two controls flank the bubble rather
+       *  than stacking beside each other — the overflow menu outboard-left, the
+       *  send-now arrow outboard-right — so neither can read as belonging to
+       *  the other, and the pairing repeats cleanly when steers stack.
+       *  items-start so the sticky controls have room to travel — see below. */}
       <div className="flex max-w-full items-start gap-1.5">
+        {!sending && (
+          /* One always-visible affordance: a label-less menu hidden until hover
+           * is undiscoverable, and edit/queue/cancel all live inside it now, so
+           * the menu shows at rest on every pointer (matching the always-on
+           * controls on the queued rows). `sticky` keeps it in view while the
+           * user scrolls through a tall, expanded steer (the stack scrolls once
+           * it passes 35vh). */
+          <div data-testid="steer-controls" className={cn(STEER_CONTROL_RAIL, 'gap-1')}>
+            <RowMenu
+              label={localize('com_ui_more_options')}
+              entries={entries}
+              preferences={preferences}
+              buttonRef={optionsButtonRef}
+            />
+          </div>
+        )}
         <div
           className={cn(
+            /* Same bubble geometry as the applied `SteerPart` and every user
+             * turn, so the words don't reshape when the server injects them. */
+            'flex min-w-0 items-start gap-2 rounded-theme-surface rounded-br-theme-control',
             /* Outlined, not just filled: an in-flight steer is provisional —
              * the fill alone reads as a settled message. */
-            'flex min-w-0 items-start gap-2 rounded-3xl border border-border-medium',
-            'bg-surface-secondary py-2 pl-3 pr-4 text-sm text-text-primary',
+            'border border-border-medium bg-surface-secondary',
+            'px-theme-normal py-2.5 text-sm text-text-primary',
             sending && 'opacity-70',
           )}
         >
@@ -327,18 +528,22 @@ const InFlightSteer = memo(function InFlightSteer({
             )}
           </div>
         </div>
-        {!sending && (
-          /* One always-visible affordance: a label-less menu hidden until hover
-           * is undiscoverable, and edit/queue/cancel all live inside it now, so
-           * the menu shows at rest on every pointer (matching the always-on
-           * controls on the queued rows). `sticky` keeps it in view while the
-           * user scrolls through a tall, expanded steer (the stack scrolls once
-           * it passes 35vh). */
-          <div data-testid="steer-controls" className="sticky top-2 flex shrink-0 items-center">
-            <RowMenu label={localize('com_ui_more_options')} entries={entries} />
+        {!sending && !preempting && (
+          /* Sticky for the same reason as the menu: a tall, expanded steer must
+           * never scroll its send-now out of reach. */
+          <div className={STEER_CONTROL_RAIL}>
+            <EscalateNowButton
+              surface="bubble"
+              messageText={steer.text}
+              disabled={interruptPending || steering.pausedOnApproval || !steering.duringRunActive}
+              onClick={escalate}
+            />
           </div>
         )}
       </div>
+      <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {escalationAnnouncement}
+      </span>
       {others.length > 0 && (
         <FilePreviewDialog
           open={selectedFile !== null}
@@ -347,6 +552,7 @@ const InFlightSteer = memo(function InFlightSteer({
           fileId={selectedFile?.file_id}
           filePath={selectedFile?.filepath}
           fileType={selectedFile?.type ?? undefined}
+          fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
         />
       )}
@@ -372,6 +578,15 @@ const InFlightSteers = memo(function InFlightSteers({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
+  /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
+   *  other escalation control disables rather than arming a second seal. The
+   *  escalating flag covers an arm request's round trip, before its chip
+   *  relabels for the chip-derived check to see. */
+  const escalating = useAtomValue(escalatingSteerFamily(conversationId));
+  const interruptPending = useMemo(
+    () => escalating || inFlight.some((steer) => steer.preempt === true),
+    [escalating, inFlight],
+  );
   const setOverlayHeight = useSetAtom(steerOverlayHeightFamily(conversationId));
 
   /** Steers append newest-last, so an overflowing stack would sit scrolled to
@@ -422,11 +637,17 @@ const InFlightSteers = memo(function InFlightSteers({
       aria-label={localize('com_ui_steer_in_flight')}
       data-testid="in-flight-steers"
       /* Floats above the composer over the bottom of the thread instead of
-       * displacing it, so scrolling up reveals the messages behind. Capped: a
-       * steer runs to 16k chars and a run takes up to 10 of them; unbounded it
-       * would cover the whole thread. pointer-events-none lets wheeling over
-       * the gaps reach those messages (each bubble opts back in). */
-      className="pointer-events-none absolute inset-x-0 bottom-full flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
+       * displacing it, so scrolling up reveals the messages behind. Height is
+       * capped: a steer runs to 16k chars and a run takes up to 10 of them;
+       * unbounded it would cover the whole thread. Width is not — `inset-x-0`
+       * takes the width of the composer the steer was typed into, so the stack
+       * ends where that composer ends at every desktop width (`xl:max-w-4xl`,
+       * maximized chat space) instead of drifting inboard against a second,
+       * narrower cap of its own; `p-2` then lands the send-now arrow in the
+       * same column as the composer's own send button (`mr-2` + border).
+       * pointer-events-none lets wheeling over the gaps reach those messages
+       * (each bubble opts back in). */
+      className="pointer-events-none absolute inset-x-0 bottom-full flex max-h-[35vh] flex-col items-end gap-2 overflow-y-auto p-2"
     >
       {inFlight.map((steer) => (
         <InFlightSteer
@@ -434,6 +655,7 @@ const InFlightSteers = memo(function InFlightSteers({
           steer={steer}
           steering={steering}
           conversationId={conversationId}
+          interruptPending={interruptPending}
           onRestoreToComposer={onRestoreToComposer}
         />
       ))}

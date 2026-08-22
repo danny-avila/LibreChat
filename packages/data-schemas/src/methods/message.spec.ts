@@ -3,8 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+} from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
-import { createMessageMethods } from './message';
 import { createModels } from '../models';
 import logger from '~/config/winston';
 
@@ -21,6 +25,9 @@ let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let Message: mongoose.Model<IMessage>;
 let saveMessage: ReturnType<typeof createMessageMethods>['saveMessage'];
 let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
+let getMessagesForSubagentThreadView: ReturnType<
+  typeof createMessageMethods
+>['getMessagesForSubagentThreadView'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -28,6 +35,10 @@ let bulkSaveMessages: ReturnType<typeof createMessageMethods>['bulkSaveMessages'
 let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageText'];
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
+let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
+let releaseSubagentTaskResultClaim: ReturnType<
+  typeof createMessageMethods
+>['releaseSubagentTaskResultClaim'];
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -40,6 +51,7 @@ beforeAll(async () => {
   const methods = createMessageMethods(mongoose);
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
+  getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -47,6 +59,8 @@ beforeAll(async () => {
   updateMessageText = methods.updateMessageText;
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
+  claimSubagentTaskResult = methods.claimSubagentTaskResult;
+  releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
 });
@@ -102,6 +116,156 @@ describe('Message Operations', () => {
       const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(savedMessage).toBeTruthy();
       expect(savedMessage?.text).toBe('Hello, world!');
+      expect(savedMessage?.isUserSubmitted).toBeUndefined();
+    });
+
+    it('should persist optional user-submitted provenance independently of message role', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+
+      expect(result?.isCreatedByUser).toBe(false);
+      expect(result?.isUserSubmitted).toBe(true);
+      expect(result?.userSubmittedPaths).toEqual(['/content/0/text']);
+
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage?.isCreatedByUser).toBe(false);
+      expect(savedMessage?.isUserSubmitted).toBe(true);
+      expect(savedMessage?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+      });
+
+      expect(result?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-explicit-submitted',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+
+      const pathScoped = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-path-scoped',
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+      expect(pathScoped?.isUserSubmitted).toBe(false);
+      expect(pathScoped?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('bounds and validates stored user-submitted provenance paths', async () => {
+      const submittedPaths = [
+        'not-a-pointer',
+        ...Array.from({ length: 300 }, (_, index) => `/content/${index}/text`),
+      ];
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: submittedPaths,
+      });
+
+      expect(result?.userSubmittedPaths).toHaveLength(256);
+      expect(result?.userSubmittedPaths).not.toContain('not-a-pointer');
+      expect(result?.userSubmittedPaths?.[0]).toBe('/content/0/text');
+      expect(result?.isUserSubmitted).toBe(true);
+    });
+
+    it('validates and atomically preserves exact HITL field provenance', async () => {
+      const first = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'tool-1', output: 'Human response' },
+          },
+        ],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: 'not-a-pointer', field: 'decision_reason' },
+        ],
+      });
+
+      expect(first?.userSubmittedMessageFieldPaths).toEqual([
+        expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+      ]);
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
+
+      const stored = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(stored?.userSubmittedMessageFieldPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+          expect.objectContaining({
+            path: '/content/0/tool_call/output',
+            field: 'decision_response',
+          }),
+        ]),
+      );
+      expect(stored?.userSubmittedMessageFieldPaths).toHaveLength(2);
+    });
+
+    it('adds semantic steer paths without replacing existing field provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/text'],
+      });
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          { type: 'text', text: 'Model response' },
+          { type: 'steer', steer: 'User direction' },
+        ],
+      });
+
+      expect(result?.userSubmittedPaths).toEqual(expect.arrayContaining(['/text', '/content/1']));
+      expect(result?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('persists dollar-prefixed message values literally while merging provenance', async () => {
+      const created = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: '$PATH',
+        content: [{ type: 'text', text: '$CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(created?.text).toBe('$PATH');
+      expect(created?.content).toEqual([expect.objectContaining({ text: '$CONTENT' })]);
+
+      const updated = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: '$UPDATED_PATH',
+        content: [{ type: 'text', text: '$UPDATED_CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(updated?.text).toBe('$UPDATED_PATH');
+      expect(
+        await Message.findOne({ messageId: 'msg123', user: 'user123' })
+          .lean()
+          .then((message) => message?.content),
+      ).toEqual([expect.objectContaining({ text: '$UPDATED_CONTENT' })]);
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -126,6 +290,120 @@ describe('Message Operations', () => {
       );
       expect(logger.info).not.toHaveBeenCalled();
     });
+  });
+
+  describe('bulkSaveMessages', () => {
+    it('preserves unknown provenance when cloning an unmarked assistant row', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-unmarked-assistant',
+          conversationId,
+          isCreatedByUser: false,
+        },
+        {
+          user: 'user123',
+          messageId: 'bulk-user-submitted',
+          conversationId,
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+
+      const rows = await Message.find({ conversationId }).lean();
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-unmarked-assistant'),
+      ).not.toHaveProperty('isUserSubmitted');
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-user-submitted')?.isUserSubmitted,
+      ).toBe(true);
+    });
+
+    it('caps exact field provenance without promoting model output to whole-message provenance', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-exact-overflow',
+          conversationId,
+          isCreatedByUser: false,
+          userSubmittedMessageFieldPaths: Array.from({ length: 300 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        },
+      ]);
+
+      const row = await Message.findOne({ messageId: 'bulk-exact-overflow' }).lean();
+      expect(row?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    });
+  });
+
+  describe('recordMessage', () => {
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const conversationId = uuidv4();
+      const modelOutput = await recordMessage({
+        user: 'user123',
+        messageId: 'record-model-output',
+        conversationId,
+        isCreatedByUser: false,
+      });
+      expect(modelOutput?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await recordMessage({
+        user: 'user123',
+        messageId: 'record-user-submitted',
+        conversationId,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+    });
+  });
+
+  it('preserves unknown provenance when message savers update legacy assistant rows', async () => {
+    const conversationId = uuidv4();
+    const messageIds = ['legacy-save', 'legacy-bulk', 'legacy-record'];
+    await Message.collection.insertMany(
+      messageIds.map((messageId) => ({
+        user: 'user123',
+        messageId,
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Legacy assistant output',
+      })),
+    );
+
+    await saveMessage(mockCtx, {
+      messageId: 'legacy-save',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+    await bulkSaveMessages([
+      {
+        user: 'user123',
+        messageId: 'legacy-bulk',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Updated assistant output',
+      },
+    ]);
+    await recordMessage({
+      user: 'user123',
+      messageId: 'legacy-record',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+
+    const rows = await Message.find({ messageId: { $in: messageIds } }).lean();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    }
   });
 
   describe('updateMessageText', () => {
@@ -158,6 +436,97 @@ describe('Message Operations', () => {
       // Verify in database
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(updatedMessage?.text).toBe('Updated text');
+    });
+
+    it('atomically merges provenance from concurrent edits to distinct fields', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          text: 'Human-edited text',
+          userSubmittedPaths: ['/text'],
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          content: [{ type: 'text', text: 'Human-edited content' }],
+          userSubmittedPaths: ['/content/0/text'],
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.text).toBe('Human-edited text');
+      expect(updatedMessage?.content).toEqual([
+        expect.objectContaining({ type: 'text', text: 'Human-edited content' }),
+      ]);
+      expect(updatedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/text', '/content/0/text']),
+      );
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index + 200}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index + 200}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(true);
+    });
+
+    it('keeps repeated exact-field overflow scoped instead of promoting the whole message', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index}`,
+          field: 'decision_response' as const,
+        })),
+      });
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index + 200}`,
+          field: 'decision_response' as const,
+        })),
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(0);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(false);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {
@@ -487,6 +856,140 @@ describe('Message Operations', () => {
     });
   });
 
+  describe('CLIENT_MESSAGE_SELECT projection', () => {
+    it('strips server-internal fields and dead SERP verticals, keeping rendered data', async () => {
+      const conversationId = uuidv4();
+      await Message.create({
+        messageId: 'projected-msg',
+        conversationId,
+        user: 'user123',
+        isCreatedByUser: false,
+        sender: 'Agent',
+        text: 'visible text',
+        content: [{ type: 'text', text: 'part text' }],
+        tokenCount: 42,
+        conversationSignature: 'sig',
+        clientId: 'client-1',
+        invocationId: 7,
+        summary: 'legacy summary',
+        summaryTokenCount: 11,
+        contextMeta: { anything: true },
+        langfuseSampled: true,
+        langfuseDestinationIds: ['lf-1'],
+        metadata: {
+          usage: { input: 10, output: 20 },
+          thoughtSignatures: { tool_1: 'opaque' },
+        },
+        subagentTask: {
+          attemptKey: 'private-attempt',
+          requestFingerprint: 'private-fingerprint',
+          status: 'running',
+        },
+        attachments: [
+          {
+            type: 'web_search',
+            toolCallId: 'tool_1',
+            web_search: {
+              turn: 0,
+              organic: [
+                {
+                  title: 'Result',
+                  link: 'https://example.com',
+                  snippet: 'snippet',
+                  sitelinks: [{ title: 'sub', link: 'https://example.com/sub' }],
+                  highlights: ['raw scrape'],
+                },
+              ],
+              topStories: [{ title: 'Story', link: 'https://example.com/s', highlights: ['x'] }],
+              references: [{ link: 'https://example.com', title: 'Result', type: 'link' }],
+              images: [{ imageUrl: 'https://example.com/i.png' }],
+              answerBox: { answer: '42' },
+              knowledgeGraph: { title: 'KG' },
+              peopleAlsoAsk: [{ question: 'q' }],
+              relatedSearches: ['related'],
+              news: [{ title: 'n' }],
+              videos: [{ title: 'v' }],
+              places: [{ title: 'p' }],
+              shopping: [{ title: 's' }],
+            },
+          },
+        ],
+      });
+
+      const [message] = await getMessages(
+        { conversationId, user: 'user123' },
+        CLIENT_MESSAGE_SELECT,
+      );
+
+      expect(message.text).toBe('visible text');
+      expect(message.content).toHaveLength(1);
+      expect(message.tokenCount).toBe(42);
+      const metadata = message.metadata as Record<string, unknown>;
+      expect(metadata.usage).toBeDefined();
+      expect(metadata.thoughtSignatures).toBeUndefined();
+
+      const hidden = message as unknown as Record<string, unknown>;
+      for (const field of [
+        '_id',
+        'user',
+        'conversationSignature',
+        'clientId',
+        'invocationId',
+        'summary',
+        'summaryTokenCount',
+        'contextMeta',
+        'langfuseSampled',
+        'langfuseDestinationIds',
+        'subagentTask',
+      ]) {
+        expect(hidden[field]).toBeUndefined();
+      }
+
+      type ProjectedWebSearch = {
+        turn: number;
+        organic: Array<Record<string, unknown>>;
+        topStories: Array<Record<string, unknown>>;
+        references: unknown[];
+        images: unknown[];
+      } & Record<string, unknown>;
+      const webSearch = (message.attachments?.[0] as { web_search: ProjectedWebSearch }).web_search;
+      expect(webSearch.turn).toBe(0);
+      expect(webSearch.organic[0].title).toBe('Result');
+      expect(webSearch.organic[0].link).toBe('https://example.com');
+      expect(webSearch.organic[0].snippet).toBe('snippet');
+      expect(webSearch.organic[0].sitelinks).toBeUndefined();
+      expect(webSearch.organic[0].highlights).toBeUndefined();
+      expect(webSearch.topStories[0].title).toBe('Story');
+      expect(webSearch.topStories[0].highlights).toBeUndefined();
+      expect(webSearch.references).toHaveLength(1);
+      expect(webSearch.images).toHaveLength(1);
+      /** `videos` stays: `turn…video…` citation markers resolve against it
+       *  (the clipboard refTypeMap addresses it explicitly). */
+      expect(webSearch.videos).toHaveLength(1);
+      expect(webSearch.answerBox).toBeDefined();
+      for (const vertical of [
+        'knowledgeGraph',
+        'peopleAlsoAsk',
+        'relatedSearches',
+        'news',
+        'places',
+        'shopping',
+      ]) {
+        expect(webSearch[vertical]).toBeUndefined();
+      }
+    });
+  });
+
+  describe('conversation fetch index', () => {
+    it('declares the compound index that serves the conversation fetch and its sort', () => {
+      const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
+      expect(indexes).toContainEqual([
+        { conversationId: 1, user: 1, createdAt: 1, _id: 1 },
+        expect.anything(),
+      ]);
+    });
+  });
+
   describe('getMessages', () => {
     it('should retrieve messages with the correct filter', async () => {
       const conversationId = uuidv4();
@@ -541,6 +1044,103 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0].text).toBe('First message');
       expect(messages[1].text).toBe('Second message');
+    });
+  });
+
+  describe('getMessagesForSubagentThreadView', () => {
+    it('bounds text in MongoDB before returning the public projection', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'bounded-message',
+        conversationId,
+        text: '🧵'.repeat(20_000),
+        user: 'user123',
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(Array.from(messages[0].text ?? '')).toHaveLength(8_192);
+      expect(Buffer.byteLength(messages[0].text ?? '', 'utf8')).toBeLessThanOrEqual(32 * 1024);
+      expect(messages[0].textProjectionTruncated).toBe(true);
+      expect(messages[0]).not.toHaveProperty('user');
+      expect(messages[0]).not.toHaveProperty('conversationId');
+    });
+
+    it('projects the private transcript only for the explicitly selected task', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-a:assistant',
+        conversationId,
+        text: 'A',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-a',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"A"}}]',
+        },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-b:assistant',
+        conversationId,
+        text: 'B',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-b',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"B"}}]',
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 10,
+        textCodePointLimit: 8_192,
+        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
+      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
+
+    it('omits an oversized private transcript before returning the application result', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-large:assistant',
+        conversationId,
+        text: 'The bounded public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-large',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'x'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT + 1) },
+            },
+          ]),
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+        taskId: 'task-large',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].text).toBe('The bounded public answer remains available.');
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
     });
   });
 
@@ -1340,7 +1940,13 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       const result = await saveMessage(
         { userId: 'user123' },
-        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+        {
+          messageId,
+          conversationId,
+          text: 'Tenant test',
+          tenantId: 'malicious-tenant',
+          userSubmittedPaths: ['/text'],
+        },
       );
 
       expect(result).not.toBeNull();
@@ -1404,15 +2010,222 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
 
-      await updateMessage('user123', {
+      const updateWithUnknownField = {
         messageId,
         text: 'Updated',
         tenantId: 'malicious-tenant',
-      });
+        unknownPipelineField: 'malicious-value',
+        userSubmittedPaths: ['/text'],
+      };
+      await updateMessage('user123', updateWithUnknownField);
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBeUndefined();
+      expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
+    });
+  });
+  describe('claimSubagentTaskResult', () => {
+    const terminalResult = async (taskId: string, conversationId: string, status: string) =>
+      saveMessage({ userId: 'user123' }, {
+        messageId: `${taskId}:assistant`,
+        conversationId,
+        text: 'child result',
+        subagentTask: { attemptKey: `${taskId}:attempt`, status },
+      } as Partial<IMessage>);
+
+    it('hands one terminal result to a single polling invocation', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      const first = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'poll-1',
+      });
+      expect(first.status).toBe('acquired');
+      expect(first.status === 'acquired' && first.message.text).toBe('child result');
+
+      /** The same invocation retrying recovers the result it never received. */
+      const retried = await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'poll-1',
+      });
+      expect(retried.status).toBe('acquired');
+
+      /** Another invocation is told it was collected instead of handed a copy. */
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-2',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('elects either a manual poll or one idempotent automatic wakeup', async () => {
+      const manualTaskId = uuidv4();
+      const wakeupTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(manualTaskId, conversationId, 'completed');
+      await terminalResult(wakeupTaskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: manualTaskId,
+          kind: 'wakeup',
+          claimId: 'delivery-1',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+
+      const wakeupClaim = {
+        userId: 'user123',
+        conversationId,
+        taskId: wakeupTaskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-2',
+      };
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(claimSubagentTaskResult(wakeupClaim)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, claimId: 'delivery-3' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+      await expect(
+        claimSubagentTaskResult({ ...wakeupClaim, kind: 'manual', claimId: 'poll-2' }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('preserves and upgrades retries of legacy manual claims without a kind', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      await claimSubagentTaskResult({
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'manual',
+        claimId: 'legacy-poll',
+      });
+      await Message.collection.updateOne(
+        { user: 'user123', conversationId, messageId: `${taskId}:assistant` },
+        { $unset: { 'subagentTask.resultClaim.kind': '' } },
+      );
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        message: { subagentTask: { resultClaim: { kind: 'manual', claimId: 'legacy-poll' } } },
+      });
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'wakeup',
+          claimId: 'legacy-poll',
+        }),
+      ).resolves.toMatchObject({ status: 'claimed' });
+    });
+
+    it('releases only the exact rejected wakeup so manual collection can take over', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+      const wakeup = {
+        userId: 'user123',
+        conversationId,
+        taskId,
+        kind: 'wakeup' as const,
+        claimId: 'delivery-1',
+      };
+      await expect(claimSubagentTaskResult(wakeup)).resolves.toMatchObject({
+        status: 'acquired',
+      });
+      await expect(
+        releaseSubagentTaskResultClaim({ ...wakeup, claimId: 'another-delivery' }),
+      ).resolves.toBe(false);
+      await expect(releaseSubagentTaskResultClaim(wakeup)).resolves.toBe(true);
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-after-rejection',
+        }),
+      ).resolves.toMatchObject({ status: 'acquired' });
+    });
+
+    it('reports a result that is missing or still running as not found', async () => {
+      const runningTaskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(runningTaskId, conversationId, 'running');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: runningTaskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'user123',
+          conversationId,
+          taskId: uuidv4(),
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    it('never hands one owner’s result to another user', async () => {
+      const taskId = uuidv4();
+      const conversationId = uuidv4();
+      await terminalResult(taskId, conversationId, 'completed');
+
+      await expect(
+        claimSubagentTaskResult({
+          userId: 'other-user',
+          conversationId,
+          taskId,
+          kind: 'manual',
+          claimId: 'poll-1',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
     });
   });
 });

@@ -35,6 +35,8 @@ export type ParallelSection = {
  */
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
+  contentIndexOffset = 0,
+  contentIndices?: ReadonlyArray<number>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -45,10 +47,11 @@ export function groupParallelContent(
   const placeholderAgents = new Map<number, Set<string>>();
   const noGroup: PartWithIndex[] = [];
 
-  content.forEach((part, idx) => {
+  content.forEach((part, localIdx) => {
     if (!part) {
       return;
     }
+    const idx = contentIndices?.[localIdx] ?? localIdx + contentIndexOffset;
 
     // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
     const { groupId } = part;
@@ -225,6 +228,11 @@ type ParallelContentRendererProps = {
    * carries per-agent identity.
    */
   renderResumeAttribution?: (idx: number) => React.ReactNode;
+  showDecorations?: boolean;
+  /** Absolute transcript index represented by `content[0]` in a phase slice. */
+  contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
 };
 
 /**
@@ -241,16 +249,23 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   isSubmitting,
   renderPart,
   renderResumeAttribution,
+  showDecorations = true,
+  contentIndexOffset = 0,
+  contentIndices,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content),
-    [content],
+    () => groupParallelContent(content, contentIndexOffset, contentIndices),
+    [content, contentIndexOffset, contentIndices],
   );
 
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
    *  filtered out of every lane, so counting it as last would leave NO
    *  rendered part with the last-part cursor until the label fills. */
-  const lastContentIdx = lastVisibleContentIdx(content);
+  const relativeLastContentIdx = lastVisibleContentIdx(content);
+  const lastContentIdx =
+    relativeLastContentIdx < 0
+      ? -1
+      : (contentIndices?.[relativeLastContentIdx] ?? relativeLastContentIdx + contentIndexOffset);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {
@@ -272,8 +287,10 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
-      <MemoryArtifacts attachments={attachments} />
-      <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      {showDecorations && <MemoryArtifacts attachments={attachments} />}
+      {showDecorations && (
+        <Sources messageId={messageId} conversationId={conversationId || undefined} />
+      )}
 
       {/* Sequential content BEFORE parallel sections */}
       {before.flatMap(({ part, idx }) => {

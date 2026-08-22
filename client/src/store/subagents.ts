@@ -1,5 +1,9 @@
-import { atomFamily } from 'recoil';
-import type { SubagentUpdatePhase } from 'librechat-data-provider';
+import { atom, atomFamily } from 'recoil';
+import type {
+  PartMetadata,
+  SubagentUpdatePhase,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
@@ -9,10 +13,10 @@ import type {
 /**
  * Progress bucket captured per subagent tool call. Populated as
  * `ON_SUBAGENT_UPDATE` SSE events stream in from the backend. Keyed by the
- * parent's `tool_call_id` so the `SubagentCall` renderer can look the bucket
- * up from the tool call it's rendering.
+ * parent invocation so provider-local tool call IDs cannot collide across
+ * separate assistant messages.
  *
- * Both the dialog content and the ticker are aggregated *incrementally*
+ * Both the panel content and the ticker are aggregated *incrementally*
  * into the atom as each envelope arrives — the atom never keeps the raw
  * event array. A long-running subagent can emit thousands of deltas
  * without the state growing past what its structural output (N text
@@ -40,7 +44,40 @@ export interface SubagentProgress {
   latestLabel?: string;
 }
 
-/** Progress state keyed by parent tool_call_id. */
+/** One child invocation selected for the shared read-only activity panel. */
+export type ActiveSubagentPanel = {
+  host: 'conversation' | 'share';
+  shareId?: string;
+  parentConversationId: string;
+  parentMessageId: string;
+  toolCallId: string;
+  partIndex: number;
+  subagentType: string;
+  prompt?: string;
+  legacyOutput?: string | null;
+  persistedContent?: TMessageContentParts[];
+  initialProgress: number;
+  isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  durable?: {
+    threadId: string;
+    taskId: string;
+  };
+};
+
+export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
+  key: 'activeSubagentPanel',
+  default: null,
+});
+
+/** Stable identity for one subagent invocation in the parent conversation. */
+export const subagentProgressKey = (
+  parentMessageId: string,
+  toolCallId: string,
+  partIndex: number,
+) => `${parentMessageId}\u0000${toolCallId}\u0000${partIndex}`;
+
+/** Progress state keyed by one concrete tool-call content-part occurrence. */
 export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, string>({
   key: 'subagentProgressByToolCallId',
   default: null,

@@ -13,7 +13,8 @@ LibreChat is a monorepo with the following key workspaces:
 | `/client` | TypeScript/React | Frontend | `packages/data-provider`, `packages/client` | Frontend SPA |
 | `/packages/client` | TypeScript | Frontend | `packages/data-provider` | Shared frontend utilities |
 
-The source code for `@librechat/agents` (major backend dependency, same team) is at `/home/danny/agentus`.
+The source code for `@librechat/agents` (major backend dependency, same team) lives at
+<https://github.com/danny-avila/agents>.
 
 ---
 
@@ -121,6 +122,33 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Group related components in feature directories (e.g., `SidePanel/Memories/`).
 - Use index files for clean exports.
 
+### Theming and styling
+
+- **Compose before styling.** Search `@librechat/client` for an existing primitive, semantic
+  variant, or composition before adding feature-local classes or CSS.
+- **Use semantic roles.** Colors and shared appearance values must come from the semantic
+  Tailwind/theme roles. Do not add raw palette utilities, hard-coded hex/RGB/HSL colors, or
+  light/dark-specific values in feature components.
+- **Deepen the system when the need is reusable.** Add a focused variant to a shared primitive or
+  extend the canonical, versioned theme-token registry when multiple screens should share the
+  same design decision. Do not create shallow local wrappers that merely relocate class strings.
+- **Themes are data, not arbitrary CSS.** Theme definitions may select semantic colors and shared
+  appearance roles. They must not contain selectors, arbitrary CSS, application behavior, or
+  alternate feature layouts. Preserve existing environment and stored-theme compatibility when
+  changing the theme engine.
+- **Keep layout and behavior local.** Feature structure, responsive layout, state-driven
+  transitions, and specialized visualization may remain feature-owned. Expose a theme role only
+  when it represents a stable, reusable appearance decision; do not turn every measurement into a
+  global token.
+- **Treat custom CSS as an exception.** Use it only when shared primitives and semantic utilities
+  cannot express the requirement. Keep it narrowly scoped, consume theme variables where
+  applicable, support light/dark and reduced motion, and add a brief code or PR explanation of why
+  the exception is necessary.
+- **Preserve defaults and prove variability.** New theme-aware variants must reproduce the current
+  default appearance unless a redesign is explicitly requested. Test semantic-token use and, when
+  extending theme capabilities, include a deliberately different reference theme to prove that
+  components adapt without feature-specific overrides.
+
 ### Data Management
 
 - Feature hooks: `client/src/data-provider/[Feature]/queries.ts` → `[Feature]/index.ts` → `client/src/data-provider/index.ts`.
@@ -140,6 +168,16 @@ Multi-line imports count total character length across all lines. Consolidate va
 - Cursor pagination for large datasets.
 - Proper dependency arrays to avoid unnecessary re-renders.
 - Leverage React Query caching and background refetching.
+
+---
+
+## Backend Rules (`api/**`, `packages/api/**`)
+
+### Auth cache invalidation
+
+When adding or changing code that mutates user documents, invalidate the auth user document cache
+for the affected users. This covers single-user updates as well as bulk role and user mutations.
+Without it, OpenID JWT request burst caching can serve a stale `req.user` until its TTL expires.
 
 ---
 

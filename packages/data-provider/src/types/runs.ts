@@ -39,6 +39,8 @@ export enum StepEvents {
   ON_REASONING_DELTA = 'on_reasoning_delta',
   ON_RUN_STEP_DELTA = 'on_run_step_delta',
   ON_RUN_STEP_COMPLETED = 'on_run_step_completed',
+  /** Terminal signal for a run step: closed with a status and timestamps. */
+  ON_RUN_STEP_CLOSED = 'on_run_step_closed',
   ON_SUMMARIZE_START = 'on_summarize_start',
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',
@@ -77,17 +79,62 @@ export enum ApprovalEvents {
  */
 export enum SteerEvents {
   ON_STEER_APPLIED = 'on_steer_applied',
+  /** Durable capability correction for queued steers after HITL handover. */
+  ON_STEER_UPDATED = 'on_steer_updated',
 }
 
 /**
  * Activity-label event names. `on_activity_label` streams to live clients
- * when a tool-batch label part is claimed (deterministic counts) and again
- * when the fast-model label resolves; reconnecting clients recover applied
- * labels from `aggregatedContent` like any other content part.
+ * when a tool-batch or parent-phase label part is claimed and again when the
+ * fast-model label resolves; reconnecting clients recover applied labels
+ * from `aggregatedContent` like any other content part.
  */
 export enum ActivityLabelEvents {
   ON_ACTIVITY_LABEL = 'on_activity_label',
 }
+
+/** Live title updates for an existing reasoning content part. */
+export enum ReasoningLabelEvents {
+  ON_REASONING_LABEL = 'on_reasoning_label',
+  /** Internal durable budget reservation; clients intentionally do not render it. */
+  ON_REASONING_LABEL_ATTEMPT = 'on_reasoning_label_attempt',
+}
+
+type TReasoningLabelEventBase = {
+  /** Completion-local content index of the reasoning part being updated. */
+  index: number;
+  stepId: string;
+  responseMessageId?: string;
+  conversationId?: string;
+};
+
+/** Payload of the `on_reasoning_label` SSE event. */
+export type TReasoningLabelEvent = TReasoningLabelEventBase &
+  (
+    | {
+        /** Clears a snapshot title when its THINK slot changed during the resume gap. */
+        reset: true;
+        /** Step identity observed in the snapshot and exclusively eligible for this reset. */
+        previousStepId: string;
+        /** Latest run-global call-budget high-water, when present on fresh content. */
+        attempts?: number;
+      }
+    | {
+        reset?: false;
+        /** Run-unique provider-call revision; may contain gaps after unsuccessful attempts. */
+        revision: number;
+        label: string;
+        status: 'streaming' | 'complete';
+      }
+  );
+
+/** Durable run-cumulative call-budget reservation, attributed to one reasoning step. */
+export type TReasoningLabelAttemptEvent = {
+  index: number;
+  stepId: string;
+  attempts: number;
+  submittedChars: number;
+};
 
 /** Payload of the `on_activity_label` SSE event. */
 export type TActivityLabelEvent = {
@@ -96,7 +143,13 @@ export type TActivityLabelEvent = {
   part: {
     type: ContentTypes.ACTIVITY_LABEL;
     [ContentTypes.ACTIVITY_LABEL]: string;
+    /** Missing means a per-batch activity label. */
+    activity_label_type?: 'phase';
     tool_call_ids?: string[];
+    activity_start_index?: number;
+    activity_end_index?: number;
+    activity_count?: number;
+    agent_ids?: string[];
     counts?: {
       searches: number;
       reads: number;
@@ -115,28 +168,47 @@ export type TActivityLabelEvent = {
 /** A steer message queued server-side but not yet injected into the run. */
 export type TPendingSteer = {
   steerId: string;
+  /** Correlates a server steer with its optimistic chip when terminal delivery
+   *  races ahead of the POST response. */
+  clientSteerId?: string;
   text: string;
   createdAt?: number;
   files?: Partial<TFile>[];
   /** The steer asked to interrupt generation at the next safe boundary —
    *  kept on parked/replayed chips so the "interrupting" label survives. */
   preempt?: boolean;
+  /** Monotonic server revision for last-writer-wins interrupt labels. */
+  preemptRevision?: number;
 };
 
 /** Payload of the `on_steer_applied` SSE event. */
 export type TSteerAppliedEvent = {
   steerId: string;
+  /** Correlates the applied event with the optimistic chip before the POST settles. */
+  clientSteerId?: string;
   /** Absolute content index the steer part was injected at. */
   index: number;
   part: {
     type: ContentTypes.STEER;
     [ContentTypes.STEER]: string;
     steerId?: string;
+    clientSteerId?: string;
     createdAt?: number;
     files?: Partial<TFile>[];
   };
   responseMessageId?: string;
   conversationId?: string;
+};
+
+/** A queued steer's interrupt label changed without moving its FIFO slot. */
+export type TSteerUpdatedEvent = {
+  conversationId: string;
+  steers: Array<{
+    steerId: string;
+    clientSteerId?: string;
+    preempt: boolean;
+    preemptRevision: number;
+  }>;
 };
 
 /** Mirrors TokenBudgetBreakdown from @librechat/agents (data-provider cannot import it). */
@@ -209,8 +281,15 @@ export type TTokenUsageEvent = {
   /** Non-primary buckets fold into session cost/totals but not the live
    *  context gauge: hidden sequential-agent calls (`sequential`), summary
    *  passes (`summarization`), isolated subagent runs (`subagent`), and
-   *  fast-model activity headers (`activity-label`) */
-  usage_type?: 'summarization' | 'subagent' | 'sequential' | 'activity-label';
+   *  fast-model activity headers (`activity-label`, `activity-phase`), and
+   *  live reasoning titles (`reasoning-label`) */
+  usage_type?:
+    | 'summarization'
+    | 'subagent'
+    | 'sequential'
+    | 'activity-label'
+    | 'activity-phase'
+    | 'reasoning-label';
   runId?: string;
   /** Per-run emission sequence; keeps identical payloads from distinct model calls unique */
   seq?: number;
@@ -282,16 +361,34 @@ export type SubagentUpdatePhase =
   | 'stop'
   | 'error';
 
+/** Structured root-to-leaf identity for one nested subagent execution. */
+export interface SubagentAncestryEntry {
+  readonly subagentRunId: string;
+  readonly subagentType: string;
+  readonly subagentKind: 'agent' | 'graph';
+  /** Execution subject ID; synthetic for graph subagents. */
+  readonly subagentAgentId: string;
+  readonly parentRunId: string;
+  readonly parentAgentId?: string;
+  readonly parentToolCallId?: string;
+}
+
 /** Single streamed subagent update forwarded by the SDK's SubagentExecutor. */
 export interface SubagentUpdateEvent {
   runId: string;
+  parentRunId?: string;
   subagentRunId: string;
   /** Parent-side `tool_call_id` for the `subagent` tool invocation that
    *  triggered this run. Surfaces from the SDK (`3.1.67-dev.2`+) so hosts
    *  can correlate child progress to the parent tool call deterministically. */
   parentToolCallId?: string;
   subagentType: string;
+  subagentKind?: 'agent' | 'graph';
+  /** Execution subject ID; synthetic for graph subagents. */
   subagentAgentId: string;
+  memberAgentId?: string;
+  depth?: number;
+  ancestry?: readonly SubagentAncestryEntry[];
   parentAgentId?: string;
   phase: SubagentUpdatePhase;
   data?: unknown;

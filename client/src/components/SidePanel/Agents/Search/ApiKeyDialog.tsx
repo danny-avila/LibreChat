@@ -301,16 +301,12 @@ export default function ApiKeyDialog({
         }
         selection={{
           selectHandler: handleSubmit(onSubmit),
-          selectClasses: 'bg-green-500 hover:bg-green-600 text-white',
+          selectClasses: 'bg-surface-submit hover:bg-surface-submit-hover text-white',
           selectText: localize('com_ui_save'),
         }}
         buttons={
           isToolAuthenticated && (
-            <Button
-              onClick={onRevoke}
-              className="bg-red-500 text-white hover:bg-red-600"
-              aria-label={localize('com_ui_revoke')}
-            >
+            <Button variant="destructive" onClick={onRevoke} aria-label={localize('com_ui_revoke')}>
               {localize('com_ui_revoke')}
             </Button>
           )

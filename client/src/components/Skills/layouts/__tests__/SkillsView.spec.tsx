@@ -6,23 +6,15 @@ import SkillsView from '../SkillsView';
 const mockUseHasAccess = jest.fn((..._args: unknown[]) => true);
 const mockUseMediaQuery = jest.fn((_query: string) => false);
 
-jest.mock(
-  'librechat-data-provider',
-  () => ({
-    PermissionTypes: { SKILLS: 'skills' },
-    Permissions: { USE: 'use', CREATE: 'create' },
-  }),
-  { virtual: true },
-);
+jest.mock('librechat-data-provider', () => ({
+  PermissionTypes: { SKILLS: 'skills' },
+  Permissions: { USE: 'use', CREATE: 'create' },
+}));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    Spinner: () => <div data-testid="spinner" />,
-    useMediaQuery: (query: string) => mockUseMediaQuery(query),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  Spinner: () => <div data-testid="spinner" />,
+  useMediaQuery: (query: string) => mockUseMediaQuery(query),
+}));
 
 jest.mock('~/components/Chat/Menus/OpenSidebar', () => ({
   __esModule: true,

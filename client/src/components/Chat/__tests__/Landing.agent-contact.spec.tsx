@@ -1,6 +1,8 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import temporaryStore from '~/store/temporary';
 import Landing from '../Landing';
 
 let mockConversation: Record<string, unknown> | null = null;
@@ -20,15 +22,11 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    BirthdayIcon: () => <span data-testid="birthday-icon" />,
-    TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    SplitText: ({ text }: { text: string }) => <span>{text}</span>,
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  BirthdayIcon: () => <span data-testid="birthday-icon" />,
+  TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  SplitText: ({ text }: { text: string }) => <span>{text}</span>,
+}));
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ conversation: mockConversation }),
@@ -43,15 +41,14 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: undefined }),
+  useGreeting: () => 'Welcome',
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
       com_agents_contact: 'Contact',
       com_agents_no_contact_available: 'No contact available',
-      com_ui_good_morning: 'Good morning',
-      com_ui_good_afternoon: 'Good afternoon',
-      com_ui_good_evening: 'Good evening',
-      com_ui_late_night: 'Good evening',
-      com_ui_weekend_morning: 'Good morning',
+      com_ui_temporary: 'Temporary Chat',
+      com_ui_temporary_description:
+        "This chat won't appear in your history and will be deleted automatically.",
     };
     return translations[key] || key;
   },
@@ -89,6 +86,14 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/components/Endpoints/ConvoIcon', () => () => <span data-testid="convo-icon" />);
 
+function renderLanding({ isTemporary = false }: { isTemporary?: boolean } = {}) {
+  return render(
+    <RecoilRoot initializeState={({ set }) => set(temporaryStore.isTemporary, isTemporary)}>
+      <Landing centerFormOnLanding={false} />
+    </RecoilRoot>,
+  );
+}
+
 describe('Landing agent contact', () => {
   beforeEach(() => {
     mockConversation = null;
@@ -110,7 +115,7 @@ describe('Landing agent contact', () => {
       },
     };
 
-    render(<Landing centerFormOnLanding={false} />);
+    renderLanding();
 
     expect(screen.getByText('Portal Remote Agent')).toBeInTheDocument();
     expect(screen.getByText('Remote Agent Showcase')).toBeInTheDocument();
@@ -127,7 +132,7 @@ describe('Landing agent contact', () => {
     };
     mockAgentsMap = {};
 
-    render(<Landing centerFormOnLanding={false} />);
+    renderLanding();
 
     expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
     expect(screen.queryByText('No contact available')).not.toBeInTheDocument();
@@ -146,9 +151,58 @@ describe('Landing agent contact', () => {
       },
     };
 
-    render(<Landing centerFormOnLanding={false} />);
+    renderLanding();
 
     expect(screen.getByText('Assistant')).toBeInTheDocument();
     expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
+  });
+});
+
+describe('Landing temporary chat empty state', () => {
+  beforeEach(() => {
+    mockConversation = null;
+    mockAgentsMap = undefined;
+    mockAssistantMap = undefined;
+  });
+
+  it('replaces the greeting with the temporary chat explanation', () => {
+    renderLanding({ isTemporary: true });
+
+    expect(screen.getByText('Temporary Chat')).toBeInTheDocument();
+    expect(
+      screen.getByText("This chat won't appear in your history and will be deleted automatically."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Welcome')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('convo-icon')).not.toBeInTheDocument();
+  });
+
+  it('hides the agent identity and contact while temporary', () => {
+    mockConversation = {
+      endpoint: 'agents',
+      agent_id: 'agent-1',
+    };
+    mockAgentsMap = {
+      'agent-1': {
+        id: 'agent-1',
+        name: 'Portal Remote Agent',
+        description: 'Remote Agent Showcase',
+        owner_contact: { name: 'Owner User' },
+      },
+    };
+
+    renderLanding({ isTemporary: true });
+
+    expect(screen.getByText('Temporary Chat')).toBeInTheDocument();
+    expect(screen.queryByText('Portal Remote Agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Remote Agent Showcase')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
+  });
+
+  it('keeps the normal greeting when temporary chat is off', () => {
+    renderLanding();
+
+    expect(screen.getByText('Welcome')).toBeInTheDocument();
+    expect(screen.queryByText('Temporary Chat')).not.toBeInTheDocument();
+    expect(screen.getByTestId('convo-icon')).toBeInTheDocument();
   });
 });

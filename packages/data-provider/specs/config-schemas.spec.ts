@@ -13,6 +13,8 @@ import {
   summarizationConfigSchema,
   retainRecentConfigSchema,
   MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  setMaxSubagents,
 } from '../src/config';
 import {
   tModelSpecPresetSchema,
@@ -20,7 +22,7 @@ import {
   ReasoningParameterFormat,
   ReasoningResponseKey,
 } from '../src/schemas';
-import { specsConfigSchema } from '../src/models';
+import { specsConfigSchema, materializeModelSpecEndpoints } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -405,6 +407,47 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('accepts a non-empty stateful code environment allowlist', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('defaults maxSubagents to MAX_SUBAGENTS and validates its bounds', () => {
+    const omitted = agentsEndpointSchema.safeParse({});
+    expect(omitted.success).toBe(true);
+    if (omitted.success) {
+      expect(omitted.data.maxSubagents).toBe(MAX_SUBAGENTS);
+    }
+
+    const raised = agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS + 10 });
+    expect(raised.success).toBe(true);
+    if (raised.success) {
+      expect(raised.data.maxSubagents).toBe(MAX_SUBAGENTS + 10);
+    }
+
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 2.5 }).success).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS_CEILING + 1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects empty or unknown stateful code environment allowlists', () => {
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: ['agent'] },
+      }).success,
+    ).toBe(false);
+  });
+
   it('does not accept baseURL', () => {
     const result = agentsEndpointSchema.safeParse({
       baseURL: 'https://example.com',
@@ -1193,6 +1236,100 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  /**
+   * The endpoint is inferable from `agent_id`, so config validation must not
+   * reject the spec before `materializeModelSpecEndpoints` can fill it in.
+   */
+  it('accepts an agent spec whose preset omits endpoint', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'agent-spec',
+          label: 'Agent Spec',
+          preset: { agent_id: 'agent_abc' },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].preset.agent_id).toBe('agent_abc');
+      expect(result.data.list[0].preset.endpoint).toBeUndefined();
+    }
+  });
+
+  /** Omission is only legal when inferable — a preset naming no agent still needs the key. */
+  it('rejects an endpoint-less preset that names no agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'dead-spec', label: 'Dead Spec', preset: { model: 'gpt-4o' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /** `endpoint: null` validated before the key became optional; it must keep validating. */
+  it('still accepts an explicit null endpoint without an agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'null-spec', label: 'Null Spec', preset: { endpoint: null } }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  /** Form-backed writers persist untouched fields as `''`, which names no agent. */
+  it('rejects an endpoint-less preset whose agent_id is an empty string', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'empty-agent', label: 'Empty Agent', preset: { agent_id: '' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /**
+   * An explicit `endpoint: null` is a statement, not an omission: such specs
+   * validated and stayed inert before inference existed, and must remain so.
+   */
+  it('does not infer over an explicit null endpoint, even with an agent_id', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        {
+          name: 'null-agent-spec',
+          label: 'Null Agent Spec',
+          preset: { endpoint: null, agent_id: 'agent_abc' },
+        },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBeNull();
+    expect(materialized).toBe(parsed);
+  });
+
+  it('materializes the inferred endpoint onto parsed agent specs', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        { name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } },
+        {
+          name: 'explicit-spec',
+          label: 'Explicit Spec',
+          preset: { endpoint: EModelEndpoint.openAI, agent_id: 'agent_abc' },
+        },
+        { name: 'bare-spec', label: 'Bare Spec', preset: { endpoint: null } },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBe(EModelEndpoint.agents);
+    expect(materialized.list[1].preset.endpoint).toBe(EModelEndpoint.openAI);
+    expect(materialized.list[1]).toBe(parsed.list[1]);
+    expect(materialized.list[2].preset.endpoint).toBeNull();
+  });
+
+  it('returns the same object when every spec already has an endpoint', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [{ name: 'spec', label: 'Spec', preset: { endpoint: EModelEndpoint.openAI } }],
+    });
+    expect(materializeModelSpecEndpoints(parsed)).toBe(parsed);
+  });
+
   it('rejects model spec subagent ids above the shared cap', () => {
     const oversized = Array.from({ length: MAX_SUBAGENTS + 1 }, (_, i) => `agent_${i}`);
     const result = specsConfigSchema.safeParse({
@@ -1206,6 +1343,23 @@ describe('specsConfigSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+
+  it('validates model spec subagent ids against the configured cap', () => {
+    const raised = Array.from({ length: MAX_SUBAGENTS + 5 }, (_, i) => `agent_${i}`);
+    setMaxSubagents(MAX_SUBAGENTS + 10);
+    const withinRaised = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          preset: { endpoint: EModelEndpoint.openAI },
+          subagents: { enabled: true, agent_ids: raised },
+        },
+      ],
+    });
+    setMaxSubagents(undefined);
+    expect(withinRaised.success).toBe(true);
   });
 });
 
@@ -1233,5 +1387,31 @@ describe('configSchema langfuse', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('accepts custom Langfuse request headers', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: true,
+        headers: {
+          'CF-Access-Client-Id': 'proxy-client',
+          'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects non-string Langfuse header values', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        headers: { 'X-Proxy-Token': 42 },
+      },
+    });
+
+    expect(result.success).toBe(false);
   });
 });

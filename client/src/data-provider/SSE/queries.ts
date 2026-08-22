@@ -2,11 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
 import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
-import { isNotFoundError, updateConvoInAllQueries } from '~/utils';
+import { isNotFoundError, updateConvoInAllQueries, setDocumentTitle } from '~/utils';
+import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
 import { useGetStartupConfig } from '../Endpoints';
 
 export interface StreamStatusResponse {
+  /** Exact protocol selected by the job. Missing/1 is always legacy. */
+  generationProtocolVersion?: number;
   active: boolean;
+  /** Client-local cache marker used to force useResumeOnLoad to replace a
+   * stale generation attachment with the newer epoch occupying this stream. */
+  generationHandoff?: boolean;
   streamId?: string;
   status?: 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
   aggregatedContent?: Array<{ type: string; text?: string }>;
@@ -16,7 +22,8 @@ export interface StreamStatusResponse {
    *  `resumeState.pendingAction`, surfaced top-level for the resume-on-load path. */
   pendingAction?: Agents.PendingAction;
   /** Acknowledged steers a terminal drain parked because no subscriber was
-   *  live for the final/abort event — claim-on-read; restore as queued chips. */
+   *  live for the final/abort event. Reads are replayable until an exact
+   *  recovery turn persists or the user discards the item. */
   unrecoveredSteers?: TPendingSteer[];
 }
 
@@ -24,7 +31,8 @@ export const streamStatusQueryKey = (conversationId: string) => ['streamStatus',
 
 export const fetchStreamStatus = async (conversationId: string): Promise<StreamStatusResponse> => {
   return request.get<StreamStatusResponse>(
-    `${apiBaseUrl()}/api/agents/chat/status/${conversationId}`,
+    withGenerationProtocolQuery(`${apiBaseUrl()}/api/agents/chat/status/${conversationId}`),
+    { headers: generationProtocolHeaders() },
   );
 };
 
@@ -171,7 +179,7 @@ export function useTitleGeneration(enabled = true) {
         updateConvoInAllQueries(queryClient, conversationId, (c) => ({ ...c, title }));
         // Only update document title if this conversation is currently active
         if (window.location.pathname.includes(conversationId)) {
-          document.title = title;
+          setDocumentTitle(title);
         }
         markTitleGenerationProcessed(conversationId);
         setReadyToFetch((prev) => prev.filter((id) => id !== conversationId));
@@ -215,7 +223,11 @@ export function useActiveJobs(enabled = true) {
     enabled,
     staleTime: 5_000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    /** Unconditional: the interval is off while nothing is listed, so a run
+     *  another client started during the last `staleTime` window would be
+     *  invisible until some unrelated refetch, and returning to the tab is
+     *  exactly when a pane needs to know whether its history has moved. */
+    refetchOnWindowFocus: 'always',
     refetchInterval: (data) => ((data?.activeJobIds?.length ?? 0) > 0 ? 5_000 : false),
     retry: false,
   });

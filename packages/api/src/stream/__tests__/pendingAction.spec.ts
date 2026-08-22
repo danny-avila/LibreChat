@@ -1,6 +1,7 @@
 import type { Agents } from 'librechat-data-provider';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
+import { PAUSE_PERSISTENCE_TIMEOUT_ERROR } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { ApprovalLifecycle } from '~/stream/ApprovalLifecycle';
@@ -59,6 +60,487 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       }
     });
 
+    test('a later ask retains a legacy answer for ordered cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-legacy-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(
+        await manager.approvals.pause(
+          streamId,
+          buildAction(streamId, {
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Approve deployment?' },
+              tool_call_id: 'ask-2',
+            },
+          }),
+        ),
+      ).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        },
+      });
+    });
+
+    test('a later tool approval retains a legacy answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-legacy-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        },
+      });
+    });
+
+    test('a later pause retains an exact-ID answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-exact-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
+        },
+      });
+    });
+
+    test('persists discovered tools in the same transition that makes the pause visible', async () => {
+      const streamId = 'stream-pause-discoveries';
+      await manager.createJob(streamId, 'user-1');
+
+      const action = buildAction(streamId);
+      expect(
+        await manager.approvals.pause(streamId, action, {
+          discoveredTools: ['save_issue_mcp_linear'],
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.status).toBe('requires_action');
+      expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
+    });
+
+    test('persists activity phase state in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-activity-phase';
+      await manager.createJob(streamId, 'user-1');
+      const activityPhaseSnapshot = {
+        version: 1 as const,
+        generated: 0,
+        activityCount: 1,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          {
+            label: 'Inspected the deployment',
+            status: 'success' as const,
+            startIndex: 0,
+          },
+        ],
+        assistantContext: ['Checking the remaining replicas'],
+        pendingReasoning: [],
+      };
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          activityPhaseSnapshot,
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.activityPhaseSnapshot).toEqual(activityPhaseSnapshot);
+    });
+
+    test('does not write a stale pause or discoveries onto a replacement job', async () => {
+      const streamId = 'stream-pause-replaced';
+      const original = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          discoveredTools: ['stale_tool'],
+          expectedCreatedAt: original.createdAt,
+        }),
+      ).toBe(false);
+
+      const liveJob = await manager.getJob(streamId);
+      expect(liveJob?.createdAt).toBe(replacement.createdAt);
+      expect(liveJob?.status).toBe('running');
+      expect(liveJob?.metadata.discoveredTools).toBeUndefined();
+    });
+
+    test('commits discoveries and the response barrier in the visible pause transition', async () => {
+      const streamId = 'stream-pause-discoveries-and-persistence';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+
+      await expect(
+        manager.approvals.pause(streamId, action, {
+          expectedCreatedAt: job.createdAt,
+          discoveredTools: ['save_issue_mcp_linear'],
+          persistencePending: true,
+        }),
+      ).resolves.toBe(true);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          discoveredTools: ['save_issue_mcp_linear'],
+          terminalPersistencePending: true,
+        },
+      });
+    });
+
+    test('holds abort behind the paused-response persistence barrier', async () => {
+      const streamId = 'stream-pause-persistence-abort-race';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+      await expect(
+        manager.approvals.pause(streamId, action, {
+          expectedCreatedAt: job.createdAt,
+          persistencePending: true,
+        }),
+      ).resolves.toBe(true);
+
+      let abortSettled = false;
+      const aborting = manager
+        .abortJob(streamId, { expectedCreatedAt: job.createdAt })
+        .then((result) => {
+          abortSettled = true;
+          return result;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(abortSettled).toBe(false);
+      await expect(
+        manager.approvals.ownsPausePersistence(streamId, action.actionId, job.createdAt),
+      ).resolves.toBe(true);
+      await expect(
+        manager.approvals.finishPausePersistence(streamId, action.actionId, job.createdAt),
+      ).resolves.toBe(true);
+      await expect(aborting).resolves.toMatchObject({
+        success: true,
+        finalEvent: expect.objectContaining({ aborted: true }),
+      });
+    });
+
+    test('holds approval resume behind the paused-response persistence barrier', async () => {
+      const streamId = 'stream-pause-persistence-resume-race';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+      await expect(
+        manager.approvals.pause(streamId, action, {
+          expectedCreatedAt: job.createdAt,
+          persistencePending: true,
+        }),
+      ).resolves.toBe(true);
+
+      let resumeSettled = false;
+      const resuming = manager.approvals
+        .resolve(streamId, action.actionId, undefined, job.createdAt)
+        .then((result) => {
+          resumeSettled = true;
+          return result;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(resumeSettled).toBe(false);
+      await expect(
+        manager.approvals.finishPausePersistence(streamId, action.actionId, job.createdAt),
+      ).resolves.toBe(true);
+      await expect(resuming).resolves.toBe(true);
+      await expect(manager.getJobStatus(streamId)).resolves.toBe('running');
+    });
+
+    test('failed pause persistence atomically beats a waiting resume and parks steers', async () => {
+      const streamId = 'stream-pause-persistence-failure-race';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId);
+      const waitingSteer = {
+        steerId: 'steer-waiting-on-failed-pause',
+        text: 'preserve me after the failed pause',
+        userId: 'user-1',
+        createdAt: Date.now(),
+      };
+      await expect(manager.steering.enqueue(streamId, waitingSteer, job.createdAt)).resolves.toBe(
+        1,
+      );
+      await expect(
+        manager.approvals.pause(streamId, action, {
+          expectedCreatedAt: job.createdAt,
+          persistencePending: true,
+        }),
+      ).resolves.toBe(true);
+
+      let resumeSettled = false;
+      const resuming = manager.approvals
+        .resolve(streamId, action.actionId, undefined, job.createdAt)
+        .then((result) => {
+          resumeSettled = true;
+          return result;
+        });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(resumeSettled).toBe(false);
+
+      await expect(
+        manager.failPausePersistence(
+          streamId,
+          action.actionId,
+          'paused response was not persisted',
+          job.createdAt,
+        ),
+      ).resolves.toBe(true);
+      await expect(resuming).resolves.toBe(false);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'error',
+        error: 'paused response was not persisted',
+      });
+      const failedStoredJob = await jobStore.getJob(streamId);
+      expect(failedStoredJob?.pendingAction).toBeUndefined();
+      expect(failedStoredJob?.pendingActionId).toBeUndefined();
+      expect(failedStoredJob?.terminalPersistencePending).toBeUndefined();
+      expect(failedStoredJob?.terminalPersistenceStartedAt).toBeUndefined();
+      await expect(manager.steering.peek(streamId, job.createdAt)).resolves.toEqual([]);
+      await expect(manager.steering.claim(streamId, { userId: 'user-1' })).resolves.toEqual([
+        expect.objectContaining({
+          steerId: waitingSteer.steerId,
+          text: waitingSteer.text,
+        }),
+      ]);
+    });
+
+    test('failed pause persistence is fenced to the exact action and generation', async () => {
+      const streamId = 'stream-pause-persistence-failure-fence';
+      const predecessor = await manager.createJob(streamId, 'user-1');
+      const action = buildAction(streamId, { actionId: 'reused-pause-action' });
+      await expect(
+        manager.approvals.pause(streamId, action, {
+          expectedCreatedAt: predecessor.createdAt,
+          persistencePending: true,
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        manager.failPausePersistence(
+          streamId,
+          'different-action',
+          'must not win',
+          predecessor.createdAt,
+        ),
+      ).resolves.toBe(false);
+      await expect(
+        manager.approvals.ownsPausePersistence(streamId, action.actionId, predecessor.createdAt),
+      ).resolves.toBe(true);
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      const replacement = await manager.createJob(streamId, 'user-1');
+      await expect(
+        manager.failPausePersistence(
+          streamId,
+          action.actionId,
+          'stale predecessor failure',
+          predecessor.createdAt,
+        ),
+      ).resolves.toBe(false);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    });
+
+    test('fails a crashed pause writer closed after the bounded barrier deadline', async () => {
+      const streamId = 'stream-stale-pause-persistence';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+
+      try {
+        const job = await manager.createJob(streamId, 'user-1');
+        const action = buildAction(streamId);
+        const waitingSteer = {
+          steerId: 'stale-pause-steer',
+          text: 'recover me instead of resuming unsafe history',
+          userId: 'user-1',
+          createdAt: 1_000,
+        };
+        await expect(manager.steering.enqueue(streamId, waitingSteer, job.createdAt)).resolves.toBe(
+          1,
+        );
+        const onError = jest.fn();
+        const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+        await expect(
+          manager.approvals.pause(streamId, action, {
+            expectedCreatedAt: job.createdAt,
+            persistencePending: true,
+          }),
+        ).resolves.toBe(true);
+
+        now.mockReturnValue(31_001);
+        await expect(
+          manager.approvals.resolve(streamId, action.actionId, undefined, job.createdAt),
+        ).resolves.toBe(false);
+        await expect(manager.getJob(streamId)).resolves.toMatchObject({
+          status: 'error',
+          error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        });
+        const failedJob = await jobStore.getJob(streamId);
+        expect(failedJob?.pendingAction).toBeUndefined();
+        expect(failedJob?.pendingActionId).toBeUndefined();
+        expect(failedJob?.terminalPersistencePending).toBeUndefined();
+        expect(failedJob?.terminalPersistenceStartedAt).toBeUndefined();
+        expect(job.abortController.signal.aborted).toBe(true);
+        expect(onError).toHaveBeenCalledWith(PAUSE_PERSISTENCE_TIMEOUT_ERROR);
+        await expect(manager.steering.claim(streamId, { userId: 'user-1' })).resolves.toEqual([
+          expect.objectContaining({ steerId: waitingSteer.steerId, text: waitingSteer.text }),
+        ]);
+        subscription?.unsubscribe();
+      } finally {
+        now.mockRestore();
+      }
+    });
+
+    test('relays a store-only pause timeout into the matching attached runtime once', async () => {
+      const streamId = 'stream-remote-stale-pause-persistence';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+
+      try {
+        const job = await manager.createJob(streamId, 'user-1');
+        const action = buildAction(streamId);
+        const onError = jest.fn();
+        const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+        await expect(
+          manager.approvals.pause(streamId, action, {
+            expectedCreatedAt: job.createdAt,
+            persistencePending: true,
+          }),
+        ).resolves.toBe(true);
+        const broadcast = jest.spyOn(eventTransport, 'emitError');
+        const clearContentState = jest.spyOn(jobStore, 'clearContentState');
+        expect(job.abortController.signal.aborted).toBe(false);
+
+        now.mockReturnValue(31_001);
+        // Model another replica/store cleanup winning the terminal CAS without
+        // access to this manager's in-process runtime.
+        await jobStore.cleanup();
+        await expect(manager.getJob(streamId)).resolves.toMatchObject({
+          status: 'error',
+          error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+        });
+        expect(onError).not.toHaveBeenCalled();
+        expect(clearContentState).not.toHaveBeenCalled();
+
+        const managerWithCleanup = manager as unknown as { cleanup(): Promise<void> };
+        await managerWithCleanup.cleanup();
+        expect(job.abortController.signal.aborted).toBe(true);
+        expect(onError).toHaveBeenCalledTimes(1);
+        expect(onError).toHaveBeenCalledWith(PAUSE_PERSISTENCE_TIMEOUT_ERROR);
+        expect(broadcast).toHaveBeenCalledWith(
+          streamId,
+          PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+          job.createdAt,
+        );
+        expect(clearContentState).toHaveBeenCalledWith(streamId, job.createdAt);
+
+        await managerWithCleanup.cleanup();
+        expect(onError).toHaveBeenCalledTimes(1);
+        subscription?.unsubscribe();
+      } finally {
+        now.mockRestore();
+      }
+    });
+
+    test('notifies the attached runtime when a locally-won timeout row is immediately evicted', async () => {
+      const streamId = 'stream-zero-ttl-stale-pause-persistence';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+
+      try {
+        const job = await manager.createJob(streamId, 'user-1');
+        const action = buildAction(streamId);
+        const onError = jest.fn();
+        const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+        await expect(
+          manager.approvals.pause(streamId, action, {
+            expectedCreatedAt: job.createdAt,
+            persistencePending: true,
+          }),
+        ).resolves.toBe(true);
+        const originalGetJob = jobStore.getJob.bind(jobStore);
+        jest.spyOn(jobStore, 'getJob').mockImplementation(async (...args) => {
+          const stored = await originalGetJob(...args);
+          return stored?.status === 'error' ? null : stored;
+        });
+
+        now.mockReturnValue(31_001);
+        await expect(
+          manager.approvals.resolve(streamId, action.actionId, undefined, job.createdAt),
+        ).resolves.toBe(false);
+        expect(job.abortController.signal.aborted).toBe(true);
+        expect(onError).toHaveBeenCalledWith(PAUSE_PERSISTENCE_TIMEOUT_ERROR);
+        subscription?.unsubscribe();
+      } finally {
+        now.mockRestore();
+      }
+    });
+
     test('returns false when the job is already terminal', async () => {
       const streamId = 'stream-pause-dead';
       await manager.createJob(streamId, 'user-1');
@@ -71,6 +553,22 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
     test('returns false when the job does not exist', async () => {
       expect(await manager.approvals.pause('nonexistent', buildAction('nonexistent'))).toBe(false);
+    });
+
+    test('a predecessor interrupt cannot pause a replacement generation', async () => {
+      const streamId = 'stream-pause-epoch-fence';
+      const predecessor = await manager.createJob(streamId, 'user-1');
+      const replacement = await manager.createJob(streamId, 'user-1');
+
+      await expect(
+        manager.approvals.pause(streamId, buildAction(streamId), {
+          expectedCreatedAt: predecessor.createdAt,
+        }),
+      ).resolves.toBe(false);
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
     });
 
     test('client-facing copies omit resumeContext/requestFingerprint; the stored record keeps them', async () => {
@@ -147,6 +645,32 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.getJobStatus(streamId)).toBe('running');
     });
 
+    test('publishes the new owner capability in the same CAS that reopens steering', async () => {
+      const streamId = 'stream-resolve-capability';
+      const job = await manager.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { preemptCapable: true },
+      });
+      await manager.steering.enqueue(streamId, {
+        steerId: 'waiting-steer',
+        text: 'wait for the new owner',
+        userId: 'user-1',
+        createdAt: Date.now(),
+      });
+      const action = buildAction(streamId);
+      await manager.approvals.pause(streamId, action);
+
+      expect(
+        await manager.approvals.resolve(streamId, action.actionId, {
+          preemptCapable: false,
+        }),
+      ).toBe(true);
+
+      expect((await manager.getJob(streamId))?.metadata.preemptCapable).toBe(false);
+      await expect(manager.steering.arm(streamId, 'waiting-steer', job.createdAt)).resolves.toBe(
+        'incapable',
+      );
+    });
+
     test('returns false when the job is not paused', async () => {
       const streamId = 'stream-resolve-running';
       await manager.createJob(streamId, 'user-1');
@@ -166,6 +690,35 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       // The matching actionId resolves it.
       expect(await manager.approvals.resolve(streamId, action.actionId)).toBe(true);
       expect(await manager.getJobStatus(streamId)).toBe('running');
+    });
+
+    test('does not resolve a replacement paused on the same action id', async () => {
+      const streamId = 'stream-resolve-epoch-fence';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      try {
+        const predecessor = await manager.createJob(streamId, 'user-1');
+        const action = buildAction(streamId, { actionId: 'reused-action-id' });
+        await manager.approvals.pause(streamId, action);
+
+        now.mockReturnValue(2000);
+        const replacement = await manager.createJob(streamId, 'user-1');
+        await manager.approvals.pause(streamId, action);
+
+        expect(
+          await manager.approvals.resolve(
+            streamId,
+            action.actionId,
+            undefined,
+            predecessor.createdAt,
+          ),
+        ).toBe(false);
+        expect(await manager.getJob(streamId)).toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'requires_action',
+        });
+      } finally {
+        now.mockRestore();
+      }
     });
 
     test('an expired pending action expires instead of resuming', async () => {
@@ -229,6 +782,80 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
   });
 
   describe('expireApproval notification', () => {
+    test('delivers the exact expired generation to the host lifecycle hook', async () => {
+      const streamId = 'stream-expire-host-hook';
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, {
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          status: 'requires_action',
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      );
+    });
+
+    test('expires a durable paused job even when no process-local runtime survived', async () => {
+      const streamId = 'stream-expire-ownerless-host-hook';
+      const job = await jobStore.createJob(streamId, 'user-1', streamId, undefined, {
+        scheduleId: 'schedule-ownerless',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      const lifecycle = new ApprovalLifecycle(jobStore);
+      await lifecycle.pause(streamId, buildAction(streamId, { expiresAt: Date.now() - 1 }));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      await (
+        manager as unknown as { expireStaleApprovals: () => Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          scheduleId: 'schedule-ownerless',
+          status: 'requires_action',
+        }),
+      );
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+    });
+
+    test('does not expire a replacement paused on the same action id', async () => {
+      const streamId = 'stream-expire-epoch-fence';
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      try {
+        const predecessor = await manager.createJob(streamId, 'user-1');
+        const action = buildAction(streamId, { actionId: 'reused-action-id' });
+        await manager.approvals.pause(streamId, action);
+
+        now.mockReturnValue(2000);
+        const replacement = await manager.createJob(streamId, 'user-1');
+        await manager.approvals.pause(streamId, action);
+
+        expect(await manager.expireApproval(streamId, action.actionId, predecessor.createdAt)).toBe(
+          false,
+        );
+        expect(await manager.getJob(streamId)).toMatchObject({
+          createdAt: replacement.createdAt,
+          status: 'requires_action',
+        });
+      } finally {
+        now.mockRestore();
+      }
+    });
+
     test('publishes a generation-tagged expiry to local and remote subscribers', async () => {
       const streamId = 'stream-expire-local-notification';
       const job = await manager.createJob(streamId, 'user-1');
@@ -351,6 +978,154 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
     });
   });
 
+  describe('durable approval-expiry host action', () => {
+    const sweep = (m: GenerationJobManagerClass) =>
+      (m as unknown as { expireStaleApprovals: () => Promise<void> }).expireStaleApprovals();
+
+    async function pauseScheduled(streamId: string) {
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, {
+        scheduleId: 's1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      return job;
+    }
+
+    test('retains the marker on hook failure and retries it on a later cleanup pass', async () => {
+      const streamId = 'stream-host-retry';
+      await pauseScheduled(streamId);
+      const handler = jest
+        .fn<Promise<void>, [string, { scheduleId?: string }]>()
+        .mockRejectedValueOnce(new Error('mongo down'))
+        .mockResolvedValue(undefined);
+      manager.setApprovalExpiredHandler(handler);
+
+      // First expiry wins its CAS, but the host hook FAILS: the durable marker is retained.
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(1);
+
+      // A later cleanup pass re-enumerates the aborted job and retries; it now succeeds
+      // and clears the marker.
+      await sweep(manager);
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+    });
+
+    test('a fresh manager (restart / other replica) retries the pending host action', async () => {
+      const streamId = 'stream-host-restart';
+      const job = await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // Another replica / a restarted process: a fresh manager over the SAME durable store,
+      // with NO local runtime for this stream.
+      const other = new GenerationJobManagerClass();
+      other.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+        cleanupOnComplete: false,
+      });
+      other.initialize();
+      const succeeding = jest.fn().mockResolvedValue(undefined);
+      other.setApprovalExpiredHandler(succeeding);
+
+      await sweep(other);
+
+      expect(succeeding).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({ createdAt: job.createdAt, scheduleId: 's1' }),
+      );
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      await other.destroy();
+    });
+
+    test('a successful acknowledgement prevents duplicate work on later sweeps', async () => {
+      const streamId = 'stream-host-ack';
+      await pauseScheduled(streamId);
+      const handler = jest.fn().mockResolvedValue(undefined);
+      manager.setApprovalExpiredHandler(handler);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+
+      await sweep(manager);
+      expect(handler).toHaveBeenCalledTimes(1); // no duplicate invocation
+    });
+
+    test('clearTerminalHostAction is identity-fenced against a replacement generation', async () => {
+      const streamId = 'stream-host-fence';
+      const job = await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+      await manager.expireApproval(streamId);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // A clear fenced to a DIFFERENT generation must not clear this one's action.
+      await jobStore.clearTerminalHostAction(streamId, job.createdAt + 1);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBe(true);
+
+      // The exact generation clears it.
+      await jobStore.clearTerminalHostAction(streamId, job.createdAt);
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+    });
+
+    test('terminalizes and delivers the terminal state even when the first hook fails', async () => {
+      const streamId = 'stream-host-notify';
+      await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('down')));
+
+      // The CAS + terminal notification proceed regardless of the host hook outcome.
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      expect(await manager.getJobStatus(streamId)).toBe('aborted');
+    });
+
+    test('retention is refreshed on each retry so a long host outage keeps the evidence', async () => {
+      const streamId = 'stream-host-refresh';
+      await pauseScheduled(streamId);
+      manager.setApprovalExpiredHandler(jest.fn().mockRejectedValue(new Error('mongo down')));
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      const before = (await jobStore.getJob(streamId))?.terminalHostActionRefreshedAt;
+
+      // A later cleanup pass re-enumerates it for retry; the hook still fails.
+      await sweep(manager);
+
+      const after = await jobStore.getJob(streamId);
+      // Still pending, and its retention basis moved forward — so the bounded retention
+      // window measures from the LAST retry, not from when the approval expired.
+      expect(after?.terminalHostActionPending).toBe(true);
+      expect(after?.terminalHostActionRefreshedAt).toEqual(expect.any(Number));
+      if (before != null) {
+        expect(after!.terminalHostActionRefreshedAt!).toBeGreaterThanOrEqual(before);
+      }
+    });
+
+    test('a non-scheduled job with a no-op host hook accumulates no marker', async () => {
+      const streamId = 'stream-host-nonsched';
+      await manager.createJob(streamId, 'user-1'); // no schedule metadata
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      // The schedule adapter is installed but owns no action for a non-scheduled job.
+      manager.setApprovalExpiredHandler(
+        jest.fn(async (_streamId: string, job: { scheduleId?: string }) => {
+          if (!job.scheduleId) {
+            return;
+          }
+        }),
+      );
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+      // Marked atomically then cleared on the no-op success — nothing lingers.
+      expect((await jobStore.getJob(streamId))?.terminalHostActionPending).toBeUndefined();
+      expect(await jobStore.getTerminalHostActionJobs()).toHaveLength(0);
+    });
+  });
+
   describe('facade integration', () => {
     test('requires_action drops the running count but keeps the user-active set', async () => {
       const streamId = 'stream-counts';
@@ -420,9 +1195,9 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
     expect((await store.getJob('epoch-guard'))?.status).toBe('error');
   });
 
-  test('cleanup() finalizes and reclaims a past-expiry pending-approval job', async () => {
+  test('cleanup() finalizes a past-expiry approval, retaining it for host-hook retry', async () => {
     const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
-    await store.createJob('s1', 'u1');
+    const job = await store.createJob('s1', 'u1');
 
     const action = buildPendingAction(
       buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
@@ -434,9 +1209,135 @@ describe('InMemoryJobStore — approval expiry cleanup', () => {
       patch: { pendingAction: action, pendingActionId: action.actionId },
     });
 
-    // A past-expiry approval must be finalized + reclaimed, not left resident.
+    // A past-expiry approval is finalized (aborted) but RETAINED with a pending host-action
+    // marker so the manager relay can still run its lifecycle hook (the store cannot know
+    // whether one is owed); it is enumerable for that retry.
+    await store.cleanup();
+    const aborted = await store.getJob('s1');
+    expect(aborted?.status).toBe('aborted');
+    expect(aborted?.terminalHostActionPending).toBe(true);
+    expect(await store.getTerminalHostActionJobs()).toHaveLength(1);
+
+    // Once the host action acknowledges, the marker clears and the next cleanup reclaims it.
+    await store.clearTerminalHostAction('s1', job.createdAt);
     await store.cleanup();
     expect(await store.getJob('s1')).toBeNull();
+  });
+
+  test('cleanup() preserves a fresh pause-persistence barrier before expiring the action', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    try {
+      const job = await store.createJob('fresh-pause-barrier', 'u1');
+      const action = buildPendingAction(
+        buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
+        { streamId: 'fresh-pause-barrier', ttlMs: -1_000 },
+      );
+      await store.transitionStatus('fresh-pause-barrier', {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: job.createdAt,
+        patch: {
+          pendingAction: action,
+          pendingActionId: `pause-persistence:${action.actionId}`,
+          terminalPersistencePending: true,
+          terminalPersistenceStartedAt: 1_000,
+        },
+      });
+
+      now.mockReturnValue(11_000);
+      await store.cleanup();
+      await expect(store.getJob('fresh-pause-barrier')).resolves.toMatchObject({
+        status: 'requires_action',
+        terminalPersistencePending: true,
+      });
+
+      now.mockReturnValue(31_001);
+      await store.cleanup();
+      await expect(store.getJob('fresh-pause-barrier')).resolves.toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('cleanup() fails a stale pause-persistence barrier closed and parks steers', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    try {
+      const job = await store.createJob('stale-pause-barrier', 'u1');
+      await store.enqueueSteer(
+        'stale-pause-barrier',
+        {
+          steerId: 'stale-cleanup-steer',
+          text: 'park me when the pause writer disappears',
+          userId: 'u1',
+          createdAt: 1_000,
+        },
+        job.createdAt,
+      );
+      const action = buildPendingAction(
+        buildToolApprovalPayload([{ name: 'shell', arguments: {}, tool_call_id: 'c1' }]),
+        { streamId: 'stale-pause-barrier' },
+      );
+      await store.transitionStatus('stale-pause-barrier', {
+        from: 'running',
+        to: 'requires_action',
+        expectCreatedAt: job.createdAt,
+        patch: {
+          pendingAction: action,
+          pendingActionId: `pause-persistence:${action.actionId}`,
+          terminalPersistencePending: true,
+          terminalPersistenceStartedAt: 1_000,
+        },
+      });
+
+      now.mockReturnValue(31_001);
+      await store.cleanup();
+      await expect(store.getJob('stale-pause-barrier')).resolves.toMatchObject({
+        status: 'error',
+        error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
+      });
+      const failedJob = await store.getJob('stale-pause-barrier');
+      expect(failedJob?.pendingAction).toBeUndefined();
+      expect(failedJob?.pendingActionId).toBeUndefined();
+      expect(failedJob?.terminalPersistencePending).toBeUndefined();
+      expect(failedJob?.terminalPersistenceStartedAt).toBeUndefined();
+      await expect(store.peekSteers('stale-pause-barrier', job.createdAt)).resolves.toEqual([]);
+      await expect(store.claimParkedSteers('stale-pause-barrier', 'u1')).resolves.toEqual(
+        expect.any(String),
+      );
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  test('cleanup() retains a terminal persistence barrier when normal retention is zero', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const completedAt = Date.now();
+    const job = await store.createJob('terminal-persistence-barrier', 'u1');
+    await store.transitionStatus('terminal-persistence-barrier', {
+      from: 'running',
+      to: 'aborted',
+      expectCreatedAt: job.createdAt,
+      patch: {
+        completedAt,
+        terminalPersistencePending: true,
+        terminalPersistenceStartedAt: completedAt,
+      },
+    });
+
+    await store.cleanup();
+    await expect(store.getJob('terminal-persistence-barrier')).resolves.toMatchObject({
+      status: 'aborted',
+      terminalPersistencePending: true,
+    });
+    await expect(
+      store.finalizeTerminalPersistence('terminal-persistence-barrier', job.createdAt, 'final'),
+    ).resolves.toBe(true);
+    await expect(store.getJob('terminal-persistence-barrier')).resolves.toMatchObject({
+      terminalPersistencePending: false,
+      finalEvent: 'final',
+    });
   });
 });
 

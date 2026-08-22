@@ -1,5 +1,11 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const {
+  Tokenizer,
+  generateCheckAccess,
+  blockFilteredMemoryContent,
+  projectStoredMemories,
+  createMemoryManagementHandlers,
+} = require('@librechat/api');
 const {
   PermissionTypes,
   PermissionBits,
@@ -15,6 +21,8 @@ const {
   createMemory,
   deleteMemory,
   setMemory,
+  setMemoryById,
+  deleteMemoryById,
   getAgents,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
@@ -47,6 +55,12 @@ const checkMemoryOptOut = generateCheckAccess({
   permissionType: PermissionTypes.MEMORIES,
   permissions: [Permissions.USE, Permissions.OPT_OUT],
   getRoleByName,
+});
+const opaqueMemoryHandlers = createMemoryManagementHandlers({
+  setMemoryById,
+  deleteMemoryById,
+  projectStoredMemories,
+  countTokens: (value) => Tokenizer.getTokenCount(value, 'o200k_base'),
 });
 
 router.use(requireJwtAuth);
@@ -90,8 +104,9 @@ const withAgentNames = async (memories, user) => {
 router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
   try {
     const memories = await getAllUserMemories(req.user.id);
+    const projectedMemories = projectStoredMemories(memories, req.config?.filters);
 
-    const sortedMemories = (await withAgentNames(memories, req.user)).sort(
+    const sortedMemories = (await withAgentNames(projectedMemories, req.user)).sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
 
@@ -118,8 +133,8 @@ router.get('/', checkMemoryRead, configMiddleware, async (req, res) => {
       charLimit,
       usagePercentage,
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (_error) {
+    res.status(500).json({ error: 'Failed to retrieve memories.' });
   }
 });
 
@@ -155,6 +170,11 @@ router.post('/', memoryPayloadLimit, checkMemoryCreate, configMiddleware, async 
     return res.status(400).json({
       error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
     });
+  }
+
+  const normalizedMemory = { key: key.trim(), value: value.trim() };
+  if (blockFilteredMemoryContent(req, res, normalizedMemory)) {
+    return;
   }
 
   try {
@@ -233,6 +253,15 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
   }
 });
 
+router.patch(
+  '/id/:id',
+  memoryPayloadLimit,
+  checkMemoryUpdate,
+  configMiddleware,
+  opaqueMemoryHandlers.updateById,
+);
+router.delete('/id/:id', checkMemoryDelete, opaqueMemoryHandlers.deleteById);
+
 /**
  * PATCH /memories/:key
  * Updates the value of an existing memory entry for the authenticated user.
@@ -263,6 +292,10 @@ router.patch('/:key', memoryPayloadLimit, checkMemoryUpdate, configMiddleware, a
     return res.status(400).json({
       error: `Value exceeds maximum length of ${charLimit} characters. Current length: ${value.length} characters.`,
     });
+  }
+
+  if (blockFilteredMemoryContent(req, res, { key: newKey, value })) {
+    return;
   }
 
   try {

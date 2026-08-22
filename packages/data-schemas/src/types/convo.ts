@@ -1,4 +1,22 @@
+import type { TSubagentThreadLineage } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+
+export interface ISubagentThreadLease {
+  token: string;
+  taskId: string;
+  expiresAt: Date;
+}
+
+export interface IActiveSubagentThreadLease {
+  conversationId: string;
+  parentConversationId: string;
+  taskId: string;
+}
+
+export interface ISubagentThreadReservation {
+  conversation: IConversation;
+  created: boolean;
+}
 
 // @ts-ignore
 export interface IConversation extends Document {
@@ -35,11 +53,18 @@ export interface IConversation extends Document {
   resendFiles?: boolean;
   imageDetail?: string;
   agent_id?: string;
+  subagentThread?: TSubagentThreadLineage;
+  /** Internal execution fence. Excluded from ordinary conversation reads. */
+  subagentThreadLease?: ISubagentThreadLease;
   assistant_id?: string;
   instructions?: string;
   stop?: string[];
   isArchived?: boolean;
+  /** Set when archived, cleared on unarchive; absent on chats archived before it existed. */
+  archivedAt?: Date | null;
   pinned?: boolean;
+  /** Derived per request from the shared-links collection; never persisted on the conversation. */
+  isShared?: boolean;
   iconURL?: string;
   greeting?: string;
   spec?: string;

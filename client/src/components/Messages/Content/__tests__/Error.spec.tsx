@@ -30,6 +30,15 @@ describe('Error — typed provider errors', () => {
     expect(catalog.com_error_google_video_unprocessable).toMatch(/too long/i);
   });
 
+  it('replaces LangChain model-not-found attribution with localized guidance', () => {
+    const raw =
+      'An error occurred while processing the request: 404 404 page not found Troubleshooting URL: https://docs.langchain.com/oss/javascript/langchain/errors/MODEL_NOT_FOUND/';
+    render(<Error text={raw} />);
+
+    expect(screen.getByText(catalog.com_error_model_not_found)).toBeInTheDocument();
+    expect(screen.queryByText(/langchain\.com/i)).not.toBeInTheDocument();
+  });
+
   it('falls back to the raw provider text for an unmapped error', () => {
     const raw =
       '[GoogleGenerativeAI Error]: [400 Bad Request] Request contains an invalid argument';

@@ -5,6 +5,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
+  mergeAppTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -33,6 +35,14 @@ jest.mock('~/config', () => ({
   }),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock(
   '@librechat/api/telemetry',
   () => ({
@@ -50,13 +60,17 @@ jest.mock(
 describe('Telemetry wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
-  it('loads telemetry before other server imports', () => {
-    const firstStatement = source
+  it('loads credentials before telemetry and other server imports', () => {
+    const firstStatements = source
       .split('\n')
       .map((line) => line.trim())
-      .find(Boolean);
+      .filter(Boolean)
+      .slice(0, 2);
 
-    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
+    expect(firstStatements).toEqual([
+      "require('../config/credentials');",
+      "const telemetry = require('./telemetry');",
+    ]);
   });
 
   it('mounts telemetry middleware after static assets and before routes', () => {
@@ -104,6 +118,16 @@ describe('Telemetry wiring', () => {
 describe('Startup readiness wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
+  it('awaits the shared Redis client before startup cache access', () => {
+    const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
+    const connectDbIndex = source.indexOf('await connectDb();');
+    const appConfigIndex = source.indexOf('await getAppConfig({ baseOnly: true });');
+
+    expect(redisReadyIndex).toBeGreaterThan(-1);
+    expect(connectDbIndex).toBeGreaterThan(redisReadyIndex);
+    expect(appConfigIndex).toBeGreaterThan(redisReadyIndex);
+  });
+
   it('configures generation streams before the server accepts requests', () => {
     const streamConfigIndex = source.indexOf('configureGenerationStreams();');
     const listenIndex = source.indexOf('const server = app.listen');
@@ -114,6 +138,14 @@ describe('Startup readiness wiring', () => {
     expect(postListenMcpIndex).toBeGreaterThan(-1);
     expect(streamConfigIndex).toBeLessThan(listenIndex);
     expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
+  });
+
+  it('configures subagent task routing before the server accepts requests', () => {
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(routingIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
   });
 
   it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
@@ -147,6 +179,14 @@ describe('Startup readiness wiring', () => {
     expect(readinessGateIndex).toBeGreaterThan(-1);
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
+  });
+
+  it('awaits durable trigger delivery before reporting readiness', () => {
+    const triggerDeliveryIndex = source.indexOf('await initializeAgentTriggerService(');
+    const readyIndex = source.indexOf('serverReady = true;');
+
+    expect(triggerDeliveryIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
 });
 

@@ -17,6 +17,8 @@ export default defineConfig({
   dts: { oxc: true },
   outDir: 'dist',
   sourcemap: true,
+  // Warn on module cycles at build time; CI enforces via config/circular-deps.mjs.
+  checks: { circularDependency: true },
   // Force .mjs/.cjs (and .d.mts/.d.cts) regardless of package `type`, so the package can stay
   // CommonJS (jest.config.js / babel.config.js are CJS) while still shipping dual ESM/CJS.
   fixedExtension: true,

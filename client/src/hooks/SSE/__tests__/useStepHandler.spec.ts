@@ -17,7 +17,7 @@ import type {
   SubagentUpdateEvent,
   Agents,
 } from 'librechat-data-provider';
-import { subagentProgressByToolCallId } from '~/store/subagents';
+import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
@@ -487,6 +487,63 @@ describe('useStepHandler', () => {
       expect(setMessagesCall).toContainEqual(
         expect.objectContaining({ messageId: userMsg.messageId }),
       );
+    });
+
+    /**
+     * Regression: the preempt-fold incident. When the missing user message is
+     * restored while its abandoned (preempt-incomplete) sibling responses are
+     * already in the list, appending it at the tail orders those children
+     * BEFORE their parent — buildTree then hoists them into phantom root
+     * branches and the thread folds to the latest branch until a refetch.
+     */
+    it('inserts a missing user message before its abandoned sibling responses', () => {
+      const rootUser = createUserMessage({ messageId: 'user-1' });
+      const assist1 = createResponseMessage({ messageId: 'assist-1', parentMessageId: 'user-1' });
+      const user2 = createUserMessage({ messageId: 'user-2', parentMessageId: 'assist-1' });
+      const assist2 = createResponseMessage({ messageId: 'assist-2', parentMessageId: 'user-2' });
+      const abandoned1 = createResponseMessage({
+        messageId: 'abandoned-1',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const abandoned2 = createResponseMessage({
+        messageId: 'abandoned-2',
+        parentMessageId: 'user-3',
+        unfinished: true,
+      });
+      const user3 = createUserMessage({ messageId: 'user-3', parentMessageId: 'assist-2' });
+
+      const cachedMessages = [rootUser, assist1, user2, assist2, abandoned1, abandoned2];
+      mockGetMessages.mockReturnValue(cachedMessages);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+
+      const runStep = createRunStep({ runId: 'assist-3' });
+      const submission = createSubmission({
+        userMessage: user3,
+        messages: cachedMessages,
+        initialResponse: createResponseMessage({
+          messageId: 'user-3_',
+          parentMessageId: 'user-3',
+        }),
+      });
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+      });
+
+      expect(mockSetMessages).toHaveBeenCalled();
+      const written = mockSetMessages.mock.calls[0][0] as TMessage[];
+      expect(written.map((message) => message.messageId)).toEqual([
+        'user-1',
+        'assist-1',
+        'user-2',
+        'assist-2',
+        'user-3',
+        'abandoned-1',
+        'abandoned-2',
+        'assist-3',
+      ]);
     });
 
     it('keeps the pending user message when replayed OAuth tool calls merge immediately', () => {
@@ -1445,6 +1502,146 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('preserves a live reasoning label across later deltas', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'First ',
+              reasoning_label: 'Tracing the streaming path',
+              reasoning_label_step_id: 'step-1',
+              reasoning_label_attempts: 1,
+              reasoning_label_submitted_chars: 6,
+              reasoning_label_revision: 1,
+              reasoning_label_status: 'streaming',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'thought') },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.THINK,
+          think: 'First thought',
+          reasoning_label: 'Tracing the streaming path',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 6,
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'streaming',
+        }),
+      );
+    });
+
+    it('clears a retained label when a new reasoning step folds into the same part', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Retained ',
+              reasoning_label: 'Inspecting the old path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 3,
+              reasoning_label_submitted_chars: 9,
+              reasoning_label_revision: 3,
+              reasoning_label_status: 'complete',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'thought') },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const part = lastCall.at(-1)?.content?.[0];
+      expect(part).toMatchObject({
+        type: ContentTypes.THINK,
+        think: 'Retained thought',
+        reasoning_label_step_id: 'step-1',
+      });
+      expect(part).not.toHaveProperty('reasoning_label');
+      expect(part).not.toHaveProperty('reasoning_label_attempts');
+      expect(part).not.toHaveProperty('reasoning_label_submitted_chars');
+      expect(part).not.toHaveProperty('reasoning_label_revision');
+    });
+
+    it('clears a retained label when THINK arrives through a message delta', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Retained ',
+              reasoning_label: 'Inspecting the old path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 3,
+              reasoning_label_submitted_chars: 9,
+              reasoning_label_revision: 3,
+              reasoning_label_status: 'complete',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_MESSAGE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: { content: [{ type: ContentTypes.THINK, think: 'thought' }] },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const part = lastCall.at(-1)?.content?.[0];
+      expect(part).toMatchObject({
+        type: ContentTypes.THINK,
+        think: 'Retained thought',
+        reasoning_label_step_id: 'step-1',
+      });
+      expect(part).not.toHaveProperty('reasoning_label');
+      expect(part).not.toHaveProperty('reasoning_label_attempts');
+      expect(part).not.toHaveProperty('reasoning_label_submitted_chars');
+      expect(part).not.toHaveProperty('reasoning_label_revision');
+    });
+
     it('applies every entry of a multi-part reasoning delta in order', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -2156,6 +2353,64 @@ describe('useStepHandler', () => {
       expect(content[1]).toMatchObject({ type: ContentTypes.TOOL_CALL });
     });
 
+    it('does not compact absolute content indices when dropping an answered ask card', () => {
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a-sparse', question: { question: 'Which env?' } },
+      } as unknown as TMessageContentParts;
+      const askToolCall = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'ask-call-sparse',
+          name: 'ask_user_question',
+          args: '{"question":"Which env?"}',
+          type: ToolCallTypes.TOOL_CALL,
+        },
+      } as unknown as TMessageContentParts;
+      const sparseContent = [{ type: ContentTypes.TEXT, text: 'Before' }] as TMessageContentParts[];
+      sparseContent[2] = askToolCall;
+      sparseContent[3] = askPart;
+      const paused = createResponseMessage({ content: sparseContent });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.syncStepMessage(paused);
+      });
+      mockGetMessages.mockReturnValue([resolveAskUserQuestionPart(paused, 'a-sparse', 'prod')]);
+
+      const askCompletion = createToolCallRunStep({
+        id: 'step-ask-sparse',
+        index: 2,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'ask-call-sparse',
+              name: 'ask_user_question',
+              args: '{"question":"Which env?"}',
+              output: 'prod',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      } as Partial<Agents.RunStep>);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: askCompletion },
+          createSubmission(),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = (lastCall[0] as TMessage[]).find((m) => m.messageId === 'response-msg-1');
+      expect(updated?.content?.[1]).toBeUndefined();
+      expect(updated?.content?.[2]).toMatchObject({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'ask-call-sparse' },
+      });
+    });
+
     it('keeps a still-live ask card when an event streams around its slot', () => {
       /** Only ANSWERED cards are droppable — a late event racing a live pause
        *  must not take the question away before the user can respond. */
@@ -2735,7 +2990,7 @@ describe('useStepHandler', () => {
      */
     const renderStepHandlerWithReader = (): {
       result: ReturnType<typeof renderHook>['result'];
-      getProgress: (toolCallId: string) => unknown;
+      getProgress: (toolCallId: string, parentMessageId?: string, partIndex?: number) => unknown;
     } => {
       /** Composite hook: the step handler under test + a `useRecoilCallback`
        *  reader that shares the same `RecoilRoot` store. Reading via a
@@ -2746,8 +3001,18 @@ describe('useStepHandler', () => {
           const stepHandler = useStepHandler(createHookParams());
           const read = useRecoilCallback(
             ({ snapshot }) =>
-              (toolCallId: string): unknown =>
-                snapshot.getLoadable(subagentProgressByToolCallId(toolCallId)).valueOrThrow(),
+              (
+                toolCallId: string,
+                parentMessageId: string = 'response-msg-1',
+                partIndex: number = 0,
+              ): unknown =>
+                snapshot
+                  .getLoadable(
+                    subagentProgressByToolCallId(
+                      subagentProgressKey(parentMessageId, toolCallId, partIndex),
+                    ),
+                  )
+                  .valueOrThrow(),
             [],
           );
           return { ...stepHandler, read };
@@ -2755,8 +3020,11 @@ describe('useStepHandler', () => {
         { wrapper: RecoilRoot },
       );
 
-      const getProgress = (toolCallId: string): unknown =>
-        (hookResult.result.current as any).read(toolCallId);
+      const getProgress = (
+        toolCallId: string,
+        parentMessageId?: string,
+        partIndex?: number,
+      ): unknown => (hookResult.result.current as any).read(toolCallId, parentMessageId, partIndex);
       return { result: hookResult.result, getProgress };
     };
 
@@ -2799,7 +3067,7 @@ describe('useStepHandler', () => {
     };
 
     const makeUpdate = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
-      runId: 'parent-run',
+      runId: 'response-msg-1',
       subagentRunId: 'child-run-1',
       subagentType: 'self',
       subagentAgentId: 'child-1',
@@ -2888,7 +3156,7 @@ describe('useStepHandler', () => {
       });
 
       const first = getProgress('call_old') as { latestLabel?: string };
-      const second = getProgress('call_new') as { latestLabel?: string };
+      const second = getProgress('call_new', undefined, 1) as { latestLabel?: string };
       expect(first.latestLabel).toBe('first');
       expect(second.latestLabel).toBe('second');
     });
@@ -3081,7 +3349,7 @@ describe('useStepHandler', () => {
         status: string;
         latestLabel?: string;
       };
-      const bucketB = getProgress('call_b') as {
+      const bucketB = getProgress('call_b', undefined, 1) as {
         subagentRunId: string;
         status: string;
         latestLabel?: string;
@@ -3100,10 +3368,140 @@ describe('useStepHandler', () => {
       expect(bucketB.status).toBe('run_step');
     });
 
-    it('clearStepMaps preserves subagent atoms so the dialog can be re-opened for auditability', () => {
+    it('keeps reused provider tool-call IDs isolated across parent messages', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const firstResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-one' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      const secondResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-two' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(firstResponse);
+        (result.current as any).syncStepMessage(secondResponse);
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-one',
+              subagentRunId: 'child-one',
+              parentToolCallId: 'call_shared',
+              label: 'first parent',
+            }),
+          },
+          createSubmission(),
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-two',
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              label: 'second parent',
+            }),
+          },
+          createSubmission(),
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-one', latestLabel: 'first parent' }),
+      );
+      expect(getProgress('call_shared', 'response-two')).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'second parent' }),
+      );
+    });
+
+    it('buffers an update for its expected parent instead of claiming another same-ID call', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const firstResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-one' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(firstResponse);
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              runId: 'response-two',
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              phase: 'stop',
+              label: 'finished before parent two arrived',
+            }),
+          },
+          createSubmission(),
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toBeNull();
+
+      const secondResponse: TMessage = {
+        ...createResponseMessage({ messageId: 'response-two' }),
+        content: [buildSubagentToolCallPart('call_shared')],
+      };
+      act(() => {
+        (result.current as any).syncStepMessage(secondResponse);
+      });
+
+      expect(getProgress('call_shared', 'response-one')).toBeNull();
+      expect(getProgress('call_shared', 'response-two')).toEqual(
+        expect.objectContaining({
+          subagentRunId: 'child-two',
+          status: 'stop',
+          latestLabel: 'finished before parent two arrived',
+        }),
+      );
+    });
+
+    it('keeps repeated provider tool-call IDs isolated by content-part occurrence', () => {
+      const { result, getProgress } = renderStepHandlerWithReader();
+      const { submission } = seedResponseWithSubagentToolCalls(result, [
+        'call_shared',
+        'call_shared',
+      ]);
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              subagentRunId: 'child-one',
+              parentToolCallId: 'call_shared',
+              label: 'first occurrence',
+            }),
+          },
+          submission,
+        );
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_SUBAGENT_UPDATE,
+            data: makeUpdate({
+              subagentRunId: 'child-two',
+              parentToolCallId: 'call_shared',
+              label: 'second occurrence',
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('call_shared', 'response-msg-1', 0)).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-one', latestLabel: 'first occurrence' }),
+      );
+      expect(getProgress('call_shared', 'response-msg-1', 1)).toEqual(
+        expect.objectContaining({ subagentRunId: 'child-two', latestLabel: 'second occurrence' }),
+      );
+    });
+
+    it('clearStepMaps preserves subagent atoms so the panel can be re-opened for auditability', () => {
       /**
        * Intentionally the inverse of the earlier behavior: the collapsed
-       * `SubagentCall` ticker and its dialog must stay readable after the
+       * `SubagentCall` ticker and its panel must stay readable after the
        * stream ends. Wiping the atoms on `clearStepMaps` would leave a
        * completed subagent tool call with no content to display, forcing
        * the fallback "raw tool output" branch and losing interleaved tool
@@ -3298,7 +3696,147 @@ describe('useStepHandler', () => {
       const response = currentMessages.find((m) => !m.isCreatedByUser);
       expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBeUndefined();
     });
+
+    it('records when the first completion part actually folds into the retained tail', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), textPart('tail')] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ index: 0, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', ' continued') },
+          submission,
+        );
+      });
+
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBe(true);
+    });
+
+    it('does not merge final-answer text into a retained commentary phase', () => {
+      const commentary = {
+        type: ContentTypes.TEXT,
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      } as TMessageContentParts;
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), commentary] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              stepDetails: {
+                type: StepTypes.MESSAGE_CREATION,
+                message_creation: { message_id: 'msg-1', phase: 'final_answer' },
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Done') },
+          submission,
+        );
+      });
+
+      const response = currentMessages.find((message) => !message.isCreatedByUser);
+      expect(response?.content?.[1]).toMatchObject({
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      });
+      expect(response?.content?.[2]).toMatchObject({
+        [ContentTypes.TEXT]: 'Done',
+        phase: 'final_answer',
+      });
+    });
+
+    it.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ] as const)(
+      'does not merge phased and unphased text (%s → %s)',
+      (retainedPhase, incomingPhase) => {
+        const retained = {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: 'Retained text. ',
+          ...(retainedPhase != null && { phase: retainedPhase }),
+        } as TMessageContentParts;
+        const submission = createSubmission({
+          editedContent: { index: 0, type: ContentTypes.TEXT },
+          initialResponse: createResponseMessage({ content: [textPart('kept'), retained] }),
+        } as never);
+        (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+        const responseMessage = submission.initialResponse as TMessage;
+        let currentMessages: TMessage[] = [responseMessage];
+        mockGetMessages.mockImplementation(() => currentMessages);
+        mockSetMessages.mockImplementation((messages: TMessage[]) => {
+          currentMessages = messages;
+        });
+
+        const { result } = renderHook(() => useStepHandler(createHookParams()));
+        act(() => {
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_RUN_STEP,
+              data: createRunStep({
+                stepDetails: {
+                  type: StepTypes.MESSAGE_CREATION,
+                  message_creation: {
+                    message_id: 'msg-1',
+                    ...(incomingPhase != null && { phase: incomingPhase }),
+                  },
+                },
+              }),
+            },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'New text') },
+            submission,
+          );
+        });
+
+        const response = currentMessages.find((message) => !message.isCreatedByUser);
+        expect(response?.content?.[1]).toMatchObject(retained);
+        expect(response?.content?.[2]).toMatchObject({
+          [ContentTypes.TEXT]: 'New text',
+          ...(incomingPhase != null && { phase: incomingPhase }),
+        });
+      },
+    );
 
     /**
      * Post-sync a delta continues at the snapshot's NEXT absolute slot. With

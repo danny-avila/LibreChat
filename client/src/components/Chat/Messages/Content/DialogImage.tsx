@@ -8,12 +8,12 @@ const imageSizeCache = new Map<string, string>();
 
 const getQualityStyles = (quality: string): string => {
   if (quality === 'high') {
-    return 'bg-green-100 text-green-800';
+    return 'bg-status-success-subtle text-status-success';
   }
   if (quality === 'low') {
-    return 'bg-orange-100 text-orange-800';
+    return 'bg-status-warning-subtle text-status-warning';
   }
-  return 'bg-gray-100 text-gray-800';
+  return 'bg-status-neutral-subtle text-status-neutral';
 };
 
 export default function DialogImage({

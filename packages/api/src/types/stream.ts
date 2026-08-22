@@ -1,15 +1,32 @@
-import type { Agents } from 'librechat-data-provider';
+import type { Agents, UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
-import type { ServerSentEvent } from '~/types';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
+import type { MCPRuntimeRequestBody } from '../mcp/types';
+import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
   userId: string;
   tenantId?: string;
   conversationId?: string;
+  /** Immutable per-generation saver scope. LangGraph's root `checkpoint_ns`
+   * remains empty; the checkpointer adapter maps this scope into storage. */
+  checkpointNamespace?: string;
+  /** Immutable generation protocol. Missing on legacy records means v1. */
+  generationProtocolVersion?: 1 | 2;
   /** User message data for rebuilding submission on reconnect */
   userMessage?: Agents.UserMessageMeta;
   /** Response message ID for tracking */
   responseMessageId?: string;
+  /** Whether this generation replaces an existing assistant branch. */
+  isRegenerate?: boolean;
+  /** Exact normalized MCP placeholder identity for this turn. Persisted so HITL
+   * resume does not reconstruct a different parent or overridden conversation. */
+  mcpRequestBody?: MCPRuntimeRequestBody;
+  /** Exact assistant-message fields authored by the user during this running job. */
+  userSubmittedPaths?: string[];
+  /** Exact HITL message-filter fields embedded at those assistant-message paths. */
+  userSubmittedMessageFieldPaths?: UserSubmittedMessageFieldPath[];
   /** Sender label for the response (e.g., "GPT-4.1", "Claude") */
   sender?: string;
   /** Endpoint identifier for abort handling */
@@ -24,16 +41,47 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
+  /** Trusted scheduled-occurrence identity. These fields are accepted only from a
+   * verified agent-trigger request and let pause/resume/reconciliation keep the
+   * occurrence attached to the exact generation that owns it. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Intended terminal classification retained when Mongo outcome persistence
+   * fails. The scheduler reconciler consumes this evidence before clearing the job. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  /** Prevent normal terminal cleanup until schedule reconciliation has consumed
+   * the retained outcome evidence. */
+  preserveForScheduleReconcile?: boolean;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
-   * without them the paused deferred tool would be missing from the schema-only toolMap.
+   * without them the rebuilt model would lose the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /** Bounded collector state for continuing a phase across HITL resume. */
+  activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
+  /** Exact provider segment whose completion gates destructive user cleanup. */
+  providerExecutionId?: string;
+  /** False only while that exact provider segment can still mutate user data. */
+  providerDrained?: boolean;
+  /** Terminal close has atomically stopped new steer acceptance, even if the
+   * final status CAS has not yet run. */
+  steersClosed?: boolean;
+  /** Stable start-submission identity. Duplicate POSTs compare this with their
+   * claim before attaching to a conversation-scoped stream. */
+  idempotencyClientRequestId?: string;
+  /** Normal FINAL publication is waiting on required durable abort work. */
+  terminalPersistencePending?: boolean;
+  terminalPersistenceStartedAt?: number;
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
+  /** Accepted ask-user answer retained until this generation terminalizes. */
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
@@ -82,6 +130,10 @@ export interface SubscribeOptions {
   skipBufferReplay?: boolean;
   /** Cancels attachment work when the HTTP client disconnects. */
   signal?: AbortSignal;
+  /** Exact generation epoch the caller intends to observe. Conversation ids
+   * are reused by later turns, so a stale client must never attach to a
+   * replacement job that now occupies the same stream id. */
+  expectedCreatedAt?: number;
 }
 
 /** Result of an atomic subscribe-with-resume operation */

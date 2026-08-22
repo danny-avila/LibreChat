@@ -25,6 +25,9 @@ import type { FlowStateManager } from '~/flow/manager';
 import type { RequestBody } from '~/types/http';
 import type * as o from '~/mcp/oauth/types';
 
+export type MCPRuntimeRequestBody = Required<Pick<RequestBody, 'messageId' | 'conversationId'>> &
+  Pick<RequestBody, 'parentMessageId'>;
+
 export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
 export type SSEOptions = z.infer<typeof SSEOptionsSchema>;
@@ -49,6 +52,9 @@ export interface MCPResource {
 export interface LCFunctionTool {
   type: 'function';
   ['function']: LCTool;
+  /** Raw upstream tool name when the model-facing key stripped a redundant
+   *  server-name prefix — tool calls must send THIS name to the server. */
+  serverToolName?: string;
 }
 
 export type LCAvailableTools = Record<string, LCFunctionTool>;
@@ -61,6 +67,8 @@ export interface MCPPrompt {
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export type OAuthHandledSource = 'silent-refresh' | 'interactive';
 
 export type MCPTool = Tool;
 export type MCPToolListResponse = ListToolsResult;
@@ -151,8 +159,13 @@ export type FormattedToolResponse = FormattedContentResult;
  * - `'yaml'`   — operator-defined in librechat.yaml, full trust, boot-time init
  * - `'config'` — admin-defined via Config override, full trust, lazy init
  * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
+ * - `'plugin'` — contributed by an Agent Plugins package, no placeholder resolution
+ *
+ * This tag is load-bearing, not descriptive: `processMCPEnv` reads it to decide
+ * which placeholders may resolve. Code that stores a config must carry the tag
+ * through rather than re-deriving it from the storage tier.
  */
-export type MCPServerSource = 'yaml' | 'config' | 'user';
+export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
@@ -161,6 +174,13 @@ export type ParsedServerConfig = MCPOptions & {
   capabilities?: string;
   tools?: string;
   toolFunctions?: LCAvailableTools;
+  /**
+   * Instructions advertised by the server, fetched during inspection when
+   * `serverInstructions` is enabled. Held separately so `serverInstructions`
+   * always keeps the operator's declaration: overwriting it in place made a
+   * re-inspected config compare unequal to its own YAML entry.
+   */
+  resolvedInstructions?: string;
   initDuration?: number;
   updatedAt?: number;
   dbId?: string;
@@ -211,6 +231,7 @@ export interface UserConnectionContext {
 export interface RequestScopedMCPConnectionStore {
   connections: Map<string, unknown>;
   pending: Map<string, Promise<unknown>>;
+  disposeConnection?: (connectionKey: string, connection: unknown) => Promise<void>;
 }
 
 export interface OAuthStartOptions {

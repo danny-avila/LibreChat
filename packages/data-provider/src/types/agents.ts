@@ -204,6 +204,36 @@ export namespace Agents {
     stepDetails: StepDetails;
     summary?: SummaryContentPart;
     usage: null | object;
+    /** Epoch ms the step was opened. Emitted by `@librechat/agents` >= 3.4.6. */
+    created_at?: number;
+    status?: RunStepStatus;
+  };
+
+  /** Lifecycle status of a run step. `in_progress` until a terminal close. */
+  export type RunStepStatus = 'in_progress' | 'completed' | 'cancelled' | 'failed';
+
+  /** Terminal status a run step can close with. */
+  export type RunStepClosedStatus = Exclude<RunStepStatus, 'in_progress'>;
+
+  /**
+   * Payload of {@link StepEvents.ON_RUN_STEP_CLOSED}. Emitted once per step
+   * when it reaches a terminal state, including steps swept at end-of-run
+   * because the caller aborted — which is the only signal that distinguishes
+   * a stopped step from one still in flight.
+   */
+  export type RunStepClosedEvent = {
+    id: string;
+    index: number;
+    type: StepTypes;
+    status: RunStepClosedStatus;
+    /** Epoch ms the step was opened, when the emitter knows it. */
+    created_at?: number;
+    /** Epoch ms the step reached its terminal state. */
+    closed_at: number;
+    runId?: string;
+    agentId?: string;
+    groupId?: number;
+    stepIndex?: number;
   };
 
   /** Content part for aggregated message content */
@@ -233,6 +263,8 @@ export namespace Agents {
     aggregatedContent?: MessageContentComplex[];
     userMessage?: UserMessageMeta;
     responseMessageId?: string;
+    /** True when the live generation replaces an existing assistant branch. */
+    isRegenerate?: boolean;
     conversationId?: string;
     sender?: string;
     iconURL?: string;
@@ -285,6 +317,9 @@ export namespace Agents {
     type: StepTypes.MESSAGE_CREATION;
     message_creation: {
       message_id: string;
+      /** Provider content kind and Open Responses semantic text channel. */
+      content_type?: 'text' | 'think';
+      phase?: 'commentary' | 'final_answer';
     };
   };
   export type ToolCallsDetails = {
@@ -377,10 +412,32 @@ export namespace Agents {
     multiSelect?: boolean;
   }
 
+  /** One independently answerable question in a batched clarification. */
+  export interface AskUserQuestionBatchItem extends AskUserQuestionRequest {
+    /** Batch-unique identifier used to map the submitted answer. */
+    id: string;
+    /** Optional short heading rendered above the question. */
+    header?: string;
+  }
+
+  /** Input shape for one tool call that asks several related questions. */
+  export interface AskUserQuestionsRequest {
+    questions: AskUserQuestionBatchItem[];
+  }
+
   /** Interrupt payload for an ask-user-question pause. */
   export interface AskUserQuestionInterruptPayload {
     type: 'ask_user_question';
     question: AskUserQuestionRequest;
+    /** Present for a batched clarification; `question` remains the first-item fallback. */
+    questions?: AskUserQuestionBatchItem[];
+    /**
+     * The ask tool call that raised this interrupt (mirrors the SDK field,
+     * present from `@librechat/agents` > 3.3.8). Lets the question/answer
+     * stamps target the exact tool-call part instead of guessing by
+     * position when a model emits several ask calls in one turn.
+     */
+    tool_call_id?: string;
   }
 
   /**
@@ -466,6 +523,11 @@ export namespace Agents {
   /** Wire format for an ask-user-question response. */
   export interface AskUserQuestionResolution {
     answer: string;
+  }
+
+  /** Wire format for a batched ask-user-question response. */
+  export interface AskUserQuestionsResolution {
+    answers: Record<string, string>;
   }
 
   export interface ExtendedMessageContent {

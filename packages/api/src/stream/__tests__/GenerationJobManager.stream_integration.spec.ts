@@ -6,11 +6,14 @@ import {
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+import {
+  GenerationJobManagerClass,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { STEER_ENQUEUE_NOT_RUNNING } from '~/stream/interfaces/IJobStore';
-import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
@@ -1588,11 +1591,77 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    testRedis('should not re-buffer detached events after first attachment (Redis)', async () => {
+      /**
+       * After the first attachment, the durable chunk log owns recovery for
+       * detached events; re-buffering them locally grew without bound for
+       * long detached generations. A late subscriber gets live events only,
+       * and resume reconstructs the detached content from the chunk log.
+       */
+      const manager = createRedisManager();
+      const streamId = `no-rebuffer-redis-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'detached-redis' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(0);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('detached-redis');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: ' live' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(1);
+      expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
+
+      sub2?.unsubscribe();
+      await manager.destroy();
+    });
+  });
+
+  describe('Early event buffer bounds', () => {
+    /**
+     * Regression tests for a production incident: a model streamed a malformed
+     * 150k-character tool argument for ~26 minutes after the browser
+     * disconnected (~40 events/sec, ~58,800 publications). Every event was
+     * retained in earlyEventBuffer, so heap and GC cost climbed for the whole
+     * detached run.
+     */
+
     testRedis(
-      'should replay buffer without skipBufferReplay after disconnect (Redis)',
+      'detached generation keeps the local buffer empty after first attachment (Redis)',
       async () => {
         const manager = createRedisManager();
-        const streamId = `replay-buf-redis-${Date.now()}`;
+        const streamId = `detached-flat-${Date.now()}`;
         await manager.createJob(streamId, 'user-1');
 
         const sub1 = await manager.subscribe(streamId, () => {});
@@ -1600,25 +1669,204 @@ describe('GenerationJobManager Integration Tests', () => {
         sub1?.unsubscribe();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
-        });
+        for (let i = 0; i < 200; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_run_step_delta',
+            data: {
+              id: 'step-1',
+              delta: { type: 'tool_call_delta', args: `"table_${i}", ` },
+            },
+          });
+        }
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const stats = manager.getRuntimeStats();
+        expect(stats.earlyBufferedEvents).toBe(0);
+        expect(stats.earlyBufferedBytes).toBe(0);
 
-        const sub2Events: ServerSentEvent[] = [];
-        const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
-
-        await new Promise((resolve) => setTimeout(resolve, 200));
-
-        expect(sub2Events.length).toBe(1);
-        expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
-
-        sub2?.unsubscribe();
         await manager.destroy();
       },
     );
+
+    test('discards and closes the buffer when the byte budget is exceeded (never attached)', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-byte-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const bigText = 'x'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'after-overflow' } } },
+      });
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const events: ServerSentEvent[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        (event) => events.push(event),
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      /** A non-resume attachment cannot be made whole once the buffer was
+       * discarded, so it is closed with the reconnect signal; the client then
+       * re-attaches with resume=true and syncs from snapshot state. */
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      expect(events).toEqual([]);
+
+      sub?.unsubscribe();
+      await manager.destroy();
+    });
+
+    testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
+      const manager = createRedisManager();
+      const streamId = `overflow-redirect-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      const bigText = 'y'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      sub?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      /** The resume path the client falls back to reconstructs the
+       * discarded output from the durable chunk log. */
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+
+      await manager.destroy();
+    });
+
+    test('buffers detached events until the cap in in-memory mode', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-below-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(2);
+      expect(stats.earlyBufferedBytes).toBeGreaterThan(0);
+
+      await manager.destroy();
+    });
+
+    test('caps captured events restored by a resume canceled before activation', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `restore-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      /** Arm only after the snapshot completes so the gate parks the resume
+       * in its post-attachment steer reconciliation, the window where
+       * emissions are captured per-resume instead of buffered. */
+      let armed = false;
+      const originalGetResumeState = manager.getResumeState.bind(manager);
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockImplementation(
+          async (...args: Parameters<GenerationJobManagerClass['getResumeState']>) => {
+            const result = await originalGetResumeState(...args);
+            armed = true;
+            return result;
+          },
+        );
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseGate = resolve));
+      let gateReached!: () => void;
+      const reached = new Promise<void>((resolve) => (gateReached = resolve));
+      const originalPeek = jobStore.peekSteers.bind(jobStore);
+      let gated = true;
+      jest
+        .spyOn(jobStore, 'peekSteers')
+        .mockImplementation(async (...args: Parameters<InMemoryJobStore['peekSteers']>) => {
+          if (armed && gated) {
+            gated = false;
+            gateReached();
+            await gate;
+          }
+          return originalPeek(...args);
+        });
+
+      const resumePromise = manager.subscribeWithResume(streamId, () => {});
+
+      await reached;
+      const bigText = 'z'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      releaseGate();
+
+      const { subscription } = await resumePromise;
+      expect(subscription).not.toBeNull();
+      subscription!.unsubscribe();
+
+      /** The ~10MB of captured events must not survive restoration. */
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      /** Restoration overflowed, so a non-resume attach takes the redirect. */
+      const errors: string[] = [];
+      const probe = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      probe?.unsubscribe();
+
+      await manager.destroy();
+    });
   });
 
   describe('Atomic subscribeWithResume', () => {
@@ -2431,12 +2679,18 @@ describe('GenerationJobManager Integration Tests', () => {
    * duplicates a dedicated subscriber connection per call. Separate OS
    * processes would exercise the same objects over the same Redis.
    */
-  describeRedis('Cross-Replica Preempt (Redis, two manager instances)', () => {
+  describeRedis('Cross-Replica Runtime Signals (Redis, multiple manager instances)', () => {
     const replicas: GenerationJobManagerClass[] = [];
 
-    function createReplica(): GenerationJobManagerClass {
+    function createReplica(redisSubscriber?: Redis | Cluster): GenerationJobManagerClass {
       const manager = new GenerationJobManagerClass();
-      manager.configure(createStreamServices({ useRedis: true, redisClient: ioredisClient! }));
+      manager.configure(
+        createStreamServices({
+          useRedis: true,
+          redisClient: ioredisClient!,
+          redisSubscriber,
+        }),
+      );
       manager.initialize();
       replicas.push(manager);
       return manager;
@@ -2479,6 +2733,61 @@ describe('GenerationJobManager Integration Tests', () => {
       throw new Error(`Timed out waiting for ${what}`);
     }
 
+    test('a replacement waits for the exact generation owner to acknowledge abort', async () => {
+      const owner = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-owner-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const replacement = await router.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(replacement.abortController.signal.aborted).toBe(false);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    }, 40000);
+
+    test('a bystander subscriber cannot acknowledge for a disconnected generation owner', async () => {
+      const ownerSubscriber = (ioredisClient as Redis).duplicate();
+      const owner = createReplica(ownerSubscriber);
+      const bystander = createReplica();
+      const router = createReplica();
+      const streamId = `${testPrefix}-replacement-bystander-ack-${Date.now()}`;
+
+      const predecessor = await owner.createJob(streamId, 'user-1', streamId, {
+        initialMetadata: { generationProtocolVersion: 2 },
+      });
+      const bystanderJob = await bystander.getJob(streamId);
+      const bystanderSubscription = await bystander.subscribe(streamId, () => undefined);
+      expect(bystanderJob?.createdAt).toBe(predecessor.createdAt);
+      expect(bystanderSubscription).not.toBeNull();
+
+      ownerSubscriber.disconnect();
+
+      await expect(
+        router.createJob(streamId, 'user-1', streamId, {
+          initialMetadata: { generationProtocolVersion: 2 },
+        }),
+      ).rejects.toThrow('predecessor handoff could not be confirmed');
+
+      expect(predecessor.abortController.signal.aborted).toBe(false);
+      expect(bystanderJob?.abortController.signal.aborted).toBe(true);
+      expect(await router.getJobStore().getJob(streamId)).toMatchObject({
+        status: 'error',
+        error: 'Generation predecessor handoff could not be confirmed',
+        replacedJobs: [
+          expect.objectContaining({ createdAt: predecessor.createdAt, status: 'running' }),
+        ],
+      });
+      bystanderSubscription?.unsubscribe();
+    }, 40000);
+
     test('a steer routed to a non-owning replica arms the owner and flips its poll', async () => {
       const owner = createReplica();
       const router = createReplica();
@@ -2504,15 +2813,37 @@ describe('GenerationJobManager Integration Tests', () => {
        */
       expect(seenByRouter?.metadata?.preemptCapable).toBe(true);
 
+      const enqueued = await router.steering.enqueueVersioned(
+        streamId,
+        {
+          steerId: 'steer-x',
+          text: 'interrupt me',
+          userId: 'user-1',
+          createdAt: Date.now(),
+        },
+        true,
+        job.createdAt,
+      );
+      if (typeof enqueued === 'number') {
+        throw new Error(`Unexpected enqueue rejection: ${enqueued}`);
+      }
+
       /** The whole point: the owner's level-triggered poll flips from a
        *  request that was accepted on a different replica. */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'steer-x', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            enqueued.item.steerId,
+            job.createdAt,
+            enqueued.item.preemptRevision ?? 0,
+          ),
         () => owner.isPreemptRequested(streamId),
         'the owner to arm',
       );
       expect(owner.getArmedPreemptIds(streamId)).toContain('steer-x');
 
+      expect(await router.steering.cancel(streamId, 'steer-x', job.createdAt)).toBe(true);
       await publishUntil(
         () => router.noteSteersRemoved(streamId, ['steer-x'], job.createdAt),
         () => !owner.isPreemptRequested(streamId),
@@ -2603,7 +2934,30 @@ describe('GenerationJobManager Integration Tests', () => {
       const router = createReplica();
       const streamId = `${testPrefix}-preempt-xreplica-stale-${Date.now()}`;
 
-      const job = await owner.createJob(streamId, 'user-1');
+      const job = await owner.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { preemptCapable: true },
+      });
+
+      const enqueuePreempt = async (steerId: string) => {
+        const enqueued = await router.steering.enqueueVersioned(
+          streamId,
+          {
+            steerId,
+            text: steerId,
+            userId: 'user-1',
+            createdAt: Date.now(),
+          },
+          true,
+          job.createdAt,
+        );
+        if (typeof enqueued === 'number') {
+          throw new Error(`Unexpected enqueue rejection for ${steerId}: ${enqueued}`);
+        }
+        return enqueued.item;
+      };
+      const controlBefore = await enqueuePreempt('control-before');
+      const stale = await enqueuePreempt('steer-stale');
+      const controlAfter = await enqueuePreempt('control-after');
 
       /**
        * A negative assertion cannot be established by waiting: an undelivered
@@ -2614,15 +2968,32 @@ describe('GenerationJobManager Integration Tests', () => {
        * behind — proves the stale arm has already had its chance to land.
        */
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-before', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlBefore.steerId,
+            job.createdAt,
+            controlBefore.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-before'),
         'the first control arm',
       );
 
-      await router.requestPreempt(streamId, 'steer-stale', job.createdAt - 1);
+      await router.requestPreempt(
+        streamId,
+        stale.steerId,
+        job.createdAt - 1,
+        stale.preemptRevision ?? 0,
+      );
 
       await publishUntil(
-        () => router.requestPreempt(streamId, 'control-after', job.createdAt),
+        () =>
+          router.requestPreempt(
+            streamId,
+            controlAfter.steerId,
+            job.createdAt,
+            controlAfter.preemptRevision ?? 0,
+          ),
         () => owner.getArmedPreemptIds(streamId).includes('control-after'),
         'the second control arm',
       );

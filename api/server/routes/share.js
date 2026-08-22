@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
 const express = require('express');
 const {
+  assertModelBoundContent,
+  createShareContentPreflight,
   isEnabled,
+  isContentFilterError,
   generateCheckAccess,
   grantCreationPermissions,
   ensureLinkPermissions,
@@ -12,13 +15,16 @@ const {
   updateSharedLinkPermissionsExpiration,
   isActiveExpirationDate,
   getSharedLinkExpiration,
+  buildShareFileEtag,
+  parseSharedLinksPageSize,
+  isValidSharedLinksCursor,
+  MAX_SHARED_LINK_SEARCH_LENGTH,
+  createSharedLinkConfigMiddleware,
 } = require('@librechat/api');
 const {
   logger,
-  getTenantId,
   runAsSystem,
   tenantStorage,
-  SYSTEM_TENANT_ID,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
 const { FileSources, PermissionTypes, Permissions } = require('librechat-data-provider');
@@ -45,6 +51,23 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getAppConfig } = require('~/server/services/Config/app');
 const router = express.Router();
+const sharedLinkConfigMiddleware = createSharedLinkConfigMiddleware({ getAppConfig });
+
+const SHARE_SERVICE_ERROR_STATUS = {
+  INVALID_PARAMS: 400,
+  TARGET_MESSAGE_NOT_FOUND: 400,
+  NO_MESSAGES: 400,
+  CONVERSATION_NOT_FOUND: 404,
+  SHARE_NOT_FOUND: 404,
+  SHARE_EXISTS: 409,
+  SHARE_REVISION_MISMATCH: 409,
+};
+
+const sendShareServiceError = (res, error, fallbackMessage) => {
+  const status = SHARE_SERVICE_ERROR_STATUS[error?.code] ?? 500;
+  const message = status === 500 ? fallbackMessage : error.message;
+  return res.status(status).json({ message });
+};
 
 const checkSharedLinksAccess = generateCheckAccess({
   permissionType: PermissionTypes.SHARED_LINKS,
@@ -82,12 +105,19 @@ const runWithTenant = (tenantId, fn) =>
  * 'failed' on the next poll so the client poller terminates. */
 const PREVIEW_LAZY_SWEEP_CUTOFF_MS = 2 * 60 * 1000;
 
-const getShareStartupPayload = async () => {
-  const tenantId = getTenantId();
-  const appConfig = await getAppConfig(
-    tenantId && tenantId !== SYSTEM_TENANT_ID ? { tenantId } : { baseOnly: true },
-  );
-  return buildSharedLinkStartupPayload(appConfig);
+const enforceSharedFileContentPolicy = (req, res, next) => {
+  try {
+    assertModelBoundContent({
+      filters: req.config?.filters,
+      files: [req.liveFile],
+    });
+    return next();
+  } catch (error) {
+    if (isContentFilterError(error)) {
+      return res.status(error.statusCode).json(error.body);
+    }
+    return next(error);
+  }
 };
 
 /**
@@ -150,15 +180,17 @@ const resolveShareFile = async (req, res, next) => {
 
     // Pin to the snapshotted version so an old link can't surface post-share content
     // after a reused file_id (e.g. code-exec same-filename outputs) is overwritten.
-    // previewRevision changes for deferred/office files; `bytes` catches other
-    // overwrites that change size, and is stable across S3 URL refresh and the
-    // pending->ready transition (which don't alter file size). Same-size content
-    // swaps remain a best-effort gap inherent to the no-byte-copy design.
+    // sourceDispatchedAt changes for every source artifact emit; previewRevision
+    // covers deferred/office generations, while `bytes` covers legacy records
+    // without either marker and stays stable across URL refresh/preview updates.
     const revisionChanged =
       (snapshot.previewRevision ?? null) !== (liveFile.previewRevision ?? null);
+    const sourceGenerationChanged =
+      snapshot.sourceDispatchedAt != null &&
+      snapshot.sourceDispatchedAt !== (liveFile.metadata?.sourceDispatchedAt ?? null);
     const bytesChanged =
       snapshot.bytes != null && liveFile.bytes != null && snapshot.bytes !== liveFile.bytes;
-    if (revisionChanged || bytesChanged) {
+    if (revisionChanged || sourceGenerationChanged || bytesChanged) {
       logger.warn(
         `[shareFileAccess] Snapshot version mismatch for file ${file_id} (share ${shareId})`,
       );
@@ -177,6 +209,31 @@ const resolveShareFile = async (req, res, next) => {
 /** Stream (or redirect to) a snapshotted file from its original stored object. */
 const streamSharedFile = async (req, res, file, requestedDisposition) => {
   const source = file.source || FileSources.local;
+
+  // An update keeps the shareId, so these URLs are stable across re-publishes. Without
+  // revalidation a viewer's cached copy would outlive a revoked "share files" choice or a
+  // replaced snapshot by the max-age.
+  const etag = buildShareFileEtag(file);
+  res.setHeader('ETag', etag);
+  res.setHeader('Cache-Control', 'private, no-cache');
+  if (req.headers['if-none-match'] === etag) {
+    return res.status(304).end();
+  }
+
+  if (source === FileSources.text) {
+    if (req.liveFile?.text == null) {
+      return res.status(404).send('No file content found');
+    }
+    const textFilename = file.filename?.toLowerCase().endsWith('.txt')
+      ? file.filename
+      : `${file.filename || file.file_id}.txt`;
+    const disposition = requestedDisposition === 'inline' ? 'inline' : 'attachment';
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', getContentDisposition(textFilename, disposition));
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    return res.send(req.liveFile.text);
+  }
+
   const { getDownloadStream, getDownloadURL } = getStrategyFunctions(source);
 
   // Inline only safe preview types; anything else is forced to attachment.
@@ -211,9 +268,6 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
   // the local stream resolves the real filename, not a literal `*.png?v=...` path.
   const streamPath = (file.storageKey || file.filepath || '').split('?')[0];
   const fileStream = await getDownloadStream(req, streamPath);
-  fileStream.on('error', (error) => {
-    logger.error('[shareFileAccess] Stream error:', error);
-  });
 
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Disposition', getContentDisposition(file.filename, disposition));
@@ -221,35 +275,71 @@ const streamSharedFile = async (req, res, file, requestedDisposition) => {
     'Content-Type',
     disposition === 'inline' ? file.type || 'application/octet-stream' : 'application/octet-stream',
   );
-  res.setHeader('Cache-Control', 'private, max-age=3600');
-  return fileStream.pipe(res);
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      fileStream.removeListener('error', onError);
+      res.removeListener('finish', onFinish);
+      res.removeListener('close', onClose);
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const onFinish = () => {
+      cleanup();
+      resolve();
+    };
+    const onClose = () => {
+      cleanup();
+      if (!fileStream.destroyed) {
+        fileStream.destroy();
+      }
+      resolve();
+    };
+
+    fileStream.once('error', onError);
+    res.once('finish', onFinish);
+    res.once('close', onClose);
+    fileStream.pipe(res);
+  });
 };
 
 if (allowSharedLinks) {
   const { forkIpLimiter, forkUserLimiter } = createForkLimiters();
 
-  router.get('/:shareId/config', optionalJwtAuth, canAccessSharedLink, async (_req, res) => {
-    try {
-      const payload = await getShareStartupPayload();
-      res.set('Cache-Control', 'private, no-store');
-      res.status(200).json(payload);
-    } catch (error) {
-      logger.error('Error getting shared startup config:', error);
-      res.status(500).json({ message: 'Error getting shared startup config' });
-    }
-  });
+  router.get(
+    '/:shareId/config',
+    optionalJwtAuth,
+    canAccessSharedLink,
+    sharedLinkConfigMiddleware,
+    (req, res) => {
+      try {
+        const payload = buildSharedLinkStartupPayload(req.config);
+        res.set('Cache-Control', 'private, no-store');
+        res.status(200).json(payload);
+      } catch (error) {
+        logger.error('Error getting shared startup config:', error);
+        res.status(500).json({ message: 'Error getting shared startup config' });
+      }
+    },
+  );
 
   router.get(
     '/:shareId',
     optionalJwtAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
+        const contentPreflight = createShareContentPreflight(req.config?.filters, {
+          sharedFileMetadata: true,
+          legacyPii: req.config?.messageFilter?.pii,
+        });
         const share = await getSharedMessages(req.params.shareId, req.shareResourceId, {
           // Viewer-independent: the per-link choice (stored on the share) decides
           // file inclusion; only a global env kill switch can force it off here.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          preflight: contentPreflight,
         });
         if (share) {
           res.set('Cache-Control', 'private, no-store');
@@ -258,6 +348,9 @@ if (allowSharedLinks) {
           res.status(404).end();
         }
       } catch (error) {
+        if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
         logger.error('Error getting shared messages:', error);
         res.status(500).json({ message: 'Error getting shared messages' });
       }
@@ -270,6 +363,7 @@ if (allowSharedLinks) {
     forkIpLimiter,
     forkUserLimiter,
     canAccessSharedLink,
+    sharedLinkConfigMiddleware,
     async (req, res) => {
       try {
         const result = await forkSharedConversation({
@@ -279,17 +373,27 @@ if (allowSharedLinks) {
           userRole: req.user.role,
           userTenantId: req.user.tenantId,
           targetMessageIndex: req.body?.targetMessageIndex,
+          shareRevision: req.body?.shareRevision,
           // Viewer-independent: honor the global shared-file kill switch, matching
           // the GET share route so disabled file snapshots aren't copied into forks.
           snapshotFiles: !isFileSnapshotKillSwitchActive(),
+          sharedContentPreflight: createShareContentPreflight(req.config?.filters, {
+            sharedFileMetadata: true,
+            legacyPii: req.config?.messageFilter?.pii,
+          }),
         });
         if (!result) {
           return res.status(404).json({ message: 'Shared conversation not found' });
         }
-        res.status(201).json(result);
+        return res.status(201).json(result);
       } catch (error) {
-        logger.error('Error forking shared conversation:', error);
-        res.status(500).json({ message: 'Error forking shared conversation' });
+        if (isContentFilterError(error)) {
+          return res.status(error.statusCode).json(error.body);
+        }
+        if (error?.code !== 'SHARE_REVISION_MISMATCH') {
+          logger.error('Error forking shared conversation:', error);
+        }
+        return sendShareServiceError(res, error, 'Error forking shared conversation');
       }
     },
   );
@@ -304,8 +408,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         const { file_id } = req.params;
@@ -347,8 +452,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         await runWithTenant(req.shareFile.tenantId, () =>
@@ -357,8 +463,9 @@ if (allowSharedLinks) {
       } catch (error) {
         logger.error('[shareFileAccess] Error downloading shared file:', error);
         if (!res.headersSent) {
-          res.status(500).send('Error downloading file');
+          return res.status(500).send('Error downloading file');
         }
+        res.destroy();
       }
     },
   );
@@ -369,8 +476,9 @@ if (allowSharedLinks) {
     optionalJwtAuth,
     optionalShareFileAuth,
     canAccessSharedLink,
-    configMiddleware,
+    sharedLinkConfigMiddleware,
     resolveShareFile,
+    enforceSharedFileContentPolicy,
     async (req, res) => {
       try {
         await runWithTenant(req.shareFile.tenantId, () =>
@@ -379,8 +487,9 @@ if (allowSharedLinks) {
       } catch (error) {
         logger.error('[shareFileAccess] Error serving shared file:', error);
         if (!res.headersSent) {
-          res.status(500).send('Error serving file');
+          return res.status(500).send('Error serving file');
         }
+        res.destroy();
       }
     },
   );
@@ -391,14 +500,31 @@ if (allowSharedLinks) {
  */
 router.get('/', requireJwtAuth, async (req, res) => {
   try {
+    const sortBy =
+      typeof req.query.sortBy === 'string' && ['createdAt', 'title'].includes(req.query.sortBy)
+        ? req.query.sortBy
+        : 'createdAt';
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor.trim() : undefined;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+
+    if (search && search.length > MAX_SHARED_LINK_SEARCH_LENGTH) {
+      return res.status(400).json({
+        message: `search must be ${MAX_SHARED_LINK_SEARCH_LENGTH} characters or fewer`,
+      });
+    }
+
+    if (cursor && !isValidSharedLinksCursor(cursor, sortBy)) {
+      return res.status(400).json({ message: 'cursor is not valid for this sort' });
+    }
+
     const params = {
-      pageParam: req.query.cursor,
-      pageSize: Math.max(1, parseInt(req.query.pageSize) || 10),
-      sortBy: ['createdAt', 'title'].includes(req.query.sortBy) ? req.query.sortBy : 'createdAt',
+      pageParam: cursor,
+      pageSize: parseSharedLinksPageSize(req.query.pageSize),
+      sortBy,
       sortDirection: ['asc', 'desc'].includes(req.query.sortDirection)
         ? req.query.sortDirection
         : 'desc',
-      search: req.query.search ? decodeURIComponent(req.query.search.trim()) : undefined,
+      search: search || undefined,
     };
 
     const result = await getSharedLinks(
@@ -417,10 +543,7 @@ router.get('/', requireJwtAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('Error getting shared links:', error);
-    res.status(500).json({
-      message: 'Error getting shared links',
-      error: error.message,
-    });
+    res.status(500).json({ message: 'Error getting shared links' });
   }
 });
 
@@ -453,7 +576,17 @@ router.post(
   checkSharedLinksAccess,
   async (req, res) => {
     try {
-      const { targetMessageId } = req.body;
+      const { targetMessageId, snapshotFiles: requestedSnapshotFiles } = req.body ?? {};
+      if (
+        targetMessageId !== undefined &&
+        (typeof targetMessageId !== 'string' || targetMessageId.trim().length === 0)
+      ) {
+        return res.status(400).json({ message: 'targetMessageId must be a non-empty string' });
+      }
+      if (requestedSnapshotFiles !== undefined && typeof requestedSnapshotFiles !== 'boolean') {
+        return res.status(400).json({ message: 'snapshotFiles must be a boolean' });
+      }
+
       const expiredAt = await resolveSharedLinkExpiration(req, req.params.conversationId);
       if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
         return res.status(404).end();
@@ -464,7 +597,15 @@ router.post(
       const grantPublic = sharedLinksPerms[Permissions.SHARE_PUBLIC] === true;
       // Per-link opt-out: snapshot only when the feature is enabled AND the user
       // did not uncheck "share files" (body flag absent defaults to enabled).
-      const snapshotFiles = isFileSnapshotEnabled(req.config) && req.body?.snapshotFiles !== false;
+      const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+        getFiles,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
+        legacyPii: req.config?.messageFilter?.pii,
+      });
 
       const created = await createSharedLink(
         req.user.id,
@@ -472,6 +613,7 @@ router.post(
         targetMessageId,
         expiredAt,
         snapshotFiles,
+        ...(contentPreflight == null ? [] : [contentPreflight]),
       );
       if (created) {
         await grantCreationPermissions(created._id, req.user.id, grantPublic, expiredAt);
@@ -480,52 +622,85 @@ router.post(
         res.status(404).end();
       }
     } catch (error) {
+      if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
       logger.error('Error creating shared link:', error);
-      res.status(500).json({ message: 'Error creating shared link' });
+      return sendShareServiceError(res, error, 'Error creating shared link');
     }
   },
 );
 
-router.patch('/:shareId', requireJwtAuth, configMiddleware, async (req, res) => {
-  try {
-    const { targetMessageId } = req.body ?? {};
-    if (targetMessageId !== undefined && typeof targetMessageId !== 'string') {
-      return res.status(400).json({ message: 'targetMessageId must be a string' });
-    }
-
-    let expiredAt;
-    const SharedLink = mongoose.models.SharedLink;
-    const existing = await SharedLink.findOne(
-      { shareId: req.params.shareId, user: req.user.id },
-      'conversationId',
-    ).lean();
-    if (existing?.conversationId) {
-      expiredAt = await resolveSharedLinkExpiration(req, existing.conversationId);
-    }
-    if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
-      return res.status(404).end();
-    }
-
-    const updatedShare = await updateSharedLink(
-      req.user.id,
-      req.params.shareId,
-      targetMessageId,
-      expiredAt,
-      isFileSnapshotEnabled(req.config) && req.body?.snapshotFiles !== false,
-    );
-    if (updatedShare) {
-      if (updatedShare._id && expiredAt !== undefined) {
-        await updateSharedLinkPermissionsExpiration(updatedShare._id, expiredAt);
+/** Updating or re-scoping a link re-publishes conversation content, so it is gated
+ * on the same CREATE permission as POST; revoking CREATE must stop updates too.
+ * DELETE stays ungated so an owner can always retract a link they no longer may create. */
+router.patch(
+  '/:shareId',
+  requireJwtAuth,
+  configMiddleware,
+  checkSharedLinksAccess,
+  async (req, res) => {
+    try {
+      const { targetMessageId, snapshotFiles: requestedSnapshotFiles } = req.body ?? {};
+      if (
+        targetMessageId !== undefined &&
+        (typeof targetMessageId !== 'string' || targetMessageId.trim().length === 0)
+      ) {
+        return res.status(400).json({ message: 'targetMessageId must be a non-empty string' });
       }
-      res.status(200).json(updatedShare);
-    } else {
-      res.status(404).end();
+      if (requestedSnapshotFiles !== undefined && typeof requestedSnapshotFiles !== 'boolean') {
+        return res.status(400).json({ message: 'snapshotFiles must be a boolean' });
+      }
+
+      let expiredAt;
+      const SharedLink = mongoose.models.SharedLink;
+      const existing = await SharedLink.findOne(
+        { shareId: req.params.shareId, user: req.user.id },
+        'conversationId',
+      ).lean();
+      if (existing?.conversationId) {
+        expiredAt = await resolveSharedLinkExpiration(req, existing.conversationId);
+      }
+      if (expiredAt != null && !isActiveExpirationDate(expiredAt)) {
+        return res.status(404).end();
+      }
+
+      const snapshotFiles = isFileSnapshotEnabled(req.config) && requestedSnapshotFiles !== false;
+      const contentPreflight = createShareContentPreflight(req.config?.filters, {
+        snapshotFiles,
+        user: req.user,
+        getFiles,
+        sharedFileMetadata: true,
+        sharedFileMetadataFiles: false,
+        legacyPii: req.config?.messageFilter?.pii,
+      });
+      const beforePublish =
+        existing?._id && expiredAt !== undefined
+          ? () => updateSharedLinkPermissionsExpiration(existing._id, expiredAt)
+          : undefined;
+      const updatedShare = await updateSharedLink(
+        req.user.id,
+        req.params.shareId,
+        targetMessageId,
+        expiredAt,
+        snapshotFiles,
+        contentPreflight,
+        beforePublish,
+      );
+      if (!updatedShare) {
+        return res.status(404).end();
+      }
+
+      return res.status(200).json(updatedShare);
+    } catch (error) {
+      if (isContentFilterError(error)) {
+        return res.status(error.statusCode).json(error.body);
+      }
+      logger.error('Error updating shared link:', error);
+      return sendShareServiceError(res, error, 'Error updating shared link');
     }
-  } catch (error) {
-    logger.error('Error updating shared link:', error);
-    res.status(500).json({ message: 'Error updating shared link' });
-  }
-});
+  },
+);
 
 router.delete('/:shareId', requireJwtAuth, async (req, res) => {
   try {
@@ -538,7 +713,7 @@ router.delete('/:shareId', requireJwtAuth, async (req, res) => {
     return res.status(200).json(result);
   } catch (error) {
     logger.error('Error deleting shared link:', error);
-    return res.status(400).json({ message: 'Error deleting shared link' });
+    return res.status(500).json({ message: 'Error deleting shared link' });
   }
 });
 

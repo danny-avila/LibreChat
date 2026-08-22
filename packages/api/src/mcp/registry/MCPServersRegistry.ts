@@ -1,6 +1,7 @@
 import { Keyv } from 'keyv';
 import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type * as t from '~/mcp/types';
 import {
@@ -9,6 +10,7 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -16,6 +18,48 @@ import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/**
+ * Provenance to persist for a config being stored in `tier`.
+ *
+ * SECURITY INVARIANT — an Agent Plugins server keeps its own `'plugin'` marker
+ * rather than taking the tier's tag. `processMCPEnv` reads that marker to decide
+ * whether a `${VAR}` the plugin authored stays literal, so retagging here would
+ * expand host secrets into a plugin-controlled header or URL at both inspection
+ * and connect time. Only operator-loaded tiers may carry the marker: a DB entry
+ * is user-authored and is always `'user'`, so user input can never claim plugin
+ * provenance and skip the sandboxed placeholder rules.
+ */
+function resolveServerSource(
+  config: t.ParsedServerConfig,
+  tier: t.MCPServerSource,
+): t.MCPServerSource {
+  if (tier === 'user') {
+    return 'user';
+  }
+  return isPluginSourced(config) ? MCP_PLUGIN_SOURCE : tier;
+}
+
+/**
+ * Source an overlaid config should carry when a Config-tier override shadows a
+ * same-name base entry. The base's source is normally inherited so downstream
+ * recovery routes to the base's storage tier.
+ *
+ * SECURITY INVARIANT — a remote `'plugin'` base is the exception: its no-resolve
+ * provenance must never transfer to an operator-authored override, or
+ * `processMCPEnv` would stop resolving the operator's own `${VAR}` placeholders.
+ * The override supersedes a remote plugin server, so it keeps its own trusted
+ * source instead. Process-backed base entries never reach this overlay path.
+ */
+function overlaySource(
+  base: t.ParsedServerConfig,
+  override: t.ParsedServerConfig,
+): t.MCPServerSource | undefined {
+  if (base.source === MCP_PLUGIN_SOURCE) {
+    return override.source ?? 'config';
+  }
+  return base.source;
+}
 
 /**
  * Fields an admin override can legitimately set. Used to detect whether a
@@ -242,10 +286,9 @@ export class MCPServersRegistry {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
-      } catch (error) {
+      } catch {
         logger.warn(
           '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
-          error,
         );
       }
     }
@@ -261,10 +304,11 @@ export class MCPServersRegistry {
    * getAllServerConfigs so list views and single-server lookups agree on
    * the same name:
    *   1. user-tier base entry wins absolutely over a config-tier candidate
-   *   2. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
-   *   3. healthy candidate overlays its fields onto the base, preserving the
+   *   2. process-backed base entries win absolutely over a config-tier candidate
+   *   3. healthy YAML/DB base wins over a failed (inspectionFailed) candidate
+   *   4. healthy candidate overlays its fields onto the base, preserving the
    *      base entry's source tag so downstream recovery routes correctly
-   *   4. with no base, the candidate is returned as-is (config-only server)
+   *   5. with no base, the candidate is returned as-is (config-only server)
    *
    * readThroughCache memoizes only the global YAML/DB lookup; the per-call
    * configServers candidate is tenant-scoped and is never cached, so a
@@ -294,8 +338,18 @@ export class MCPServersRegistry {
 
     if (!candidate) return base;
     if (base?.source === 'user') return base;
+    if (isProcessMCPServerConfig(base)) return base;
     if (candidate.inspectionFailed) return base ?? candidate;
-    return base ? { ...candidate, source: base.source } : candidate;
+    return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
+  }
+
+  /** Returns whether an effective config exactly matches the operator-owned base config. */
+  public async isAppServerConfig(
+    serverName: string,
+    effectiveConfig: t.ParsedServerConfig,
+  ): Promise<boolean> {
+    const baseConfig = await this.getServerConfig(serverName);
+    return baseConfig != null && deepEqual(baseConfig, effectiveConfig);
   }
 
   /**
@@ -303,12 +357,15 @@ export class MCPServersRegistry {
    * and User-DB entries.
    *
    * Precedence (lowest to highest): YAML cache > Config-tier overrides (success only) > User DB.
-   * Two guards keep the merge safe:
+   * Three guards keep the merge safe:
    *   1. Config-tier entries carrying `inspectionFailed: true` never overlay an existing
    *      base entry; the healthy base is preserved for the duration of the retry window.
    *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
+   *   3. Process-backed base entries are never replaced by Config-tier overlays.
    * On a successful overlay the base entry's `source` field is preserved so downstream
-   * recovery logic routes to the correct storage location.
+   * recovery logic routes to the correct storage location — except a `'plugin'` base,
+   * whose no-resolve provenance must not transfer to the operator override (see
+   * `overlaySource`).
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -322,12 +379,18 @@ export class MCPServersRegistry {
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {
-        logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        logger.debug('[MCP][config] Admin override shadowed by user-tier entry');
+        continue;
+      }
+      if (isProcessMCPServerConfig(result[name])) {
+        logger.debug(`[MCP][config][${name}] Admin override shadowed by process-backed entry`);
         continue;
       }
       if (override.inspectionFailed && result[name]) continue;
-      const baseSource = result[name]?.source;
-      result[name] = baseSource ? { ...override, source: baseSource } : override;
+      const baseEntry = result[name];
+      result[name] = baseEntry
+        ? { ...override, source: overlaySource(baseEntry, override) }
+        : override;
     }
     return result;
   }
@@ -392,7 +455,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const stubConfig: t.ParsedServerConfig = {
+      ...config,
+      inspectionFailed: true,
+      source: resolveServerSource(config, 'yaml'),
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -407,7 +474,7 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
     const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
@@ -478,7 +545,7 @@ export class MCPServersRegistry {
         allowedAddresses,
       );
     } catch (error) {
-      logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
+      logger.error('[MCPServersRegistry] Server reinspection failed');
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
@@ -491,14 +558,19 @@ export class MCPServersRegistry {
     return { serverName, config: updatedConfig };
   }
 
-  public async updateServer(
+  /**
+   * Inspects an update without mutating its backing repository. Callers that must
+   * coordinate an external fence with persistence can prepare first, fence, and
+   * then commit the returned config.
+   */
+  public async inspectServerUpdate(
     serverName: string,
     config: t.MCPOptions,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -532,9 +604,35 @@ export class MCPServersRegistry {
       }
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
+    return parsedConfig;
+  }
+
+  /** Persists a previously inspected update without opening a second MCP connection. */
+  public async commitServerUpdate(
+    serverName: string,
+    parsedConfig: t.ParsedServerConfig,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.update(serverName, parsedConfig, userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
+  }
+
+  public async updateServer(
+    serverName: string,
+    config: t.MCPOptions,
+    storageLocation: 'CACHE' | 'DB',
+    userId?: string,
+  ): Promise<t.ParsedServerConfig> {
+    const parsedConfig = await this.inspectServerUpdate(
+      serverName,
+      config,
+      storageLocation,
+      userId,
+    );
+    return await this.commitServerUpdate(serverName, parsedConfig, storageLocation, userId);
   }
 
   /**
@@ -576,7 +674,7 @@ export class MCPServersRegistry {
     );
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
-        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected initialization error');
       }
     }
 
@@ -628,7 +726,7 @@ export class MCPServersRegistry {
       if (!isStaleStub) {
         return cached;
       }
-      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      logger.info('[MCP][config] Retrying stale failure stub');
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);
@@ -656,14 +754,13 @@ export class MCPServersRegistry {
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const prefix = `[MCP][config][${serverName}]`;
+    const prefix = '[MCP][config]';
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
+    const source = resolveServerSource(rawConfig, 'config');
+
     try {
-      const configForInspection = {
-        ...rawConfig,
-        source: 'config' as const,
-      } as t.ParsedServerConfig;
+      const configForInspection = { ...rawConfig, source } as t.ParsedServerConfig;
       const { allowedDomains, allowedAddresses } = allowlists;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
@@ -677,31 +774,28 @@ export class MCPServersRegistry {
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = { ...inspected, source };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
-        `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
+        `${prefix} Initialized: toolCount=${parsedConfig.toolFunctions ? Object.keys(parsedConfig.toolFunctions).length : 0}, ` +
           `duration=${parsedConfig.initDuration ?? 'N/A'}ms`,
       );
       return parsedConfig;
-    } catch (error) {
-      logger.error(`${prefix} Failed to initialize:`, error);
+    } catch {
+      logger.error(`${prefix} Failed to initialize`);
 
       const stubConfig: t.ParsedServerConfig = {
         ...rawConfig,
         inspectionFailed: true,
-        source: 'config',
+        source,
         updatedAt: Date.now(),
       };
       try {
         await this.upsertConfigCache(cacheKey, stubConfig);
         logger.info(`${prefix} Stored stub config for recovery`);
-      } catch (cacheError) {
-        logger.error(
-          `${prefix} Failed to store stub config (will retry on next request):`,
-          cacheError,
-        );
+      } catch {
+        logger.error(`${prefix} Failed to store stub config; will retry on next request`);
       }
       return stubConfig;
     }
@@ -830,8 +924,7 @@ export class MCPServersRegistry {
     }
 
     logger.warn(
-      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed server(s) with colliding name(s): ` +
-        `${shadowedNames.join(', ')}. DB records remain stored but are hidden while operator-managed servers use these names.`,
+      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed servers with ${shadowedNames.length} colliding name(s); DB records remain stored but hidden`,
     );
   }
 

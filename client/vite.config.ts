@@ -67,7 +67,7 @@ export default defineConfig(({ command }) => ({
   },
   // Set the directory where environment variables are loaded from and restrict prefixes
   envDir: '../',
-  envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_'],
+  envPrefix: ['VITE_', 'SCRIPT_', 'DOMAIN_', 'ALLOW_', 'REACT_APP_THEME_'],
   plugins: [
     react(),
     {
@@ -255,7 +255,7 @@ export default defineConfig(({ command }) => ({
                   if (normalizedId.includes('react-hook-form')) {
                     return 'forms';
                   }
-                  if (normalizedId.includes('react-router-dom')) {
+                  if (normalizedId.includes('react-router')) {
                     return 'routing';
                   }
                   if (

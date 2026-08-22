@@ -867,7 +867,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       await manager.destroy();
     });
 
-    test('mid-generation buffer replay advances to its absolute Redis sequence', async () => {
+    test('early buffer replay advances to its absolute Redis sequence', async () => {
       if (!ioredisClient) {
         console.warn('Redis not available, skipping test');
         return;
@@ -885,24 +885,17 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
       const streamId = `absolute-replay-${Date.now()}`;
       await manager.createJob(streamId, 'user-1');
 
-      const firstEvents: unknown[] = [];
-      const firstSubscription = await manager.subscribe(streamId, (event) => {
-        firstEvents.push(event);
-      });
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Redis sequences are conversation-scoped and survive across turns, so a
+      // fresh generation's early buffer can hold events whose sequences start
+      // well above zero. Seed the shared counter to model that later turn.
+      await ioredisClient.set(`stream:{${streamId}}:seq`, '5');
 
+      // These buffered events receive seqs 5 and 6. Replaying two events must
+      // therefore advance to seq=7, not to the relative count of 2.
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { index: 0 },
       });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(firstEvents).toHaveLength(1);
-
-      firstSubscription?.unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // This buffered event receives seq=1. Replaying one event must therefore
-      // advance to seq=2, not to the relative count of 1.
       await manager.emitChunk(streamId, {
         event: 'on_message_delta',
         data: { index: 1 },
@@ -923,7 +916,7 @@ describe('Reconnect Reorder Buffer Desync (Regression)', () => {
 
       expect(
         resumedEvents.map((event) => (event as { data: { index: number } }).data.index),
-      ).toEqual([1, 2]);
+      ).toEqual([0, 1, 2]);
 
       resumedSubscription?.unsubscribe();
       await manager.destroy();

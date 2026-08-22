@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Button } from '@librechat/client';
 import { alternateName, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
+import { formatKeyExpiryLabel } from '~/components/Input/SetKeyDialog/utils';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useUserKey, useLocalize } from '~/hooks';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -32,7 +33,7 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
     if (expiry === 'never') {
       return localize('com_endpoint_config_key_never_expires');
     }
-    return `${localize('com_endpoint_config_key_encryption')} ${new Date(expiry).toLocaleString()}`;
+    return formatKeyExpiryLabel(localize, expiry);
   }, [expiry, localize]);
 
   return (

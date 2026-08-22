@@ -1,6 +1,6 @@
 {
   "name": "@librechat/frontend",
-  "version": "v0.8.7",
+  "version": "v0.8.8-rc1",
   "description": "",
   "type": "module",
   "scripts": {
@@ -86,7 +86,7 @@
     "mdast-util-from-markdown": "^2.0.1",
     "mdast-util-gfm": "^3.0.0",
     "mdast-util-math": "^3.0.0",
-    "mermaid": "^11.15.0",
+    "mermaid": "^11.16.1",
     "micromark-extension-directive": "^3.0.1",
     "micromark-extension-gfm": "^3.0.0",
     "micromark-extension-llm-math": "^3.1.0",
@@ -105,7 +105,7 @@
     "react-i18next": "^15.4.0",
     "react-markdown": "^9.0.1",
     "react-resizable-panels": "^4.7.4",
-    "react-router-dom": "^6.30.3",
+    "react-router-dom": "^7.18.2",
     "react-speech-recognition": "^3.10.0",
     "react-textarea-autosize": "^8.4.0",
     "react-transition-group": "^4.4.5",

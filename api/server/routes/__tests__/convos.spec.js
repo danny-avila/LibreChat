@@ -2,9 +2,18 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
+const { archiveAllHandler } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
-jest.mock('@librechat/api', () => require(MOCKS).api());
+jest.mock('@librechat/api', () =>
+  require(MOCKS).api({
+    createContentFilter: jest.fn(() => (req, res, next) => next()),
+    inspectContent: jest.fn(() => null),
+    extractConversationTitleContent: jest.fn(() => []),
+    contentFilterBlockResponse: jest.fn(),
+    isContentFilterError: jest.fn((error) => error?.code === 'content_filter_block'),
+  }),
+);
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
 jest.mock('~/models', () => require(MOCKS).sharedModels());
@@ -17,16 +26,20 @@ jest.mock('~/server/routes/files/multer', () => require(MOCKS).multerSetup());
 jest.mock('multer', () => require(MOCKS).multerLib());
 jest.mock('~/server/services/Endpoints/azureAssistants', () => require(MOCKS).assistantEndpoint());
 jest.mock('~/server/services/Endpoints/assistants', () => require(MOCKS).assistantEndpoint());
+jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
+  require(MOCKS).subagentThreadStore(),
+);
 
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
+  const { deleteToolCalls, deleteConvos, getConvo, saveConvo } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
+  const subagentThreadStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 
   beforeAll(() => {
     convosRouter = require('../convos');
@@ -36,7 +49,22 @@ describe('Convos Routes', () => {
 
     /** Mock authenticated user */
     app.use((req, res, next) => {
-      req.user = { id: 'test-user-123' };
+      req.user = { id: 'test-user-123', role: 'USER' };
+      req.config = {
+        messageFilter: {
+          pii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        },
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+      };
       next();
     });
 
@@ -45,6 +73,199 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('GET /:conversationId', () => {
+    it('returns an ordinary owned conversation', async () => {
+      getConvo.mockResolvedValue({ conversationId: 'ordinary', title: 'Ordinary' });
+
+      const response = await request(app).get('/api/convos/ordinary');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ conversationId: 'ordinary', title: 'Ordinary' });
+      expect(getConvo).toHaveBeenCalledWith('test-user-123', 'ordinary');
+    });
+
+    it('returns the same not-found response for an owned child thread', async () => {
+      getConvo.mockResolvedValue({
+        conversationId: 'child',
+        subagentThread: { parentConversationId: 'parent' },
+      });
+
+      const childResponse = await request(app).get('/api/convos/child');
+      getConvo.mockResolvedValue(null);
+      const missingResponse = await request(app).get('/api/convos/missing');
+
+      expect(childResponse.status).toBe(404);
+      expect(childResponse.text).toBe('');
+      expect(childResponse.status).toBe(missingResponse.status);
+      expect(childResponse.text).toBe(missingResponse.text);
+      expect(getConvo).toHaveBeenNthCalledWith(1, 'test-user-123', 'child');
+    });
+  });
+
+  describe('POST /import', () => {
+    const { importConversations } = require('~/server/utils/import');
+
+    it('passes source-aware filters into conversation import', async () => {
+      importConversations.mockResolvedValue();
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(201);
+      expect(importConversations).toHaveBeenCalledWith({
+        filepath: '/tmp/test-file.json',
+        requestUserId: 'test-user-123',
+        userRole: 'USER',
+        interfaceConfig: undefined,
+        filters: {
+          messages: {
+            pii: {
+              fields: ['text'],
+              starterPatterns: ['sk_prefix'],
+            },
+          },
+        },
+        legacyPii: {
+          starterPatterns: ['sk_prefix'],
+        },
+      });
+    });
+
+    it('returns only metadata-safe filter details for a blocked import', async () => {
+      const error = Object.assign(new Error('blocked'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      importConversations.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/import');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(response.body).not.toHaveProperty('detectorId');
+      expect(response.body).not.toHaveProperty('ruleId');
+      expect(response.body).not.toHaveProperty('fragmentPath');
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /fork', () => {
+    const { forkConversation } = require('~/server/utils/import/fork');
+
+    it('passes source-aware filters into the fork preflight', async () => {
+      forkConversation.mockResolvedValue({ conversation: { conversationId: 'forked-convo' } });
+
+      const response = await request(app).post('/api/convos/fork').send({
+        conversationId: 'source-convo',
+        messageId: 'source-message',
+      });
+
+      expect(response.status).toBe(200);
+      expect(forkConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestUserId: 'test-user-123',
+          originalConvoId: 'source-convo',
+          targetMessageId: 'source-message',
+          filters: {
+            messages: {
+              pii: {
+                fields: ['text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        }),
+      );
+    });
+
+    it('returns a raw-free 400 when cloned content is blocked', async () => {
+      const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      forkConversation.mockRejectedValue(error);
+
+      const response = await request(app).post('/api/convos/fork').send({
+        conversationId: 'source-convo',
+        messageId: 'source-message',
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    });
+  });
+
+  describe('POST /duplicate', () => {
+    const { duplicateConversation } = require('~/server/utils/import/fork');
+
+    it('passes source-aware filters into the duplicate preflight', async () => {
+      duplicateConversation.mockResolvedValue({
+        conversation: { conversationId: 'duplicated-convo' },
+      });
+
+      const response = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'source-convo' });
+
+      expect(response.status).toBe(201);
+      expect(duplicateConversation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'test-user-123',
+          conversationId: 'source-convo',
+          filters: {
+            messages: {
+              pii: {
+                fields: ['text'],
+                starterPatterns: ['sk_prefix'],
+              },
+            },
+          },
+          legacyPii: {
+            starterPatterns: ['sk_prefix'],
+          },
+        }),
+      );
+    });
+
+    it('returns a raw-free 400 when cloned content is blocked', async () => {
+      const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+        code: 'content_filter_block',
+        statusCode: 400,
+        body: {
+          error: 'content_filter_block',
+          message: 'Submitted content contains a restricted value. Remove it and try again.',
+          source: 'message',
+          field: 'text',
+        },
+      });
+      duplicateConversation.mockRejectedValue(error);
+
+      const response = await request(app)
+        .post('/api/convos/duplicate')
+        .send({ conversationId: 'source-convo' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual(error.body);
+      expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    });
   });
 
   describe('DELETE /all', () => {
@@ -60,6 +281,13 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(201);
       expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
       expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+      /** The deletion runs inside the owner admission fence, not around it. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      const [fencedUserId, fencedTenantId] =
+        subagentThreadStore.withOwnerDeletionFence.mock.calls[0];
+      expect(fencedUserId).toBe('test-user-123');
+      expect(fencedTenantId).toBeUndefined();
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
     });
 
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
@@ -124,6 +352,21 @@ describe('Convos Routes', () => {
       /** Verify error was logged */
       const { logger } = require('@librechat/data-schemas');
       expect(logger.error).toHaveBeenCalledWith('Error clearing conversations', expect.any(Error));
+    });
+
+    it('does not delete conversations when cross-replica task draining fails', async () => {
+      /** Draining happens inside the admission fence, so its failure fails the fence. */
+      subagentThreadStore.withOwnerDeletionFence.mockRejectedValueOnce(
+        new Error('task owner unavailable'),
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(500);
+      expect(deleteConvos).not.toHaveBeenCalled();
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
+      expect(deleteToolCalls).not.toHaveBeenCalled();
+      expect(deleteAllSharedLinksWithCleanup).not.toHaveBeenCalled();
     });
 
     it('should return 500 if deleteToolCalls fails', async () => {
@@ -233,6 +476,62 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /', () => {
+    it('fences the owner when DELETE / is called without a conversation filter', async () => {
+      deleteConvos.mockResolvedValue({ deletedCount: 3, conversationIds: ['a', 'b', 'c'] });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      /** An empty filter deletes everything, so it takes the same admission fence. */
+      expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
+      expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
+      expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
+      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+    });
+
+    it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 1 });
+      deleteConvoSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 1 });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({
+          arg: { conversationId: 'parent-conversation' },
+        });
+
+      expect(response.status).toBe(201);
+      /** The plan is resolved before deletion, while those rows can still be read. */
+      expect(subagentThreadStore.planCancellationForConversations).toHaveBeenCalledWith(
+        'test-user-123',
+        ['parent-conversation'],
+        undefined,
+      );
+      expect(
+        subagentThreadStore.planCancellationForConversations.mock.invocationCallOrder[0],
+      ).toBeLessThan(deleteConvos.mock.invocationCallOrder[0]);
+      /** It is applied once before deletion and replayed after with the cascade. */
+      expect(subagentThreadStore.cancelPlan).toHaveBeenCalledTimes(2);
+      expect(subagentThreadStore.cancelPlan.mock.calls[0][1]).toBeUndefined();
+      expect(subagentThreadStore.cancelPlan.mock.calls[1][1]).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
+      expect(deleteToolCalls.mock.calls.map((call) => call[1])).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
+      expect(deleteConvoSharedLinksWithCleanup.mock.calls.map((call) => call[1])).toEqual([
+        'parent-conversation',
+        'child-conversation',
+      ]);
+    });
+
     it('should delete a single conversation, tool calls, and associated shared links', async () => {
       const mockConversationId = 'conv-123';
       const mockDbResponse = {
@@ -445,6 +744,78 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / search handling', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** Express already percent-decodes `req.query`, so decoding a second time in the route
+     * threw URIError on any term containing a bare `%` and mangled `%xx`-looking text. */
+    it('accepts a search term containing a literal percent sign', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ isArchived: 'true', search: '100% ready' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: '100% ready' }),
+      );
+    });
+
+    it('passes percent-escape-looking text through without decoding it', async () => {
+      const response = await request(app).get('/api/convos').query({ search: 'a%41b' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: 'a%41b' }),
+      );
+    });
+
+    it('treats a whitespace-only search as no search', async () => {
+      const response = await request(app).get('/api/convos').query({ search: '   ' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: undefined }),
+      );
+    });
+  });
+
+  describe('GET / pinned filter', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    it('forwards pinned=true so the sidebar section can fetch pins on their own', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ pinned: 'true', limit: '100' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: true, limit: 100 }),
+      );
+    });
+
+    it('leaves the list unfiltered when pinned is absent', async () => {
+      const response = await request(app).get('/api/convos');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: false }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';
@@ -470,8 +841,15 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
-        { conversationId: mockConversationId, isArchived: true },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          conversationId: mockConversationId,
+          isArchived: true,
+        },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
     });
 
@@ -500,7 +878,55 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
+      );
+    });
+
+    it('leaves archivedAt to saveConvo so a redundant archive cannot restamp it', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: true });
+
+      await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'conv-789', isArchived: true } });
+
+      const [, data] = saveConvo.mock.calls[0];
+      expect(data).not.toHaveProperty('archivedAt');
+      expect(data.isArchived).toBe(true);
+    });
+
+    /** `updatedAt` stays the chat's own activity so unarchiving restores its real place
+     * in the date groups; when it was filed away is recorded on `archivedAt` instead. */
+    it('does not let archiving count as activity in the sidebar ordering', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: true });
+
+      await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'conv-789', isArchived: true } });
+
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ preserveUpdatedAt: true }),
+      );
+    });
+
+    it('should return 404 when the conversation does not exist', async () => {
+      saveConvo.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'missing-convo', isArchived: true } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ noUpsert: true }),
       );
     });
 
@@ -577,37 +1003,69 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('POST /archive/all', () => {
+    const { archiveAllConvos } = require('~/models');
+
+    it('delegates archive-all requests through the package API handler', async () => {
+      archiveAllConvos.mockResolvedValue({ archivedCount: 4 });
+
+      const response = await request(app).post('/api/convos/archive/all');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ archivedCount: 4 });
+      expect(archiveAllHandler).toHaveBeenCalledTimes(1);
+      expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
+    });
+  });
+
   describe('POST /convos/pin', () => {
     const mockConversationId = 'conv-123';
+    const { setConvoPinned } = require('~/models');
 
     it('should pin a conversation', async () => {
       const mockPinnedConvo = { conversationId: mockConversationId, pinned: true };
-      saveConvo.mockResolvedValue(mockPinnedConvo);
+      setConvoPinned.mockResolvedValue(mockPinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockPinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockPinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: true },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, true);
     });
 
     it('should unpin a conversation', async () => {
       const mockUnpinnedConvo = { conversationId: mockConversationId, pinned: false };
-      saveConvo.mockResolvedValue(mockUnpinnedConvo);
+      setConvoPinned.mockResolvedValue(mockUnpinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockUnpinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnpinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: false },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, false);
+    });
+
+    /** A pin is one boolean: it must not drag in `saveConvo`'s message-id refresh
+     * and project-stats recompute, which cost an extra read and a large write. */
+    it('does not route a pin through the full conversation save', async () => {
+      setConvoPinned.mockResolvedValue({ conversationId: mockConversationId, pinned: true });
+
+      await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: true } });
+
+      expect(setConvoPinned).toHaveBeenCalledTimes(1);
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the conversation does not exist', async () => {
+      setConvoPinned.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: 'missing-convo', pinned: true } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
     });
 
     it('should return 400 when conversationId is missing', async () => {
@@ -617,7 +1075,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is not a boolean', async () => {
@@ -627,7 +1085,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned must be a boolean' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is missing', async () => {
@@ -637,11 +1095,11 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
-    it('should return 500 when saveConvo fails', async () => {
-      saveConvo.mockRejectedValue(new Error('Database error'));
+    it('should return 500 when the pin update fails', async () => {
+      setConvoPinned.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app)
         .post('/api/convos/pin')

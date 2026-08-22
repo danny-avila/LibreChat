@@ -150,7 +150,9 @@ describe('RedisEventTransport Integration Tests', () => {
         expect(replacement.createdAt).toBe(terminalJob.createdAt + 1);
 
         // A live replacement must reject the predecessor's delayed terminal event.
-        await transport.emitDone(streamId, { final: true, stale: true }, terminalJob.createdAt);
+        await expect(
+          transport.emitDone(streamId, { final: true, stale: true }, terminalJob.createdAt),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(received).toEqual([finalEvent]);
 
@@ -165,11 +167,13 @@ describe('RedisEventTransport Integration Tests', () => {
           }),
         ).resolves.toBe(true);
         await expect(store.getJob(streamId)).resolves.toBeNull();
-        await transport.emitDone(
-          streamId,
-          { final: true, staleAfterReplacement: true },
-          terminalJob.createdAt,
-        );
+        await expect(
+          transport.emitDone(
+            streamId,
+            { final: true, staleAfterReplacement: true },
+            terminalJob.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(received).toEqual([finalEvent]);
 
@@ -310,11 +314,13 @@ describe('RedisEventTransport Integration Tests', () => {
           }
         })();
         expect(claimedReplacement.createdAt).toBe(claimFirstLegacy.createdAt + 1);
-        await transport.emitError(
-          claimBeforeCreateId,
-          'stale after replacement',
-          claimFirstLegacy.createdAt,
-        );
+        await expect(
+          transport.emitError(
+            claimBeforeCreateId,
+            'stale after replacement',
+            claimFirstLegacy.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(claimedEvents).toEqual(['legacy claim won']);
 
@@ -340,18 +346,22 @@ describe('RedisEventTransport Integration Tests', () => {
           }
         })();
         expect(createFirstReplacement.createdAt).toBe(createFirstLegacy.createdAt + 1000);
-        await transport.emitError(
-          createBeforeClaimId,
-          'legacy claim lost',
-          createFirstLegacy.createdAt,
-        );
+        await expect(
+          transport.emitError(
+            createBeforeClaimId,
+            'legacy claim lost',
+            createFirstLegacy.createdAt,
+          ),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(createFirstEvents).toEqual([]);
 
         // With two unknowable pre-marker epochs and no live hash, Redis ordering
         // gives the marker to the first claimant and rejects the differing second.
         await transport.emitError(competingClaimsId, 'first claimant', 100);
-        await transport.emitError(competingClaimsId, 'second claimant', 200);
+        await expect(
+          transport.emitError(competingClaimsId, 'second claimant', 200),
+        ).rejects.toThrow('fenced by a replacement');
         await new Promise((resolve) => setTimeout(resolve, 100));
         expect(competingEvents).toEqual(['first claimant']);
         await expect(
@@ -1458,9 +1468,9 @@ describe('RedisEventTransport Integration Tests', () => {
       // Public callers retain Promise<void>; the internal manager capability receives failure
       // without creating an unhandled rejection.
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
-      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
-        false,
-      );
+      await expect(
+        emitChunkWithReceipt(transport, streamId, { data: 'test' }),
+      ).resolves.toBeUndefined();
 
       transport.destroy();
     });
@@ -1485,9 +1495,9 @@ describe('RedisEventTransport Integration Tests', () => {
       const streamId = `error-prop-incr-${Date.now()}`;
 
       await expect(transport.emitChunk(streamId, { data: 'test' })).resolves.toBeUndefined();
-      await expect(emitChunkWithReceipt(transport, streamId, { data: 'test' })).resolves.toBe(
-        false,
-      );
+      await expect(
+        emitChunkWithReceipt(transport, streamId, { data: 'test' }),
+      ).resolves.toBeUndefined();
       expect(mockPublisher.publish).not.toHaveBeenCalled();
 
       transport.destroy();

@@ -470,6 +470,36 @@ describe('getMultiplier', () => {
     }
   });
 
+  it('should use the documented gpt-5.6 pricing', () => {
+    const expectedPricing = {
+      'gpt-5.6': {
+        standard: { prompt: 5, completion: 30 },
+        cache: { write: 6.25, read: 0.5 },
+        premium: { threshold: 272000, prompt: 10, completion: 45 },
+        premiumCache: { threshold: 272000, write: 12.5, read: 1 },
+      },
+      'gpt-5.6-terra': {
+        standard: { prompt: 2, completion: 12 },
+        cache: { write: 2.5, read: 0.2 },
+        premium: { threshold: 272000, prompt: 4, completion: 18 },
+        premiumCache: { threshold: 272000, write: 5, read: 0.4 },
+      },
+      'gpt-5.6-luna': {
+        standard: { prompt: 0.2, completion: 1.2 },
+        cache: { write: 0.25, read: 0.02 },
+        premium: { threshold: 272000, prompt: 0.4, completion: 1.8 },
+        premiumCache: { threshold: 272000, write: 0.5, read: 0.04 },
+      },
+    };
+
+    for (const [model, pricing] of Object.entries(expectedPricing)) {
+      expect(tokenValues[model]).toEqual(pricing.standard);
+      expect(cacheTokenValues[model]).toEqual(pricing.cache);
+      expect(premiumTokenValues[model]).toEqual(pricing.premium);
+      expect(premiumCacheTokenValues[model]).toEqual(pricing.premiumCache);
+    }
+  });
+
   it('should return the correct multiplier for gpt-4o', () => {
     const valueKey = getValueKey('gpt-4o-2024-08-06');
     expect(getMultiplier({ valueKey, tokenType: 'prompt' })).toBe(tokenValues['gpt-4o'].prompt);
@@ -1526,6 +1556,7 @@ describe('Google Model Tests', () => {
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemini-3.1-flash-lite-preview',
+    'gemini-3.7-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
@@ -1576,6 +1607,7 @@ describe('Google Model Tests', () => {
       'gemini-3.1-pro-preview': 'gemini-3.1',
       'gemini-3.1-pro-preview-customtools': 'gemini-3.1',
       'gemini-3.1-flash-lite-preview': 'gemini-3.1-flash-lite',
+      'gemini-3.7-flash': 'gemini-3.7-flash',
       'gemini-3.6-flash': 'gemini-3.6-flash',
       'gemini-3.5-flash': 'gemini-3.5-flash',
       'gemini-3.5-flash-lite': 'gemini-3.5-flash-lite',
@@ -1711,6 +1743,35 @@ describe('Google Model Tests', () => {
     expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
       cacheTokenValues['gemini-3.6-flash'].read,
     );
+  });
+
+  it('should return correct rates for Gemini 3.7 Flash', () => {
+    const model = 'gemini-3.7-flash';
+    expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.7-flash'].prompt,
+    );
+    expect(getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google })).toBe(
+      tokenValues['gemini-3.7-flash'].completion,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(
+      cacheTokenValues['gemini-3.7-flash'].write,
+    );
+    expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(
+      cacheTokenValues['gemini-3.7-flash'].read,
+    );
+  });
+
+  it('should apply the introductory Flash rates to Gemini 3.6 and 3.7 Flash', () => {
+    for (const model of ['gemini-3.6-flash', 'gemini-3.7-flash']) {
+      expect(getMultiplier({ model, tokenType: 'prompt', endpoint: EModelEndpoint.google })).toBe(
+        0.75,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', endpoint: EModelEndpoint.google }),
+      ).toBe(3.75);
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(0.75);
+      expect(getCacheMultiplier({ model, cacheType: 'read' })).toBe(0.075);
+    }
   });
 
   it('should return correct rates for Gemini 3.5 Flash-Lite', () => {
@@ -2823,8 +2884,8 @@ describe('GPT-5.6 Long-Context Premium Pricing', () => {
       const premiumEntry = premiumTokenValues[model];
       expect(premiumEntry).toBeDefined();
       expect(premiumEntry.threshold).toBe(272000);
-      expect(premiumEntry.prompt).toBe(tokenValues[model].prompt * 2);
-      expect(premiumEntry.completion).toBe(tokenValues[model].completion * 1.5);
+      expect(premiumEntry.prompt).toBeCloseTo(tokenValues[model].prompt * 2);
+      expect(premiumEntry.completion).toBeCloseTo(tokenValues[model].completion * 1.5);
     }
   });
 
@@ -2881,6 +2942,110 @@ describe('Long-Context Premium Cache Pricing', () => {
         getCacheMultiplier({ model, cacheType: 'read' }),
       );
     }
+  });
+});
+
+describe('Newer model pricing', () => {
+  const newlyPriced = [
+    'llama4-scout',
+    'llama-4-maverick',
+    'muse-spark-1.1',
+    'musespark',
+    'muse-glimmer-30b',
+    'deepseek-v4-flash',
+    'deepseek-v4-pro',
+    'kimi-k3',
+    'glm-4.7',
+    'glm-4.7-flash',
+    'glm-5.1',
+    'glm-5.2',
+    'grok-4.5',
+    'grok-4.6',
+    'ministral-8b-2512',
+    'ministral-14b-2512',
+    'nova-2-lite',
+    'command-a',
+    'minimax-m2.7',
+    'minimax-m3',
+    'qwen3-coder-next',
+  ];
+
+  it.each(newlyPriced)('bills %s at its own rate rather than the default', (model) => {
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    expect(getMultiplier({ model, tokenType: 'completion' })).toBe(tokenValues[model].completion);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).not.toBe(defaultRate);
+  });
+
+  it('keeps the preceding generation on its own rate', () => {
+    for (const model of [
+      'grok-4',
+      'grok-4-fast',
+      'ministral-8b',
+      'qwen3-coder',
+      'command-r-plus',
+    ]) {
+      expect(getValueKey(model)).toBe(model);
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    }
+  });
+
+  it('resolves dated and vendor-prefixed variants to the same rate', () => {
+    expect(getMultiplier({ model: 'moonshotai/kimi-k3', tokenType: 'completion' })).toBe(
+      tokenValues['kimi-k3'].completion,
+    );
+    expect(getMultiplier({ model: 'x-ai/grok-4-6', tokenType: 'prompt' })).toBe(
+      tokenValues['grok-4-6'].prompt,
+    );
+    expect(getMultiplier({ model: 'command-a-plus-05-2026', tokenType: 'prompt' })).toBe(
+      tokenValues['command-a'].prompt,
+    );
+  });
+});
+
+describe('dot-prefixed Kimi K3 aliases', () => {
+  it('bills both bedrock forms at the K3 rate rather than an older Kimi row', () => {
+    for (const model of ['moonshot.kimi-k3', 'moonshotai.kimi-k3']) {
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k3'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot.kimi'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot'].completion,
+      );
+    }
+  });
+});
+
+describe('Grok long-context premium tier', () => {
+  it('doubles the rate once a prompt passes the 200K threshold', () => {
+    for (const model of ['grok-4.5', 'grok-4.6']) {
+      const { threshold } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        premiumTokenValues[model].prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(premiumTokenValues[model].completion);
+    }
+  });
+});
+
+describe('vendor-prefixed pricing keys', () => {
+  it('prices the model segment rather than the vendor prefix', () => {
+    expect(getValueKey('moonshotai/kimi-k2')).toBe('kimi-k2');
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).toBe(
+      tokenValues['kimi-k2'].prompt,
+    );
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).not.toBe(
+      tokenValues['moonshot'].prompt,
+    );
   });
 });
 

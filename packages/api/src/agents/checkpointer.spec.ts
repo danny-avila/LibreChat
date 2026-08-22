@@ -77,4 +77,15 @@ describe('deleteAgentCheckpoint', () => {
       checkpointIds: [],
     });
   });
+
+  test('normalizes an explicit empty namespace to a thread-wide legacy capture', async () => {
+    await expect(
+      captureAgentCheckpointGeneration('conversation-1', undefined, {
+        checkpointNamespace: '',
+      }),
+    ).resolves.toEqual({
+      threadId: 'conversation-1',
+      checkpointIds: [],
+    });
+  });
 });
