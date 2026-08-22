@@ -1,4 +1,6 @@
 export * from './dispatch';
+export * from './bindings';
+export * from './bindingResolver';
 export * from './delivery';
 export * from './envelope';
 export * from './host';

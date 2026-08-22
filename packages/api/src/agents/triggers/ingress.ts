@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
 import type {
   AgentFireTarget,
+  AgentContinueTarget,
   AgentSteerTarget,
   AgentTriggerEvent,
   AgentTriggerMode,
@@ -28,12 +29,13 @@ interface AgentTriggerIngressRequest extends Request {
   apiKeyId?: { toString(): string } | string;
   requestId?: string;
   user?: AgentTriggerIngressUser;
+  _agentEventBindingResolved?: boolean;
 }
 
 interface AgentTriggerIngressBody {
   mode?: AgentTriggerMode;
   event?: AgentTriggerEvent;
-  target?: AgentFireTarget | AgentSteerTarget;
+  target?: AgentContinueTarget | AgentFireTarget | AgentSteerTarget;
   input?: string;
   orderingKey?: string;
 }
@@ -216,18 +218,31 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
         },
         input: body.input as string,
       };
-      const envelope =
-        body.mode === 'fire'
-          ? createAgentTriggerEnvelope({
-              ...common,
-              mode: body.mode,
-              target: body.target as AgentFireTarget,
-            })
-          : createAgentTriggerEnvelope({
-              ...common,
-              mode: body.mode as 'steer',
-              target: body.target as AgentSteerTarget,
-            });
+      if (body.mode === 'continue' && req._agentEventBindingResolved !== true) {
+        throw new AgentTriggerIngressError(
+          'Continue events require an authenticated agent-event binding',
+        );
+      }
+      let envelope;
+      if (body.mode === 'fire') {
+        envelope = createAgentTriggerEnvelope({
+          ...common,
+          mode: 'fire',
+          target: body.target as AgentFireTarget,
+        });
+      } else if (body.mode === 'continue') {
+        envelope = createAgentTriggerEnvelope({
+          ...common,
+          mode: 'continue',
+          target: body.target as AgentContinueTarget,
+        });
+      } else {
+        envelope = createAgentTriggerEnvelope({
+          ...common,
+          mode: 'steer',
+          target: body.target as AgentSteerTarget,
+        });
+      }
       const receipt = await deps.enqueue(envelope, enqueueOptions(body));
 
       logger.info('[agent-trigger-ingress] delivery accepted', {

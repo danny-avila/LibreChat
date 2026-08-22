@@ -4,5 +4,6 @@ const db = require('~/models');
 
 module.exports = createSubagentThreadTurnGuard({
   getConvo: db.getConvo,
+  getEventBinding: db.getAgentEventBinding,
   store: subagentThreadTaskStore,
 });

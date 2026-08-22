@@ -46,20 +46,31 @@ function makeStore(): SubagentThreadTaskStore {
   });
 }
 
-function createApp(getConvo: AllMethods['getConvo'], store: SubagentThreadTaskStore) {
+function createApp(
+  getConvo: AllMethods['getConvo'],
+  store: SubagentThreadTaskStore,
+  getEventBinding?: AllMethods['getAgentEventBinding'],
+) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = { id: 'user-1', tenantId: 'tenant-1' };
+    (req as typeof req & { _isAgentTrigger?: boolean })._isAgentTrigger =
+      req.get('x-test-trigger') === '1';
     next();
   });
-  app.post('/chat', createSubagentThreadTurnGuard({ getConvo, store }), (req, res) => {
-    res.json({
-      ok: true,
-      resolvedConversationId: (req as typeof req & { resolvedConversation?: IConversation | null })
-        .resolvedConversation?.conversationId,
-    });
-  });
+  app.post(
+    '/chat',
+    createSubagentThreadTurnGuard({ getConvo, store, getEventBinding }),
+    (req, res) => {
+      res.json({
+        ok: true,
+        resolvedConversationId: (
+          req as typeof req & { resolvedConversation?: IConversation | null }
+        ).resolvedConversation?.conversationId,
+      });
+    },
+  );
   return app;
 }
 
@@ -96,6 +107,40 @@ describe('subagent child-thread write policy', () => {
 
     expect(response.status).toBe(409);
     expect(response.body).toEqual({ error: CHILD_THREAD_READ_ONLY_ERROR });
+  });
+
+  it('allows only the authenticated trigger bound to this child conversation', async () => {
+    const store = makeStore();
+    const getEventBinding = jest.fn(async () => ({
+      conversationId: 'child-conversation',
+      agentId: 'child-agent',
+      binding: {
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+      lineage: childConversation().subagentThread!,
+    }));
+    const app = createApp(
+      jest.fn().mockResolvedValue(childConversation()),
+      store,
+      getEventBinding as AllMethods['getAgentEventBinding'],
+    );
+
+    const response = await request(app)
+      .post('/chat')
+      .set('x-test-trigger', '1')
+      .set('x-lc-agent-event-binding', `evtbind_${'a'.repeat(48)}`)
+      .set('x-lc-agent-event-source-key', 'source-key')
+      .send({ conversationId: 'child-conversation' });
+
+    expect(response.status).toBe(200);
+    expect(getEventBinding).toHaveBeenCalledWith({
+      user: 'user-1',
+      tenantId: 'tenant-1',
+      bindingId: `evtbind_${'a'.repeat(48)}`,
+      sourceKeyId: 'source-key',
+    });
   });
 
   it('rejects a provisional child before its conversation becomes durable', async () => {

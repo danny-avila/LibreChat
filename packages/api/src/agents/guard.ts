@@ -20,6 +20,7 @@ interface SubagentTurnUser {
 
 export interface SubagentThreadWriteGuardDeps {
   getConvo: ConversationMethods['getConvo'];
+  getEventBinding?: ConversationMethods['getAgentEventBinding'];
   store: SubagentThreadTaskStore;
 }
 
@@ -36,6 +37,29 @@ interface SubagentThreadWriteResolution {
 
 interface ResolvedConversationRequest extends Request {
   resolvedConversation?: IConversation | null;
+  _isAgentTrigger?: boolean;
+}
+
+async function isBoundEventContinuation(
+  deps: SubagentThreadWriteGuardDeps,
+  request: ResolvedConversationRequest,
+  target: SubagentThreadWriteTarget,
+): Promise<boolean> {
+  if (request._isAgentTrigger !== true || deps.getEventBinding == null) {
+    return false;
+  }
+  const bindingId = request.get('x-lc-agent-event-binding');
+  const sourceKeyId = request.get('x-lc-agent-event-source-key');
+  if (bindingId == null || sourceKeyId == null) {
+    return false;
+  }
+  const binding = await deps.getEventBinding({
+    user: target.userId,
+    bindingId,
+    sourceKeyId,
+    ...(target.tenantId == null ? {} : { tenantId: target.tenantId }),
+  });
+  return binding?.conversationId === target.conversationId;
 }
 
 async function resolveSubagentThreadWrite(
@@ -94,7 +118,14 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
       if (resolved.conversation !== undefined) {
         (request as ResolvedConversationRequest).resolvedConversation = resolved.conversation;
       }
-      if (!resolved.blocked) {
+      if (
+        !resolved.blocked ||
+        (await isBoundEventContinuation(deps, request as ResolvedConversationRequest, {
+          userId,
+          conversationId: candidateConversationId,
+          ...(tenantId == null ? {} : { tenantId }),
+        }))
+      ) {
         next();
         return;
       }

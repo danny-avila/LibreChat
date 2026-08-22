@@ -3494,6 +3494,61 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('resolves an event binding only through its owner, tenant, and API key', async () => {
+      const conversationId = uuidv4();
+      const bindingId = `evtbind_${'a'.repeat(48)}`;
+      await Conversation.create({
+        conversationId,
+        user: 'binding-user',
+        tenantId: 'tenant-a',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toMatchObject({
+        conversationId,
+        agentId: 'agent-player',
+        binding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+      });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-b',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-b',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('binding-user', conversationId)).not.toHaveProperty(
+        'agentEventBinding',
+      );
+    });
+
     it('admits one cross-replica owner and fences renewal and release by token', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

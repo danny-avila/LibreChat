@@ -575,6 +575,31 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
+  it('carries server-resolved binding identity only on bound child continuations', async () => {
+    const base = createContinueEnvelope();
+    const envelope = {
+      ...base,
+      target: {
+        ...base.target,
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+    };
+    const fetcher = fetchMock(async () =>
+      response({
+        streamId: 'conversation-1',
+        conversationId: 'conversation-1',
+        status: 'started',
+      }),
+    );
+
+    await createAgentTriggerExecutionHost(deps(fetcher)).dispatch(envelope);
+
+    const headers = fetcher.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers['x-lc-agent-event-binding']).toBe(`evtbind_${'a'.repeat(48)}`);
+    expect(headers['x-lc-agent-event-source-key']).toBe('source-key');
+  });
+
   it('retries without consuming the logical delivery when the parent is not settled', async () => {
     expect.hasAssertions();
     const host = createAgentTriggerExecutionHost(

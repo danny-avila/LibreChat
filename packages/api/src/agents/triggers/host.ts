@@ -590,6 +590,12 @@ async function startRun(
           'User-Agent': TRIGGER_USER_AGENT,
           'x-lc-agent-trigger': '1',
           'x-request-id': context.idempotencyKey,
+          ...(envelope.mode === 'continue' && envelope.target.bindingId != null
+            ? {
+                'x-lc-agent-event-binding': envelope.target.bindingId,
+                'x-lc-agent-event-source-key': envelope.target.sourceKeyId!,
+              }
+            : {}),
           [GENERATION_PROTOCOL_HEADER]: '2',
         },
         body: JSON.stringify({

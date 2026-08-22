@@ -2,6 +2,7 @@ import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type {
+  IAgentEventBindingRecord,
   AppConfig,
   IChatProjectDocument,
   IActiveSubagentThreadLease,
@@ -167,6 +168,12 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
   }): Promise<SubagentThreadReadRecord | null>;
+  getAgentEventBinding(input: {
+    user: string;
+    bindingId: string;
+    sourceKeyId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventBindingRecord | null>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -297,6 +304,38 @@ export function createConversationMethods(
     }
   }
 
+  /** Resolves an event target only when the API key, owner, and tenant all match. */
+  async function getAgentEventBinding(input: {
+    user: string;
+    bindingId: string;
+    sourceKeyId: string;
+    tenantId?: string;
+  }): Promise<IAgentEventBindingRecord | null> {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const conversation = await Conversation.findOne({
+      user: input.user,
+      'agentEventBinding.bindingId': input.bindingId,
+      'agentEventBinding.sourceKeyId': input.sourceKeyId,
+      ...subagentLeaseTenantFilter(input.tenantId),
+    })
+      .select('conversationId agent_id tenantId subagentThread +agentEventBinding')
+      .lean<IConversation>();
+    if (
+      conversation?.agentEventBinding == null ||
+      conversation.subagentThread == null ||
+      typeof conversation.agent_id !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      conversationId: conversation.conversationId,
+      agentId: conversation.agent_id,
+      ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
+      binding: conversation.agentEventBinding,
+      lineage: conversation.subagentThread,
+    };
+  }
+
   /** Creates immutable child lineage exactly once without overwriting a concurrent winner. */
   async function reserveSubagentThread(input: {
     user: string;
@@ -322,7 +361,7 @@ export function createConversationMethods(
           },
         },
         { new: true, upsert: true, includeResultMetadata: true, setDefaultsOnInsert: true },
-      )) as unknown as ConversationUpdateResult;
+      ).select('+agentEventBinding')) as unknown as ConversationUpdateResult;
       if (result.value == null) {
         throw new Error('Unable to reserve the subagent thread.');
       }
@@ -334,7 +373,9 @@ export function createConversationMethods(
       /** Concurrent upserts can race at the unique index. The document that won is
        * the reservation; callers still validate its immutable lineage before use. */
       if ((error as { code?: number }).code === 11000) {
-        const existing = await Conversation.findOne(filter).lean<IConversation>();
+        const existing = await Conversation.findOne(filter)
+          .select('+agentEventBinding')
+          .lean<IConversation>();
         if (existing != null) {
           return { conversation: existing, created: false };
         }
@@ -1617,6 +1658,7 @@ export function createConversationMethods(
     getConvosQueried,
     getConvo,
     getSubagentThreadForParent,
+    getAgentEventBinding,
     reserveSubagentThread,
     acquireSubagentThreadLease,
     renewSubagentThreadLease,
