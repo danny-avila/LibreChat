@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -89,7 +90,17 @@ export const useUpdatePinnedOrderMutation = () => {
    * before the user query resolves, so ownership is known from the first
    * authenticated render rather than only once that fetch lands. */
   const user = useRecoilValue(store.user);
-  signedInUserId = user?.id;
+  const observedUserId = user?.id;
+  useEffect(() => {
+    signedInUserId = observedUserId;
+    /* This hook lives in a section the sidebar unmounts during a search, and it
+     * is the only thing feeding the tracker. A value left behind would go stale
+     * across a session change and, being non-null, would also shadow the cache
+     * fallback, so an unverifiable owner refuses the write instead. */
+    return () => {
+      signedInUserId = undefined;
+    };
+  }, [observedUserId]);
 
   return useMutation(
     /* Two drags completed inside one round trip would otherwise race, and the

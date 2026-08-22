@@ -267,10 +267,11 @@ const PinnedSection = ({
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
   const { data: activeJobsData } = useActiveJobs();
   const favoritesData = useFavoritesData();
-  /* `isFetched` gates every write: merging against `??  []` before the stored
-   * order arrives, then cancelling that GET in `onMutate`, would post only the
-   * visible keys and discard saved positions for good. */
-  const { data: storedOrder, isFetched: orderLoaded } = useGetPinnedOrderQuery();
+  /* Gated on success, not on the fetch having been attempted: a failed GET
+   * still reports as fetched while leaving the order undefined, and merging
+   * against that `?? []` then cancelling the retry would post only the visible
+   * keys and discard saved positions for good. */
+  const { data: storedOrder, isSuccess: orderLoaded } = useGetPinnedOrderQuery();
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
   const { showToast } = useToastContext();
@@ -573,6 +574,10 @@ const PinnedSection = ({
       ref={setSectionRef}
       className="flex flex-col px-3 text-sm"
       role="region"
+      /** The focus handoff after an unpin must act only on rows in this list:
+       *  `ConversationsSection` is also a labelled region and an ancestor of
+       *  the project rows, which render the same `Convo` and survive unpinning. */
+      data-pinned-section=""
       aria-label={localize('com_ui_pinned')}
     >
       <div

@@ -37,7 +37,7 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/data-provider', () => ({
   useActiveJobs: () => ({ data: undefined }),
-  useGetPinnedOrderQuery: () => ({ data: mockPinnedOrder, isFetched: mockOrderFetched }),
+  useGetPinnedOrderQuery: () => ({ data: mockPinnedOrder, isSuccess: mockOrderFetched }),
   useUpdatePinnedOrderMutation: () => ({ mutate: mockUpdatePinnedOrder }),
   usePinConversationMutation: () => ({ mutate: jest.fn() }),
 }));
@@ -203,7 +203,8 @@ describe('PinnedSection unified list', () => {
     /* Reordering against an order that has not arrived yet would merge into
      * `[]` and, since `onMutate` cancels that GET, post only what is on screen,
      * discarding the saved positions of everything else. */
-    it('refuses to reorder before the stored order has loaded', () => {
+    /* A failed GET still reports as fetched, so the gate is on success. */
+    it('refuses to reorder until the stored order was fetched successfully', () => {
       mockOrderFetched = false;
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       renderSection([pinnedConvo('c1', 'Pinned Chat')]);

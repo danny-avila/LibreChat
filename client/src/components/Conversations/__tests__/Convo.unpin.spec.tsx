@@ -83,7 +83,7 @@ const pinned = (id: string, title: string) =>
 const renderPinnedSection = (conversations: TConversation[]) =>
   render(
     <DndProvider backend={HTML5Backend}>
-      <div role="region" aria-label="com_ui_pinned">
+      <div role="region" data-pinned-section="" aria-label="com_ui_pinned">
         {conversations.map((conversation) => (
           <Conversation
             key={conversation.conversationId}
@@ -169,5 +169,35 @@ describe('pinned conversation row unpin', () => {
     });
 
     expect(document.activeElement).not.toBe(screen.getByLabelText('open Second'));
+  });
+
+  it('leaves focus alone for a row outside the pinned section', () => {
+    /* The same row renders inside an expanded project, where unpinning only
+     * clears the flag and the row stays put, so focus must stay with it. */
+    render(
+      <DndProvider backend={HTML5Backend}>
+        <div role="region" aria-label="chats">
+          <Conversation
+            conversation={pinned('c1', 'Project Chat')}
+            retainView={jest.fn()}
+            toggleNav={jest.fn()}
+          />
+          <Conversation
+            conversation={pinned('c2', 'Other')}
+            retainView={jest.fn()}
+            toggleNav={jest.fn()}
+          />
+        </div>
+      </DndProvider>,
+    );
+
+    const button = screen.getAllByTestId('convo-unpin-button')[0];
+    button.focus();
+    fireEvent.click(button);
+    act(() => {
+      pinCalls[0].options?.onSuccess?.();
+    });
+
+    expect(document.activeElement).toBe(button);
   });
 });
