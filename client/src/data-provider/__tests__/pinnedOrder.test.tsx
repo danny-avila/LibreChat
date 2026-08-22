@@ -1,0 +1,137 @@
+import { createElement } from 'react';
+import { dataService, QueryKeys } from 'librechat-data-provider';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+import { useUpdatePinnedOrderMutation } from '../Favorites';
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getPinnedOrder: jest.fn(),
+      updatePinnedOrder: jest.fn(),
+    },
+  };
+});
+
+const updatePinnedOrder = dataService.updatePinnedOrder as jest.MockedFunction<
+  typeof dataService.updatePinnedOrder
+>;
+const getPinnedOrder = dataService.getPinnedOrder as jest.MockedFunction<
+  typeof dataService.getPinnedOrder
+>;
+
+/** Resolves/rejects on command so two writes can be held in flight at once. */
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
+const setup = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client: queryClient }, children);
+  const { result } = renderHook(() => useUpdatePinnedOrderMutation(), { wrapper });
+  return { queryClient, result };
+};
+
+const cached = (queryClient: QueryClient) =>
+  queryClient.getQueryData<string[]>([QueryKeys.pinnedOrder]);
+
+describe('useUpdatePinnedOrderMutation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    getPinnedOrder.mockResolvedValue(['a', 'b', 'c']);
+  });
+
+  it('serializes writes so the server sees them in the order they were made', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { result } = setup();
+
+    /* `onMutate` awaits `cancelQueries`, so the request leaves in a microtask
+     * rather than inside the `mutate` call itself. */
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    await act(async () => {
+      result.current.mutate(['c', 'b', 'a']);
+    });
+
+    /* The second request must not be issued until the first settles, or the
+     * server keeps whichever response happens to land last. */
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+    });
+
+    await waitFor(() => expect(updatePinnedOrder).toHaveBeenCalledTimes(2));
+    expect(updatePinnedOrder.mock.calls[0][0]).toEqual(['b', 'a', 'c']);
+    expect(updatePinnedOrder.mock.calls[1][0]).toEqual(['c', 'b', 'a']);
+  });
+
+  it('leaves a newer pending order alone when an earlier write fails', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.pinnedOrder], ['a', 'b', 'c']);
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    await act(async () => {
+      result.current.mutate(['c', 'b', 'a']);
+    });
+    expect(cached(queryClient)).toEqual(['c', 'b', 'a']);
+
+    await act(async () => {
+      first.reject(new Error('nope'));
+      await first.promise.catch(() => undefined);
+    });
+
+    /* Rolling back here would put the pre-first-drag order on screen while the
+     * second drag is still in flight and about to be stored. */
+    await waitFor(() => expect(cached(queryClient)).toEqual(['c', 'b', 'a']));
+  });
+
+  it('takes the order the server confirms for the newest write', async () => {
+    updatePinnedOrder.mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { queryClient, result } = setup();
+
+    await act(async () => {
+      await result.current.mutateAsync(['c', 'b', 'a']);
+    });
+
+    expect(cached(queryClient)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('discards the optimistic order when the newest write fails', async () => {
+    updatePinnedOrder.mockRejectedValueOnce(new Error('rejected'));
+
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.pinnedOrder], ['a', 'b', 'c']);
+
+    await act(async () => {
+      await result.current.mutateAsync(['b', 'a', 'c']).catch(() => undefined);
+    });
+
+    /* The optimistic value was never accepted, so it must not survive as though
+     * it had been. Every automatic refetch trigger is off on this query, so
+     * leaving it cached would pass it off as server data all session. */
+    await waitFor(() => expect(cached(queryClient)).toBeUndefined());
+  });
+});

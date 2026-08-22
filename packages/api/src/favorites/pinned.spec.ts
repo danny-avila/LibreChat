@@ -134,39 +134,43 @@ describe('createPinnedOrderHandlers', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    /* A model favorite keys as `model:${endpoint}::${model}` and the favorites
-     * endpoint accepts 256 characters for each half, so the longest key a valid
-     * favorite can produce has to survive this validator. */
+    /* A model favorite keys as `model:${endpoint.length}:${endpoint}:${model}`
+     * and the favorites endpoint accepts 256 characters for each half, so the
+     * longest key a valid favorite can produce has to survive this validator. */
     it('accepts the longest key a valid model favorite can produce', async () => {
       const { handlers } = setup();
       const res = makeRes();
-      const longest = `model:${'e'.repeat(256)}::${'m'.repeat(256)}`;
-      expect(longest.length).toBe(520);
+      const endpoint = 'e'.repeat(256);
+      const longest = `model:${endpoint.length}:${endpoint}:${'m'.repeat(256)}`;
+      expect(longest.length).toBeLessThanOrEqual(560);
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: [longest] }), res);
       expect(res.statusCode).toBe(200);
     });
 
-    it('rejects a key past the cap', async () => {
+    it('rejects a key past the per-key cap', async () => {
       const { handlers } = setup();
       const res = makeRes();
-      await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['x'.repeat(521)] }), res);
+      await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['x'.repeat(561)] }), res);
       expect(res.statusCode).toBe(400);
     });
 
-    /* Conversation pinning has no membership cap, so the entry limit only has
-     * to stay above any list the sidebar can realistically show. */
-    it('accepts an order far larger than the favorites cap', async () => {
-      const { handlers } = setup();
+    /* Pinning has no membership cap and the sidebar query drains every cursor,
+     * so any count limit would reject a legitimate list. Only the size of the
+     * document being written is bounded. */
+    it('accepts an order with more entries than any count cap would allow', async () => {
+      const { handlers, stored } = setup();
       const res = makeRes();
-      const order = Array.from({ length: 1000 }, (_, index) => `convo:${index}`);
+      const order = Array.from({ length: 5000 }, (_, index) => `convo:${index}`);
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: order }), res);
       expect(res.statusCode).toBe(200);
+      expect(stored['user-1']).toHaveLength(5000);
     });
 
-    it('rejects an order past the entry cap', async () => {
+    it('rejects a payload past the total size guard', async () => {
       const { handlers } = setup();
       const res = makeRes();
-      const order = Array.from({ length: 1001 }, (_, index) => `convo:${index}`);
+      /* 512 keys of 512 bytes each is 256KB, one past the budget. */
+      const order = Array.from({ length: 600 }, (_, index) => `convo:${index}:${'x'.repeat(500)}`);
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: order }), res);
       expect(res.statusCode).toBe(400);
     });

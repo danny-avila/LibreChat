@@ -33,6 +33,11 @@ const PINNED_ROW_ACCEPTS = [CONVERSATION_DRAG_TYPE, FAVORITE_ROW_DRAG_TYPE];
 
 const noop = () => {};
 
+/** A key identifies a row everywhere in this section, so the encoding has to be
+ *  injective. The favorites API accepts any string for an endpoint or a model,
+ *  so a plain `endpoint::model` join collides: `a::b` + `c` and `a` + `b::c`
+ *  both read back as `a::b::c`, and the dedupe below would then hide one of two
+ *  distinct favorites. Length-prefixing the endpoint makes the split exact. */
 export const favoriteEntryKey = (favorite: Favorite): string => {
   if (favorite.agentId) {
     return `agent:${favorite.agentId}`;
@@ -40,7 +45,8 @@ export const favoriteEntryKey = (favorite: Favorite): string => {
   if (favorite.spec) {
     return `spec:${favorite.spec}`;
   }
-  return `model:${favorite.endpoint}::${favorite.model}`;
+  const endpoint = favorite.endpoint ?? '';
+  return `model:${endpoint.length}:${endpoint}:${favorite.model ?? ''}`;
 };
 
 const convoEntryKey = (conversationId: string): string => `convo:${conversationId}`;
@@ -444,13 +450,28 @@ const PinnedSection = ({
     const entries = dragEntriesRef.current;
     const visibleKeys = entries.map((entry) => entry.key);
     const nextOrder = isFiltered ? mergeVisibleOrder(storedOrder ?? [], visibleKeys) : visibleKeys;
-    /* The optimistic update rolls back on failure, so a rejected order (the
-     * server caps how many entries it stores) would otherwise snap the row
-     * back with nothing said. */
+    /* The favorites array carries its own copy of the relative order, so other
+     * consumers agree with what the section shows. It is written only once the
+     * order itself is stored: persisting it on a failed write would leave the
+     * two out of sync with each other and with the rolled-back display. */
+    const orderedFavorites = entries
+      .filter((entry) => entry.kind === 'favorite')
+      .map((entry) => (entry as { favorite: Favorite }).favorite);
+    const current = favoritesData.favorites;
+    const favoritesMoved =
+      orderedFavorites.length !== current.length ||
+      orderedFavorites.some((favorite, index) => favorite !== current[index]);
+
     updatePinnedOrder.mutate(nextOrder, {
+      onSuccess: () => {
+        if (favoritesMoved) {
+          favoritesData.reorderFavorites(orderedFavorites, true);
+        }
+      },
+      /* The rejected order rolls back, so the local arrangement will never
+       * converge on it: release it explicitly and say what happened rather than
+       * letting the row snap back unexplained. */
       onError: () => {
-        /* The rollback restores the previous stored order, which the local
-         * arrangement will never converge on, so release it explicitly. */
         setLiveEntries(null);
         showToast({
           message: localize('com_ui_reorder_error'),
@@ -459,18 +480,6 @@ const PinnedSection = ({
         });
       },
     });
-    /* Keep the favorites array itself matching its new relative order, so any
-     * other consumer of favorites agrees with what the section shows. */
-    const orderedFavorites = entries
-      .filter((entry) => entry.kind === 'favorite')
-      .map((entry) => (entry as { favorite: Favorite }).favorite);
-    const current = favoritesData.favorites;
-    const changed =
-      orderedFavorites.length !== current.length ||
-      orderedFavorites.some((favorite, index) => favorite !== current[index]);
-    if (changed) {
-      favoritesData.reorderFavorites(orderedFavorites, true);
-    }
   }, [updatePinnedOrder, favoritesData, isFiltered, storedOrder, showToast, localize]);
 
   /* `moveEntryBy` is declared above `commitOrder` and both are stable across a

@@ -3,15 +3,18 @@ import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 
-/** Storage guard rather than a membership cap: conversation pinning itself is
- *  unbounded, so this only has to stay above any list a sidebar can show. The
- *  client surfaces a rejection instead of silently dropping the new order. */
-const MAX_PINNED_ORDER_ENTRIES = 1000;
+/** Pinning a conversation has no membership cap and the sidebar query drains
+ *  every cursor, so an account can legitimately present any number of keys: a
+ *  count limit would reject a valid sidebar rather than bound anything. What
+ *  needs bounding is the user document this is stored in, so the guard is on
+ *  total size, which only an abusive payload reaches. */
+const MAX_PINNED_ORDER_BYTES = 256 * 1024;
 
 /** The longest key a valid entry can produce is a model favorite's
- *  `model:${endpoint}::${model}`: the favorites endpoint accepts 256 characters
- *  for each half, so 6 + 256 + 2 + 256. */
-const MAX_PINNED_ORDER_KEY_LENGTH = 520;
+ *  `model:${endpoint.length}:${endpoint}:${model}`: the favorites endpoint
+ *  accepts 256 characters for each half, so 6 + 3 + 1 + 256 + 1 + 256, plus
+ *  headroom. */
+const MAX_PINNED_ORDER_KEY_LENGTH = 560;
 
 export interface PinnedOrderHandlersDeps {
   /** User read/write — from `@librechat/data-schemas` `createMethods` output. */
@@ -25,11 +28,7 @@ function validatePinnedOrder(pinnedOrder: unknown, res: Response): string[] | nu
     return null;
   }
 
-  if (pinnedOrder.length > MAX_PINNED_ORDER_ENTRIES) {
-    res.status(400).json({ message: `Maximum ${MAX_PINNED_ORDER_ENTRIES} entries allowed` });
-    return null;
-  }
-
+  let totalBytes = 0;
   for (const key of pinnedOrder) {
     if (typeof key !== 'string' || key.length === 0) {
       res.status(400).json({ message: 'Each pinnedOrder entry must be a non-empty string' });
@@ -39,6 +38,13 @@ function validatePinnedOrder(pinnedOrder: unknown, res: Response): string[] | nu
       res.status(400).json({
         message: `pinnedOrder entry exceeds maximum length of ${MAX_PINNED_ORDER_KEY_LENGTH}`,
       });
+      return null;
+    }
+    totalBytes += Buffer.byteLength(key, 'utf8');
+    if (totalBytes > MAX_PINNED_ORDER_BYTES) {
+      res
+        .status(400)
+        .json({ message: `pinnedOrder exceeds maximum size of ${MAX_PINNED_ORDER_BYTES} bytes` });
       return null;
     }
   }
