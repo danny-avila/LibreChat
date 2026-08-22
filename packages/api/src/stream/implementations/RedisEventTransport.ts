@@ -222,7 +222,7 @@ const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
 /** Durable owner proof outlives receipt retries and process-local subscriptions. */
 const ABORT_ACK_TTL_SECONDS = 86400;
 const PROVIDER_DRAIN_TTL_SECONDS = 86400;
-const SUBSCRIPTION_FRONTIER_TIMEOUT_MS = 3_000;
+const SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS = 3_000;
 
 interface SubscriptionFrontierWaiter {
   streamId: string;
@@ -328,7 +328,7 @@ export class RedisEventTransport implements IEventTransport {
       const timeout = setTimeout(() => {
         this.subscriptionFrontierWaiters.delete(subscriptionFrontierId);
         reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`));
-      }, SUBSCRIPTION_FRONTIER_TIMEOUT_MS);
+      }, SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS);
       timeout.unref?.();
       this.subscriptionFrontierWaiters.set(subscriptionFrontierId, {
         streamId,
@@ -359,7 +359,7 @@ export class RedisEventTransport implements IEventTransport {
       const operationDeadline = new Promise<never>((_, reject) => {
         operationTimeout = setTimeout(
           () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
-          SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
+          SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS,
         );
         operationTimeout.unref?.();
       });
@@ -638,7 +638,24 @@ export class RedisEventTransport implements IEventTransport {
       return existing;
     }
 
-    const ready = this.subscriber.subscribe(channel).then(() => {
+    const operation = this.subscriber.subscribe(channel);
+    const ready = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error(`Timed out synchronizing Redis subscription for ${channel}`)),
+        SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS,
+      );
+      timeout.unref?.();
+      operation.then(
+        () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      );
+    }).then(() => {
       logger.debug(`[RedisEventTransport] Subscription active for channel ${channel}`);
     });
     this.channelSubscriptions.set(channel, ready);
@@ -1167,27 +1184,8 @@ export class RedisEventTransport implements IEventTransport {
     const captureSequenceFrontier =
       options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
     const channelReady = this.ensureChannelSubscription(channel);
-    /** Every local subscriber needs a bounded admission result, including followers that
-     * share the first attachment's in-flight SUBSCRIBE but do not own frontier capture. */
-    const boundedChannelReady = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
-        SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
-      );
-      timeout.unref?.();
-      channelReady.then(
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-      );
-    });
     const attachmentFrontier = captureSequenceFrontier
-      ? boundedChannelReady
+      ? channelReady
           .then(() => {
             if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
             return this.captureSubscriptionFrontier(streamId);
@@ -1199,7 +1197,7 @@ export class RedisEventTransport implements IEventTransport {
             throw error;
           })
       : undefined;
-    const readyPromise = attachmentFrontier?.then(() => undefined) ?? boundedChannelReady;
+    const readyPromise = attachmentFrontier?.then(() => undefined) ?? channelReady;
 
     return {
       ready: readyPromise,

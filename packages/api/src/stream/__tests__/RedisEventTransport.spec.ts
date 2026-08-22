@@ -380,6 +380,7 @@ describe('RedisEventTransport', () => {
         { onChunk: (event) => received.push(event as object) },
         { deferSequenceDelivery: true, captureSequenceFrontier: true },
       );
+      jest.advanceTimersByTime(500);
       const concurrent = transport.subscribe(streamId, { onChunk: jest.fn() });
       deliverSequencedMessage(messageHandler, streamId, {
         type: 'chunk',
@@ -388,15 +389,33 @@ describe('RedisEventTransport', () => {
       });
       expect(received).toEqual([]);
 
-      jest.advanceTimersByTime(3_000);
-      await expect(subscription.ready).rejects.toThrow(
-        'Timed out synchronizing Redis subscription',
+      const readinessFailures = Promise.all([
+        subscription.ready?.then(
+          () => undefined,
+          (error: unknown) => error,
+        ),
+        concurrent.ready?.then(
+          () => undefined,
+          (error: unknown) => error,
+        ),
+      ]);
+      jest.advanceTimersByTime(2_500);
+      const [initiatingFailure, concurrentFailure] = await readinessFailures;
+      expect(initiatingFailure).toEqual(
+        expect.objectContaining({ message: expect.stringContaining('Timed out synchronizing') }),
       );
-      await expect(concurrent.ready).rejects.toThrow('Timed out synchronizing Redis subscription');
+      expect(concurrentFailure).toEqual(
+        expect.objectContaining({ message: expect.stringContaining('Timed out synchronizing') }),
+      );
       expect(received).toEqual([{ index: 0 }]);
+
+      const retry = transport.subscribe(streamId, { onChunk: jest.fn() });
+      await retry.ready;
+      expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
 
       subscription.unsubscribe();
       concurrent.unsubscribe();
+      retry.unsubscribe();
       expect(transport.getSubscriberCount(streamId)).toBe(0);
     } finally {
       transport.destroy();
