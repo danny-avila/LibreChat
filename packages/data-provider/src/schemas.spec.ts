@@ -6,6 +6,7 @@ import {
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
+  tMessageSchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
   eReasoningModeSchema,
@@ -647,5 +648,55 @@ describe('subagentThreadLineageSchema', () => {
     expect(() =>
       subagentThreadLineageSchema.parse({ ...lineage, parentConversationId: '' }),
     ).toThrow();
+  });
+});
+
+describe('tMessageSchema user-submitted provenance', () => {
+  const message = {
+    messageId: 'message-1',
+    conversationId: 'conversation-1',
+    parentMessageId: null,
+    text: 'Assistant-role text',
+    isCreatedByUser: false,
+  };
+
+  it('preserves an explicit user-submitted marker', () => {
+    expect(
+      tMessageSchema.parse({
+        ...message,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/text', '/content/0/steer'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/1/tool_call/output', field: 'decision_response' },
+        ],
+      }),
+    ).toMatchObject({
+      isCreatedByUser: false,
+      isUserSubmitted: true,
+      userSubmittedPaths: ['/text', '/content/0/steer'],
+      userSubmittedMessageFieldPaths: [
+        { path: '/content/1/tool_call/output', field: 'decision_response' },
+      ],
+    });
+  });
+
+  it('keeps the marker optional for legacy messages', () => {
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('isUserSubmitted');
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('userSubmittedPaths');
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('userSubmittedMessageFieldPaths');
+  });
+
+  it('rejects provenance paths that are not JSON pointers', () => {
+    expect(() =>
+      tMessageSchema.parse({ ...message, userSubmittedPaths: ['content/0/text'] }),
+    ).toThrow();
+  });
+
+  it.each([
+    [{ path: 'content/0/tool_call/output', field: 'answer' }],
+    [{ path: '/content/0/tool_call/output', field: 'content_part' }],
+    [{ path: '/content/0/tool_call/output', field: 'answer', extra: true }],
+  ])('rejects invalid exact message-field provenance %#', (userSubmittedMessageFieldPaths) => {
+    expect(() => tMessageSchema.parse({ ...message, userSubmittedMessageFieldPaths })).toThrow();
   });
 });

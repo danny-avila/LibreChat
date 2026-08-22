@@ -1013,6 +1013,21 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
     });
 
+    it('ignores tombstones for base-only filter policy', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { fieldPath: 'filters.messages.pii' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body!.message).toBeDefined();
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
     it('rejects unsafe field paths', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({

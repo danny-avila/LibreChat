@@ -515,6 +515,8 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string, agentId?: string) =>
   `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
+export const memoryById = (id: string, agentId?: string) =>
+  `${memories()}/id/${encodeURIComponent(id)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {

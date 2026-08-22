@@ -6,17 +6,73 @@ const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
+const mockSharedLinkConfigMiddleware = jest.fn((_req, _res, next) => next());
+let mockShareTenantId;
 const mockBuildSharedLinkStartupPayload = jest.fn();
 const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
   req.shareResourceId = 'resource-123';
+  req.shareTenantId = mockShareTenantId;
   next();
 });
 const mockGetAppConfig = jest.fn();
-const mockGetTenantId = jest.fn(() => undefined);
 const mockParseSharedLinksPageSize = jest.fn(() => 10);
 const mockIsValidSharedLinksCursor = jest.fn(() => true);
+const mockAssertConversationContentAllowed = jest.fn();
+const mockAssertModelBoundContent = jest.fn();
+const mockAssertSharedFileMetadataAllowed = jest.fn();
+const mockCreateShareContentPreflight = jest.fn((filters, options = {}) => {
+  const legacyPii = options.legacyPii;
+  if (filters == null && legacyPii == null) {
+    return undefined;
+  }
+  const omitFiles = (messages) =>
+    messages.map(({ files: _files, attachments: _attachments, ...message }) => ({
+      ...message,
+      ...(Array.isArray(message.content)
+        ? {
+            content: message.content.map((part) => {
+              if (part?.type !== 'steer' || part.files === undefined) {
+                return part;
+              }
+              const { files: _partFiles, ...rest } = part;
+              return rest;
+            }),
+          }
+        : {}),
+    }));
+  return async ({ title, messages, shareId }) => {
+    const inspectSharedFileMetadata = options.sharedFileMetadata === true;
+    const inspectSharedFiles =
+      inspectSharedFileMetadata && options.sharedFileMetadataFiles !== false;
+    const snapshot = {
+      conversations: [{ title }],
+      messages:
+        options.snapshotFiles === false || inspectSharedFiles ? omitFiles(messages) : messages,
+    };
+    const context = {
+      ...(options.user == null ? {} : { user: options.user, getFiles: options.getFiles }),
+      ...(legacyPii == null ? {} : { legacyPii }),
+    };
+    await mockAssertConversationContentAllowed(
+      filters,
+      snapshot,
+      ...(Object.keys(context).length === 0 ? [] : [context]),
+    );
+    if (inspectSharedFileMetadata) {
+      mockAssertSharedFileMetadataAllowed({
+        filters,
+        messages: options.snapshotFiles === false ? omitFiles(messages) : messages,
+        shareId,
+        ...(options.sharedFileMetadataFiles === false && { includeFiles: false }),
+      });
+    }
+  };
+});
 
 jest.mock('@librechat/api', () => ({
+  assertModelBoundContent: (...args) => mockAssertModelBoundContent(...args),
+  assertSharedFileMetadataAllowed: (...args) => mockAssertSharedFileMetadataAllowed(...args),
+  createShareContentPreflight: (...args) => mockCreateShareContentPreflight(...args),
   isEnabled: jest.fn(() => true),
   generateCheckAccess: jest.fn(() => mockSharedLinksAccess),
   grantCreationPermissions: (...args) => mockGrantCreationPermissions(...args),
@@ -26,6 +82,7 @@ jest.mock('@librechat/api', () => ({
   isFileSnapshotEnabled: jest.fn(() => true),
   isFileSnapshotKillSwitchActive: jest.fn(() => false),
   buildSharedLinkStartupPayload: (...args) => mockBuildSharedLinkStartupPayload(...args),
+  createSharedLinkConfigMiddleware: jest.fn(() => mockSharedLinkConfigMiddleware),
   deleteSharedLinkWithCleanup: jest.fn(),
   getSharedLinkExpiration: (...args) => mockGetSharedLinkExpiration(...args),
   isActiveExpirationDate: jest.fn((expiredAt) => expiredAt > new Date()),
@@ -36,11 +93,14 @@ jest.mock('@librechat/api', () => ({
   buildShareFileEtag: (file) =>
     `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}-${file.filepath ?? ''}"`,
   MAX_SHARED_LINK_SEARCH_LENGTH: 256,
+  isContentFilterError: jest.fn(
+    (error) =>
+      error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
+  ),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
-  getTenantId: (...args) => mockGetTenantId(...args),
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
   runAsSystem: jest.fn((fn) => fn()),
   tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
@@ -127,6 +187,9 @@ jest.mock('~/server/middleware/limiters', () => ({
 jest.mock('~/server/utils/import/fork', () => ({
   forkSharedConversation: jest.fn(),
 }));
+jest.mock('~/server/utils/import/importBatchBuilder', () => ({
+  assertConversationContentAllowed: (...args) => mockAssertConversationContentAllowed(...args),
+}));
 
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
@@ -152,27 +215,69 @@ const shareRouter = require('../share');
 
 const activeExpiration = new Date('2030-01-01T00:00:00.000Z');
 const expiredExpiration = new Date('2020-01-01T00:00:00.000Z');
+const contentFilters = {
+  messages: {
+    pii: {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+    },
+  },
+};
 
 const lean = (value) => ({
   lean: jest.fn().mockResolvedValue(value),
 });
 
-const buildApp = ({ retentionMode = RetentionMode.TEMPORARY, user = { id: 'user-123' } } = {}) => {
+const buildApp = ({
+  retentionMode = RetentionMode.TEMPORARY,
+  user = { id: 'user-123' },
+  filters,
+  messageFilter,
+} = {}) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
     req.user = user;
-    req.config = { interfaceConfig: { retentionMode } };
+    req.config = {
+      interfaceConfig: { retentionMode },
+      ...(filters == null ? {} : { filters }),
+      ...(messageFilter == null ? {} : { messageFilter }),
+    };
     next();
   });
   app.use('/api/share', shareRouter);
   return app;
 };
 
+const mockSharedMessagesResult = (result) => {
+  getSharedMessages.mockImplementation(async (_shareId, _resourceId, options) => {
+    await options?.preflight?.(result);
+    return result;
+  });
+};
+
+const mockUpdatedShare = (result) => {
+  updateSharedLink.mockImplementationOnce(async (...args) => {
+    await args[5]?.({ title: 'Safe share', messages: [] });
+    await args[6]?.();
+    return result;
+  });
+};
+
+const useResolvedSharedLinkConfig = () => {
+  mockSharedLinkConfigMiddleware.mockImplementationOnce(async (req, _res, next) => {
+    const tenantId = req.shareTenantId;
+    req.config = await mockGetAppConfig(
+      tenantId && tenantId !== '__SYSTEM__' ? { tenantId } : { baseOnly: true },
+    );
+    next();
+  });
+};
+
 describe('share routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetTenantId.mockReturnValue(undefined);
+    mockShareTenantId = undefined;
     mockGetAppConfig.mockResolvedValue({
       interfaceConfig: {
         privacyPolicy: { externalUrl: 'https://example.com/privacy' },
@@ -196,6 +301,7 @@ describe('share routes', () => {
   });
 
   it('serves shared startup config after shared-link access is granted', async () => {
+    useResolvedSharedLinkConfig();
     const response = await request(buildApp()).get('/api/share/share-123/config');
 
     expect(response.status).toBe(200);
@@ -217,7 +323,8 @@ describe('share routes', () => {
   });
 
   it('uses tenant-scoped app config for shared startup config when tenant context is present', async () => {
-    mockGetTenantId.mockReturnValue('tenant-abc');
+    mockShareTenantId = 'tenant-abc';
+    useResolvedSharedLinkConfig();
 
     const response = await request(buildApp()).get('/api/share/share-123/config');
 
@@ -226,7 +333,8 @@ describe('share routes', () => {
   });
 
   it('uses base app config for shared startup config in system context', async () => {
-    mockGetTenantId.mockReturnValue('__SYSTEM__');
+    mockShareTenantId = '__SYSTEM__';
+    useResolvedSharedLinkConfig();
 
     const response = await request(buildApp()).get('/api/share/share-123/config');
 
@@ -235,12 +343,14 @@ describe('share routes', () => {
   });
 
   it('prevents successful shared message responses from being cached', async () => {
-    getSharedMessages.mockResolvedValue({ shareId: 'share-123', messages: [] });
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
 
     const response = await request(buildApp()).get('/api/share/share-123');
 
     expect(response.status).toBe(200);
     expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(mockAssertConversationContentAllowed).not.toHaveBeenCalled();
+    expect(mockAssertSharedFileMetadataAllowed).not.toHaveBeenCalled();
   });
 
   it('normalizes shared-link list parameters without double-decoding search text', async () => {
@@ -294,6 +404,247 @@ describe('share routes', () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ message: 'Error getting shared links' });
+  });
+
+  it('reapplies the current content policy before serving an existing share', async () => {
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [
+        {
+          text: 'safe message',
+          files: [{ file_id: 'file-1', filename: 'safe-report.pdf' }],
+          attachments: [{ file_id: 'file-2', name: 'safe-image.png' }],
+          content: [
+            {
+              type: 'steer',
+              steer: 'safe user steer',
+              files: [{ file_id: 'file-3', filename: 'safe-context.txt' }],
+            },
+          ],
+        },
+      ],
+    };
+    mockSharedMessagesResult(share);
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
+      conversations: [{ title: share.title }],
+      messages: [
+        {
+          text: 'safe message',
+          content: [{ type: 'steer', steer: 'safe user steer' }],
+        },
+      ],
+    });
+    expect(mockAssertSharedFileMetadataAllowed).toHaveBeenCalledWith({
+      filters: contentFilters,
+      messages: share.messages,
+      shareId: 'share-123',
+    });
+  });
+
+  it('uses the share tenant policy when an authenticated viewer belongs to another tenant', async () => {
+    const ownerFilters = {
+      messages: {
+        pii: {
+          starterPatterns: ['sk_prefix'],
+        },
+      },
+    };
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ isCreatedByUser: true, text: 'safe message' }],
+    };
+    mockShareTenantId = 'tenant-owner';
+    mockSharedLinkConfigMiddleware.mockImplementationOnce((req, _res, next) => {
+      expect(req.user.tenantId).toBe('tenant-viewer');
+      expect(req.shareTenantId).toBe('tenant-owner');
+      req.config = { filters: ownerFilters };
+      next();
+    });
+    mockSharedMessagesResult(share);
+
+    const response = await request(
+      buildApp({ user: { id: 'viewer', role: 'USER', tenantId: 'tenant-viewer' } }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(ownerFilters, {
+      conversations: [{ title: share.title }],
+      messages: share.messages,
+    });
+    expect(mockAssertSharedFileMetadataAllowed).toHaveBeenCalledWith({
+      filters: ownerFilters,
+      messages: share.messages,
+      shareId: share.shareId,
+    });
+  });
+
+  it('threads a legacy-only detector into strict shared-content preflight', async () => {
+    const strictFilters = {
+      messages: { unattributedAssistantContent: 'inspect' },
+    };
+    const legacyPii = {
+      starterPatterns: [],
+      customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+    };
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ isCreatedByUser: false, role: 'assistant', text: 'safe model output' }],
+    };
+    mockSharedMessagesResult(share);
+
+    const response = await request(
+      buildApp({ filters: strictFilters, messageFilter: { pii: legacyPii } }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      strictFilters,
+      {
+        conversations: [{ title: share.title }],
+        messages: share.messages,
+      },
+      { legacyPii },
+    );
+  });
+
+  it('keeps shared-message preflight active with only legacy message filtering', async () => {
+    const legacyPii = { starterPatterns: ['sk_prefix'] };
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ isCreatedByUser: true, text: 'safe user input' }],
+    };
+    mockSharedMessagesResult(share);
+
+    const response = await request(buildApp({ messageFilter: { pii: legacyPii } })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      undefined,
+      {
+        conversations: [{ title: share.title }],
+        messages: share.messages,
+      },
+      { legacyPii },
+    );
+  });
+
+  it('returns a raw-free 400 when existing shared metadata fails current policy', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'attachment_reference',
+      },
+    });
+    mockSharedMessagesResult({
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [
+        {
+          text: 'safe message',
+          files: [{ file_id: 'file-1', filename: 'PRIVATE-SENTINEL.pdf' }],
+        },
+      ],
+    });
+    mockAssertSharedFileMetadataAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('rechecks legacy shared response fields before returning public JSON', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'attachment_reference',
+      },
+    });
+    const share = {
+      shareId: 'share-123',
+      title: 'Legacy Shared Conversation',
+      messages: [
+        {
+          isCreatedByUser: true,
+          text: 'safe message',
+          iconURL: 'https://example.test/PRIVATE-SENTINEL',
+        },
+      ],
+    };
+    mockSharedMessagesResult(share);
+    mockAssertSharedFileMetadataAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(mockAssertSharedFileMetadataAllowed).toHaveBeenCalledWith({
+      filters: contentFilters,
+      messages: share.messages,
+      shareId: share.shareId,
+    });
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('returns a raw-free 400 when an existing share fails the current policy', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    mockSharedMessagesResult({
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ text: 'PRIVATE-SENTINEL' }],
+    });
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('expires new shares for retained non-temporary conversations', async () => {
@@ -380,6 +731,152 @@ describe('share routes', () => {
     expect(response.body).toEqual({ message: 'Share already exists' });
   });
 
+  it('returns a raw-free 400 when the exact create snapshot fails policy preflight', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'text',
+      },
+    });
+    const messages = [{ text: 'PRIVATE-SENTINEL' }];
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+    createSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Conversation', messages });
+      return { _id: 'link-123', shareId: 'share-123' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters }))
+      .post('/api/share/convo-123')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Conversation' }],
+        messages,
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
+    expect(mockGrantCreationPermissions).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('checks public message metadata before creating the shared link', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_block',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_block',
+        message: 'Submitted content contains a private value. Remove it and try again.',
+        source: 'message',
+        field: 'attachment_reference',
+      },
+    });
+    const messages = [
+      {
+        isCreatedByUser: true,
+        text: 'safe message',
+        iconURL: 'https://example.test/PRIVATE-SENTINEL',
+      },
+    ];
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    mockAssertSharedFileMetadataAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+    createSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Conversation', messages });
+      return { _id: 'link-123', shareId: 'share-123' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters }))
+      .post('/api/share/convo-123')
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Conversation' }],
+        messages,
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
+    expect(mockAssertSharedFileMetadataAllowed).toHaveBeenCalledWith({
+      filters: contentFilters,
+      messages,
+      shareId: undefined,
+      includeFiles: false,
+    });
+    expect(mockGrantCreationPermissions).not.toHaveBeenCalled();
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('preflights only the exact text snapshot when shared files are opted out', async () => {
+    const messages = [
+      {
+        text: 'safe message',
+        files: [{ file_id: 'file-top-level' }],
+        attachments: [{ file_id: 'attachment-top-level' }],
+        content: [
+          { type: 'text', text: 'safe model content' },
+          {
+            type: 'steer',
+            steer: 'safe user steer',
+            files: [{ file_id: 'steer-file' }],
+          },
+        ],
+      },
+    ];
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Conversation', messages });
+      return { _id: 'link-123', shareId: 'share-123' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters }))
+      .post('/api/share/convo-123')
+      .send({ snapshotFiles: false });
+
+    expect(response.status).toBe(200);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Conversation' }],
+        messages: [
+          {
+            text: 'safe message',
+            content: [
+              { type: 'text', text: 'safe model content' },
+              { type: 'steer', steer: 'safe user steer' },
+            ],
+          },
+        ],
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
+  });
+
   it('does not snapshot files when the user opts out (snapshotFiles=false)', async () => {
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     createSharedLink.mockResolvedValue({ _id: 'link-123', shareId: 'share-123' });
@@ -420,7 +917,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     await request(buildApp()).patch('/api/share/share-123').send({ snapshotFiles: false });
 
@@ -430,7 +927,56 @@ describe('share routes', () => {
       undefined,
       expect.anything(),
       false,
+      undefined,
+      expect.any(Function),
     );
+  });
+
+  it('returns a raw-free 400 when the exact update snapshot fails policy preflight', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      },
+    });
+    const messages = [{ files: [{ file_id: 'file_PRIVATE-SENTINEL' }] }];
+    mongoose.models.SharedLink.findOne.mockReturnValue(
+      lean({ _id: 'link-456', conversationId: 'convo-123' }),
+    );
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    mockAssertConversationContentAllowed.mockImplementationOnce(() => {
+      throw error;
+    });
+    updateSharedLink.mockImplementationOnce(async (...args) => {
+      await args[5]({ title: 'Protected Share', messages });
+      await args[6]?.();
+      return { _id: 'link-456', shareId: 'share-456' };
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).patch(
+      '/api/share/share-123',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(
+      contentFilters,
+      {
+        conversations: [{ title: 'Protected Share' }],
+        messages,
+      },
+      {
+        user: { id: 'user-123' },
+        getFiles,
+      },
+    );
+    expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('rejects new shares when the retained conversation expired', async () => {
@@ -462,7 +1008,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -489,6 +1035,8 @@ describe('share routes', () => {
       undefined,
       new Date('2030-01-01T00:00:00.000Z'),
       true,
+      undefined,
+      expect.any(Function),
     );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith(
       'link-456',
@@ -502,13 +1050,14 @@ describe('share routes', () => {
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
     mockUpdateSharedLinkPermissionsExpiration.mockRejectedValueOnce(new Error('acl down'));
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(500);
     // The shareId is stable, so publishing first would expose the update behind
     // the existing grants while the owner is told the update failed.
-    expect(updateSharedLink).not.toHaveBeenCalled();
+    expect(updateSharedLink).toHaveBeenCalledTimes(1);
   });
 
   it('rejects updated shares when the retained conversation expired', async () => {
@@ -548,12 +1097,20 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(null);
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
     expect(response.status).toBe(200);
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      null,
+      true,
+      undefined,
+      expect.any(Function),
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
     expect(mockSharedLinksAccess).toHaveBeenCalled();
   });
@@ -574,7 +1131,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(undefined);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456' });
+    mockUpdatedShare({ shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -585,6 +1142,8 @@ describe('share routes', () => {
       undefined,
       undefined,
       true,
+      undefined,
+      undefined,
     );
     expect(mockUpdateSharedLinkPermissionsExpiration).not.toHaveBeenCalled();
   });
@@ -598,7 +1157,7 @@ describe('share routes', () => {
       dependencies.logger.error('[getSharedLinkExpiration] Error creating expiration date:', error);
       return null;
     });
-    updateSharedLink.mockResolvedValue({ _id: 'link-456', shareId: 'share-456' });
+    mockUpdatedShare({ _id: 'link-456', shareId: 'share-456' });
 
     const response = await request(buildApp()).patch('/api/share/share-123');
 
@@ -607,7 +1166,15 @@ describe('share routes', () => {
       '[getSharedLinkExpiration] Error creating expiration date:',
       error,
     );
-    expect(updateSharedLink).toHaveBeenCalledWith('user-123', 'share-123', undefined, null, true);
+    expect(updateSharedLink).toHaveBeenCalledWith(
+      'user-123',
+      'share-123',
+      undefined,
+      null,
+      true,
+      undefined,
+      expect.any(Function),
+    );
     expect(mockUpdateSharedLinkPermissionsExpiration).toHaveBeenCalledWith('link-456', null);
   });
 
@@ -616,7 +1183,7 @@ describe('share routes', () => {
       lean({ _id: 'link-456', conversationId: 'convo-123' }),
     );
     mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
-    updateSharedLink.mockResolvedValue({ shareId: 'share-456', targetMessageId: 'msg-456' });
+    mockUpdatedShare({ shareId: 'share-456', targetMessageId: 'msg-456' });
 
     const response = await request(buildApp())
       .patch('/api/share/share-123')
@@ -629,6 +1196,8 @@ describe('share routes', () => {
       'msg-456',
       new Date('2030-01-01T00:00:00.000Z'),
       true,
+      undefined,
+      expect.any(Function),
     );
   });
 
@@ -685,6 +1254,7 @@ describe('share routes', () => {
 describe('share fork route', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockShareTenantId = undefined;
   });
 
   it('forks a shared conversation for the requesting user', async () => {
@@ -711,6 +1281,44 @@ describe('share fork route', () => {
       targetMessageIndex: 3,
       shareRevision: '2026-01-01T00:00:00.000Z',
       snapshotFiles: true,
+      sharedContentPreflight: undefined,
+    });
+  });
+
+  it('passes the share tenant policy into a cross-tenant fork read preflight', async () => {
+    const share = {
+      shareId: 'share-123',
+      title: 'Protected Conversation',
+      messages: [{ text: 'safe', files: [{ filename: 'safe-report.pdf' }] }],
+    };
+    forkSharedConversation.mockImplementationOnce(async ({ sharedContentPreflight }) => {
+      await sharedContentPreflight(share);
+      return {
+        conversation: { conversationId: 'convo-456' },
+        messages: [],
+      };
+    });
+    mockShareTenantId = 'tenant-owner';
+    mockSharedLinkConfigMiddleware.mockImplementationOnce((req, _res, next) => {
+      expect(req.user.tenantId).toBe('tenant-viewer');
+      expect(req.shareTenantId).toBe('tenant-owner');
+      req.config = { filters: contentFilters };
+      next();
+    });
+
+    const response = await request(
+      buildApp({ user: { id: 'viewer', role: 'USER', tenantId: 'tenant-viewer' } }),
+    ).post('/api/share/share-123/fork');
+
+    expect(response.status).toBe(201);
+    expect(mockAssertConversationContentAllowed).toHaveBeenCalledWith(contentFilters, {
+      conversations: [{ title: share.title }],
+      messages: [{ text: 'safe' }],
+    });
+    expect(mockAssertSharedFileMetadataAllowed).toHaveBeenCalledWith({
+      filters: contentFilters,
+      messages: share.messages,
+      shareId: share.shareId,
     });
   });
 
@@ -761,6 +1369,7 @@ describe('share fork route', () => {
 describe('share-scoped file routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockShareTenantId = undefined;
     mockGetStrategyFunctions.mockReturnValue({
       getDownloadStream: jest.fn(async () => Readable.from(['file-bytes'])),
     });
@@ -903,6 +1512,82 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers['etag']).not.toBe(first.headers['etag']);
+  });
+
+  it('reapplies the share tenant file policy for a cross-tenant viewer', async () => {
+    const liveFile = {
+      file_id: 'file-1',
+      status: 'ready',
+      filename: 'report.pdf',
+      text: 'safe extracted text',
+    };
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'report.pdf',
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([liveFile]);
+    mockShareTenantId = 'tenant-owner';
+    mockSharedLinkConfigMiddleware.mockImplementationOnce((req, _res, next) => {
+      expect(req.user.tenantId).toBe('tenant-viewer');
+      expect(req.shareTenantId).toBe('tenant-owner');
+      req.config = { filters: contentFilters };
+      next();
+    });
+
+    const response = await request(
+      buildApp({ user: { id: 'viewer', role: 'USER', tenantId: 'tenant-viewer' } }),
+    ).get('/api/share/share-123/files/file-1/download');
+
+    expect(response.status).toBe(200);
+    expect(mockAssertModelBoundContent).toHaveBeenCalledWith({
+      filters: contentFilters,
+      files: [liveFile],
+    });
+  });
+
+  it('returns a raw-free 400 before serving a file that fails the current policy', async () => {
+    const error = Object.assign(new Error('PRIVATE-SENTINEL'), {
+      code: 'content_filter_uninspectable',
+      statusCode: 400,
+      body: {
+        error: 'content_filter_uninspectable',
+        message: 'Submitted file content could not be inspected before processing.',
+        source: 'file',
+        field: 'content',
+      },
+    });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/file-1',
+        type: 'application/pdf',
+        filename: 'PRIVATE-SENTINEL.pdf',
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([
+      { file_id: 'file-1', status: 'ready', filename: 'PRIVATE-SENTINEL.pdf' },
+    ]);
+    mockAssertModelBoundContent.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    const response = await request(buildApp({ filters: contentFilters })).get(
+      '/api/share/share-123/files/file-1/download',
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual(error.body);
+    expect(JSON.stringify(response.body)).not.toContain('PRIVATE-SENTINEL');
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('forces attachment for unsafe inline types (no stored XSS)', async () => {
@@ -1099,6 +1784,59 @@ describe('share-scoped file routes', () => {
 
     expect(response.status).toBe(404);
     expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('404s when a same-size file reuse has a different source generation', async () => {
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/x',
+        bytes: 100,
+        previewRevision: null,
+        sourceDispatchedAt: 1000,
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([
+      {
+        status: 'ready',
+        bytes: 100,
+        previewRevision: null,
+        metadata: { sourceDispatchedAt: 2000 },
+      },
+    ]);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(404);
+    expect(mockGetStrategyFunctions).not.toHaveBeenCalled();
+  });
+
+  it('uses legacy snapshot markers when only the live file has a source generation', async () => {
+    const getDownloadStream = jest.fn(async () => Readable.from(['bytes']));
+    mockGetStrategyFunctions.mockReturnValue({ getDownloadStream });
+    getSharedLinkFile.mockResolvedValue({
+      file: {
+        file_id: 'file-1',
+        source: 'local',
+        filepath: '/uploads/owner/x',
+        bytes: 100,
+      },
+      hasSnapshots: true,
+    });
+    getFiles.mockResolvedValue([
+      {
+        status: 'ready',
+        bytes: 100,
+        metadata: { sourceDispatchedAt: 2000 },
+      },
+    ]);
+
+    const response = await request(buildApp()).get('/api/share/share-123/files/file-1');
+
+    expect(response.status).toBe(200);
+    expect(getDownloadStream).toHaveBeenCalled();
   });
 
   it('strips a cache-busting query string before local streaming', async () => {

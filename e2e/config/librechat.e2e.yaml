@@ -37,6 +37,10 @@ mcpSettings:
     - https://allowed.example.com
     # __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__
 
+actions:
+  allowedDomains:
+    - example.com
+
 mcpServers:
   e2e-memory:
     type: stdio

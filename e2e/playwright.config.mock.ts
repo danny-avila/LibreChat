@@ -26,6 +26,8 @@ const labelServerPath = path.resolve(rootPath, 'e2e/setup/fake-label-server.js')
  *  `writeRuntimeMockConfig` substitutes any override into the generated copy. */
 const LABEL_PORT = process.env.E2E_LABEL_PORT || '8889';
 const fakeModelHookPath = path.resolve(rootPath, 'e2e/setup/fake-model.js');
+const assistantsServerPath = path.resolve(rootPath, 'e2e/setup/fake-assistants-server.js');
+const ASSISTANTS_PORT = process.env.E2E_ASSISTANTS_PORT || '8890';
 const configTemplatePath = path.resolve(rootPath, 'e2e/config/librechat.e2e.yaml');
 const configPath = path.resolve(rootPath, 'e2e/.generated/librechat.e2e.yaml');
 const reportPath = path.resolve(rootPath, 'e2e/playwright-report');
@@ -44,7 +46,10 @@ const vanillaOverrides = {
   OPENID_AUTO_REDIRECT: 'false',
   ALLOW_SOCIAL_LOGIN: 'false',
   ALLOW_SOCIAL_REGISTRATION: 'false',
+  ALLOW_SHARED_LINKS_PUBLIC: 'true',
   STREAM_KEEP_COMPLETED_JOBS: 'true',
+  FORK_IP_MAX: '100',
+  FORK_USER_MAX: '100',
   /** A local `.env` may enable balance enforcement, which `neutralizeCredentialEnv`
    *  does not blank (not credential-shaped); the fresh e2e user has no balance
    *  record, so every streaming spec would be refused with a token_balance
@@ -59,6 +64,10 @@ const baseEnv = {
   /** Loaded in-process by `@librechat/api`'s `createRun` to swap in a fake model. */
   LIBRECHAT_TEST_RUN_HOOK: fakeModelHookPath,
   ...(enableDynamicMcp ? { E2E_MCP_LIST_CHANGED: 'true', E2E_MCP_STATE_PATH: MCP_STATE_PATH } : {}),
+  /** The Assistants runtime uses the OpenAI SDK directly, outside the agents run hook. */
+  ASSISTANTS_API_KEY: 'e2e-mock-assistants-key',
+  ASSISTANTS_BASE_URL: `http://127.0.0.1:${ASSISTANTS_PORT}/v1`,
+  ASSISTANTS_MODELS: 'gpt-4o-mini',
   ...vanillaOverrides,
 };
 
@@ -232,6 +241,16 @@ export default defineConfig({
       cwd: rootPath,
       env: { ...process.env, E2E_LABEL_PORT: LABEL_PORT },
       url: `http://127.0.0.1:${LABEL_PORT}/`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
+    {
+      // Stateful provider-boundary fake for Assistant CRUD and streamed runs.
+      command: `node ${assistantsServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_ASSISTANTS_PORT: ASSISTANTS_PORT },
+      url: `http://127.0.0.1:${ASSISTANTS_PORT}/`,
       stdout: 'pipe',
       timeout: 60_000,
       reuseExistingServer: false,

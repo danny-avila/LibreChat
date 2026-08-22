@@ -4,7 +4,12 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
+import {
+  createShareMethods,
+  anonymizeSharedContent,
+  type ShareMethods,
+  type SharedLinkContentSnapshot,
+} from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -51,6 +56,7 @@ describe('Share Methods', () => {
         textFormat: { type: String, enum: ['html', 'text'] },
         status: { type: String, enum: ['pending', 'ready', 'failed'] },
         previewError: String,
+        metadata: mongoose.Schema.Types.Mixed,
         tenantId: String,
       },
       { timestamps: true },
@@ -63,6 +69,15 @@ describe('Share Methods', () => {
         user: { type: String, required: true },
         text: String,
         isCreatedByUser: Boolean,
+        isUserSubmitted: Boolean,
+        userSubmittedPaths: {
+          type: [String],
+          default: undefined,
+        },
+        userSubmittedMessageFieldPaths: {
+          type: [mongoose.Schema.Types.Mixed],
+          default: undefined,
+        },
         model: String,
         iconURL: String,
         endpoint: String,
@@ -382,6 +397,117 @@ describe('Share Methods', () => {
       });
       expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
     });
+
+    test('runs content preflight before creating any shared-link record', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const rejection = new Error('blocked by current policy');
+
+      await Conversation.create({
+        conversationId,
+        title: 'Protected Conversation',
+        user: userId,
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'PRIVATE-SENTINEL',
+        isCreatedByUser: true,
+      });
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.title).toBe('Protected Conversation');
+        expect(snapshot.messages).toHaveLength(1);
+        expect(snapshot.messages[0]?.text).toBe('PRIVATE-SENTINEL');
+        throw rejection;
+      });
+
+      await expect(
+        shareMethods.createSharedLink(
+          userId,
+          conversationId,
+          undefined,
+          undefined,
+          true,
+          preflight,
+        ),
+      ).rejects.toBe(rejection);
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(await SharedLink.countDocuments({ conversationId })).toBe(0);
+    });
+
+    test('preflights only messages selected by a branch target', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+      const siblingMessageId = `msg_${nanoid()}`;
+
+      await Conversation.create({
+        conversationId,
+        title: 'Branched Conversation',
+        user: userId,
+      });
+      await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Root prompt',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+        },
+        {
+          messageId: targetMessageId,
+          conversationId,
+          user: userId,
+          text: 'Selected answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: siblingMessageId,
+          conversationId,
+          user: userId,
+          text: 'Sibling answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+        },
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Unselected sibling branch tail',
+          isCreatedByUser: true,
+          parentMessageId: siblingMessageId,
+        },
+      ]);
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.messages).toHaveLength(3);
+        expect(snapshot.messages.map((message) => message.text)).toEqual(
+          expect.arrayContaining(['Root prompt', 'Selected answer', 'Sibling answer']),
+        );
+        expect(snapshot.messages.map((message) => message.text)).not.toContain(
+          'Unselected sibling branch tail',
+        );
+      });
+
+      const result = await shareMethods.createSharedLink(
+        userId,
+        conversationId,
+        targetMessageId,
+        undefined,
+        true,
+        preflight,
+      );
+      const storedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(storedShare?.messages).toHaveLength(4);
+    });
   });
 
   describe('getSharedMessages', () => {
@@ -406,6 +532,11 @@ describe('Share Methods', () => {
           user: userId,
           text: 'World',
           isCreatedByUser: false,
+          isUserSubmitted: true,
+          userSubmittedPaths: ['/text'],
+          userSubmittedMessageFieldPaths: [
+            { path: '/content/0/tool_call/output', field: 'decision_reason' },
+          ],
           model: 'gpt-4',
           parentMessageId: Constants.NO_PARENT,
         },
@@ -434,6 +565,30 @@ describe('Share Methods', () => {
         expect(msg.conversationId).toBe(result.conversationId);
         expect((msg as Record<string, unknown>).user).toBeUndefined(); // User should be removed
       });
+      expect(result?.messages.find((message) => message.text === 'World')?.isUserSubmitted).toBe(
+        true,
+      );
+      expect(
+        result?.messages.find((message) => message.text === 'World')?.userSubmittedPaths,
+      ).toEqual(['/text']);
+      expect(
+        result?.messages.find((message) => message.text === 'World')
+          ?.userSubmittedMessageFieldPaths,
+      ).toEqual([
+        expect.objectContaining({
+          path: '/content/0/tool_call/output',
+          field: 'decision_reason',
+        }),
+      ]);
+      expect(result?.messages.find((message) => message.text === 'Hello')).not.toHaveProperty(
+        'isUserSubmitted',
+      );
+      expect(result?.messages.find((message) => message.text === 'Hello')).not.toHaveProperty(
+        'userSubmittedPaths',
+      );
+      expect(result?.messages.find((message) => message.text === 'Hello')).not.toHaveProperty(
+        'userSubmittedMessageFieldPaths',
+      );
     });
 
     test('should return null for non-existent share', async () => {
@@ -1878,6 +2033,174 @@ describe('Share Methods', () => {
       expect(originalShare).toBeDefined();
       expect(originalShare?.user).toBe(ownerUserId);
     });
+
+    test('runs content preflight before mutating a shared-link record', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rejection = new Error('blocked by current policy');
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Protected Share',
+        user: userId,
+        messages: [],
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'PRIVATE-SENTINEL',
+        isCreatedByUser: true,
+      });
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.title).toBe('Protected Share');
+        expect(snapshot.messages).toHaveLength(1);
+        expect(snapshot.messages[0]?.text).toBe('PRIVATE-SENTINEL');
+        throw rejection;
+      });
+      const beforePublish = jest.fn();
+
+      await expect(
+        shareMethods.updateSharedLink(
+          userId,
+          shareId,
+          undefined,
+          undefined,
+          true,
+          preflight,
+          beforePublish,
+        ),
+      ).rejects.toBe(rejection);
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(beforePublish).not.toHaveBeenCalled();
+      expect(await SharedLink.countDocuments({ conversationId })).toBe(1);
+      const untouched = await SharedLink.findOne({ shareId }).lean();
+      expect(untouched?.messages).toHaveLength(0);
+    });
+
+    test('runs content preflight before the before-publish mutation', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Protected Share',
+        user: userId,
+        messages: [],
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Safe message',
+        isCreatedByUser: true,
+      });
+      const order: string[] = [];
+      const preflight = jest.fn(async () => {
+        order.push('preflight');
+      });
+      const beforePublish = jest.fn(async () => {
+        order.push('beforePublish');
+      });
+
+      await shareMethods.updateSharedLink(
+        userId,
+        shareId,
+        undefined,
+        undefined,
+        true,
+        preflight,
+        beforePublish,
+      );
+
+      expect(order).toEqual(['preflight', 'beforePublish']);
+    });
+
+    test('preflights only messages selected by the stored branch target', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      const rootMessageId = `msg_${nanoid()}`;
+      const targetMessageId = `msg_${nanoid()}`;
+      const siblingMessageId = `msg_${nanoid()}`;
+      const targetCreatedAt = Date.now();
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        title: 'Branched Share',
+        user: userId,
+        messages: [],
+        targetMessageId,
+      });
+      await Message.create([
+        {
+          messageId: rootMessageId,
+          conversationId,
+          user: userId,
+          text: 'Root prompt',
+          isCreatedByUser: true,
+          parentMessageId: Constants.NO_PARENT,
+          createdAt: new Date(targetCreatedAt - 3000),
+        },
+        {
+          messageId: targetMessageId,
+          conversationId,
+          user: userId,
+          text: 'Selected answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+          createdAt: new Date(targetCreatedAt),
+        },
+        {
+          messageId: siblingMessageId,
+          conversationId,
+          user: userId,
+          text: 'Sibling answer',
+          isCreatedByUser: false,
+          parentMessageId: rootMessageId,
+          createdAt: new Date(targetCreatedAt - 2000),
+        },
+        {
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Unselected sibling branch tail',
+          isCreatedByUser: true,
+          parentMessageId: siblingMessageId,
+          createdAt: new Date(targetCreatedAt - 1000),
+        },
+      ]);
+
+      const preflight = jest.fn(async (snapshot: SharedLinkContentSnapshot) => {
+        expect(snapshot.messages).toHaveLength(3);
+        expect(snapshot.messages.map((message) => message.text)).toEqual(
+          expect.arrayContaining(['Root prompt', 'Selected answer', 'Sibling answer']),
+        );
+        expect(snapshot.messages.map((message) => message.text)).not.toContain(
+          'Unselected sibling branch tail',
+        );
+      });
+
+      const result = await shareMethods.updateSharedLink(
+        userId,
+        shareId,
+        undefined,
+        undefined,
+        true,
+        preflight,
+      );
+      const storedShare = await SharedLink.findOne({ shareId: result.shareId }).lean();
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      expect(result.targetMessageId).toBe(targetMessageId);
+      expect(storedShare?.messages).toHaveLength(4);
+    });
   });
 
   describe('deleteSharedLink', () => {
@@ -2437,6 +2760,11 @@ describe('Share Methods', () => {
         height: 80,
       });
       const docId = await createFile(userId);
+      const sourceDispatchedAt = 1_725_000_000_000;
+      await File.updateOne(
+        { file_id: docId },
+        { $set: { 'metadata.sourceDispatchedAt': sourceDispatchedAt } },
+      );
 
       await Message.create([
         {
@@ -2466,6 +2794,7 @@ describe('Share Methods', () => {
       expect(byId.get(imageId)?.storageKey).toBeUndefined();
       expect(byId.get(docId)?.filename).toBe('report.pdf');
       expect(byId.get(docId)?.filepath).toBe(`/uploads/${userId}/${docId}`);
+      expect(byId.get(docId)?.sourceDispatchedAt).toBe(sourceDispatchedAt);
     });
 
     test('createSharedLink with snapshotFiles=false stores no snapshots', async () => {
@@ -2528,7 +2857,14 @@ describe('Share Methods', () => {
         text: 'doc',
         isCreatedByUser: true,
         files: [
-          { file_id: docId, type: 'application/pdf', filepath: `/uploads/${userId}/${docId}` },
+          {
+            file_id: docId,
+            type: 'application/pdf',
+            filepath: `/uploads/${userId}/${docId}`,
+            preview: `/previews/${userId}/${docId}`,
+            uri: `https://files.example.test/${userId}/${docId}`,
+            url: `https://cdn.example.test/${userId}/${docId}`,
+          },
         ],
       });
 
@@ -2536,9 +2872,14 @@ describe('Share Methods', () => {
       const result = await shareMethods.getSharedMessages(shareId);
 
       const file = (result?.messages[0].files?.[0] ?? {}) as Record<string, unknown>;
-      expect(file.filepath).toBe(`/api/share/${shareId}/files/${docId}`);
-      // owner storage path must not leak
-      expect(String(file.filepath)).not.toContain(userId);
+      const sharedRoute = `/api/share/${shareId}/files/${docId}`;
+      expect(file).toMatchObject({
+        filepath: sharedRoute,
+        preview: sharedRoute,
+        uri: sharedRoute,
+        url: sharedRoute,
+      });
+      expect(JSON.stringify(file)).not.toContain(userId);
     });
 
     test('getSharedMessages neutralizes URLs for non-snapshotted files', async () => {
@@ -2554,7 +2895,15 @@ describe('Share Methods', () => {
         user: userId,
         text: 'doc',
         isCreatedByUser: true,
-        files: [{ file_id: remoteId, filepath: originalPath }],
+        files: [
+          {
+            file_id: remoteId,
+            filepath: originalPath,
+            preview: `${originalPath}/preview`,
+            uri: `https://files.example.test/${userId}/${remoteId}`,
+            url: `https://cdn.example.test/${userId}/${remoteId}`,
+          },
+        ],
       });
 
       const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
@@ -2563,6 +2912,9 @@ describe('Share Methods', () => {
       // Non-snapshotted (non-streamable source): original URL must not leak.
       expect(file.filepath).toBeUndefined();
       expect(file.preview).toBeUndefined();
+      expect(file.uri).toBeUndefined();
+      expect(file.url).toBeUndefined();
+      expect(JSON.stringify(file)).not.toContain(userId);
     });
 
     test('updateSharedLink recomputes snapshots from current messages', async () => {
@@ -2792,6 +3144,40 @@ describe('Share Methods', () => {
       // viewer's fork is validated against.
       expect(saved?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
       expect(result?.updatedAt?.getTime()).toBe(published?.updatedAt?.getTime());
+    });
+
+    test('runs public projection preflight before persisting a legacy backfill', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId);
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'doc',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: `/uploads/${userId}/${docId}` }],
+      });
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+      const rejected = new Error('policy rejected');
+      const preflight = jest.fn(async () => {
+        throw rejected;
+      });
+
+      await expect(shareMethods.getSharedMessages(shareId, undefined, { preflight })).rejects.toBe(
+        rejected,
+      );
+
+      expect(preflight).toHaveBeenCalledTimes(1);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toBeUndefined();
     });
 
     test('snapshots database-backed text-source files without embedding their text', async () => {

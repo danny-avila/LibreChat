@@ -1,4 +1,5 @@
-import { RetentionMode } from 'librechat-data-provider';
+import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
+import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model } from 'mongoose';
 import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
@@ -8,6 +9,185 @@ import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_STORED_USER_SUBMITTED_PATHS = 256;
+const MAX_NORMALIZED_USER_SUBMITTED_PATHS = MAX_STORED_USER_SUBMITTED_PATHS + 1;
+const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATHS;
+const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
+const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
+const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
+const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
+
+function normalizeUserSubmittedPaths(paths: unknown): string[] {
+  if (!Array.isArray(paths)) {
+    return [];
+  }
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const path of paths) {
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
+      seen.has(path)
+    ) {
+      continue;
+    }
+    seen.add(path);
+    normalized.push(path);
+    if (normalized.length >= MAX_NORMALIZED_USER_SUBMITTED_PATHS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function normalizeUserSubmittedMessageFieldPaths(values: unknown): UserSubmittedMessageFieldPath[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const normalized: UserSubmittedMessageFieldPath[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const { path, field } = value as { path?: unknown; field?: unknown };
+    if (
+      typeof path !== 'string' ||
+      !path.startsWith('/') ||
+      path.length > MAX_USER_SUBMITTED_PATH_LENGTH ||
+      typeof field !== 'string' ||
+      !HITL_MESSAGE_FILTER_FIELD_SET.has(field)
+    ) {
+      continue;
+    }
+    const key = `${field}:${path}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({ path, field: field as UserSubmittedMessageFieldPath['field'] });
+    if (normalized.length >= MAX_NORMALIZED_USER_SUBMITTED_PATHS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function capNormalizedProvenance(
+  userSubmittedPaths: readonly string[],
+  userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
+): {
+  userSubmittedPaths: string[];
+  userSubmittedMessageFieldPaths: UserSubmittedMessageFieldPath[];
+  promoteWholeMessage: boolean;
+} {
+  return {
+    userSubmittedPaths: userSubmittedPaths.slice(0, MAX_STORED_USER_SUBMITTED_PATHS),
+    userSubmittedMessageFieldPaths: userSubmittedMessageFieldPaths.slice(
+      0,
+      MAX_STORED_USER_SUBMITTED_FIELD_PATHS,
+    ),
+    promoteWholeMessage: userSubmittedPaths.length > MAX_STORED_USER_SUBMITTED_PATHS,
+  };
+}
+
+function getStoredArrayExpression(field: string): Record<string, unknown> {
+  return {
+    $cond: [{ $isArray: `$${field}` }, `$${field}`, []],
+  };
+}
+
+function getSetUnionExpression(field: string, values: readonly unknown[]): Record<string, unknown> {
+  return {
+    $setUnion: [getStoredArrayExpression(field), values],
+  };
+}
+
+function getLiteralPipelineSet(update: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(update).map(([field, value]) => [field, { $literal: value }]),
+  );
+}
+
+function getStrictPipelineUpdate(Message: Model<IMessage>, update: Record<string, unknown>) {
+  const candidate = { ...update };
+  delete candidate._id;
+  delete candidate.tenantId;
+  return Message.castObject(candidate) as unknown as Record<string, unknown>;
+}
+
+/**
+ * Builds one Mongo aggregation update that merges and caps both provenance
+ * sets. Generic path overflow promotes the message to whole-message user
+ * provenance before excess paths are discarded. Exact HITL field provenance
+ * retains one bounded overflow sentinel (257 entries) so field-specific
+ * policies still fail closed instead of forgetting a dropped field identity.
+ */
+function buildAtomicProvenanceMerge(
+  update: Record<string, unknown>,
+  userSubmittedPaths: readonly string[],
+  userSubmittedMessageFieldPaths: readonly UserSubmittedMessageFieldPath[],
+  stampModelOutputOnInsert = false,
+): Record<string, unknown>[] {
+  const pathsUnion = getSetUnionExpression('userSubmittedPaths', userSubmittedPaths);
+  const fieldPathsUnion = getSetUnionExpression(
+    'userSubmittedMessageFieldPaths',
+    userSubmittedMessageFieldPaths,
+  );
+  let existingOrSubmitted: unknown = '$isUserSubmitted';
+  if (typeof update.isUserSubmitted === 'boolean') {
+    existingOrSubmitted = update.isUserSubmitted;
+  } else if (stampModelOutputOnInsert) {
+    existingOrSubmitted = { $ifNull: ['$isUserSubmitted', false] };
+  }
+
+  return [
+    {
+      $set: {
+        ...getLiteralPipelineSet(update),
+        [PROVENANCE_PATHS_UNION_FIELD]: pathsUnion,
+        [PROVENANCE_FIELD_PATHS_UNION_FIELD]: fieldPathsUnion,
+      },
+    },
+    {
+      $set: {
+        userSubmittedPaths: {
+          $slice: [`$${PROVENANCE_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_PATHS],
+        },
+        userSubmittedMessageFieldPaths: {
+          $slice: [`$${PROVENANCE_FIELD_PATHS_UNION_FIELD}`, MAX_STORED_USER_SUBMITTED_FIELD_PATHS],
+        },
+        isUserSubmitted: {
+          $cond: [
+            {
+              $gt: [{ $size: `$${PROVENANCE_PATHS_UNION_FIELD}` }, MAX_STORED_USER_SUBMITTED_PATHS],
+            },
+            true,
+            existingOrSubmitted,
+          ],
+        },
+      },
+    },
+    {
+      $unset: [PROVENANCE_PATHS_UNION_FIELD, PROVENANCE_FIELD_PATHS_UNION_FIELD],
+    },
+  ];
+}
+
+function getSteerUserSubmittedPaths(content: unknown): string[] {
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const paths: string[] = [];
+  for (let index = 0; index < content.length; index++) {
+    const part = content[index] as { type?: unknown } | null | undefined;
+    if (part?.type === 'steer') {
+      paths.push(`/content/${index}`);
+    }
+  }
+  return paths;
+}
 
 /**
  * Maximum private transcript JSON that may cross the MongoDB projection seam
@@ -228,9 +408,31 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
         update.tokenCount = 0;
       }
+      const userSubmittedPaths = normalizeUserSubmittedPaths([
+        ...(Array.isArray(params.userSubmittedPaths) ? params.userSubmittedPaths : []),
+        ...getSteerUserSubmittedPaths(params.content),
+      ]);
+      const userSubmittedMessageFieldPaths = normalizeUserSubmittedMessageFieldPaths(
+        params.userSubmittedMessageFieldPaths,
+      );
+      delete update.userSubmittedPaths;
+      delete update.userSubmittedMessageFieldPaths;
+      const stampModelOutputOnInsert =
+        params.isCreatedByUser === false && params.isUserSubmitted === undefined;
+      let messageUpdate: Record<string, unknown> | Record<string, unknown>[] = update;
+      if (userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0) {
+        messageUpdate = buildAtomicProvenanceMerge(
+          getStrictPipelineUpdate(Message, update),
+          userSubmittedPaths,
+          userSubmittedMessageFieldPaths,
+          stampModelOutputOnInsert,
+        );
+      } else if (stampModelOutputOnInsert) {
+        messageUpdate = { $set: update, $setOnInsert: { isUserSubmitted: false } };
+      }
       const message = await Message.findOneAndUpdate(
         { messageId: params.messageId, user: userId },
-        update,
+        messageUpdate,
         { upsert: true, new: true },
       );
 
@@ -289,14 +491,35 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const bulkOps = messages.map((message) => ({
-        updateOne: {
-          filter: { messageId: message.messageId },
-          update: message,
-          timestamps: !overrideTimestamp,
-          upsert: true,
-        },
-      }));
+      const bulkOps = messages.map((message) => {
+        const normalizedMessage = { ...message };
+        const provenance = capNormalizedProvenance(
+          normalizeUserSubmittedPaths(message.userSubmittedPaths),
+          normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
+        );
+        if (provenance.userSubmittedPaths.length > 0) {
+          normalizedMessage.userSubmittedPaths = provenance.userSubmittedPaths;
+        } else {
+          delete normalizedMessage.userSubmittedPaths;
+        }
+        if (provenance.userSubmittedMessageFieldPaths.length > 0) {
+          normalizedMessage.userSubmittedMessageFieldPaths =
+            provenance.userSubmittedMessageFieldPaths;
+        } else {
+          delete normalizedMessage.userSubmittedMessageFieldPaths;
+        }
+        if (provenance.promoteWholeMessage) {
+          normalizedMessage.isUserSubmitted = true;
+        }
+        return {
+          updateOne: {
+            filter: { messageId: message.messageId },
+            update: normalizedMessage,
+            timestamps: !overrideTimestamp,
+            upsert: true,
+          },
+        };
+      });
       const result = await tenantSafeBulkWrite(Message, bulkOps);
       return result;
     } catch (err) {
@@ -325,16 +548,38 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const provenance = capNormalizedProvenance(
+        normalizeUserSubmittedPaths(rest.userSubmittedPaths),
+        normalizeUserSubmittedMessageFieldPaths(rest.userSubmittedMessageFieldPaths),
+      );
+      const {
+        userSubmittedPaths: _userSubmittedPaths,
+        userSubmittedMessageFieldPaths: _userSubmittedMessageFieldPaths,
+        ...safeRest
+      } = rest;
       const message = {
         user,
         endpoint,
         messageId,
         conversationId,
         parentMessageId,
-        ...rest,
+        ...safeRest,
+        ...(provenance.userSubmittedPaths.length > 0 && {
+          userSubmittedPaths: provenance.userSubmittedPaths,
+        }),
+        ...(provenance.userSubmittedMessageFieldPaths.length > 0 && {
+          userSubmittedMessageFieldPaths: provenance.userSubmittedMessageFieldPaths,
+        }),
+        ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
+      const update =
+        rest.isCreatedByUser === false &&
+        rest.isUserSubmitted === undefined &&
+        !provenance.promoteWholeMessage
+          ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
+          : message;
 
-      return await Message.findOneAndUpdate({ user, messageId }, message, {
+      return await Message.findOneAndUpdate({ user, messageId }, update, {
         upsert: true,
         new: true,
       });
@@ -538,9 +783,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const { messageId, ...update } = message;
-      const updatedMessage = await Message.findOneAndUpdate({ messageId, user: userId }, update, {
-        new: true,
-      });
+      const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
+      const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
+        update.userSubmittedMessageFieldPaths,
+      );
+      delete update.userSubmittedPaths;
+      delete update.userSubmittedMessageFieldPaths;
+      const messageUpdate =
+        submittedPaths.length > 0 || submittedMessageFields.length > 0
+          ? buildAtomicProvenanceMerge(
+              getStrictPipelineUpdate(Message, update),
+              submittedPaths,
+              submittedMessageFields,
+            )
+          : update;
+      const updatedMessage = await Message.findOneAndUpdate(
+        { messageId, user: userId },
+        messageUpdate,
+        { new: true },
+      );
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
@@ -553,6 +814,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         sender: updatedMessage.sender,
         text: updatedMessage.text,
         isCreatedByUser: updatedMessage.isCreatedByUser,
+        isUserSubmitted: updatedMessage.isUserSubmitted,
+        userSubmittedPaths: updatedMessage.userSubmittedPaths,
+        userSubmittedMessageFieldPaths: updatedMessage.userSubmittedMessageFieldPaths,
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,

@@ -586,8 +586,12 @@ export interface BackgroundTask {
    * the ORIGINAL tool-call identity.
    */
   harvestStarted?: boolean;
+  /** True until completion-time file inspection/persistence accepts or rejects the artifact. */
+  harvestPending?: boolean;
   /** True once the artifact has been handed to a live poll turn's callback. */
   artifactDelivered?: boolean;
+  /** Terminal policy rejection: blocked artifact bytes must never be restored or claimed. */
+  artifactBlocked?: boolean;
   /** Error message when status === 'error'. */
   error?: string;
   createdAt: number;
@@ -798,7 +802,7 @@ export class BackgroundTaskRegistryClass {
       toolCallId: params.toolCallId,
       messageId: params.messageId,
       agentId: params.agentId,
-      ...(params.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(params.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       status: 'running',
       createdAt: nextDispatchStamp(now),
       updatedAt: now,
@@ -816,7 +820,7 @@ export class BackgroundTaskRegistryClass {
   ): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || (task.artifactBlocked === true && patch.artifactBlocked !== true)) {
       return;
     }
     Object.assign(task, patch, { updatedAt: Date.now() });
@@ -832,7 +836,7 @@ export class BackgroundTaskRegistryClass {
       status: 'completed',
       result: toStoredContent(result.content),
       artifact: toStoredArtifact(taskId, result.artifact),
-      ...(result.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(result.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
       /** Marks that an artifact existed even after `claimArtifact` clears it,
        *  so re-polls keep the "produced an artifact" note. */
       artifactDelivered: false,
@@ -855,6 +859,19 @@ export class BackgroundTaskRegistryClass {
       return;
     }
     this.update(userId, conversationId, taskId, { attachments });
+  }
+
+  /** Marks completion-time inspection/persistence successful, unlocking artifact collection. */
+  finishHarvest(
+    userId: string,
+    conversationId: string,
+    taskId: string,
+    attachments: unknown[] = [],
+  ): void {
+    this.update(userId, conversationId, taskId, {
+      harvestPending: false,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   /**
@@ -882,7 +899,13 @@ export class BackgroundTaskRegistryClass {
     | undefined {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.status !== 'completed' || task.artifact == null || task.artifactDelivered) {
+    if (
+      !task ||
+      task.status !== 'completed' ||
+      task.harvestPending === true ||
+      task.artifact == null ||
+      task.artifactDelivered
+    ) {
       return undefined;
     }
     const artifact = task.artifact;
@@ -906,7 +929,7 @@ export class BackgroundTaskRegistryClass {
   restoreArtifact(userId: string, conversationId: string, taskId: string, artifact: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task || task.artifact != null) {
+    if (!task || task.artifactBlocked === true || task.artifact != null) {
       return;
     }
     /** Same size bound as `complete()` — a restore path must not resurrect
@@ -925,7 +948,22 @@ export class BackgroundTaskRegistryClass {
     this.update(userId, conversationId, taskId, {
       status: 'error',
       error,
-      ...(options?.harvestStarted === true ? { harvestStarted: true } : {}),
+      ...(options?.harvestStarted === true ? { harvestStarted: true, harvestPending: true } : {}),
+    });
+  }
+
+  /** Permanently removes a policy-rejected artifact and exposes only the raw-free policy error. */
+  blockArtifact(userId: string, conversationId: string, taskId: string, error: string): void {
+    this.update(userId, conversationId, taskId, {
+      status: 'error',
+      error,
+      result: undefined,
+      artifact: undefined,
+      attachments: undefined,
+      harvestStarted: undefined,
+      harvestPending: undefined,
+      artifactDelivered: false,
+      artifactBlocked: true,
     });
   }
 
@@ -938,10 +976,11 @@ export class BackgroundTaskRegistryClass {
   revokeHarvest(userId: string, conversationId: string, taskId: string, artifact?: unknown): void {
     const bucket = this.buckets.get(this.key(userId, conversationId));
     const task = bucket?.tasks.get(taskId);
-    if (!task) {
+    if (!task || task.artifactBlocked === true) {
       return;
     }
     task.harvestStarted = undefined;
+    task.harvestPending = undefined;
     if (task.artifact == null && artifact != null) {
       task.artifact = artifact;
       task.artifactDelivered = false;
@@ -1346,6 +1385,27 @@ export async function runCheckBackgroundTask(params: {
   });
 }
 
+/** Returns a read-only snapshot of the specifically requested task, if any. */
+export function getBackgroundTaskSnapshot(params: {
+  userId: string;
+  conversationId: string;
+  args: unknown;
+}): Readonly<BackgroundTask> | undefined {
+  const rawId = coerceArgsObject(params.args)?.background_task_id;
+  const taskId = typeof rawId === 'string' && rawId.trim() !== '' ? rawId.trim() : undefined;
+  if (!taskId) {
+    return undefined;
+  }
+  const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
+  if (!task) {
+    return undefined;
+  }
+  return {
+    ...task,
+    ...(task.attachments != null ? { attachments: [...task.attachments] } : {}),
+  };
+}
+
 /**
  * When a `check_background_task` call targets a specific completed task that
  * produced an artifact, returns that artifact once (marking it delivered) so the
@@ -1419,7 +1479,11 @@ export function getBackgroundCodeDelivery(params: {
     return undefined;
   }
   const task = backgroundTaskRegistry.get(params.userId, params.conversationId, taskId);
-  if (!task || task.harvestStarted !== true) {
+  if (
+    !task ||
+    task.harvestStarted !== true ||
+    (task.status === 'completed' && task.harvestPending === true)
+  ) {
     return undefined;
   }
   return {

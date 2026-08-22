@@ -286,10 +286,9 @@ export class MCPServersRegistry {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
-      } catch (error) {
+      } catch {
         logger.warn(
           '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
-          error,
         );
       }
     }
@@ -380,7 +379,7 @@ export class MCPServersRegistry {
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {
-        logger.debug(`[MCP][config][${name}] Admin override shadowed by user-tier entry`);
+        logger.debug('[MCP][config] Admin override shadowed by user-tier entry');
         continue;
       }
       if (isProcessMCPServerConfig(result[name])) {
@@ -546,7 +545,7 @@ export class MCPServersRegistry {
         allowedAddresses,
       );
     } catch (error) {
-      logger.error(`[MCPServersRegistry] Reinspection failed for server "${serverName}":`, error);
+      logger.error('[MCPServersRegistry] Server reinspection failed');
       if (isMCPDomainNotAllowedError(error)) {
         throw error;
       }
@@ -675,7 +674,7 @@ export class MCPServersRegistry {
     );
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
-        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+        logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected initialization error');
       }
     }
 
@@ -727,7 +726,7 @@ export class MCPServersRegistry {
       if (!isStaleStub) {
         return cached;
       }
-      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      logger.info('[MCP][config] Retrying stale failure stub');
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);
@@ -755,7 +754,7 @@ export class MCPServersRegistry {
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
   ): Promise<t.ParsedServerConfig | undefined> {
-    const prefix = `[MCP][config][${serverName}]`;
+    const prefix = '[MCP][config]';
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
     const source = resolveServerSource(rawConfig, 'config');
@@ -779,12 +778,12 @@ export class MCPServersRegistry {
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
-        `${prefix} Initialized: tools=${parsedConfig.tools ?? 'N/A'}, ` +
+        `${prefix} Initialized: toolCount=${parsedConfig.toolFunctions ? Object.keys(parsedConfig.toolFunctions).length : 0}, ` +
           `duration=${parsedConfig.initDuration ?? 'N/A'}ms`,
       );
       return parsedConfig;
-    } catch (error) {
-      logger.error(`${prefix} Failed to initialize:`, error);
+    } catch {
+      logger.error(`${prefix} Failed to initialize`);
 
       const stubConfig: t.ParsedServerConfig = {
         ...rawConfig,
@@ -795,11 +794,8 @@ export class MCPServersRegistry {
       try {
         await this.upsertConfigCache(cacheKey, stubConfig);
         logger.info(`${prefix} Stored stub config for recovery`);
-      } catch (cacheError) {
-        logger.error(
-          `${prefix} Failed to store stub config (will retry on next request):`,
-          cacheError,
-        );
+      } catch {
+        logger.error(`${prefix} Failed to store stub config; will retry on next request`);
       }
       return stubConfig;
     }
@@ -928,8 +924,7 @@ export class MCPServersRegistry {
     }
 
     logger.warn(
-      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed server(s) with colliding name(s): ` +
-        `${shadowedNames.join(', ')}. DB records remain stored but are hidden while operator-managed servers use these names.`,
+      `[MCPServersRegistry] ${operatorSource} MCP server(s) shadow DB-backed servers with ${shadowedNames.length} colliding name(s); DB records remain stored but hidden`,
     );
   }
 
