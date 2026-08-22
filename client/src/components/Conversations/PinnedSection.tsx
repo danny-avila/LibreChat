@@ -481,7 +481,11 @@ const PinnedSection = ({
        * draining. Once the visible list is known to be the whole list, those
        * keys really are gone and replacing prunes them: merging forever would
        * grow the array until the endpoint's size guard rejected every write. */
-      const canPrune = membershipComplete && !favoritesData.isLoading;
+      /* Every membership source has to have actually delivered, not merely
+       * stopped loading: a favorites fetch that exhausted its retries leaves
+       * the list empty, and pruning against that would drop every favorite key
+       * from the stored order. */
+      const canPrune = membershipComplete && favoritesData.isLoaded;
       const nextOrder = canPrune ? visibleKeys : mergeVisibleOrder(storedOrder ?? [], visibleKeys);
 
       updatePinnedOrder.mutate(nextOrder, {
@@ -508,7 +512,7 @@ const PinnedSection = ({
       updatePinnedOrder,
       storedOrder,
       membershipComplete,
-      favoritesData.isLoading,
+      favoritesData.isLoaded,
       showToast,
       localize,
     ],

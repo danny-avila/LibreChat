@@ -16,6 +16,7 @@ const mockUpdatePinnedOrder = jest.fn();
 const mockFavoritesData = {
   favorites: [] as Array<Record<string, string>>,
   isLoading: false,
+  isLoaded: true,
   isAgentsLoading: false,
   agentsMap: {} as Record<string, unknown>,
   specsMap: {} as Record<string, unknown>,
@@ -120,6 +121,7 @@ describe('PinnedSection unified list', () => {
     mockUpdatePinnedOrder.mockReset();
     mockFavoritesData.favorites = [];
     mockFavoritesData.isLoading = false;
+    mockFavoritesData.isLoaded = true;
     mockFavoritesData.isAgentsLoading = false;
     mockFavoritesData.agentsMap = {};
     mockFavoritesData.specsMap = {};
@@ -213,6 +215,30 @@ describe('PinnedSection unified list', () => {
 
       expect(itemLabels()).toEqual(['gpt-4o', 'Pinned Chat']);
       expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+    });
+
+    /* A favorites fetch that exhausted its retries stops loading with nothing
+     * to show, and pruning against that empty list would drop every favorite
+     * key from the stored order. */
+    it('keeps merging when the favorites fetch never delivered', () => {
+      mockFavoritesData.isLoaded = false;
+      mockPinnedOrder = ['convo:gone', 'convo:c1'];
+      render(
+        <DndProvider backend={HTML5Backend}>
+          <PinnedSection
+            conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
+            toggleNav={jest.fn()}
+            membershipComplete
+          />
+        </DndProvider>,
+      );
+
+      moveFocusedRow('Pinned Chat', 'ArrowDown');
+
+      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+        ['convo:gone', 'convo:c2', 'convo:c1'],
+        expect.anything(),
+      );
     });
 
     it('prunes keys that are gone once the whole list is known', () => {
