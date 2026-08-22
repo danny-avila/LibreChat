@@ -2,9 +2,17 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { AgentDetail } from './agents.helpers';
 import { cleanupAgent, openAgentBuilder, uniqueAgentName } from './agents.helpers';
-import { MOCK_ENDPOINTS, getAccessToken, requestJson, sendMessage } from './helpers';
+import {
+  MOCK_ENDPOINTS,
+  getAccessToken,
+  requestJson,
+  sendMessageAndWaitForCompletion,
+} from './helpers';
 
 const DETACHED_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
+/** The activity hook's first reconnect is scheduled after 500 ms. */
+const ACTIVITY_RECONNECT_GUARD_MS = 1_000;
+const ACTIVITY_PATH = /\/api\/convos\/[^/]+\/subagents\/[^/]+\/tasks\/[^/]+\/activity$/;
 
 async function createAgent(
   page: Page,
@@ -48,10 +56,17 @@ test.describe('detached subagent activity', () => {
     const parentName = uniqueAgentName('E2E Activity Parent');
     const createdAgentIds: string[] = [];
     const activityRequests: string[] = [];
+    const finishedActivityRequests: string[] = [];
     page.on('request', (request) => {
       const url = new URL(request.url());
-      if (/\/api\/convos\/[^/]+\/subagents\/[^/]+\/tasks\/[^/]+\/activity$/.test(url.pathname)) {
+      if (ACTIVITY_PATH.test(url.pathname)) {
         activityRequests.push(url.pathname);
+      }
+    });
+    page.on('requestfinished', (request) => {
+      const url = new URL(request.url());
+      if (ACTIVITY_PATH.test(url.pathname)) {
+        finishedActivityRequests.push(url.pathname);
       }
     });
 
@@ -72,7 +87,7 @@ test.describe('detached subagent activity', () => {
       createdAgentIds.push(parent.id);
 
       await selectAgent(page, parentName);
-      const response = await sendMessage(
+      const response = await sendMessageAndWaitForCompletion(
         page,
         `${DETACHED_ACTIVITY_MARKER}${children.map((child) => child.id).join(',')}:${label}`,
       );
@@ -93,7 +108,9 @@ test.describe('detached subagent activity', () => {
 
       await expect(panel.getByText('Completed', { exact: true })).toBeVisible({ timeout: 30_000 });
       await expect(panel).toContainText(`E2E detached child 1 complete ${label}`);
-      await expect.poll(() => activityRequests.length).toBe(1);
+      await expect.poll(() => finishedActivityRequests.length).toBe(1);
+      await page.waitForTimeout(ACTIVITY_RECONNECT_GUARD_MS);
+      expect(activityRequests).toHaveLength(1);
 
       await panel.getByRole('button', { name: 'Close' }).click();
       await expect(panel).not.toBeVisible();
@@ -114,6 +131,8 @@ test.describe('detached subagent activity', () => {
 
       await panel.getByRole('button', { name: 'Close' }).click();
       await page.getByRole('button', { name: 'Chat History' }).click();
+      await expect(page.getByTestId('convo-item').first()).toBeVisible();
+      await expect(page.getByTestId('convo-item')).toHaveCount(1);
       await expect(page.getByText(/Subagent:/)).toHaveCount(0);
     } finally {
       for (const agentId of createdAgentIds.reverse()) {
