@@ -3,12 +3,8 @@ import { useToastContext } from '@librechat/client';
 import { useAssignConversationToProjectMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
-import { enqueue } from '~/utils';
 
 export const CONVERSATION_DRAG_TYPE = 'conversation-item';
-
-/** One queue per conversation: drops onto different chats stay independent. */
-const ASSIGN_QUEUE_PREFIX = 'assign-conversation:';
 
 /** Where each conversation is headed while its assignment is still queued. A
  *  drag item carries the project the row had when the drag started, which goes
@@ -68,12 +64,9 @@ export const useAssignDroppedConversation = () => {
       }
       const token = ++assignmentToken;
       queuedDestination.set(conversationId, { token, projectId, settled: false });
-      /* A slow assignment leaves the row droppable, and every project target
-       * owns its own mutation instance, so two quick drops would run
-       * concurrently. The write is an unconditional update, so the request that
-       * happens to reach the database last would decide the project regardless
-       * of which drop came first. */
-      void enqueue(`${ASSIGN_QUEUE_PREFIX}${conversationId}`, async () => {
+      /* The mutation serializes writes per conversation, so this only has to
+       * report the outcome and keep the destination bookkeeping in step. */
+      void (async () => {
         try {
           await assignConversation.mutateAsync({ conversationId, projectId });
           showToast({
@@ -96,7 +89,7 @@ export const useAssignDroppedConversation = () => {
             queuedDestination.delete(conversationId);
           }
         }
-      });
+      })();
     },
     [assignConversation, localize, showToast],
   );

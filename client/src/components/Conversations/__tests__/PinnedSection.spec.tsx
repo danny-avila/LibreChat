@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -219,6 +219,24 @@ describe('PinnedSection unified list', () => {
     /* Reordering against an order that has not arrived yet would merge into
      * `[]` and, since `onMutate` cancels that GET, post only what is on screen,
      * discarding the saved positions of everything else. */
+    /* A write that settles after the user has arranged the list again must not
+     * clear the snapshot showing that newer arrangement. */
+    it('keeps a newer arrangement when an older write settles', () => {
+      mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+      renderSection([pinnedConvo('c1', 'First'), pinnedConvo('c2', 'Second')]);
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+      const firstSettle = mockUpdatePinnedOrder.mock.calls[0][1].onSettled;
+
+      moveFocusedRow('gpt-4o', 'ArrowDown');
+      const arranged = itemLabels();
+
+      act(() => firstSettle());
+
+      /* Releasing after this would otherwise save an order no longer on screen. */
+      expect(itemLabels()).toEqual(arranged);
+    });
+
     /* Alt/Option+Arrow moves the caret word-wise inside a text field, so the
      * shortcut has to stand down wherever the drag source does. */
     it('leaves Alt+Arrow to the rename input while a row title is being edited', () => {

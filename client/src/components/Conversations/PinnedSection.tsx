@@ -424,6 +424,11 @@ const PinnedSection = ({
    * into a project and drags that were abandoned without passing a row. Only a
    * drag that actually reordered something is worth a write. */
   const hasReorderedRef = useRef(false);
+  /* Bumped by every move. A write that settles after the user has already
+   * arranged the list again must not clear the snapshot showing that newer
+   * arrangement, or the rows would snap back to the older order while the drag
+   * still holds, and releasing would save something no longer on screen. */
+  const arrangementRef = useRef(0);
 
   const moveEntry = useCallback((dragKey: string, hoverKey: string) => {
     const list = [...dragEntriesRef.current];
@@ -436,6 +441,7 @@ const PinnedSection = ({
     list.splice(to, 0, moved);
     dragEntriesRef.current = list;
     hasReorderedRef.current = true;
+    arrangementRef.current += 1;
     setLiveEntries(list);
   }, []);
 
@@ -457,6 +463,7 @@ const PinnedSection = ({
       list.splice(to, 0, moved);
       dragEntriesRef.current = list;
       hasReorderedRef.current = true;
+      arrangementRef.current += 1;
       setLiveEntries(list);
       setAnnouncement(
         localize('com_ui_moved_to_position', { 0: `${to + 1}`, 1: `${list.length}` }),
@@ -472,6 +479,7 @@ const PinnedSection = ({
         return;
       }
       hasReorderedRef.current = false;
+      const arrangement = arrangementRef.current;
       if (handledElsewhere) {
         /* The drop filed the chat into a project or back into Chats. The rows
          * the pointer crossed on the way shifted only incidentally, so that
@@ -509,6 +517,9 @@ const PinnedSection = ({
          * then the optimistic cache carries it, or the rollback has replaced it
          * with what the server actually holds. */
         onSettled: () => {
+          if (arrangementRef.current !== arrangement) {
+            return;
+          }
           setLiveEntries(null);
         },
       });
