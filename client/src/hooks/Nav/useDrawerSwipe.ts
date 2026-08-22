@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import {
   TRANSITION_MS,
   MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_TRANSITION,
+  MOBILE_PANE_SHIFT,
   SIDEBAR_TRANSITION,
 } from '~/components/UnifiedSidebar/constants';
 
@@ -19,6 +21,15 @@ const FLICK_MIN_DISTANCE = 24;
 const VELOCITY_HOLD_MS = 100;
 /** Inline styles are cleared this long after TRANSITION_MS, then classes own the state. */
 const SETTLE_BUFFER_MS = 80;
+
+/**
+ * Whether the drawer hides the pane entirely, which is what makes repositioning
+ * the pane instantly invisible. A geometric fact rather than a reading of the
+ * setting: the reveal is safe exactly when there is nothing uncovered to see it
+ * in, however the width was arrived at.
+ */
+const drawerCoversPane = (drawer: HTMLElement): boolean =>
+  (drawer.clientWidth || window.innerWidth) >= window.innerWidth;
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
@@ -165,17 +176,29 @@ type Gesture = {
   rafScheduled: boolean;
 };
 
+/**
+ * What the two surfaces settle back to. Nothing under reduced motion, where
+ * every drawer move snaps: handing an animating value back would leave the
+ * element ready to ease the next change, and the strip setting changes the
+ * drawer's width without passing through the snap path at all.
+ */
+const settledTransitions = (): { drawer: string; pane: string } =>
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ? { drawer: 'none', pane: 'none' }
+    : { drawer: MOBILE_DRAWER_TRANSITION, pane: SIDEBAR_TRANSITION };
+
 /** Returns every transient inline property to what React/classes render for
  * `paneOpen`. The drawer's transform is class-driven so clearing suffices, but
  * the pane's is a React style prop React will NOT re-assert while its value is
  * unchanged — an open pane must get its committed transform back explicitly. */
 const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: boolean) => {
+  const settled = settledTransitions();
   drawer.style.transform = '';
   drawer.style.willChange = '';
-  drawer.style.transition = SIDEBAR_TRANSITION;
-  pane.style.transform = paneOpen ? 'translateX(100%)' : '';
+  drawer.style.transition = settled.drawer;
+  pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
-  pane.style.transition = SIDEBAR_TRANSITION;
+  pane.style.transition = settled.pane;
 };
 
 const dragTransforms = (gesture: Gesture): { drawer: string; pane: string } => {
@@ -290,18 +313,19 @@ export default function useDrawerSwipe({
           onOpenChangeRef.current(next);
           const id = setTimeout(() => {
             settleRef.current = null;
-            gesture.drawer.style.transition = SIDEBAR_TRANSITION;
-            gesture.pane.style.transition = SIDEBAR_TRANSITION;
+            const settled = settledTransitions();
+            gesture.drawer.style.transition = settled.drawer;
+            gesture.pane.style.transition = settled.pane;
           }, SETTLE_BUFFER_MS);
           settleRef.current = { id, target: next, drawer: gesture.drawer, pane: gesture.pane };
         }
         return;
       }
       const { drawer: drawerEl, pane: paneEl } = gesture;
-      drawerEl.style.transition = SIDEBAR_TRANSITION;
+      drawerEl.style.transition = MOBILE_DRAWER_TRANSITION;
       paneEl.style.transition = SIDEBAR_TRANSITION;
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
-      paneEl.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
+      paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
@@ -336,8 +360,9 @@ export default function useDrawerSwipe({
         pane.style.transition = 'none';
         const id = setTimeout(() => {
           settleRef.current = null;
-          drawer.style.transition = SIDEBAR_TRANSITION;
-          pane.style.transition = SIDEBAR_TRANSITION;
+          const settled = settledTransitions();
+          drawer.style.transition = settled.drawer;
+          pane.style.transition = settled.pane;
         }, SETTLE_BUFFER_MS);
         settleRef.current = { id, target: next, drawer, pane };
         return;
@@ -367,22 +392,26 @@ export default function useDrawerSwipe({
         if (armed == null || armed.target !== next || armed.id != null) {
           return;
         }
-        drawer.style.transition = SIDEBAR_TRANSITION;
+        drawer.style.transition = MOBILE_DRAWER_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
         if (next) {
           pane.style.transition = SIDEBAR_TRANSITION;
-          pane.style.transform = 'translateX(100%)';
-        } else {
-          /** A programmatic close is a REVEAL: the pane repositions
-           * instantly beneath the opaque drawer's cover and only the
-           * drawer slides away, uncovering content already in place.
-           * Animating the pane in from the right made every
-           * tap-to-navigate close visibly shift the chat leftward while
-           * the new conversation committed into the moving layer
-           * mid-slide. The gesture keeps the paired both-move motion in
-           * `settle` — there a finger drags both surfaces. */
+          pane.style.transform = MOBILE_PANE_SHIFT;
+        } else if (drawerCoversPane(drawer)) {
+          /** A programmatic close is a REVEAL while the drawer is full width:
+           * the pane repositions instantly beneath the opaque cover and only
+           * the drawer slides away, uncovering content already in place.
+           * Animating the pane in from the right makes every tap-to-navigate
+           * close visibly shift the chat leftward while the new conversation
+           * commits into the moving layer mid-slide. */
           pane.style.transition = 'none';
           pane.style.transform = 'none';
+        } else {
+          /** With the strip enabled that jump would land in the visible slice,
+           * so both surfaces animate together, which is the motion the drag
+           * path already produces in `settle`. */
+          pane.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transform = 'translate3d(0, 0, 0)';
         }
         void drawer.getBoundingClientRect();
         armed.id = setTimeout(() => {
