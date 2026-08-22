@@ -84,6 +84,7 @@ const baseDefinitions: Record<string, SettingDefinition> = {
       [ImageDetail.low]: 'com_ui_low',
       [ImageDetail.auto]: 'com_ui_auto',
       [ImageDetail.high]: 'com_ui_high',
+      [ImageDetail.original]: 'com_ui_original',
     },
     optionType: 'conversation',
     columnSpan: 2,
@@ -353,6 +354,32 @@ const openAIParams: Record<string, SettingDefinition> = {
     },
     optionType: 'model',
     columnSpan: 4,
+  },
+  priorityProcessing: {
+    key: 'priorityProcessing',
+    label: 'com_endpoint_priority_processing',
+    labelCode: true,
+    description: 'com_endpoint_openai_priority_processing',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'model',
+    showDefault: false,
+    columnSpan: 2,
+  },
+  promptCache: {
+    key: 'promptCache',
+    label: 'com_endpoint_prompt_cache',
+    labelCode: true,
+    description: 'com_endpoint_openai_prompt_cache',
+    descriptionCode: true,
+    type: 'boolean',
+    default: false,
+    component: 'switch',
+    optionType: 'conversation',
+    showDefault: false,
+    columnSpan: 2,
   },
   verbosity: {
     key: 'verbosity',
@@ -883,13 +910,17 @@ const openAI: SettingsConfiguration = [
   openAIParams.reasoning_summary,
   openAIParams.reasoning_mode,
   openAIParams.reasoning_context,
+  openAIParams.priorityProcessing,
+  openAIParams.promptCache,
   openAIParams.verbosity,
   openAIParams.disableStreaming,
   librechat.fileTokenLimit,
 ];
 
 const openRouter: SettingsConfiguration = [
-  ...openAI,
+  ...openAI.filter(
+    (setting) => setting.key !== 'priorityProcessing' && setting.key !== 'promptCache',
+  ),
   anthropic.promptCache,
   anthropic.promptCacheTtl,
 ];
@@ -914,6 +945,8 @@ const openAICol2: SettingsConfiguration = [
   openAIParams.reasoning_summary,
   openAIParams.reasoning_mode,
   openAIParams.reasoning_context,
+  openAIParams.priorityProcessing,
+  openAIParams.promptCache,
   openAIParams.verbosity,
   openAIParams.useResponsesApi,
   openAIParams.web_search,
@@ -1200,7 +1233,13 @@ export const presetSettings: Record<
   [EModelEndpoint.custom]: openAIColumns,
   [Providers.OPENROUTER]: {
     col1: openAICol1,
-    col2: [...openAICol2, anthropic.promptCache, anthropic.promptCacheTtl],
+    col2: [
+      ...openAICol2.filter(
+        (setting) => setting.key !== 'priorityProcessing' && setting.key !== 'promptCache',
+      ),
+      anthropic.promptCache,
+      anthropic.promptCacheTtl,
+    ],
   },
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,
@@ -1256,29 +1295,135 @@ export const agentParamSettings: Record<string, SettingsConfiguration | undefine
  * current models (2.5 and 3+) surface their 64K output limit instead of the legacy 8K value.
  * Anthropic prompt-cache controls are only surfaced for models that support them.
  */
+export interface ModelAwareSettingsOptions {
+  provider?: string;
+  useResponsesApi?: boolean;
+  priorityModels?: string[];
+}
+
+const GPT_5_6_PATTERN = /^gpt-5\.6(?:-|$)/i;
+const GPT_5_6_ONLY_KEYS = new Set(['reasoning_mode', 'reasoning_context']);
+const RESPONSES_ONLY_KEYS = new Set(['reasoning_mode', 'reasoning_context']);
+const MODEL_AWARE_OPTION_KEYS = new Set(['imageDetail', 'reasoning_effort']);
+
+export function getInvalidModelAwareKeys(
+  settings: SettingsConfiguration,
+  values: Record<string, unknown>,
+): string[] {
+  const invalidKeys: string[] = [];
+  for (const setting of settings) {
+    if (!MODEL_AWARE_OPTION_KEYS.has(setting.key) || !setting.options) {
+      continue;
+    }
+    const value = values[setting.key];
+    if (typeof value === 'string' && !setting.options.includes(value)) {
+      invalidKeys.push(setting.key);
+    }
+  }
+  return invalidKeys;
+}
+
 export function applyModelAwareDefaults(
   settings: SettingsConfiguration,
   endpoint: string,
   model?: string,
+  options: ModelAwareSettingsOptions = {},
 ): SettingsConfiguration {
-  if (!model) {
+  const openAIEndpoint =
+    endpoint === EModelEndpoint.openAI ||
+    endpoint === EModelEndpoint.azureOpenAI ||
+    endpoint === EModelEndpoint.custom;
+  if (!model && !openAIEndpoint) {
     return settings;
   }
+
+  const modelName = model ?? '';
 
   const modelAwareSettings =
     endpoint === EModelEndpoint.google
       ? settings.map((setting) =>
           setting.key === 'maxOutputTokens'
-            ? { ...setting, default: googleSettings.maxOutputTokens.reset(model) }
+            ? { ...setting, default: googleSettings.maxOutputTokens.reset(modelName) }
             : setting,
         )
       : settings;
 
-  if (endpoint !== EModelEndpoint.anthropic || supportsPromptCache(model)) {
+  if (endpoint === EModelEndpoint.anthropic) {
+    if (supportsPromptCache(modelName)) {
+      return modelAwareSettings;
+    }
+
+    return modelAwareSettings.filter(
+      (setting) => setting.key !== 'promptCache' && setting.key !== 'promptCacheTtl',
+    );
+  }
+
+  if (!openAIEndpoint) {
     return modelAwareSettings;
   }
 
-  return modelAwareSettings.filter(
-    (setting) => setting.key !== 'promptCache' && setting.key !== 'promptCacheTtl',
-  );
+  const isGPT56 = GPT_5_6_PATTERN.test(modelName);
+  const provider = options.provider ?? endpoint;
+  const isFirstPartyOpenAI =
+    provider === EModelEndpoint.openAI || provider === EModelEndpoint.azureOpenAI;
+  const supportsManagedGPT56 = isGPT56 && isFirstPartyOpenAI;
+  const supportsPriority =
+    provider === EModelEndpoint.openAI ||
+    (provider === EModelEndpoint.azureOpenAI &&
+      options.priorityModels?.includes(modelName) === true);
+
+  return modelAwareSettings.flatMap((setting) => {
+    if (GPT_5_6_ONLY_KEYS.has(setting.key) && !isGPT56) {
+      return [];
+    }
+    if (setting.key === 'priorityProcessing' && !supportsManagedGPT56) {
+      return [];
+    }
+    if (
+      setting.key === 'promptCache' &&
+      provider !== Providers.OPENROUTER &&
+      !supportsManagedGPT56
+    ) {
+      return [];
+    }
+    if (RESPONSES_ONLY_KEYS.has(setting.key) && options.useResponsesApi !== true) {
+      return [];
+    }
+    if (setting.key === 'priorityProcessing' && !supportsPriority) {
+      return [];
+    }
+    if (setting.key === 'priorityProcessing') {
+      const isOpenAI = provider === EModelEndpoint.openAI;
+      return [
+        {
+          ...setting,
+          label: isOpenAI ? 'com_endpoint_fast_mode' : 'com_endpoint_priority_processing',
+          description: isOpenAI
+            ? 'com_endpoint_openai_fast_mode'
+            : 'com_endpoint_openai_priority_processing',
+        },
+      ];
+    }
+    if (setting.key === 'reasoning_effort') {
+      return [
+        {
+          ...setting,
+          options: isGPT56
+            ? setting.options
+            : setting.options?.filter((value) => value !== ReasoningEffort.max),
+        },
+      ];
+    }
+    if (setting.key === 'imageDetail') {
+      return [
+        {
+          ...setting,
+          options: supportsManagedGPT56
+            ? [ImageDetail.low, ImageDetail.auto, ImageDetail.high, ImageDetail.original]
+            : [ImageDetail.low, ImageDetail.auto, ImageDetail.high],
+        },
+      ];
+    }
+    return [setting];
+  });
 }

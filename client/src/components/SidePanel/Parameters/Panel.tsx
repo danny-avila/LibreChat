@@ -7,6 +7,7 @@ import {
   paramSettings,
   getSettingsKeys,
   getEndpointField,
+  getInvalidModelAwareKeys,
   SettingDefinition,
   tConvoUpdateSchema,
   applyModelAwareDefaults,
@@ -30,7 +31,7 @@ export default function Parameters() {
   /** Bumped on every reset; used as a key so the spin animation replays */
   const [resetCount, setResetCount] = useState(0);
 
-  const { data: endpointsConfig = {} } = useGetEndpointsQuery();
+  const { data: endpointsConfig = {}, isSuccess: endpointsConfigReady } = useGetEndpointsQuery();
   const provider = conversation?.endpoint ?? '';
   const model = conversation?.model ?? '';
 
@@ -54,14 +55,19 @@ export default function Parameters() {
       defaultParams.filter((param) => param != null),
       overriddenEndpointKey,
       model,
+      {
+        provider,
+        useResponsesApi: conversation?.useResponsesApi === true,
+        priorityModels: endpointsConfig[provider]?.priorityModels,
+      },
     );
     return modelAwareParams.map(
       (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
     );
-  }, [endpointType, endpointsConfig, model, provider]);
+  }, [conversation?.useResponsesApi, endpointType, endpointsConfig, model, provider]);
 
   useEffect(() => {
-    if (!parameters) {
+    if (!parameters || !endpointsConfigReady) {
       return;
     }
 
@@ -83,6 +89,9 @@ export default function Parameters() {
       }
 
       const updatedConversation = { ...prev };
+      const invalidModelAwareKeys = new Set(
+        getInvalidModelAwareKeys(parameters, updatedConversation),
+      );
 
       const conversationKeys = Object.keys(updatedConversation);
       const updatedKeys: string[] = [];
@@ -94,7 +103,7 @@ export default function Parameters() {
         //   return;
         // }
 
-        if (paramKeys.has(key)) {
+        if (paramKeys.has(key) && !invalidModelAwareKeys.has(key)) {
           return;
         }
 
@@ -116,7 +125,7 @@ export default function Parameters() {
 
       return updatedConversation;
     });
-  }, [parameters, setConversation]);
+  }, [endpointsConfigReady, parameters, setConversation]);
 
   const resetParameters = useCallback(() => {
     setConversation((prev) => {

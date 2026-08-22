@@ -1,5 +1,5 @@
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn(), debug: jest.fn() },
+  logger: { error: jest.fn(), debug: jest.fn(), warn: jest.fn() },
 }));
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
@@ -191,5 +191,55 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
 
   it('throws when collectedUsage is not an array (existing contract)', () => {
     expect(() => new ModelEndHandler(null)).toThrow('collectedUsage must be an array');
+  });
+});
+
+describe('ModelEndHandler — service tier capture', () => {
+  const buildOpenAIGraph = (serviceTier) => ({
+    getAgentContext: () => ({
+      provider: 'openai',
+      clientOptions: { model: 'gpt-5.6-sol', service_tier: serviceTier },
+    }),
+  });
+
+  it('uses the provider-reported tier when a Fast request is downgraded', async () => {
+    const collectedUsage = [];
+    const handler = new ModelEndHandler(collectedUsage);
+
+    await handler.handle(
+      'on_chat_model_end',
+      {
+        output: {
+          usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+          response_metadata: { service_tier: 'default' },
+        },
+      },
+      { ls_model_name: 'gpt-5.6-sol', user_id: 'u1' },
+      buildOpenAIGraph('fast'),
+    );
+
+    expect(collectedUsage[0]).toMatchObject({ serviceTier: 'default' });
+    expect(collectedUsage[0].serviceTierInferred).toBeUndefined();
+  });
+
+  it('falls back to the requested tier when provider metadata is absent', async () => {
+    const collectedUsage = [];
+    const handler = new ModelEndHandler(collectedUsage);
+
+    await handler.handle(
+      'on_chat_model_end',
+      {
+        output: {
+          usage_metadata: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        },
+      },
+      { ls_model_name: 'gpt-5.6-sol', user_id: 'u1' },
+      buildOpenAIGraph('fast'),
+    );
+
+    expect(collectedUsage[0]).toMatchObject({
+      serviceTier: 'priority',
+      serviceTierInferred: true,
+    });
   });
 });

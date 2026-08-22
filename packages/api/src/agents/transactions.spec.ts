@@ -144,6 +144,19 @@ describe('prepareTokenSpend', () => {
     );
   });
 
+  it('passes and persists the provider-reported service tier', () => {
+    const entries = prepareTokenSpend(
+      { ...baseTxData, model: 'gpt-5.6', serviceTier: 'priority' },
+      { promptTokens: 100 },
+      mockPricing,
+    );
+
+    expect(mockPricing.getMultiplier).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gpt-5.6', serviceTier: 'priority' }),
+    );
+    expect(entries[0].doc.serviceTier).toBe('priority');
+  });
+
   it('should carry balance config on each entry', () => {
     const entries = prepareTokenSpend(
       baseTxData,

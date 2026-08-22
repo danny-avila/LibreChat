@@ -77,6 +77,7 @@ export interface IConversation extends Document {
   reasoning_summary?: string;
   reasoning_mode?: string;
   reasoning_context?: string;
+  priorityProcessing?: boolean;
   verbosity?: string;
   useResponsesApi?: boolean;
   web_search?: boolean;

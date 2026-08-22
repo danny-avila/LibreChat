@@ -1,5 +1,6 @@
 import {
   AnthropicEffort,
+  ImageDetail,
   ReasoningEffort,
   ReasoningMode,
   ReasoningContext,
@@ -9,6 +10,7 @@ import {
   tMessageSchema,
   eAnthropicEffortSchema,
   eReasoningEffortSchema,
+  eImageDetailSchema,
   eReasoningModeSchema,
   eReasoningContextSchema,
   subagentThreadLineageSchema,
@@ -698,5 +700,12 @@ describe('tMessageSchema user-submitted provenance', () => {
     [{ path: '/content/0/tool_call/output', field: 'answer', extra: true }],
   ])('rejects invalid exact message-field provenance %#', (userSubmittedMessageFieldPaths) => {
     expect(() => tMessageSchema.parse({ ...message, userSubmittedMessageFieldPaths })).toThrow();
+  });
+});
+
+describe('GPT-5.6 image detail', () => {
+  it('accepts original and rejects unknown values', () => {
+    expect(eImageDetailSchema.parse(ImageDetail.original)).toBe('original');
+    expect(() => eImageDetailSchema.parse('raw')).toThrow();
   });
 });
