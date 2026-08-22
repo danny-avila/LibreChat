@@ -97,9 +97,14 @@ test.describe('detached subagent activity', () => {
       const cards = page.locator('[data-subagent-tool-call^="call_e2e_subagent_activity_"]');
       await expect(cards).toHaveCount(2, { timeout: 30_000 });
       await expect(cards.first()).toHaveAttribute('data-subagent-thread', /.+/);
+      const activityResponsePromise = page.waitForResponse((candidate) => {
+        const url = new URL(candidate.url());
+        return ACTIVITY_PATH.test(url.pathname);
+      });
       await cards.first().click();
 
       const panel = page.getByRole('region', { name: 'Child agent activity' });
+      const activityResponse = await activityResponsePromise;
       await expect(panel).toBeVisible();
       await expect(panel.getByText('Running', { exact: true })).toBeVisible();
       await expect(panel.getByText('Writing', { exact: true })).toBeVisible();
@@ -109,6 +114,9 @@ test.describe('detached subagent activity', () => {
       await expect(panel.getByText('Completed', { exact: true })).toBeVisible({ timeout: 30_000 });
       await expect(panel).toContainText(`E2E detached child 1 complete ${label}`);
       await expect.poll(() => finishedActivityRequests.length).toBe(1);
+      const activityStreamBody = await activityResponse.text();
+      expect(activityStreamBody).toContain('"event":"on_subagent_update"');
+      expect(activityStreamBody).toContain('"phase":"message_delta"');
       await page.waitForTimeout(ACTIVITY_RECONNECT_GUARD_MS);
       expect(activityRequests).toHaveLength(1);
 
@@ -131,9 +139,11 @@ test.describe('detached subagent activity', () => {
 
       await panel.getByRole('button', { name: 'Close' }).click();
       await page.getByRole('button', { name: 'Chat History' }).click();
-      await expect(page.getByTestId('convo-item').first()).toBeVisible();
-      await expect(page.getByTestId('convo-item')).toHaveCount(1);
-      await expect(page.getByText(/Subagent:/)).toHaveCount(0);
+      const conversationRows = page.getByTestId('convo-item');
+      await expect(conversationRows.locator('button[aria-current="page"]')).toBeVisible();
+      for (const child of children) {
+        await expect(conversationRows.filter({ hasText: `Subagent: ${child.id}` })).toHaveCount(0);
+      }
     } finally {
       for (const agentId of createdAgentIds.reverse()) {
         await cleanupAgent(page, agentId);
