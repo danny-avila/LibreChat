@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { type FilterQuery } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
@@ -1774,13 +1774,16 @@ describe('Conversation Operations', () => {
         },
       ]);
       const realFind = Conversation.find.bind(Conversation);
-      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter, ...args) => {
-        if (filter?.['subagentThread.parentConversationId'] != null) {
+      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter) => {
+        if (
+          filter != null &&
+          Object.prototype.hasOwnProperty.call(filter, 'subagentThread.parentConversationId')
+        ) {
           return {
             select: () => ({ lean: () => Promise.reject(new Error('stepdown')) }),
           };
         }
-        return realFind(filter, ...args);
+        return realFind(filter as FilterQuery<IConversation>);
       }) as typeof Conversation.find);
 
       await expect(deleteConvos('user123', { conversationId: parentId })).rejects.toThrow(
