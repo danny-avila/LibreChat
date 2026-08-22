@@ -1230,7 +1230,8 @@ class BaseClient {
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const reqCtx = {
       userId: options?.req?.user?.id,
-      isTemporary: options?.req?.body?.isTemporary,
+      isTemporary:
+        options?.req?._agentEventBindingRetention?.isTemporary ?? options?.req?.body?.isTemporary,
       expiredAt: options?.req?._agentEventBindingRetention?.expiredAt,
       interfaceConfig: options?.req?.config?.interfaceConfig,
     };

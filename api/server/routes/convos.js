@@ -138,6 +138,8 @@ router.get('/gen_title/:conversationId', async (req, res) => {
 
 const POST_DELETE_CANCEL_ATTEMPTS = 3;
 const POST_DELETE_CANCEL_BACKOFF_MS = 250;
+const GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS = 45_000;
+const GENERATION_PERSISTENCE_DRAIN_POLL_MS = 100;
 
 /** Replays a cancellation plan after deletion, retrying a transiently unreachable
  * owner rather than losing the only pass that can stop a late-admitted child. */
@@ -160,6 +162,7 @@ async function retryPostDeleteCancellation(cancellationPlan, deletedConversation
  * persistence that raced the first conversation cascade. */
 async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskIds = []) {
   let foundActiveGeneration = false;
+  const drainErrors = [];
   const generationIds = [...new Set([...conversationIds, ...leaseTaskIds])];
   await Promise.all(
     generationIds.map(async (conversationId) => {
@@ -170,21 +173,38 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
         logger.warn('Deleted child generation lookup failed', error);
         return;
       }
-      if (
-        job == null ||
-        job.userId !== userId ||
-        (job.status !== 'running' && job.status !== 'requires_action')
-      ) {
+      if (job == null || job.metadata?.userId !== userId) {
         return;
       }
+      const needsDrain =
+        job.status === 'running' ||
+        job.status === 'requires_action' ||
+        job.metadata?.terminalPersistencePending === true;
+      if (!needsDrain) return;
       foundActiveGeneration = true;
       try {
         await GenerationJobManager.abortJob(conversationId, {
           expectedCreatedAt: job.createdAt,
           awaitProviderDrain: true,
         });
+        const deadline = Date.now() + GENERATION_PERSISTENCE_DRAIN_TIMEOUT_MS;
+        while (true) {
+          const current = await GenerationJobManager.getJob(conversationId);
+          if (
+            current == null ||
+            current.createdAt !== job.createdAt ||
+            current.metadata?.terminalPersistencePending !== true
+          ) {
+            break;
+          }
+          if (Date.now() >= deadline) {
+            throw new Error(`Timed out waiting for generation persistence: ${conversationId}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, GENERATION_PERSISTENCE_DRAIN_POLL_MS));
+        }
       } catch (error) {
         logger.warn('Deleted child generation drain failed', error);
+        drainErrors.push(error);
       }
     }),
   );
@@ -199,6 +219,9 @@ async function drainDeletedAgentGenerations(userId, conversationIds, leaseTaskId
   await db
     .deleteMessages({ user: userId, conversationId: { $in: conversationIds } })
     .catch((error) => logger.warn('Deleted child message remnant cleanup failed', error));
+  if (drainErrors.length > 0) {
+    throw new Error('One or more deleted child generations could not be confirmed drained.');
+  }
 }
 
 router.delete('/', configMiddleware, async (req, res) => {
@@ -269,7 +292,13 @@ router.delete('/', configMiddleware, async (req, res) => {
       await drainDeletedAgentGenerations(
         req.user.id,
         deletedConversationIds,
-        cancellationPlan.leases.map((lease) => lease.taskId),
+        cancellationPlan.leases
+          .filter(
+            (lease) =>
+              deletedConversationIds.includes(lease.parentConversationId) ||
+              deletedConversationIds.includes(lease.conversationId),
+          )
+          .map((lease) => lease.taskId),
       );
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's

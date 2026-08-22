@@ -51,6 +51,7 @@ function createApp(
   getConvo: AllMethods['getConvo'],
   store: SubagentThreadTaskStore,
   getEventBinding?: AllMethods['getAgentEventBinding'],
+  isHumanResumeAllowed?: () => Promise<boolean>,
 ) {
   const app = express();
   app.use(express.json());
@@ -60,26 +61,29 @@ function createApp(
       req.get('x-test-trigger') === '1';
     next();
   });
-  app.post(
-    '/chat',
-    createSubagentThreadTurnGuard({ getConvo, store, getEventBinding }),
-    (req, res) => {
-      res.json({
-        ok: true,
-        resolvedConversationId: (
-          req as typeof req & { resolvedConversation?: IConversation | null }
-        ).resolvedConversation?.conversationId,
-        parentConversationId: (
-          req as typeof req & { _agentEventBindingParentConversationId?: string }
-        )._agentEventBindingParentConversationId,
-        retention: (
-          req as typeof req & {
-            _agentEventBindingRetention?: { isTemporary?: boolean; expiredAt?: Date };
-          }
-        )._agentEventBindingRetention,
-      });
-    },
-  );
+  const guard = createSubagentThreadTurnGuard({
+    getConvo,
+    store,
+    getEventBinding,
+    isHumanResumeAllowed,
+  });
+  const handler = (req: express.Request, res: express.Response) => {
+    res.json({
+      ok: true,
+      resolvedConversationId: (req as typeof req & { resolvedConversation?: IConversation | null })
+        .resolvedConversation?.conversationId,
+      parentConversationId: (
+        req as typeof req & { _agentEventBindingParentConversationId?: string }
+      )._agentEventBindingParentConversationId,
+      retention: (
+        req as typeof req & {
+          _agentEventBindingRetention?: { isTemporary?: boolean; expiredAt?: Date };
+        }
+      )._agentEventBindingRetention,
+    });
+  };
+  app.post('/chat', guard, handler);
+  app.post('/resume', guard, handler);
   return app;
 }
 
@@ -164,6 +168,43 @@ describe('subagent child-thread write policy', () => {
       tenantId: 'tenant-1',
       bindingId: `evtbind_${'a'.repeat(48)}`,
       sourceKeyId: 'source-key',
+    });
+  });
+
+  it('allows only an exact pending human resume for a bound child', async () => {
+    const store = makeStore();
+    const boundChild = {
+      ...childConversation(),
+      tenantId: 'tenant-1',
+      isTemporary: true,
+      agentEventBinding: {
+        bindingId: `evtbind_${'b'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+        actorId: 'player',
+      },
+    } as unknown as IConversation;
+    const isHumanResumeAllowed = jest.fn(async () => true);
+    const app = createApp(
+      jest.fn().mockResolvedValue(boundChild),
+      store,
+      undefined,
+      isHumanResumeAllowed,
+    );
+
+    const response = await request(app)
+      .post('/resume')
+      .send({ conversationId: 'child-conversation', actionId: 'action-1' });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      resolvedConversationId: 'child-conversation',
+      parentConversationId: 'parent-conversation',
+      retention: { isTemporary: true },
+    });
+    expect(isHumanResumeAllowed).toHaveBeenCalledWith({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      conversationId: 'child-conversation',
     });
   });
 

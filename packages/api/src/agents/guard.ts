@@ -21,6 +21,7 @@ interface SubagentTurnUser {
 export interface SubagentThreadWriteGuardDeps {
   getConvo: ConversationMethods['getConvo'];
   getEventBinding?: ConversationMethods['getAgentEventBinding'];
+  isHumanResumeAllowed?: (target: SubagentThreadWriteTarget) => Promise<boolean>;
   store: SubagentThreadTaskStore;
 }
 
@@ -43,6 +44,23 @@ interface ResolvedConversationRequest extends Request {
     expiredAt?: Date;
   };
   _agentEventBindingParentConversationId?: string;
+  _agentEventBindingParentAgentId?: string;
+  _agentEventBindingTenantId?: string;
+}
+
+function applyEventBindingContext(
+  request: ResolvedConversationRequest,
+  conversation: IConversation,
+): void {
+  request.resolvedConversation = conversation;
+  request._agentEventBindingRetention = {
+    ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
+    ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
+  };
+  request._agentEventBindingParentConversationId =
+    conversation.subagentThread?.parentConversationId;
+  request._agentEventBindingParentAgentId = conversation.subagentThread?.parentAgentId;
+  request._agentEventBindingTenantId = conversation.tenantId;
 }
 
 async function isBoundEventContinuation(
@@ -147,6 +165,22 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
         next();
         return;
       }
+      const resolvedRequest = request as ResolvedConversationRequest;
+      if (
+        request.path === '/resume' &&
+        resolved.conversation?.agentEventBinding != null &&
+        resolved.conversation.subagentThread != null &&
+        deps.isHumanResumeAllowed != null &&
+        (await deps.isHumanResumeAllowed({
+          userId,
+          conversationId: candidateConversationId,
+          ...(tenantId == null ? {} : { tenantId }),
+        }))
+      ) {
+        applyEventBindingContext(resolvedRequest, resolved.conversation);
+        next();
+        return;
+      }
       const boundConversation = await isBoundEventContinuation(
         deps,
         request as ResolvedConversationRequest,
@@ -157,18 +191,7 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
         },
       );
       if (boundConversation != null) {
-        const resolvedRequest = request as ResolvedConversationRequest;
-        resolvedRequest.resolvedConversation = boundConversation;
-        resolvedRequest._agentEventBindingRetention = {
-          ...(boundConversation.isTemporary == null
-            ? {}
-            : { isTemporary: boundConversation.isTemporary }),
-          ...(boundConversation.expiredAt == null
-            ? {}
-            : { expiredAt: boundConversation.expiredAt }),
-        };
-        resolvedRequest._agentEventBindingParentConversationId =
-          boundConversation.subagentThread?.parentConversationId;
+        applyEventBindingContext(resolvedRequest, boundConversation);
         next();
         return;
       }

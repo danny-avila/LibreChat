@@ -55,7 +55,11 @@ const {
   getActions,
   getUserMemories,
   getRoleByName,
+  isSubagentOwnerAdmissible,
 } = require('~/models');
+const {
+  acquireEventChildGenerationLease,
+} = require('~/server/services/Endpoints/agents/eventChildLease');
 const {
   recordScheduleOutcome,
   claimScheduleResume,
@@ -1209,6 +1213,55 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
   }
 
+  let releaseEventChildLease;
+  if (req._agentEventBindingParentConversationId != null) {
+    try {
+      releaseEventChildLease = await acquireEventChildGenerationLease({
+        userId,
+        tenantId: req.user?.tenantId,
+        conversationId,
+        streamId,
+        jobCreatedAt: job.createdAt,
+      });
+      const [eventParent, ownerAdmissible] = await Promise.all([
+        getConvo(userId, req._agentEventBindingParentConversationId),
+        isSubagentOwnerAdmissible(userId),
+      ]);
+      if (
+        releaseEventChildLease == null ||
+        eventParent == null ||
+        eventParent.subagentThread != null ||
+        eventParent.agent_id !== req._agentEventBindingParentAgentId ||
+        (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+        !ownerAdmissible
+      ) {
+        throw new Error('The event binding parent is no longer available');
+      }
+    } catch (error) {
+      logger.warn('[ResumeAgentController] Event actor resume lost its binding fence', error);
+      await releaseEventChildLease?.();
+      await GenerationJobManager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        awaitProviderDrain: true,
+      }).catch((abortError) => {
+        logger.warn(
+          '[ResumeAgentController] Failed to stop rejected event actor resume',
+          abortError,
+        );
+      });
+      await decrementPendingRequest(userId);
+      return sendGenerationJson(
+        res,
+        409,
+        {
+          code: 'EVENT_BINDING_PARENT_ENDED',
+          error: 'The event binding parent is no longer available',
+        },
+        generationProtocolVersion,
+      );
+    }
+  }
+
   /**
    * An interrupt steer enqueued just before the pause survives durably with
    * its `preempt` flag, but the ARM lived only in the previous owner's
@@ -1581,6 +1634,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       ).catch((drainError) => {
         logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
       });
+      await releaseEventChildLease?.();
     }
   }
 };

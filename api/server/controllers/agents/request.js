@@ -41,12 +41,12 @@ const {
   saveMessage,
   getMessages,
   getConvo,
-  acquireSubagentThreadLease,
-  renewSubagentThreadLease,
-  releaseSubagentThreadLease,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
 } = require('~/models');
+const {
+  acquireEventChildGenerationLease,
+} = require('~/server/services/Endpoints/agents/eventChildLease');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -80,79 +80,6 @@ function getInitializationFailure(error) {
     status: candidateStatus,
     ...(typeof error?.code === 'string' ? { code: error.code } : {}),
     error: error?.message || 'Failed to start generation',
-  };
-}
-
-const EVENT_CHILD_LEASE_TTL_MS = 30_000;
-const EVENT_CHILD_LEASE_HEARTBEAT_MS = 10_000;
-
-/** Makes an event-driven child generation visible to the same durable deletion
- * protocol used by detached subagents. The generation job exists before this lease,
- * so any deletion that observes the lease can route an abort to the exact run. */
-async function acquireEventChildGenerationLease({
-  userId,
-  tenantId,
-  conversationId,
-  streamId,
-  jobCreatedAt,
-}) {
-  const token = crypto.randomUUID();
-  const input = {
-    user: userId,
-    conversationId,
-    token,
-    taskId: streamId,
-    ...(tenantId == null ? {} : { tenantId }),
-  };
-  const now = new Date();
-  const acquired = await acquireSubagentThreadLease({
-    ...input,
-    now,
-    expiresAt: new Date(now.getTime() + EVENT_CHILD_LEASE_TTL_MS),
-  });
-  if (!acquired) {
-    return null;
-  }
-
-  let stopped = false;
-  let renewalInFlight;
-  const renew = () => {
-    if (stopped || renewalInFlight != null) {
-      return;
-    }
-    renewalInFlight = (async () => {
-      const renewalTime = new Date();
-      const held = await renewSubagentThreadLease({
-        ...input,
-        now: renewalTime,
-        expiresAt: new Date(renewalTime.getTime() + EVENT_CHILD_LEASE_TTL_MS),
-      });
-      if (!held) {
-        await GenerationJobManager.abortJob(streamId, {
-          expectedCreatedAt: jobCreatedAt,
-          awaitProviderDrain: true,
-        });
-      }
-    })()
-      .catch((error) => {
-        logger.warn('[ResumableAgentController] Event child lease renewal failed', error);
-      })
-      .finally(() => {
-        renewalInFlight = undefined;
-      });
-  };
-  const heartbeat = setInterval(renew, EVENT_CHILD_LEASE_HEARTBEAT_MS);
-
-  return async () => {
-    if (stopped) {
-      return;
-    }
-    stopped = true;
-    clearInterval(heartbeat);
-    await renewalInFlight;
-    await releaseSubagentThreadLease(input).catch((error) => {
-      logger.warn('[ResumableAgentController] Event child lease release failed', error);
-    });
   };
 }
 
@@ -1168,7 +1095,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
-        isTemporary: req.body?.isTemporary,
+        isTemporary: req._agentEventBindingRetention?.isTemporary ?? req.body?.isTemporary,
         ...(isRegenerate && { isRegenerate: true }),
         ...(scheduleId
           ? {
@@ -1224,7 +1151,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         getConvo(userId, req._agentEventBindingParentConversationId),
         isSubagentOwnerAdmissible(userId),
       ]);
-      if (eventParent == null || eventParent.subagentThread != null || !ownerAdmissible) {
+      if (
+        eventParent == null ||
+        eventParent.subagentThread != null ||
+        eventParent.agent_id !== req._agentEventBindingParentAgentId ||
+        (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+        !ownerAdmissible
+      ) {
         throw Object.assign(new Error('The event binding parent is no longer available'), {
           code: 'EVENT_BINDING_PARENT_ENDED',
           status: 409,
@@ -1359,7 +1292,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           saveMessage(
             {
               userId,
-              isTemporary: req?.body?.isTemporary,
+              isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
               expiredAt: req?._agentEventBindingRetention?.expiredAt,
               interfaceConfig: req?.config?.interfaceConfig,
             },
@@ -1788,7 +1721,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   const savedUserMessage = await saveMessage(
                     {
                       userId,
-                      isTemporary: req?.body?.isTemporary,
+                      isTemporary:
+                        req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
                       expiredAt: req?._agentEventBindingRetention?.expiredAt,
                       interfaceConfig: req?.config?.interfaceConfig,
                     },
@@ -1809,7 +1743,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               const savedResponseMessage = await saveMessage(
                 {
                   userId,
-                  isTemporary: req?.body?.isTemporary,
+                  isTemporary:
+                    req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
                   expiredAt: req?._agentEventBindingRetention?.expiredAt,
                   interfaceConfig: req?.config?.interfaceConfig,
                 },
@@ -1969,7 +1904,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         // where client refetch happens before database is updated
         const reqCtx = {
           userId: req?.user?.id,
-          isTemporary: req?.body?.isTemporary,
+          isTemporary: req?._agentEventBindingRetention?.isTemporary ?? req?.body?.isTemporary,
           expiredAt: req?._agentEventBindingRetention?.expiredAt,
           interfaceConfig: req?.config?.interfaceConfig,
         };

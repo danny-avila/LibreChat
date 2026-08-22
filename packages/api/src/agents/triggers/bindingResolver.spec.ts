@@ -1,7 +1,7 @@
 import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import type { IConversation } from '@librechat/data-schemas';
-import { createAgentEventContinueResolver } from './bindingResolver';
 import { createAgentTriggerEnvelope, type AgentContinueTriggerEnvelope } from './envelope';
+import { createAgentEventContinueResolver } from './bindingResolver';
 
 const bindingId = `evtbind_${'a'.repeat(48)}`;
 const sourceKeyId = '507f191e810c19729de860eb';
