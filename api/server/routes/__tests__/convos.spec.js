@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
-const { archiveAllHandler } = require(MOCKS);
+const { archiveAllHandler, subagentActivityHandlerInputs } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () =>
@@ -73,6 +73,19 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('binds the activity subscription adapter to the subagent task store', () => {
+    const binding = subagentActivityHandlerInputs.at(-1);
+    const subscriber = { onEvent: jest.fn() };
+
+    binding.stream.subscribe('child-thread', 'task-1', subscriber);
+
+    expect(subagentThreadStore.subscribeActivity).toHaveBeenCalledWith(
+      'child-thread',
+      'task-1',
+      subscriber,
+    );
   });
 
   describe('GET /:conversationId', () => {

@@ -55,7 +55,9 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
     getSubagentThreadForParent: db.getSubagentThreadForParent,
     getMessages: db.getMessages,
   },
-  subagentThreadTaskStore,
+  {
+    subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
+  },
 );
 router.use(requireJwtAuth);
 

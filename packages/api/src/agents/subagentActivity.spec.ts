@@ -139,6 +139,24 @@ describe('detached subagent activity stream', () => {
     subscription.unsubscribe();
   });
 
+  it('does not resynchronize when another local subscriber joins an active stream', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const first = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    await first.ready;
+
+    const second = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    await second.ready;
+
+    expect(transport.subscribeOptions).toEqual([
+      { deferSequenceDelivery: true },
+      { deferSequenceDelivery: false },
+    ]);
+    expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
+    first.unsubscribe();
+    second.unsubscribe();
+  });
+
   it('publishes only while a panel has renewed live-view demand', async () => {
     const transport = new TestTransport();
     transport.demanded = false;

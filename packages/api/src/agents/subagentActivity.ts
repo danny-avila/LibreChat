@@ -225,6 +225,7 @@ export class SubagentActivityStream {
         this.demandCache.delete(streamId);
       });
     };
+    const synchronizeAttachment = this.transport.isFirstSubscriber(streamId);
     const subscription = this.transport.subscribe(
       streamId,
       {
@@ -247,7 +248,7 @@ export class SubagentActivityStream {
           }
         },
       },
-      { deferSequenceDelivery: true },
+      { deferSequenceDelivery: synchronizeAttachment },
     );
     let closed = false;
     let demandHeartbeat: ReturnType<typeof setInterval> | undefined;
@@ -260,7 +261,9 @@ export class SubagentActivityStream {
     };
     const ready = Promise.resolve(subscription.ready).then(async () => {
       if (closed) return;
-      await this.transport.syncReorderBuffer?.(streamId);
+      if (synchronizeAttachment) {
+        await this.transport.syncReorderBuffer?.(streamId);
+      }
       if (closed) return;
       await this.renewDemand(streamId, () => !closed);
       if (closed) {
