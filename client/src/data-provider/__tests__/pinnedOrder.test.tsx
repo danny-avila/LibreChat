@@ -134,4 +134,57 @@ describe('useUpdatePinnedOrderMutation', () => {
      * leaving it cached would pass it off as server data all session. */
     await waitFor(() => expect(cached(queryClient)).toBeUndefined());
   });
+
+  it('abandons a queued write when the signed-in user changed', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    let queued!: Promise<string[] | string>;
+    await act(async () => {
+      queued = result.current.mutateAsync(['c', 'b', 'a']).catch(() => 'abandoned');
+      /* Let `onMutate` settle so the write is queued and has recorded its owner
+       * before the session turns over. */
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    /* The session turns over while the second write is still waiting its turn:
+     * sending it would put one account's order in the other's document. */
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-b' });
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+      await expect(queued).resolves.toBe('abandoned');
+    });
+
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
+    expect(updatePinnedOrder.mock.calls[0][0]).toEqual(['b', 'a', 'c']);
+  });
+
+  it('still sends a queued write when the same user stays signed in', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-a' });
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    await act(async () => {
+      result.current.mutate(['c', 'b', 'a']);
+    });
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+    });
+
+    await waitFor(() => expect(updatePinnedOrder).toHaveBeenCalledTimes(2));
+  });
 });

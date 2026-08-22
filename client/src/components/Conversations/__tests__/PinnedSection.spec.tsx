@@ -95,10 +95,10 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
 const pinnedConvo = (id: string, title: string) =>
   ({ conversationId: id, title, pinned: true }) as unknown as TConversation;
 
-const renderSection = (conversations: TConversation[], isFiltered = false) =>
+const renderSection = (conversations: TConversation[]) =>
   render(
     <DndProvider backend={HTML5Backend}>
-      <PinnedSection conversations={conversations} toggleNav={jest.fn()} isFiltered={isFiltered} />
+      <PinnedSection conversations={conversations} toggleNav={jest.fn()} />
     </DndProvider>,
   );
 
@@ -227,12 +227,14 @@ describe('PinnedSection unified list', () => {
       expect(screen.getByRole('status')).toHaveTextContent('com_ui_moved_to_position');
     });
 
-    /* A bookmark filter hides part of the list; persisting only what is on
-     * screen would drop every hidden pin from the stored order. */
-    it('merges into the stored order while filtered', () => {
+    /* Rows can be missing from view for reasons the section cannot tell apart:
+     * a bookmark filter hides them, or the pinned query is still draining its
+     * cursor. Persisting only what is on screen would drop those keys and lose
+     * their positions, so the order is always merged, never replaced. */
+    it('keeps keys it cannot see in the stored order', () => {
       mockPinnedOrder = ['convo:hidden', 'model:6:openAI:gpt-4o', 'convo:c1'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
-      renderSection([pinnedConvo('c1', 'Pinned Chat')], true);
+      renderSection([pinnedConvo('c1', 'Pinned Chat')]);
 
       moveFocusedRow('gpt-4o', 'ArrowDown');
 
@@ -242,18 +244,16 @@ describe('PinnedSection unified list', () => {
       );
     });
 
-    it('replaces the stored order when nothing is filtered out', () => {
-      mockPinnedOrder = ['convo:gone', 'model:6:openAI:gpt-4o', 'convo:c1'];
+    it('does not write the favorites array a second time', () => {
+      mockPinnedOrder = ['model:6:openAI:gpt-4o', 'convo:c1'];
       mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
       renderSection([pinnedConvo('c1', 'Pinned Chat')]);
 
       moveFocusedRow('gpt-4o', 'ArrowDown');
 
-      /* Unfiltered, replacing also prunes `convo:gone`, whose chat is no longer pinned. */
-      expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
-        ['convo:c1', 'model:6:openAI:gpt-4o'],
-        expect.anything(),
-      );
+      /* `pinnedOrder` is the only ordering the section reads, and a second
+       * whole-array write would race the favorites membership mutations. */
+      expect(mockReorderFavorites).not.toHaveBeenCalled();
     });
   });
 
