@@ -93,6 +93,7 @@ const OpenSubagentPanel = () => {
   const open = () => {
     setConversation({ conversationId: 'parent-conversation' } as TConversation);
     setSelection({
+      host: 'conversation',
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       toolCallId: 'tool-call',

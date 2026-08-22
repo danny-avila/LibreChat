@@ -14,7 +14,9 @@ import store, {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store';
+import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
 import { MessageContext } from '~/Providers/MessageContext';
+import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
 import { useAgentsMapContext } from '~/Providers';
@@ -166,6 +168,7 @@ export default function SubagentCall({
   hideAttachments = false,
 }: SubagentCallProps) {
   const localize = useLocalize();
+  const { isSharedConvo, shareId } = useShareContext();
   const parentMessageContext = useContext(MessageContext);
   const parentMessageId = parentMessageContext.messageId?.trim() ?? '';
   const partIndex = parentMessageContext.partIndex ?? 0;
@@ -181,7 +184,8 @@ export default function SubagentCall({
     [output, args],
   );
   const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
-  const canOpenDurablePanel = backgroundHandle != null && parentConversationId !== '';
+  const canOpenDurablePanel =
+    isSharedConvo !== true && backgroundHandle != null && parentConversationId !== '';
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = subagentType === 'self';
@@ -277,8 +281,26 @@ export default function SubagentCall({
    *  the name isn't resolvable (agent map miss). */
   const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
+  const canOpenDetails = useMemo(
+    () =>
+      isSharedConvo !== true ||
+      adaptLivePersistedActivity({
+        title: '',
+        progress: null,
+        persistedContent,
+        legacyOutput: backgroundHandle == null ? output : undefined,
+        initialProgress,
+        isSubmitting: false,
+        runStepStatus,
+        approvalVisibility: 'hidden',
+      }).items.length > 0,
+    [backgroundHandle, initialProgress, isSharedConvo, output, persistedContent, runStepStatus],
+  );
+
   const panelSelection = useMemo(
     () => ({
+      host: isSharedConvo === true ? ('share' as const) : ('conversation' as const),
+      ...(isSharedConvo === true && shareId != null ? { shareId } : {}),
       parentConversationId,
       parentMessageId,
       toolCallId,
@@ -303,6 +325,7 @@ export default function SubagentCall({
       backgroundHandle,
       canOpenDurablePanel,
       initialProgress,
+      isSharedConvo,
       isSubmitting,
       output,
       parentConversationId,
@@ -311,6 +334,7 @@ export default function SubagentCall({
       persistedContent,
       prompt,
       runStepStatus,
+      shareId,
       subagentType,
       toolCallId,
     ],
@@ -327,16 +351,24 @@ export default function SubagentCall({
   }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
 
   const openDetails = useCallback(() => {
+    if (!canOpenDetails) return;
     resetCurrentArtifactId();
     setArtifactsVisible(false);
     setSelectedSubagent(panelSelection);
-  }, [panelSelection, resetCurrentArtifactId, setArtifactsVisible, setSelectedSubagent]);
+  }, [
+    canOpenDetails,
+    panelSelection,
+    resetCurrentArtifactId,
+    setArtifactsVisible,
+    setSelectedSubagent,
+  ]);
 
   return (
     <>
       <button
         type="button"
         onClick={openDetails}
+        disabled={!canOpenDetails}
         data-subagent-thread={
           canOpenDurablePanel ? backgroundHandle?.subagent_thread_id : undefined
         }
@@ -344,7 +376,8 @@ export default function SubagentCall({
         data-subagent-parent-message={parentMessageId}
         data-subagent-part-index={partIndex}
         className={cn(
-          'group my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition hover:bg-surface-tertiary',
+          'my-1.5 flex w-full flex-col gap-1 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-left transition',
+          canOpenDetails ? 'group hover:bg-surface-tertiary' : 'cursor-default opacity-80',
           running && !detachedStatusUnknown && 'animate-pulse-slow',
         )}
         aria-label={headerText}
@@ -384,11 +417,13 @@ export default function SubagentCall({
           ) : (
             <span className="flex-1" />
           )}
-          <ChevronRight
-            size={14}
-            className="shrink-0 text-text-secondary transition group-hover:translate-x-0.5"
-            aria-hidden="true"
-          />
+          {canOpenDetails && (
+            <ChevronRight
+              size={14}
+              className="shrink-0 text-text-secondary transition group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
+          )}
         </div>
 
         <ul className="w-full space-y-0.5 pl-5 font-mono text-xs text-text-secondary">

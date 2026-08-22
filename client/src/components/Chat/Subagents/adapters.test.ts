@@ -145,6 +145,34 @@ describe('child activity adapters', () => {
     );
   });
 
+  it('keeps shared-message activity read-only by omitting approval controls', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'tool',
+            name: 'protected_tool',
+            args: '{}',
+            output: '',
+            progress: 0.1,
+            approval: { expires_at: 123 },
+          },
+        },
+      ] as unknown as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: false,
+      approvalVisibility: 'hidden',
+    });
+
+    expect(activity.items[0]).toEqual(
+      expect.objectContaining({ type: 'tool', name: 'protected_tool' }),
+    );
+    expect(activity.items[0]).not.toHaveProperty('approval');
+  });
+
   it('uses the exact assistant row as terminal authority for an older API response', () => {
     const oldView = {
       threadId: 'thread',

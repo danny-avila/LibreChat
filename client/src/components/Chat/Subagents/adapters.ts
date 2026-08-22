@@ -52,6 +52,7 @@ type ContentToolCall = {
 const contentPartsToActivity = (
   parts: TMessageContentParts[],
   reasoningVisibility: 'visible' | 'marker',
+  approvalVisibility: 'visible' | 'hidden',
 ): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
     if (part.type === ContentTypes.TEXT) {
@@ -85,7 +86,9 @@ const contentPartsToActivity = (
         ...(tool.args == null ? {} : { input: tool.args }),
         ...(tool.output == null ? {} : { output: tool.output }),
         status: runStepStatus ?? (completed ? 'completed' : 'running'),
-        ...(tool.approval == null ? {} : { approval: tool.approval }),
+        ...(tool.approval == null || approvalVisibility === 'hidden'
+          ? {}
+          : { approval: tool.approval }),
       },
     ];
   });
@@ -129,11 +132,16 @@ export function adaptLivePersistedActivity(input: {
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
   reasoningVisibility?: 'visible' | 'marker';
+  approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
   const persisted = input.persistedContent ?? [];
   const live = (input.progress?.contentParts ?? []) as TMessageContentParts[];
   const parts = persisted.length > 0 ? persisted : live;
-  const items = contentPartsToActivity(parts, input.reasoningVisibility ?? 'visible');
+  const items = contentPartsToActivity(
+    parts,
+    input.reasoningVisibility ?? 'visible',
+    input.approvalVisibility ?? 'visible',
+  );
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
   }

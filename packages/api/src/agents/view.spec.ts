@@ -5,6 +5,7 @@ import { createSubagentThreadViewHandler, SUBAGENT_THREAD_VIEW_LIMITS } from './
 
 jest.mock('@librechat/data-schemas', () => ({
   CLIENT_MESSAGE_SELECT: '-_id -user',
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: 256 * 1024,
   logger: { error: jest.fn() },
 }));
 
@@ -257,6 +258,34 @@ describe('subagent thread parent-scoped view', () => {
       expect.objectContaining({ activity: [], activityTruncated: true }),
     );
     expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('Wrong task.');
+  });
+
+  it('falls back to the bounded final message when storage omits an oversized transcript', async () => {
+    const selected = {
+      ...message('task-1:assistant', 'completed'),
+      text: 'The bounded final answer.',
+      subagentTranscriptProjectionTruncated: true,
+    } as IMessage & { subagentTranscriptProjectionTruncated: boolean };
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest
+        .fn()
+        .mockResolvedValue({ ...child, subagentThreadLease: undefined }),
+      getMessagesForSubagentThreadView: jest.fn().mockResolvedValue([selected]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({}, { taskId: 'task-1' }), response);
+
+    const view = json.mock.calls[0][0];
+    expect(view).toEqual(
+      expect.objectContaining({
+        activity: [],
+        activityTruncated: true,
+        messages: [expect.objectContaining({ text: 'The bounded final answer.' })],
+      }),
+    );
+    expect(JSON.stringify(view)).not.toContain('subagentTranscript');
   });
 
   it('bounds the complete UTF-8 response while retaining the newest history', async () => {

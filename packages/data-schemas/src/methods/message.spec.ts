@@ -3,7 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+} from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -749,6 +753,39 @@ describe('Message Operations', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
       expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
+
+    it('omits an oversized private transcript before returning the application result', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-large:assistant',
+        conversationId,
+        text: 'The bounded public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-large',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'x'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT + 1) },
+            },
+          ]),
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+        taskId: 'task-large',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].text).toBe('The bounded public answer remains available.');
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
     });
   });
 
