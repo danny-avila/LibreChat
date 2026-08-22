@@ -511,7 +511,7 @@ describe('createToolExecuteHandler', () => {
       );
 
       expect(loadTools).toHaveBeenCalledTimes(1);
-      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable);
+      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable, undefined);
       expect(JSON.stringify(jest.mocked(loadTools).mock.calls)).not.toContain(protectedName);
       expect(results[0]).toEqual(
         expect.objectContaining({
