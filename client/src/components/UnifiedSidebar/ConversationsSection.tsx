@@ -19,7 +19,6 @@ import {
 } from '~/hooks';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
-import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
@@ -37,7 +36,6 @@ const ConversationsSection = memo(() => {
 
   const [isChatsExpanded, setIsChatsExpanded] = useLocalStorage('chatsExpanded', true);
   const [tags, setTags] = useState<string[]>([]);
-
   const hasAccessToBookmarks = useHasAccess({
     permissionType: PermissionTypes.BOOKMARKS,
     permission: Permissions.USE,
@@ -45,7 +43,7 @@ const ConversationsSection = memo(() => {
 
   const search = useRecoilValue(store.search);
 
-  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching } =
+  const { data, fetchNextPage, isFetchingNextPage, isLoading, isFetching, isPreviousData } =
     useConversationsInfiniteQuery(
       {
         tags: tags.length === 0 ? undefined : tags,
@@ -85,7 +83,7 @@ const ConversationsSection = memo(() => {
   /** Pins are fetched on their own so one older than the first page of the chats list
    * still shows on first paint, instead of appearing only once that list scrolls to it.
    * The bookmark filter still applies, matching the chats list beside it. */
-  const { data: pinnedData } = usePinnedConversationsQuery(
+  const { data: pinnedData, isSuccess: isPinnedComplete } = usePinnedConversationsQuery(
     { tags: tags.length === 0 ? undefined : tags },
     { enabled: isAuthenticated },
   );
@@ -151,19 +149,23 @@ const ConversationsSection = memo(() => {
         <div className="flex items-center gap-0.5 px-3">
           {hasAccessToBookmarks && (
             <Suspense fallback={null}>
-              <BookmarkNav tags={tags} setTags={setTags} />
+              <BookmarkNav tags={tags} setTags={setTags} matchSearchBar />
             </Suspense>
           )}
           {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
         </div>
       )}
-      {!search.query && (
-        <div className="px-3">
-          <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
-        </div>
-      )}
       {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
-      {!search.query && <PinnedSection conversations={pinnedConversations} toggleNav={toggleNav} />}
+      {!search.query && (
+        <PinnedSection
+          conversations={pinnedConversations}
+          toggleNav={toggleNav}
+          isSmallScreen={isSmallScreen}
+          /* Only a successful drain proves the list is whole: a failed later
+             page still publishes partial data and stops fetching. */
+          membershipComplete={tags.length === 0 && isPinnedComplete}
+        />
+      )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}
@@ -172,10 +174,9 @@ const ConversationsSection = memo(() => {
           containerRef={conversationsRef}
           loadMoreConversations={loadMoreConversations}
           isLoading={isFetchingNextPage || isLoading}
-          isSearchLoading={isSearchLoading}
+          isSearchLoading={isSearchLoading || isPreviousData}
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
-          showFavorites={false}
           chatsHeaderTrailing={
             isSmallScreen && hasAccessToBookmarks ? (
               <Suspense fallback={null}>

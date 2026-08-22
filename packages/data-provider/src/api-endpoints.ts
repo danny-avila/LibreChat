@@ -461,6 +461,9 @@ export const adminLangfuseConnectionTest = () => `${adminLangfuseConnection()}/t
 export const adminLangfuseSessionLink = (conversationId: string) =>
   `${adminLangfuseConnection()}/session/${encodeURIComponent(conversationId)}`;
 
+/* Combined Pinned-section display order: favorite and pinned-chat entry keys interleaved. */
+export const pinnedOrder = () => `${BASE_URL}/api/user/settings/pinned-order`;
+
 /* Tool favorites (starred marketplace items) */
 export const toolFavorites = () => `${BASE_URL}/api/user/settings/favorites/tools`;
 export const toolFavorite = (itemType: string, itemId: string) =>

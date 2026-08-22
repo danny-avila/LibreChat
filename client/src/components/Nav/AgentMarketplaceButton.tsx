@@ -1,28 +1,24 @@
-import React, { useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { LayoutGrid } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { TooltipAnchor, Button } from '@librechat/client';
+import { TooltipAnchor } from '@librechat/client';
 import { useLocalize, useShowMarketplace } from '~/hooks';
 
 interface AgentMarketplaceButtonProps {
-  isSmallScreen?: boolean;
-  toggleNav: () => void;
+  /** Which way the tooltip opens: the desktop rail is a left edge, the mobile
+   *  drawer header is a top edge. */
+  side?: 'right' | 'bottom';
+  /** Mobile dismisses the drawer on navigation; the desktop rail stays put. */
+  onNavigate?: () => void;
 }
 
+/** Agent Marketplace entry in the sidebar. Self-gated on marketplace
+ *  permissions, so a deployment without access is left with no gap. */
 export default function AgentMarketplaceButton({
-  isSmallScreen,
-  toggleNav,
+  side = 'right',
+  onNavigate,
 }: AgentMarketplaceButtonProps) {
-  const navigate = useNavigate();
   const localize = useLocalize();
   const showAgentMarketplace = useShowMarketplace();
-
-  const handleAgentMarketplace = useCallback(() => {
-    navigate('/agents');
-    if (isSmallScreen) {
-      toggleNav();
-    }
-  }, [navigate, isSmallScreen, toggleNav]);
 
   if (!showAgentMarketplace) {
     return null;
@@ -30,17 +26,26 @@ export default function AgentMarketplaceButton({
 
   return (
     <TooltipAnchor
+      side={side}
       description={localize('com_agents_marketplace')}
       render={
-        <Button
-          variant="outline"
+        /** A router Link rather than an anchor with a swallowed default, so
+         *  modifier- and middle-clicks still open the marketplace in a new tab.
+         *  Those clicks stay on the current page, so they must not dismiss. */
+        <Link
+          to="/agents"
           data-testid="nav-agents-marketplace-button"
           aria-label={localize('com_agents_marketplace')}
-          className="rounded-full border-none bg-transparent p-2 hover:bg-surface-hover md:rounded-xl"
-          onClick={handleAgentMarketplace}
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
+          onClick={(event) => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+              return;
+            }
+            onNavigate?.();
+          }}
         >
-          <LayoutGrid className="icon-lg text-text-primary" aria-hidden="true" />
-        </Button>
+          <LayoutGrid className="h-5 w-5 text-text-primary" aria-hidden="true" />
+        </Link>
       }
     />
   );

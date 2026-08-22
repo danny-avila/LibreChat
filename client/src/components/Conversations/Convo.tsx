@@ -1,16 +1,24 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useDrag } from 'react-dnd';
 import { useRecoilValue } from 'recoil';
-import { Link2, Pin } from 'lucide-react';
+import { Link2, PinOff } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
+import { Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
-import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
+import type { ConversationDragItem } from './dnd';
+import {
+  useGetStartupConfig,
+  usePinConversationMutation,
+  useUpdateConversationMutation,
+} from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
 import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
+import { CONVERSATION_DRAG_TYPE } from './dnd';
+import { resolveRowBeside } from './focus';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import ConvoLink from './ConvoLink';
@@ -21,6 +29,12 @@ interface ConversationProps {
   retainView: () => void;
   toggleNav: (afterSlide?: () => void) => void;
   isGenerating?: boolean;
+  /** Sidebar rows double as drag sources for filing the chat into a project;
+   *  other surfaces leave this off. */
+  draggable?: boolean;
+  /** Lets a wrapper that owns its own drag source release it while the title is
+   *  being edited, the way this row releases its own. */
+  onRenamingChange?: (renaming: boolean) => void;
 }
 
 function Conversation({
@@ -28,6 +42,8 @@ function Conversation({
   retainView,
   toggleNav,
   isGenerating = false,
+  draggable = false,
+  onRenamingChange,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -35,6 +51,7 @@ function Conversation({
   const { navigateToConvo } = useNavigateToConvo();
   const currentConvoId = useMemo(() => params.conversationId, [params.conversationId]);
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
+  const unpinMutation = usePinConversationMutation();
   const activeConvos = useRecoilValue(store.allConversationsSelector);
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   /* A deployment with shared links off leaves existing links in the database but stops
@@ -46,13 +63,48 @@ function Conversation({
   const { conversationId, title = '' } = conversation;
 
   const [titleInput, setTitleInput] = useState(title || '');
-  const [renaming, setRenaming] = useState(false);
+  const [renaming, setRenamingState] = useState(false);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const previousTitle = useRef(title);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const onRenamingChangeRef = useRef(onRenamingChange);
+  onRenamingChangeRef.current = onRenamingChange;
+
+  const setRenaming = useCallback((next: boolean) => {
+    setRenamingState(next);
+    onRenamingChangeRef.current?.(next);
+  }, []);
+
+  /* A row can be removed mid-rename, for instance by unpinning the same chat
+   * from the project list that renders it too. Without this the owner would
+   * keep treating the row as renaming and, once it came back, leave its drag
+   * source released for the rest of the section's life. */
+  useEffect(
+    () => () => {
+      onRenamingChangeRef.current?.(false);
+    },
+    [],
+  );
+
+  /* HTML5 drag needs a hover-capable pointer: connecting the source on touch
+   * stamps `draggable="true"` on the row, and iOS Safari then hands taps to the
+   * drag recognizer instead of synthesizing a click, so the row would only
+   * select on the second tap. A `draggable` ancestor also swallows drag-select
+   * inside the rename input, so the source is released while renaming. */
+  const canHoverPointer = useMediaQuery('(hover: hover)');
+  const [, dragConnector] = useDrag<ConversationDragItem, unknown, unknown>({
+    type: CONVERSATION_DRAG_TYPE,
+    item: () => ({
+      conversationId: conversationId ?? '',
+      chatProjectId: conversation.chatProjectId ?? null,
+      pinned: conversation.pinned === true,
+    }),
+  });
+  dragConnector(draggable && canHoverPointer && !renaming ? containerRef : null);
 
   useEffect(() => {
     if (title !== previousTitle.current) {
@@ -114,6 +166,34 @@ function Conversation({
       setHasInteracted(true);
     }
   }, [hasInteracted]);
+
+  /* Matches the favorites' row-level unpin: one click on the pin badge, no
+   * menu digging. The row unmounts once the pinned refetch lands, so focus is
+   * handed to a neighbouring row first. Where that row is has to be resolved
+   * before the mutation, not in its callback: by then the refetch may already
+   * have unmounted this row and cleared the ref the search starts from. */
+  const unpinConvo = useCallback(() => {
+    if (!conversationId) {
+      return;
+    }
+    const row = containerRef.current;
+    const successor = row?.contains(document.activeElement) === true ? resolveRowBeside(row) : null;
+    unpinMutation.mutate(
+      { conversationId, pinned: false },
+      {
+        onSuccess: () => {
+          successor?.focus();
+        },
+        onError: () => {
+          showToast({
+            message: localize('com_ui_unpin_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [conversationId, unpinMutation, showToast, localize]);
 
   const handleMouseLeave = useCallback(() => {
     if (!isPopoverActive) {
@@ -262,7 +342,24 @@ function Conversation({
         <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
-        <Pin className="icon-sm mr-1 shrink-0 text-text-primary" aria-hidden="true" />
+        <TooltipAnchor
+          description={localize('com_ui_unpin')}
+          side="top"
+          render={
+            <button
+              type="button"
+              aria-label={localize('com_ui_unpin')}
+              data-testid="convo-unpin-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                unpinConvo();
+              }}
+              className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md p-0 text-text-primary outline-none transition-colors hover:bg-surface-active focus-visible:bg-surface-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+            >
+              <PinOff className="size-4" aria-hidden="true" />
+            </button>
+          }
+        />
       )}
       <div
         className={cn(

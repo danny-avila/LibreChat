@@ -11,6 +11,7 @@ import type {
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { enqueue } from '~/utils';
 import store from '~/store';
 
 export const useCreateProjectMutation = (): UseMutationResult<
@@ -80,6 +81,24 @@ export const useDeleteProjectMutation = (): UseMutationResult<
   });
 };
 
+/** One queue per conversation: assignments to different chats stay independent. */
+const ASSIGN_CONVERSATION_QUEUE = 'assign-conversation:';
+
+/** Where each conversation is headed while a write for it is still queued or in
+ *  flight, recorded here so every assignment path shares one answer: a drag
+ *  helper that tracked only its own writes would keep reporting its
+ *  destination after a menu action had moved the chat somewhere else. Each
+ *  entry is identified by the write that made it, since comparing destinations
+ *  alone cannot tell two moves to the same project apart. */
+type PendingAssignment = { token: number; projectId: string | null };
+
+const pendingAssignments = new Map<string, PendingAssignment>();
+let assignmentToken = 0;
+
+/** The destination of the newest write still outstanding, if there is one. */
+export const getPendingAssignment = (conversationId: string): PendingAssignment | undefined =>
+  pendingAssignments.get(conversationId);
+
 export const useAssignConversationToProjectMutation = (): UseMutationResult<
   TAssignConversationToProjectResponse,
   unknown,
@@ -102,15 +121,37 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
   );
 
   return useMutation(
-    (payload: TAssignConversationToProjectRequest) =>
-      dataService.assignConversationToProject(payload),
+    /* Serialized per conversation, and here rather than at any one caller: the
+     * drag targets, the row menu and the project dialog each hold their own
+     * mutation instance, and the write is an unconditional update, so two of
+     * them racing let whichever request reached the database last decide the
+     * project regardless of which the user asked for first. */
+    (payload: TAssignConversationToProjectRequest) => {
+      const { conversationId, projectId } = payload;
+      const token = ++assignmentToken;
+      pendingAssignments.set(conversationId, { token, projectId: projectId ?? null });
+      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${conversationId}`, () =>
+        dataService.assignConversationToProject(payload),
+      ).finally(() => {
+        /* Only the newest write clears the entry. Once nothing is outstanding
+         * the conversation cache below carries the truth, written synchronously
+         * in `onSuccess`, so no list refresh has to be waited on. */
+        if (pendingAssignments.get(conversationId)?.token === token) {
+          pendingAssignments.delete(conversationId);
+        }
+      });
+    },
     {
-      onSuccess: (result) => {
+      onSuccess: async (result) => {
+        const { conversationId } = result.conversation;
+        /* A refetch of this exact conversation may already be in flight, for
+         * instance one navigation kicked off, and it would have read the old
+         * project. Cancelling first stops it landing after this write and
+         * quietly reverting the assignment in the cache everything else now
+         * reads the conversation's project from. */
+        await queryClient.cancelQueries([QueryKeys.conversation, conversationId]);
         updateActiveConversation(result.conversation);
-        queryClient.setQueryData(
-          [QueryKeys.conversation, result.conversation.conversationId],
-          result.conversation,
-        );
+        queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
         [result.previousProjectId, result.projectId].forEach((projectId) => {
           if (projectId) {
             queryClient.invalidateQueries([QueryKeys.project, projectId]);
