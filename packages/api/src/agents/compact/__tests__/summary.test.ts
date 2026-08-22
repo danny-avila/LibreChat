@@ -1409,6 +1409,38 @@ describe('compactConversation', () => {
     expect(inlined.length).toBeLessThan(longText.length);
   });
 
+  it('honors a resolved file token limit of zero', async () => {
+    /** Zero is a valid configured limit and means inline nothing; dropping it
+     *  would fall back to the request field or the nonzero global default. */
+    const getFiles = jest.fn().mockResolvedValue([
+      {
+        file_id: 'file_zero',
+        filename: 'spec.md',
+        source: 'text',
+        text: 'RFC-9110 defines GET.',
+      },
+    ]);
+    const withFile = {
+      ...userMessage('z1', Constants.NO_PARENT, 'summarize this'),
+      files: [{ file_id: 'file_zero' }],
+    } as TMessage;
+
+    await compactConversation({
+      req: makeReq(),
+      agent: { ...agent, fileTokenLimit: 0 },
+      branch: [withFile],
+      ids,
+      db: dbMethods,
+      getFiles,
+    });
+
+    const sent = mockStream.mock.calls[0][0] as BaseMessage[];
+    const inlined = JSON.stringify(sent[0].content);
+    expect(inlined).not.toContain('RFC-9110 defines GET.');
+    /** The file is still named, so the checkpoint records that it existed. */
+    expect(inlined).toContain('spec.md');
+  });
+
   it('does not carry run parameters into a cross-endpoint summarizer', async () => {
     /** `getGoogleConfig` spreads whatever it is handed into the client config,
      *  so an OpenAI conversation's parameters would reach a Google summarizer
