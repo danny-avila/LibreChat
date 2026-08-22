@@ -210,6 +210,28 @@ describe('instrumentPtcToolMap', () => {
     expect(JSON.stringify(events)).not.toContain('555-01-0000');
   });
 
+  it('emits nothing at all for a tool whose name the policy filters', async () => {
+    const { events, emit } = collect();
+    const toolMap = new Map([
+      ['ok_tool', createTool('ok_tool', async () => 'ok')],
+      ['blocked_name_tool', createTool('blocked_name_tool', async () => 'ok')],
+    ]);
+
+    const instrumented = instrumentPtcToolMap({
+      toolMap,
+      toolCallId: 'call_1',
+      traceExclusions: new Set(['blocked_name_tool']),
+      emit,
+    });
+
+    /** Excluded tools still execute — only their telemetry is suppressed. */
+    await expect(instrumented.get('blocked_name_tool')?.invoke({ a: 1 })).resolves.toBe('ok');
+    await instrumented.get('ok_tool')?.invoke({ a: 1 });
+
+    expect(events.map((e) => e.name)).toEqual(['ok_tool', 'ok_tool']);
+    expect(JSON.stringify(events)).not.toContain('blocked_name_tool');
+  });
+
   it('runs the inner call even when the emitter throws', async () => {
     const toolMap = new Map([['read_file', createTool('read_file', async () => 'ok')]]);
     const instrumented = instrumentPtcToolMap({

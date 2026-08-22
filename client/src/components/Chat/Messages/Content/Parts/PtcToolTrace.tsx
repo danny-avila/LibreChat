@@ -7,6 +7,7 @@ import { cn, parseToolName, getRunStepDurationLabels } from '~/utils';
 import { useMessageContext } from '~/Providers/MessageContext';
 import { ptcTraceByToolCallId, ptcTraceKey } from '~/store';
 import { useMCPServerNames } from '~/hooks/MCP';
+import useFollowScroll from './useFollowScroll';
 import { useLocalize } from '~/hooks';
 
 /** Terminal-style status column: one glyph wide for every state, so the
@@ -105,9 +106,13 @@ function PtcTraceLine({ entry }: { entry: PtcTraceEntry }) {
  */
 export default function PtcToolTrace({
   toolCallId,
+  expanded = false,
   className,
 }: {
   toolCallId?: string;
+  /** The host card's disclosure state — a collapsed pane must not be scrolled
+   *  invisibly, or it opens at the tail instead of the first call. */
+  expanded?: boolean;
   className?: string;
 }) {
   const localize = useLocalize();
@@ -116,6 +121,16 @@ export default function PtcToolTrace({
   const { messageId } = useMessageContext();
   const trace = useRecoilValue(
     ptcTraceByToolCallId(toolCallId && messageId ? ptcTraceKey(messageId, toolCallId) : ''),
+  );
+
+  /** One character per row, so the pin re-fires both when a call is appended
+   *  and when one settles — a settle can add an error line and change height. */
+  const followKey = `${trace.dropped}:${trace.entries.map((entry) => entry.status[0]).join('')}`;
+  const running = trace.entries.some((entry) => entry.status === 'running');
+  const { ref: listRef, onScroll } = useFollowScroll<HTMLOListElement>(
+    followKey,
+    running,
+    expanded,
   );
 
   if (trace.entries.length === 0) {
@@ -131,7 +146,12 @@ export default function PtcToolTrace({
       <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
         {localize('com_ui_ptc_trace_title')}
       </div>
-      <ol className="max-h-[200px] overflow-auto font-mono" aria-live="polite">
+      <ol
+        ref={listRef}
+        onScroll={onScroll}
+        className="max-h-[200px] overflow-auto font-mono"
+        aria-live="polite"
+      >
         {/* The retained tail is a window, not the whole program — say so
             rather than let the reader assume these are all the calls. */}
         {trace.dropped > 0 && (

@@ -750,6 +750,35 @@ function filteredToolArgumentsResult(
   }
 }
 
+/**
+ * Inner tool names the `name` PII policy would block. `filteredToolArgumentsResult`
+ * inspects `tc.name` for direct calls, but inner calls bypass it entirely — and
+ * the trace event carries the name unconditionally, so without this the trace
+ * becomes the disclosure path the policy exists to close. The eligible map holds
+ * a handful of names, each inspected once per PTC call.
+ */
+function collectFilteredPtcToolNames(
+  names: Iterable<string>,
+  req: ServerRequest | undefined,
+): ReadonlySet<string> | undefined {
+  const filters = req?.config?.filters;
+  if (filters == null || !hasActivePiiFields(filters.toolArguments?.pii, ['name'])) {
+    return undefined;
+  }
+  const blocked = new Set<string>();
+  for (const name of names) {
+    try {
+      if (inspectContent(extractToolArgumentContent({ name }), { filters }) != null) {
+        blocked.add(name);
+      }
+    } catch {
+      /* An un-inspectable name is treated as blocked: fail closed. */
+      blocked.add(name);
+    }
+  }
+  return blocked.size > 0 ? blocked : undefined;
+}
+
 function filteredToolOutputResult(
   tc: ToolCallRequest,
   req: ServerRequest | undefined,
@@ -5036,9 +5065,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * the sandbox bridge invokes them directly — so when the
                          * deployment filters tool arguments for PII, the trace
                          * must not put their values on the wire. */
-                        const ptcArgumentPii = (
-                          mergedConfigurable?.req as ServerRequest | undefined
-                        )?.config?.filters?.toolArguments?.pii;
+                        const ptcReq = mergedConfigurable?.req as ServerRequest | undefined;
+                        const ptcArgumentPii = ptcReq?.config?.filters?.toolArguments?.pii;
                         toolCallConfig.toolMap = emitPtcProgress
                           ? instrumentPtcToolMap({
                               toolMap: eligiblePtcToolMap,
@@ -5051,6 +5079,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                                 'arguments',
                                 'output',
                               ]),
+                              traceExclusions: collectFilteredPtcToolNames(
+                                eligiblePtcToolMap.keys(),
+                                ptcReq,
+                              ),
                               emit: emitPtcProgress,
                             })
                           : eligiblePtcToolMap;

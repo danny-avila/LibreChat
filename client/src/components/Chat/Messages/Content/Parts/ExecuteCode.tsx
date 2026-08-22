@@ -180,6 +180,7 @@ export default function ExecuteCode({
             )}
             <PtcToolTrace
               toolCallId={toolCallId}
+              expanded={showCode}
               className={cn(code && 'border-t border-border-light')}
             />
             {hasOutput && backgroundHandle == null && (

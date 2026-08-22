@@ -179,6 +179,7 @@ export default function BashCall({
             )}
             <PtcToolTrace
               toolCallId={toolCallId}
+              expanded={showCode}
               className={cn(command && 'border-t border-border-light')}
             />
             {hasOutput && backgroundHandle == null && (

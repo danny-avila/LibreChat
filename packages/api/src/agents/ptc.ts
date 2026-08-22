@@ -95,6 +95,14 @@ export interface InstrumentPtcToolMapParams {
    * argument that caused it. The trace still reports name, status and duration.
    */
   includePreviews?: boolean;
+  /**
+   * Inner tools whose *name* trips the deployment's PII policy. The event
+   * carries the tool name unconditionally, so a name the `name` filter would
+   * have blocked on a direct call cannot be allowed to ride the trace instead.
+   * These tools still execute — they are simply left unwrapped, so no event
+   * about them is ever emitted.
+   */
+  traceExclusions?: ReadonlySet<string>;
   emit: (event: PtcToolCallEvent) => void;
 }
 
@@ -111,6 +119,7 @@ export function instrumentPtcToolMap({
   toolCallId,
   runId,
   includePreviews = true,
+  traceExclusions,
   emit,
 }: InstrumentPtcToolMapParams): Map<string, StructuredToolInterface> {
   let sequence = 0;
@@ -125,6 +134,10 @@ export function instrumentPtcToolMap({
 
   const instrumented = new Map<string, StructuredToolInterface>();
   for (const [name, tool] of toolMap) {
+    if (traceExclusions?.has(name)) {
+      instrumented.set(name, tool);
+      continue;
+    }
     instrumented.set(
       name,
       new Proxy(tool, {
