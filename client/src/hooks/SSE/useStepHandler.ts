@@ -420,11 +420,17 @@ export default function useStepHandler({
   );
 
   /**
-   * Drops rows still marked `running` after a stream gap. Inner calls carry no
-   * durable state — they are not content parts, so the resume snapshot cannot
-   * rebuild them and their settling events are not replayed — which means a
-   * call that finished during a disconnect would otherwise show a spinner
-   * forever. Settled rows are real history and stay.
+   * Settles rows still marked `running` after a stream gap as `interrupted`.
+   * Inner calls carry no durable state — they are not content parts, so the
+   * resume snapshot cannot rebuild them and a settling event lost in the gap
+   * is never replayed — which means such a row would otherwise spin forever.
+   *
+   * Marked, not removed: a call can also still be executing across the
+   * reconnect, and its settling event then arrives normally on the restored
+   * live stream. That event updates this row in place, so the call reports its
+   * real outcome. Deleting the row would strand it — a settle whose row is
+   * gone is dropped rather than re-appended out of order — and the call would
+   * vanish from the trace despite having run. Settled rows are untouched.
    */
   const prunePtcTraces = useRecoilCallback(
     ({ set }) =>
@@ -434,7 +440,11 @@ export default function useStepHandler({
             previous.entries.some((entry) => entry.status === 'running')
               ? {
                   ...previous,
-                  entries: previous.entries.filter((entry) => entry.status !== 'running'),
+                  entries: previous.entries.map((entry) =>
+                    entry.status === 'running'
+                      ? { ...entry, status: 'interrupted' as const }
+                      : entry,
+                  ),
                 }
               : previous,
           );

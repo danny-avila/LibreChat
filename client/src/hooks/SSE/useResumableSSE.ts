@@ -2128,9 +2128,11 @@ export default function useResumableSSE(
             }
 
             /** PTC inner calls are not content parts, so the resume snapshot
-             *  can't rebuild them and their settling events aren't replayed.
-             *  Any row still `running` across this gap is unknowable — drop it
-             *  rather than leave a spinner that never resolves. */
+             *  can't rebuild them and a settling event lost in this gap is
+             *  never replayed. Mark rows still `running` as interrupted rather
+             *  than leave a spinner that never resolves — and rather than drop
+             *  them, since a call still executing across the reconnect settles
+             *  normally on the restored stream and updates its row in place. */
             prunePtcTraces();
 
             if (data.resumeState?.replayEvents?.length > 0) {

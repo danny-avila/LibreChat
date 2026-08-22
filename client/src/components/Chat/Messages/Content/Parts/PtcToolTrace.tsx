@@ -16,6 +16,7 @@ const STATUS_GLYPH: Record<PtcTraceEntry['status'], string> = {
   running: '›',
   success: '✓',
   error: '✗',
+  interrupted: '?',
 };
 
 /** Spoken equivalent of the glyph. The glyph itself is decorative, and a
@@ -25,6 +26,7 @@ const STATUS_LABEL_KEYS: Record<PtcTraceEntry['status'], TranslationKeys> = {
   running: 'com_ui_ptc_trace_running',
   success: 'com_ui_ptc_trace_done',
   error: 'com_ui_ptc_trace_failed',
+  interrupted: 'com_ui_ptc_trace_interrupted',
 };
 
 /**

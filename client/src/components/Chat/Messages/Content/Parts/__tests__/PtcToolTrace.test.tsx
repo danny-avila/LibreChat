@@ -15,6 +15,7 @@ jest.mock('~/hooks', () => ({
         com_ui_ptc_trace_running: 'running',
         com_ui_ptc_trace_failed: 'failed',
         com_ui_ptc_trace_done: 'done',
+        com_ui_ptc_trace_interrupted: 'interrupted',
         com_ui_ptc_trace_earlier: `+${values?.count} earlier calls`,
         com_ui_tool_name_code: 'Code',
       };
@@ -109,6 +110,14 @@ describe('PtcToolTrace', () => {
     renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }]);
 
     expect(screen.getByText('done')).toBeInTheDocument();
+  });
+
+  it('speaks an interrupted outcome for a call a stream gap cut off', () => {
+    renderTrace([{ callId: 'c1', name: 'write_file', status: 'interrupted' }]);
+    expect(screen.getByText('interrupted')).toBeInTheDocument();
+    /** Neither a failure nor still in flight: no error styling, no spinner. */
+    expect(screen.queryByText('failed')).not.toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
   });
 
   it('says how many calls the cap dropped rather than truncating silently', () => {

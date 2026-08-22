@@ -1745,6 +1745,7 @@
   "com_ui_ptc_trace_done": "done",
   "com_ui_ptc_trace_earlier": "+{{count}} earlier calls",
   "com_ui_ptc_trace_failed": "failed",
+  "com_ui_ptc_trace_interrupted": "interrupted",
   "com_ui_ptc_trace_running": "running",
   "com_ui_ptc_trace_title": "Tool calls",
   "com_ui_quality": "Quality",

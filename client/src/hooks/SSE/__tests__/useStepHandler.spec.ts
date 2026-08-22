@@ -4084,7 +4084,7 @@ describe('useStepHandler', () => {
       expect(getEntries('call_ptc')).toEqual([]);
     });
 
-    it('prunes rows still running across a resume gap and keeps settled ones', () => {
+    it('marks rows still running across a resume gap and keeps settled ones', () => {
       const { result, getEntries } = renderWithTraceReader();
       const submission = createSubmission();
 
@@ -4115,7 +4115,51 @@ describe('useStepHandler', () => {
         (result.current as unknown as { prunePtcTraces: () => void }).prunePtcTraces();
       });
 
-      expect(getEntries('call_ptc').map((e) => e.callId)).toEqual(['call_ptc:0']);
+      expect(getEntries('call_ptc').map((e) => [e.callId, e.status])).toEqual([
+        ['call_ptc:0', 'success'],
+        ['call_ptc:1', 'interrupted'],
+      ]);
+    });
+
+    it('lets a call still running across the gap settle onto its marked row', () => {
+      const { result, getEntries } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', name: 'write_file' }),
+          },
+          submission,
+        );
+      });
+
+      act(() => {
+        (result.current as unknown as { prunePtcTraces: () => void }).prunePtcTraces();
+      });
+      expect(getEntries('call_ptc').map((e) => e.status)).toEqual(['interrupted']);
+
+      /** The call outlived the disconnect, so its terminal event arrives on
+       *  the restored live stream and must land on the row it opened. */
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({
+              call_id: 'call_ptc:0',
+              name: 'write_file',
+              status: 'success',
+              durationMs: 1400,
+            }),
+          },
+          submission,
+        );
+      });
+
+      expect(getEntries('call_ptc')).toEqual([
+        expect.objectContaining({ callId: 'call_ptc:0', status: 'success', durationMs: 1400 }),
+      ]);
     });
 
     it('caps the retained rows and reports how many it dropped', () => {
