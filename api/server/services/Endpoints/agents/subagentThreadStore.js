@@ -88,6 +88,7 @@ async function configureSubagentTaskRouting() {
       await subagentThreadTaskStore.destroyTaskControlTransport();
       subagentThreadTaskStore.destroyActivityStream();
       publisher.disconnect();
+      activitySubscriber.disconnect();
       activityPublisher.disconnect();
     },
     { priority: 90 },
