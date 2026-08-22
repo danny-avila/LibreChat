@@ -30,13 +30,12 @@ import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/mes
 import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
-import {
-  boundSubagentActivityUpdate,
-  SubagentActivityStream,
-  type SubagentActivityUpdateEvent,
-  type SubagentActivitySubscriber,
-  type SubagentActivitySubscription,
-  type SubagentActivityTerminalStatus,
+import { boundSubagentActivityUpdate, SubagentActivityStream } from './subagentActivity';
+import type {
+  SubagentActivityUpdateEvent,
+  SubagentActivitySubscriber,
+  SubagentActivitySubscription,
+  SubagentActivityTerminalStatus,
 } from './subagentActivity';
 import {
   boundedClaim,

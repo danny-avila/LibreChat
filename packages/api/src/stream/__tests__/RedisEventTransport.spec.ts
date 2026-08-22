@@ -295,7 +295,7 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
-  it('does not advance past a chunk published after a fresh channel becomes ready', async () => {
+  it('fences a fresh channel before advancing past attachment-time chunks', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -304,43 +304,46 @@ describe('RedisEventTransport', () => {
     );
     const streamId = 'fresh-attachment-frontier';
     const received: object[] = [];
-    let releaseFrontier!: (value: string) => void;
-    mockPublisher.get
-      .mockImplementationOnce(() => new Promise<string>((resolve) => (releaseFrontier = resolve)))
-      .mockResolvedValueOnce('6');
+    const messageHandler = getMessageHandler(mockSubscriber);
+    mockPublisher.get.mockResolvedValueOnce('6').mockResolvedValueOnce('6');
+    mockPublisher.publish.mockImplementation(async (channel: string, payload: string) => {
+      const parsed = JSON.parse(payload) as { type?: string };
+      if (parsed.type === 'subscription_frontier') {
+        deliverSequencedMessage(messageHandler, streamId, {
+          type: 'chunk',
+          seq: 5,
+          data: { index: 5 },
+        });
+        messageHandler(channel, payload);
+      }
+      return 1;
+    });
 
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
       { deferSequenceDelivery: true, captureSequenceFrontier: true },
     );
-    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
-    releaseFrontier('5');
-    await subscription.ready;
     expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(1);
+    await subscription.ready;
 
     await subscription.syncReorderBuffer?.();
-    deliverSequencedMessage(getMessageHandler(mockSubscriber), streamId, {
-      type: 'chunk',
-      seq: 5,
-      data: { index: 5 },
-    });
 
     expect(received).toEqual([{ index: 5 }]);
     subscription.unsubscribe();
     transport.destroy();
   });
 
-  it('does not open a channel after the last frontier-capturing subscriber leaves', async () => {
+  it('does not capture a frontier after the last subscriber leaves during SUBSCRIBE', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
+    let releaseSubscribe!: () => void;
+    mockSubscriber.subscribe.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (releaseSubscribe = resolve)),
+    );
     const transport = new RedisEventTransport(
       mockPublisher as unknown as Redis,
       mockSubscriber as unknown as Redis,
-    );
-    let releaseFrontier!: (value: string) => void;
-    mockPublisher.get.mockImplementationOnce(
-      () => new Promise<string>((resolve) => (releaseFrontier = resolve)),
     );
 
     const subscription = transport.subscribe(
@@ -349,10 +352,11 @@ describe('RedisEventTransport', () => {
       { deferSequenceDelivery: true, captureSequenceFrontier: true },
     );
     subscription.unsubscribe();
-    releaseFrontier('0');
+    releaseSubscribe();
     await subscription.ready;
 
-    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
+    expect(mockPublisher.eval).not.toHaveBeenCalled();
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
     transport.destroy();
   });
 

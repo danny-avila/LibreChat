@@ -51,6 +51,7 @@ const EventTypes = {
   CHUNK_BATCH: 'chunk_batch',
   DONE: 'done',
   ERROR: 'error',
+  SUBSCRIPTION_FRONTIER: 'subscription_frontier',
   ABORT: 'abort',
   ABORT_ACK: 'abort_ack',
   PREEMPT: 'preempt',
@@ -72,6 +73,8 @@ interface PubSubMessage {
   abortRequestId?: string;
   /** Payload for PREEMPT messages; fenced by its own createdAt. */
   preempt?: PreemptMessage;
+  /** Opaque local subscriber fence; never forwarded to application handlers. */
+  subscriptionFrontierId?: string;
 }
 
 /**
@@ -205,6 +208,13 @@ const PUBLISH_REPLACED_DONE_LUA =
   'redis.call("EXPIRE", KEYS[1], ttl) end local seq = val - 1 ' +
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) return seq';
 
+/** Capture the counter and publish a subscriber-visible fence atomically. Once the
+ * requesting subscriber observes this marker, every sequenced publication below the
+ * returned frontier that it could receive is already in its local reorder buffer. */
+const CAPTURE_SUBSCRIPTION_FRONTIER_LUA =
+  'local frontier = redis.call("GET", KEYS[1]) or "0" ' +
+  'redis.call("PUBLISH", ARGV[1], ARGV[2]) return frontier';
+
 /** Max messages to buffer before force-flushing (prevents memory issues) */
 const MAX_BUFFER_SIZE = 100;
 /** Rolling-upgrade recovery window after a legacy job hash expires without an epoch marker. */
@@ -212,6 +222,14 @@ const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
 /** Durable owner proof outlives receipt retries and process-local subscriptions. */
 const ABORT_ACK_TTL_SECONDS = 86400;
 const PROVIDER_DRAIN_TTL_SECONDS = 86400;
+const SUBSCRIPTION_FRONTIER_TIMEOUT_MS = 3_000;
+
+interface SubscriptionFrontierWaiter {
+  streamId: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
 
 /**
  * Subscriber state for a stream
@@ -272,6 +290,8 @@ export class RedisEventTransport implements IEventTransport {
   private subscriberIdCounter = 0;
   /** Coalescable chunk publications awaiting their window flush, per stream */
   private pendingBatches = new Map<string, PendingChunkBatch>();
+  /** Local waiters for atomic sequence-frontier markers published after SUBSCRIBE. */
+  private subscriptionFrontierWaiters = new Map<string, SubscriptionFrontierWaiter>();
   /** Delta-coalescing window; 0 keeps every publication on the per-event path */
   private readonly coalesceWindowMs: number;
 
@@ -301,10 +321,59 @@ export class RedisEventTransport implements IEventTransport {
     return state;
   }
 
-  private async readSequenceFrontier(streamId: string): Promise<number> {
-    const raw = await this.publisher.get(KEYS.sequence(streamId));
-    const parsed = raw != null ? parseInt(raw, 10) : 0;
-    return Number.isNaN(parsed) ? 0 : parsed;
+  private async captureSubscriptionFrontier(streamId: string): Promise<number> {
+    const subscriptionFrontierId = randomUUID();
+    const observed = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.subscriptionFrontierWaiters.delete(subscriptionFrontierId);
+        reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`));
+      }, SUBSCRIPTION_FRONTIER_TIMEOUT_MS);
+      timeout.unref?.();
+      this.subscriptionFrontierWaiters.set(subscriptionFrontierId, {
+        streamId,
+        resolve,
+        reject,
+        timeout,
+      });
+    });
+    /** The timeout can win while EVAL is still pending; attach rejection handling now. */
+    void observed.catch(() => undefined);
+    try {
+      const raw = await this.publisher.eval(
+        CAPTURE_SUBSCRIPTION_FRONTIER_LUA,
+        1,
+        KEYS.sequence(streamId),
+        CHANNELS.events(streamId),
+        JSON.stringify({
+          type: EventTypes.SUBSCRIPTION_FRONTIER,
+          subscriptionFrontierId,
+        }),
+      );
+      await observed;
+      const parsed = raw != null ? parseInt(String(raw), 10) : 0;
+      return Number.isNaN(parsed) ? 0 : parsed;
+    } catch (error) {
+      const waiter = this.subscriptionFrontierWaiters.get(subscriptionFrontierId);
+      if (waiter != null) {
+        waiter.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+      throw error;
+    } finally {
+      const waiter = this.subscriptionFrontierWaiters.get(subscriptionFrontierId);
+      if (waiter != null) {
+        clearTimeout(waiter.timeout);
+        this.subscriptionFrontierWaiters.delete(subscriptionFrontierId);
+      }
+    }
+  }
+
+  private releaseSubscriptionFrontiers(streamId: string): void {
+    for (const [id, waiter] of this.subscriptionFrontierWaiters) {
+      if (waiter.streamId !== streamId) continue;
+      clearTimeout(waiter.timeout);
+      this.subscriptionFrontierWaiters.delete(id);
+      waiter.resolve();
+    }
   }
 
   /**
@@ -590,8 +659,14 @@ export class RedisEventTransport implements IEventTransport {
    *   above it are live chunks from the ongoing generation. Using the exact replay frontier
    *   (not the Redis counter) is critical: INCR can advance the counter past a live chunk's
    *   sequence during the GET window. Undefined means no local replay, so currentSeq is trusted.
+   * @param preserveBufferedBeforeFrontier - A fresh post-SUBSCRIBE fence has no replay log;
+   *   preserve every frame observed before its marker and begin at the earliest buffered seq.
    */
-  async syncReorderBuffer(streamId: string, replayedNextSeq?: number): Promise<void> {
+  async syncReorderBuffer(
+    streamId: string,
+    replayedNextSeq?: number,
+    preserveBufferedBeforeFrontier = false,
+  ): Promise<void> {
     const initialState = this.streams.get(streamId);
     try {
       const key = KEYS.sequence(streamId);
@@ -616,7 +691,7 @@ export class RedisEventTransport implements IEventTransport {
 
       // Prune true duplicates already delivered via earlyEventBuffer. Entries at or above
       // the absolute replay frontier are live (possibly from an ongoing generation).
-      if (replayedNextSeq != null) {
+      if (replayedNextSeq != null && !preserveBufferedBeforeFrontier) {
         for (const seq of buffer.pending.keys()) {
           if (seq < replayedNextSeq) {
             buffer.pending.delete(seq);
@@ -659,7 +734,7 @@ export class RedisEventTransport implements IEventTransport {
         const buffer = state.reorderBuffer;
         // The local replay frontier remains authoritative even when the shared counter
         // cannot be read. Drop its pub/sub copies before releasing any later live events.
-        if (replayedNextSeq != null) {
+        if (replayedNextSeq != null && !preserveBufferedBeforeFrontier) {
           for (const seq of buffer.pending.keys()) {
             if (seq < replayedNextSeq) {
               buffer.pending.delete(seq);
@@ -694,6 +769,18 @@ export class RedisEventTransport implements IEventTransport {
 
     try {
       const parsed = JSON.parse(message) as PubSubMessage;
+      if (
+        parsed.type === EventTypes.SUBSCRIPTION_FRONTIER &&
+        parsed.subscriptionFrontierId != null
+      ) {
+        const waiter = this.subscriptionFrontierWaiters.get(parsed.subscriptionFrontierId);
+        if (waiter?.streamId === streamId) {
+          clearTimeout(waiter.timeout);
+          this.subscriptionFrontierWaiters.delete(parsed.subscriptionFrontierId);
+          waiter.resolve();
+        }
+        return;
+      }
       /** Aborts, preempts, and abort acknowledgements are consumed by
        *  transport-internal waiters (e.g. pending-ack resolution), not SSE
        *  subscribers, so they must flow even with zero local subscribers. */
@@ -970,6 +1057,7 @@ export class RedisEventTransport implements IEventTransport {
 
   private detachStreamSubscribers(streamId: string, state: StreamSubscribers): void {
     this.resetReorderBuffer(streamId);
+    this.releaseSubscriptionFrontiers(streamId);
 
     this.unsubscribeUnusedChannel(streamId, state);
 
@@ -1041,29 +1129,37 @@ export class RedisEventTransport implements IEventTransport {
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
 
-    /** A fresh activity attachment has no replay log. Capture its frontier before
-     * issuing SUBSCRIBE; a later GET must not skip a frame published after readiness. */
-    const attachmentFrontier =
-      options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred
-        ? this.readSequenceFrontier(streamId)
-        : undefined;
-    const readyPromise =
-      attachmentFrontier == null
-        ? this.ensureChannelSubscription(channel)
-        : attachmentFrontier.then(() => {
-            /** The last local viewer may disappear while the frontier read is in flight. */
-            if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
-            return this.ensureChannelSubscription(channel);
-          });
+    /** A fresh activity attachment has no replay log. SUBSCRIBE first, then atomically
+     * capture the sequence and publish a marker. Observing that marker proves every
+     * receivable pre-frontier frame is already buffered locally. */
+    const captureSequenceFrontier =
+      options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
+    const channelReady = this.ensureChannelSubscription(channel);
+    const attachmentFrontier = captureSequenceFrontier
+      ? channelReady.then(() => {
+          if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
+          return this.captureSubscriptionFrontier(streamId);
+        })
+      : undefined;
+    const readyPromise = attachmentFrontier?.then(() => undefined) ?? channelReady;
 
     return {
       ready: readyPromise,
       syncReorderBuffer: async () => {
         /** A delayed attachment must never synchronize state recreated under the same ID. */
         if (this.streams.get(streamId) !== streamState) return;
-        const capturedFrontier = await attachmentFrontier;
-        if (this.streams.get(streamId) !== streamState) return;
-        return this.syncReorderBuffer(streamId, capturedFrontier);
+        if (captureSequenceFrontier) {
+          const capturedFrontier = await attachmentFrontier;
+          if (
+            capturedFrontier == null ||
+            this.streams.get(streamId) !== streamState ||
+            streamState.count === 0
+          ) {
+            return;
+          }
+          return this.syncReorderBuffer(streamId, capturedFrontier, true);
+        }
+        return this.syncReorderBuffer(streamId);
       },
       unsubscribe: () => {
         // An unsubscribe closure belongs to the exact state and handler created
@@ -1521,6 +1617,7 @@ export class RedisEventTransport implements IEventTransport {
   cleanup(streamId: string): void {
     const channel = CHANNELS.events(streamId);
     const state = this.streams.get(streamId);
+    this.releaseSubscriptionFrontiers(streamId);
 
     /** Terminal publications flushed ahead of themselves; anything still pending
      * here belongs to a torn-down generation and stays recoverable from the
@@ -1555,6 +1652,11 @@ export class RedisEventTransport implements IEventTransport {
    * Destroy all resources.
    */
   destroy(): void {
+    for (const streamId of new Set(
+      [...this.subscriptionFrontierWaiters.values()].map((waiter) => waiter.streamId),
+    )) {
+      this.releaseSubscriptionFrontiers(streamId);
+    }
     for (const streamId of this.pendingBatches.keys()) {
       this.discardCoalescedChunks(streamId);
     }
