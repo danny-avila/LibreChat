@@ -5,5 +5,6 @@ export * from './delivery';
 export * from './envelope';
 export * from './host';
 export * from './ingress';
+export * from './lease';
 export * from './service';
 export * from './engine';
