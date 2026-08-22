@@ -12,6 +12,7 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
   SubagentTaskConfig,
+  CallerCapabilityProjectionSnapshot,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
@@ -66,6 +67,7 @@ import {
   INTENT_ARG,
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -99,6 +101,8 @@ export interface ToolExecuteOptions {
     agentId?: string,
     /** Immutable run configuration available before deferred tools connect. */
     configurable?: Record<string, unknown>,
+    /** SDK-owned live caller capability projection for this agent context. */
+    callerCapabilityProjection?: CallerCapabilityProjectionSnapshot,
   ) => Promise<{
     loadedTools: StructuredToolInterface[];
     /** Additional configurable properties to merge (e.g., userMCPAuthMap) */
@@ -4152,6 +4156,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
       const { toolCalls, agentId, configurable, metadata, resolve, reject } = data;
+      const callerCapabilityProjection = resolveCallerCapabilityProjectionSnapshot(
+        (
+          data as ToolExecuteBatchRequest & {
+            callerCapabilityProjection?: unknown;
+          }
+        ).callerCapabilityProjection,
+      );
       /** Optional per-call channel (agents SDK > 3.2.33); cast keeps older
        * installed SDK typings compiling until the release lands. */
       const onResult = (
@@ -4202,6 +4213,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               toolNames,
               agentId,
               sourceConfigurable,
+              callerCapabilityProjection,
             );
             const toolMap = new Map(loadedTools.map((t) => [t.name, t]));
             const loadedConfigurable = toolConfigurable as Record<string, unknown> | undefined;
@@ -4939,18 +4951,45 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         | Map<string, StructuredToolInterface>
                         | undefined;
                       if (toolRegistry) {
+                        const activeCodeExecutionToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.codeExecutionToolNames)
+                          : undefined;
+                        const activeDirectOnlyToolNames = callerCapabilityProjection
+                          ? new Set(callerCapabilityProjection.directOnlyToolNames)
+                          : undefined;
                         const fileAuthoringToolNames =
                           getFileAuthoringToolNames(mergedConfigurable) ?? new Set<string>();
-                        const filteredToolDefs: LCTool[] = Array.from(toolRegistry.values()).filter(
-                          (t) =>
-                            t.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
-                            t.name !== Constants.TOOL_SEARCH &&
-                            /* Host-only poll tool: implemented by the ON_TOOL_EXECUTE
-                             * shortcut, not callable from PTC-generated code. */
-                            t.name !== CHECK_BACKGROUND_TASK_NAME &&
-                            !fileAuthoringToolNames.has(t.name),
-                        );
+                        const eligibleToolDefs: LCTool[] = [];
+                        const disallowedToolDefs: LCTool[] = [];
+                        for (const toolDef of toolRegistry.values()) {
+                          const isInnerTool =
+                            toolDef.name !== Constants.PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.BASH_PROGRAMMATIC_TOOL_CALLING &&
+                            toolDef.name !== Constants.TOOL_SEARCH &&
+                            toolDef.name !== CHECK_BACKGROUND_TASK_NAME &&
+                            !fileAuthoringToolNames.has(toolDef.name);
+                          if (!isInnerTool) {
+                            continue;
+                          }
+                          const allowsCodeExecution = (
+                            toolDef.allowed_callers ?? ['direct']
+                          ).includes('code_execution');
+                          if (
+                            allowsCodeExecution &&
+                            (activeCodeExecutionToolNames == null ||
+                              activeCodeExecutionToolNames.has(toolDef.name))
+                          ) {
+                            eligibleToolDefs.push(toolDef);
+                          } else if (
+                            !allowsCodeExecution &&
+                            (activeDirectOnlyToolNames == null ||
+                              activeDirectOnlyToolNames.has(toolDef.name))
+                          ) {
+                            disallowedToolDefs.push({
+                              name: toolDef.name,
+                            });
+                          }
+                        }
                         /* PTC-generated calls don't go through the host background
                          * interceptor, so strip the injected `run_in_background`
                          * param from target schemas (the registry entries were
@@ -4961,12 +5000,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          * bridge must not advertise them. */
                         const toolDefs = stripIntentLabelsFromToolDefinitions(
                           stripBackgroundFromToolDefinitions(
-                            filteredToolDefs,
+                            eligibleToolDefs,
                             mergedConfigurable?.backgroundToolNames as string[] | undefined,
                           ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
-                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                        toolCallConfig.disallowedToolDefs = disallowedToolDefs;
+                        const eligibleNames = new Set(toolDefs.map((toolDef) => toolDef.name));
+                        toolCallConfig.toolMap = new Map(
+                          [...(ptcToolMap ?? toolMap)].filter(([name]) => eligibleNames.has(name)),
+                        );
                       }
                     }
 

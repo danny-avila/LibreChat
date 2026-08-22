@@ -1016,7 +1016,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
       // Create tool execute options for event-driven tool execution
       const toolExecuteOptions = {
-        loadTools: async (toolNames, agentId) => {
+        loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
           const result = await loadToolsForExecution({
@@ -1029,6 +1029,7 @@ const executeResponse = async (envelope, { req, res }) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
             intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,
@@ -1206,7 +1207,7 @@ const executeResponse = async (envelope, { req, res }) => {
       const toolEndCallback = createToolEndCallback({ req, res, artifactPromises, streamId: null });
 
       const toolExecuteOptions = {
-        loadTools: async (toolNames, agentId) => {
+        loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
           const ctx =
             agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
           const result = await loadToolsForExecution({
@@ -1219,6 +1220,7 @@ const executeResponse = async (envelope, { req, res }) => {
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
             toolRegistry: ctx.toolRegistry,
+            callerCapabilityProjection,
             backgroundToolNames: ctx.backgroundToolNames,
             intentToolNames: ctx.intentToolNames,
             mcpAvailableTools: ctx.mcpAvailableTools,

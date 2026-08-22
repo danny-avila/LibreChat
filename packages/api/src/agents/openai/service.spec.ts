@@ -190,6 +190,7 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
       ['deferred_mcp_tool'],
       'agent_test',
       expect.objectContaining({ requestBody: runArgs.requestBody }),
+      undefined,
     );
   });
 

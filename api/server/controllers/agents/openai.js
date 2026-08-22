@@ -701,7 +701,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        agent never gains sandbox access even if the admin enabled the
        capability globally. */
     const toolExecuteOptions = {
-      loadTools: async (toolNames, agentId) => {
+      loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
         const ctx = agentToolContexts.get(agentId) ?? agentToolContexts.get(primaryConfig.id) ?? {};
         const result = await loadToolsForExecution({
           req,
@@ -713,6 +713,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           agent: ctx.agent ?? agent,
           signal: abortController.signal,
           toolRegistry: ctx.toolRegistry,
+          callerCapabilityProjection,
           backgroundToolNames: ctx.backgroundToolNames,
           intentToolNames: ctx.intentToolNames,
           mcpAvailableTools: ctx.mcpAvailableTools,

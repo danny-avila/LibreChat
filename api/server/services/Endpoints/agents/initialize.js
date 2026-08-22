@@ -329,7 +329,7 @@ const initializeClient = async ({
   const endpointTokenConfigByAgentId = new Map();
 
   const toolExecuteOptions = {
-    loadTools: async (toolNames, agentId) => {
+    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
@@ -344,6 +344,7 @@ const initializeClient = async ({
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
+        callerCapabilityProjection,
         backgroundToolNames: ctx.backgroundToolNames,
         intentToolNames: ctx.intentToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,

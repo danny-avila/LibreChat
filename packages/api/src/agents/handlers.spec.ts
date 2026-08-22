@@ -48,13 +48,21 @@ function createHandler(
 function invokeHandler(
   handler: ReturnType<typeof createToolExecuteHandler>,
   toolCalls: ToolCallRequest[],
+  callerCapabilityProjection?: {
+    version: 1;
+    directToolNames: string[];
+    codeExecutionToolNames: string[];
+    directOnlyToolNames: string[];
+    codeExecutionOnlyToolNames: string[];
+  },
 ): Promise<ToolExecuteResult[]> {
   return new Promise((resolve, reject) => {
-    const request: ToolExecuteBatchRequest = {
+    const request = {
       toolCalls,
+      callerCapabilityProjection,
       resolve,
       reject,
-    };
+    } as ToolExecuteBatchRequest & { callerCapabilityProjection?: unknown };
     handler.handle('on_tool_execute', request);
   });
 }
@@ -503,7 +511,7 @@ describe('createToolExecuteHandler', () => {
       );
 
       expect(loadTools).toHaveBeenCalledTimes(1);
-      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable);
+      expect(loadTools).toHaveBeenCalledWith(['allowed_tool'], undefined, configurable, undefined);
       expect(JSON.stringify(jest.mocked(loadTools).mock.calls)).not.toContain(protectedName);
       expect(results[0]).toEqual(
         expect.objectContaining({
@@ -819,7 +827,8 @@ describe('createToolExecuteHandler', () => {
       const capturedConfigs: Record<string, unknown>[] = [];
       const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
       const toolRegistry = new Map([
-        ['custom_tool', { name: 'custom_tool' }],
+        ['custom_tool', { name: 'custom_tool', allowed_callers: ['code_execution'] }],
+        ['direct_tool', { name: 'direct_tool', allowed_callers: ['direct'] }],
         ['create_file', { name: 'create_file' }],
         [Constants.PROGRAMMATIC_TOOL_CALLING, { name: Constants.PROGRAMMATIC_TOOL_CALLING }],
         [
@@ -828,7 +837,11 @@ describe('createToolExecuteHandler', () => {
         ],
         [Constants.TOOL_SEARCH, { name: Constants.TOOL_SEARCH }],
       ]);
-      const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
+      const customTool = createMockTool('custom_tool', []);
+      const ptcToolMap = new Map([
+        ['custom_tool', customTool],
+        ['direct_tool', createMockTool('direct_tool', [])],
+      ]);
       const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
         loadedTools: [legacyPtcTool] as never[],
         configurable: {
@@ -848,8 +861,120 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(capturedConfigs).toHaveLength(1);
-      expect(capturedConfigs[0].toolDefs).toEqual([{ name: 'custom_tool' }]);
-      expect(capturedConfigs[0].toolMap).toBe(ptcToolMap);
+      expect(capturedConfigs[0].toolDefs).toEqual([
+        { name: 'custom_tool', allowed_callers: ['code_execution'] },
+      ]);
+      expect(capturedConfigs[0].disallowedToolDefs).toEqual([{ name: 'direct_tool' }]);
+      expect(capturedConfigs[0].toolMap).toEqual(new Map([['custom_tool', customTool]]));
+    });
+
+    it('uses the SDK live projection as the authoritative active PTC policy', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
+      const activeProgrammaticTool = createMockTool('active_programmatic_tool', []);
+      const deferredProgrammaticTool = createMockTool('deferred_programmatic_tool', []);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [legacyPtcTool] as never[],
+        configurable: {
+          toolRegistry: new Map([
+            [
+              'active_programmatic_tool',
+              { name: 'active_programmatic_tool', allowed_callers: ['code_execution'] },
+            ],
+            [
+              'deferred_programmatic_tool',
+              {
+                name: 'deferred_programmatic_tool',
+                allowed_callers: ['code_execution'],
+                defer_loading: true,
+              },
+            ],
+            ['active_direct_tool', { name: 'active_direct_tool' }],
+            ['deferred_direct_tool', { name: 'deferred_direct_tool', defer_loading: true }],
+          ]),
+          ptcToolMap: new Map([
+            ['active_programmatic_tool', activeProgrammaticTool],
+            ['deferred_programmatic_tool', deferredProgrammaticTool],
+          ]),
+        },
+      }));
+      const callerCapabilityProjection = {
+        version: 1 as const,
+        directToolNames: ['active_direct_tool'],
+        codeExecutionToolNames: ['active_programmatic_tool'],
+        directOnlyToolNames: ['active_direct_tool'],
+        codeExecutionOnlyToolNames: ['active_programmatic_tool'],
+      };
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(
+        handler,
+        [
+          {
+            id: 'call_projected',
+            name: Constants.PROGRAMMATIC_TOOL_CALLING,
+            args: { code: 'active_programmatic_tool "{}"' },
+          },
+        ],
+        callerCapabilityProjection,
+      );
+
+      expect(loadTools).toHaveBeenCalledWith(
+        [Constants.PROGRAMMATIC_TOOL_CALLING],
+        undefined,
+        undefined,
+        callerCapabilityProjection,
+      );
+      expect(capturedConfigs[0].toolDefs).toEqual([
+        { name: 'active_programmatic_tool', allowed_callers: ['code_execution'] },
+      ]);
+      expect(capturedConfigs[0].disallowedToolDefs).toEqual([{ name: 'active_direct_tool' }]);
+      expect(capturedConfigs[0].toolMap).toEqual(
+        new Map([['active_programmatic_tool', activeProgrammaticTool]]),
+      );
+    });
+
+    it('treats an empty versioned projection as authoritative', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const legacyPtcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [legacyPtcTool] as never[],
+        configurable: {
+          toolRegistry: new Map([
+            [
+              'deferred_programmatic_tool',
+              { name: 'deferred_programmatic_tool', allowed_callers: ['code_execution'] },
+            ],
+            ['deferred_direct_tool', { name: 'deferred_direct_tool' }],
+          ]),
+          ptcToolMap: new Map([
+            ['deferred_programmatic_tool', createMockTool('deferred_programmatic_tool', [])],
+          ]),
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools });
+
+      await invokeHandler(
+        handler,
+        [
+          {
+            id: 'call_empty_projection',
+            name: Constants.PROGRAMMATIC_TOOL_CALLING,
+            args: { code: 'print("done")' },
+          },
+        ],
+        {
+          version: 1,
+          directToolNames: [],
+          codeExecutionToolNames: [],
+          directOnlyToolNames: [],
+          codeExecutionOnlyToolNames: [],
+        },
+      );
+
+      expect(capturedConfigs[0].toolDefs).toEqual([]);
+      expect(capturedConfigs[0].disallowedToolDefs).toEqual([]);
+      expect(capturedConfigs[0].toolMap).toEqual(new Map());
     });
   });
 
