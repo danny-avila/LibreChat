@@ -60,7 +60,6 @@ import {
   contentFilterModelBoundBlockResponse,
   isContentFilterError,
 } from '~/middleware/contentFilter';
-import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import {
   hasIntentArg,
   stripIntentArg,
@@ -68,6 +67,7 @@ import {
   INTENT_ARG,
 } from './intent';
 import { getSafeErrorMetadata, logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
+import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
