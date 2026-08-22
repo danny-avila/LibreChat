@@ -1,11 +1,12 @@
 import { AIMessage, HumanMessage } from '@langchain/core/messages';
+import type { IConversation } from '@librechat/data-schemas';
 import { createAgentEventContinueResolver } from './bindingResolver';
-import { createAgentTriggerEnvelope } from './envelope';
+import { createAgentTriggerEnvelope, type AgentContinueTriggerEnvelope } from './envelope';
 
 const bindingId = `evtbind_${'a'.repeat(48)}`;
 const sourceKeyId = '507f191e810c19729de860eb';
 
-function envelope() {
+function envelope(): AgentContinueTriggerEnvelope {
   return createAgentTriggerEnvelope({
     mode: 'continue',
     requestId: 'request-1',
@@ -26,7 +27,7 @@ function envelope() {
       bindingId,
       sourceKeyId,
     },
-  });
+  }) as AgentContinueTriggerEnvelope;
 }
 
 describe('agent event continuation resolver', () => {
@@ -63,11 +64,14 @@ describe('agent event continuation resolver', () => {
             parentAgentId: 'agent-director',
           } as never,
         })),
-        getConvo: jest.fn(async () => ({
-          conversationId: 'parent-thread',
-          agent_id: 'agent-director',
-          tenantId: 'tenant-1',
-        })),
+        getConvo: jest.fn(
+          async () =>
+            ({
+              conversationId: 'parent-thread',
+              agent_id: 'agent-director',
+              tenantId: 'tenant-1',
+            }) as IConversation,
+        ),
         getMessages: jest.fn(async () => [
           Object.assign(new HumanMessage('first'), {
             messageId: 'user-1',
@@ -125,11 +129,14 @@ describe('agent event continuation resolver', () => {
             parentAgentId: 'agent-director',
           } as never,
         })),
-        getConvo: jest.fn(async () => ({
-          conversationId: 'parent-thread',
-          agent_id: 'agent-director',
-          tenantId: 'tenant-1',
-        })),
+        getConvo: jest.fn(
+          async () =>
+            ({
+              conversationId: 'parent-thread',
+              agent_id: 'agent-director',
+              tenantId: 'tenant-1',
+            }) as IConversation,
+        ),
         getMessages: jest.fn(),
       },
     });

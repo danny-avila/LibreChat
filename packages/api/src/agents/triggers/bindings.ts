@@ -3,6 +3,7 @@ import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type {
   AgentMethods,
   ConversationMethods,
+  IAgent,
   IAgentEventBindingRecord,
   IConversation,
   MessageMethods,
@@ -82,7 +83,7 @@ function tenantMatches(actual: string | undefined, expected: string | undefined)
   return actual == null ? expected == null : actual === expected;
 }
 
-function configuredChild(parentAgent: Record<string, unknown>, targetAgentId: string): boolean {
+function configuredChild(parentAgent: IAgent, targetAgentId: string): boolean {
   const parentId = typeof parentAgent.id === 'string' ? parentAgent.id : undefined;
   const subagents = parentAgent.subagents as
     | { enabled?: boolean; allowSelf?: boolean; agent_ids?: unknown[] }

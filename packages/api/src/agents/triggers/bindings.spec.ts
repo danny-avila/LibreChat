@@ -29,7 +29,7 @@ function dependencies() {
     },
   }));
   return {
-    getAgent: jest.fn(async ({ id }) =>
+    getAgent: jest.fn<Promise<unknown>, [Record<string, unknown>]>(async ({ id }) =>
       id === PARENT_AGENT_ID
         ? {
             id: PARENT_AGENT_ID,
@@ -37,8 +37,8 @@ function dependencies() {
           }
         : { id },
     ),
-    getConvo: jest.fn(async () => parent()),
-    getBinding: jest.fn(async () => null),
+    getConvo: jest.fn<Promise<IConversation | null>, [string, string]>(async () => parent()),
+    getBinding: jest.fn<Promise<unknown>, [Record<string, unknown>]>(async () => null),
     getMessage: jest.fn(async () => ({
       messageId: PARENT_MESSAGE_ID,
       conversationId: PARENT_ID,
@@ -62,7 +62,9 @@ function app(deps = dependencies()) {
     next();
   });
   server.post('/bindings', handlers.register);
-  server.post('/resolve', handlers.resolve, (req, res) => res.json(req.body));
+  server.post('/resolve', handlers.resolve, (req, res) => {
+    res.json(req.body);
+  });
   return { server, deps };
 }
 
@@ -129,7 +131,7 @@ describe('agent event bindings', () => {
     deps.getAgent.mockResolvedValueOnce({
       id: PARENT_AGENT_ID,
       subagents: { enabled: true, allowSelf: false, agent_ids: [] },
-    });
+    } as never);
     const response = await request(server)
       .post('/bindings')
       .set('Idempotency-Key', 'not-configured')
@@ -234,7 +236,10 @@ describe('agent event bindings', () => {
 
     expect(first.status).toBe(201);
     const reservation = await deps.reserveThread.mock.results[0].value;
-    deps.getConvo.mockResolvedValueOnce({ ...parent(), conversationId: 'other-parent' });
+    deps.getConvo.mockResolvedValueOnce({
+      ...parent(),
+      conversationId: 'other-parent',
+    } as unknown as IConversation);
     deps.getMessage.mockResolvedValueOnce({
       messageId: PARENT_MESSAGE_ID,
       conversationId: 'other-parent',
@@ -246,7 +251,7 @@ describe('agent event bindings', () => {
       tenantId: reservation.conversation.tenantId,
       binding: reservation.conversation.agentEventBinding,
       lineage: reservation.conversation.subagentThread,
-    });
+    } as never);
     const response = await request(server)
       .post('/bindings')
       .set('Idempotency-Key', 'cross-parent-replay')
