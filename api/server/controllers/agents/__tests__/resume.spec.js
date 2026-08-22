@@ -420,7 +420,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     ...extra,
   });
 
-  const configureEventActorResume = (expiredAt = new Date('2026-08-22T01:00:00.000Z')) => {
+  const configureEventActorResume = (expiredAt = new Date(Date.now() + 60_000)) => {
     requestStateOverrides = {
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
@@ -509,6 +509,20 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
       expect(res.status).toBe(409);
       expect(res.body).toMatchObject({ code: 'EVENT_ACTOR_NOT_READY' });
+      expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
+        expectedCreatedAt: 1000,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('rejects a binding that expires after the route guard but before approval consumption', async () => {
+      configureEventActorResume(new Date(Date.now() - 1));
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(approveBody());
+
+      expect(res.body).toMatchObject({ code: 'EVENT_BINDING_PARENT_ENDED' });
+      expect(res.status).toBe(409);
       expect(mockGenerationJobManager.abortJob).toHaveBeenCalledWith(CONVO_ID, {
         expectedCreatedAt: 1000,
         awaitProviderDrain: true,

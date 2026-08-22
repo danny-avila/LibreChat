@@ -38,6 +38,7 @@ const {
   toPendingSteer,
   createMCPRuntimeRequestBody,
   getSafeErrorMetadata,
+  isAgentEventRetentionActive,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -1282,7 +1283,9 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           eventParent == null ||
           eventParent.subagentThread != null ||
           eventParent.agent_id !== req._agentEventBindingParentAgentId ||
-          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId
+          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+          !isAgentEventRetentionActive(req._agentEventBindingRetention?.expiredAt) ||
+          !isAgentEventRetentionActive(eventParent.expiredAt)
         ) {
           eventActorRejection = {
             code: 'EVENT_BINDING_PARENT_ENDED',
