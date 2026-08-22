@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels, logger, runAfterTransaction } from '..';
+import { createModels, logger, runAfterTransaction, tenantStorage } from '..';
 import {
   PermissionBits,
   PrincipalModel,
@@ -28,6 +28,7 @@ let delayDeletes = false;
 let resolvePendingDeletes: Array<() => void> = [];
 let generationTtls: Array<number | undefined> = [];
 let failGenerationReads = false;
+let notifyPendingSet: (() => void) | undefined;
 
 const cacheStore: CacheStore = {
   get: async (key) => {
@@ -39,6 +40,7 @@ const cacheStore: CacheStore = {
   set: async (key, value, ttl) => {
     /** The generation entry itself must never be held back by the test gate */
     if (delaySets && !key.includes(':generation')) {
+      notifyPendingSet?.();
       await new Promise<void>((resolve) => resolvePendingSets.push(resolve));
     }
     if (key.includes(':generation')) {
@@ -121,6 +123,7 @@ afterEach(async () => {
   resolvePendingDeletes.forEach((resolve) => resolve());
   resolvePendingDeletes = [];
   failGenerationReads = false;
+  notifyPendingSet = undefined;
 });
 
 describe('getPromptGroupAccessContext', () => {
@@ -248,11 +251,15 @@ describe('getPromptGroupAccessContext', () => {
     const ownGroup = await seedGroupAndPrompt(userId);
     await grantView(PrincipalType.USER, userId, ownGroup._id);
 
+    const pendingSet = new Promise<void>((resolve) => {
+      notifyPendingSet = resolve;
+    });
     delaySets = true;
     const firstResolve = methods.getPromptGroupAccessContext({
       userId: userId.toString(),
       role: 'USER',
     });
+    await pendingSet;
 
     await AclEntry.deleteMany({ resourceId: ownGroup._id });
     await methods.invalidatePromptGroupAccessContext();
@@ -267,6 +274,110 @@ describe('getPromptGroupAccessContext', () => {
       role: 'USER',
     });
     expect(idStrings(fresh.accessibleIds)).not.toContain(ownGroup._id.toString());
+  });
+
+  it('does not resurrect an old cache era when generation initializers overlap', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    const raceMap = new Map<string, unknown>();
+    let generationReadCount = 0;
+    let generationSetCount = 0;
+    let releaseFirstGenerationRead!: () => void;
+    let releaseSecondInitialization!: () => void;
+    let signalSecondInitialization!: () => void;
+    const firstGenerationRead = new Promise<void>((resolve) => {
+      releaseFirstGenerationRead = resolve;
+    });
+    const secondInitialization = new Promise<void>((resolve) => {
+      signalSecondInitialization = resolve;
+    });
+    const secondInitializationGate = new Promise<void>((resolve) => {
+      releaseSecondInitialization = resolve;
+    });
+    const raceStore: CacheStore = {
+      get: async (key) => {
+        if (key === 'access:generation' && generationReadCount < 2) {
+          generationReadCount += 1;
+          if (generationReadCount === 1) {
+            await firstGenerationRead;
+          } else {
+            releaseFirstGenerationRead();
+          }
+          return undefined;
+        }
+        return raceMap.get(key);
+      },
+      set: async (key, value) => {
+        if (key === 'access:generation') {
+          generationSetCount += 1;
+          if (generationSetCount === 2) {
+            signalSecondInitialization();
+            await secondInitializationGate;
+          }
+        }
+        raceMap.set(key, value);
+      },
+    };
+    const raceMethods = createMethods(mongoose, { getCache: () => raceStore });
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+
+    try {
+      const requestA = raceMethods.getPromptGroupAccessContext({
+        userId: userId.toString(),
+        role: 'USER',
+      });
+      const requestB = raceMethods.getPromptGroupAccessContext({
+        userId: userId.toString(),
+        role: 'USER',
+      });
+
+      await secondInitialization;
+      const beforeMutation = await Promise.race([requestA, requestB]);
+      expect(idStrings(beforeMutation.accessibleIds)).toContain(ownGroup._id.toString());
+
+      await AclEntry.deleteMany({ resourceId: ownGroup._id });
+      await raceMethods.invalidatePromptGroupAccessContext();
+      releaseSecondInitialization();
+      await Promise.all([requestA, requestB]);
+
+      const afterMutation = await raceMethods.getPromptGroupAccessContext({
+        userId: userId.toString(),
+        role: 'USER',
+      });
+      expect(idStrings(afterMutation.accessibleIds)).not.toContain(ownGroup._id.toString());
+    } finally {
+      dateNow.mockRestore();
+      releaseSecondInitialization();
+    }
+  });
+
+  it('only marks in-flight lookups stale for the active tenant', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const ownGroup = await seedGroupAndPrompt(userId);
+    await grantView(PrincipalType.USER, userId, ownGroup._id);
+
+    const pendingSet = new Promise<void>((resolve) => {
+      notifyPendingSet = resolve;
+    });
+    delaySets = true;
+    const tenantBResolve = tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+      methods.getPromptGroupAccessContext({ userId: userId.toString(), role: 'USER' }),
+    );
+    await pendingSet;
+
+    await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+      methods.invalidatePromptGroupAccessContext(),
+    );
+
+    delaySets = false;
+    resolvePendingSets.forEach((resolve) => resolve());
+    resolvePendingSets = [];
+    await tenantBResolve;
+
+    const userKey = `:user:${userId.toString()}:USER:tenant-b`;
+    expect([...cacheMap.keys()].some((key) => key.includes(userKey))).toBe(true);
   });
 
   it('does not reuse an expired generation value after the marker itself expires', async () => {
@@ -394,24 +505,90 @@ describe('getPromptGroupAccessContext', () => {
 });
 
 describe('runAfterTransaction', () => {
-  it('defers invalidation until a caller-owned session ends', async () => {
+  function createSession(abortError?: Error) {
+    let active = true;
     const endedHandlers: Array<() => void> = [];
-    const session = {
-      inTransaction: () => true,
+    const abortTransaction = jest.fn(async (_options?: { timeoutMS?: number }) => {
+      active = false;
+      if (abortError) {
+        throw abortError;
+      }
+    });
+    const rawSession = {
+      inTransaction: () => active,
+      commitTransaction: jest.fn(async () => {
+        active = false;
+      }),
+      abortTransaction,
       once: (event: string, handler: () => void) => {
         if (event === 'ended') {
           endedHandlers.push(handler);
         }
       },
-    } as unknown as Parameters<typeof runAfterTransaction>[0];
+    };
+    return {
+      abortTransaction,
+      endedHandlers,
+      session: rawSession as unknown as NonNullable<Parameters<typeof runAfterTransaction>[0]>,
+      startTransaction: () => {
+        active = true;
+      },
+    };
+  }
+
+  it('defers invalidation until a caller-owned session commits', async () => {
+    const { session } = createSession();
     const invalidate = jest.fn().mockResolvedValue(undefined);
 
     await runAfterTransaction(session, invalidate);
     expect(invalidate).not.toHaveBeenCalled();
 
-    endedHandlers.forEach((fire) => fire());
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await session.commitTransaction();
     expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards deferred invalidation when the transaction aborts', async () => {
+    const { endedHandlers, session } = createSession();
+    const invalidate = jest.fn().mockResolvedValue(undefined);
+
+    await runAfterTransaction(session, invalidate);
+    await session.abortTransaction();
+    endedHandlers.forEach((fire) => fire());
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('does not carry a failed abort queue into a reused session', async () => {
+    const abortError = new Error('abort failed');
+    const { abortTransaction, session, startTransaction } = createSession(abortError);
+    const abortedInvalidate = jest.fn().mockResolvedValue(undefined);
+    const committedInvalidate = jest.fn().mockResolvedValue(undefined);
+
+    await runAfterTransaction(session, abortedInvalidate);
+    await expect(session.abortTransaction({ timeoutMS: 25 })).rejects.toThrow(abortError);
+    expect(abortTransaction).toHaveBeenCalledWith({ timeoutMS: 25 });
+
+    startTransaction();
+    await runAfterTransaction(session, committedInvalidate);
+    await session.commitTransaction();
+
+    expect(abortedInvalidate).not.toHaveBeenCalled();
+    expect(committedInvalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('drains only the current queue when a session is reused', async () => {
+    const { session, startTransaction } = createSession();
+    const firstInvalidate = jest.fn().mockResolvedValue(undefined);
+    const secondInvalidate = jest.fn().mockResolvedValue(undefined);
+
+    await runAfterTransaction(session, firstInvalidate);
+    await session.commitTransaction();
+    startTransaction();
+    await runAfterTransaction(session, secondInvalidate);
+    await session.commitTransaction();
+
+    expect(firstInvalidate).toHaveBeenCalledTimes(1);
+    expect(secondInvalidate).toHaveBeenCalledTimes(1);
   });
 
   it('runs invalidation immediately without an active transaction', async () => {

@@ -5,6 +5,7 @@ const {
   keyvMongo,
   cacheConfig,
   sessionCache,
+  sharedCache,
   standardCache,
   violationCache,
   userPrincipalsCache,
@@ -18,6 +19,9 @@ const disabledCache = {
   delete: async () => undefined,
   clear: async () => undefined,
 };
+
+const promptGroupsAccessCache =
+  sharedCache(CacheKeys.PROMPT_GROUPS_ACCESS, Time.THIRTY_SECONDS) ?? disabledCache;
 
 const namespaces = {
   [ViolationTypes.GENERAL]: new Keyv({ store: logFile, namespace: 'violations' }),
@@ -46,10 +50,7 @@ const namespaces = {
 
   [CacheKeys.ROLES]: standardCache(CacheKeys.ROLES),
   [CacheKeys.USER_PRINCIPALS]: userPrincipalsCache() ?? disabledCache,
-  [CacheKeys.PROMPT_GROUPS_ACCESS]: standardCache(
-    CacheKeys.PROMPT_GROUPS_ACCESS,
-    Time.THIRTY_SECONDS,
-  ),
+  [CacheKeys.PROMPT_GROUPS_ACCESS]: promptGroupsAccessCache,
   [CacheKeys.APP_CONFIG]: standardCache(CacheKeys.APP_CONFIG),
   [CacheKeys.CONFIG_STORE]: standardCache(CacheKeys.CONFIG_STORE),
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),

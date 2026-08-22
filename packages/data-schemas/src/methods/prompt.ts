@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   CacheKeys,
   PermissionBits,
@@ -45,7 +46,7 @@ export interface PromptDeps {
 /** In-flight access ID builds, so concurrent same-process misses share one resolution. */
 const pendingAccessLookups = new Map<
   string,
-  { promise: Promise<string[]>; markStale: () => void }
+  { generationKey: string; promise: Promise<string[]>; markStale: () => void }
 >();
 
 const ACCESS_GENERATION_KEY = 'access:generation';
@@ -65,14 +66,17 @@ function isCachedIdArray(value: unknown): value is string[] {
  * undefined when the marker cannot be read: guessing a generation then could
  * serve an orphaned entry, so callers must bypass the cache.
  */
-async function readAccessGeneration(cache: CacheStore): Promise<number | undefined> {
+async function readAccessGeneration(cache: CacheStore): Promise<string | undefined> {
   const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
   try {
     const value = await cache.get(generationKey);
-    if (typeof value === 'number' && Number.isFinite(value)) {
+    if (typeof value === 'string' && value.length > 0) {
       return value;
     }
-    const initialized = Math.max(Date.now(), 1);
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value.toString();
+    }
+    const initialized = randomUUID();
     await cache.set(generationKey, initialized, Time.ONE_DAY);
     return initialized;
   } catch {
@@ -753,6 +757,7 @@ export function createPromptMethods(
    */
   async function resolveCachedIds(
     cacheKey: string,
+    generationKey: string,
     build: () => Promise<Types.ObjectId[]>,
   ): Promise<Types.ObjectId[]> {
     const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
@@ -792,6 +797,7 @@ export function createPromptMethods(
     })();
 
     pendingAccessLookups.set(cacheKey, {
+      generationKey,
       promise: lookup,
       markStale: () => {
         stale = true;
@@ -835,7 +841,8 @@ export function createPromptMethods(
      * read the primary so a lagging secondary cannot pin pre-mutation IDs for
      * the full TTL.
      */
-    const generation = cache ? await readAccessGeneration(cache) : 0;
+    const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
+    const generation = cache ? await readAccessGeneration(cache) : '0';
     const buildAccessible = async (): Promise<Types.ObjectId[]> => {
       const principalsList = await deps.getUserPrincipals({ userId, role });
       if (principalsList.length === 0) {
@@ -866,12 +873,13 @@ export function createPromptMethods(
 
     const accessibleIds = await resolveCachedIds(
       scopedKey(`user:${userId}:${role ?? ''}`),
+      generationKey,
       buildAccessible,
     );
 
     const [publiclyAccessibleIds, ownedPromptGroupIds] = await Promise.all([
-      resolveCachedIds(scopedKey('public'), buildPublic),
-      resolveCachedIds(scopedKey(`owned:${userId}`), buildOwned),
+      resolveCachedIds(scopedKey('public'), generationKey, buildPublic),
+      resolveCachedIds(scopedKey(`owned:${userId}`), generationKey, buildOwned),
     ]);
 
     return { accessibleIds, publiclyAccessibleIds, ownedPromptGroupIds };
@@ -887,33 +895,28 @@ export function createPromptMethods(
    * Failures are non-fatal; the cache TTL bounds any residual staleness.
    */
   async function invalidatePromptGroupAccessContext(): Promise<void> {
-    for (const pending of pendingAccessLookups.values()) {
+    const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
+    for (const [cacheKey, pending] of pendingAccessLookups) {
+      if (pending.generationKey !== generationKey) {
+        continue;
+      }
       pending.markStale();
+      pendingAccessLookups.delete(cacheKey);
     }
-    pendingAccessLookups.clear();
     const cache = deps.getCache?.(CacheKeys.PROMPT_GROUPS_ACCESS);
     if (!cache) {
       return;
     }
     try {
-      const generationKey = scopedCacheKey(ACCESS_GENERATION_KEY);
-      const current = await cache.get(generationKey);
       /**
-       * Strictly increasing and never repeating, even when the marker itself
-       * expired out of the TTL cache: a repeated value could resurrect a
-       * pre-mutation entry that is still alive under that generation.
+       * A collision-resistant token cannot repeat an evicted era or be restored
+       * by a delayed initializer that selected a different token before this write.
        */
-      const next = Math.max(
-        Date.now(),
-        (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1,
-      );
       /**
-       * The marker must outlive every derived entry and in-flight build: with the
-       * namespace default it could expire first, and a reader would fall back to
-       * generation 0 while a late cross-process write from that era is still
-       * alive, briefly re-exposing revoked IDs.
+       * Keep the marker longer than derived entries so normal expiry does not
+       * orphan a warm cache era and force avoidable access-query rebuilds.
        */
-      await cache.set(generationKey, next, Time.ONE_DAY);
+      await cache.set(generationKey, randomUUID(), Time.ONE_DAY);
     } catch (error) {
       logger.warn('Failed to invalidate prompt group access cache', error);
     }

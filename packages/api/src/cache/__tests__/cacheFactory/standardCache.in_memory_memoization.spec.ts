@@ -45,6 +45,11 @@ describe('standardCache - in-memory memoization', () => {
     expect(a).toBe(b);
   });
 
+  it('does not create a shared cache without Redis', async () => {
+    const { sharedCache } = await loadFactory();
+    expect(sharedCache(CacheKeys.PROMPT_GROUPS_ACCESS)).toBeUndefined();
+  });
+
   it('returns different instances for different namespaces', async () => {
     const { standardCache } = await loadFactory();
     const a = standardCache('ns-one');

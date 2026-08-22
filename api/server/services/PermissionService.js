@@ -936,7 +936,7 @@ const bulkUpdateResourcePermissions = async ({
     }
 
     if (resourceType === ResourceType.PROMPTGROUP) {
-      /** The caller's session may still be uncommitted; defer until it ends */
+      /** The caller's session may still be uncommitted; defer until it commits */
       await runAfterTransaction(localSession, () => db.invalidatePromptGroupAccessContext());
     }
 
