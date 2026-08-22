@@ -1,113 +1,94 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { QueryKeys } from 'librechat-data-provider';
+import { renderHook } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import type { ConversationDragItem } from '../dnd';
-import { effectiveProjectId, useAssignDroppedConversation } from '../dnd';
+import { useEffectiveProjectId } from '../dnd';
 
-type AssignVariables = { conversationId: string; projectId: string | null };
+type PendingAssignment = { token: number; projectId: string | null } | undefined;
 
-const mockMutateAsync = jest.fn<Promise<unknown>, [AssignVariables]>();
+let mockPending: PendingAssignment;
+
+jest.mock('~/data-provider/Projects/mutations', () => ({
+  getPendingAssignment: () => mockPending,
+}));
 
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
-/* The real mutation serializes per conversation internally; this stands in for
- * it so the destination bookkeeping can be exercised on its own. */
 jest.mock('~/data-provider', () => ({
-  useAssignConversationToProjectMutation: () => ({ mutateAsync: mockMutateAsync }),
+  useAssignConversationToProjectMutation: () => ({ mutateAsync: jest.fn() }),
 }));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-const deferred = <T,>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-};
-
-/** A drag item as the row reports it: `chatProjectId` is whatever the list
- *  cache said when the drag began. */
+/** A drag item as the row reports it: `chatProjectId` is whatever the list that
+ *  rendered the row believed when the drag began. */
 const item = (conversationId: string, chatProjectId: string | null): ConversationDragItem => ({
   conversationId,
   chatProjectId,
   pinned: false,
 });
 
-describe('assignment destinations', () => {
+const setup = () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  const { result } = renderHook(() => useEffectiveProjectId(), { wrapper });
+  return { queryClient, effectiveProjectId: result.current };
+};
+
+describe('useEffectiveProjectId', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    mockPending = undefined;
   });
 
-  it('reports the queued destination while the write is in flight', async () => {
-    const pending = deferred<void>();
-    mockMutateAsync.mockReturnValueOnce(pending.promise);
-
-    const { result } = renderHook(() => useAssignDroppedConversation());
-    act(() => result.current(item('c-a', null), 'project-b'));
-
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
-    /* The row still says "no project" until the lists refresh. */
-    expect(effectiveProjectId(item('c-a', null))).toBe('project-b');
-
-    await act(async () => {
-      pending.resolve();
-    });
+  it('falls back to the row when nothing is pending or cached', () => {
+    const { effectiveProjectId } = setup();
+    expect(effectiveProjectId(item('c1', 'project-a'))).toBe('project-a');
   });
 
-  it('keeps reporting it after success until the lists catch up', async () => {
-    mockMutateAsync.mockResolvedValueOnce(undefined);
+  it('prefers a pending write over everything else', () => {
+    mockPending = { token: 1, projectId: 'project-b' };
+    const { queryClient, effectiveProjectId } = setup();
+    queryClient.setQueryData([QueryKeys.conversation, 'c1'], { chatProjectId: 'project-a' });
 
-    const { result } = renderHook(() => useAssignDroppedConversation());
-    await act(async () => {
-      result.current(item('c-b', null), 'project-b');
-    });
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
-
-    /* The mutation's invalidations are not awaited, so a drag started now still
-     * carries the old project. Dropping back on it must not read as a no-op. */
-    expect(effectiveProjectId(item('c-b', null))).toBe('project-b');
-
-    /* Once a drag item shows the new project, the row speaks for itself. */
-    expect(effectiveProjectId(item('c-b', 'project-b'))).toBe('project-b');
-    expect(effectiveProjectId(item('c-b', null))).toBe(null);
+    expect(effectiveProjectId(item('c1', 'project-a'))).toBe('project-b');
   });
 
-  it('falls back to the row when the assignment fails', async () => {
-    mockMutateAsync.mockRejectedValueOnce(new Error('nope'));
-
-    const { result } = renderHook(() => useAssignDroppedConversation());
-    await act(async () => {
-      result.current(item('c-c', 'project-a'), 'project-b');
-    });
-
-    await waitFor(() => expect(effectiveProjectId(item('c-c', 'project-a'))).toBe('project-a'));
+  it('honours a pending move back to the root list', () => {
+    mockPending = { token: 1, projectId: null };
+    const { effectiveProjectId } = setup();
+    expect(effectiveProjectId(item('c1', 'project-a'))).toBe(null);
   });
 
-  it('judges a repeat drop against the latest queued destination', async () => {
-    const first = deferred<void>();
-    mockMutateAsync.mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+  /* The mutation writes this cache synchronously on success, so it is right the
+   * moment the write lands rather than once the lists refresh. */
+  it('uses the conversation cache once nothing is pending', () => {
+    const { queryClient, effectiveProjectId } = setup();
+    queryClient.setQueryData([QueryKeys.conversation, 'c1'], { chatProjectId: 'project-b' });
 
-    const { result } = renderHook(() => useAssignDroppedConversation());
-    act(() => result.current(item('c-d', 'project-a'), 'project-b'));
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+    /* Two lists render this conversation and refresh independently, so a stale
+     * row must not be believed over what the write already confirmed. */
+    expect(effectiveProjectId(item('c1', 'project-a'))).toBe('project-b');
+    expect(effectiveProjectId(item('c1', null))).toBe('project-b');
+  });
 
-    /* Dropping back on A while B is queued is a real change of intent, not the
-     * no-op the row's stale `chatProjectId` would suggest. */
-    act(() => result.current(item('c-d', 'project-a'), 'project-a'));
-    expect(effectiveProjectId(item('c-d', 'project-a'))).toBe('project-a');
+  it('reports the root list from the cache as a real value, not a miss', () => {
+    const { queryClient, effectiveProjectId } = setup();
+    queryClient.setQueryData([QueryKeys.conversation, 'c1'], { chatProjectId: null });
 
-    await act(async () => {
-      first.resolve();
-    });
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(2));
-    expect(mockMutateAsync.mock.calls[1][0]).toEqual({
-      conversationId: 'c-d',
-      projectId: 'project-a',
-    });
+    expect(effectiveProjectId(item('c1', 'project-a'))).toBe(null);
+  });
+
+  it('leaves other conversations alone', () => {
+    const { queryClient, effectiveProjectId } = setup();
+    queryClient.setQueryData([QueryKeys.conversation, 'c1'], { chatProjectId: 'project-b' });
+
+    expect(effectiveProjectId(item('c2', 'project-a'))).toBe('project-a');
   });
 });

@@ -1,50 +1,54 @@
 import { useCallback } from 'react';
 import { useToastContext } from '@librechat/client';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import type { TConversation } from 'librechat-data-provider';
+import { getPendingAssignment } from '~/data-provider/Projects/mutations';
 import { useAssignConversationToProjectMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
 export const CONVERSATION_DRAG_TYPE = 'conversation-item';
 
-/** Where each conversation is headed while its assignment is still queued. A
- *  drag item carries the project the row had when the drag started, which goes
- *  stale the moment an earlier drop is accepted: without this, dropping a chat
- *  on B and then dragging it straight back to A reads as a no-op and the
- *  earlier request still lands it on B.
- *
- *  Each entry carries the identity of the drop that made it, not just where it
- *  was headed. Comparing destinations alone cannot tell two drops onto the same
- *  project apart, so a B, A, B run would let the first B's cleanup discard an
- *  entry that the still-queued later drops own. */
-type QueuedAssignment = { token: number; projectId: string | null; settled: boolean };
-
-const queuedDestination = new Map<string, QueuedAssignment>();
-let assignmentToken = 0;
-
-/** The project a conversation will be in once everything queued has settled.
- *
- *  A settled entry is kept rather than dropped: the mutation's cache
- *  invalidations are not awaited, so a row still reports its old project for a
- *  moment after the write succeeds. Holding the destination until a drag item
- *  actually shows the new value is what keeps a quick drag back to the original
- *  project from reading as a no-op. */
-export const effectiveProjectId = (item: ConversationDragItem): string | null => {
-  const queued = item.conversationId ? queuedDestination.get(item.conversationId) : undefined;
-  if (!queued) {
-    return item.chatProjectId;
-  }
-  if (queued.settled && item.chatProjectId === queued.projectId) {
-    /* The lists have caught up, so the row speaks for itself again. */
-    queuedDestination.delete(item.conversationId);
-    return item.chatProjectId;
-  }
-  return queued.projectId;
-};
-
 export type ConversationDragItem = {
   conversationId: string;
   chatProjectId: string | null;
   pinned: boolean;
+};
+
+/**
+ * The project a conversation belongs to for the purpose of accepting a drop.
+ *
+ * A drag item carries whatever the list that rendered its row believed, which
+ * goes stale the moment an assignment is accepted, and the same conversation
+ * can be rendered by several lists that refresh independently. So the pending
+ * write wins if there is one, then the conversation cache the mutation writes
+ * synchronously on success, and only then the row's own value.
+ */
+export const useEffectiveProjectId = () => {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (item: ConversationDragItem): string | null => {
+      if (!item.conversationId) {
+        return item.chatProjectId;
+      }
+      const pending = getPendingAssignment(item.conversationId);
+      if (pending) {
+        return pending.projectId;
+      }
+      const cached = queryClient.getQueryData<TConversation>([
+        QueryKeys.conversation,
+        item.conversationId,
+      ]);
+      /* A cache miss falls through to the row, but a cached `null` is a real
+       * answer: it means the chat was confirmed out of every project. */
+      if (cached) {
+        return cached.chatProjectId ?? null;
+      }
+      return item.chatProjectId;
+    },
+    [queryClient],
+  );
 };
 
 /** Files a dragged conversation into a project, or back into the root chats
@@ -55,6 +59,7 @@ export const useAssignDroppedConversation = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const assignConversation = useAssignConversationToProjectMutation();
+  const effectiveProjectId = useEffectiveProjectId();
 
   return useCallback(
     (item: ConversationDragItem, projectId: string | null) => {
@@ -62,36 +67,24 @@ export const useAssignDroppedConversation = () => {
       if (!conversationId || effectiveProjectId(item) === projectId) {
         return;
       }
-      const token = ++assignmentToken;
-      queuedDestination.set(conversationId, { token, projectId, settled: false });
-      /* The mutation serializes writes per conversation, so this only has to
-       * report the outcome and keep the destination bookkeeping in step. */
-      void (async () => {
-        try {
-          await assignConversation.mutateAsync({ conversationId, projectId });
+      /* The mutation serializes these per conversation and records where each
+       * is headed, so this only has to report the outcome. */
+      void assignConversation.mutateAsync({ conversationId, projectId }).then(
+        () =>
           showToast({
             message: localize('com_ui_project_updated'),
             severity: NotificationSeverity.SUCCESS,
             showIcon: true,
-          });
-          if (queuedDestination.get(conversationId)?.token === token) {
-            /* Kept, not cleared: the lists have not refreshed yet. */
-            queuedDestination.set(conversationId, { token, projectId, settled: true });
-          }
-        } catch {
+          }),
+        () =>
           showToast({
             message: localize('com_ui_project_update_error'),
             severity: NotificationSeverity.ERROR,
             showIcon: true,
-          });
-          if (queuedDestination.get(conversationId)?.token === token) {
-            /* The move never happened, so the row's own project is the truth. */
-            queuedDestination.delete(conversationId);
-          }
-        }
-      })();
+          }),
+      );
     },
-    [assignConversation, localize, showToast],
+    [assignConversation, effectiveProjectId, localize, showToast],
   );
 };
 
