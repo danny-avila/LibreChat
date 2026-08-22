@@ -156,7 +156,9 @@ describe('detached subagent activity stream', () => {
     await stream.publish('child-thread', 'task-1', update());
 
     expect(streamId).toMatch(/^subagent-activity:[A-Za-z0-9_-]{32}$/);
-    expect(transport.subscribeOptions).toEqual([{ deferSequenceDelivery: true }]);
+    expect(transport.subscribeOptions).toEqual([
+      { deferSequenceDelivery: true, captureSequenceFrontier: true },
+    ]);
     expect(transport.synchronized).toEqual([streamId]);
     expect(received).toEqual([
       expect.objectContaining({
@@ -177,8 +179,8 @@ describe('detached subagent activity stream', () => {
     await second.ready;
 
     expect(transport.subscribeOptions).toEqual([
-      { deferSequenceDelivery: true },
-      { deferSequenceDelivery: false },
+      { deferSequenceDelivery: true, captureSequenceFrontier: true },
+      { deferSequenceDelivery: false, captureSequenceFrontier: false },
     ]);
     expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
     first.unsubscribe();

@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import type { Redis } from 'ioredis';
+import { emitChunkWithReceipt, emitObservedChunk } from '~/stream/internal/chunkPublication';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
-import { emitChunkWithReceipt } from '~/stream/internal/chunkPublication';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { createMockPublisher } from './helpers/publisher';
 
@@ -292,6 +292,67 @@ describe('RedisEventTransport', () => {
     expect(mockPublisher.get).toHaveBeenCalledTimes(1);
 
     replacement.unsubscribe();
+    transport.destroy();
+  });
+
+  it('does not advance past a chunk published after a fresh channel becomes ready', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'fresh-attachment-frontier';
+    const received: object[] = [];
+    let releaseFrontier!: (value: string) => void;
+    mockPublisher.get
+      .mockImplementationOnce(() => new Promise<string>((resolve) => (releaseFrontier = resolve)))
+      .mockResolvedValueOnce('6');
+
+    const subscription = transport.subscribe(
+      streamId,
+      { onChunk: (event) => received.push(event as object) },
+      { deferSequenceDelivery: true, captureSequenceFrontier: true },
+    );
+    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
+    releaseFrontier('5');
+    await subscription.ready;
+    expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(1);
+
+    await subscription.syncReorderBuffer?.();
+    deliverSequencedMessage(getMessageHandler(mockSubscriber), streamId, {
+      type: 'chunk',
+      seq: 5,
+      data: { index: 5 },
+    });
+
+    expect(received).toEqual([{ index: 5 }]);
+    subscription.unsubscribe();
+    transport.destroy();
+  });
+
+  it('does not open a channel after the last frontier-capturing subscriber leaves', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    let releaseFrontier!: (value: string) => void;
+    mockPublisher.get.mockImplementationOnce(
+      () => new Promise<string>((resolve) => (releaseFrontier = resolve)),
+    );
+
+    const subscription = transport.subscribe(
+      'closed-frontier-attachment',
+      { onChunk: jest.fn() },
+      { deferSequenceDelivery: true, captureSequenceFrontier: true },
+    );
+    subscription.unsubscribe();
+    releaseFrontier('0');
+    await subscription.ready;
+
+    expect(mockSubscriber.subscribe).not.toHaveBeenCalled();
     transport.destroy();
   });
 
@@ -1008,6 +1069,9 @@ describe('RedisEventTransport', () => {
     await expect(
       emitChunkWithReceipt(transport, 'failed-stream', { text: 'Hello' }),
     ).resolves.toBeUndefined();
+    await expect(
+      emitObservedChunk(transport, 'failed-observer', { text: 'Hello' }),
+    ).rejects.toThrow('Observed chunk publication failed');
 
     transport.destroy();
   });

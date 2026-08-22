@@ -1357,6 +1357,9 @@ export interface IEventTransport {
     options?: {
       /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
       deferSequenceDelivery?: boolean;
+      /** Capture the sequence before opening a fresh Pub/Sub channel so synchronization
+       * cannot advance past a frame published after that channel becomes ready. */
+      captureSequenceFrontier?: boolean;
     },
   ): {
     unsubscribe: () => void;

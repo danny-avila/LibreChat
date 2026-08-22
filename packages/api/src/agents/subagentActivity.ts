@@ -5,6 +5,7 @@ import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest } from '~/types';
+import { emitObservedChunk } from '~/stream/internal/chunkPublication';
 
 const STREAM_PREFIX = 'subagent-activity:';
 const MAX_ID_BYTES = 512;
@@ -208,7 +209,7 @@ export class SubagentActivityStream {
       event: 'on_subagent_update',
       data: boundSubagentActivityUpdate(event),
     };
-    await this.transport.emitChunk(streamId, envelope);
+    await emitObservedChunk(this.transport, streamId, envelope);
   }
 
   subscribe(
@@ -250,7 +251,10 @@ export class SubagentActivityStream {
           }
         },
       },
-      { deferSequenceDelivery: synchronizeAttachment },
+      {
+        deferSequenceDelivery: synchronizeAttachment,
+        captureSequenceFrontier: synchronizeAttachment,
+      },
     );
     let closed = false;
     let demandHeartbeat: ReturnType<typeof setInterval> | undefined;

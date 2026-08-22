@@ -301,6 +301,12 @@ export class RedisEventTransport implements IEventTransport {
     return state;
   }
 
+  private async readSequenceFrontier(streamId: string): Promise<number> {
+    const raw = await this.publisher.get(KEYS.sequence(streamId));
+    const parsed = raw != null ? parseInt(raw, 10) : 0;
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
   /**
    * Create a new Redis event transport.
    *
@@ -1010,6 +1016,7 @@ export class RedisEventTransport implements IEventTransport {
     },
     options?: {
       deferSequenceDelivery?: boolean;
+      captureSequenceFrontier?: boolean;
       /** @deprecated Use deferSequenceDelivery. */
       deferDeliveryUntilSynchronized?: boolean;
     },
@@ -1034,14 +1041,29 @@ export class RedisEventTransport implements IEventTransport {
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
 
-    const readyPromise = this.ensureChannelSubscription(channel);
+    /** A fresh activity attachment has no replay log. Capture its frontier before
+     * issuing SUBSCRIBE; a later GET must not skip a frame published after readiness. */
+    const attachmentFrontier =
+      options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred
+        ? this.readSequenceFrontier(streamId)
+        : undefined;
+    const readyPromise =
+      attachmentFrontier == null
+        ? this.ensureChannelSubscription(channel)
+        : attachmentFrontier.then(() => {
+            /** The last local viewer may disappear while the frontier read is in flight. */
+            if (this.streams.get(streamId) !== streamState || streamState.count === 0) return;
+            return this.ensureChannelSubscription(channel);
+          });
 
     return {
       ready: readyPromise,
-      syncReorderBuffer: () => {
+      syncReorderBuffer: async () => {
         /** A delayed attachment must never synchronize state recreated under the same ID. */
         if (this.streams.get(streamId) !== streamState) return;
-        return this.syncReorderBuffer(streamId);
+        const capturedFrontier = await attachmentFrontier;
+        if (this.streams.get(streamId) !== streamState) return;
+        return this.syncReorderBuffer(streamId, capturedFrontier);
       },
       unsubscribe: () => {
         // An unsubscribe closure belongs to the exact state and handler created
