@@ -187,6 +187,26 @@ describe('createPtcProgressEmitter', () => {
     });
   });
 
+  it('absorbs a rejected resumable emit instead of leaving an unhandled rejection', async () => {
+    const { GenerationJobManager } = require('@librechat/api');
+    const { createPtcProgressEmitter } = require('../callbacks');
+    GenerationJobManager.emitChunk.mockRejectedValueOnce(new Error('transport down'));
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+
+    const emit = createPtcProgressEmitter({
+      res: { write: jest.fn() },
+      streamId: 'conversation-1',
+      jobCreatedAt: 1234,
+    });
+
+    expect(() => emit(ptcEvent)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    process.off('unhandledRejection', unhandled);
+
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('drops the event once the response has closed', () => {
     const { sendEvent } = require('@librechat/api');
     const { createPtcProgressEmitter } = require('../callbacks');

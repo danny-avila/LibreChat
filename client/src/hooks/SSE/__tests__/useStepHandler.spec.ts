@@ -20,7 +20,7 @@ import type {
 } from 'librechat-data-provider';
 import type { PtcTraceEntry } from '~/store/ptc';
 import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
-import { ptcTraceByToolCallId } from '~/store/ptc';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/store/ptc';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
@@ -3888,8 +3888,10 @@ describe('useStepHandler', () => {
           const stepHandler = useStepHandler(createHookParams());
           const read = useRecoilCallback(
             ({ snapshot }) =>
-              (toolCallId: string): PtcTraceEntry[] =>
-                snapshot.getLoadable(ptcTraceByToolCallId(toolCallId)).valueOrThrow(),
+              (messageId: string, toolCallId: string): PtcTraceEntry[] =>
+                snapshot
+                  .getLoadable(ptcTraceByToolCallId(ptcTraceKey(messageId, toolCallId)))
+                  .valueOrThrow(),
             [],
           );
           return { ...stepHandler, read };
@@ -3898,10 +3900,12 @@ describe('useStepHandler', () => {
       );
       return {
         result: hookResult.result,
-        getTrace: (toolCallId: string): PtcTraceEntry[] =>
-          (hookResult.result.current as unknown as { read: (id: string) => PtcTraceEntry[] }).read(
-            toolCallId,
-          ),
+        getTrace: (toolCallId: string, messageId = 'response-msg-1'): PtcTraceEntry[] =>
+          (
+            hookResult.result.current as unknown as {
+              read: (m: string, id: string) => PtcTraceEntry[];
+            }
+          ).read(messageId, toolCallId),
       };
     };
 
@@ -3910,6 +3914,7 @@ describe('useStepHandler', () => {
       call_id: 'call_ptc:0',
       name: 'read_file',
       status: 'running',
+      runId: 'response-msg-1',
       ...overrides,
     });
 
@@ -4003,6 +4008,71 @@ describe('useStepHandler', () => {
       });
 
       expect(getTrace('call_ptc')).toEqual([]);
+    });
+
+    it('keeps a reused tool_call_id isolated across parent messages', () => {
+      const { result, getTrace } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ name: 'read_file' }) },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ name: 'write_file', runId: 'response-msg-2' }),
+          },
+          submission,
+        );
+      });
+
+      expect(getTrace('call_ptc').map((e) => e.name)).toEqual(['read_file']);
+      expect(getTrace('call_ptc', 'response-msg-2').map((e) => e.name)).toEqual(['write_file']);
+    });
+
+    it('drops an envelope that cannot be scoped to a parent message', () => {
+      const { result, getTrace } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_PTC_TOOL_CALL, data: ptcEvent({ runId: undefined }) },
+          submission,
+        );
+      });
+
+      expect(getTrace('call_ptc')).toEqual([]);
+    });
+
+    it('prunes rows still running across a resume gap and keeps settled ones', () => {
+      const { result, getTrace } = renderWithTraceReader();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:0', status: 'success', durationMs: 900 }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_PTC_TOOL_CALL,
+            data: ptcEvent({ call_id: 'call_ptc:1', name: 'write_file' }),
+          },
+          submission,
+        );
+      });
+      expect(getTrace('call_ptc')).toHaveLength(2);
+
+      act(() => {
+        (result.current as unknown as { prunePtcTraces: () => void }).prunePtcTraces();
+      });
+
+      expect(getTrace('call_ptc').map((e) => e.callId)).toEqual(['call_ptc:0']);
     });
 
     it('releases the trace atoms on reset', () => {

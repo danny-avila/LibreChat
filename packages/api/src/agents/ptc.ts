@@ -6,42 +6,70 @@ const ARGS_PREVIEW_MAX_CHARS = 96;
 /** Per-value budget, so one long string can't crowd out the other keys. */
 const ARGS_VALUE_MAX_CHARS = 40;
 const ERROR_PREVIEW_MAX_CHARS = 160;
+/**
+ * Collapsing whitespace can only shorten a string, so a window this many times
+ * the visible budget is always long enough to fill it. Slicing to the window
+ * before rewriting matters: this runs synchronously ahead of every inner
+ * `invoke`, and without it a multi-megabyte argument would be collapsed in
+ * full to produce a forty-character preview.
+ */
+const CLIP_OVERSCAN = 4;
 
-const truncate = (input: string, max: number): string =>
-  input.length <= max ? input : `${input.slice(0, max)}…`;
-
-const collapse = (input: string): string => input.replace(/\s+/g, ' ').trim();
+/** Bounded collapse-and-clip: never rewrites more of `input` than the budget
+ *  can possibly need, and marks any truncation it performed. */
+const clip = (input: string, max: number): string => {
+  const window = input.length > max * CLIP_OVERSCAN ? input.slice(0, max * CLIP_OVERSCAN) : input;
+  const collapsed = window.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= max && window.length === input.length) {
+    return collapsed;
+  }
+  return `${collapsed.slice(0, max)}…`;
+};
 
 /**
  * Collapses an inner call's input into a single `key=value, key=value` line
- * for the CLI-style trace. Values are stringified and clipped individually;
- * the joined result is clipped again so the payload stays bounded no matter
- * how many keys the tool takes.
+ * for the CLI-style trace. Values are clipped individually and iteration stops
+ * as soon as the joined preview can no longer grow, so a call with a large
+ * body or many keys costs the same as a small one.
  */
 export function summarizePtcArgs(input: unknown): string {
   if (input == null) {
     return '';
   }
   if (typeof input === 'string') {
-    return truncate(collapse(input), ARGS_PREVIEW_MAX_CHARS);
+    return clip(input, ARGS_PREVIEW_MAX_CHARS);
   }
   if (typeof input !== 'object' || Array.isArray(input)) {
-    return truncate(collapse(String(input)), ARGS_PREVIEW_MAX_CHARS);
+    return clip(String(input), ARGS_PREVIEW_MAX_CHARS);
   }
 
+  const record = input as Record<string, unknown>;
   const entries: string[] = [];
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+  let budget = ARGS_PREVIEW_MAX_CHARS;
+  /* Keys, not entries: `Object.entries` would materialize every value before
+   * the loop starts, so the budget check below could never skip the work it
+   * exists to skip. */
+  for (const key of Object.keys(record)) {
+    if (budget <= 0) {
+      break;
+    }
+    const value = record[key];
     if (value == null || value === '') {
       continue;
     }
+    /* Strings are the values that get large (file bodies, request payloads),
+     * and `clip` bounds them without touching the tail. Everything else is
+     * small enough that serializing it first is cheaper than inspecting it. */
     const rendered = typeof value === 'string' ? value : safeStringify(value);
     if (rendered === '') {
       continue;
     }
-    entries.push(`${key}=${truncate(collapse(rendered), ARGS_VALUE_MAX_CHARS)}`);
+    const entry = `${key}=${clip(rendered, ARGS_VALUE_MAX_CHARS)}`;
+    entries.push(entry);
+    budget -= entry.length + 2;
   }
 
-  return truncate(entries.join(', '), ARGS_PREVIEW_MAX_CHARS);
+  return clip(entries.join(', '), ARGS_PREVIEW_MAX_CHARS);
 }
 
 function safeStringify(value: unknown): string {
@@ -126,8 +154,8 @@ export function instrumentPtcToolMap({
                 call_id: callId,
                 name,
                 status: 'error',
-                error: truncate(
-                  collapse(error instanceof Error ? error.message : String(error)),
+                error: clip(
+                  error instanceof Error ? error.message : String(error),
                   ERROR_PREVIEW_MAX_CHARS,
                 ),
                 durationMs: Date.now() - startedAt,

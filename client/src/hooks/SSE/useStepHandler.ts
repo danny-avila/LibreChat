@@ -34,6 +34,7 @@ import {
   sandboxStartingByToolCallId,
   ptcTraceByToolCallId,
   subagentProgressKey,
+  ptcTraceKey,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -380,13 +381,16 @@ export default function useStepHandler({
    */
   const applyPtcToolCall = useRecoilCallback(
     ({ set }) =>
-      (event: PtcToolCallEvent): void => {
+      (event: PtcToolCallEvent, parentMessageId: string): void => {
         const { tool_call_id: toolCallId, call_id: callId, name, status } = event;
-        if (!toolCallId || !callId) {
+        /** No parent message means no occurrence to scope this to; a raw
+         *  `tool_call_id` would leak the rows into whichever card reused it. */
+        if (!toolCallId || !callId || !parentMessageId) {
           return;
         }
-        knownPtcAtomKeys.current.add(toolCallId);
-        set(ptcTraceByToolCallId(toolCallId), (previous) => {
+        const atomKey = ptcTraceKey(parentMessageId, toolCallId);
+        knownPtcAtomKeys.current.add(atomKey);
+        set(ptcTraceByToolCallId(atomKey), (previous) => {
           const index = previous.findIndex((entry) => entry.callId === callId);
           const entry = {
             callId,
@@ -410,10 +414,31 @@ export default function useStepHandler({
   const resetPtcAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
-        for (const toolCallId of knownPtcAtomKeys.current) {
-          reset(ptcTraceByToolCallId(toolCallId));
+        for (const atomKey of knownPtcAtomKeys.current) {
+          reset(ptcTraceByToolCallId(atomKey));
         }
         knownPtcAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /**
+   * Drops rows still marked `running` after a stream gap. Inner calls carry no
+   * durable state — they are not content parts, so the resume snapshot cannot
+   * rebuild them and their settling events are not replayed — which means a
+   * call that finished during a disconnect would otherwise show a spinner
+   * forever. Settled rows are real history and stay.
+   */
+  const prunePtcTraces = useRecoilCallback(
+    ({ set }) =>
+      (): void => {
+        for (const atomKey of knownPtcAtomKeys.current) {
+          set(ptcTraceByToolCallId(atomKey), (previous) =>
+            previous.some((entry) => entry.status === 'running')
+              ? previous.filter((entry) => entry.status !== 'running')
+              : previous,
+          );
+        }
       },
     [],
   );
@@ -1331,7 +1356,13 @@ export default function useStepHandler({
       } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
         setSandboxStarting(stepEvent.data.tool_call_id);
       } else if (stepEvent.event === StepEvents.ON_PTC_TOOL_CALL) {
-        applyPtcToolCall(stepEvent.data);
+        /** `runId` is the response message id (the run configurable's
+         *  `run_id`), the same correlation the subagent path uses. */
+        let responseMessageId = stepEvent.data.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+        }
+        applyPtcToolCall(stepEvent.data, responseMessageId);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         let responseMessageId = stepEvent.data.runId;
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -1534,6 +1565,7 @@ export default function useStepHandler({
     clearStepMaps,
     resetSubagentAtoms,
     resetPtcAtoms,
+    prunePtcTraces,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,

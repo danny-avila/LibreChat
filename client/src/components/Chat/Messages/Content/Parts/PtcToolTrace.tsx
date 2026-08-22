@@ -1,9 +1,11 @@
 import { useRecoilValue } from 'recoil';
 import { useTranslation } from 'react-i18next';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import type { PtcTraceEntry } from '~/store';
 import { cn, parseToolName, getRunStepDurationLabels } from '~/utils';
-import { ptcTraceByToolCallId } from '~/store';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/store';
+import { useMessageContext } from '~/Providers/MessageContext';
 import { useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 
@@ -13,6 +15,15 @@ const STATUS_GLYPH: Record<PtcTraceEntry['status'], string> = {
   running: '›',
   success: '✓',
   error: '✗',
+};
+
+/** Spoken equivalent of the glyph. The glyph itself is decorative, and a
+ *  fast call renders no duration, so without this a completed row would
+ *  announce no outcome at all. */
+const STATUS_LABEL_KEYS: Record<PtcTraceEntry['status'], TranslationKeys> = {
+  running: 'com_ui_ptc_trace_running',
+  success: 'com_ui_ptc_trace_done',
+  error: 'com_ui_ptc_trace_failed',
 };
 
 /**
@@ -44,6 +55,7 @@ function PtcTraceLine({ entry }: { entry: PtcTraceEntry }) {
         >
           {STATUS_GLYPH[entry.status]}
         </span>
+        <span className="sr-only">{localize(STATUS_LABEL_KEYS[entry.status])}</span>
         <span className="shrink-0 text-text-primary">
           {parsed.mcpServer && (
             <>
@@ -64,7 +76,8 @@ function PtcTraceLine({ entry }: { entry: PtcTraceEntry }) {
             </span>
           </>
         ) : (
-          <span className="shrink-0 text-text-tertiary">
+          /* The sr-only status above already speaks this cell's meaning. */
+          <span className="shrink-0 text-text-tertiary" aria-hidden="true">
             {running ? localize('com_ui_ptc_trace_running') : ''}
           </span>
         )}
@@ -98,7 +111,12 @@ export default function PtcToolTrace({
   className?: string;
 }) {
   const localize = useLocalize();
-  const entries = useRecoilValue(ptcTraceByToolCallId(toolCallId ?? ''));
+  /** Scope to this card's own message: providers reuse `tool_call_id` across
+   *  turns, so the raw id alone would show a later program's calls here. */
+  const { messageId } = useMessageContext();
+  const entries = useRecoilValue(
+    ptcTraceByToolCallId(toolCallId && messageId ? ptcTraceKey(messageId, toolCallId) : ''),
+  );
 
   if (entries.length === 0) {
     return null;

@@ -2,7 +2,8 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render } from '@testing-library/react';
 import type { PtcTraceEntry } from '~/store/ptc';
-import { ptcTraceByToolCallId } from '~/store/ptc';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/store/ptc';
+import { MessageContext } from '~/Providers/MessageContext';
 import ExecuteCode from '../ExecuteCode';
 import store from '~/store';
 
@@ -144,22 +145,25 @@ describe('ExecuteCode streaming follow-scroll', () => {
 
 describe('ExecuteCode programmatic tool trace', () => {
   const TOOL_CALL_ID = 'call_ptc_1';
+  const MESSAGE_ID = 'response-msg-1';
 
   const renderWithTrace = (entries: PtcTraceEntry[]) =>
     render(
       <RecoilRoot
         initializeState={({ set }) => {
           set(store.autoExpandTools, true);
-          set(ptcTraceByToolCallId(TOOL_CALL_ID), entries);
+          set(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)), entries);
         }}
       >
-        <ExecuteCode
-          initialProgress={0.5}
-          isSubmitting={true}
-          toolCallId={TOOL_CALL_ID}
-          args={{ lang: 'py', code: 'print(1)' }}
-          output=""
-        />
+        <MessageContext.Provider value={{ messageId: MESSAGE_ID, isExpanded: true }}>
+          <ExecuteCode
+            initialProgress={0.5}
+            isSubmitting={true}
+            toolCallId={TOOL_CALL_ID}
+            args={{ lang: 'py', code: 'print(1)' }}
+            output=""
+          />
+        </MessageContext.Provider>
       </RecoilRoot>,
     );
 

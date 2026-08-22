@@ -2,7 +2,8 @@ import React from 'react';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { render, screen } from '@testing-library/react';
 import type { PtcTraceEntry } from '~/store/ptc';
-import { ptcTraceByToolCallId } from '~/store/ptc';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/store/ptc';
+import { MessageContext } from '~/Providers/MessageContext';
 import PtcToolTrace from '../PtcToolTrace';
 
 jest.mock('~/hooks', () => ({
@@ -13,6 +14,7 @@ jest.mock('~/hooks', () => ({
         com_ui_ptc_trace_title: 'Tool calls',
         com_ui_ptc_trace_running: 'running',
         com_ui_ptc_trace_failed: 'failed',
+        com_ui_ptc_trace_done: 'done',
         com_ui_tool_name_code: 'Code',
       };
       if (key === 'com_ui_duration_seconds') {
@@ -31,10 +33,11 @@ jest.mock('~/utils', () => ({
 }));
 
 const TOOL_CALL_ID = 'call_ptc_1';
+const MESSAGE_ID = 'response-msg-1';
 
-function renderTrace(entries: PtcTraceEntry[]) {
+function renderTrace(entries: PtcTraceEntry[], messageId = MESSAGE_ID) {
   const Seed = () => {
-    const set = useSetRecoilState(ptcTraceByToolCallId(TOOL_CALL_ID));
+    const set = useSetRecoilState(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)));
     React.useEffect(() => {
       if (entries.length > 0) {
         set(entries);
@@ -46,7 +49,9 @@ function renderTrace(entries: PtcTraceEntry[]) {
   return render(
     <RecoilRoot>
       <Seed />
-      <PtcToolTrace toolCallId={TOOL_CALL_ID} />
+      <MessageContext.Provider value={{ messageId, isExpanded: false }}>
+        <PtcToolTrace toolCallId={TOOL_CALL_ID} />
+      </MessageContext.Provider>
     </RecoilRoot>,
   );
 }
@@ -67,7 +72,8 @@ describe('PtcToolTrace', () => {
     expect(screen.getByText('read_file')).toBeInTheDocument();
     expect(screen.getByText('path=a.ts')).toBeInTheDocument();
     expect(screen.getByText('write_file')).toBeInTheDocument();
-    expect(screen.getByText('running')).toBeInTheDocument();
+    /* Twice by design: the visible cell plus the screen-reader status. */
+    expect(screen.getAllByText('running')).toHaveLength(2);
   });
 
   it('splits an MCP tool id into its server and tool name', () => {
@@ -95,6 +101,18 @@ describe('PtcToolTrace', () => {
   it('falls back to a generic failure label when no message came through', () => {
     renderTrace([{ callId: 'a', name: 'write_file', status: 'error' }]);
 
-    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(screen.getAllByText('failed').length).toBeGreaterThan(0);
+  });
+
+  it('speaks a completion status even when the call was too fast to time', () => {
+    renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }]);
+
+    expect(screen.getByText('done')).toBeInTheDocument();
+  });
+
+  it('does not show another message\u2019s trace in this card', () => {
+    renderTrace([{ callId: 'a', name: 'read_file', status: 'success' }], 'a-different-message');
+
+    expect(screen.queryByText('read_file')).not.toBeInTheDocument();
   });
 });

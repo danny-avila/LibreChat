@@ -1106,7 +1106,16 @@ function createPtcProgressEmitter({ res, streamId = null, jobCreatedAt }) {
     }
     const payload = { event: StepEvents.ON_PTC_TOOL_CALL, data: event };
     if (streamId) {
-      GenerationJobManager.emitChunk(streamId, payload, { expectedCreatedAt: jobCreatedAt });
+      /* Absorb a rejected transport here. The emitter is called from a
+       * synchronous try/catch inside `instrumentPtcToolMap`, which cannot
+       * observe a rejected promise — without this catch a failed emit would
+       * surface as an unhandled rejection on every affected inner call
+       * instead of being dropped as the telemetry it is. */
+      Promise.resolve(
+        GenerationJobManager.emitChunk(streamId, payload, { expectedCreatedAt: jobCreatedAt }),
+      ).catch(() => {
+        /* dropped: the trace is best-effort */
+      });
       return;
     }
     sendEvent(res, payload);

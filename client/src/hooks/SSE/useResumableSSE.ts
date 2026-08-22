@@ -1137,6 +1137,7 @@ export default function useResumableSSE(
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
     attachmentHandler,
     resetContentHandler,
     flushPendingDeltas,
@@ -2125,6 +2126,12 @@ export default function useResumableSSE(
             if (data.resumeState?.titleEvent) {
               titleHandler(data.resumeState.titleEvent);
             }
+
+            /** PTC inner calls are not content parts, so the resume snapshot
+             *  can't rebuild them and their settling events aren't replayed.
+             *  Any row still `running` across this gap is unknowable — drop it
+             *  rather than leave a spinner that never resolves. */
+            prunePtcTraces();
 
             if (data.resumeState?.replayEvents?.length > 0) {
               logger.log(
@@ -3474,6 +3481,7 @@ export default function useResumableSSE(
       contentHandler,
       resetContentHandler,
       syncStepMessage,
+      prunePtcTraces,
       clearStepMaps,
       messageHandler,
       errorHandler,

@@ -41,6 +41,34 @@ describe('summarizePtcArgs', () => {
     expect(summary.length).toBeLessThanOrEqual(97);
   });
 
+  it('stops once the preview budget is spent instead of visiting every key', () => {
+    const seen: string[] = [];
+    const probe: Record<string, unknown> = {};
+    for (let i = 0; i < 40; i++) {
+      Object.defineProperty(probe, `key${i}`, {
+        enumerable: true,
+        get() {
+          seen.push(`key${i}`);
+          return `value${i}`;
+        },
+      });
+    }
+
+    summarizePtcArgs(probe);
+
+    expect(seen.length).toBeLessThan(40);
+  });
+
+  it('does not rewrite the whole of an oversized value to build a short preview', () => {
+    const huge = 'a b '.repeat(500_000);
+    const started = Date.now();
+    const summary = summarizePtcArgs({ content: huge, path: 'a.ts' });
+
+    expect(summary).toContain('path=a.ts');
+    expect(summary.length).toBeLessThanOrEqual(97);
+    expect(Date.now() - started).toBeLessThan(150);
+  });
+
   it('falls back to the raw string for a non-object input', () => {
     expect(summarizePtcArgs('ls -la')).toBe('ls -la');
   });

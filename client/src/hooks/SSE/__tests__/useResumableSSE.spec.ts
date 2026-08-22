@@ -236,6 +236,7 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       contentHandler: jest.fn(),
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
+      prunePtcTraces: jest.fn(),
       clearStepMaps: mockClearStepMaps,
       flushPendingDeltas: jest.fn(),
       messageHandler: jest.fn(),
