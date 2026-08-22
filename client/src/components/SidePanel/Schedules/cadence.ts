@@ -13,6 +13,8 @@ const WEEKLY_DEFAULT_DAY = 1;
 /** August 1st, 2021 was a Sunday; anchors day-of-week indices 0-6 to real dates */
 const SUNDAY_UTC = Date.UTC(2021, 7, 1);
 
+export const UTC_TIMEZONE = 'UTC';
+
 export const to12Hour = (hour: number): { hour12: number; meridiem: Meridiem } => ({
   hour12: hour % 12 === 0 ? 12 : hour % 12,
   meridiem: hour >= 12 ? 'PM' : 'AM',
@@ -74,3 +76,38 @@ export const formatRunInstant = (date: Date, timezone: string, locale?: string):
     hour: 'numeric',
     minute: '2-digit',
   }).format(date);
+
+export const resolveLocalTimezone = (): string =>
+  Intl.DateTimeFormat().resolvedOptions().timeZone || UTC_TIMEZONE;
+
+/**
+ * Every IANA zone the runtime knows, with the user's own zone and UTC pinned first.
+ * `Intl.supportedValuesOf` is unavailable on older engines, so the pinned pair
+ * doubles as the fallback list: a user who cannot browse zones can still keep the
+ * one their schedule already uses.
+ */
+export const buildTimezoneOptions = (localTimezone: string, storedTimezone?: string): string[] => {
+  const pinned = [localTimezone, UTC_TIMEZONE];
+  if (storedTimezone != null && storedTimezone.length > 0) {
+    pinned.push(storedTimezone);
+  }
+  const seen = new Set(pinned);
+  const rest =
+    typeof Intl.supportedValuesOf === 'function'
+      ? Intl.supportedValuesOf('timeZone').filter((zone) => !seen.has(zone))
+      : [];
+  return [...seen, ...rest];
+};
+
+/** The zone's current offset, e.g. `GMT+2`, so two similar names are tellable apart. */
+export const formatTimezoneOffset = (timezone: string, locale?: string): string => {
+  try {
+    const parts = new Intl.DateTimeFormat(locale, {
+      timeZone: timezone,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(new Date());
+    return parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+  } catch {
+    return '';
+  }
+};
