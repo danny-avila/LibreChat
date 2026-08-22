@@ -161,6 +161,20 @@
     ]
   },
   {
+    "name": "WaveSpeed",
+    "pluginKey": "wavespeed",
+    "description": "Generate images using text with WaveSpeed AI, including Seedream and the full WaveSpeed model catalog.",
+    "icon": "https://wavespeed.ai/favicon.ico",
+    "isAuthRequired": "true",
+    "authConfig": [
+      {
+        "authField": "WAVESPEED_API_KEY",
+        "label": "Your WaveSpeed API Key",
+        "description": "Get your API key from your <a href=\"https://wavespeed.ai/\" target=\"_blank\">WaveSpeed AI</a> account settings."
+      }
+    ]
+  },
+  {
     "name": "Gemini Image Tools",
     "pluginKey": "gemini_image_gen",
     "description": "Generate high-quality images using Google's Gemini Image Models. Supports Gemini API or Vertex AI.",

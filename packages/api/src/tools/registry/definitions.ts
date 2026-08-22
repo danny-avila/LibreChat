@@ -144,6 +144,28 @@ export const fluxApiSchema: ExtendedJsonSchema = {
   required: [],
 };
 
+/** WaveSpeed AI image generation tool JSON schema */
+export const waveSpeedSchema: ExtendedJsonSchema = {
+  type: 'object',
+  properties: {
+    prompt: {
+      type: 'string',
+      description: 'Text prompt describing the image to generate.',
+    },
+    model: {
+      type: 'string',
+      description:
+        'WaveSpeed model ID to use for generation, e.g. "bytedance/seedream-v5.0-pro". Defaults to that model when omitted. Only set this when the user explicitly asks for a different WaveSpeed model.',
+    },
+    size: {
+      type: 'string',
+      description:
+        'Output image size as "width*height" in pixels, e.g. "2048*2048" or "1920*1080". Omit to use the model default.',
+    },
+  },
+  required: ['prompt'],
+};
+
 /** OpenWeather tool JSON schema */
 export const openWeatherSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -350,6 +372,13 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'Use Flux to generate images from text descriptions. This tool can generate images and list available finetunes. Each generate call creates one image. For multiple images, make multiple consecutive calls.',
     schema: fluxApiSchema,
+    toolType: 'builtin',
+  },
+  wavespeed: {
+    name: 'wavespeed',
+    description:
+      'Use WaveSpeed AI to generate images from text descriptions. Each call generates one image; for multiple images, make multiple consecutive calls.',
+    schema: waveSpeedSchema,
     toolType: 'builtin',
   },
   open_weather: {
