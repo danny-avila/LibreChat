@@ -1556,6 +1556,45 @@ describe('file content inspection policy', () => {
     });
   });
 
+  it.each([
+    ['empty canonical extracted text', { extractedText: '' }],
+    ['whitespace-only canonical extracted text', { extractedText: ' \n\t' }],
+    ['empty canonical text fallback', { text: '' }],
+    ['whitespace-only canonical text fallback', { text: ' \n\t' }],
+  ])('keeps %s fail-closed for persisted document reuse', async (_label, extractionFields) => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['extracted_text'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { files: [{ file_id: 'blank-extraction-document' }] },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'blank-extraction-document',
+            filename: 'report.pdf',
+            type: 'application/pdf',
+            ...extractionFields,
+          },
+        ]),
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'extracted_text',
+      },
+    });
+  });
+
   it('keeps audio transcripts fail-closed without text-extraction provenance', async () => {
     const filters = {
       files: {
@@ -1578,6 +1617,45 @@ describe('file content inspection policy', () => {
             type: 'audio/webm',
             source: 'local',
             text: 'unclassified legacy text',
+          },
+        ]),
+      }),
+    ).rejects.toMatchObject({
+      code: 'content_filter_uninspectable',
+      body: {
+        source: 'file',
+        field: 'transcript',
+      },
+    });
+  });
+
+  it.each([
+    ['empty canonical transcript', { transcript: '' }],
+    ['whitespace-only canonical transcript', { transcript: ' \n\t' }],
+    ['empty canonical text fallback', { source: 'text', text: '' }],
+    ['whitespace-only canonical text fallback', { source: 'text', text: ' \n\t' }],
+  ])('keeps %s fail-closed for persisted audio reuse', async (_label, transcriptFields) => {
+    const filters = {
+      files: {
+        pii: {
+          fields: ['transcript'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    } as FiltersConfig;
+
+    await expect(
+      resolveCanonicalFileReferences({
+        filters,
+        input: { files: [{ file_id: 'blank-transcript-audio' }] },
+        user: { id: 'user-1' },
+        getFiles: jest.fn().mockResolvedValue([
+          {
+            file_id: 'blank-transcript-audio',
+            filename: 'recording.webm',
+            type: 'audio/webm',
+            ...transcriptFields,
           },
         ]),
       }),

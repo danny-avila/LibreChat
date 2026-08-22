@@ -913,6 +913,10 @@ function getNormalizedMimeType(file: CanonicalFileInspectionFile): string {
   return normalizeMimeType(file.type);
 }
 
+function getNonBlankInspectionText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
 export function getCanonicalFileInspectionCoverage(
   file: CanonicalFileInspectionFile,
 ): CanonicalFileInspectionCoverage {
@@ -922,14 +926,16 @@ export function getCanonicalFileInspectionCoverage(
   const isTextual = mimeType.startsWith('text/') || TEXTUAL_APPLICATION_MIME_TYPES.has(mimeType);
   const hasExtractedTextProvenance =
     typeof file.source === 'string' && file.source.toLowerCase() === 'text';
-  const text = typeof file.text === 'string' ? file.text : undefined;
+  const text = getNonBlankInspectionText(file.text);
   const content = typeof file.content === 'string' ? file.content : undefined;
-  const transcript = typeof file.transcript === 'string' ? file.transcript : undefined;
+  const extractedText = getNonBlankInspectionText(file.extractedText);
+  const transcript = getNonBlankInspectionText(file.transcript);
+  const transcriptFallback = hasExtractedTextProvenance && isAudio ? text : undefined;
 
   return {
     content: content ?? (hasExtractedTextProvenance && isTextual ? text : undefined),
-    extractedText: typeof file.extractedText === 'string' ? file.extractedText : text,
-    transcript: transcript ?? (hasExtractedTextProvenance && isAudio ? text : undefined),
+    extractedText: extractedText ?? text,
+    transcript: transcript ?? transcriptFallback,
     transcriptApplicable,
   };
 }

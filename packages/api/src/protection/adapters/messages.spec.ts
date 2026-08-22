@@ -919,6 +919,29 @@ describe('extractMessageContent', () => {
     expect(fragments.some(({ text }) => text.includes('safe-'))).toBe(false);
   });
 
+  it('scopes incomplete submitted snapshots to every opaque audio surface', () => {
+    let payload: unknown = { input_audio: { data: 'opaque-audio', format: 'mp3' } };
+    for (let depth = 0; depth < 30; depth++) {
+      payload = { nested: payload };
+    }
+
+    const prepared = snapshotExternalMessages([
+      { role: 'user', content: [{ type: 'vendor_content', payload }] },
+    ]);
+
+    expect(prepared.traversalError).toBeInstanceOf(ContentTraversalLimitError);
+    expect(
+      getContentTraversalScopes(prepared.traversalError as ContentTraversalLimitError),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          source: 'file',
+          fields: ['name', 'uri', 'content', 'extracted_text', 'transcript'],
+        },
+      ]),
+    );
+  });
+
   it('fails closed when prepared-brand detection receives a revoked proxy', () => {
     const { proxy, revoke } = Proxy.revocable([], {});
     revoke();

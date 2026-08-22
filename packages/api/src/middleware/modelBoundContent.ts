@@ -153,7 +153,7 @@ function getProviderPartSnapshotTraversalScopes(
   const scopes: ContentTraversalScope[] = [
     { source: 'message', fields: ['content_part', 'attachment_reference'] },
     { source: 'assembled_context', fields: ['assembled_context'] },
-    { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text'] },
+    { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text', 'transcript'] },
     { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
   ];
   if (providerRoles.some((role) => role === 'system' || role === 'developer')) {

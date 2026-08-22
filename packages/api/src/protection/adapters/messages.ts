@@ -121,7 +121,7 @@ const EXTERNAL_MESSAGE_TRAVERSAL_SCOPES: readonly ContentTraversalScope[] = [
   { source: 'message', fields: ['name', 'text', 'content_part', 'attachment_reference'] },
   { source: 'assembled_context', fields: ['assembled_context'] },
   { source: 'agent_instruction', fields: ['instructions'] },
-  { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text'] },
+  { source: 'file', fields: ['name', 'uri', 'content', 'extracted_text', 'transcript'] },
   { source: 'tool_argument', fields: ['name', 'arguments', 'output'] },
 ];
 const ASSEMBLED_CONTEXT_TRAVERSAL_SCOPE: readonly ContentTraversalScope[] = [

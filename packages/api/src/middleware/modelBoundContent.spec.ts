@@ -37,6 +37,18 @@ const makeDeepModelParameter = () => {
   return value;
 };
 
+const makeIncompleteAudioCarrier = () => {
+  const carrier: Record<string, unknown> = {};
+  Object.defineProperty(carrier, 'blocked', {
+    enumerable: true,
+    get() {
+      throw new Error('snapshot blocked');
+    },
+  });
+  carrier.input_audio = { data: 'opaque-audio', format: 'mp3' };
+  return carrier;
+};
+
 describe('hasModelBoundContentProtection', () => {
   it.each([
     undefined,
@@ -1391,6 +1403,28 @@ describe('assertModelBoundContent', () => {
     ).toThrow('Submitted content could not be completely inspected before processing.');
   });
 
+  it('fails closed when an incomplete submitted snapshot can hide an audio transcript', () => {
+    expect(() =>
+      assertModelBoundContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['transcript'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        submittedMessages: [
+          {
+            role: 'user',
+            content: [{ type: 'vendor_content', payload: makeIncompleteAudioCarrier() }],
+          },
+        ],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
   it('blocks historical agent resource references and file records', () => {
     const failClosedFilters: FiltersConfig = {
       files: {
@@ -2417,6 +2451,28 @@ describe('assertModelBoundProviderContent', () => {
           },
         },
         providerMessages: [{ role: 'human', content: [{ type: 'vendor_content', payload }] }],
+      }),
+    ).toThrow('Submitted content could not be completely inspected before processing.');
+  });
+
+  it('fails closed when an incomplete provider snapshot can hide an audio transcript', () => {
+    expect(() =>
+      assertModelBoundProviderContent({
+        filters: {
+          files: {
+            pii: {
+              fields: ['transcript'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+        providerMessages: [
+          {
+            role: 'human',
+            content: [{ type: 'vendor_content', payload: makeIncompleteAudioCarrier() }],
+          },
+        ],
       }),
     ).toThrow('Submitted content could not be completely inspected before processing.');
   });
