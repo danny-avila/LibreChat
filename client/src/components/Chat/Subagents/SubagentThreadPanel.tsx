@@ -9,8 +9,8 @@ import {
   subagentProgressKey,
 } from '~/store/subagents';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
+import { useSubagentActivityStream, useSubagentThreadQuery } from '~/data-provider';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
-import { useSubagentThreadQuery } from '~/data-provider';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import SubagentActivity from './SubagentActivity';
 
@@ -35,6 +35,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     threadId,
     taskId,
   );
+  const durableTerminal =
+    data?.status === 'completed' ||
+    data?.status === 'failed' ||
+    data?.status === 'interrupted' ||
+    data?.status === 'cancelled';
+  useSubagentActivityStream(selection, !durableTerminal);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&

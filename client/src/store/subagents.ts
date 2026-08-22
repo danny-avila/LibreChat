@@ -3,11 +3,18 @@ import type {
   PartMetadata,
   SubagentUpdatePhase,
   TMessageContentParts,
+  SubagentUpdateEvent,
 } from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
   SubagentContentPart,
   SubagentTickerState,
+} from '~/utils/subagentContent';
+import {
+  foldSubagentEvent,
+  foldSubagentEventIntoTicker,
+  initSubagentAggregatorState,
+  initSubagentTickerState,
 } from '~/utils/subagentContent';
 
 /**
@@ -82,3 +89,33 @@ export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, 
   key: 'subagentProgressByToolCallId',
   default: null,
 });
+
+/** Shared reducer for foreground chat SSE and task-scoped detached activity SSE. */
+export function reduceSubagentProgress(
+  previous: SubagentProgress | null,
+  events: SubagentUpdateEvent[],
+): SubagentProgress | null {
+  if (events.length === 0) return previous;
+  let contentParts = previous?.contentParts ?? [];
+  let aggregatorState = previous?.aggregatorState ?? initSubagentAggregatorState();
+  let tickerState = previous?.tickerState ?? initSubagentTickerState();
+  for (const event of events) {
+    ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
+      contentParts,
+      aggregatorState,
+      event,
+    ));
+    tickerState = foldSubagentEventIntoTicker(tickerState, event);
+  }
+  const last = events[events.length - 1];
+  return {
+    subagentRunId: last.subagentRunId,
+    subagentType: last.subagentType,
+    subagentAgentId: last.subagentAgentId ?? previous?.subagentAgentId,
+    contentParts,
+    aggregatorState,
+    tickerState,
+    status: last.phase,
+    latestLabel: last.label ?? previous?.latestLabel,
+  };
+}

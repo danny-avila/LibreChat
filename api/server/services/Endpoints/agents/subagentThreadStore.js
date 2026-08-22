@@ -7,6 +7,8 @@ const {
   createSubagentThreadTaskStore,
   createSubagentCompletionWakeupHandler,
   RedisSubagentTaskControlTransport,
+  RedisEventTransport,
+  SubagentActivityStream,
 } = require('@librechat/api');
 const db = require('~/models');
 const { enqueueAgentTrigger } = require('../../Agents/triggers');
@@ -62,14 +64,21 @@ async function configureSubagentTaskRouting() {
    * steer the caller was told had failed could still reach the child. Failing fast
    * turns that into the honest `unavailable` the caller already handles. */
   const publisher = duplicateIoRedisClient(ioredisClient, { enableOfflineQueue: false });
+  const activitySubscriber = ioredisClient.duplicate();
+  const activityPublisher = duplicateIoRedisClient(ioredisClient, { enableOfflineQueue: false });
   const transport = new RedisSubagentTaskControlTransport(publisher, subscriber, {
     namespace: cacheConfig.REDIS_KEY_PREFIX,
   });
   try {
     await subagentThreadTaskStore.configureTaskControlTransport(transport);
+    subagentThreadTaskStore.configureActivityStream(
+      new SubagentActivityStream(new RedisEventTransport(activityPublisher, activitySubscriber)),
+    );
   } catch (error) {
     subscriber.disconnect();
     publisher.disconnect();
+    activitySubscriber.disconnect();
+    activityPublisher.disconnect();
     throw error;
   }
   taskRoutingConfigured = true;
@@ -77,7 +86,9 @@ async function configureSubagentTaskRouting() {
     'subagent task control transport',
     async () => {
       await subagentThreadTaskStore.destroyTaskControlTransport();
+      subagentThreadTaskStore.destroyActivityStream();
       publisher.disconnect();
+      activityPublisher.disconnect();
     },
     { priority: 90 },
   );

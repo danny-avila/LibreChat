@@ -13,12 +13,14 @@ import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/su
 import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
+const mockUseSubagentActivityStream = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
+  useSubagentActivityStream: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -156,6 +158,7 @@ describe('SubagentThreadPanel', () => {
       'child-thread',
       'task',
     );
+    expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
     expect(screen.getByText('Investigate the release.')).toBeInTheDocument();
     expect(screen.getByText('The release is ready.')).toBeInTheDocument();

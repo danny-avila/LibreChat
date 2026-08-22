@@ -19,6 +19,7 @@ import type {
   SubagentTaskSnapshot,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  SubagentUpdateEvent,
 } from '@librechat/agents';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
@@ -27,6 +28,7 @@ import type {
   SubagentTaskControlTransport,
 } from './subagentTaskRouting';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
+import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   buildSubagentThreadTaskConfig,
@@ -36,6 +38,7 @@ import {
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { SUBAGENT_COMPLETION_DELIVERY } from './subagentDelivery';
 import { createSubagentAttemptKey } from './subagentThreadIds';
+import { SubagentActivityStream } from './subagentActivity';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
@@ -344,6 +347,113 @@ describe('SubagentThreadTaskStore', () => {
       subagentType: 'researcher-agent',
       createdAt: expect.any(Number),
     });
+  });
+
+  it('streams child activity and closes only after the terminal result is durable', async () => {
+    const userId = 'activity-stream-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const progress: SubagentUpdateEvent = {
+      runId: 'root-run',
+      parentRunId: 'parent-run',
+      subagentRunId: 'child-run',
+      subagentType: 'researcher-agent',
+      subagentKind: 'agent',
+      subagentAgentId: 'agent-1',
+      parentToolCallId: 'tool-call',
+      depth: 1,
+      ancestry: [
+        {
+          subagentRunId: 'parent-run',
+          subagentType: 'parent',
+          subagentKind: 'agent',
+          subagentAgentId: 'parent-agent',
+          parentRunId: 'root-run',
+        },
+      ],
+      phase: 'message_delta',
+      data: { delta: { content: [{ type: 'text', text: 'Working.' }] } },
+      timestamp: '2026-08-21T20:00:00.000Z',
+    };
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      args[0].reportProgress(progress);
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    const accepted = requireAccepted(started);
+    const events: unknown[] = [];
+    let resolveTerminal!: (status: string) => void;
+    const terminal = new Promise<string>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    store.subscribeActivity(requireThreadId(started), accepted.task.taskId, {
+      onEvent: (event) => events.push(event),
+      onDone: (event) => resolveTerminal(event.status),
+    });
+
+    await expect(terminal).resolves.toBe('completed');
+    expect(events).toEqual([
+      { event: 'on_subagent_update', data: expect.objectContaining({ data: progress.data }) },
+    ]);
+    const messages = await methods.getMessages(
+      {
+        user: userId,
+        conversationId: requireThreadId(started),
+        messageId: `${accepted.task.taskId}:assistant`,
+      },
+      '+subagentTask',
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.subagentTask?.status).toBe('completed');
+  });
+
+  it('keeps activity delivery observational when its transport is unavailable', async () => {
+    const userId = 'activity-stream-failure-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const unavailableTransport = {
+      emitChunk: async () => Promise.reject(new Error('activity transport unavailable')),
+      emitDone: async () => Promise.reject(new Error('activity transport unavailable')),
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(unavailableTransport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        parentToolCallId: 'tool-call',
+        depth: 1,
+        ancestry: [],
+        phase: 'start',
+        timestamp: '2026-08-21T20:00:00.000Z',
+      });
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
+      'completed',
+    );
   });
 
   it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {

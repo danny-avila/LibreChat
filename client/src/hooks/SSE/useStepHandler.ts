@@ -23,12 +23,7 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
-  foldSubagentEvent,
-  foldSubagentEventIntoTicker,
-  initSubagentAggregatorState,
-  initSubagentTickerState,
-} from '~/utils/subagentContent';
-import {
+  reduceSubagentProgress,
   subagentProgressByToolCallId,
   subagentProgressKey,
   sandboxStartingByToolCallId,
@@ -277,34 +272,9 @@ export default function useStepHandler({
         const toApply = pending ? [...pending.events, payload] : [payload];
 
         knownSubagentAtomKeys.current.add(invocationKey);
-        set(subagentProgressByToolCallId(invocationKey), (prev) => {
-          /** Fold the batch into both aggregators. Pure functions — they
-           *  return a new reference only when something actually changed,
-           *  so React bails out of unnecessary re-renders downstream. */
-          let contentParts = prev?.contentParts ?? [];
-          let aggregatorState = prev?.aggregatorState ?? initSubagentAggregatorState();
-          let tickerState = prev?.tickerState ?? initSubagentTickerState();
-          for (const event of toApply) {
-            ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
-              contentParts,
-              aggregatorState,
-              event,
-            ));
-            tickerState = foldSubagentEventIntoTicker(tickerState, event);
-          }
-
-          const last = toApply[toApply.length - 1];
-          return {
-            subagentRunId: payload.subagentRunId,
-            subagentType: payload.subagentType,
-            subagentAgentId: payload.subagentAgentId ?? prev?.subagentAgentId,
-            contentParts,
-            aggregatorState,
-            tickerState,
-            status: last.phase,
-            latestLabel: last.label ?? prev?.latestLabel,
-          };
-        });
+        set(subagentProgressByToolCallId(invocationKey), (prev) =>
+          reduceSubagentProgress(prev, toApply),
+        );
       },
     [resolveSubagentInvocationKey],
   );
