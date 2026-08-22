@@ -37,6 +37,7 @@ jest.mock('~/server/services/Endpoints/agents', () => ({
 }));
 jest.mock('~/server/controllers/agents/request', () => jest.fn());
 jest.mock('~/server/controllers/agents/resume', () => jest.fn());
+jest.mock('~/server/controllers/agents/compact', () => jest.fn());
 jest.mock('~/server/services/Endpoints/agents/title', () => jest.fn());
 jest.mock('~/models', () => ({
   getFiles: mockGetFiles,
