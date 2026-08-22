@@ -20,15 +20,29 @@ const ASSIGN_QUEUE_PREFIX = 'assign-conversation:';
  *  was headed. Comparing destinations alone cannot tell two drops onto the same
  *  project apart, so a B, A, B run would let the first B's cleanup discard an
  *  entry that the still-queued later drops own. */
-type QueuedAssignment = { token: number; projectId: string | null };
+type QueuedAssignment = { token: number; projectId: string | null; settled: boolean };
 
 const queuedDestination = new Map<string, QueuedAssignment>();
 let assignmentToken = 0;
 
-/** The project a conversation will be in once everything queued has settled. */
+/** The project a conversation will be in once everything queued has settled.
+ *
+ *  A settled entry is kept rather than dropped: the mutation's cache
+ *  invalidations are not awaited, so a row still reports its old project for a
+ *  moment after the write succeeds. Holding the destination until a drag item
+ *  actually shows the new value is what keeps a quick drag back to the original
+ *  project from reading as a no-op. */
 export const effectiveProjectId = (item: ConversationDragItem): string | null => {
   const queued = item.conversationId ? queuedDestination.get(item.conversationId) : undefined;
-  return queued ? queued.projectId : item.chatProjectId;
+  if (!queued) {
+    return item.chatProjectId;
+  }
+  if (queued.settled && item.chatProjectId === queued.projectId) {
+    /* The lists have caught up, so the row speaks for itself again. */
+    queuedDestination.delete(item.conversationId);
+    return item.chatProjectId;
+  }
+  return queued.projectId;
 };
 
 export type ConversationDragItem = {
@@ -53,7 +67,7 @@ export const useAssignDroppedConversation = () => {
         return;
       }
       const token = ++assignmentToken;
-      queuedDestination.set(conversationId, { token, projectId });
+      queuedDestination.set(conversationId, { token, projectId, settled: false });
       /* A slow assignment leaves the row droppable, and every project target
        * owns its own mutation instance, so two quick drops would run
        * concurrently. The write is an unconditional update, so the request that
@@ -67,14 +81,18 @@ export const useAssignDroppedConversation = () => {
             severity: NotificationSeverity.SUCCESS,
             showIcon: true,
           });
+          if (queuedDestination.get(conversationId)?.token === token) {
+            /* Kept, not cleared: the lists have not refreshed yet. */
+            queuedDestination.set(conversationId, { token, projectId, settled: true });
+          }
         } catch {
           showToast({
             message: localize('com_ui_project_update_error'),
             severity: NotificationSeverity.ERROR,
             showIcon: true,
           });
-        } finally {
           if (queuedDestination.get(conversationId)?.token === token) {
+            /* The move never happened, so the row's own project is the truth. */
             queuedDestination.delete(conversationId);
           }
         }

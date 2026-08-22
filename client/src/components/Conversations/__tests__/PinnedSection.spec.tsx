@@ -219,6 +219,18 @@ describe('PinnedSection unified list', () => {
     /* Reordering against an order that has not arrived yet would merge into
      * `[]` and, since `onMutate` cancels that GET, post only what is on screen,
      * discarding the saved positions of everything else. */
+    /* Alt/Option+Arrow moves the caret word-wise inside a text field, so the
+     * shortcut has to stand down wherever the drag source does. */
+    it('leaves Alt+Arrow to the rename input while a row title is being edited', () => {
+      renderSection([pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]);
+
+      fireEvent.click(screen.getByTestId('rename-Pinned Chat'));
+      moveFocusedRow('Pinned Chat', 'ArrowDown');
+
+      expect(itemLabels()).toEqual(['Pinned Chat', 'Second']);
+      expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+    });
+
     /* A failed GET still reports as fetched, so the gate is on success. */
     it('refuses to reorder until the stored order was fetched successfully', () => {
       mockOrderFetched = false;
