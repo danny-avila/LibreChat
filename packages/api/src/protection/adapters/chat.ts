@@ -19,6 +19,7 @@ export interface ChatSubmissionDecision {
 }
 
 export interface ChatSubmissionBody extends ModelParameterContentInput {
+  readonly input?: string;
   readonly text?: string;
   readonly quotes?: unknown;
   readonly answer?: string;
@@ -101,6 +102,10 @@ export function extractChatContent(
 
   if (text.length > 0) {
     fragments.push(createFragment('chat.text', '/text', text, 'message', 'text'));
+  }
+
+  if (typeof body?.input === 'string' && body.input.length > 0) {
+    fragments.push(createFragment('chat.input', '/input', body.input, 'message', 'text'));
   }
 
   const quoteEntries = getReferencedQuoteEntries(body?.quotes);

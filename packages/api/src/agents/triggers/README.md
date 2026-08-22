@@ -68,3 +68,40 @@ await enqueueAgentTrigger(
 
 `getAgentTriggerDeadLetters` and `requeueAgentTrigger` are intentionally trusted in-process
 operations. Exposing them through an admin API requires a separate authorization and audit layer.
+
+## Remote event ingress
+
+Authenticated controllers and source adapters can enqueue the same durable envelope through
+`POST /api/agents/v1/events`. The endpoint uses Remote Agents API-key authentication, the remote
+agents feature permission, and the target agent's existing remote-view ACL. Send exactly one
+`Idempotency-Key` header and keep it stable when retrying the same source-event-to-target delivery.
+The authenticated user, tenant, API-key source identity, request id, and receive time are always
+supplied by LibreChat. Remote callers do not choose `event.source`; provider-specific webhook
+adapters may verify their native signature and map verified provider metadata into the trusted
+in-process adapter contract above.
+
+```http
+POST /api/agents/v1/events
+Authorization: Bearer <remote-agents-api-key>
+Idempotency-Key: webhook-42-resource-7
+Content-Type: application/json
+
+{
+  "mode": "fire",
+  "event": {
+    "id": "resource-7-ready-3",
+    "type": "resource.ready",
+    "occurredAt": 1786967999000,
+    "payload": { "resourceId": "resource-7" }
+  },
+  "target": { "agentId": "agent-id" },
+  "input": "Resource resource-7 is ready. Inspect it and report the result.",
+  "orderingKey": "resource-7"
+}
+```
+
+A successful admission returns `202 Accepted`, an opaque delivery `id`, and a `Location` header.
+Poll that location to read `pending`, `leased`, `succeeded`, or `dead` state. Successful fire
+results include the conversation and generation identity needed for a later `steer` event. Status
+responses never expose the stored source payload, ordering key, retry history, or worker identity.
+Callers must sanitize `event.payload`; credentials and transport secrets must not be persisted.

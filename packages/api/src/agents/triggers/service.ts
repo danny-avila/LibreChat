@@ -1,4 +1,5 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
+import type { AgentTriggerDeliveryStatusRecord } from '@librechat/data-schemas';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
@@ -94,6 +95,12 @@ export interface AgentTriggerDeliveryPersistence {
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
+  getAgentTriggerDeliveryStatus: (
+    deliveryKey: string,
+    userId: string,
+    sourceKeyId: string,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeueAgentTriggerDelivery: (
     id: string,
@@ -124,6 +131,12 @@ export interface AgentTriggerService {
     options?: AgentTriggerEnqueueOptions,
   ) => Promise<AgentTriggerDeliveryReceipt>;
   getDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
+  getDeliveryStatus: (
+    deliveryKey: string,
+    userId: string,
+    sourceKeyId: string,
+    tenantId?: string,
+  ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
   drainUser: (userId: string) => Promise<void>;
@@ -394,6 +407,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     },
     getDelivery: (deliveryKey) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDelivery(deliveryKey)),
+    getDeliveryStatus: (deliveryKey, userId, sourceKeyId, tenantId) =>
+      runAsSystem(async () =>
+        requireMethods().getAgentTriggerDeliveryStatus(deliveryKey, userId, sourceKeyId, tenantId),
+      ),
     getDeadLetters: (limit) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>

@@ -9,6 +9,8 @@ const {
   MESSAGE_IP_WINDOW = 1,
   MESSAGE_USER_MAX = 40,
   MESSAGE_USER_WINDOW = 1,
+  AGENT_EVENT_USER_MAX = 40,
+  AGENT_EVENT_USER_WINDOW = 1,
   MESSAGE_VIOLATION_SCORE: score,
 } = process.env;
 
@@ -19,6 +21,10 @@ const ipWindowInMinutes = ipWindowMs / 60000;
 const userWindowMs = MESSAGE_USER_WINDOW * 60 * 1000;
 const userMax = MESSAGE_USER_MAX;
 const userWindowInMinutes = userWindowMs / 60000;
+
+const agentEventUserWindowMs = AGENT_EVENT_USER_WINDOW * 60 * 1000;
+const agentEventUserMax = AGENT_EVENT_USER_MAX;
+const agentEventUserWindowInMinutes = agentEventUserWindowMs / 60000;
 
 /**
  * Creates either an IP/User message request rate limiter for excessive requests
@@ -74,7 +80,31 @@ const messageIpLimiter = rateLimit(ipLimiterOptions);
  */
 const messageUserLimiter = rateLimit(userLimiterOptions);
 
+/**
+ * Event admission has its own API-principal bucket. The durable worker later
+ * consumes the normal message-user bucket when it executes the delivery, so
+ * sharing that limiter here would charge every event twice.
+ */
+const agentEventUserLimiter = rateLimit({
+  windowMs: agentEventUserWindowMs,
+  max: agentEventUserMax,
+  handler: async (req, res) => {
+    const type = ViolationTypes.MESSAGE_LIMIT;
+    const errorMessage = {
+      type,
+      max: agentEventUserMax,
+      limiter: 'agent_event_principal',
+      windowInMinutes: agentEventUserWindowInMinutes,
+    };
+    await logViolation(req, res, type, errorMessage, score);
+    return await denyRequest(req, res, errorMessage);
+  },
+  keyGenerator: (req) => String(req.apiKeyId ?? req.user?.id),
+  store: limiterCache('agent_event_user_limiter'),
+});
+
 module.exports = {
+  agentEventUserLimiter,
   messageIpLimiter,
   messageUserLimiter,
 };

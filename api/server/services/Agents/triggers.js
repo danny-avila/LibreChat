@@ -20,6 +20,7 @@ module.exports = {
   dispatchAgentTrigger: service.dispatch,
   enqueueAgentTrigger: service.enqueue,
   getAgentTriggerDelivery: service.getDelivery,
+  getAgentTriggerDeliveryStatus: service.getDeliveryStatus,
   getAgentTriggerDeadLetters: service.getDeadLetters,
   requeueAgentTrigger: service.requeue,
   drainAgentTriggerDeliveriesForUser: service.drainUser,

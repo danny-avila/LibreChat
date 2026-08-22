@@ -6,6 +6,8 @@
  *
  * Usage:
  *   POST /v1/chat/completions - Chat with an agent
+ *   POST /v1/events - Durably deliver a source-neutral event
+ *   GET /v1/events/:id - Read an event delivery status and result
  *   GET /v1/models - List available agents
  *   GET /v1/models/:model - Get agent details
  *
@@ -17,25 +19,55 @@
  *   }
  */
 const express = require('express');
+const { createAgentTriggerIngressHandlers, createMessageFilterPii } = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
   GetModelController,
 } = require('~/server/controllers/agents/openai');
-const { configMiddleware } = require('~/server/middleware');
+const { agentEventUserLimiter, configMiddleware } = require('~/server/middleware');
+const {
+  enqueueAgentTrigger,
+  getAgentTriggerDeliveryStatus,
+} = require('~/server/services/Agents/triggers');
 const {
   checkAgentPermission,
+  checkAgentTriggerPermission,
   preAuthTenantMiddleware,
   requireRemoteAgentAuth,
   checkRemoteAgentsFeature,
 } = require('./middleware');
 
 const router = express.Router();
+const eventHandlers = createAgentTriggerIngressHandlers({
+  enqueue: enqueueAgentTrigger,
+  getDeliveryStatus: getAgentTriggerDeliveryStatus,
+});
 
 router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
+
+/**
+ * @route POST /v1/events
+ * @desc Durably deliver a source-neutral event to an agent
+ * @access Private (API key auth required)
+ */
+router.post(
+  '/events',
+  agentEventUserLimiter,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  checkAgentTriggerPermission,
+  eventHandlers.enqueueEvent,
+);
+
+/**
+ * @route GET /v1/events/:id
+ * @desc Read the authenticated owner's delivery status and result
+ * @access Private (API key auth required)
+ */
+router.get('/events/:id', eventHandlers.getEvent);
 
 /**
  * @route POST /v1/chat/completions

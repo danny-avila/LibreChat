@@ -250,6 +250,16 @@ describe('messageFilterPii middleware', () => {
     });
   });
 
+  it('rejects model-bound event input before durable ingress can persist it', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { input: 'dispatch this with sk-proj-FAKE1234567890ABCDEF' },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+    expect(capturedRes.body).toMatchObject({ error: 'message_filter_pii_block' });
+  });
+
   it('rejects with 400 when a Bearer header is present', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {},
