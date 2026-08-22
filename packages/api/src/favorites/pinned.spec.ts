@@ -201,4 +201,23 @@ describe('createPinnedOrderHandlers', () => {
       expect(res.statusCode).toBe(500);
     });
   });
+
+  describe('malformed bodies', () => {
+    /* Express leaves `req.body` nullish for a request with no JSON body, and a
+     * throw here would escape the handler into the generic error path. */
+    it.each([[undefined], [null]])('answers 400 for a %p body', async (body) => {
+      const { handlers, deps } = setup();
+      const res = makeRes();
+      await handlers.updatePinnedOrder(makeReq(body), res);
+      expect(res.statusCode).toBe(400);
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('answers 400 when the body carries no pinnedOrder', async () => {
+      const { handlers } = setup();
+      const res = makeRes();
+      await handlers.updatePinnedOrder(makeReq({}), res);
+      expect(res.statusCode).toBe(400);
+    });
+  });
 });

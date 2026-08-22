@@ -267,6 +267,12 @@ const PinnedSection = ({
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
   const { data: activeJobsData } = useActiveJobs();
   const favoritesData = useFavoritesData();
+  /* Read at write time rather than captured, so a membership change made while
+   * an order request was in flight is not overwritten by a stale snapshot. */
+  const favoritesRef = useRef(favoritesData.favorites);
+  favoritesRef.current = favoritesData.favorites;
+  const reorderFavoritesRef = useRef(favoritesData.reorderFavorites);
+  reorderFavoritesRef.current = favoritesData.reorderFavorites;
   const { data: storedOrder } = useGetPinnedOrderQuery();
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
@@ -454,18 +460,26 @@ const PinnedSection = ({
      * consumers agree with what the section shows. It is written only once the
      * order itself is stored: persisting it on a failed write would leave the
      * two out of sync with each other and with the rolled-back display. */
-    const orderedFavorites = entries
-      .filter((entry) => entry.kind === 'favorite')
-      .map((entry) => (entry as { favorite: Favorite }).favorite);
-    const current = favoritesData.favorites;
-    const favoritesMoved =
-      orderedFavorites.length !== current.length ||
-      orderedFavorites.some((favorite, index) => favorite !== current[index]);
+    const rank = new Map(visibleKeys.map((key, index) => [key, index]));
 
     updatePinnedOrder.mutate(nextOrder, {
       onSuccess: () => {
-        if (favoritesMoved) {
-          favoritesData.reorderFavorites(orderedFavorites, true);
+        /* Membership is read here, not captured at drag end: a favorite added
+         * or removed while the request was in flight would otherwise be undone
+         * by writing back the older list. Only the relative order comes from
+         * the drag; anything the drag never saw keeps its place at the end. */
+        const current = favoritesRef.current;
+        const reordered = current
+          .map((favorite, index) => ({ favorite, index }))
+          .sort((a, b) => {
+            const rankA = rank.get(favoriteEntryKey(a.favorite)) ?? Infinity;
+            const rankB = rank.get(favoriteEntryKey(b.favorite)) ?? Infinity;
+            return rankA === rankB ? a.index - b.index : rankA - rankB;
+          })
+          .map((entry) => entry.favorite);
+        const moved = reordered.some((favorite, index) => favorite !== current[index]);
+        if (moved) {
+          reorderFavoritesRef.current(reordered, true);
         }
       },
       /* The rejected order rolls back, so the local arrangement will never
@@ -480,7 +494,7 @@ const PinnedSection = ({
         });
       },
     });
-  }, [updatePinnedOrder, favoritesData, isFiltered, storedOrder, showToast, localize]);
+  }, [updatePinnedOrder, isFiltered, storedOrder, showToast, localize]);
 
   /* `moveEntryBy` is declared above `commitOrder` and both are stable across a
    * drag, so the commit is reached through a ref rather than reordering them

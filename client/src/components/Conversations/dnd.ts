@@ -3,8 +3,12 @@ import { useToastContext } from '@librechat/client';
 import { useAssignConversationToProjectMutation } from '~/data-provider';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
+import { enqueue } from '~/utils';
 
 export const CONVERSATION_DRAG_TYPE = 'conversation-item';
+
+/** One queue per conversation: drops onto different chats stay independent. */
+const ASSIGN_QUEUE_PREFIX = 'assign-conversation:';
 
 export type ConversationDragItem = {
   conversationId: string;
@@ -23,28 +27,31 @@ export const useAssignDroppedConversation = () => {
 
   return useCallback(
     (item: ConversationDragItem, projectId: string | null) => {
-      if (!item.conversationId || item.chatProjectId === projectId) {
+      const conversationId = item.conversationId;
+      if (!conversationId || item.chatProjectId === projectId) {
         return;
       }
-      assignConversation.mutate(
-        { conversationId: item.conversationId, projectId },
-        {
-          onSuccess: () => {
-            showToast({
-              message: localize('com_ui_project_updated'),
-              severity: NotificationSeverity.SUCCESS,
-              showIcon: true,
-            });
-          },
-          onError: () => {
-            showToast({
-              message: localize('com_ui_project_update_error'),
-              severity: NotificationSeverity.ERROR,
-              showIcon: true,
-            });
-          },
-        },
-      );
+      /* A slow assignment leaves the row droppable, and every project target
+       * owns its own mutation instance, so two quick drops would run
+       * concurrently. The write is an unconditional update, so the request that
+       * happens to reach the database last would decide the project regardless
+       * of which drop came first. */
+      void enqueue(`${ASSIGN_QUEUE_PREFIX}${conversationId}`, async () => {
+        try {
+          await assignConversation.mutateAsync({ conversationId, projectId });
+          showToast({
+            message: localize('com_ui_project_updated'),
+            severity: NotificationSeverity.SUCCESS,
+            showIcon: true,
+          });
+        } catch {
+          showToast({
+            message: localize('com_ui_project_update_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        }
+      });
     },
     [assignConversation, localize, showToast],
   );
