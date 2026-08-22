@@ -632,32 +632,60 @@ export class RedisEventTransport implements IEventTransport {
     }
   }
 
-  private ensureChannelSubscription(channel: string): Promise<void> {
+  private ensureChannelSubscription(streamId: string): Promise<void> {
+    const channel = CHANNELS.events(streamId);
     const existing = this.channelSubscriptions.get(channel);
     if (existing) {
       return existing;
     }
 
     const operation = this.subscriber.subscribe(channel);
-    const ready = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error(`Timed out synchronizing Redis subscription for ${channel}`)),
-        SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS,
-      );
+    let expired = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        expired = true;
+        reject(new Error(`Timed out synchronizing Redis subscription for ${channel}`));
+      }, SUBSCRIPTION_ATTACHMENT_TIMEOUT_MS);
       timeout.unref?.();
-      operation.then(
-        () => {
-          clearTimeout(timeout);
-          resolve();
-        },
-        (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        },
-      );
-    }).then(() => {
+    });
+    const ready = Promise.race([operation, deadline]).then(() => {
       logger.debug(`[RedisEventTransport] Subscription active for channel ${channel}`);
     });
+    operation.then(
+      () => {
+        if (timeout != null) clearTimeout(timeout);
+        if (expired) {
+          const current = this.channelSubscriptions.get(channel);
+          if (current == null || current === ready) {
+            if (current === ready) this.channelSubscriptions.delete(channel);
+            const state = this.streams.get(streamId);
+            const hasOwner =
+              state != null &&
+              (state.count > 0 ||
+                state.abortCallbacks.size > 0 ||
+                state.abortAckWaiters.size > 0 ||
+                state.preemptCallbacks.size > 0);
+            if (hasOwner) {
+              /** The late command is now active. Re-track it so the surviving owner can
+               * release the channel through the ordinary identity-fenced cleanup path. */
+              this.channelSubscriptions.set(channel, Promise.resolve());
+            } else {
+              /** No replacement and no local owner can observe this late subscription. */
+              this.subscriber.unsubscribe(channel).catch((error) => {
+                logger.error(
+                  `[RedisEventTransport] Failed to release late subscription ${channel}:`,
+                  error,
+                );
+              });
+            }
+          }
+        }
+      },
+      () => {
+        if (timeout != null) clearTimeout(timeout);
+      },
+    );
     this.channelSubscriptions.set(channel, ready);
     void ready.catch((err) => {
       if (this.channelSubscriptions.get(channel) === ready) {
@@ -1162,7 +1190,6 @@ export class RedisEventTransport implements IEventTransport {
     ready?: Promise<void>;
     syncReorderBuffer?: () => void | Promise<void>;
   } {
-    const channel = CHANNELS.events(streamId);
     const subscriberId = `sub_${++this.subscriberIdCounter}`;
 
     // Initialize stream state if needed
@@ -1183,7 +1210,7 @@ export class RedisEventTransport implements IEventTransport {
      * receivable pre-frontier frame is already buffered locally. */
     const captureSequenceFrontier =
       options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
-    const channelReady = this.ensureChannelSubscription(channel);
+    const channelReady = this.ensureChannelSubscription(streamId);
     const attachmentFrontier = captureSequenceFrontier
       ? channelReady
           .then(() => {
@@ -1535,9 +1562,8 @@ export class RedisEventTransport implements IEventTransport {
       logger.error(`[RedisEventTransport] Failed to inspect generation abort proof:`, error);
     }
 
-    const channel = CHANNELS.events(streamId);
     const state = this.getOrCreateStreamState(streamId);
-    await this.ensureChannelSubscription(channel);
+    await this.ensureChannelSubscription(streamId);
     if (this.streams.get(streamId) !== state) {
       return false;
     }
@@ -1577,14 +1603,13 @@ export class RedisEventTransport implements IEventTransport {
     streamId: string,
     callback: (generationId?: number) => void | boolean,
   ): Promise<() => void> {
-    const channel = CHANNELS.events(streamId);
     const state = this.getOrCreateStreamState(streamId);
 
     const registration = { callback };
     state.abortCallbacks.add(registration);
 
     try {
-      await this.ensureChannelSubscription(channel);
+      await this.ensureChannelSubscription(streamId);
     } catch (error) {
       state.abortCallbacks.delete(registration);
       this.unsubscribeUnusedChannel(streamId, state);
@@ -1631,14 +1656,13 @@ export class RedisEventTransport implements IEventTransport {
    * replacement.
    */
   async onPreempt(streamId: string, callback: (msg: PreemptMessage) => void): Promise<() => void> {
-    const channel = CHANNELS.events(streamId);
     const state = this.getOrCreateStreamState(streamId);
 
     const registration = { callback };
     state.preemptCallbacks.add(registration);
 
     try {
-      await this.ensureChannelSubscription(channel);
+      await this.ensureChannelSubscription(streamId);
     } catch (error) {
       state.preemptCallbacks.delete(registration);
       this.unsubscribeUnusedChannel(streamId, state);

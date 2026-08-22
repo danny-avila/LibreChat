@@ -365,7 +365,10 @@ describe('RedisEventTransport', () => {
     jest.useFakeTimers();
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
-    mockSubscriber.subscribe.mockImplementationOnce(() => new Promise(() => undefined));
+    let finishOriginalSubscribe!: () => void;
+    mockSubscriber.subscribe.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishOriginalSubscribe = resolve)),
+    );
     const transport = new RedisEventTransport(
       mockPublisher as unknown as Redis,
       mockSubscriber as unknown as Redis,
@@ -413,10 +416,57 @@ describe('RedisEventTransport', () => {
       await retry.ready;
       expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
 
+      finishOriginalSubscribe();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+
       subscription.unsubscribe();
       concurrent.unsubscribe();
       retry.unsubscribe();
       expect(transport.getSubscriberCount(streamId)).toBe(0);
+      expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
+    } finally {
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('unsubscribes an evicted channel operation that completes without an owner', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    let finishSubscribe!: () => void;
+    mockSubscriber.subscribe.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishSubscribe = resolve)),
+    );
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'late-channel-without-owner';
+
+    try {
+      const subscription = transport.subscribe(
+        streamId,
+        { onChunk: jest.fn() },
+        { deferSequenceDelivery: true, captureSequenceFrontier: true },
+      );
+      const readinessFailure = subscription.ready?.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      jest.advanceTimersByTime(3_000);
+      await readinessFailure;
+      subscription.unsubscribe();
+      expect(transport.getSubscriberCount(streamId)).toBe(0);
+      expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+
+      finishSubscribe();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
     } finally {
       transport.destroy();
       jest.useRealTimers();
