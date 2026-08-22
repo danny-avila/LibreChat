@@ -417,7 +417,9 @@ describe('SubagentThreadTaskStore', () => {
     await saveParent(userId, parentConversationId);
     const store = new SubagentThreadTaskStore(methods);
     const unavailableTransport = {
-      emitChunk: async () => Promise.reject(new Error('activity transport unavailable')),
+      emitChunk: () => {
+        throw new Error('activity transport unavailable');
+      },
       emitDone: async () => Promise.reject(new Error('activity transport unavailable')),
       emitError: async () => undefined,
       subscribe: () => ({ unsubscribe: () => undefined }),
