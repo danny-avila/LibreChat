@@ -314,7 +314,12 @@ export default function AgentPanel() {
 
   const agentQuery = canEdit && expandedAgentQuery.data ? expandedAgentQuery : basicAgentQuery;
 
-  const models = useMemo(() => modelsQuery.data ?? {}, [modelsQuery.data]);
+  const modelsLoaded = modelsQuery.isSuccess && modelsQuery.isFetchedAfterMount;
+  const modelsError = !modelsQuery.isSuccess && modelsQuery.isFetchedAfterMount;
+  const models = useMemo(
+    () => (modelsLoaded ? (modelsQuery.data ?? {}) : {}),
+    [modelsLoaded, modelsQuery.data],
+  );
   const methods = useForm<AgentForm>({
     defaultValues: getDefaultAgentFormValues(defaultStatefulCodeEnvironment),
     mode: 'onChange',
@@ -543,6 +548,18 @@ export default function AgentPanel() {
           status: 'error',
         });
       }
+      if (!modelsLoaded) {
+        return showToast({
+          message: localize('com_error_models_not_loaded'),
+          status: 'error',
+        });
+      }
+      if (!(models[provider] ?? []).includes(model)) {
+        return showToast({
+          message: localize('com_error_model_not_found'),
+          status: 'error',
+        });
+      }
       if (!data.name) {
         return showToast({
           message: localize('com_agents_missing_name'),
@@ -552,7 +569,17 @@ export default function AgentPanel() {
 
       create.mutate({ ...basePayload, model, tools, provider });
     },
-    [agent_id, create, dirtyFields, handleAvatarUpload, update, showToast, localize],
+    [
+      agent_id,
+      create,
+      dirtyFields,
+      handleAvatarUpload,
+      models,
+      modelsLoaded,
+      update,
+      showToast,
+      localize,
+    ],
   );
 
   const handleSelectAgent = useCallback(() => {
@@ -633,7 +660,13 @@ export default function AgentPanel() {
             </div>
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.model && (
-            <ModelPanel models={models} providers={providers} setActivePanel={setActivePanel} />
+            <ModelPanel
+              models={models}
+              modelsError={modelsError}
+              modelsLoaded={modelsLoaded}
+              providers={providers}
+              setActivePanel={setActivePanel}
+            />
           )}
           {canEditAgent && !agentQuery.isInitialLoading && activePanel === Panel.builder && (
             <AgentConfig />
