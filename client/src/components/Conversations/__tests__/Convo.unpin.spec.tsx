@@ -200,4 +200,29 @@ describe('pinned conversation row unpin', () => {
 
     expect(document.activeElement).toBe(button);
   });
+
+  it('reports the rename ending when the row is removed mid-rename', () => {
+    /* The owner releases a renaming row's drag source. A row taken away while
+     * renaming, for instance by unpinning it from the project list that also
+     * renders it, would otherwise never report the rename ending and stay
+     * undraggable once it came back. */
+    const onRenamingChange = jest.fn();
+    const { unmount } = render(
+      <DndProvider backend={HTML5Backend}>
+        <div role="region" data-pinned-section="" aria-label="com_ui_pinned">
+          <Conversation
+            conversation={pinned('c1', 'Renaming')}
+            retainView={jest.fn()}
+            toggleNav={jest.fn()}
+            onRenamingChange={onRenamingChange}
+          />
+        </div>
+      </DndProvider>,
+    );
+
+    onRenamingChange.mockClear();
+    unmount();
+
+    expect(onRenamingChange).toHaveBeenCalledWith(false);
+  });
 });
