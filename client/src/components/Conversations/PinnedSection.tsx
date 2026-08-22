@@ -51,9 +51,6 @@ export const favoriteEntryKey = (favorite: Favorite): string => {
 
 const convoEntryKey = (conversationId: string): string => `convo:${conversationId}`;
 
-const sameKeyOrder = (a: PinnedEntry[], b: PinnedEntry[]): boolean =>
-  a.length === b.length && a.every((entry, index) => entry.key === b[index].key);
-
 type PinnedEntry =
   | { key: string; kind: 'favorite'; favorite: Favorite }
   | { key: string; kind: 'convo'; conversationId: string };
@@ -246,33 +243,17 @@ interface PinnedSectionProps {
   conversations: TConversation[];
   toggleNav: () => void;
   isSmallScreen?: boolean;
-  /** A bookmark filter hides part of the pinned list. The order then has to be
-   *  merged into the stored one rather than replacing it, or the hidden keys
-   *  are dropped; without a filter, replacing also prunes keys whose item is
-   *  gone. */
-  isFiltered?: boolean;
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
  *  reorderable list: favorites and conversations interleave freely, the order
  *  persists per user, and the section opens with the same collapse motion as
  *  the Projects section above it. */
-const PinnedSection = ({
-  conversations,
-  toggleNav,
-  isSmallScreen,
-  isFiltered = false,
-}: PinnedSectionProps) => {
+const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectionProps) => {
   const localize = useLocalize();
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
   const { data: activeJobsData } = useActiveJobs();
   const favoritesData = useFavoritesData();
-  /* Read at write time rather than captured, so a membership change made while
-   * an order request was in flight is not overwritten by a stale snapshot. */
-  const favoritesRef = useRef(favoritesData.favorites);
-  favoritesRef.current = favoritesData.favorites;
-  const reorderFavoritesRef = useRef(favoritesData.reorderFavorites);
-  reorderFavoritesRef.current = favoritesData.reorderFavorites;
   const { data: storedOrder } = useGetPinnedOrderQuery();
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
@@ -388,14 +369,6 @@ const PinnedSection = ({
     dragEntriesRef.current = orderedEntries;
   }
 
-  /* Hold the local arrangement until the stored order agrees with it. Dropping
-   * it at commit time instead would snap the list back to the pre-move order
-   * for as long as the write takes, and a second keyboard move in that window
-   * would start from the order the user had already left behind. */
-  if (liveEntries !== null && sameKeyOrder(liveEntries, orderedEntries)) {
-    setLiveEntries(null);
-  }
-
   const displayEntries = liveEntries ?? orderedEntries;
 
   /** Live index of a key in the list the drag is mutating, so a hover can tell
@@ -454,47 +427,37 @@ const PinnedSection = ({
     }
     hasReorderedRef.current = false;
     const entries = dragEntriesRef.current;
-    const visibleKeys = entries.map((entry) => entry.key);
-    const nextOrder = isFiltered ? mergeVisibleOrder(storedOrder ?? [], visibleKeys) : visibleKeys;
-    /* The favorites array carries its own copy of the relative order, so other
-     * consumers agree with what the section shows. It is written only once the
-     * order itself is stored: persisting it on a failed write would leave the
-     * two out of sync with each other and with the rolled-back display. */
-    const rank = new Map(visibleKeys.map((key, index) => [key, index]));
+    /* Always a merge, never a replacement. The visible list is not always the
+     * whole list: a bookmark filter hides rows, and the pinned query publishes
+     * partial results while it drains its cursor. Persisting only what is on
+     * screen would drop every key it could not see, losing those positions for
+     * good. Keys whose item is gone are inert on read and bounded by the
+     * endpoint's size guard, so leaving them costs nothing. */
+    const nextOrder = mergeVisibleOrder(
+      storedOrder ?? [],
+      entries.map((entry) => entry.key),
+    );
 
     updatePinnedOrder.mutate(nextOrder, {
-      onSuccess: () => {
-        /* Membership is read here, not captured at drag end: a favorite added
-         * or removed while the request was in flight would otherwise be undone
-         * by writing back the older list. Only the relative order comes from
-         * the drag; anything the drag never saw keeps its place at the end. */
-        const current = favoritesRef.current;
-        const reordered = current
-          .map((favorite, index) => ({ favorite, index }))
-          .sort((a, b) => {
-            const rankA = rank.get(favoriteEntryKey(a.favorite)) ?? Infinity;
-            const rankB = rank.get(favoriteEntryKey(b.favorite)) ?? Infinity;
-            return rankA === rankB ? a.index - b.index : rankA - rankB;
-          })
-          .map((entry) => entry.favorite);
-        const moved = reordered.some((favorite, index) => favorite !== current[index]);
-        if (moved) {
-          reorderFavoritesRef.current(reordered, true);
-        }
-      },
-      /* The rejected order rolls back, so the local arrangement will never
-       * converge on it: release it explicitly and say what happened rather than
-       * letting the row snap back unexplained. */
+      /* `pinnedOrder` is the only ordering the section reads: no consumer of
+       * the favorites array depends on its order, so writing the arrangement
+       * back there a second time bought nothing and raced the membership
+       * mutations that share that array. */
       onError: () => {
-        setLiveEntries(null);
         showToast({
           message: localize('com_ui_reorder_error'),
           severity: NotificationSeverity.ERROR,
           showIcon: true,
         });
       },
+      /* Release the local arrangement once the write resolves either way: by
+       * then the optimistic cache carries it, or the rollback has replaced it
+       * with what the server actually holds. */
+      onSettled: () => {
+        setLiveEntries(null);
+      },
     });
-  }, [updatePinnedOrder, isFiltered, storedOrder, showToast, localize]);
+  }, [updatePinnedOrder, storedOrder, showToast, localize]);
 
   /* `moveEntryBy` is declared above `commitOrder` and both are stable across a
    * drag, so the commit is reached through a ref rather than reordering them
