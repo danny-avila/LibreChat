@@ -282,6 +282,20 @@ describe('PinnedSection unified list', () => {
     expect(row).not.toHaveAttribute('draggable', 'true');
   });
 
+  /* Dragging a pin onto a project row above the section, or onto Chats below
+   * it, sweeps the pointer across sibling rows whose hover handlers shift the
+   * order. That movement is incidental to a filing action, not a reorder. */
+  it('writes nothing when a drag ends without a reorder', () => {
+    mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+    renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+    const row = screen.getByTestId('pinned-convo').parentElement as HTMLElement;
+    fireEvent.dragStart(row);
+    fireEvent.dragEnd(row);
+
+    expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+  });
+
   it('keeps two model favorites distinct when a component contains the delimiter', () => {
     /* The favorites API accepts any string for either half, so joining them on
      * `::` collides: `a::b` + `c` and `a` + `b::c` would key the same and the
