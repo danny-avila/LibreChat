@@ -142,12 +142,16 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
       });
     },
     {
-      onSuccess: (result) => {
+      onSuccess: async (result) => {
+        const { conversationId } = result.conversation;
+        /* A refetch of this exact conversation may already be in flight, for
+         * instance one navigation kicked off, and it would have read the old
+         * project. Cancelling first stops it landing after this write and
+         * quietly reverting the assignment in the cache everything else now
+         * reads the conversation's project from. */
+        await queryClient.cancelQueries([QueryKeys.conversation, conversationId]);
         updateActiveConversation(result.conversation);
-        queryClient.setQueryData(
-          [QueryKeys.conversation, result.conversation.conversationId],
-          result.conversation,
-        );
+        queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
         [result.previousProjectId, result.projectId].forEach((projectId) => {
           if (projectId) {
             queryClient.invalidateQueries([QueryKeys.project, projectId]);

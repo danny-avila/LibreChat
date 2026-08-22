@@ -1,5 +1,5 @@
 import { RecoilRoot } from 'recoil';
-import { dataService } from 'librechat-data-provider';
+import { dataService, QueryKeys } from 'librechat-data-provider';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -32,13 +32,15 @@ const response = (conversationId: string, projectId: string | null) =>
     previousProjectId: null,
   }) as never;
 
+let activeQueryClient: QueryClient;
+
 const wrapper = ({ children }: { children: ReactNode }) => {
-  const queryClient = new QueryClient({
+  activeQueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return (
     <RecoilRoot>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={activeQueryClient}>{children}</QueryClientProvider>
     </RecoilRoot>
   );
 };
@@ -100,5 +102,28 @@ describe('useAssignConversationToProjectMutation', () => {
     await act(async () => {
       held.resolve(response('c1', 'project-b') as never);
     });
+  });
+
+  /* Navigation invalidates this exact conversation, so a refetch that read the
+   * old project can be in flight when the assignment confirms. Everything now
+   * reads a conversation's project from this cache, so an older fetch landing
+   * after the write would quietly revert the move. */
+  it('cancels an in-flight conversation refetch before writing the result', async () => {
+    assignConversationToProject.mockResolvedValueOnce(response('c1', 'project-b'));
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+    const cancelQueries = jest.spyOn(activeQueryClient, 'cancelQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'c1', projectId: 'project-b' });
+    });
+
+    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c1']);
+    expect(
+      activeQueryClient.getQueryData<{ chatProjectId: string | null }>([
+        QueryKeys.conversation,
+        'c1',
+      ])?.chatProjectId,
+    ).toBe('project-b');
   });
 });
