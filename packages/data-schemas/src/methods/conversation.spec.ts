@@ -1762,8 +1762,21 @@ describe('Conversation Operations', () => {
     it('reports a partial cascade failure instead of silently succeeding', async () => {
       const parentId = uuidv4();
       const childId = uuidv4();
+      const project = await ChatProject.create({
+        user: 'user123',
+        name: 'Partial Cascade',
+        conversationCount: 1,
+        lastConversationId: parentId,
+      });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 1, position: 1 });
       await Conversation.create([
-        { conversationId: parentId, user: 'user123', endpoint: EModelEndpoint.agents },
+        {
+          conversationId: parentId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          chatProjectId: project._id!.toString(),
+          tags: ['work'],
+        },
         {
           conversationId: childId,
           user: 'user123',
@@ -1799,6 +1812,12 @@ describe('Conversation Operations', () => {
       expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
       expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
       expect(deleteMessages).not.toHaveBeenCalled();
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect(
+        (await ChatProject.findById(project._id).lean<IChatProject>())?.conversationCount,
+      ).toBe(0);
 
       findSpy.mockRestore();
       deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 2 });
@@ -1810,6 +1829,9 @@ describe('Conversation Operations', () => {
         conversationId: { $in: [parentId, childId] },
         user: 'user123',
       });
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
       findSpy.mockRestore();
     });
 

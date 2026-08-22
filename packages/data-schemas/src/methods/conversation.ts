@@ -1471,6 +1471,41 @@ export function createConversationMethods(
       let pending = conversations;
       let acknowledged = true;
       let deletedCount = 0;
+      const reconcileDeletedWave = async (
+        wave: DeletionConversation[],
+        waveDeletedCount: number,
+      ): Promise<void> => {
+        if (waveDeletedCount === 0) {
+          return;
+        }
+
+        /**
+         * Commit derived metadata while the deleted documents are still available in
+         * memory. Descendant discovery can fail after this point; deferring the
+         * reconciliation until the whole walk completes would make the root's tags and
+         * project impossible to recover on a later retry.
+         */
+        const tagDecrements: string[] = [];
+        for (const conversation of wave) {
+          for (const tag of new Set(conversation.tags ?? [])) {
+            tagDecrements.push(tag);
+          }
+        }
+        await decrementTagCounts(mongoose, user, tagDecrements);
+
+        const waveProjectIds = new Set(
+          wave
+            .map((conversation) => conversation.chatProjectId)
+            .filter((projectId): projectId is string => Boolean(projectId)),
+        );
+        if (waveProjectIds.size > 0) {
+          try {
+            await refreshChatProjectStatsInBatches(mongoose, user, waveProjectIds);
+          } catch (error) {
+            logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
+          }
+        }
+      };
       while (pending.length > 0) {
         const wave = pending.filter((conversation) => !seen.has(conversation.conversationId));
         if (wave.length === 0) {
@@ -1481,6 +1516,7 @@ export function createConversationMethods(
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
+        await reconcileDeletedWave(wave, result.deletedCount);
         for (const conversation of wave) {
           seen.add(conversation.conversationId);
           deletedConversations.push(conversation);
@@ -1499,42 +1535,8 @@ export function createConversationMethods(
         ...recoveryConversationIds,
         ...deletedConversations.map((conversation) => conversation.conversationId),
       ];
-      const projectIds = new Set(
-        deletedConversations
-          .map((conversation) => conversation.chatProjectId)
-          .filter((projectId): projectId is string => Boolean(projectId)),
-      );
-
-      /**
-       * One entry per (conversation, tag) association: each conversation's tags are
-       * deduped so a duplicate tag entry within a single conversation only decrements
-       * the bookmark count once.
-       */
-      const tagDecrements: string[] = [];
-      for (const conversation of deletedConversations) {
-        if (!conversation.tags?.length) {
-          continue;
-        }
-        for (const tag of new Set(conversation.tags)) {
-          tagDecrements.push(tag);
-        }
-      }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
-      const deleted = deleteConvoResult.deletedCount > 0;
-
-      /**
-       * Reconcile bookmark counts from the deletion before message cleanup: if
-       * `deleteMessages` later throws, the conversation is already gone and a retry
-       * finds nothing, so the count must be reconciled here or it would stay stale.
-       * The decrement is best-effort and never throws, so it cannot block message
-       * cleanup. The `deletedCount` guard skips a losing concurrent delete whose
-       * pre-delete snapshot would otherwise decrement a conversation it did not
-       * actually remove.
-       */
-      if (deleted) {
-        await decrementTagCounts(mongoose, user, tagDecrements);
-      }
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a
@@ -1550,19 +1552,6 @@ export function createConversationMethods(
         });
       } catch (error) {
         logger.error('[deleteConvos] Conversations deleted but message cleanup failed', error);
-      }
-
-      /**
-       * Refresh project stats after message cleanup so a stats-refresh error cannot
-       * prevent `deleteMessages` from running, which would orphan the deleted
-       * conversations' messages.
-       */
-      if (deleted && projectIds.size > 0) {
-        try {
-          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
-        } catch (error) {
-          logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
-        }
       }
 
       // conversationIds lets callers run sibling cleanup that lives in higher layers
