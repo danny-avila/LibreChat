@@ -148,8 +148,13 @@ const DraggablePinnedRow = ({
 
   /* Keyboard equivalent of the drag: the shortcut is caught as it bubbles from
    * whichever element inside the row holds focus, so the row keeps that focus
-   * across the move. */
+   * across the move. It obeys the same gate as the pointer drag, which also
+   * keeps Alt/Option+Arrow doing its usual word-wise caret movement inside an
+   * open rename input rather than moving the row out from under it. */
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!canDrag) {
+      return;
+    }
     if (!event.altKey || event.ctrlKey || event.metaKey) {
       return;
     }
