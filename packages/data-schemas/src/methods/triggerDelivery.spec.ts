@@ -103,19 +103,23 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments()).toBe(1);
   });
 
-  it('projects public status while enforcing owner and tenant in the query', async () => {
+  it('projects public status while enforcing API key, owner, and tenant in the query', async () => {
     const user = new mongoose.Types.ObjectId();
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
         user,
         tenantId: 'tenant-1',
-        envelope: { privatePayload: 'x'.repeat(1024) },
+        envelope: {
+          event: { source: { id: 'source-key-1' } },
+          privatePayload: 'x'.repeat(1024),
+        },
       }),
     );
 
     const status = await methods.getAgentTriggerDeliveryStatus(
       queued.delivery.deliveryKey,
       user,
+      'source-key-1',
       'tenant-1',
     );
 
@@ -133,11 +137,25 @@ describe('agent trigger delivery methods', () => {
       methods.getAgentTriggerDeliveryStatus(
         queued.delivery.deliveryKey,
         new mongoose.Types.ObjectId(),
+        'source-key-1',
         'tenant-1',
       ),
     ).resolves.toBeNull();
     await expect(
-      methods.getAgentTriggerDeliveryStatus(queued.delivery.deliveryKey, user, 'tenant-2'),
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        user,
+        'source-key-1',
+        'tenant-2',
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      methods.getAgentTriggerDeliveryStatus(
+        queued.delivery.deliveryKey,
+        user,
+        'source-key-2',
+        'tenant-1',
+      ),
     ).resolves.toBeNull();
   });
 

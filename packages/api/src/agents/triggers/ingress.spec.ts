@@ -270,13 +270,18 @@ describe('agent trigger event ingress', () => {
     expect(response.body).not.toHaveProperty('orderingKey');
   });
 
-  it('uses an owner-and-tenant-scoped status projection and hides missing deliveries', async () => {
+  it('uses an API-key, owner, and tenant-scoped status projection and hides missing deliveries', async () => {
     const deps = dependencies({ getDeliveryStatus: jest.fn(async () => null) });
     const response = await request(createApp(deps)).get(`/api/agents/v1/events/${DELIVERY_KEY}`);
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('event_not_found');
-    expect(deps.getDeliveryStatus).toHaveBeenCalledWith(DELIVERY_KEY, USER_ID, 'tenant-1');
+    expect(deps.getDeliveryStatus).toHaveBeenCalledWith(
+      DELIVERY_KEY,
+      USER_ID,
+      API_KEY_ID,
+      'tenant-1',
+    );
   });
 
   it('rejects malformed delivery ids without querying storage', async () => {

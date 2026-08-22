@@ -255,11 +255,17 @@ export function createAgentTriggerIngressHandlers(deps: AgentTriggerIngressDepen
     const req = baseReq as AgentTriggerIngressRequest;
     try {
       const user = requireUser(req);
+      const sourceKeyId = requireSourceKeyId(req);
       const deliveryKey = req.params.id;
       if (!DELIVERY_KEY_PATTERN.test(deliveryKey)) {
         throw new AgentTriggerIngressError('Event delivery id is invalid');
       }
-      const delivery = await deps.getDeliveryStatus(deliveryKey, user.id, user.tenantId);
+      const delivery = await deps.getDeliveryStatus(
+        deliveryKey,
+        user.id,
+        sourceKeyId,
+        user.tenantId,
+      );
       if (delivery == null) {
         sendError(res, 404, 'event_not_found', 'Agent event delivery not found');
         return;

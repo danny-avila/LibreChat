@@ -98,6 +98,7 @@ export interface AgentTriggerDeliveryMethods {
   getAgentTriggerDeliveryStatus: (
     deliveryKey: string,
     user: string | Types.ObjectId,
+    sourceKeyId: string,
     tenantId?: string,
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerDeliveryRecord[]>;
@@ -823,12 +824,13 @@ export function createAgentTriggerDeliveryMethods(
   async function getAgentTriggerDeliveryStatus(
     deliveryKey: string,
     user: string | Types.ObjectId,
+    sourceKeyId: string,
     tenantId?: string,
   ): Promise<AgentTriggerDeliveryStatusRecord | null> {
     const tenantScope =
       tenantId == null ? { tenantId: null } : { $or: [{ tenantId: null }, { tenantId }] };
     const delivery = await Delivery()
-      .findOne({ deliveryKey, user, ...tenantScope })
+      .findOne({ deliveryKey, user, 'envelope.event.source.id': sourceKeyId, ...tenantScope })
       .select('-_id deliveryKey status attempts availableAt createdAt settledAt result lastError')
       .lean<AgentTriggerDeliveryStatusRecord>();
     return delivery;

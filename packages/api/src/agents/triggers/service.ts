@@ -98,6 +98,7 @@ export interface AgentTriggerDeliveryPersistence {
   getAgentTriggerDeliveryStatus: (
     deliveryKey: string,
     userId: string,
+    sourceKeyId: string,
     tenantId?: string,
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getAgentTriggerDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
@@ -133,6 +134,7 @@ export interface AgentTriggerService {
   getDeliveryStatus: (
     deliveryKey: string,
     userId: string,
+    sourceKeyId: string,
     tenantId?: string,
   ) => Promise<AgentTriggerDeliveryStatusRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
@@ -405,9 +407,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     },
     getDelivery: (deliveryKey) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDelivery(deliveryKey)),
-    getDeliveryStatus: (deliveryKey, userId, tenantId) =>
+    getDeliveryStatus: (deliveryKey, userId, sourceKeyId, tenantId) =>
       runAsSystem(async () =>
-        requireMethods().getAgentTriggerDeliveryStatus(deliveryKey, userId, tenantId),
+        requireMethods().getAgentTriggerDeliveryStatus(deliveryKey, userId, sourceKeyId, tenantId),
       ),
     getDeadLetters: (limit) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
