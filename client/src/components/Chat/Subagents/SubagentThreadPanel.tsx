@@ -80,7 +80,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         prompt: selection.prompt,
         progress,
         persistedContent: selection.persistedContent,
-        mergeLive: selection.durable != null,
+        isDetached: selection.durable != null,
         legacyOutput: selection.legacyOutput,
         // A detached parent tool step closes as soon as dispatch succeeds;
         // its terminal status does not describe the still-running child.

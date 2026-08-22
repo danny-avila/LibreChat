@@ -49,11 +49,14 @@ export default function useSubagentActivityStream(
   );
   const setProgress = useSetRecoilState(subagentProgressByToolCallId(key));
   const durable = selection.durable;
+  const threadId = durable?.threadId;
+  const taskId = durable?.taskId;
 
   useEffect(() => {
     if (
       selection.host !== 'conversation' ||
-      durable == null ||
+      threadId == null ||
+      taskId == null ||
       !enabled ||
       !isAuthenticated ||
       token == null
@@ -61,13 +64,8 @@ export default function useSubagentActivityStream(
       return;
     }
 
-    const queryKey = [
-      QueryKeys.subagentThread,
-      selection.parentConversationId,
-      durable.threadId,
-      durable.taskId,
-    ];
-    const endpoint = `${apiBaseUrl()}/api/convos/${encodeURIComponent(selection.parentConversationId)}/subagents/${encodeURIComponent(durable.threadId)}/tasks/${encodeURIComponent(durable.taskId)}/activity`;
+    const queryKey = [QueryKeys.subagentThread, selection.parentConversationId, threadId, taskId];
+    const endpoint = `${apiBaseUrl()}/api/convos/${encodeURIComponent(selection.parentConversationId)}/subagents/${encodeURIComponent(threadId)}/tasks/${encodeURIComponent(taskId)}/activity`;
     let stream: SSE | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let retryAttempt = 0;
@@ -111,7 +109,7 @@ export default function useSubagentActivityStream(
         }
         retryAttempt = 0;
         registerSubagentProgressKey(key);
-        setProgress((previous) => reduceSubagentProgress(previous, [event]));
+        setProgress((previous) => reduceSubagentProgress(previous, [event], 'detached'));
       });
       next.addEventListener('error', () => {
         if (stream !== next || disposed || terminal || retryTimer != null) return;
@@ -129,7 +127,6 @@ export default function useSubagentActivityStream(
       closeCurrent();
     };
   }, [
-    durable,
     enabled,
     isAuthenticated,
     key,
@@ -140,6 +137,8 @@ export default function useSubagentActivityStream(
     selection.partIndex,
     selection.toolCallId,
     setProgress,
+    taskId,
+    threadId,
     token,
   ]);
 }

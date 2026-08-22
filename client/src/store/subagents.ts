@@ -52,6 +52,9 @@ export interface SubagentProgress {
   latestLabel?: string;
   /** Bounded replay fence for events that overlap parent and detached SSE delivery. */
   recentEventKeys?: string[];
+  /** Whether the folded events cover the run from its beginning or only the
+   *  forward-only suffix observed after opening a detached task stream. */
+  coverage?: 'complete' | 'suffix';
 }
 
 const MAX_RECENT_EVENT_KEYS = 256;
@@ -298,6 +301,7 @@ export function takeRegisteredSubagentProgressKeys(): string[] {
 export function reduceSubagentProgress(
   previous: SubagentProgress | null,
   events: SubagentUpdateEvent[],
+  source: 'parent' | 'detached' = 'parent',
 ): SubagentProgress | null {
   if (events.length === 0) return previous;
   const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
@@ -352,5 +356,6 @@ export function reduceSubagentProgress(
     status: last.phase,
     latestLabel: last.label ?? previous?.latestLabel,
     recentEventKeys: boundedEventKeys,
+    coverage: previous?.coverage ?? (source === 'detached' ? 'suffix' : 'complete'),
   };
 }

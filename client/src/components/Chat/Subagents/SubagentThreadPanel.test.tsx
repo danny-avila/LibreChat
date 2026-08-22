@@ -241,6 +241,7 @@ describe('SubagentThreadPanel', () => {
             contentParts: [{ type: ContentTypes.TEXT, text: 'latest detached text.' }],
             aggregatorState: initSubagentAggregatorState(),
             tickerState: initSubagentTickerState(),
+            coverage: 'suffix',
           })
         }
       >

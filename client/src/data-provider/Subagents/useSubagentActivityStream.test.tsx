@@ -41,9 +41,10 @@ jest.mock('sse.js', () => ({
 }));
 
 const mockInvalidateQueries = jest.fn();
+const mockQueryClient = { invalidateQueries: mockInvalidateQueries };
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual('@tanstack/react-query'),
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries }),
+  useQueryClient: () => mockQueryClient,
 }));
 
 jest.mock('~/hooks/AuthContext', () => ({
@@ -123,6 +124,7 @@ describe('useSubagentActivityStream', () => {
     });
 
     expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Live child output' }]);
+    expect(result.current?.coverage).toBe('suffix');
     expect(takeRegisteredSubagentProgressKeys()).toEqual([
       subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
     ]);
@@ -211,6 +213,25 @@ describe('useSubagentActivityStream', () => {
 
     unmount();
     jest.useRealTimers();
+  });
+
+  it('keeps one forward-only stream across metadata-only selection updates', () => {
+    const { rerender } = renderHook(({ value }) => useSubagentActivityStream(value), {
+      initialProps: { value: selection },
+      wrapper,
+    });
+    expect(streams).toHaveLength(1);
+
+    rerender({
+      value: {
+        ...selection,
+        persistedContent: [{ type: 'text', text: 'New snapshot.' }],
+        durable: { ...selection.durable! },
+      },
+    });
+
+    expect(streams).toHaveLength(1);
+    expect(streams[0]?.close).not.toHaveBeenCalled();
   });
 
   it('never opens the private task stream for shares or foreground children', () => {

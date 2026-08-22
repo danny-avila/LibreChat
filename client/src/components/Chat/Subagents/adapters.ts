@@ -102,35 +102,14 @@ const publicActivityToChildActivity = (items: SubagentActivityItem[]): ChildActi
     };
   });
 
-const itemExtends = (prefix: ChildActivityItem, candidate: ChildActivityItem): boolean => {
-  if (prefix.type !== candidate.type) return false;
-  if (prefix.type === 'writing' && candidate.type === 'writing') {
-    return candidate.text.startsWith(prefix.text);
-  }
-  if (prefix.type === 'reasoning' && candidate.type === 'reasoning') {
-    return prefix.text == null || candidate.text?.startsWith(prefix.text) === true;
-  }
-  if (prefix.type === 'tool' && candidate.type === 'tool') {
-    return prefix.toolCallId === candidate.toolCallId;
-  }
-  return false;
-};
-
-/** A selected detached stream starts at subscription time, so after reload its
- * live projection is a suffix. In an uninterrupted parent run it can instead
- * contain the persisted prefix. Merge both shapes without duplicating a replay. */
+/** Merge activity whose transport explicitly declares it is a forward-only
+ * suffix. Complete parent-stream projections bypass this function entirely. */
 const mergePersistedAndLiveActivity = (
   persisted: ChildActivityItem[],
   live: ChildActivityItem[],
 ): ChildActivityItem[] => {
   if (persisted.length === 0) return live;
   if (live.length === 0) return persisted;
-  if (
-    live.length >= persisted.length &&
-    persisted.every((item, index) => itemExtends(item, live[index]))
-  ) {
-    return live;
-  }
 
   const merged = [...persisted];
   for (const item of live) {
@@ -139,7 +118,16 @@ const mergePersistedAndLiveActivity = (
         (candidate) => candidate.type === 'tool' && candidate.toolCallId === item.toolCallId,
       );
       if (existingIndex >= 0) {
-        merged[existingIndex] = { ...merged[existingIndex], ...item };
+        const existing = merged[existingIndex] as Extract<ChildActivityItem, { type: 'tool' }>;
+        const next = { ...existing, ...item };
+        if (item.name === '') next.name = existing.name;
+        if (
+          existing.input != null &&
+          (item.input == null || item.input === '' || item.input === '{}')
+        ) {
+          next.input = existing.input;
+        }
+        merged[existingIndex] = next;
       } else {
         merged.push(item);
       }
@@ -153,11 +141,7 @@ const mergePersistedAndLiveActivity = (
     }
     const previousText = previous.text ?? '';
     const nextText = item.text ?? '';
-    if (nextText.startsWith(previousText)) {
-      merged[merged.length - 1] = item;
-    } else if (!previousText.endsWith(nextText)) {
-      merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
-    }
+    merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
   }
   return merged;
 };
@@ -172,6 +156,7 @@ const liveStatus = ({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  isDetached?: boolean;
 }): SubagentThreadStatus => {
   if (runStepStatus === 'cancelled') return 'cancelled';
   if (runStepStatus === 'failed' || progress?.status === 'error') return 'failed';
@@ -191,9 +176,6 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
-  /** Detached streams begin at subscription time, so merge their live suffix
-   *  with any parent-message snapshot persisted during dispatch. */
-  mergeLive?: boolean;
   reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
@@ -204,8 +186,10 @@ export function adaptLivePersistedActivity(input: {
   const persistedItems = contentPartsToActivity(persisted, reasoningVisibility, approvalVisibility);
   const liveItems = contentPartsToActivity(live, reasoningVisibility, approvalVisibility);
   let items = persistedItems.length > 0 ? persistedItems : liveItems;
-  if (input.mergeLive === true) {
+  if (input.isDetached === true && input.progress?.coverage === 'suffix') {
     items = mergePersistedAndLiveActivity(persistedItems, liveItems);
+  } else if (input.isDetached === true && liveItems.length > 0) {
+    items = liveItems;
   }
   if (items.length === 0 && input.legacyOutput != null && input.legacyOutput !== '') {
     items.push({ type: 'writing', text: input.legacyOutput });
