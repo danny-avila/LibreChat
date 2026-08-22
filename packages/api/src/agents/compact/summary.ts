@@ -430,11 +430,10 @@ async function hydrateAttachments(
   const files = (await getFiles(filter)) ?? [];
   const byId = new Map(files.map((file) => [file.file_id, file]));
   /** Shallow clone rather than a mutation: the caller's request must keep its
-   *  own body for the rest of its lifetime. */
+   *  own body for the rest of its lifetime. Zero is carried like any other
+   *  value: it is a valid configured limit, and it means inline nothing. */
   const extractionReq = (
-    fileTokenLimit != null && fileTokenLimit > 0
-      ? { ...req, body: { ...(req.body ?? {}), fileTokenLimit } }
-      : req
+    fileTokenLimit != null ? { ...req, body: { ...(req.body ?? {}), fileTokenLimit } } : req
   ) as ServerRequest;
   /**
    * Deduplicated across the RETAINED segment, as the normal history path
