@@ -74,7 +74,9 @@ const boundedData = (data: unknown, budget: number): unknown => {
   }
 };
 
-const boundedUpdate = (event: SubagentActivityUpdateEvent): SubagentActivityUpdateEvent => {
+export const boundSubagentActivityUpdate = (
+  event: SubagentActivityUpdateEvent,
+): SubagentActivityUpdateEvent => {
   let base: SubagentActivityUpdateEvent = {
     runId: boundedString(event.runId) ?? '',
     parentRunId: boundedString(event.parentRunId) ?? '',
@@ -199,7 +201,7 @@ export class SubagentActivityStream {
     if (!(await this.isDemanded(streamId))) return;
     const envelope: SubagentActivityEnvelope = {
       event: 'on_subagent_update',
-      data: boundedUpdate(event),
+      data: boundSubagentActivityUpdate(event),
     };
     await this.transport.emitChunk(streamId, envelope);
   }
@@ -265,12 +267,19 @@ export class SubagentActivityStream {
     status: SubagentActivityTerminalStatus,
   ): Promise<void> {
     const streamId = subagentActivityStreamId(threadId, taskId);
-    if (!(await this.isDemanded(streamId))) return;
-    await this.transport.emitDone(streamId, {
-      final: true,
-      subagentActivity: true,
-      status,
-    });
+    /** Terminal delivery is a one-shot transition; do not let a 250 ms progress cache
+     * hide a subscriber that arrived after the last update. */
+    this.demandCache.delete(streamId);
+    try {
+      if (!(await this.isDemanded(streamId))) return;
+      await this.transport.emitDone(streamId, {
+        final: true,
+        subagentActivity: true,
+        status,
+      });
+    } finally {
+      this.demandCache.delete(streamId);
+    }
   }
 
   destroy(): void {
@@ -309,6 +318,17 @@ export function createSubagentActivityStreamHandler(
       return;
     }
 
+    let closed = req.destroyed || res.destroyed;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let subscription: SubagentActivitySubscription | undefined;
+    const close = () => {
+      closed = true;
+      if (heartbeat != null) clearInterval(heartbeat);
+      subscription?.unsubscribe();
+    };
+    req.once('aborted', close);
+    res.once('close', close);
+
     try {
       const [parent, child] = await Promise.all([
         deps.getConvoOwnership(userId, parentConversationId, tenantId ?? null),
@@ -333,6 +353,7 @@ export function createSubagentActivityStreamHandler(
         notFound(res);
         return;
       }
+      if (closed || req.destroyed || res.destroyed) return;
 
       res.setHeader('Content-Encoding', 'identity');
       res.setHeader('Content-Type', 'text/event-stream');
@@ -341,15 +362,10 @@ export function createSubagentActivityStreamHandler(
       res.setHeader('X-Accel-Buffering', 'no');
       res.flushHeaders?.();
 
-      let subscription: SubagentActivitySubscription | undefined;
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         if (!res.writableEnded) res.write(': keep-alive\n\n');
       }, HEARTBEAT_MS);
       heartbeat.unref?.();
-      const close = () => {
-        clearInterval(heartbeat);
-        subscription?.unsubscribe();
-      };
       try {
         subscription = stream.subscribe(threadId, taskId, {
           onEvent: (event) => writeSse(res, event),
@@ -364,14 +380,15 @@ export function createSubagentActivityStreamHandler(
             res.end();
           },
         });
-        req.once('close', close);
         await subscription.ready;
       } catch (error) {
         close();
         throw error;
       }
+      if (closed || res.destroyed) return;
       writeSse(res, { ready: true });
     } catch (error) {
+      if (closed || res.destroyed) return;
       logger.error('[subagentActivity] Failed to open child activity stream', error);
       if (!res.headersSent) {
         res.status(500).json({ error: 'Failed to open subagent activity stream' });

@@ -146,6 +146,19 @@ describe('detached subagent activity stream', () => {
     expect(transport.cleaned).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
   });
 
+  it('evicts cached no-demand state when a task reaches terminal state', async () => {
+    const transport = new TestTransport();
+    transport.demanded = false;
+    const stream = new SubagentActivityStream(transport);
+
+    await stream.publish('child-thread', 'task-1', update());
+    await stream.complete('child-thread', 'task-1', 'completed');
+    transport.demanded = true;
+    await stream.publish('child-thread', 'task-1', update());
+
+    expect(transport.emitted).toHaveLength(1);
+  });
+
   it('drops oversized payload data while retaining lifecycle identity and bounds', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);
@@ -261,7 +274,7 @@ describe('subagent activity stream authorization', () => {
     expect(res.status).not.toHaveBeenCalled();
     expect(res.chunks.join('')).toContain('"event":"on_subagent_update"');
     expect(res.chunks.join('')).toContain('Drafting the report');
-    req.emit('close');
+    res.emit('close');
   });
 
   it('returns the same 404 for a mismatched task without subscribing', async () => {
@@ -282,5 +295,33 @@ describe('subagent activity stream authorization', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(transport.handlers.size).toBe(0);
+  });
+
+  it('does not subscribe when the client disconnects during authorization', async () => {
+    let resolveParent!: (value: IConversation) => void;
+    let resolveChild!: (value: IConversation) => void;
+    const stream = { subscribe: jest.fn() };
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn(
+          () => new Promise<IConversation>((resolve) => (resolveParent = resolve)),
+        ),
+        getSubagentThreadForParent: jest.fn(
+          () => new Promise<IConversation>((resolve) => (resolveChild = resolve)),
+        ),
+      },
+      stream,
+    );
+    const req = request();
+    const res = response();
+
+    const pending = handler(req, res);
+    res.emit('close');
+    resolveParent(parent);
+    resolveChild(child);
+    await pending;
+
+    expect(stream.subscribe).not.toHaveBeenCalled();
+    expect(res.flushHeaders).not.toHaveBeenCalled();
   });
 });

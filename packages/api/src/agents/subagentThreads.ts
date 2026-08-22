@@ -31,6 +31,7 @@ import type { SubagentTaskControlTransport } from './subagentTaskRouting';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
 import {
+  boundSubagentActivityUpdate,
   SubagentActivityStream,
   type SubagentActivityUpdateEvent,
   type SubagentActivitySubscriber,
@@ -62,6 +63,10 @@ const DEFAULT_OWNER_DRAIN_POLL_MS = 100;
 const DELETION_CANCEL_CONCURRENCY = 32;
 /** Bounds retained control invocations; one entry per applied command. */
 const MAX_CONTROL_INVOCATIONS = 4_096;
+/** Bounds retained live-only updates while an event transport is unavailable. */
+const MAX_PENDING_ACTIVITY_EVENTS = 32;
+/** Live activity must never delay terminal notification indefinitely. */
+const ACTIVITY_PUBLICATION_TIMEOUT_MS = 1_000;
 
 /** A cancellation target set resolved before the conversations are removed. */
 export interface SubagentCancellationPlan {
@@ -135,6 +140,8 @@ interface TaskThreadLease {
   settling: boolean;
   /** Ordered observational tail; canonical child settlement never awaits it. */
   activityTail?: Promise<void>;
+  activityPending?: number;
+  activityClosed?: boolean;
   shared?: {
     token: string;
     lost: boolean;
@@ -143,6 +150,24 @@ interface TaskThreadLease {
     heartbeat?: ReturnType<typeof setInterval>;
     heartbeatInFlight?: Promise<void>;
   };
+}
+
+async function settleActivityWithin(operation: Promise<void>): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      operation,
+      new Promise<void>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Subagent activity publication timed out.')),
+          ACTIVITY_PUBLICATION_TIMEOUT_MS,
+        );
+        timeout.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeout != null) clearTimeout(timeout);
+  }
 }
 
 export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStoreOptions {
@@ -521,10 +546,24 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     event: SubagentUpdateEvent,
   ): void {
+    if (
+      lease.activityClosed === true ||
+      (lease.activityPending ?? 0) >= MAX_PENDING_ACTIVITY_EVENTS
+    ) {
+      return;
+    }
+    lease.activityPending = (lease.activityPending ?? 0) + 1;
+    const boundedEvent = boundSubagentActivityUpdate(event);
     const publication = (lease.activityTail ?? Promise.resolve())
-      .then(() => this.activityStream.publish(threadId, taskId, event))
+      .then(() => {
+        if (lease.activityClosed === true) return;
+        return settleActivityWithin(this.activityStream.publish(threadId, taskId, boundedEvent));
+      })
       .catch((error) => {
         logger.warn('[subagentThreads] Failed to publish child activity', error);
+      })
+      .finally(() => {
+        lease.activityPending = Math.max(0, (lease.activityPending ?? 1) - 1);
       });
     lease.activityTail = publication;
   }
@@ -535,8 +574,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     status: SubagentActivityTerminalStatus,
   ): void {
+    lease.activityClosed = true;
     const terminal = (lease.activityTail ?? Promise.resolve())
-      .then(() => this.activityStream.complete(threadId, taskId, status))
+      .then(() => settleActivityWithin(this.activityStream.complete(threadId, taskId, status)))
       .catch((error) => {
         logger.warn('[subagentThreads] Failed to close child activity stream', error);
       });

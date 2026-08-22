@@ -464,15 +464,17 @@ describe('SubagentThreadTaskStore', () => {
     );
   });
 
-  it('settles the canonical child while an observational activity transport is stalled', async () => {
+  it('bounds stalled activity and still attempts terminal delivery', async () => {
     const userId = 'activity-stream-stalled-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const store = new SubagentThreadTaskStore(methods);
     const never = () => new Promise<void>(() => undefined);
+    const emitChunk = jest.fn(never);
+    const emitDone = jest.fn(async () => undefined);
     const stalledTransport = {
-      emitChunk: never,
-      emitDone: never,
+      emitChunk,
+      emitDone,
       emitError: async () => undefined,
       subscribe: () => ({ unsubscribe: () => undefined }),
       getSubscriberCount: () => 0,
@@ -486,18 +488,21 @@ describe('SubagentThreadTaskStore', () => {
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
     const defaultRun = taskRequest(config.scopeId).run;
     const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
-      args[0].reportProgress({
-        runId: 'root-run',
-        parentRunId: 'parent-run',
-        subagentRunId: 'child-run',
-        subagentType: 'researcher-agent',
-        subagentKind: 'agent',
-        subagentAgentId: 'agent-1',
-        depth: 1,
-        ancestry: [],
-        phase: 'start',
-        timestamp: '2026-08-21T20:00:00.000Z',
-      });
+      for (let index = 0; index < 100; index += 1) {
+        args[0].reportProgress({
+          runId: 'root-run',
+          parentRunId: 'parent-run',
+          subagentRunId: 'child-run',
+          subagentType: 'researcher-agent',
+          subagentKind: 'agent',
+          subagentAgentId: 'agent-1',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          data: { delta: { content: [{ type: 'text', text: `chunk-${index}` }] } },
+          timestamp: '2026-08-21T20:00:00.000Z',
+        });
+      }
       return defaultRun(...args);
     });
 
@@ -507,6 +512,8 @@ describe('SubagentThreadTaskStore', () => {
     expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
       'completed',
     );
+    await waitUntil(() => emitDone.mock.calls.length === 1, 'terminal activity delivery');
+    expect(emitChunk).toHaveBeenCalledTimes(1);
   });
 
   it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {
