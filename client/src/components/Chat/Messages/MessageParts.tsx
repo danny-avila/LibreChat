@@ -42,7 +42,7 @@ function MessageParts(props: TMessageProps) {
     copyToClipboard,
     getCanCopy,
     regenerateMessage,
-  } = useMessageHelpers(props);
+  } = useMessageHelpers(props, searchResults);
 
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { messageId = null, isCreatedByUser } = message ?? {};
