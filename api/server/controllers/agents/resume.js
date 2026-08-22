@@ -1114,6 +1114,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           conversationId,
           streamId,
           jobCreatedAt: job.createdAt,
+          retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
         });
       } catch (error) {
         logger.warn('[ResumeAgentController] Event actor resume lease is unavailable', error);

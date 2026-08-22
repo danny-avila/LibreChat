@@ -78,4 +78,29 @@ describe('event child generation lease', () => {
     });
     await release();
   });
+
+  it('caps ownership and aborts the exact generation at the inherited retention deadline', async () => {
+    const retentionExpiresAt = new Date('2026-08-22T00:00:05.000Z');
+    const release = await acquireEventChildGenerationLease({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      conversationId: 'child-1',
+      streamId: 'child-1',
+      jobCreatedAt: 123,
+      retentionExpiresAt,
+    });
+
+    expect(mockAcquireLease).toHaveBeenCalledWith(
+      expect.objectContaining({ expiresAt: retentionExpiresAt }),
+    );
+    await jest.advanceTimersByTimeAsync(4_999);
+    expect(mockAbortJob).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(mockAbortJob).toHaveBeenCalledWith('child-1', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
+    await release();
+  });
 });

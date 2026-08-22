@@ -3611,6 +3611,7 @@ describe('ResumableAgentController resume metadata', () => {
   });
 
   it('reports a temporary event-actor fence as retryable rather than ending the binding', async () => {
+    const expiredAt = new Date(Date.now() + 60_000);
     mockGenerationJobManager.claimGeneration.mockResolvedValue(
       wonGenerationClaim({
         streamId: 'child-conversation',
@@ -3636,6 +3637,7 @@ describe('ResumableAgentController resume metadata', () => {
       _agentEventBindingParentConversationId: 'parent-conversation',
       _agentEventBindingParentAgentId: 'parent-agent',
       _agentEventBindingTenantId: 'tenant-1',
+      _agentEventBindingRetention: { isTemporary: true, expiredAt },
     };
     const res = { json: jest.fn(), status: jest.fn(() => res), set: jest.fn() };
 
@@ -3646,6 +3648,9 @@ describe('ResumableAgentController resume metadata', () => {
       expect.objectContaining({ code: 'EVENT_ACTOR_NOT_READY' }),
     );
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
+    expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+      expect.objectContaining({ retentionExpiresAt: expiredAt }),
+    );
   });
 
   it('releases the idempotency claim on a 429 only when it won the claim', async () => {

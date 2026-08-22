@@ -1141,6 +1141,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         conversationId,
         streamId,
         jobCreatedAt,
+        retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
       });
       if (releaseEventChildLease == null) {
         throw Object.assign(new Error('The event actor is already handling another turn'), {

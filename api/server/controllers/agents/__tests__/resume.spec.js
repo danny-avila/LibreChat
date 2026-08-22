@@ -465,6 +465,9 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockAcquireEventChildGenerationLease.mock.invocationCallOrder[0]).toBeLessThan(
         mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
       );
+      expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
+        expect.objectContaining({ retentionExpiresAt: expiredAt }),
+      );
       expect(mockSaveMessage).toHaveBeenCalledWith(
         expect.objectContaining({ isTemporary: true, expiredAt }),
         expect.anything(),
