@@ -847,6 +847,22 @@ describe('submitted content adapters', () => {
       ),
     ).toEqual([expect.objectContaining({ field: 'transcript', text: 'submitted transcript' })]);
 
+    for (const transcript of ['', ' \n\t']) {
+      expect(
+        fieldValues(
+          extractFileContent({
+            file_id: 'audio-file-with-blank-transcript',
+            type: 'audio/webm',
+            source: 'text',
+            text: 'submitted transcript fallback',
+            transcript,
+          }),
+        ),
+      ).toEqual([
+        expect.objectContaining({ field: 'transcript', text: 'submitted transcript fallback' }),
+      ]);
+    }
+
     expect(
       fieldValues(
         extractFileContent({
@@ -857,6 +873,34 @@ describe('submitted content adapters', () => {
         }),
       ),
     ).toEqual([expect.objectContaining({ field: 'extracted_text', text: 'legacy preview text' })]);
+  });
+
+  it('routes a canonical audio text fallback only through transcript policy', () => {
+    const fragments = extractFileContent({
+      file_id: 'audio-file-with-blank-transcript',
+      type: 'audio/webm',
+      source: 'text',
+      text: 'TRANSCRIPT-ONLY-SECRET',
+      transcript: ' \n\t',
+    });
+    const customPatterns = [
+      { id: 'transcript-secret', label: 'transcript secret', regex: 'TRANSCRIPT-ONLY-SECRET' },
+    ];
+
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          files: { pii: { fields: ['extracted_text'], starterPatterns: [], customPatterns } },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      inspectContent(fragments, {
+        filters: {
+          files: { pii: { fields: ['transcript'], starterPatterns: [], customPatterns } },
+        },
+      }),
+    ).toMatchObject({ source: 'file', field: 'transcript', label: 'transcript secret' });
   });
 
   it('extracts only registered provider-bound model parameter strings through stored wrappers', () => {

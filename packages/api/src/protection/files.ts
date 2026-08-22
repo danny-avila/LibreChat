@@ -58,6 +58,8 @@ export interface CanonicalFileInspectionCoverage {
   readonly content?: string;
   readonly extractedText?: string;
   readonly transcript?: string;
+  /** The canonical transcript came from the persisted `text` fallback. */
+  readonly textProvidesTranscript: boolean;
   /** `null` means the MIME is absent or malformed, so strict transcript
    * policy must fail closed instead of assuming the file is non-audio. */
   readonly transcriptApplicable: boolean | null;
@@ -936,6 +938,7 @@ export function getCanonicalFileInspectionCoverage(
     content: content ?? (hasExtractedTextProvenance && isTextual ? text : undefined),
     extractedText: extractedText ?? text,
     transcript: transcript ?? transcriptFallback,
+    textProvidesTranscript: transcript == null && transcriptFallback != null,
     transcriptApplicable,
   };
 }

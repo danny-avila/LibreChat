@@ -1096,11 +1096,6 @@ export function extractFileContent(
 ): readonly TextContentFragment[] {
   const fragments: TextContentFragment[] = [];
   const coverage = input == null ? undefined : getCanonicalFileInspectionCoverage(input);
-  const normalizedTextIsTranscript =
-    input?.transcript == null &&
-    typeof input?.text === 'string' &&
-    coverage?.transcriptApplicable === true &&
-    coverage.transcript === input.text;
   for (const key of ['name', 'filename', 'originalname'] as const) {
     pushString(fragments, input?.[key], {
       id: `file.name.${key}`,
@@ -1116,9 +1111,10 @@ export function extractFileContent(
     field: 'content',
     treatment: 'inspect_only',
   });
-  const extractedTextKeys = normalizedTextIsTranscript
-    ? (['extractedText'] as const)
-    : (['extractedText', 'text'] as const);
+  const extractedTextKeys =
+    coverage?.textProvidesTranscript === true
+      ? (['extractedText'] as const)
+      : (['extractedText', 'text'] as const);
   for (const key of extractedTextKeys) {
     pushString(fragments, input?.[key], {
       id: `file.extracted-text.${key}`,
