@@ -9,8 +9,8 @@ export interface IGroup extends Document {
   avatar?: string;
   /** Array of member IDs (stores idOnTheSource values, not ObjectIds) */
   memberIds?: string[];
-  source: 'local' | 'entra';
-  /** External ID (e.g., Entra ID) - required for non-local sources */
+  source: 'local' | 'entra' | 'oidc';
+  /** External ID (e.g., Entra ID, OIDC provider) - required for non-local sources */
   idOnTheSource?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -23,7 +23,7 @@ export interface CreateGroupRequest {
   email?: string;
   avatar?: string;
   memberIds?: string[];
-  source: 'local' | 'entra';
+  source: 'local' | 'entra' | 'oidc';
   idOnTheSource?: string;
 }
 
@@ -33,13 +33,13 @@ export interface UpdateGroupRequest {
   email?: string;
   avatar?: string;
   memberIds?: string[];
-  source?: 'local' | 'entra' | 'ldap';
+  source?: 'local' | 'entra' | 'oidc' | 'ldap';
   idOnTheSource?: string;
 }
 
 export interface GroupFilterOptions extends CursorPaginationParams {
   // Includes email, name and description
   search?: string;
-  source?: 'local' | 'entra' | 'ldap';
+  source?: 'local' | 'entra' | 'oidc' | 'ldap';
   hasMember?: string;
 }

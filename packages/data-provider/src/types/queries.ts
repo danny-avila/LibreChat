@@ -191,6 +191,7 @@ export type PrincipalSearchResponse = {
   sources: {
     local: number;
     entra: number;
+    oidc: number;
   };
 };
 
