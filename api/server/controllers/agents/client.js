@@ -133,6 +133,7 @@ const {
   ContentTypes,
   ApprovalEvents,
   EModelEndpoint,
+  ImageDetail,
   PermissionTypes,
   AgentCapabilities,
   hasActivePiiPatterns,
@@ -1535,12 +1536,18 @@ class AgentClient extends BaseClient {
    * @returns {Promise<Array<Partial<MongoFile>>>}
    */
   async addImageURLs(message, attachments) {
+    const provider = this.options.agent.provider;
+    const imageDetail =
+      provider === Providers.OPENAI || provider === Providers.AZURE
+        ? (this.options.agent.model_parameters?.imageDetail ?? ImageDetail.auto)
+        : undefined;
     const { files, image_urls } = await encodeAndFormat(
       this.options.req,
       attachments,
       {
-        provider: this.options.agent.provider,
+        provider,
         endpoint: this.options.endpoint,
+        imageDetail,
       },
       VisionModes.agents,
     );

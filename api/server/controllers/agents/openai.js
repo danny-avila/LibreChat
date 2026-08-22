@@ -913,8 +913,15 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const agentContext = graph?.getAgentContext?.(metadata);
-            const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
+            const agentContext = graph?.getAgentContext?.(metadata) ?? {
+              clientOptions: primaryConfig.model_parameters,
+            };
+            const taggedUsage = contextualizeModelUsage(
+              usage,
+              metadata,
+              agentContext,
+              data?.output?.response_metadata,
+            );
             collectedUsage.push(taggedUsage);
           }
         },

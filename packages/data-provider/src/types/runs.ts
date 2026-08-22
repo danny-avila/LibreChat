@@ -305,6 +305,7 @@ export type TTokenUsageEvent = {
   };
   model?: string;
   provider?: string;
+  serviceTier?: 'default' | 'priority';
   /** Non-primary buckets fold into session cost/totals but not the live
    *  context gauge: hidden sequential-agent calls (`sequential`), summary
    *  passes (`summarization`), isolated subagent runs (`subagent`), and

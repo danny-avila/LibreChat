@@ -1069,8 +1069,15 @@ const executeResponse = async (envelope, { req, res }) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const agentContext = graph?.getAgentContext?.(metadata);
-              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
+              const agentContext = graph?.getAgentContext?.(metadata) ?? {
+                clientOptions: primaryConfig.model_parameters,
+              };
+              const taggedUsage = contextualizeModelUsage(
+                usage,
+                metadata,
+                agentContext,
+                data?.output?.response_metadata,
+              );
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1265,8 +1272,15 @@ const executeResponse = async (envelope, { req, res }) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const agentContext = graph?.getAgentContext?.(metadata);
-              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
+              const agentContext = graph?.getAgentContext?.(metadata) ?? {
+                clientOptions: primaryConfig.model_parameters,
+              };
+              const taggedUsage = contextualizeModelUsage(
+                usage,
+                metadata,
+                agentContext,
+                data?.output?.response_metadata,
+              );
               collectedUsage.push(taggedUsage);
             }
           },

@@ -7,7 +7,7 @@ import { StepTypes, ContentTypes, ToolCallTypes } from './runs';
 export namespace Agents {
   export type MessageType = 'human' | 'ai' | 'generic' | 'system' | 'function' | 'tool' | 'remove';
 
-  export type ImageDetail = 'auto' | 'low' | 'high';
+  export type ImageDetail = 'auto' | 'low' | 'high' | 'original';
 
   export type ReasoningContentText = {
     type: ContentTypes.THINK;

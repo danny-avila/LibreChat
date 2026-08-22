@@ -1,6 +1,7 @@
 import {
   Verbosity,
   EModelEndpoint,
+  ImageDetail,
   ReasoningEffort,
   ReasoningSummary,
   ReasoningResponseKey,
@@ -41,6 +42,209 @@ describe('getOpenAIConfig', () => {
       maxTokens: 1000,
     });
     expect((result.llmConfig as Record<string, unknown>).max_tokens).toBeUndefined();
+  });
+
+  describe('GPT-5.6 first-party request fields', () => {
+    it('maps Fast mode, Pro mode, reasoning context, and cache for OpenAI', () => {
+      const modelOptions = {
+        model: 'gpt-5.6-sol',
+        useResponsesApi: true,
+        firstPartyOpenAI: true,
+        priorityProcessing: true,
+        reasoning_mode: 'pro',
+        reasoning_context: 'all_turns',
+        promptCache: true,
+        imageDetail: ImageDetail.original,
+      } as Partial<OpenAIParameters> & {
+        firstPartyOpenAI: boolean;
+        priorityProcessing: boolean;
+        reasoning_mode: 'pro';
+        reasoning_context: 'all_turns';
+        promptCache: boolean;
+      };
+
+      const result = getOpenAIConfig(mockApiKey, { modelOptions }, EModelEndpoint.openAI);
+
+      expect(result.llmConfig).toMatchObject({
+        service_tier: 'fast',
+        promptCache: true,
+        reasoning: {
+          mode: 'pro',
+          context: 'all_turns',
+        },
+        imageDetail: ImageDetail.original,
+      });
+      expect(result.llmConfig).not.toHaveProperty('firstPartyOpenAI');
+      expect(result.llmConfig).not.toHaveProperty('priorityProcessing');
+    });
+
+    it('uses the priority request value for Azure', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6-sol',
+            firstPartyOpenAI: true,
+            priorityProcessingAvailable: true,
+            priorityProcessing: true,
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            priorityProcessingAvailable: boolean;
+            priorityProcessing: boolean;
+          },
+        },
+        EModelEndpoint.azureOpenAI,
+      );
+
+      expect(result.llmConfig.service_tier).toBe('priority');
+    });
+
+    it('omits service_tier for Azure models without configured priority processing', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6-sol',
+            firstPartyOpenAI: true,
+            priorityProcessingAvailable: false,
+            priorityProcessing: false,
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            priorityProcessingAvailable: boolean;
+            priorityProcessing: boolean;
+          },
+        },
+        EModelEndpoint.azureOpenAI,
+      );
+
+      expect(result.llmConfig).not.toHaveProperty('service_tier');
+      expect(result.llmConfig).not.toHaveProperty('priorityProcessingAvailable');
+    });
+
+    it('explicitly requests the default tier when priority is off', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6',
+            firstPartyOpenAI: true,
+            priorityProcessing: false,
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            priorityProcessing: boolean;
+          },
+        },
+        EModelEndpoint.openAI,
+      );
+
+      expect(result.llmConfig.service_tier).toBe('default');
+    });
+
+    it('omits managed fields for compatible proxies', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6',
+            firstPartyOpenAI: false,
+            priorityProcessing: true,
+            promptCache: true,
+            promptCacheKey: 'crafted-cache-key',
+            promptCacheExplicit: true,
+            safety_identifier: 'crafted-safety-id',
+            service_tier: 'priority',
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            priorityProcessing: boolean;
+            promptCache: boolean;
+            promptCacheKey: string;
+            promptCacheExplicit: boolean;
+            safety_identifier: string;
+            service_tier: 'priority';
+          },
+        },
+        EModelEndpoint.openAI,
+      );
+      expect(result.llmConfig).not.toHaveProperty('service_tier');
+      expect(result.llmConfig).not.toHaveProperty('promptCache');
+      expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+      expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+      expect(result.llmConfig).not.toHaveProperty('safety_identifier');
+    });
+
+    it('removes GPT-5.6-only reasoning fields from older models', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.4',
+            useResponsesApi: true,
+            firstPartyOpenAI: true,
+            reasoning_effort: 'max',
+            reasoning_mode: 'pro',
+            reasoning_context: 'all_turns',
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            reasoning_mode: 'pro';
+            reasoning_context: 'all_turns';
+          },
+        },
+        EModelEndpoint.openAI,
+      );
+
+      expect(result.llmConfig).not.toHaveProperty('reasoning');
+    });
+
+    it('removes original image detail from unsupported models and compatible proxies', () => {
+      const olderModel = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.4',
+            firstPartyOpenAI: true,
+            imageDetail: ImageDetail.original,
+          } as Partial<OpenAIParameters> & { firstPartyOpenAI: boolean },
+        },
+        EModelEndpoint.openAI,
+      );
+      const compatibleProxy = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6',
+            firstPartyOpenAI: false,
+            imageDetail: ImageDetail.original,
+          } as Partial<OpenAIParameters> & { firstPartyOpenAI: boolean },
+        },
+        EModelEndpoint.openAI,
+      );
+
+      expect(olderModel.llmConfig).not.toHaveProperty('imageDetail');
+      expect(compatibleProxy.llmConfig).not.toHaveProperty('imageDetail');
+    });
+
+    it('gates managed fields against the final model after addParams overrides', () => {
+      const result = getOpenAIConfig(
+        mockApiKey,
+        {
+          modelOptions: {
+            model: 'gpt-5.6',
+            firstPartyOpenAI: true,
+            priorityProcessing: true,
+            imageDetail: ImageDetail.original,
+          } as Partial<OpenAIParameters> & {
+            firstPartyOpenAI: boolean;
+            priorityProcessing: boolean;
+          },
+          addParams: { model: 'gpt-5.4' },
+        },
+        EModelEndpoint.openAI,
+      );
+
+      expect(result.llmConfig.model).toBe('gpt-5.4');
+      expect(result.llmConfig).not.toHaveProperty('service_tier');
+      expect(result.llmConfig).not.toHaveProperty('imageDetail');
+    });
   });
 
   it('should separate known and unknown params from addParams', () => {
