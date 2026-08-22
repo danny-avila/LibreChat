@@ -17,10 +17,6 @@ import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
-import {
-  resolveCallerCapabilityProjectionSnapshot,
-  type CallerCapabilityProjectionSnapshot,
-} from './callerCapabilities';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -44,6 +40,10 @@ import {
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import {
+  resolveCallerCapabilityProjectionSnapshot,
+  type CallerCapabilityProjectionSnapshot,
+} from './callerCapabilities';
 import {
   hasIntentArg,
   stripIntentArg,
