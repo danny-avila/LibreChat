@@ -1013,7 +1013,11 @@ export class RedisEventTransport implements IEventTransport {
       /** @deprecated Use deferSequenceDelivery. */
       deferDeliveryUntilSynchronized?: boolean;
     },
-  ): { unsubscribe: () => void; ready?: Promise<void> } {
+  ): {
+    unsubscribe: () => void;
+    ready?: Promise<void>;
+    syncReorderBuffer?: () => void | Promise<void>;
+  } {
     const channel = CHANNELS.events(streamId);
     const subscriberId = `sub_${++this.subscriberIdCounter}`;
 
