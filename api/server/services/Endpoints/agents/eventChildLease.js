@@ -35,24 +35,42 @@ async function acquireEventChildGenerationLease({
   if (!acquired) return null;
 
   let stopped = false;
+  let leaseLost = false;
+  let heldUntil = now.getTime() + EVENT_CHILD_LEASE_TTL_MS;
   let renewalInFlight;
+  const abortForLostLease = async (message, error) => {
+    if (leaseLost || stopped) return;
+    leaseLost = true;
+    logger.warn(message, error);
+    await GenerationJobManager.abortJob(streamId, {
+      expectedCreatedAt: jobCreatedAt,
+      awaitProviderDrain: true,
+    }).catch((abortError) => {
+      logger.warn('[EventChildLease] Failed to stop generation after lease loss', abortError);
+    });
+  };
   const renew = () => {
-    if (stopped || renewalInFlight != null) return;
+    if (stopped || leaseLost || renewalInFlight != null) return;
     renewalInFlight = (async () => {
+      const previousDeadline = heldUntil;
       const renewalTime = new Date();
+      const renewedUntil = renewalTime.getTime() + EVENT_CHILD_LEASE_TTL_MS;
       const held = await renewSubagentThreadLease({
         ...input,
         now: renewalTime,
-        expiresAt: new Date(renewalTime.getTime() + EVENT_CHILD_LEASE_TTL_MS),
+        expiresAt: new Date(renewedUntil),
       });
-      if (!held) {
-        await GenerationJobManager.abortJob(streamId, {
-          expectedCreatedAt: jobCreatedAt,
-          awaitProviderDrain: true,
-        });
+      if (!held || Date.now() >= previousDeadline) {
+        await abortForLostLease(
+          '[EventChildLease] Generation lost continuous ownership of its lease',
+        );
+        return;
       }
+      heldUntil = renewedUntil;
     })()
-      .catch((error) => logger.warn('[EventChildLease] Renewal failed', error))
+      .catch((error) =>
+        abortForLostLease('[EventChildLease] Renewal failed; stopping generation', error),
+      )
       .finally(() => {
         renewalInFlight = undefined;
       });

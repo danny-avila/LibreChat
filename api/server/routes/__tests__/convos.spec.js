@@ -298,6 +298,31 @@ describe('Convos Routes', () => {
       expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
     });
 
+    it('drains a paused event actor after owner-wide deletion removes its conversation', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'paused-event-child'
+          ? {
+              metadata: { userId: 'test-user-123' },
+              status: 'requires_action',
+              createdAt,
+            }
+          : null,
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('paused-event-child', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
       const mockDbResponse = {
         deletedCount: 5,
@@ -497,6 +522,33 @@ describe('Convos Routes', () => {
       expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
       expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
       expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+    });
+
+    it('drains a paused event actor after an empty-filter deletion removes it', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'paused-event-child'
+          ? {
+              metadata: { userId: 'test-user-123' },
+              status: 'requires_action',
+              createdAt,
+            }
+          : null,
+      );
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('paused-event-child', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
     });
 
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {

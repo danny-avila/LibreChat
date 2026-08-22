@@ -300,6 +300,12 @@ router.delete('/', configMiddleware, async (req, res) => {
           )
           .map((lease) => lease.taskId),
       );
+    } else if (deletedConversationIds.length > 0) {
+      /** Owner-wide deletion drains lease-backed tasks before the cascade, but a
+       * requires_action event actor has intentionally released its lease. Its durable
+       * generation is still addressable by the deleted conversation id and must be
+       * terminalized before its checkpoint is pruned. */
+      await drainDeletedAgentGenerations(req.user.id, deletedConversationIds);
     }
     // HITL: prune the deleted conversations' durable checkpoints — a paused run's
     // checkpoint would otherwise persist until the Mongo TTL. Never throws.
@@ -334,6 +340,7 @@ router.delete('/all', configMiddleware, async (req, res) => {
       tenantId,
       () => db.deleteConvos(req.user.id, {}),
     );
+    await drainDeletedAgentGenerations(req.user.id, dbResponse.conversationIds ?? []);
     // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
     await deleteAgentCheckpoints(
       dbResponse.conversationIds,

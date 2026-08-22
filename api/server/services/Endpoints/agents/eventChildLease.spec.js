@@ -1,0 +1,81 @@
+const mockAcquireLease = jest.fn();
+const mockRenewLease = jest.fn();
+const mockReleaseLease = jest.fn();
+const mockAbortJob = jest.fn();
+const mockLogger = { warn: jest.fn() };
+
+jest.mock('@librechat/data-schemas', () => ({ logger: mockLogger }));
+jest.mock('@librechat/api', () => ({
+  GenerationJobManager: { abortJob: (...args) => mockAbortJob(...args) },
+}));
+jest.mock('~/models', () => ({
+  acquireSubagentThreadLease: (...args) => mockAcquireLease(...args),
+  renewSubagentThreadLease: (...args) => mockRenewLease(...args),
+  releaseSubagentThreadLease: (...args) => mockReleaseLease(...args),
+}));
+
+const {
+  acquireEventChildGenerationLease,
+} = require('~/server/services/Endpoints/agents/eventChildLease');
+
+describe('event child generation lease', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-08-22T00:00:00.000Z') });
+    jest.clearAllMocks();
+    mockAcquireLease.mockResolvedValue(true);
+    mockReleaseLease.mockResolvedValue(true);
+    mockAbortJob.mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('aborts when a renewal lands after continuous ownership expired', async () => {
+    let resolveRenewal;
+    mockRenewLease.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRenewal = resolve;
+        }),
+    );
+    const release = await acquireEventChildGenerationLease({
+      userId: 'user-1',
+      tenantId: 'tenant-1',
+      conversationId: 'child-1',
+      streamId: 'child-1',
+      jobCreatedAt: 123,
+    });
+
+    jest.advanceTimersByTime(10_000);
+    await Promise.resolve();
+    jest.setSystemTime(new Date('2026-08-22T00:00:30.001Z'));
+    resolveRenewal(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockAbortJob).toHaveBeenCalledWith('child-1', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
+    await release();
+  });
+
+  it('aborts when renewal throws instead of silently running past expiry', async () => {
+    mockRenewLease.mockRejectedValue(new Error('mongo unavailable'));
+    const release = await acquireEventChildGenerationLease({
+      userId: 'user-1',
+      conversationId: 'child-1',
+      streamId: 'child-1',
+      jobCreatedAt: 123,
+    });
+
+    await jest.advanceTimersByTimeAsync(10_000);
+
+    expect(mockAbortJob).toHaveBeenCalledWith('child-1', {
+      expectedCreatedAt: 123,
+      awaitProviderDrain: true,
+    });
+    await release();
+  });
+});
