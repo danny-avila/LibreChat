@@ -87,7 +87,10 @@ export function createPinnedOrderHandlers(deps: PinnedOrderHandlersDeps): {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const { pinnedOrder } = req.body as { pinnedOrder?: unknown };
+    /* A request with no JSON body, or a literal `null` one, leaves `req.body`
+     * nullish. Destructuring it would throw past this handler and answer with
+     * Express's generic error page instead of the 400 the validator gives. */
+    const pinnedOrder = (req.body as { pinnedOrder?: unknown } | null | undefined)?.pinnedOrder;
     const validated = validatePinnedOrder(pinnedOrder, res);
     if (validated == null) {
       return res;

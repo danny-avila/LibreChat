@@ -1,9 +1,11 @@
-import { useRef } from 'react';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
+import { enqueue } from '~/utils';
+
+const PINNED_ORDER_QUEUE = 'pinnedOrder';
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -56,34 +58,29 @@ export const useGetPinnedOrderQuery = (
   });
 };
 
+/** The order the user last asked for. Module scope for the same reason the
+ *  queue is: the sidebar unmounts whole sections while a search is active, and
+ *  a per-instance ref would let a remounted hook forget that an older write is
+ *  still in flight. */
+let latestPinnedOrder: string[] | null = null;
+
 export const useUpdatePinnedOrderMutation = () => {
   const queryClient = useQueryClient();
-  /** Two drags completed inside one round trip would otherwise race, and the
-   *  server would keep whichever request happened to land last rather than the
-   *  order the user finished on. Chaining the requests makes arrival order
-   *  match intent order. */
-  const pending = useRef<Promise<unknown>>(Promise.resolve());
-  /** The order the user last asked for. Only its outcome may touch the cache:
-   *  an earlier write failing must not undo a newer arrangement that is already
-   *  on screen and still in flight. */
-  const latest = useRef<string[] | null>(null);
 
   return useMutation(
-    (pinnedOrder: string[]) => {
-      const next = pending.current
-        .catch(() => undefined)
-        .then(() => dataService.updatePinnedOrder(pinnedOrder));
-      pending.current = next;
-      return next;
-    },
+    /* Two drags completed inside one round trip would otherwise race, and the
+     * server would keep whichever request happened to land last rather than the
+     * order the user finished on. */
+    (pinnedOrder: string[]) =>
+      enqueue(PINNED_ORDER_QUEUE, () => dataService.updatePinnedOrder(pinnedOrder)),
     {
       onMutate: async (newOrder) => {
-        latest.current = newOrder;
+        latestPinnedOrder = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
       },
       onError: (_err, newOrder) => {
-        if (latest.current !== newOrder) {
+        if (latestPinnedOrder !== newOrder) {
           return;
         }
         /* The newest write failed, so the cache holds an order the server never
@@ -94,7 +91,7 @@ export const useUpdatePinnedOrderMutation = () => {
         queryClient.resetQueries([QueryKeys.pinnedOrder]);
       },
       onSuccess: (savedOrder, newOrder) => {
-        if (latest.current !== newOrder) {
+        if (latestPinnedOrder !== newOrder) {
           return;
         }
         queryClient.setQueryData([QueryKeys.pinnedOrder], savedOrder);
