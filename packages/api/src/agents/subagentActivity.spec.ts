@@ -3,7 +3,7 @@ import type { IConversation, IMessage } from '@librechat/data-schemas';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
-import type { SubagentActivityEnvelope } from './subagentActivity';
+import type { SubagentActivityEnvelope, SubagentActivityUpdateEvent } from './subagentActivity';
 import type { ServerRequest } from '~/types';
 import {
   SubagentActivityStream,
@@ -127,7 +127,9 @@ class TestTransport implements IEventTransport {
   }
 }
 
-const update = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEvent => ({
+const update = (
+  overrides: Partial<SubagentActivityUpdateEvent> = {},
+): SubagentActivityUpdateEvent => ({
   runId: 'root-run',
   parentRunId: 'parent-run',
   subagentRunId: 'child-run',
@@ -163,7 +165,11 @@ describe('detached subagent activity stream', () => {
     });
     await subscription.ready;
 
-    await stream.publish('child-thread', 'task-1', update());
+    await stream.publish(
+      'child-thread',
+      'task-1',
+      update({ activityEventId: 'task-1:7', activitySequence: 7 }),
+    );
 
     expect(streamId).toMatch(/^subagent-activity:[A-Za-z0-9_-]{32}$/);
     expect(transport.subscribeOptions).toEqual([
@@ -173,10 +179,29 @@ describe('detached subagent activity stream', () => {
     expect(received).toEqual([
       expect.objectContaining({
         event: 'on_subagent_update',
-        data: expect.objectContaining({ label: 'Drafting the report' }),
+        data: expect.objectContaining({
+          label: 'Drafting the report',
+          activityEventId: 'task-1:7',
+          activitySequence: 7,
+        }),
       }),
     ]);
     subscription.unsubscribe();
+  });
+
+  it('omits an invalid activity sequence from the public envelope', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+
+    await stream.publish(
+      'child-thread',
+      'task-1',
+      update({ activityEventId: 'task-1:invalid', activitySequence: -1 }),
+    );
+
+    expect((transport.emitted[0]?.event as SubagentActivityEnvelope).data).not.toHaveProperty(
+      'activitySequence',
+    );
   });
 
   it('does not resynchronize when another local subscriber joins an active stream', async () => {

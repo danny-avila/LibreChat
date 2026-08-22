@@ -23,6 +23,8 @@ export type SubagentActivityTerminalStatus = 'completed' | 'failed' | 'cancelled
 export type SubagentActivityUpdateEvent = SubagentUpdateEvent & {
   /** Host-assigned identity shared by parent and detached delivery paths. */
   activityEventId?: string;
+  /** Host-assigned monotonic sequence shared by parent and detached delivery paths. */
+  activitySequence?: number;
 };
 
 export type SubagentActivityEnvelope = {
@@ -87,6 +89,9 @@ export const boundSubagentActivityUpdate = (
     ...(boundedString(event.activityEventId) == null
       ? {}
       : { activityEventId: boundedString(event.activityEventId) }),
+    ...(Number.isSafeInteger(event.activitySequence) && (event.activitySequence ?? -1) >= 0
+      ? { activitySequence: event.activitySequence }
+      : {}),
     subagentType: boundedString(event.subagentType) ?? '',
     subagentKind: event.subagentKind,
     subagentAgentId: boundedString(event.subagentAgentId) ?? '',

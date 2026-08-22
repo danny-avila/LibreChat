@@ -710,9 +710,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               const activityRuntime: SubagentTaskRuntime = {
                 ...runtime,
                 reportProgress: (event) => {
+                  const sequence = activitySequence++;
                   const activityEvent: SubagentActivityUpdateEvent = {
                     ...event,
-                    activityEventId: `${runtime.taskId}:${activitySequence++}`,
+                    activityEventId: `${runtime.taskId}:${sequence}`,
+                    activitySequence: sequence,
                   };
                   runtime.reportProgress(activityEvent);
                   this.publishActivity(

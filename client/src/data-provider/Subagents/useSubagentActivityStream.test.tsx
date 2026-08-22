@@ -105,6 +105,7 @@ describe('useSubagentActivityStream', () => {
           parentRunId: 'parent',
           subagentRunId: 'child',
           activityEventId: 'task-1:0',
+          activitySequence: 0,
           subagentType: 'researcher',
           subagentKind: 'agent',
           subagentAgentId: 'agent-1',

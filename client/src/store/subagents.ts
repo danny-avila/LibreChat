@@ -52,6 +52,8 @@ export interface SubagentProgress {
   latestLabel?: string;
   /** Bounded replay fence for events that overlap parent and detached SSE delivery. */
   recentEventKeys?: string[];
+  /** Highest host sequence folded for this child run. Older overlap frames are ignored. */
+  lastActivitySequence?: number;
   /** Whether the folded events cover the run from its beginning or only the
    *  forward-only suffix observed after opening a detached task stream. */
   coverage?: 'complete' | 'suffix';
@@ -306,12 +308,38 @@ export function reduceSubagentProgress(
   if (events.length === 0) return previous;
   const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
   const seen = new Set(recentEventKeys);
+  const sequenced = events.every(
+    (event) => Number.isSafeInteger(event.activitySequence) && (event.activitySequence ?? -1) >= 0,
+  );
+  const orderedEvents = sequenced
+    ? [...events].sort((left, right) =>
+        (left.activitySequence ?? 0) === (right.activitySequence ?? 0)
+          ? 0
+          : (left.activitySequence ?? 0) - (right.activitySequence ?? 0),
+      )
+    : events;
+  let lastActivitySequence =
+    previous?.subagentRunId === orderedEvents[0]?.subagentRunId
+      ? previous.lastActivitySequence
+      : undefined;
   const uniqueEvents: SubagentUpdateEvent[] = [];
-  for (const event of events) {
+  for (const event of orderedEvents) {
+    const sequence = event.activitySequence;
+    if (
+      Number.isSafeInteger(sequence) &&
+      (sequence ?? -1) >= 0 &&
+      lastActivitySequence != null &&
+      (sequence ?? -1) <= lastActivitySequence
+    ) {
+      continue;
+    }
     const key = eventKey(event);
     if (key != null && seen.has(key)) continue;
     if (key != null) seen.add(key);
     uniqueEvents.push(event);
+    if (Number.isSafeInteger(sequence) && (sequence ?? -1) >= 0) {
+      lastActivitySequence = sequence;
+    }
     if (key != null) recentEventKeys.push(key);
   }
   if (uniqueEvents.length === 0) return previous;
@@ -356,6 +384,7 @@ export function reduceSubagentProgress(
     status: last.phase,
     latestLabel: last.label ?? previous?.latestLabel,
     recentEventKeys: boundedEventKeys,
+    ...(lastActivitySequence == null ? {} : { lastActivitySequence }),
     coverage: previous?.coverage ?? (source === 'detached' ? 'suffix' : 'complete'),
   };
 }

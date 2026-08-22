@@ -33,11 +33,64 @@ describe('reduceSubagentProgress', () => {
 
   it('preserves equal chunks that carry distinct host event identities', () => {
     const progress = reduceSubagentProgress(null, [
-      update({ activityEventId: 'activity-1' }),
-      update({ activityEventId: 'activity-2' }),
+      update({ activityEventId: 'activity-1', activitySequence: 0 }),
+      update({ activityEventId: 'activity-2', activitySequence: 1 }),
     ]);
 
     expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.Working.' }]);
+  });
+
+  it('orders a same-batch overlap by the host sequence before folding', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({
+        activityEventId: 'activity-2',
+        activitySequence: 2,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'second' }] } },
+      }),
+      update({
+        activityEventId: 'activity-1',
+        activitySequence: 1,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'first ' }] } },
+      }),
+    ]);
+
+    expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'first second' }]);
+    expect(progress?.lastActivitySequence).toBe(2);
+  });
+
+  it('rejects older overlap events and duplicates beyond the replay-key window', () => {
+    const initial = reduceSubagentProgress(null, [
+      update({
+        activityEventId: 'activity-300',
+        activitySequence: 300,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'latest' }] } },
+      }),
+    ]);
+    const delayed = reduceSubagentProgress(initial, [
+      update({
+        activityEventId: 'activity-1',
+        activitySequence: 1,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'old' }] } },
+      }),
+      update({
+        activityEventId: 'activity-300',
+        activitySequence: 300,
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'duplicate' }] } },
+      }),
+    ]);
+
+    expect(delayed).toBe(initial);
+    expect(delayed?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'latest' }]);
+  });
+
+  it('preserves legacy unsequenced foreground updates', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({ activityEventId: undefined, activitySequence: undefined }),
+      update({ activityEventId: undefined, activitySequence: undefined }),
+    ]);
+
+    expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.Working.' }]);
+    expect(progress?.lastActivitySequence).toBeUndefined();
   });
 
   it('preserves a reasoning activity marker without retaining private reasoning text', () => {

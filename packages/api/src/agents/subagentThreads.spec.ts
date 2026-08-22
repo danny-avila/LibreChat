@@ -401,6 +401,7 @@ describe('SubagentThreadTaskStore', () => {
         event: 'on_subagent_update',
         data: expect.objectContaining({
           activityEventId: `${accepted.task.taskId}:0`,
+          activitySequence: 0,
           data: progress.data,
         }),
       },

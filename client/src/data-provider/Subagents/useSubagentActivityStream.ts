@@ -30,6 +30,8 @@ const isSubagentUpdate = (value: unknown): value is SubagentUpdateEvent => {
     typeof event.subagentRunId === 'string' &&
     typeof event.subagentType === 'string' &&
     (event.activityEventId == null || typeof event.activityEventId === 'string') &&
+    (event.activitySequence == null ||
+      (Number.isSafeInteger(event.activitySequence) && event.activitySequence >= 0)) &&
     (event.parentToolCallId == null || typeof event.parentToolCallId === 'string') &&
     typeof event.phase === 'string'
   );
