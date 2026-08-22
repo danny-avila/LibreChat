@@ -15,7 +15,7 @@ import type {
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
-import type { CodeEnvRef } from 'librechat-data-provider';
+import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -70,6 +70,7 @@ import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { instrumentPtcToolMap } from './ptc';
 import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
@@ -132,6 +133,13 @@ export interface ToolExecuteOptions {
   }) => Promise<{ attachments?: unknown[] } | null>;
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
+  /**
+   * Emits an `on_ptc_tool_call` SSE event for one inner tool invocation made
+   * by a programmatic tool-calling program. Absent on transports that don't
+   * carry the LibreChat step stream (Open Responses), which simply skips the
+   * instrumentation.
+   */
+  emitPtcProgress?: (event: PtcToolCallEvent) => void;
   /**
    * Loads a skill by name with ACL constraint (returns full body for injection).
    *
@@ -4146,8 +4154,14 @@ function buildToolCallConfig(
 }
 
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
-    options;
+  const {
+    loadTools,
+    toolEndCallback,
+    persistBackgroundCodeResult,
+    emitAttachment,
+    emitPtcProgress,
+    subagentTasks,
+  } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -4966,7 +4980,22 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           ),
                         );
                         toolCallConfig.toolDefs = toolDefs;
-                        toolCallConfig.toolMap = ptcToolMap ?? toolMap;
+                        const resolvedPtcToolMap = ptcToolMap ?? toolMap;
+                        /* Inner calls produce no run step and no card of their
+                         * own, so the only record of what the program did is
+                         * this trace. Instrument the map the sandbox bridge
+                         * resolves against — `invoke` is the single seam every
+                         * inner call passes through. */
+                        toolCallConfig.toolMap = emitPtcProgress
+                          ? instrumentPtcToolMap({
+                              toolMap: resolvedPtcToolMap,
+                              toolCallId: tc.id,
+                              runId: (metadata as Record<string, unknown>)?.run_id as
+                                | string
+                                | undefined,
+                              emit: emitPtcProgress,
+                            })
+                          : resolvedPtcToolMap;
                       }
                     }
 

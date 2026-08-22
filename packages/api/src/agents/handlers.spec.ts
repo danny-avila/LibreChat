@@ -10,6 +10,7 @@ import type {
   ToolExecuteResult,
   ToolCallRequest,
 } from '@librechat/agents';
+import type { PtcToolCallEvent } from 'librechat-data-provider';
 import type { CodeExecutionContext } from './execution';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
 import { markSandboxReady } from './prewarm';
@@ -850,6 +851,48 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].toolDefs).toEqual([{ name: 'custom_tool' }]);
       expect(capturedConfigs[0].toolMap).toBe(ptcToolMap);
+    });
+
+    it('instruments the PTC tool map so inner calls report progress', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const ptcTool = createMockTool(Constants.PROGRAMMATIC_TOOL_CALLING, capturedConfigs);
+      const toolRegistry = new Map([['custom_tool', { name: 'custom_tool' }]]);
+      const ptcToolMap = new Map([['custom_tool', createMockTool('custom_tool', [])]]);
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [ptcTool] as never[],
+        configurable: { toolRegistry, ptcToolMap },
+      }));
+      const events: PtcToolCallEvent[] = [];
+      const handler = createToolExecuteHandler({
+        loadTools,
+        emitPtcProgress: (event) => events.push(event),
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_ptc',
+          name: Constants.PROGRAMMATIC_TOOL_CALLING,
+          args: { code: 'custom_tool "{}"' },
+        },
+      ]);
+
+      const injectedMap = capturedConfigs[0].toolMap as Map<
+        string,
+        { name: string; invoke: (input: unknown, config?: unknown) => Promise<unknown> }
+      >;
+      expect(injectedMap).not.toBe(ptcToolMap);
+      expect(injectedMap.get('custom_tool')?.name).toBe('custom_tool');
+
+      await injectedMap
+        .get('custom_tool')
+        ?.invoke({ path: 'a.ts' }, { metadata: { [Constants.PROGRAMMATIC_TOOL_CALLING]: true } });
+
+      expect(events.map((event) => event.status)).toEqual(['running', 'success']);
+      expect(events[0]).toMatchObject({
+        tool_call_id: 'call_ptc',
+        name: 'custom_tool',
+        args: 'path=a.ts',
+      });
     });
   });
 

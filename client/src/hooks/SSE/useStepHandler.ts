@@ -19,6 +19,7 @@ import type {
   TMessageContentParts,
   SubagentUpdateEvent,
   SandboxStartingEvent,
+  PtcToolCallEvent,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
@@ -30,8 +31,9 @@ import {
 } from '~/utils/subagentContent';
 import {
   subagentProgressByToolCallId,
-  subagentProgressKey,
   sandboxStartingByToolCallId,
+  ptcTraceByToolCallId,
+  subagentProgressKey,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
@@ -63,7 +65,8 @@ type TStepEvent =
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
   | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
-  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
+  | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent }
+  | { event: StepEvents.ON_PTC_TOOL_CALL; data: PtcToolCallEvent };
 
 type MessageDeltaUpdate = {
   type: ContentTypes.TEXT;
@@ -362,6 +365,55 @@ export default function useStepHandler({
           reset(sandboxStartingByToolCallId(toolCallId));
         }
         knownSandboxAtomKeys.current.clear();
+      },
+    [],
+  );
+
+  /** PTC tool call ids with a live trace, so the atoms can be released. */
+  const knownPtcAtomKeys = useRef(new Set<string>());
+
+  /**
+   * Folds one `on_ptc_tool_call` envelope into its program's trace: the
+   * `running` event appends a row, the settling event updates that row in
+   * place by `call_id`. Order follows the sandbox's dispatch order, which is
+   * what the code reads like — a round trip can settle out of order.
+   */
+  const applyPtcToolCall = useRecoilCallback(
+    ({ set }) =>
+      (event: PtcToolCallEvent): void => {
+        const { tool_call_id: toolCallId, call_id: callId, name, status } = event;
+        if (!toolCallId || !callId) {
+          return;
+        }
+        knownPtcAtomKeys.current.add(toolCallId);
+        set(ptcTraceByToolCallId(toolCallId), (previous) => {
+          const index = previous.findIndex((entry) => entry.callId === callId);
+          const entry = {
+            callId,
+            name,
+            status,
+            ...(event.args ? { args: event.args } : {}),
+            ...(event.error ? { error: event.error } : {}),
+            ...(event.durationMs != null ? { durationMs: event.durationMs } : {}),
+          };
+          if (index === -1) {
+            return [...previous, entry];
+          }
+          const next = [...previous];
+          next[index] = { ...previous[index], ...entry };
+          return next;
+        });
+      },
+    [],
+  );
+
+  const resetPtcAtoms = useRecoilCallback(
+    ({ reset }) =>
+      (): void => {
+        for (const toolCallId of knownPtcAtomKeys.current) {
+          reset(ptcTraceByToolCallId(toolCallId));
+        }
+        knownPtcAtomKeys.current.clear();
       },
     [],
   );
@@ -1278,6 +1330,8 @@ export default function useStepHandler({
         );
       } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
         setSandboxStarting(stepEvent.data.tool_call_id);
+      } else if (stepEvent.event === StepEvents.ON_PTC_TOOL_CALL) {
+        applyPtcToolCall(stepEvent.data);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
         let responseMessageId = stepEvent.data.runId;
         if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
@@ -1389,6 +1443,7 @@ export default function useStepHandler({
       applySubagentUpdate,
       setSandboxStarting,
       clearSandboxStarting,
+      applyPtcToolCall,
       onSkillAuthoringComplete,
     ],
   );
@@ -1478,6 +1533,7 @@ export default function useStepHandler({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,

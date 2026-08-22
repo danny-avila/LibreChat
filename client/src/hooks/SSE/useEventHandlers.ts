@@ -375,6 +375,7 @@ export default function useEventHandlers({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
@@ -420,8 +421,12 @@ export default function useEventHandlers({
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
       resetSubagentAtoms();
+      /** PTC traces are live-only for the same reason and share the boundary:
+       *  keep them through a run so a finished program stays auditable, drop
+       *  them when the conversation changes. */
+      resetPtcAtoms();
     }
-  }, [paramId, resetSubagentAtoms]);
+  }, [paramId, resetSubagentAtoms, resetPtcAtoms]);
 
   /** Final cleanup on component unmount. `useStepHandler` keeps the
    *  set of known atom keys in a ref; when the hook unmounts (user
@@ -432,8 +437,9 @@ export default function useEventHandlers({
   useEffect(
     () => () => {
       resetSubagentAtoms();
+      resetPtcAtoms();
     },
-    [resetSubagentAtoms],
+    [resetSubagentAtoms, resetPtcAtoms],
   );
 
   const messageHandler = useCallback(
