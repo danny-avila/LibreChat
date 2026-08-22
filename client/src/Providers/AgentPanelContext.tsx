@@ -1,21 +1,26 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import { useRecoilValue } from 'recoil';
+import { useLocation } from 'react-router-dom';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { MCP, Action, TPlugin } from 'librechat-data-provider';
 import type { AgentPanelContextType, MCPServerInfo } from '~/common';
+import {
+  useMCPConnectionStatus,
+  useMCPServerManager,
+  useGetAgentsConfig,
+  activateCatalog,
+  useCatalogReady,
+  useLocalize,
+} from '~/hooks';
 import {
   useAvailableToolsQuery,
   useGetActionsQuery,
   useGetStartupConfig,
   useMCPToolsQuery,
 } from '~/data-provider';
-import {
-  useLocalize,
-  useGetAgentsConfig,
-  useMCPConnectionStatus,
-  useMCPServerManager,
-} from '~/hooks';
 import { isMCPServerReadyForAgent } from '~/components/MCP/mcpServerUtils';
 import { Panel, isEphemeralAgent } from '~/common';
+import store from '~/store';
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
 
@@ -30,6 +35,18 @@ export function useAgentPanelContext() {
 /** Houses relevant state for the Agent Form Panels (formerly 'commonProps') */
 export function AgentPanelProvider({ children }: { children: React.ReactNode }) {
   const localize = useLocalize();
+  const location = useLocation();
+  /** The panel stays mounted while the sidebar is hidden (collapsed, mobile
+   * drawer, or the insights route collapsing it), so only a visible form
+   * releases the MCP catalogs ahead of the background warmup schedule */
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
+  useEffect(() => {
+    if (panelVisible) {
+      activateCatalog('mcpServers');
+      activateCatalog('mcpTools');
+    }
+  }, [panelVisible]);
   const [mcp, setMcp] = useState<MCP | undefined>(undefined);
   const [mcps, setMcps] = useState<MCP[] | undefined>(undefined);
   const [action, setAction] = useState<Action | undefined>(undefined);
@@ -43,8 +60,12 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
 
   const { data: regularTools } = useAvailableToolsQuery(EModelEndpoint.agents);
 
+  /** The tools query keeps its own warmup gate: the servers list resolving
+   * alone must not pull the heavier tools request ahead of its stagger. */
+  const mcpToolsReady = useCatalogReady('mcpTools');
   const { data: mcpData, isFetching: mcpToolsFetching } = useMCPToolsQuery({
     enabled:
+      mcpToolsReady &&
       !isEphemeralAgent(agent_id) &&
       !isLoading &&
       availableMCPServers != null &&
