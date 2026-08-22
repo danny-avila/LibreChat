@@ -450,6 +450,36 @@ describe('subagent activity stream authorization', () => {
     expect(res.flushHeaders).not.toHaveBeenCalled();
   });
 
+  it('ends the SSE and releases its subscription when readiness fails', async () => {
+    const transport = new TestTransport();
+    let rejectReady!: (error: Error) => void;
+    transport.subscriptionReady = new Promise<void>((_resolve, reject) => {
+      rejectReady = reject;
+    });
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest.fn().mockResolvedValue([]),
+      },
+      stream,
+    );
+    const res = response();
+    const pending = handler(request(), res);
+    while (transport.handlers.size === 0) {
+      await Promise.resolve();
+    }
+    Object.defineProperty(res, 'headersSent', { value: true, configurable: true });
+
+    rejectReady(new Error('Redis subscription unavailable'));
+    await pending;
+
+    expect(res.chunks.join('')).toContain('Subagent activity stream unavailable');
+    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(transport.handlers.size).toBe(0);
+  });
+
   it('closes with durable terminal state when completion races stream readiness', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);

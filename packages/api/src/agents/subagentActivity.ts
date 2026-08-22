@@ -373,10 +373,13 @@ export function createSubagentActivityStreamHandler(
     let closed = req.destroyed || res.destroyed;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let subscription: SubagentActivitySubscription | undefined;
-    const close = () => {
-      closed = true;
+    const dispose = () => {
       if (heartbeat != null) clearInterval(heartbeat);
       subscription?.unsubscribe();
+    };
+    const close = () => {
+      closed = true;
+      dispose();
     };
     req.once('aborted', close);
     res.once('close', close);
@@ -442,7 +445,9 @@ export function createSubagentActivityStreamHandler(
         });
         await subscription.ready;
       } catch (error) {
-        close();
+        /** Release the failed attachment while leaving `closed` to represent only a
+         * client/response close; the outer catch still owns the SSE error and end. */
+        dispose();
         throw error;
       }
       if (closed || res.destroyed) return;
