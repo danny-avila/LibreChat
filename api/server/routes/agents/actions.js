@@ -9,9 +9,7 @@ const {
   validateActionOAuthMetadata,
   ACTION_CREDENTIAL_REFRESH_MESSAGE,
   buildActionOAuthTokenDeleteQueries,
-  inspectContentWithTraversal,
-  extractAssistantActionContent,
-  contentFilterBlockResponse,
+  blockFilteredActionProjection,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -47,22 +45,6 @@ const checkAgentCreate = generateCheckAccess({
   getRoleByName: db.getRoleByName,
 });
 
-function blockFilteredActionProjection(req, res, action) {
-  const { finding, traversalError } = inspectContentWithTraversal(
-    () => extractAssistantActionContent(action),
-    { filters: req.config?.filters },
-  );
-  if (finding != null) {
-    res.status(400).json(contentFilterBlockResponse(finding));
-    return true;
-  }
-  if (traversalError != null) {
-    res.status(traversalError.statusCode).json(traversalError.body);
-    return true;
-  }
-  return false;
-}
-
 /**
  * Retrieves all user's actions
  * @route GET /actions/
@@ -91,7 +73,7 @@ router.get('/', async (req, res) => {
         : [];
 
     for (const action of actions) {
-      if (blockFilteredActionProjection(req, res, action)) {
+      if (blockFilteredActionProjection(req.config?.filters, res, action)) {
         return;
       }
     }
@@ -128,7 +110,12 @@ router.post(
         return res.status(400).json({ message: 'No functions provided' });
       }
 
-      if (blockFilteredActionProjection(req, res, { functions, metadata: _metadata })) {
+      if (
+        blockFilteredActionProjection(req.config?.filters, res, {
+          functions,
+          metadata: _metadata,
+        })
+      ) {
         return;
       }
 
@@ -215,7 +202,7 @@ router.post(
       });
 
       if (
-        blockFilteredActionProjection(req, res, {
+        blockFilteredActionProjection(req.config?.filters, res, {
           functions: plannedUpdate.tools.map((name) => ({ function: { name } })),
           metadata: await decryptMetadata(plannedUpdate.metadata),
         })

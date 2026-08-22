@@ -5,13 +5,7 @@ const express = require('express');
 const {
   createSkillsHandlers,
   createImportHandler,
-  contentFilterBlockResponse,
-  extractSkillContent,
-  extractFileContent,
-  isBinaryBuffer,
-  inspectContent,
-  contentFilterUninspectableResponse,
-  getBlockedUninspectableSkillFileField,
+  blockFilteredSkillFile,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -194,39 +188,6 @@ const importHandler = createImportHandler({
 // ---------------------------------------------------------------------------
 // Per-file upload handler (add a single file to an existing skill)
 // ---------------------------------------------------------------------------
-function blockFilteredSkillFile(req, res, file, relativePath) {
-  if (!req.config?.filters) {
-    return false;
-  }
-  const isBinary = isBinaryBuffer(file.buffer);
-  if (isBinary) {
-    const uninspectableField = getBlockedUninspectableSkillFileField(req.config.filters, [
-      'content',
-      'extracted_text',
-    ]);
-    if (uninspectableField != null) {
-      res.status(400).json(contentFilterUninspectableResponse(uninspectableField));
-      return true;
-    }
-  }
-  const text = isBinary ? undefined : file.buffer.toString('utf-8');
-  const finding = inspectContent(
-    [
-      ...extractSkillContent({
-        files: [{ filename: file.originalname }, { filename: relativePath, text }],
-      }),
-      ...extractFileContent({ originalname: file.originalname, content: text, text }),
-      ...extractFileContent({ name: relativePath }),
-    ],
-    { filters: req.config.filters },
-  );
-  if (!finding) {
-    return false;
-  }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
-}
-
 async function uploadFileHandler(req, res) {
   try {
     const { file } = req;
@@ -251,7 +212,13 @@ async function uploadFileHandler(req, res) {
     ) {
       return res.status(400).json({ error: 'Invalid file path' });
     }
-    if (blockFilteredSkillFile(req, res, file, relativePath)) {
+    if (
+      blockFilteredSkillFile(req.config?.filters, res, {
+        buffer: file.buffer,
+        originalName: file.originalname,
+        relativePath,
+      })
+    ) {
       return res;
     }
 

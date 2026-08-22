@@ -2,11 +2,9 @@ const express = require('express');
 const {
   Tokenizer,
   generateCheckAccess,
-  inspectContent,
-  extractMemoryContent,
+  blockFilteredMemoryContent,
   projectStoredMemories,
   createMemoryManagementHandlers,
-  contentFilterBlockResponse,
 } = require('@librechat/api');
 const {
   PermissionTypes,
@@ -70,20 +68,6 @@ router.use(requireJwtAuth);
 /** Normalizes the optional agent partition param; undefined = shared personal pool */
 const getAgentIdParam = (value) =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-
-const blockFilteredMemoryContent = (req, res, memory) => {
-  if (req.config?.filters == null) {
-    return false;
-  }
-  const finding = inspectContent(extractMemoryContent(memory), {
-    filters: req.config.filters,
-  });
-  if (finding == null) {
-    return false;
-  }
-  res.status(400).json(contentFilterBlockResponse(finding));
-  return true;
-};
 
 /** Resolves agent display names for agent-partitioned memories, restricted
  *  to agents the requester can VIEW — `agentId` is caller-supplied on write,

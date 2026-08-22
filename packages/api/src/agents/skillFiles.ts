@@ -23,8 +23,8 @@ import {
 import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { ContentFilterError, isContentFilterError } from '~/middleware/contentFilter';
 import { createConcurrencyLimiter, getSafeErrorMetadata } from '~/utils';
+import { assertSkillFileContentAllowed } from '~/skills/protection';
 import { extractInvokedSkillsFromPayload } from './run';
-import { isBinaryBuffer } from '~/skills/binary';
 import { SKILL_FILE_PREFIX } from './skills';
 
 const MAX_INSPECTABLE_SKILL_FILE_BYTES = 10 * 1024 * 1024;
@@ -253,30 +253,11 @@ function assertStoredSkillFileAllowed(
   buffer: Buffer,
   req: ServerRequest,
 ): void {
-  const filters = req.config?.filters;
-  const isBinary = isBinaryBuffer(buffer);
-  const content = isBinary ? undefined : buffer.toString('utf8');
-  const finding = inspectContent(
-    [
-      ...extractSkillContent({
-        files: [{ name: file.filename, filename: file.relativePath, content }],
-      }),
-      ...extractFileContent({
-        name: file.filename,
-        filename: file.relativePath,
-        content,
-        extractedText: content,
-      }),
-    ],
-    { filters },
-  );
-  if (finding != null) {
-    throw new ContentFilterError(finding);
-  }
-
-  if (isBinary) {
-    throwIfStoredSkillFileMustBeInspectable(req);
-  }
+  assertSkillFileContentAllowed(req.config?.filters, {
+    buffer,
+    originalName: file.filename,
+    relativePath: file.relativePath,
+  });
 }
 
 function assertStoredSkillFileNameAllowed(file: SkillFileRecord, req: ServerRequest): void {

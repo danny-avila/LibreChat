@@ -1,5 +1,5 @@
+import { hasActivePiiPatterns, type FiltersConfig } from 'librechat-data-provider';
 import type { MemoryMethods } from '@librechat/data-schemas';
-import type { FiltersConfig } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { MemoryContentInput } from '../protection/adapters/submissions';
 import type { ProjectedStoredMemory } from './protection';
@@ -46,13 +46,13 @@ const getAgentId = (value?: string | string[]): string | undefined => {
 
 const getUserId = (req: MemoryRequest): string => req.user?.id ?? '';
 
-function blockFilteredMemoryContent(
+export function blockFilteredMemoryContent(
   req: MemoryRequest,
   res: Response,
   memory: MemoryContentInput,
 ): boolean {
   const filters = req.config?.filters;
-  if (filters == null) {
+  if (!hasActivePiiPatterns(filters?.memories?.pii)) {
     return false;
   }
   const finding = inspectContent(extractMemoryContent(memory), { filters });

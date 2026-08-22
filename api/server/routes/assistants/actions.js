@@ -3,10 +3,8 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   isActionDomainAllowed,
-  inspectContentWithTraversal,
-  extractAssistantActionContent,
+  blockFilteredActionProjection,
   validateActionOAuthMetadata,
-  contentFilterBlockResponse,
 } = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
@@ -19,22 +17,6 @@ const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const db = require('~/models');
 
 const router = express.Router();
-
-function blockFilteredActionProjection(req, res, action) {
-  const { finding, traversalError } = inspectContentWithTraversal(
-    () => extractAssistantActionContent(action),
-    { filters: req.config?.filters },
-  );
-  if (finding != null) {
-    res.status(400).json(contentFilterBlockResponse(finding));
-    return true;
-  }
-  if (traversalError != null) {
-    res.status(traversalError.statusCode).json(traversalError.body);
-    return true;
-  }
-  return false;
-}
 
 /**
  * Adds or updates actions for a specific assistant.
@@ -56,7 +38,12 @@ router.post('/:assistant_id', async (req, res) => {
       return res.status(400).json({ message: 'No functions provided' });
     }
 
-    if (blockFilteredActionProjection(req, res, { functions, metadata: _metadata })) {
+    if (
+      blockFilteredActionProjection(req.config?.filters, res, {
+        functions,
+        metadata: _metadata,
+      })
+    ) {
       return;
     }
 
@@ -147,7 +134,7 @@ router.post('/:assistant_id', async (req, res) => {
       );
 
     if (
-      blockFilteredActionProjection(req, res, {
+      blockFilteredActionProjection(req.config?.filters, res, {
         functions: tools,
         metadata: await decryptMetadata(metadata),
       })

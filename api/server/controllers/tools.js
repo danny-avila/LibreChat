@@ -2,13 +2,9 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   checkAccess,
-  inspectContent,
-  ContentFilterError,
+  assertDirectToolOutputAllowed,
   loadWebSearchAuth,
   isContentFilterError,
-  getContentTraversalFragments,
-  isContentTraversalLimitError,
-  extractToolArgumentContent,
 } = require('@librechat/api');
 const {
   Tools,
@@ -16,7 +12,6 @@ const {
   Permissions,
   ToolCallTypes,
   PermissionTypes,
-  hasActivePiiPatterns,
 } = require('librechat-data-provider');
 const { getRoleByName, createToolCall, getToolCallsByConvo, getMessage } = require('~/models');
 const { processFileURL, uploadImageBuffer } = require('~/server/services/Files/process');
@@ -35,33 +30,6 @@ const directCallableTools = new Set([Tools.execute_code]);
 
 const toolAccessPermType = {
   [Tools.execute_code]: PermissionTypes.RUN_CODE,
-};
-
-const throwIfContentBlocked = (filters, fragments) => {
-  const finding = inspectContent(fragments, { filters });
-  if (finding != null) {
-    throw new ContentFilterError(finding);
-  }
-};
-
-const inspectDirectToolOutput = (filters, toolId, output) => {
-  const pii = filters?.toolArguments?.pii;
-  if (
-    pii == null ||
-    !hasActivePiiPatterns(pii) ||
-    (pii.fields != null && !pii.fields.includes('output'))
-  ) {
-    return;
-  }
-  try {
-    throwIfContentBlocked(filters, extractToolArgumentContent({ name: toolId, output }));
-  } catch (error) {
-    if (!isContentTraversalLimitError(error)) {
-      throw error;
-    }
-    throwIfContentBlocked(filters, getContentTraversalFragments(error));
-    throw error;
-  }
 };
 
 /**
@@ -198,7 +166,7 @@ const callTool = async (req, res) => {
     });
 
     const { content, artifact } = result;
-    inspectDirectToolOutput(appConfig?.filters, toolId, content);
+    assertDirectToolOutputAllowed(appConfig?.filters, toolId, content);
     const hasGeneratedArtifacts = toolId === Tools.execute_code && Array.isArray(artifact?.files);
     const generatedFiles = hasGeneratedArtifacts
       ? await preflightCodeOutputBatch({ req, artifact })
