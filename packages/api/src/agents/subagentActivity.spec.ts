@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { IConversation, IMessage } from '@librechat/data-schemas';
 import type { SubagentUpdateEvent } from '@librechat/agents';
 import type { Response } from 'express';
-import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { SubagentActivityEnvelope, SubagentActivityUpdateEvent } from './subagentActivity';
+import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest } from '~/types';
 import {
   SubagentActivityStream,
