@@ -380,6 +380,7 @@ describe('RedisEventTransport', () => {
         { onChunk: (event) => received.push(event as object) },
         { deferSequenceDelivery: true, captureSequenceFrontier: true },
       );
+      const concurrent = transport.subscribe(streamId, { onChunk: jest.fn() });
       deliverSequencedMessage(messageHandler, streamId, {
         type: 'chunk',
         seq: 0,
@@ -391,9 +392,11 @@ describe('RedisEventTransport', () => {
       await expect(subscription.ready).rejects.toThrow(
         'Timed out synchronizing Redis subscription',
       );
+      await expect(concurrent.ready).rejects.toThrow('Timed out synchronizing Redis subscription');
       expect(received).toEqual([{ index: 0 }]);
 
       subscription.unsubscribe();
+      concurrent.unsubscribe();
       expect(transport.getSubscriberCount(streamId)).toBe(0);
     } finally {
       transport.destroy();

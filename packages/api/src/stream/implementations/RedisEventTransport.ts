@@ -1167,25 +1167,25 @@ export class RedisEventTransport implements IEventTransport {
     const captureSequenceFrontier =
       options?.captureSequenceFrontier === true && streamState.reorderBuffer.deliveryDeferred;
     const channelReady = this.ensureChannelSubscription(channel);
-    const boundedChannelReady = captureSequenceFrontier
-      ? new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
-            SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
-          );
-          timeout.unref?.();
-          channelReady.then(
-            () => {
-              clearTimeout(timeout);
-              resolve();
-            },
-            (error) => {
-              clearTimeout(timeout);
-              reject(error);
-            },
-          );
-        })
-      : channelReady;
+    /** Every local subscriber needs a bounded admission result, including followers that
+     * share the first attachment's in-flight SUBSCRIBE but do not own frontier capture. */
+    const boundedChannelReady = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error(`Timed out synchronizing Redis subscription for ${streamId}`)),
+        SUBSCRIPTION_FRONTIER_TIMEOUT_MS,
+      );
+      timeout.unref?.();
+      channelReady.then(
+        () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      );
+    });
     const attachmentFrontier = captureSequenceFrontier
       ? boundedChannelReady
           .then(() => {
