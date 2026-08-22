@@ -35,6 +35,7 @@ const waitForMock = async (mock: jest.Mock, timeoutMs = 2000): Promise<void> => 
 const mockAddDocuments = jest.fn();
 const mockUpdateDocuments = jest.fn();
 const mockDeleteDocument = jest.fn();
+const mockWaitForTask = jest.fn();
 const mockGetDocument = jest.fn();
 const mockIndex = jest.fn().mockReturnValue({
   getRawInfo: jest.fn(),
@@ -48,7 +49,10 @@ const mockIndex = jest.fn().mockReturnValue({
   getDocuments: jest.fn().mockReturnValue({ results: [] }),
 });
 jest.mock('meilisearch', () => ({
-  MeiliSearch: jest.fn().mockImplementation(() => ({ index: mockIndex })),
+  MeiliSearch: jest.fn().mockImplementation(() => ({
+    index: mockIndex,
+    waitForTask: mockWaitForTask,
+  })),
 }));
 
 describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path)', () => {
@@ -84,9 +88,10 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
 
   beforeEach(async () => {
     await conversationModel.deleteMany({});
-    mockAddDocuments.mockClear();
-    mockUpdateDocuments.mockClear();
-    mockDeleteDocument.mockClear();
+    mockAddDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
+    mockUpdateDocuments.mockReset().mockResolvedValue({ taskUid: 1 });
+    mockDeleteDocument.mockReset().mockResolvedValue({ taskUid: 1 });
+    mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
     mockGetDocument.mockClear();
     mockGetDocument.mockReset();
   });
@@ -165,12 +170,10 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
     expect(storedDoc?._meiliIndex).toBe(true);
   });
 
-  test('does not wait for Meilisearch reads before settling the MongoDB update', async () => {
+  test('does not wait for Meilisearch writes before settling the MongoDB update', async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     const user = new mongoose.Types.ObjectId().toString();
-    let resolveMeiliRead:
-      | ((document: { conversationId: string; title: string }) => void)
-      | undefined;
+    let resolveMeiliWrite: ((result: { taskUid: number }) => void) | undefined;
 
     await conversationModel.create({
       conversationId,
@@ -181,28 +184,29 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
     await waitForMock(mockAddDocuments);
     await waitForIndexAcknowledgment(conversationId);
     mockAddDocuments.mockClear();
-    mockGetDocument.mockImplementationOnce(
+    mockAddDocuments.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          resolveMeiliRead = resolve;
+          resolveMeiliWrite = resolve;
         }),
     );
 
     const result = await updateTitle(conversationId, user, 'Renamed Title');
 
     expect((result as unknown as { value: unknown }).value).toBeTruthy();
-    expect(resolveMeiliRead).toBeDefined();
-    expect(mockAddDocuments).not.toHaveBeenCalled();
+    await waitForMock(mockAddDocuments);
+    expect(resolveMeiliWrite).toBeDefined();
+    expect(mockAddDocuments).toHaveBeenCalledTimes(1);
     expect((await conversationModel.collection.findOne({ conversationId }))?._meiliIndex).toBe(
       false,
     );
 
-    resolveMeiliRead!({ conversationId, title: 'Original Title' });
-    await waitForMock(mockAddDocuments);
+    resolveMeiliWrite!({ taskUid: 1 });
+    await waitForIndexAcknowledgment(conversationId);
     expect(mockAddDocuments).toHaveBeenCalledTimes(1);
   });
 
-  test('skips re-indexing when the title already matches the MeiliSearch document', async () => {
+  test('re-indexes even when the title matches so every changed field stays current', async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     const user = new mongoose.Types.ObjectId().toString();
     await conversationModel.create({
@@ -213,14 +217,43 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
     });
     await waitForIndexAcknowledgment(conversationId);
     mockAddDocuments.mockClear();
-    mockGetDocument.mockResolvedValueOnce({ conversationId, title: 'Same Title' });
-
     await updateTitle(conversationId, user, 'Same Title');
 
-    await wait(50);
-    expect(mockGetDocument).toHaveBeenCalledWith(conversationId);
-    expect(mockAddDocuments).not.toHaveBeenCalled();
+    await waitForMock(mockAddDocuments);
+    expect(mockGetDocument).not.toHaveBeenCalled();
+    expect(mockAddDocuments).toHaveBeenCalledWith(
+      [expect.objectContaining({ conversationId, title: 'Same Title' })],
+      { primaryKey: 'conversationId' },
+    );
     expect(mockUpdateDocuments).not.toHaveBeenCalled();
+  });
+
+  test('persists the pending marker in the original findOneAndUpdate write', async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const user = new mongoose.Types.ObjectId().toString();
+    let resolveMeiliWrite: ((result: { taskUid: number }) => void) | undefined;
+    const modelUpdateOne = jest
+      .spyOn(conversationModel, 'updateOne')
+      .mockRejectedValue(new Error('follow-up marker writes must not be required'));
+    mockAddDocuments.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMeiliWrite = resolve;
+        }),
+    );
+
+    await expect(updateTitle(conversationId, user, 'Atomic Pending Marker')).resolves.toBeTruthy();
+
+    const storedDoc = await conversationModel.collection.findOne({ conversationId });
+    expect(storedDoc?._meiliIndex).toBe(false);
+    expect(storedDoc?._meiliIndexAttempted).toBe(true);
+    expect(storedDoc?._meiliIndexVersion).toEqual(expect.any(String));
+    expect(modelUpdateOne).not.toHaveBeenCalled();
+
+    await waitForMock(mockAddDocuments);
+    resolveMeiliWrite!({ taskUid: 1 });
+    await waitForIndexAcknowledgment(conversationId);
+    modelUpdateOne.mockRestore();
   });
 
   test('does NOT index temporary conversations updated via the raw result wrapper', async () => {
