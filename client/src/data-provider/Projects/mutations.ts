@@ -84,6 +84,21 @@ export const useDeleteProjectMutation = (): UseMutationResult<
 /** One queue per conversation: assignments to different chats stay independent. */
 const ASSIGN_CONVERSATION_QUEUE = 'assign-conversation:';
 
+/** Where each conversation is headed while a write for it is still queued or in
+ *  flight, recorded here so every assignment path shares one answer: a drag
+ *  helper that tracked only its own writes would keep reporting its
+ *  destination after a menu action had moved the chat somewhere else. Each
+ *  entry is identified by the write that made it, since comparing destinations
+ *  alone cannot tell two moves to the same project apart. */
+type PendingAssignment = { token: number; projectId: string | null };
+
+const pendingAssignments = new Map<string, PendingAssignment>();
+let assignmentToken = 0;
+
+/** The destination of the newest write still outstanding, if there is one. */
+export const getPendingAssignment = (conversationId: string): PendingAssignment | undefined =>
+  pendingAssignments.get(conversationId);
+
 export const useAssignConversationToProjectMutation = (): UseMutationResult<
   TAssignConversationToProjectResponse,
   unknown,
@@ -111,10 +126,21 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
      * mutation instance, and the write is an unconditional update, so two of
      * them racing let whichever request reached the database last decide the
      * project regardless of which the user asked for first. */
-    (payload: TAssignConversationToProjectRequest) =>
-      enqueue(`${ASSIGN_CONVERSATION_QUEUE}${payload.conversationId}`, () =>
+    (payload: TAssignConversationToProjectRequest) => {
+      const { conversationId, projectId } = payload;
+      const token = ++assignmentToken;
+      pendingAssignments.set(conversationId, { token, projectId: projectId ?? null });
+      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${conversationId}`, () =>
         dataService.assignConversationToProject(payload),
-      ),
+      ).finally(() => {
+        /* Only the newest write clears the entry. Once nothing is outstanding
+         * the conversation cache below carries the truth, written synchronously
+         * in `onSuccess`, so no list refresh has to be waited on. */
+        if (pendingAssignments.get(conversationId)?.token === token) {
+          pendingAssignments.delete(conversationId);
+        }
+      });
+    },
     {
       onSuccess: (result) => {
         updateActiveConversation(result.conversation);

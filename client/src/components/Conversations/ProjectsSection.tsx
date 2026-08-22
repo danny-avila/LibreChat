@@ -33,7 +33,7 @@ import {
   useActiveJobs,
   useConversationsInfiniteQuery,
 } from '~/data-provider';
-import { CONVERSATION_DRAG_TYPE, effectiveProjectId, useAssignDroppedConversation } from './dnd';
+import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation, useEffectiveProjectId } from './dnd';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
@@ -175,6 +175,7 @@ const ProjectItem = memo(
      * read as already-filed and are rejected. The highlight lands on the header
      * row so the affordance reads as the project, not the row under it. */
     const assignDropped = useAssignDroppedConversation();
+    const effectiveProjectId = useEffectiveProjectId();
     const projectRowRef = useRef<HTMLLIElement>(null);
     const [{ isDropOver, canDrop }, dropRef] = useDrop<
       ConversationDragItem,

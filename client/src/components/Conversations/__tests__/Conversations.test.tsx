@@ -4,10 +4,15 @@ import '@testing-library/jest-dom';
 import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import Conversations from '../Conversations';
 import store from '~/store';
+
+/* The section resolves a conversation's project from the query cache, so the
+ * tree needs a client even though the data hooks themselves are mocked. */
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 jest.mock('react-virtualized', () => {
   const actual = jest.requireActual('react-virtualized');
@@ -95,31 +100,33 @@ describe('Conversations: pinned chats live in PinnedSection', () => {
 
   const renderConversations = (conversations: TConversation[], searchQuery = '') =>
     render(
-      <DndProvider backend={HTML5Backend}>
-        <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.search, {
-              query: searchQuery,
-              enabled: true,
-              debouncedQuery: searchQuery,
-              isSearching: true,
-              isTyping: false,
-            });
-          }}
-        >
-          <Conversations
-            conversations={conversations}
-            moveToTop={jest.fn()}
-            toggleNav={jest.fn()}
-            containerRef={containerRef}
-            loadMoreConversations={jest.fn()}
-            isLoading={false}
-            isSearchLoading={false}
-            isChatsExpanded={true}
-            setIsChatsExpanded={jest.fn()}
-          />
-        </RecoilRoot>
-      </DndProvider>,
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot
+            initializeState={({ set }) => {
+              set(store.search, {
+                query: searchQuery,
+                enabled: true,
+                debouncedQuery: searchQuery,
+                isSearching: true,
+                isTyping: false,
+              });
+            }}
+          >
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={jest.fn()}
+              isLoading={false}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
     );
 
   it('does not render a pinned header inside the chats list', () => {
@@ -148,21 +155,23 @@ describe('Conversations: all-pin pages still paginate', () => {
     isLoading?: boolean;
   }) =>
     render(
-      <DndProvider backend={HTML5Backend}>
-        <RecoilRoot>
-          <Conversations
-            conversations={conversations}
-            moveToTop={jest.fn()}
-            toggleNav={jest.fn()}
-            containerRef={containerRef}
-            loadMoreConversations={loadMoreConversations}
-            isLoading={isLoading}
-            isSearchLoading={false}
-            isChatsExpanded={isChatsExpanded}
-            setIsChatsExpanded={jest.fn()}
-          />
-        </RecoilRoot>
-      </DndProvider>,
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={isLoading}
+              isSearchLoading={false}
+              isChatsExpanded={isChatsExpanded}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
     );
 
   it('requests another page when grouping leaves the chats list empty', () => {
@@ -198,38 +207,42 @@ describe('Conversations: all-pin pages still paginate', () => {
     expect(loadMoreConversations).toHaveBeenCalledTimes(1);
 
     rerender(
-      <DndProvider backend={HTML5Backend}>
-        <RecoilRoot>
-          <Conversations
-            conversations={conversations}
-            moveToTop={jest.fn()}
-            toggleNav={jest.fn()}
-            containerRef={containerRef}
-            loadMoreConversations={loadMoreConversations}
-            isLoading={true}
-            isSearchLoading={false}
-            isChatsExpanded={true}
-            setIsChatsExpanded={jest.fn()}
-          />
-        </RecoilRoot>
-      </DndProvider>,
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={true}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
     );
     rerender(
-      <DndProvider backend={HTML5Backend}>
-        <RecoilRoot>
-          <Conversations
-            conversations={conversations}
-            moveToTop={jest.fn()}
-            toggleNav={jest.fn()}
-            containerRef={containerRef}
-            loadMoreConversations={loadMoreConversations}
-            isLoading={false}
-            isSearchLoading={false}
-            isChatsExpanded={true}
-            setIsChatsExpanded={jest.fn()}
-          />
-        </RecoilRoot>
-      </DndProvider>,
+      <QueryClientProvider client={queryClient}>
+        <DndProvider backend={HTML5Backend}>
+          <RecoilRoot>
+            <Conversations
+              conversations={conversations}
+              moveToTop={jest.fn()}
+              toggleNav={jest.fn()}
+              containerRef={containerRef}
+              loadMoreConversations={loadMoreConversations}
+              isLoading={false}
+              isSearchLoading={false}
+              isChatsExpanded={true}
+              setIsChatsExpanded={jest.fn()}
+            />
+          </RecoilRoot>
+        </DndProvider>
+      </QueryClientProvider>,
     );
 
     expect(loadMoreConversations).toHaveBeenCalledTimes(1);
