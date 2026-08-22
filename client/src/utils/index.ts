@@ -18,6 +18,7 @@ export * from './errors';
 export * from './agents';
 export * from './drafts';
 export * from './convos';
+export * from './queue';
 export * from './routes';
 export * from './presets';
 export * from './prompts';
