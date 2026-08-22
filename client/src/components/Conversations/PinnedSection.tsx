@@ -247,18 +247,30 @@ interface PinnedSectionProps {
   conversations: TConversation[];
   toggleNav: () => void;
   isSmallScreen?: boolean;
+  /** True when this list is the whole pinned list: no bookmark filter, and the
+   *  pinned query has finished draining. Only then can keys the section cannot
+   *  resolve be treated as gone rather than merely unseen. */
+  membershipComplete?: boolean;
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
  *  reorderable list: favorites and conversations interleave freely, the order
  *  persists per user, and the section opens with the same collapse motion as
  *  the Projects section above it. */
-const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectionProps) => {
+const PinnedSection = ({
+  conversations,
+  toggleNav,
+  isSmallScreen,
+  membershipComplete = false,
+}: PinnedSectionProps) => {
   const localize = useLocalize();
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
   const { data: activeJobsData } = useActiveJobs();
   const favoritesData = useFavoritesData();
-  const { data: storedOrder } = useGetPinnedOrderQuery();
+  /* `isFetched` gates every write: merging against `??  []` before the stored
+   * order arrives, then cancelling that GET in `onMutate`, would post only the
+   * visible keys and discard saved positions for good. */
+  const { data: storedOrder, isFetched: orderLoaded } = useGetPinnedOrderQuery();
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
   const { showToast } = useToastContext();
@@ -365,9 +377,25 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
   const dragEntriesRef = useRef<PinnedEntry[]>(orderedEntries);
   const [liveEntries, setLiveEntries] = useState<PinnedEntry[] | null>(null);
   const [announcement, setAnnouncement] = useState('');
-  /** Only one row renames at a time, so its key is enough to release that row's
-   *  drag source. */
-  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  /** `RenameForm` has no blur cancellation, so a second row's form can open
+   *  while the first is still mounted. Every renaming row has to keep its drag
+   *  source released, not just the most recent one. */
+  const [renamingKeys, setRenamingKeys] = useState<ReadonlySet<string>>(() => new Set());
+
+  const setRowRenaming = useCallback((key: string, renaming: boolean) => {
+    setRenamingKeys((previous) => {
+      if (previous.has(key) === renaming) {
+        return previous;
+      }
+      const next = new Set(previous);
+      if (renaming) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
 
   if (orderedEntries !== dragEntriesRef.current && liveEntries === null) {
     dragEntriesRef.current = orderedEntries;
@@ -377,6 +405,10 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
 
   /** Live index of a key in the list the drag is mutating, so a hover can tell
    *  which side of the hovered row the drag is coming from. */
+  /* Read inside callbacks that outlive the render they were created in. */
+  const orderLoadedRef = useRef(orderLoaded);
+  orderLoadedRef.current = orderLoaded;
+
   const indexOfKey = useCallback(
     (key: string) => dragEntriesRef.current.findIndex((entry) => entry.key === key),
     [],
@@ -406,6 +438,9 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
    *  reader. */
   const moveEntryBy = useCallback(
     (key: string, delta: number) => {
+      if (!orderLoadedRef.current) {
+        return;
+      }
       const list = [...dragEntriesRef.current];
       const from = list.findIndex((entry) => entry.key === key);
       const to = from + delta;
@@ -439,16 +474,14 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
         return;
       }
       const entries = dragEntriesRef.current;
-      /* Always a merge, never a replacement. The visible list is not always the
-       * whole list: a bookmark filter hides rows, and the pinned query publishes
-       * partial results while it drains its cursor. Persisting only what is on
-       * screen would drop every key it could not see, losing those positions for
-       * good. Keys whose item is gone are inert on read and bounded by the
-       * endpoint's size guard, so leaving them costs nothing. */
-      const nextOrder = mergeVisibleOrder(
-        storedOrder ?? [],
-        entries.map((entry) => entry.key),
-      );
+      const visibleKeys = entries.map((entry) => entry.key);
+      /* Merging keeps keys the section cannot currently see, which is right
+       * while a bookmark filter hides rows or the pinned query is still
+       * draining. Once the visible list is known to be the whole list, those
+       * keys really are gone and replacing prunes them: merging forever would
+       * grow the array until the endpoint's size guard rejected every write. */
+      const canPrune = membershipComplete && !favoritesData.isLoading;
+      const nextOrder = canPrune ? visibleKeys : mergeVisibleOrder(storedOrder ?? [], visibleKeys);
 
       updatePinnedOrder.mutate(nextOrder, {
         /* `pinnedOrder` is the only ordering the section reads: no consumer of
@@ -470,7 +503,14 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
         },
       });
     },
-    [updatePinnedOrder, storedOrder, showToast, localize],
+    [
+      updatePinnedOrder,
+      storedOrder,
+      membershipComplete,
+      favoritesData.isLoading,
+      showToast,
+      localize,
+    ],
   );
 
   /* `moveEntryBy` is declared above `commitOrder` and both are stable across a
@@ -559,7 +599,10 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
       </div>
 
       <Collapse open={isExpanded}>
-        <div className="scrollbar-gutter-stable max-h-[42vh] overflow-y-auto pt-0.5">
+        {/* Projects above already claims up to 42vh; matching it here starved the
+            flex-growing Chats region on short viewports, so this keeps the
+            pre-existing budget. */}
+        <div className="scrollbar-gutter-stable max-h-[30vh] overflow-y-auto pt-0.5">
           {displayEntries.length === 0 && draggingConversation && (
             <div
               className={cn(
@@ -598,14 +641,14 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                       moveEntry={moveEntry}
                       moveEntryBy={moveEntryBy}
                       onDrop={commitOrder}
-                      canDrag={renamingKey !== entry.key}
+                      canDrag={orderLoaded && !renamingKeys.has(entry.key)}
                     >
                       <Convo
                         conversation={convo}
                         retainView={noop}
                         toggleNav={toggleNav}
                         isGenerating={activeJobIds.has(convo.conversationId ?? '')}
-                        onRenamingChange={(renaming) => setRenamingKey(renaming ? entry.key : null)}
+                        onRenamingChange={(renaming) => setRowRenaming(entry.key, renaming)}
                       />
                     </DraggablePinnedRow>
                   </li>
@@ -619,6 +662,7 @@ const PinnedSection = ({ conversations, toggleNav, isSmallScreen }: PinnedSectio
                     moveEntry={moveEntry}
                     moveEntryBy={moveEntryBy}
                     onDrop={commitOrder}
+                    canDrag={orderLoaded}
                   >
                     <FavoriteRow
                       favorite={entry.favorite}

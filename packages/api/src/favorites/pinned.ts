@@ -70,7 +70,7 @@ export function createPinnedOrderHandlers(deps: PinnedOrderHandlersDeps): {
       return res.status(401).json({ message: 'Unauthorized' });
     }
     try {
-      const user = await deps.getUserById(userId, 'pinnedOrder');
+      const user = await deps.getUserById(userId, '+pinnedOrder');
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
@@ -101,7 +101,9 @@ export function createPinnedOrderHandlers(deps: PinnedOrderHandlersDeps): {
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
-      return res.status(200).json(user.pinnedOrder ?? []);
+      /* The field is deselected at schema level, so the updated document does
+       * not carry it back. What was just stored is what to answer with. */
+      return res.status(200).json(validated);
     } catch (error) {
       logger.error('[PinnedOrder] Error updating pinned order:', error);
       return res.status(500).json({ message: 'Internal server error' });

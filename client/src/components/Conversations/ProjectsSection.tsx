@@ -33,7 +33,7 @@ import {
   useActiveJobs,
   useConversationsInfiniteQuery,
 } from '~/data-provider';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
+import { CONVERSATION_DRAG_TYPE, effectiveProjectId, useAssignDroppedConversation } from './dnd';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
@@ -182,7 +182,7 @@ const ProjectItem = memo(
       { isDropOver: boolean; canDrop: boolean }
     >({
       accept: CONVERSATION_DRAG_TYPE,
-      canDrop: (item) => item.chatProjectId !== project._id,
+      canDrop: (item) => effectiveProjectId(item) !== project._id,
       drop: (item) => assignDropped(item, project._id),
       collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
     });

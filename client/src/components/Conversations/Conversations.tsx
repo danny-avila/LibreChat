@@ -8,7 +8,7 @@ import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation } from './dnd';
+import { CONVERSATION_DRAG_TYPE, effectiveProjectId, useAssignDroppedConversation } from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
@@ -173,7 +173,7 @@ const Conversations: FC<ConversationsProps> = ({
     { isDropOver: boolean; canDrop: boolean }
   >({
     accept: CONVERSATION_DRAG_TYPE,
-    canDrop: (item) => item.chatProjectId != null,
+    canDrop: (item) => effectiveProjectId(item) != null,
     drop: (item) => assignDropped(item, null),
     collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
   });

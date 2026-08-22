@@ -53,11 +53,13 @@ const setup = (overrides: Partial<PinnedOrderHandlersDeps> = {}) => {
 describe('createPinnedOrderHandlers', () => {
   describe('getPinnedOrder', () => {
     it('returns the stored order', async () => {
-      const { handlers } = setup();
+      const { handlers, deps } = setup();
       const res = makeRes();
       await handlers.getPinnedOrder(makeReq(undefined), res);
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual(['convo:a', 'agent:b']);
+      /* The schema deselects the field, so it has to be asked for by name. */
+      expect(deps.getUserById).toHaveBeenCalledWith('user-1', '+pinnedOrder');
     });
 
     it('returns an empty array when the user has no order yet', async () => {
@@ -101,6 +103,17 @@ describe('createPinnedOrderHandlers', () => {
       await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['agent:b', 'convo:a'] }), res);
       expect(res.statusCode).toBe(200);
       expect(stored['user-1']).toEqual(['agent:b', 'convo:a']);
+      expect(res.body).toEqual(['agent:b', 'convo:a']);
+    });
+
+    /* `updateUser` returns a document without the deselected field, so the
+     * answer has to come from what was validated rather than from the doc. */
+    it('answers with the stored order even when the document omits the field', async () => {
+      const { handlers } = setup({ updateUser: async () => ({}) as IUser });
+      const res = makeRes();
+      await handlers.updatePinnedOrder(makeReq({ pinnedOrder: ['convo:x', 'convo:y'] }), res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual(['convo:x', 'convo:y']);
     });
 
     it('accepts an empty order', async () => {

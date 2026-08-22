@@ -83,7 +83,7 @@ const ConversationsSection = memo(() => {
   /** Pins are fetched on their own so one older than the first page of the chats list
    * still shows on first paint, instead of appearing only once that list scrolls to it.
    * The bookmark filter still applies, matching the chats list beside it. */
-  const { data: pinnedData } = usePinnedConversationsQuery(
+  const { data: pinnedData, isFetching: isPinnedFetching } = usePinnedConversationsQuery(
     { tags: tags.length === 0 ? undefined : tags },
     { enabled: isAuthenticated },
   );
@@ -161,6 +161,7 @@ const ConversationsSection = memo(() => {
           conversations={pinnedConversations}
           toggleNav={toggleNav}
           isSmallScreen={isSmallScreen}
+          membershipComplete={tags.length === 0 && !isPinnedFetching && pinnedData != null}
         />
       )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
