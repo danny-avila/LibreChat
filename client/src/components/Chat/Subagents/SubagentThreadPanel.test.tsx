@@ -256,6 +256,37 @@ describe('SubagentThreadPanel', () => {
 
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'loading');
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'dispatched');
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, false);
+  });
+
+  it('opens live activity only after the durable child becomes addressable', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      isReadinessPending: true,
+    });
+
+    const { rerender } = render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, false);
+
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running' },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    rerender(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
   });
 
   it('surfaces a durable read failure after the readiness window', () => {

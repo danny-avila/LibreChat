@@ -3,7 +3,11 @@ import { RecoilRoot, useRecoilValue } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
 import { QueryKeys, StepEvents } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
-import { subagentProgressByToolCallId, subagentProgressKey } from '~/store/subagents';
+import {
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+  takeRegisteredSubagentProgressKeys,
+} from '~/store/subagents';
 import useSubagentActivityStream from './useSubagentActivityStream';
 
 type Listener = (event: MessageEvent) => void;
@@ -66,6 +70,7 @@ describe('useSubagentActivityStream', () => {
   beforeEach(() => {
     streams.length = 0;
     mockInvalidateQueries.mockClear();
+    takeRegisteredSubagentProgressKeys();
   });
 
   it('opens one authorized task stream and closes after terminal delivery', () => {
@@ -117,6 +122,9 @@ describe('useSubagentActivityStream', () => {
     });
 
     expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Live child output' }]);
+    expect(takeRegisteredSubagentProgressKeys()).toEqual([
+      subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
+    ]);
     expect(streams[0]?.close).toHaveBeenCalledTimes(1);
     expect(mockInvalidateQueries).toHaveBeenCalledWith([
       QueryKeys.subagentThread,
@@ -126,6 +134,44 @@ describe('useSubagentActivityStream', () => {
     ]);
     unmount();
     expect(streams[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an exact task-stream update when older providers omit the optional tool-call id', () => {
+    const { result } = renderHook(
+      () => {
+        useSubagentActivityStream(selection);
+        return useRecoilValue(
+          subagentProgressByToolCallId(
+            subagentProgressKey(
+              selection.parentMessageId,
+              selection.toolCallId,
+              selection.partIndex,
+            ),
+          ),
+        );
+      },
+      { wrapper },
+    );
+
+    act(() => {
+      streams[0]?.emit('message', {
+        event: StepEvents.ON_SUBAGENT_UPDATE,
+        data: {
+          runId: 'root',
+          parentRunId: 'parent',
+          subagentRunId: 'child',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+          ancestry: [],
+          phase: 'message_delta',
+          data: { delta: { content: [{ type: 'text', text: 'Compatible update' }] } },
+          timestamp: '2026-08-21T20:00:00.000Z',
+        },
+      });
+    });
+
+    expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Compatible update' }]);
   });
 
   it('never opens the private task stream for shares or foreground children', () => {

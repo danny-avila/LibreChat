@@ -12,6 +12,9 @@ const MAX_LABEL_BYTES = 512;
 const MAX_ANCESTRY_ENTRIES = 16;
 const MAX_EVENT_BYTES = 64 * 1024;
 const HEARTBEAT_MS = 15_000;
+const DEMAND_TTL_MS = 30_000;
+const DEMAND_HEARTBEAT_MS = 10_000;
+const DEMAND_CACHE_MS = 250;
 
 export type SubagentActivityTerminalStatus = 'completed' | 'failed' | 'cancelled';
 
@@ -161,16 +164,32 @@ export const subagentActivityStreamId = (threadId: string, taskId: string): stri
 
 /** Task-scoped live activity over the same in-memory/Redis transports used by generation SSE. */
 export class SubagentActivityStream {
+  private readonly demandCache = new Map<string, { demanded: boolean; expiresAt: number }>();
+
   constructor(private readonly transport: IEventTransport) {}
 
-  publish(threadId: string, taskId: string, event: SubagentUpdateEvent): Promise<void> {
+  private async isDemanded(streamId: string): Promise<boolean> {
+    if (this.transport.hasDemand == null) return true;
+    const cached = this.demandCache.get(streamId);
+    if (cached != null && cached.expiresAt > Date.now()) return cached.demanded;
+    const demanded = await this.transport.hasDemand(streamId);
+    this.demandCache.set(streamId, { demanded, expiresAt: Date.now() + DEMAND_CACHE_MS });
+    return demanded;
+  }
+
+  private async renewDemand(streamId: string): Promise<void> {
+    await this.transport.renewDemand?.(streamId, DEMAND_TTL_MS);
+    this.demandCache.set(streamId, { demanded: true, expiresAt: Date.now() + DEMAND_CACHE_MS });
+  }
+
+  async publish(threadId: string, taskId: string, event: SubagentUpdateEvent): Promise<void> {
+    const streamId = subagentActivityStreamId(threadId, taskId);
+    if (!(await this.isDemanded(streamId))) return;
     const envelope: SubagentActivityEnvelope = {
       event: 'on_subagent_update',
       data: boundedUpdate(event),
     };
-    return Promise.resolve(
-      this.transport.emitChunk(subagentActivityStreamId(threadId, taskId), envelope),
-    ).then(() => undefined);
+    await this.transport.emitChunk(streamId, envelope);
   }
 
   subscribe(
@@ -178,8 +197,16 @@ export class SubagentActivityStream {
     taskId: string,
     subscriber: SubagentActivitySubscriber,
   ): SubagentActivitySubscription {
+    const streamId = subagentActivityStreamId(threadId, taskId);
     let unsubscribe = (): void => undefined;
-    const subscription = this.transport.subscribe(subagentActivityStreamId(threadId, taskId), {
+    const cleanupIfIdle = (): void => {
+      queueMicrotask(() => {
+        if (this.transport.getSubscriberCount(streamId) > 0) return;
+        this.transport.cleanup(streamId);
+        this.demandCache.delete(streamId);
+      });
+    };
+    const subscription = this.transport.subscribe(streamId, {
       onChunk: (event) => {
         if (isActivityEnvelope(event)) subscriber.onEvent(event);
       },
@@ -199,8 +226,25 @@ export class SubagentActivityStream {
         }
       },
     });
-    unsubscribe = subscription.unsubscribe;
-    return subscription;
+    let closed = false;
+    let demandHeartbeat: ReturnType<typeof setInterval> | undefined;
+    unsubscribe = () => {
+      if (closed) return;
+      closed = true;
+      if (demandHeartbeat != null) clearInterval(demandHeartbeat);
+      subscription.unsubscribe();
+      cleanupIfIdle();
+    };
+    const ready = Promise.resolve(subscription.ready).then(async () => {
+      if (closed) return;
+      await this.renewDemand(streamId);
+      if (closed) return;
+      demandHeartbeat = setInterval(() => {
+        void this.renewDemand(streamId).catch(() => undefined);
+      }, DEMAND_HEARTBEAT_MS);
+      demandHeartbeat.unref?.();
+    });
+    return { unsubscribe, ready };
   }
 
   async complete(
@@ -209,6 +253,7 @@ export class SubagentActivityStream {
     status: SubagentActivityTerminalStatus,
   ): Promise<void> {
     const streamId = subagentActivityStreamId(threadId, taskId);
+    if (!(await this.isDemanded(streamId))) return;
     await this.transport.emitDone(streamId, {
       final: true,
       subagentActivity: true,
@@ -217,6 +262,7 @@ export class SubagentActivityStream {
   }
 
   destroy(): void {
+    this.demandCache.clear();
     this.transport.destroy();
   }
 }

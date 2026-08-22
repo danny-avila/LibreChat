@@ -1,4 +1,5 @@
 import { atom, atomFamily } from 'recoil';
+import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
   SubagentUpdatePhase,
@@ -49,7 +50,43 @@ export interface SubagentProgress {
   status: SubagentUpdatePhase;
   /** Convenience: last event's `label` for quick ticker display. */
   latestLabel?: string;
+  /** Bounded replay fence for events that overlap parent and detached SSE delivery. */
+  recentEventKeys?: string[];
 }
+
+const MAX_RECENT_EVENT_KEYS = 256;
+const REDACTED_REASONING_MARKER = '…';
+
+const hashString = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const eventKey = (event: SubagentUpdateEvent): string => {
+  let data = '[redacted]';
+  if (event.phase !== 'reasoning_delta') {
+    try {
+      data = JSON.stringify(event.data) ?? '';
+    } catch {
+      data = '[unserializable]';
+    }
+  }
+  return hashString(
+    [
+      event.subagentRunId,
+      event.parentToolCallId ?? '',
+      event.memberAgentId ?? '',
+      event.phase,
+      event.timestamp,
+      event.label ?? '',
+      data,
+    ].join('\u0000'),
+  );
+};
 
 /** One child invocation selected for the shared read-only activity panel. */
 export type ActiveSubagentPanel = {
@@ -90,24 +127,66 @@ export const subagentProgressByToolCallId = atomFamily<SubagentProgress | null, 
   default: null,
 });
 
+/**
+ * Invocation atoms populated by either the parent generation stream or the selected detached
+ * task stream. The conversation host drains this registry on navigation so both transports share
+ * one cleanup boundary instead of leaking detached-only atom-family members for the app lifetime.
+ */
+const registeredSubagentProgressKeys = new Set<string>();
+
+export function registerSubagentProgressKey(key: string): void {
+  registeredSubagentProgressKeys.add(key);
+}
+
+export function takeRegisteredSubagentProgressKeys(): string[] {
+  const keys = [...registeredSubagentProgressKeys];
+  registeredSubagentProgressKeys.clear();
+  return keys;
+}
+
 /** Shared reducer for foreground chat SSE and task-scoped detached activity SSE. */
 export function reduceSubagentProgress(
   previous: SubagentProgress | null,
   events: SubagentUpdateEvent[],
 ): SubagentProgress | null {
   if (events.length === 0) return previous;
+  const recentEventKeys = [...(previous?.recentEventKeys ?? [])];
+  const seen = new Set(recentEventKeys);
+  const uniqueEvents: SubagentUpdateEvent[] = [];
+  for (const event of events) {
+    const key = eventKey(event);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueEvents.push(event);
+    recentEventKeys.push(key);
+  }
+  if (uniqueEvents.length === 0) return previous;
+  const boundedEventKeys = recentEventKeys.slice(-MAX_RECENT_EVENT_KEYS);
   let contentParts = previous?.contentParts ?? [];
   let aggregatorState = previous?.aggregatorState ?? initSubagentAggregatorState();
   let tickerState = previous?.tickerState ?? initSubagentTickerState();
-  for (const event of events) {
+  for (const event of uniqueEvents) {
+    const foldEvent =
+      event.phase === 'reasoning_delta' &&
+      event.data == null &&
+      aggregatorState.openThinkIdx == null
+        ? {
+            ...event,
+            data: {
+              delta: {
+                content: [{ type: ContentTypes.THINK, think: REDACTED_REASONING_MARKER }],
+              },
+            },
+          }
+        : event;
     ({ parts: contentParts, state: aggregatorState } = foldSubagentEvent(
       contentParts,
       aggregatorState,
-      event,
+      foldEvent,
     ));
-    tickerState = foldSubagentEventIntoTicker(tickerState, event);
+    tickerState = foldSubagentEventIntoTicker(tickerState, foldEvent);
   }
-  const last = events[events.length - 1];
+  const last = uniqueEvents[uniqueEvents.length - 1];
   return {
     subagentRunId: last.subagentRunId,
     subagentType: last.subagentType,
@@ -117,5 +196,6 @@ export function reduceSubagentProgress(
     tickerState,
     status: last.phase,
     latestLabel: last.label ?? previous?.latestLabel,
+    recentEventKeys: boundedEventKeys,
   };
 }

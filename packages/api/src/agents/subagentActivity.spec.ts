@@ -20,8 +20,12 @@ class TestTransport implements IEventTransport {
       onError?: (error: string) => void;
     }
   >();
+
   readonly emitted: Array<{ streamId: string; event: unknown }> = [];
   readonly completed: Array<{ streamId: string; event: unknown }> = [];
+  readonly cleaned: string[] = [];
+
+  demanded = true;
 
   subscribe(
     streamId: string,
@@ -45,6 +49,14 @@ class TestTransport implements IEventTransport {
     this.handlers.get(streamId)?.onError?.(error);
   }
 
+  renewDemand(): void {
+    this.demanded = true;
+  }
+
+  hasDemand(): boolean {
+    return this.demanded;
+  }
+
   getSubscriberCount(streamId: string): number {
     return this.handlers.has(streamId) ? 1 : 0;
   }
@@ -56,6 +68,7 @@ class TestTransport implements IEventTransport {
   onAllSubscribersLeft(): void {}
 
   cleanup(streamId: string): void {
+    this.cleaned.push(streamId);
     this.handlers.delete(streamId);
   }
 
@@ -115,6 +128,24 @@ describe('detached subagent activity stream', () => {
     subscription.unsubscribe();
   });
 
+  it('publishes only while a panel has renewed live-view demand', async () => {
+    const transport = new TestTransport();
+    transport.demanded = false;
+    const stream = new SubagentActivityStream(transport);
+
+    await stream.publish('child-thread', 'task-1', update());
+    expect(transport.emitted).toHaveLength(0);
+
+    const subscription = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    await subscription.ready;
+    await stream.publish('child-thread', 'task-1', update());
+
+    expect(transport.emitted).toHaveLength(1);
+    subscription.unsubscribe();
+    await Promise.resolve();
+    expect(transport.cleaned).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
+  });
+
   it('drops oversized payload data while retaining lifecycle identity and bounds', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);
@@ -160,6 +191,8 @@ describe('detached subagent activity stream', () => {
     expect(done).toEqual([{ final: true, subagentActivity: true, status: 'completed' }]);
     expect(transport.completed).toHaveLength(1);
     expect(transport.handlers.size).toBe(0);
+    await Promise.resolve();
+    expect(transport.cleaned).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
   });
 });
 

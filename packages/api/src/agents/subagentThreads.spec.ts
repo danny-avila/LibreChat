@@ -456,6 +456,50 @@ describe('SubagentThreadTaskStore', () => {
     );
   });
 
+  it('settles the canonical child while an observational activity transport is stalled', async () => {
+    const userId = 'activity-stream-stalled-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const never = () => new Promise<void>(() => undefined);
+    const stalledTransport = {
+      emitChunk: never,
+      emitDone: never,
+      emitError: async () => undefined,
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      getSubscriberCount: () => 0,
+      isFirstSubscriber: () => true,
+      onAllSubscribersLeft: () => undefined,
+      cleanup: () => undefined,
+      getTrackedStreamIds: () => [],
+      destroy: () => undefined,
+    } satisfies IEventTransport;
+    store.configureActivityStream(new SubagentActivityStream(stalledTransport));
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const defaultRun = taskRequest(config.scopeId).run;
+    const run = jest.fn(async (...args: Parameters<typeof defaultRun>) => {
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        depth: 1,
+        ancestry: [],
+        phase: 'start',
+        timestamp: '2026-08-21T20:00:00.000Z',
+      });
+      return defaultRun(...args);
+    });
+
+    const started = store.start(taskRequest(config.scopeId, { run }));
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
+      'completed',
+    );
+  });
+
   it('fails before provider work and keeps the durable failure collectable when registration fails', async () => {
     const userId = 'wakeup-failure-user';
     const parentConversationId = randomUUID();

@@ -1379,6 +1379,12 @@ export interface IEventTransport {
    */
   emitError(streamId: string, error: string, generationId?: number): void | Promise<void>;
 
+  /** Optional live-view demand marker used by observational streams that do not replay. */
+  renewDemand?(streamId: string, ttlMs: number): void | Promise<void>;
+
+  /** Returns whether at least one live viewer recently renewed demand for this stream. */
+  hasDemand?(streamId: string): boolean | Promise<boolean>;
+
   /**
    * Publish an abort signal to all replicas (Redis mode).
    * Enables cross-replica abort: user aborts on Replica B,

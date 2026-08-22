@@ -24,8 +24,10 @@ import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
   reduceSubagentProgress,
+  registerSubagentProgressKey,
   subagentProgressByToolCallId,
   subagentProgressKey,
+  takeRegisteredSubagentProgressKeys,
   sandboxStartingByToolCallId,
 } from '~/store';
 import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
@@ -178,13 +180,6 @@ export default function useStepHandler({
   const pendingSubagentBuffer = useRef(
     new Map<string, { parentMessageId: string; events: SubagentUpdateEvent[] }>(),
   );
-  /**
-   * Tracked atom keys so `clearStepMaps` can reset them. Without this, each
-   * subagent invocation leaks an `events: SubagentUpdateEvent[]` array in the
-   * `atomFamily` — atoms persist for the app lifetime.
-   */
-  const knownSubagentAtomKeys = useRef(new Set<string>());
-
   const getCurrentMessages = useCallback(
     (messages: TMessage[]) => {
       const freshMessages = getMessages();
@@ -271,7 +266,7 @@ export default function useStepHandler({
         }
         const toApply = pending ? [...pending.events, payload] : [payload];
 
-        knownSubagentAtomKeys.current.add(invocationKey);
+        registerSubagentProgressKey(invocationKey);
         set(subagentProgressByToolCallId(invocationKey), (prev) =>
           reduceSubagentProgress(prev, toApply),
         );
@@ -293,10 +288,9 @@ export default function useStepHandler({
   const resetSubagentAtoms = useRecoilCallback(
     ({ reset }) =>
       (): void => {
-        for (const invocationKey of knownSubagentAtomKeys.current) {
+        for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
           reset(subagentProgressByToolCallId(invocationKey));
         }
-        knownSubagentAtomKeys.current.clear();
       },
     [],
   );

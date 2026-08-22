@@ -7,6 +7,7 @@ import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   reduceSubagentProgress,
+  registerSubagentProgressKey,
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
@@ -25,7 +26,7 @@ const isSubagentUpdate = (value: unknown): value is SubagentUpdateEvent => {
   return (
     typeof event.subagentRunId === 'string' &&
     typeof event.subagentType === 'string' &&
-    typeof event.parentToolCallId === 'string' &&
+    (event.parentToolCallId == null || typeof event.parentToolCallId === 'string') &&
     typeof event.phase === 'string'
   );
 };
@@ -90,7 +91,8 @@ export default function useSubagentActivityStream(
       if (envelope.event !== StepEvents.ON_SUBAGENT_UPDATE || !isSubagentUpdate(event)) {
         return;
       }
-      if (event.parentToolCallId !== selection.toolCallId) return;
+      if (event.parentToolCallId != null && event.parentToolCallId !== selection.toolCallId) return;
+      registerSubagentProgressKey(key);
       setProgress((previous) => reduceSubagentProgress(previous, [event]));
     });
     stream.addEventListener('error', close);
@@ -100,9 +102,12 @@ export default function useSubagentActivityStream(
     durable,
     enabled,
     isAuthenticated,
+    key,
     queryClient,
     selection.host,
     selection.parentConversationId,
+    selection.parentMessageId,
+    selection.partIndex,
     selection.toolCallId,
     setProgress,
     token,

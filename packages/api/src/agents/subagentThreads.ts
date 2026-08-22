@@ -132,7 +132,8 @@ interface TaskThreadLease {
   taskId: string;
   running: boolean;
   settling: boolean;
-  activityPublications?: Set<Promise<void>>;
+  /** Ordered observational tail; canonical child settlement never awaits it. */
+  activityTail?: Promise<void>;
   shared?: {
     token: string;
     lost: boolean;
@@ -519,28 +520,30 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     event: SubagentUpdateEvent,
   ): void {
-    const pending = lease.activityPublications ?? new Set<Promise<void>>();
-    lease.activityPublications = pending;
-    const publication = this.activityStream
-      .publish(threadId, taskId, event)
+    const publication = (lease.activityTail ?? Promise.resolve())
+      .then(() => this.activityStream.publish(threadId, taskId, event))
       .catch((error) => {
         logger.warn('[subagentThreads] Failed to publish child activity', error);
-      })
-      .finally(() => {
-        pending.delete(publication);
       });
-    pending.add(publication);
+    lease.activityTail = publication;
   }
 
-  private async completeActivity(
+  private completeActivity(
     lease: TaskThreadLease,
     threadId: string,
     taskId: string,
     status: SubagentActivityTerminalStatus,
-  ): Promise<void> {
-    await Promise.all(lease.activityPublications ?? []);
-    await this.activityStream.complete(threadId, taskId, status).catch((error) => {
-      logger.warn('[subagentThreads] Failed to close child activity stream', error);
+  ): void {
+    const terminal = (lease.activityTail ?? Promise.resolve())
+      .then(() => this.activityStream.complete(threadId, taskId, status))
+      .catch((error) => {
+        logger.warn('[subagentThreads] Failed to close child activity stream', error);
+      });
+    lease.activityTail = terminal;
+    void terminal.finally(() => {
+      if (lease.activityTail === terminal) {
+        lease.activityTail = undefined;
+      }
     });
   }
 
@@ -729,7 +732,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               throw new Error(publicFailureDetail(error));
             } finally {
               if (prepared != null && prepared.replay == null) {
-                await this.completeActivity(
+                this.completeActivity(
                   lease,
                   prepared.conversation.conversationId,
                   runtime.taskId,

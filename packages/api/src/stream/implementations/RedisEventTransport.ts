@@ -33,6 +33,8 @@ const KEYS = {
   job: (streamId: string) => `stream:{${streamId}}:job`,
   /** Latest generation epoch, retained briefly beyond the live job hash. */
   generationEpoch: (streamId: string) => `stream:{${streamId}}:generation-epoch`,
+  /** Short-lived proof that at least one UI is watching this live-only stream. */
+  demand: (streamId: string) => `stream:{${streamId}}:demand`,
   /** Owner-issued proof that this exact generation processed an abort. */
   abortAck: (streamId: string, generationId: number) =>
     `stream:{${streamId}}:abort-ack:${generationId}`,
@@ -1106,6 +1108,14 @@ export class RedisEventTransport implements IEventTransport {
       logger.error(`[RedisEventTransport] Failed to publish done:`, err);
       throw err;
     }
+  }
+
+  async renewDemand(streamId: string, ttlMs: number): Promise<void> {
+    await this.publisher.set(KEYS.demand(streamId), '1', 'PX', ttlMs);
+  }
+
+  async hasDemand(streamId: string): Promise<boolean> {
+    return (await this.publisher.exists(KEYS.demand(streamId))) > 0;
   }
 
   async emitReplacedDoneConfirmed(
