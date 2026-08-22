@@ -52,9 +52,9 @@ interface _DocumentWithMeiliIndex extends Document {
   addObjectToMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
   updateObjectToMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
   deleteObjectFromMeili?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
-  postSaveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
-  postUpdateHook?: (next: CallbackWithoutResultAndOptionalError) => void;
-  postRemoveHook?: (next: CallbackWithoutResultAndOptionalError) => void;
+  postSaveHook?: (next: CallbackWithoutResultAndOptionalError) => Promise<void>;
+  postUpdateHook?: (next: CallbackWithoutResultAndOptionalError) => Promise<void> | void;
+  postRemoveHook?: (next: CallbackWithoutResultAndOptionalError) => Promise<void> | void;
 }
 
 export type DocumentWithMeiliIndex = _DocumentWithMeiliIndex & IConversation & Partial<IMessage>;
@@ -106,6 +106,26 @@ const hasSchemaPath = (schema: Schema, path: string): boolean =>
 
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const meiliCleanupVersion = 1;
+const meiliRequestTimeoutMs = 10_000;
+const completeDetachedOperation: CallbackWithoutResultAndOptionalError = () => undefined;
+
+const createDetachedMeiliRunner = () => {
+  const pendingOperations = new Map<string, Promise<void>>();
+
+  return (key: string, operation: () => Promise<void> | void, context: string): void => {
+    const previousOperation = pendingOperations.get(key) ?? Promise.resolve();
+    const operationPromise = previousOperation.then(operation).catch((error) => {
+      logger.error(context, error);
+    });
+    const trackedOperation = operationPromise.finally(() => {
+      if (pendingOperations.get(key) === trackedOperation) {
+        pendingOperations.delete(key);
+      }
+    });
+
+    pendingOperations.set(key, trackedOperation);
+  };
+};
 
 const buildRetentionIndexableQuery = (schema: Schema): FilterQuery<unknown> => {
   if (hasSchemaPath(schema, 'isTemporary')) {
@@ -595,9 +615,7 @@ const createMeiliMongooseModel = ({
       return object;
     }
 
-    /**
-     * Adds the current document to the MeiliSearch index with retry logic
-     */
+    /** Adds the current document to the MeiliSearch index. */
     async addObjectToMeili(
       this: DocumentWithMeiliIndex,
       next: CallbackWithoutResultAndOptionalError,
@@ -607,8 +625,6 @@ const createMeiliMongooseModel = ({
       }
 
       const object = this.preprocessObjectForIndex!();
-      const maxRetries = 3;
-      let retryCount = 0;
 
       try {
         // Mark the possible Meili presence before enqueueing the add. If the
@@ -617,7 +633,7 @@ const createMeiliMongooseModel = ({
         const model = this.constructor as Model<DocumentWithMeiliIndex>;
         await model.updateOne(
           { _id: this._id as Types.ObjectId },
-          { $set: { _meiliIndexAttempted: true } },
+          { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
           { timestamps: false },
         );
       } catch (error) {
@@ -625,19 +641,11 @@ const createMeiliMongooseModel = ({
         return next();
       }
 
-      while (retryCount < maxRetries) {
-        try {
-          await index.addDocuments([object], { primaryKey });
-          break;
-        } catch (error) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            logger.error('[addObjectToMeili] Error adding document to Meili after retries:', error);
-            return next();
-          }
-          // Exponential backoff
-          await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
-        }
+      try {
+        await index.addDocuments([object], { primaryKey });
+      } catch (error) {
+        logger.error('[addObjectToMeili] Error adding document to Meili:', error);
+        return next();
       }
 
       try {
@@ -687,7 +695,19 @@ const createMeiliMongooseModel = ({
         }
 
         const object = this.preprocessObjectForIndex!();
+        const model = this.constructor as Model<DocumentWithMeiliIndex>;
+        await model.updateOne(
+          { _id: this._id as Types.ObjectId },
+          { $set: { _meiliIndex: false, _meiliIndexAttempted: true } },
+          { timestamps: false },
+        );
         await index.updateDocuments([object], { primaryKey });
+
+        // eslint-disable-next-line no-restricted-syntax -- _meiliIndex is an internal bookkeeping flag, not tenant-scoped data
+        await this.collection.updateOne(
+          { _id: this._id as Types.ObjectId },
+          { $set: { _meiliIndex: true, _meiliCleanupVersion: meiliCleanupVersion } },
+        );
         next();
       } catch (error) {
         logger.error('[updateObjectToMeili] Error updating document in Meili:', error);
@@ -719,12 +739,14 @@ const createMeiliMongooseModel = ({
      * If the document is already indexed (i.e. `_meiliIndex` is true), it updates it;
      * otherwise, it adds the document to the index.
      */
-    postSaveHook(this: DocumentWithMeiliIndex, next: CallbackWithoutResultAndOptionalError): void {
+    postSaveHook(
+      this: DocumentWithMeiliIndex,
+      next: CallbackWithoutResultAndOptionalError,
+    ): Promise<void> {
       if (this._meiliIndex) {
-        this.updateObjectToMeili!(next);
-      } else {
-        this.addObjectToMeili!(next);
+        return this.updateObjectToMeili!(next);
       }
+      return this.addObjectToMeili!(next);
     }
 
     /**
@@ -856,7 +878,10 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
     delayMs: options.syncDelayMs || getSyncConfig().delayMs,
   };
 
-  const client = new MeiliSearch({ host, apiKey });
+  const client = new MeiliSearch({ host, apiKey, timeout: meiliRequestTimeoutMs });
+  const runDetachedMeiliOperation = createDetachedMeiliRunner();
+  const getOperationKey = (doc: DocumentWithMeiliIndex): string =>
+    `${indexName}:${String(doc[primaryKey as keyof DocumentWithMeiliIndex] ?? doc._id)}`;
 
   /** Create index only if it doesn't exist */
   const index = client.index<MeiliIndexable>(indexName);
@@ -945,7 +970,14 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   schema.post('save', function (doc: DocumentWithMeiliIndex, next) {
-    doc.postSaveHook?.(next);
+    next();
+    if (typeof doc.postSaveHook === 'function') {
+      runDetachedMeiliOperation(
+        getOperationKey(doc),
+        () => doc.postSaveHook!(completeDetachedOperation),
+        '[mongoMeili] Detached post-save indexing failed:',
+      );
+    }
   });
 
   schema.pre('findOneAndUpdate', function (next) {
@@ -968,17 +1000,25 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   });
 
   schema.post('updateOne', function (doc: DocumentWithMeiliIndex, next) {
+    next();
     if (typeof doc.postUpdateHook === 'function') {
-      return doc.postUpdateHook(next);
+      runDetachedMeiliOperation(
+        getOperationKey(doc),
+        () => doc.postUpdateHook!(completeDetachedOperation),
+        '[mongoMeili] Detached post-update indexing failed:',
+      );
     }
-    return next();
   });
 
   schema.post('deleteOne', function (doc: DocumentWithMeiliIndex, next) {
+    next();
     if (typeof doc.postRemoveHook === 'function') {
-      return doc.postRemoveHook(next);
+      runDetachedMeiliOperation(
+        getOperationKey(doc),
+        () => doc.postRemoveHook!(completeDetachedOperation),
+        '[mongoMeili] Detached post-remove indexing failed:',
+      );
     }
-    return next();
   });
 
   // Pre-deleteMany hook: remove corresponding documents from MeiliSearch when multiple documents are deleted.
@@ -1039,7 +1079,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
   // Post-findOneAndUpdate hook
   schema.post(
     'findOneAndUpdate',
-    async function (
+    function (
       res: DocumentWithMeiliIndex | { value: DocumentWithMeiliIndex | null } | null,
       next: CallbackWithoutResultAndOptionalError,
     ) {
@@ -1054,55 +1094,51 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
       } else {
         doc = res;
       }
-      const finish = (error?: Error | null): void => {
-        if (
-          doc != null &&
-          privateExcludedPath != null &&
-          queriesWithInjectedPrivatePath.has(this)
-        ) {
-          if (doc instanceof mongoose.Document) {
-            doc.set(privateExcludedPath, undefined);
-          } else {
-            _.unset(doc, privateExcludedPath);
-          }
+      if (doc != null && privateExcludedPath != null && queriesWithInjectedPrivatePath.has(this)) {
+        if (doc instanceof mongoose.Document) {
+          doc.set(privateExcludedPath, undefined);
+        } else {
+          _.unset(doc, privateExcludedPath);
         }
-        next(error ?? undefined);
-      };
+      }
+
+      next();
 
       if (!meiliEnabled) {
-        finish();
         return;
       }
 
       if (!doc || doc.unfinished) {
-        finish();
         return;
       }
 
-      let meiliDoc: Record<string, unknown> | undefined;
-      if (doc.messages) {
-        try {
-          meiliDoc = await client.index('convos').getDocument(doc.conversationId as string);
-        } catch (error: unknown) {
-          logger.debug(
-            '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
-              doc.conversationId,
-            error as Record<string, unknown>,
-          );
-        }
-      }
+      const savedDoc = doc;
+      runDetachedMeiliOperation(
+        getOperationKey(savedDoc),
+        async () => {
+          let meiliDoc: Record<string, unknown> | undefined;
+          if (savedDoc.messages) {
+            try {
+              meiliDoc = await client
+                .index('convos')
+                .getDocument(savedDoc.conversationId as string);
+            } catch (error: unknown) {
+              logger.debug(
+                '[MeiliMongooseModel.findOneAndUpdate] Convo not found in MeiliSearch and will index ' +
+                  savedDoc.conversationId,
+                error as Record<string, unknown>,
+              );
+            }
+          }
 
-      if (meiliDoc && meiliDoc.title === doc.title) {
-        finish();
-        return;
-      }
+          if (meiliDoc && meiliDoc.title === savedDoc.title) {
+            return;
+          }
 
-      if (typeof doc.postSaveHook === 'function') {
-        await doc.postSaveHook(finish);
-        return;
-      }
-
-      finish();
+          await savedDoc.postSaveHook?.(completeDetachedOperation);
+        },
+        '[mongoMeili] Detached findOneAndUpdate indexing failed:',
+      );
     },
   );
 }

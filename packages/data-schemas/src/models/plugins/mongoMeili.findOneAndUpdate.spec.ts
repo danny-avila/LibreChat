@@ -98,6 +98,20 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
       { new: true, upsert: true, includeResultMetadata: true },
     );
 
+  const waitForIndexAcknowledgment = async (
+    conversationId: string,
+    timeoutMs = 2000,
+  ): Promise<void> => {
+    const start = Date.now();
+    while (Date.now() - start <= timeoutMs) {
+      const storedDoc = await conversationModel.collection.findOne({ conversationId });
+      if (storedDoc?._meiliIndex === true) {
+        return;
+      }
+      await wait(10);
+    }
+  };
+
   test('re-indexes the updated title when the raw result wrapper is returned', async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     const user = new mongoose.Types.ObjectId().toString();
@@ -107,6 +121,7 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
       title: 'Original Title',
       endpoint: EModelEndpoint.openAI,
     });
+    await waitForIndexAcknowledgment(conversationId);
     mockAddDocuments.mockClear();
 
     const result = await updateTitle(conversationId, user, 'Renamed Title');
@@ -150,6 +165,40 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
     expect(storedDoc?._meiliIndex).toBe(true);
   });
 
+  test('does not wait for Meilisearch reads before settling the MongoDB update', async () => {
+    const conversationId = new mongoose.Types.ObjectId().toString();
+    const user = new mongoose.Types.ObjectId().toString();
+    let resolveMeiliRead:
+      | ((document: { conversationId: string; title: string }) => void)
+      | undefined;
+
+    await conversationModel.create({
+      conversationId,
+      user,
+      title: 'Original Title',
+      endpoint: EModelEndpoint.openAI,
+    });
+    await waitForMock(mockAddDocuments);
+    await waitForIndexAcknowledgment(conversationId);
+    mockAddDocuments.mockClear();
+    mockGetDocument.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMeiliRead = resolve;
+        }),
+    );
+
+    const result = await updateTitle(conversationId, user, 'Renamed Title');
+
+    expect((result as unknown as { value: unknown }).value).toBeTruthy();
+    expect(resolveMeiliRead).toBeDefined();
+    expect(mockAddDocuments).not.toHaveBeenCalled();
+
+    resolveMeiliRead!({ conversationId, title: 'Original Title' });
+    await waitForMock(mockAddDocuments);
+    expect(mockAddDocuments).toHaveBeenCalledTimes(1);
+  });
+
   test('skips re-indexing when the title already matches the MeiliSearch document', async () => {
     const conversationId = new mongoose.Types.ObjectId().toString();
     const user = new mongoose.Types.ObjectId().toString();
@@ -159,6 +208,7 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
       title: 'Same Title',
       endpoint: EModelEndpoint.openAI,
     });
+    await waitForIndexAcknowledgment(conversationId);
     mockAddDocuments.mockClear();
     mockGetDocument.mockResolvedValueOnce({ conversationId, title: 'Same Title' });
 
