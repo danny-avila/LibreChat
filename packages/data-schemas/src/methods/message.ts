@@ -10,6 +10,14 @@ import logger from '~/config/winston';
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Maximum private transcript JSON that may cross the MongoDB projection seam
+ * for the bounded public subagent-activity view. This gives the sanitizer
+ * enough source headroom while preventing multi-megabyte transcripts from
+ * being materialized merely to produce a 64 KiB public activity response.
+ */
+export const SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT: number = 256 * 1024;
+
+/**
  * Exclusion projection for message reads that feed the chat client (the
  * conversation GET and shared-link reads). Every excluded field is either
  * server-internal (ids, replay signatures, legacy summarization state) or a
@@ -63,7 +71,10 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'error'
   | 'subagentTranscript'
   | 'subagentTask'
-> & { textProjectionTruncated?: boolean };
+> & {
+  textProjectionTruncated?: boolean;
+  subagentTranscriptProjectionTruncated?: boolean;
+};
 
 export interface MessageMethods {
   saveMessage(
@@ -751,6 +762,21 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   }): Promise<SubagentThreadViewMessageRecord[]> {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
+      const selectedAssistantMessageId =
+        input.taskId == null ? undefined : `${input.taskId}:assistant`;
+      const transcriptJsonBytes = {
+        $strLenBytes: {
+          $convert: {
+            input: '$subagentTranscript.messagesJson',
+            to: 'string',
+            onError: '',
+            onNull: '',
+          },
+        },
+      };
+      const transcriptIsString = {
+        $eq: [{ $type: '$subagentTranscript.messagesJson' }, 'string'],
+      };
       return await Message.aggregate<SubagentThreadViewMessageRecord>([
         {
           $match: {
@@ -770,6 +796,16 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: input.limit },
+        ...(input.taskId == null
+          ? []
+          : [
+              {
+                $set: {
+                  _subagentTranscriptSourceBytes: transcriptJsonBytes,
+                  _subagentTranscriptSourceIsString: transcriptIsString,
+                },
+              },
+            ]),
         {
           $project: {
             _id: 0,
@@ -789,8 +825,48 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               : {
                   subagentTranscript: {
                     $cond: [
-                      { $eq: ['$messageId', `${input.taskId}:assistant`] },
-                      '$subagentTranscript',
+                      {
+                        $and: [
+                          { $eq: ['$messageId', selectedAssistantMessageId] },
+                          '$_subagentTranscriptSourceIsString',
+                          {
+                            $lte: [
+                              '$_subagentTranscriptSourceBytes',
+                              SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                            ],
+                          },
+                        ],
+                      },
+                      {
+                        taskId: '$subagentTranscript.taskId',
+                        mode: '$subagentTranscript.mode',
+                        messagesJson: '$subagentTranscript.messagesJson',
+                      },
+                      '$$REMOVE',
+                    ],
+                  },
+                  subagentTranscriptProjectionTruncated: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$messageId', selectedAssistantMessageId] },
+                          {
+                            $ne: [{ $type: '$subagentTranscript.messagesJson' }, 'missing'],
+                          },
+                          {
+                            $or: [
+                              { $eq: ['$_subagentTranscriptSourceIsString', false] },
+                              {
+                                $gt: [
+                                  '$_subagentTranscriptSourceBytes',
+                                  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                      true,
                       '$$REMOVE',
                     ],
                   },

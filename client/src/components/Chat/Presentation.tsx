@@ -96,7 +96,11 @@ export default function Presentation({ children }: { children: React.ReactNode }
   }, [artifactsElement, resetSelectedSubagent, selectedSubagent]);
 
   const subagentElement = useMemo(() => {
-    if (selectedSubagent == null || selectedSubagent.parentConversationId !== conversationId) {
+    if (
+      selectedSubagent == null ||
+      selectedSubagent.host !== 'conversation' ||
+      selectedSubagent.parentConversationId !== conversationId
+    ) {
       return null;
     }
     return (

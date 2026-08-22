@@ -1,4 +1,4 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT } from '@librechat/data-schemas';
 import type {
   ConversationMethods,
   MessageMethods,
@@ -204,23 +204,30 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         child.subagentThreadLease != null && child.subagentThreadLease.expiresAt > now
           ? child.subagentThreadLease.taskId
           : undefined;
-      const selectedTranscript =
+      const selectedMessage =
         requestedTaskId == null
           ? undefined
-          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:assistant`)
-              ?.subagentTranscript;
+          : newestFirst.find((message) => message.messageId === `${requestedTaskId}:assistant`);
+      const selectedTranscript = selectedMessage?.subagentTranscript;
       const selectedInput =
         requestedTaskId == null
           ? undefined
           : newestFirst.find((message) => message.messageId === `${requestedTaskId}:user`);
-      const projectedActivity =
-        selectedTranscript != null && selectedTranscript.taskId === requestedTaskId
-          ? projectSubagentActivity(
-              selectedTranscript.messagesJson,
-              selectedTranscript.mode,
-              selectedInput?.textProjectionTruncated === true ? undefined : selectedInput?.text,
-            )
-          : { activity: [], truncated: selectedTranscript != null };
+      let projectedActivity: ReturnType<typeof projectSubagentActivity> = {
+        activity: [],
+        truncated: false,
+      };
+      if (selectedMessage?.subagentTranscriptProjectionTruncated === true) {
+        projectedActivity = { activity: [], truncated: true };
+      } else if (selectedTranscript != null && selectedTranscript.taskId === requestedTaskId) {
+        projectedActivity = projectSubagentActivity(
+          selectedTranscript.messagesJson,
+          selectedTranscript.mode,
+          selectedInput?.textProjectionTruncated === true ? undefined : selectedInput?.text,
+        );
+      } else if (selectedTranscript != null) {
+        projectedActivity = { activity: [], truncated: true };
+      }
       const projectedNewestFirst: SubagentThreadMessage[] = [];
       let remainingTextBytes = MAX_RESPONSE_TEXT_BYTES;
       for (const message of newestFirst) {
@@ -272,6 +279,7 @@ export const SUBAGENT_THREAD_VIEW_LIMITS: Readonly<{
   responseBytes: number;
   activityItems: number;
   activityBytes: number;
+  activitySourceBytes: number;
 }> = {
   messages: MAX_THREAD_MESSAGES,
   messageTextBytes: MAX_MESSAGE_TEXT_BYTES,
@@ -279,4 +287,5 @@ export const SUBAGENT_THREAD_VIEW_LIMITS: Readonly<{
   responseBytes: MAX_RESPONSE_BYTES,
   activityItems: SUBAGENT_ACTIVITY_LIMITS.items,
   activityBytes: SUBAGENT_ACTIVITY_LIMITS.bytes,
+  activitySourceBytes: SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
 };

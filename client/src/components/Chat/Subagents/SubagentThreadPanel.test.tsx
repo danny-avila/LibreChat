@@ -78,6 +78,7 @@ jest.mock('lucide-react', () => ({
 }));
 
 const selection: ActiveSubagentPanel = {
+  host: 'conversation',
   parentConversationId: 'parent-conversation',
   parentMessageId: 'parent-message',
   toolCallId: 'tool-call',
@@ -179,6 +180,7 @@ describe('SubagentThreadPanel', () => {
       isReadinessPending: false,
     });
     const foreground: ActiveSubagentPanel = {
+      host: 'conversation',
       parentConversationId: 'parent-conversation',
       parentMessageId: 'parent-message',
       toolCallId: 'foreground-call',
