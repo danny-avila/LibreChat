@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
-import { QueryKeys, StepEvents } from 'librechat-data-provider';
+import { ContentTypes, QueryKeys, StepEvents } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   subagentProgressByToolCallId,
@@ -225,7 +225,7 @@ describe('useSubagentActivityStream', () => {
     rerender({
       value: {
         ...selection,
-        persistedContent: [{ type: 'text', text: 'New snapshot.' }],
+        persistedContent: [{ type: ContentTypes.TEXT, text: 'New snapshot.' }],
         durable: { ...selection.durable! },
       },
     });

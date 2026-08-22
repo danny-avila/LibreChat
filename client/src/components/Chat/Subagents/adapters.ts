@@ -156,7 +156,6 @@ const liveStatus = ({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
-  isDetached?: boolean;
 }): SubagentThreadStatus => {
   if (runStepStatus === 'cancelled') return 'cancelled';
   if (runStepStatus === 'failed' || progress?.status === 'error') return 'failed';
@@ -176,6 +175,7 @@ export function adaptLivePersistedActivity(input: {
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  isDetached?: boolean;
   reasoningVisibility?: 'visible' | 'marker';
   approvalVisibility?: 'visible' | 'hidden';
 }): ChildActivity {
