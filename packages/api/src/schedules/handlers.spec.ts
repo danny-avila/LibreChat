@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ISchedule } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SchedulesHandlersDeps } from './handlers';
@@ -162,6 +163,7 @@ function makeCreateDeps(over: Partial<SchedulesHandlersDeps> = {}): SchedulesHan
       minIntervalMinutes: 60,
       autoDisableAfterFailures: 5,
       fireConcurrency: 5,
+      requireProject: false,
     }),
     canViewAgent: async () => true,
     filterOwnedFileIds: async (ids: string[]) => ids,
@@ -356,6 +358,154 @@ describe('createSchedule late-create compensation', () => {
     // requested, and deleting it would erase a row a concurrent replay may already
     // have confirmed with its own 201.
     expect(captured.status).toBe(201);
+  });
+});
+
+describe('computeCreateDigest cadence shape', () => {
+  it('hashes a structured cadence exactly as it did before cron existed', () => {
+    // The digest is the idempotency key's content fence. Widening the canonical shape
+    // for every cadence would change it for schedules already out there: a create that
+    // committed before a deploy and lost its response would retry against a digest
+    // that no longer matches and be refused as if the key had been reused.
+    const legacy = createHash('sha256')
+      .update(
+        JSON.stringify({
+          name: 'Digest',
+          prompt: 'Summarize',
+          agent_id: 'agent-1',
+          timezone: 'America/New_York',
+          target: 'new',
+          enabled: true,
+          cadence: { frequency: 'daily', hour: 8, minute: 0, daysOfWeek: null },
+          file_ids: null,
+        }),
+      )
+      .digest('hex');
+
+    expect(createBodyDigest()).toBe(legacy);
+  });
+
+  it('hashes a cron cadence by its expression', () => {
+    const cron = computeCreateDigest({
+      ...CREATE_BODY,
+      target: 'new',
+      enabled: true,
+      cadence: { frequency: 'cron', expression: '0 9 * * 1-5' },
+    } as never);
+
+    expect(cron).not.toBe(createBodyDigest());
+  });
+});
+
+describe('create with a cron cadence', () => {
+  it('resolves an idempotent replay after the floor was raised beneath it', async () => {
+    // The row committed under the old floor and the client lost the response. An
+    // admin raising the floor in between must not turn the retry into a 400 for a
+    // schedule that already exists; the raised floor reaches it at fire time.
+    const committed = {
+      id: 'sched-1',
+      clientRequestId: 'intent-1',
+      name: 'Digest',
+      prompt: 'Summarize',
+      agent_id: 'agent-1',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'America/New_York',
+      target: 'new',
+      enabled: true,
+    } as unknown as ISchedule;
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        // Above the ~1320 minutes a daily cadence reports, so the payload no longer
+        // clears the floor it was admitted under.
+        minIntervalMinutes: 100_000,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    (deps.methods.getScheduleByClientRequestId as jest.Mock).mockResolvedValue(committed);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).not.toBe(400);
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a NEW create below the floor', async () => {
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 100_000,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).createSchedule(makeCreateReq(), res);
+
+    expect(captured.status).toBe(400);
+    expect(deps.methods.createScheduleWithSlot).not.toHaveBeenCalled();
+  });
+
+  it('does not hold attachments for a create it deterministically refuses', async () => {
+    // retainFiles extends every upload's TTL to the 14-day schedule hold. Running it
+    // before a refusal nothing can retry past meant each attempt pinned uploads that
+    // no schedule will ever reference and nothing will ever release.
+    const markFilesUsed = jest.fn(async () => undefined);
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      markFilesUsed,
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 100_000,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    const { res, captured } = makeRes();
+    const req = {
+      body: { ...CREATE_BODY, file_ids: ['file-1'] },
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    } as unknown as ServerRequest;
+
+    await createSchedulesHandlers(deps).createSchedule(req, res);
+
+    expect(captured.status).toBe(400);
+    expect(markFilesUsed).not.toHaveBeenCalled();
+  });
+
+  it('accepts a recurring expression that clears the floor', async () => {
+    // The default deps raise the account-deletion barrier on the post-insert
+    // re-check; this case is about the cadence, so keep that barrier down.
+    const deps = makeCreateDeps({ isUserDeleting: jest.fn(async () => false) });
+    (deps.methods.armSchedule as jest.Mock).mockResolvedValue(true);
+    // The response re-reads the row it just armed, so it has to exist to be returned.
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue({
+      id: 'sched-1',
+      cadence: { frequency: 'cron', expression: '0 9 * * 1-5' },
+      timezone: 'America/New_York',
+      enabled: true,
+    });
+    const { res, captured } = makeRes();
+    const req = {
+      body: { ...CREATE_BODY, cadence: { frequency: 'cron', expression: '0 9 * * 1-5' } },
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    } as unknown as ServerRequest;
+
+    await createSchedulesHandlers(deps).createSchedule(req, res);
+
+    expect(captured.status).toBe(201);
+    expect(deps.methods.armSchedule).toHaveBeenCalled();
   });
 });
 
@@ -763,6 +913,108 @@ describe('attachment id deduplication', () => {
       expect.objectContaining({ file_ids: ['file-a'] }),
       expect.any(Number),
     );
+  });
+});
+
+describe('updateSchedule cadence timezone resolution', () => {
+  const nyRow = (enabled: boolean) =>
+    ({
+      id: 'sched-1',
+      enabled,
+      agent_id: 'agent-1',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'America/New_York',
+      configRevision: 1,
+    }) as unknown as ISchedule;
+
+  const patchCadence = () =>
+    ({
+      params: { id: 'sched-1' },
+      body: { cadence: { frequency: 'cron', expression: '0 0,12 * * *' } },
+      user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+    }) as unknown as ServerRequest;
+
+  it('measures a cadence-only PATCH against the STORED timezone', async () => {
+    // The payload carries no timezone, so validation used undefined (i.e. UTC) and
+    // read the nominal 720-minute gap, while the schedule actually runs in New York
+    // where spring-forward compresses it to 660. The row stays disabled, so the later
+    // effective-cadence check never runs and nothing else catches it.
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 700,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue(nyRow(false));
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(patchCadence(), res);
+
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('measures a timezone-ONLY patch against the floor, even while disabled', async () => {
+    // Timing is the cadence and the zone it is read in. Checking only a submitted
+    // CADENCE let a disabled row be retimed into a zone where its gap violates the
+    // floor: accepted with 200, then refused later at enable.
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 700,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue({
+      ...nyRow(false),
+      cadence: { frequency: 'cron', expression: '0 0,12 * * *' },
+      timezone: 'UTC',
+    } as unknown as ISchedule);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(
+      {
+        params: { id: 'sched-1' },
+        body: { timezone: 'America/New_York' },
+        user: { id: 'user-1', tenantId: 't1', role: 'USER' },
+      } as unknown as ServerRequest,
+      res,
+    );
+
+    expect(captured.status).toBe(400);
+    expect(deps.methods.updateScheduleById).not.toHaveBeenCalled();
+  });
+
+  it('accepts the same PATCH where the stored zone does not compress it', async () => {
+    const deps = makeCreateDeps({
+      isUserDeleting: jest.fn(async () => false),
+      getLimits: async () => ({
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 700,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+        requireProject: false,
+      }),
+    });
+    (deps.methods.getScheduleById as jest.Mock).mockResolvedValue({
+      ...nyRow(false),
+      timezone: 'UTC',
+    } as unknown as ISchedule);
+    const { res, captured } = makeRes();
+
+    await createSchedulesHandlers(deps).updateSchedule(patchCadence(), res);
+
+    expect(captured.status ?? 200).toBe(200);
   });
 });
 

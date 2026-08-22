@@ -1,7 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import { createHash, randomUUID } from 'node:crypto';
-import { createSchedulePayloadSchema, updateSchedulePayloadSchema } from 'librechat-data-provider';
-import type { TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
+import {
+  createSchedulePayloadSchema,
+  updateSchedulePayloadSchema,
+  isCronCadence,
+} from 'librechat-data-provider';
+import type { TScheduleCadence, TCreateSchedule, TUpdateSchedule } from 'librechat-data-provider';
 import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type {
@@ -12,7 +16,12 @@ import type {
   FireResult,
 } from './types';
 import type { ServerRequest } from '~/types';
-import { isValidTimezone, cadenceIntervalMinutes, computeNextRunAt } from './cadence';
+import {
+  isValidCronExpression,
+  cadenceIntervalMinutes,
+  computeNextRunAt,
+  isValidTimezone,
+} from './cadence';
 import { resolveScheduleProjectId } from './types';
 
 export interface SchedulesHandlersDeps {
@@ -113,12 +122,19 @@ export function computeCreateDigest(payload: TCreateSchedule): string {
     timezone: payload.timezone,
     target: payload.target,
     enabled: payload.enabled,
-    cadence: {
-      frequency: payload.cadence.frequency,
-      hour: payload.cadence.hour,
-      minute: payload.cadence.minute,
-      daysOfWeek: payload.cadence.daysOfWeek ?? null,
-    },
+    // A structured cadence keeps EXACTLY the shape it hashed under before cron
+    // existed. Adding `expression: null` to it would change the canonical JSON, and
+    // with it the digest, for every schedule already out there: a create that
+    // committed before a deploy and lost its response would then retry against a
+    // digest that no longer matches and be refused as key reuse.
+    cadence: isCronCadence(payload.cadence)
+      ? { frequency: 'cron' as const, expression: payload.cadence.expression }
+      : {
+          frequency: payload.cadence.frequency,
+          hour: payload.cadence.hour,
+          minute: payload.cadence.minute,
+          daysOfWeek: payload.cadence.daysOfWeek ?? null,
+        },
     file_ids: payload.file_ids ?? null,
     // `!== undefined`, NOT `!= null`: an OMITTED field still digests byte-identically
     // to a payload from before project scope existed, so an in-flight create retried
@@ -140,6 +156,31 @@ function sameList<T>(left: T[] | undefined, right: T[] | undefined): boolean {
 }
 
 /**
+ * Compares the fields that belong to the payload's cadence kind. A cron row has no
+ * hour or minute and a structured row has no expression, so comparing all of them
+ * unconditionally would read two identical cron rows as different (undefined vs
+ * undefined is fine, but a structured row's populated hour against a cron row's
+ * missing one is not) and resurface the duplicate this matching exists to prevent.
+ */
+function sameCadenceShape(
+  existing: ISchedule['cadence'] | undefined,
+  payload: TScheduleCadence,
+): boolean {
+  if (existing == null) {
+    return false;
+  }
+  if (isCronCadence(payload)) {
+    return isCronCadence(existing) && existing.expression === payload.expression;
+  }
+  return (
+    !isCronCadence(existing) &&
+    existing.hour === payload.hour &&
+    existing.minute === payload.minute &&
+    sameList(existing.daysOfWeek, payload.daysOfWeek)
+  );
+}
+
+/**
  * Legacy replay matching for rows stamped before `clientRequestDigest` existed.
  * Deliberately omits `enabled` — a policy auto-disable mutates it, and this
  * comparison exists precisely because mutable state makes a poor replay record.
@@ -152,9 +193,7 @@ function matchesCreatedSchedule(existing: ISchedule, payload: TCreateSchedule): 
     existing.timezone === payload.timezone &&
     existing.target === payload.target &&
     existing.cadence?.frequency === payload.cadence.frequency &&
-    existing.cadence?.hour === payload.cadence.hour &&
-    existing.cadence?.minute === payload.cadence.minute &&
-    sameList(existing.cadence?.daysOfWeek, payload.cadence.daysOfWeek) &&
+    sameCadenceShape(existing.cadence, payload.cadence) &&
     sameList(existing.file_ids, payload.file_ids) &&
     // Only when the payload names one: an operator pin is written to the row without
     // the client ever sending it, and a legacy row predates project scope entirely.
@@ -253,25 +292,61 @@ export interface SchedulesHandlers {
 }
 
 export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesHandlers {
+  /**
+   * Wellformedness only: is this payload storable at all. Anything that depends on
+   * CURRENT policy, like the interval floor, is deliberately not here, because this
+   * runs before an idempotent create can resolve its existing row and a policy change
+   * would then refuse a retry of a schedule that already committed.
+   *
+   * `storedTimezone` is the row's own, for a PATCH that edits the cadence and leaves
+   * the timezone alone. Without it the cron below was validated against `undefined`,
+   * i.e. UTC, while the schedule actually runs in its stored zone.
+   */
+  /**
+   * The interval floor, which is policy AT THIS MOMENT rather than a property of the
+   * payload. Applied only once a create is known to be a genuinely new row: an admin
+   * raising the floor between a create committing and its lost response being retried
+   * must not turn that retry into a 400 for a schedule that already exists.
+   */
+  function withinIntervalFloor(
+    res: Response,
+    cadence: TScheduleCadence,
+    timezone: string,
+    limits: ScheduleLimits,
+  ): boolean {
+    if (cadenceIntervalMinutes(cadence, timezone) >= limits.minIntervalMinutes) {
+      return true;
+    }
+    res.status(400).json({
+      error: `Schedule interval must be at least ${limits.minIntervalMinutes} minutes`,
+    });
+    return false;
+  }
+
   async function validatePayload(
     req: ServerRequest,
     res: Response,
     payload: TCreateSchedule | TUpdateSchedule,
     limits: ScheduleLimits,
+    storedTimezone?: string,
   ): Promise<boolean> {
     if (payload.timezone != null && !isValidTimezone(payload.timezone)) {
       res.status(400).json({ error: 'Invalid IANA timezone' });
       return false;
     }
+    const timezone = payload.timezone ?? storedTimezone;
+    // Rejected here rather than left to `computeNextRunAt` returning null, which the
+    // engine reads as an unreadable cadence and disables, giving the user a saved
+    // schedule that never fires.
     if (
       payload.cadence != null &&
-      cadenceIntervalMinutes(payload.cadence) < limits.minIntervalMinutes
+      isCronCadence(payload.cadence) &&
+      !isValidCronExpression(payload.cadence.expression, timezone)
     ) {
-      res.status(400).json({
-        error: `Schedule interval must be at least ${limits.minIntervalMinutes} minutes`,
-      });
+      res.status(400).json({ error: 'Invalid cron expression' });
       return false;
     }
+
     if (payload.agent_id != null && !(await deps.canViewAgent(payload.agent_id, req))) {
       res.status(400).json({ error: 'Agent not found or not accessible' });
       return false;
@@ -411,6 +486,9 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       schedules: schedules.map((schedule) => toWireSchedule(schedule, limits)),
       limits: {
         maxPerUser: limits.maxPerUser,
+        // minIntervalMinutes ships with the list so the dialog can refuse a cadence
+        // the floor would reject, instead of surfacing it as a 400 after submit.
+        minIntervalMinutes: limits.minIntervalMinutes,
         requireProject: limits.requireProject,
         ...(limits.projectId != null && { projectId: limits.projectId }),
       },
@@ -554,11 +632,10 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       });
       return;
     }
-    // Retain attachments BEFORE creating, so a persisted (claimable) schedule never
-    // references uploads still eligible for TTL expiry — there is no create-then-
-    // retain window where a crash or a failed rollback leaves the two inconsistent.
-    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
-      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+    // Past the replay lookup, so this is a genuinely new row and the current floor
+    // applies to it. BEFORE the next-run computation below, which is a croner walk
+    // wasted on a request this check refuses.
+    if (!withinIntervalFloor(res, parsed.data.cadence, parsed.data.timezone, limits)) {
       return;
     }
     const id = `sched_${randomUUID()}`;
@@ -569,6 +646,16 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
           scheduleId: id,
         })
       : undefined;
+    // Retain attachments BEFORE creating, so a persisted (claimable) schedule never
+    // references uploads still eligible for TTL expiry: that leaves no create-then-
+    // retain window where a crash or a failed rollback makes the two inconsistent.
+    // AFTER the floor check, for the same reason the capacity pre-check runs early:
+    // it is deterministic, so retaining first meant every retry of the same rejected
+    // payload extended the TTL of uploads no schedule will ever reference.
+    if (parsed.data.file_ids?.length && !(await retainFiles(parsed.data.file_ids, user.id))) {
+      res.status(500).json({ error: 'Failed to retain schedule attachments' });
+      return;
+    }
     // Atomic cap: createScheduleWithSlot claims a free per-user slot via the
     // {user, slot} partial unique index, so concurrent creates can never exceed
     // maxPerUser. 'limit' means a concurrent racer took the last slot after the
@@ -734,19 +821,23 @@ export function createSchedulesHandlers(deps: SchedulesHandlersDeps): SchedulesH
       res.status(403).json({ error: 'Scheduled chats are disabled' });
       return;
     }
-    if (!(await validatePayload(req, res, parsed.data, limits))) {
+    if (!(await validatePayload(req, res, parsed.data, limits, existing.timezone))) {
       return;
     }
     const cadence = parsed.data.cadence ?? existing.cadence;
     const timezone = parsed.data.timezone ?? existing.timezone;
     const enabled = parsed.data.enabled ?? existing.enabled;
-    // Re-validate the EFFECTIVE (possibly stored) cadence against the current
-    // floor whenever this edit leaves the schedule enabled — otherwise a bare
-    // {enabled:true} could re-enable an existing schedule that now runs too often.
-    if (enabled && cadenceIntervalMinutes(cadence) < limits.minIntervalMinutes) {
-      res.status(400).json({
-        error: `Schedule interval must be at least ${limits.minIntervalMinutes} minutes`,
-      });
+    // Timing is the CADENCE AND THE ZONE it is read in: the same expression is a
+    // different schedule in another zone, and `0 0,12 * * *` moved from UTC into
+    // America/New_York goes from a 12-hour gap to an 11-hour one on spring-forward
+    // day. A timezone-only PATCH therefore faces the floor exactly as a cadence one
+    // does, whatever the row's enabled state; checking only a SUBMITTED cadence let a
+    // disabled row be retimed under the floor and rejected later at enable.
+    const timingChanged = parsed.data.cadence != null || parsed.data.timezone != null;
+    // Measured on the EFFECTIVE pair, so a bare {enabled:true} still cannot re-enable
+    // a schedule that now runs too often, and a pure rename of a disabled row below a
+    // raised floor is still left alone: it changes no timing and the API accepts it.
+    if ((timingChanged || enabled) && !withinIntervalFloor(res, cadence, timezone, limits)) {
       return;
     }
     // A supplied agent_id is validated in validatePayload; when an edit omits it
