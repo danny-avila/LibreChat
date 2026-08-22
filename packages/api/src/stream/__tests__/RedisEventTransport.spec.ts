@@ -261,6 +261,40 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
+  it('does not let a stale subscription synchronize replacement stream state', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'stale-subscription-sync';
+    const stale = transport.subscribe(
+      streamId,
+      { onChunk: jest.fn() },
+      { deferSequenceDelivery: true },
+    );
+    await stale.ready;
+    stale.unsubscribe();
+    transport.cleanup(streamId);
+
+    const replacement = transport.subscribe(
+      streamId,
+      { onChunk: jest.fn() },
+      { deferSequenceDelivery: true },
+    );
+    await replacement.ready;
+    mockPublisher.get.mockResolvedValue('0');
+
+    await stale.syncReorderBuffer?.();
+    expect(mockPublisher.get).not.toHaveBeenCalled();
+    await replacement.syncReorderBuffer?.();
+    expect(mockPublisher.get).toHaveBeenCalledTimes(1);
+
+    replacement.unsubscribe();
+    transport.destroy();
+  });
+
   it('releases each generation abort subscription after successful completion', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();

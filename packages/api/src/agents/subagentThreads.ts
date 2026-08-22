@@ -567,9 +567,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         return settleActivityWithin(this.activityStream.publish(threadId, taskId, boundedEvent));
       })
       .catch((error) => {
-        if (error instanceof SubagentActivityPublicationTimeoutError) {
-          lease.activityClosed = true;
-        }
+        /** Any failed observational command opens the per-task circuit. Retrying every
+         * token during an outage only creates command/log pressure; durable state remains. */
+        lease.activityClosed = true;
         logger.warn('[subagentThreads] Failed to publish child activity', error);
       })
       .finally(() => {

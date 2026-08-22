@@ -50,6 +50,10 @@ class TestTransport implements IEventTransport {
     this.handlers.set(streamId, subscribers);
     return {
       ...(this.subscriptionReady == null ? {} : { ready: this.subscriptionReady }),
+      syncReorderBuffer: () => {
+        if (this.handlers.get(streamId) !== subscribers) return;
+        this.syncReorderBuffer(streamId);
+      },
       unsubscribe: () => {
         subscribers.delete(subscriberId);
         if (subscribers.size === 0) this.handlers.delete(streamId);
@@ -198,6 +202,25 @@ describe('detached subagent activity stream', () => {
     );
     expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
     second.unsubscribe();
+  });
+
+  it('does not let a stale attachment synchronize recreated transport state', async () => {
+    const transport = new TestTransport();
+    let markOldReady!: () => void;
+    transport.subscriptionReady = new Promise<void>((resolve) => (markOldReady = resolve));
+    const stream = new SubagentActivityStream(transport);
+    const stale = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    stale.unsubscribe();
+    await Promise.resolve();
+
+    transport.subscriptionReady = Promise.resolve();
+    const replacement = stream.subscribe('child-thread', 'task-1', { onEvent: jest.fn() });
+    await replacement.ready;
+    markOldReady();
+    await stale.ready;
+
+    expect(transport.synchronized).toEqual([subagentActivityStreamId('child-thread', 'task-1')]);
+    replacement.unsubscribe();
   });
 
   it('publishes only while a panel has renewed live-view demand', async () => {

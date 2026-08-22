@@ -1034,6 +1034,11 @@ export class RedisEventTransport implements IEventTransport {
 
     return {
       ready: readyPromise,
+      syncReorderBuffer: () => {
+        /** A delayed attachment must never synchronize state recreated under the same ID. */
+        if (this.streams.get(streamId) !== streamState) return;
+        return this.syncReorderBuffer(streamId);
+      },
       unsubscribe: () => {
         // An unsubscribe closure belongs to the exact state and handler created
         // above. After cleanup + stream reuse, it must not decrement or detach

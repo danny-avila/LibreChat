@@ -265,7 +265,7 @@ export class SubagentActivityStream {
       if (synchronizeAttachment) {
         /** The attachment that deferred the shared buffer owns synchronization even if
          * its panel closes meanwhile; a surviving local subscriber still needs release. */
-        await this.transport.syncReorderBuffer?.(streamId);
+        await subscription.syncReorderBuffer?.();
       }
       if (closed) return;
       await this.renewDemand(streamId, () => !closed);

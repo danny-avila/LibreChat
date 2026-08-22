@@ -422,10 +422,11 @@ describe('SubagentThreadTaskStore', () => {
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const store = new SubagentThreadTaskStore(methods);
+    const emitChunk = jest.fn(() => {
+      throw new Error('activity transport unavailable');
+    });
     const unavailableTransport = {
-      emitChunk: () => {
-        throw new Error('activity transport unavailable');
-      },
+      emitChunk,
       emitDone: async () => Promise.reject(new Error('activity transport unavailable')),
       emitError: async () => undefined,
       subscribe: () => ({ unsubscribe: () => undefined }),
@@ -453,6 +454,21 @@ describe('SubagentThreadTaskStore', () => {
         phase: 'start',
         timestamp: '2026-08-21T20:00:00.000Z',
       });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      args[0].reportProgress({
+        runId: 'root-run',
+        parentRunId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'researcher-agent',
+        subagentKind: 'agent',
+        subagentAgentId: 'agent-1',
+        parentToolCallId: 'tool-call',
+        depth: 1,
+        ancestry: [],
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'after-error' }] } },
+        timestamp: '2026-08-21T20:00:00.010Z',
+      });
       return defaultRun(...args);
     });
 
@@ -462,6 +478,7 @@ describe('SubagentThreadTaskStore', () => {
     expect(store.get(config.scopeId, requireAccepted(started).task.taskId)?.status).toBe(
       'completed',
     );
+    expect(emitChunk).toHaveBeenCalledTimes(1);
   });
 
   it('bounds stalled activity and still attempts terminal delivery', async () => {

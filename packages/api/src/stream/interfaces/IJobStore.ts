@@ -1358,7 +1358,12 @@ export interface IEventTransport {
       /** Hold sequenced events until syncReorderBuffer establishes the replay frontier. */
       deferSequenceDelivery?: boolean;
     },
-  ): { unsubscribe: () => void; ready?: Promise<void> };
+  ): {
+    unsubscribe: () => void;
+    ready?: Promise<void>;
+    /** Synchronize only the transport state captured by this concrete subscription. */
+    syncReorderBuffer?: () => void | Promise<void>;
+  };
 
   /**
    * Publish a chunk event.
