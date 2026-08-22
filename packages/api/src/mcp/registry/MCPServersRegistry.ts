@@ -1,8 +1,8 @@
-import { Keyv } from 'keyv';
 import { createHash } from 'crypto';
-import { logger } from '@librechat/data-schemas';
 import { isProcessMCPServerConfig } from 'librechat-data-provider';
+import { logger, encryptV2, decryptV2, scopedCacheKey } from '@librechat/data-schemas';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
+import type { ReadThroughTransforms, FillToken } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
 import {
   ServerConfigsCacheFactory,
@@ -10,14 +10,40 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
+import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
-import { cacheConfig } from '~/cache/cacheConfig';
+import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/** Cached configs carry decrypted oauth/apiKey credentials, so the shared
+ *  stores only ever see ciphertext; plaintext stays in process memory,
+ *  exactly where it lived before these caches became shared. */
+function encryptedStoreTransforms<T>(): ReadThroughTransforms<T> {
+  return {
+    encode: async (value) => encryptV2(JSON.stringify(value)),
+    decode: async (raw) => JSON.parse(await decryptV2(raw)),
+  };
+}
+
+/** The per-server cache also negative-caches lookups, so its envelope keeps a
+ *  stored "absent" (null) distinguishable from "not cached". */
+function perServerStoreTransforms(): ReadThroughTransforms<t.ParsedServerConfig | undefined> {
+  return {
+    encode: async (value) => encryptV2(JSON.stringify({ config: value ?? null })),
+    decode: async (raw) => {
+      const decoded = JSON.parse(await decryptV2(raw)) as {
+        config: t.ParsedServerConfig | null;
+      };
+      return decoded.config ?? undefined;
+    },
+  };
+}
 
 /**
  * Provenance to persist for a config being stored in `tier`.
@@ -170,11 +196,14 @@ export class MCPServersRegistry {
   private readonly allowedAddresses?: string[] | null;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
-  private readonly readThroughCache: Keyv<t.ParsedServerConfig>;
-  private readonly readThroughCacheAll: Keyv<Record<string, t.ParsedServerConfig>>;
+  private readonly readThroughCache: ReadThroughCache<t.ParsedServerConfig | undefined>;
+  private readonly readThroughCacheAll: ReadThroughAllCache<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
     string,
-    Promise<Record<string, t.ParsedServerConfig>>
+    {
+      generation: string;
+      promise: Promise<Record<string, t.ParsedServerConfig>>;
+    }
   >();
 
   /** Tracks in-flight config server initializations to prevent duplicate work. */
@@ -202,15 +231,18 @@ export class MCPServersRegistry {
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
-    this.readThroughCache = new Keyv<t.ParsedServerConfig>({
-      namespace: 'mcp-registry-read-through',
+    /** Per-server entries are invalidated by targeted deletes. */
+    this.readThroughCache = new ReadThroughCache<t.ParsedServerConfig | undefined>(
+      'mcp-registry-read-through',
       ttl,
-    });
+      perServerStoreTransforms(),
+    );
 
-    this.readThroughCacheAll = new Keyv<Record<string, t.ParsedServerConfig>>({
-      namespace: 'mcp-registry-read-through-all',
+    this.readThroughCacheAll = new ReadThroughAllCache<Record<string, t.ParsedServerConfig>>(
+      'mcp-registry-read-through-all',
       ttl,
-    });
+      encryptedStoreTransforms<Record<string, t.ParsedServerConfig>>(),
+    );
   }
 
   /** Creates and initializes the singleton MCPServersRegistry instance */
@@ -324,8 +356,9 @@ export class MCPServersRegistry {
 
     const cacheKey = this.getReadThroughCacheKey(serverName, userId);
     let base: t.ParsedServerConfig | undefined;
-    if (await this.readThroughCache.has(cacheKey)) {
-      base = await this.readThroughCache.get(cacheKey);
+    const cached = await this.readThroughCache.getEntry(cacheKey);
+    if (cached.hit) {
+      base = cached.value;
     } else {
       const configFromYaml = await this.cacheConfigsRepo.get(serverName);
       if (configFromYaml) {
@@ -333,7 +366,7 @@ export class MCPServersRegistry {
       } else {
         base = await this.dbConfigsRepo.get(serverName, userId);
       }
-      await this.readThroughCache.set(cacheKey, base);
+      await this.readThroughCache.set(cacheKey, base, cached.fill);
     }
 
     if (!candidate) return base;
@@ -405,24 +438,36 @@ export class MCPServersRegistry {
     userId?: string,
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    const cacheKey = userId ?? '__no_user__';
+    /** Tenant-scoped (also covering the single-flight map): the DB read behind
+     *  a miss is filtered by the active tenant, so entries and in-flight
+     *  builds must partition the same way. */
+    const cacheKey = scopedCacheKey(userId ?? '__no_user__');
 
-    if (await this.readThroughCacheAll.has(cacheKey)) {
-      return (await this.readThroughCacheAll.get(cacheKey)) ?? {};
+    const cached = await this.readThroughCacheAll.get(cacheKey);
+    if (cached.hit) {
+      return cached.value ?? {};
+    }
+
+    const fill = cached.fill;
+    if (fill?.generation == null) {
+      return this.fetchBaseServerConfigs(cacheKey, userId, role, fill);
     }
 
     const pending = this.pendingGetAllPromises.get(cacheKey);
-    if (pending) {
-      return pending;
+    if (pending?.generation === fill.generation) {
+      return pending.promise;
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role);
-    this.pendingGetAllPromises.set(cacheKey, fetchPromise);
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role, fill);
+    const pendingFill = { generation: fill.generation, promise: fetchPromise };
+    this.pendingGetAllPromises.set(cacheKey, pendingFill);
 
     try {
       return await fetchPromise;
     } finally {
-      this.pendingGetAllPromises.delete(cacheKey);
+      if (this.pendingGetAllPromises.get(cacheKey) === pendingFill) {
+        this.pendingGetAllPromises.delete(cacheKey);
+      }
     }
   }
 
@@ -430,6 +475,7 @@ export class MCPServersRegistry {
     cacheKey: string,
     userId?: string,
     role?: string,
+    fill?: FillToken,
   ): Promise<Record<string, t.ParsedServerConfig>> {
     const [dbConfigs, yamlConfigs] = await Promise.all([
       this.dbConfigsRepo.getAll(userId, role),
@@ -440,7 +486,7 @@ export class MCPServersRegistry {
 
     const result = { ...dbConfigs, ...yamlConfigs };
 
-    await this.readThroughCacheAll.set(cacheKey, result);
+    await this.readThroughCacheAll.set(cacheKey, result, fill);
     return result;
   }
 
@@ -461,7 +507,7 @@ export class MCPServersRegistry {
       source: resolveServerSource(config, 'yaml'),
     };
     const result = await configRepo.add(serverName, stubConfig, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId);
+    await this.invalidateServerReadCaches(result.serverName, userId, 'CACHE');
     this.resetYamlServerNamesMemo();
     return result;
   }
@@ -506,7 +552,7 @@ export class MCPServersRegistry {
             await this.getOperatorManagedServerNames(reservedServerNames),
           )
         : await configRepo.add(serverName, tagged, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId);
+    await this.invalidateServerReadCaches(result.serverName, userId, storageLocation);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
@@ -554,7 +600,7 @@ export class MCPServersRegistry {
 
     const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
     await configRepo.update(serverName, updatedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     return { serverName, config: updatedConfig };
   }
 
@@ -616,7 +662,7 @@ export class MCPServersRegistry {
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.update(serverName, parsedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     return parsedConfig;
   }
 
@@ -824,9 +870,10 @@ export class MCPServersRegistry {
 
     await Promise.all([
       this.configCacheRepo.reset(),
-      // Only clear readThroughCacheAll (merged results that may include stale config servers).
+      // Only invalidate readThroughCacheAll (merged results that may include stale config servers).
       // readThroughCache (individual YAML/user lookups) is unaffected by config mutations.
-      this.readThroughCacheAll.clear(),
+      // Operator config changes are global, so the eviction crosses tenants.
+      this.readThroughCacheAll.invalidateAllGlobal(),
     ]);
 
     if (evictedNames.length > 0) {
@@ -851,7 +898,7 @@ export class MCPServersRegistry {
     await this.cacheConfigsRepo.reset();
     await this.configCacheRepo.reset();
     await this.readThroughCache.clear();
-    await this.readThroughCacheAll.clear();
+    await this.readThroughCacheAll.invalidateAllGlobal();
     this.resetYamlServerNamesMemo();
   }
 
@@ -862,7 +909,7 @@ export class MCPServersRegistry {
   ): Promise<void> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.remove(serverName, userId);
-    await this.invalidateServerReadCaches(serverName, userId);
+    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
@@ -881,14 +928,35 @@ export class MCPServersRegistry {
     }
   }
 
+  /** Tenant-scoped because DB-backed lookups are filtered by the active tenant:
+   *  an entry populated in one tenant's context must never satisfy another's. */
   private getReadThroughCacheKey(serverName: string, userId?: string): string {
-    return userId ? `${serverName}::${userId}` : serverName;
+    return scopedCacheKey(userId ? `${serverName}::${userId}` : serverName);
   }
 
-  private async invalidateServerReadCaches(serverName: string, userId?: string): Promise<void> {
+  /**
+   * DB-backed servers and their ACL grants are tenant-scoped data, so their
+   * invalidation stays within the acting tenant. CACHE-tier (YAML/App
+   * repository) entries are global, so those mutations evict across tenants:
+   * the per-server cache cannot enumerate tenant-scoped keys, so it clears the
+   * namespace, and the aggregate map uses its global path.
+   */
+  private async invalidateServerReadCaches(
+    serverName: string,
+    userId?: string,
+    storageLocation?: 'CACHE' | 'DB',
+  ): Promise<void> {
+    if (storageLocation === 'CACHE') {
+      await Promise.all([
+        this.readThroughCache.clear(),
+        this.readThroughCacheAll.invalidateAllGlobal(),
+      ]);
+      return;
+    }
+
     const deletes = [
       this.readThroughCache.delete(this.getReadThroughCacheKey(serverName)),
-      this.readThroughCacheAll.clear(),
+      this.readThroughCacheAll.invalidateAll(),
     ];
 
     if (userId) {
