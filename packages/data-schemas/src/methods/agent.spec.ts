@@ -20,6 +20,7 @@ import type {
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
+import { tenantStorage } from '~/config/tenantContext';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
 
@@ -587,6 +588,42 @@ describe('Agent Methods', () => {
         });
 
         expect(await methods.getAgentsWithMCPServerNames()).toEqual([]);
+      });
+
+      test('getAgentsWithMCPServerNames stays within the active tenant', async () => {
+        const tenantA = `tenant-a-${uuidv4()}`;
+        const tenantB = `tenant-b-${uuidv4()}`;
+        const { agentId, authorId } = createTestIds();
+        const agentA = await tenantStorage.run({ tenantId: tenantA }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant A MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-a'],
+          }),
+        );
+        const agentB = await tenantStorage.run({ tenantId: tenantB }, async () =>
+          createAgent({
+            id: agentId,
+            name: 'Tenant B MCP Agent',
+            provider: 'test',
+            model: 'test-model',
+            author: authorId,
+            mcpServerNames: ['server-b'],
+          }),
+        );
+
+        const inA = await tenantStorage.run({ tenantId: tenantA }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+        const inB = await tenantStorage.run({ tenantId: tenantB }, () =>
+          methods.getAgentsWithMCPServerNames(),
+        );
+
+        expect(inA.map((agent) => agent._id.toString())).toEqual([agentA._id.toString()]);
+        expect(inB.map((agent) => agent._id.toString())).toEqual([agentB._id.toString()]);
       });
 
       test('getAgentIdsByMCPServerName returns ids of agents referencing the server', async () => {

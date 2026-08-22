@@ -6,6 +6,7 @@ import { standardCache } from '~/cache';
 /** Base key holding the active generation tag; the effective key is
  *  tenant-scoped, so one tenant's mutations cannot orphan another's entries. */
 const GENERATION_KEY = '__generation__';
+const GLOBAL_GENERATION_KEY = '__global_generation__';
 
 interface MemoEntry<T> {
   value: T;
@@ -19,7 +20,7 @@ interface MemoEntry<T> {
  *  only that fill) can be fenced when an invalidation completed first. */
 export interface FillToken {
   key: string;
-  generation: string;
+  generation: string | null;
 }
 
 /** Result of one read: `hit` distinguishes a stored value from a miss, and
@@ -99,14 +100,20 @@ export class ReadThroughAllCache<T> {
    *  generation whose unexpired entries could otherwise be revived by a
    *  transient read failure. */
   private async readGeneration(): Promise<string | undefined> {
-    let generation: unknown;
+    let globalGeneration: unknown;
+    let tenantGeneration: unknown;
     try {
-      generation = await this.generationCache.get(scopedCacheKey(GENERATION_KEY));
+      [globalGeneration, tenantGeneration] = await Promise.all([
+        this.generationCache.get(GLOBAL_GENERATION_KEY),
+        this.generationCache.get(scopedCacheKey(GENERATION_KEY)),
+      ]);
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Generation read failed:', error);
       return undefined;
     }
-    return typeof generation === 'string' ? generation : '0';
+    const global = typeof globalGeneration === 'string' ? globalGeneration : '0';
+    const tenant = typeof tenantGeneration === 'string' ? tenantGeneration : '0';
+    return `${global}:${tenant}`;
   }
 
   /** Effective tenant for cache scoping, mirroring scopedCacheKey: the system
@@ -144,7 +151,7 @@ export class ReadThroughAllCache<T> {
     }
     const generation = await this.readGeneration();
     if (generation == null) {
-      return { hit: false, value: undefined };
+      return { hit: false, value: undefined, fill: { key, generation: null } };
     }
     let raw: unknown;
     try {
@@ -195,27 +202,31 @@ export class ReadThroughAllCache<T> {
     if (!this.enabled) {
       return;
     }
+    if (fill != null && fill.key === key && fill.generation == null) {
+      return;
+    }
     const current = await this.readGeneration();
-    if (fill != null && fill.key === key && current != null && current !== fill.generation) {
+    if (current == null) {
+      return;
+    }
+    if (fill != null && fill.key === key && current !== fill.generation) {
       /** Fenced: this value was computed before an invalidation completed, so
        *  writing it (store or memo) would resurrect the pre-mutation map. */
       return;
     }
-    const generation = current ?? (fill != null && fill.key === key ? fill.generation : undefined);
-    if (generation != null) {
-      try {
-        const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
-        await this.cache.set(this.entryKey(generation, key), stored);
-      } catch (error) {
-        /** A failed store write degrades to the memo only; the caller's result
-         *  is already computed and must still be served. */
-        logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
-      }
-      /** Same recheck as get(): skip the memo when an invalidation landed while
-       *  this write was in flight, so the next read recomputes. */
-      if ((await this.readGeneration()) !== generation) {
-        return;
-      }
+    const generation = current;
+    try {
+      const stored = this.transforms?.encode ? await this.transforms.encode(value) : value;
+      await this.cache.set(this.entryKey(generation, key), stored);
+    } catch (error) {
+      /** A failed store write degrades to the memo only; the caller's result
+       *  is already computed and must still be served. */
+      logger.warn('[ReadThroughAllCache] Failed to write cache entry:', error);
+    }
+    /** Same recheck as get(): skip the memo when an invalidation landed while
+     *  this write was in flight, so the next read recomputes. */
+    if ((await this.readGeneration()) !== generation) {
+      return;
     }
     this.memo.set(key, {
       value,
@@ -229,15 +240,13 @@ export class ReadThroughAllCache<T> {
    * Orphans the calling tenant's entries without scanning the keyspace.
    * DB-backed MCP servers and ACL grants are tenant-scoped data, so one
    * tenant's mutation has no business evicting another tenant's entries, in
-   * the store or in the process-local memo.
+   * the store or in the process-local memo. Rejects when the shared generation
+   * cannot be rotated, so a persisted mutation is never reported as fully
+   * invalidated while stale shared entries remain addressable.
    */
   async invalidateAll(): Promise<void> {
     const tenantId = this.currentTenantId();
-    for (const [key, entry] of this.memo) {
-      if (entry.tenantId === tenantId) {
-        this.memo.delete(key);
-      }
-    }
+    this.evictTenantMemo(tenantId);
     if (!this.enabled) {
       return;
     }
@@ -247,13 +256,18 @@ export class ReadThroughAllCache<T> {
       await this.generationCache.set(scopedCacheKey(GENERATION_KEY), randomUUID());
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Generation write failed:', error);
+      throw error;
     }
+    /** A read that completed against the old generation while the write was in
+     *  flight may have repopulated the memo after the first eviction. */
+    this.evictTenantMemo(tenantId);
   }
 
   /**
    * Clears every entry across tenants by scanning the namespace. Reserved for
    * genuinely global events (operator config changes, lifecycle resets) where
-   * the SCAN cost is rare and cross-tenant eviction is the point.
+   * the SCAN cost is rare and cross-tenant eviction is the point. Rejects when
+   * the shared global fence cannot be rotated.
    */
   async invalidateAllGlobal(): Promise<void> {
     this.memo.clear();
@@ -261,9 +275,24 @@ export class ReadThroughAllCache<T> {
       return;
     }
     try {
+      await this.generationCache.set(GLOBAL_GENERATION_KEY, randomUUID());
+    } catch (error) {
+      logger.warn('[ReadThroughAllCache] Global generation write failed:', error);
+      throw error;
+    }
+    this.memo.clear();
+    try {
       await this.cache.clear();
     } catch (error) {
       logger.warn('[ReadThroughAllCache] Global clear failed:', error);
+    }
+  }
+
+  private evictTenantMemo(tenantId: string | undefined): void {
+    for (const [key, entry] of this.memo) {
+      if (entry.tenantId === tenantId) {
+        this.memo.delete(key);
+      }
     }
   }
 }

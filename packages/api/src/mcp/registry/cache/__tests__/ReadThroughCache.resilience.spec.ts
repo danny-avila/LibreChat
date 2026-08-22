@@ -19,6 +19,10 @@ jest.mock('~/cache', () => {
   return {
     ...actual,
     standardCache: (namespace: string) => {
+      const existing = mockStores.get(namespace);
+      if (existing) {
+        return existing;
+      }
       const store: MockStore = {
         get: jest.fn(async () => undefined),
         set: jest.fn(async () => true),
@@ -48,6 +52,30 @@ function storeFor(namespace: string): MockStore {
   return store;
 }
 
+function installGenerationStore(
+  generation: MockStore,
+  initial: Record<string, string> = {},
+): Map<string, string> {
+  const values = new Map(Object.entries(initial));
+  generation.get.mockImplementation(async (key: string) => values.get(key));
+  generation.set.mockImplementation(async (key: string, value: string) => {
+    values.set(key, value);
+    return true;
+  });
+  return values;
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe('read-through cache resilience', () => {
   test('entry store failure on get degrades to a miss', async () => {
     const namespace = `rtac-r-${randomUUID()}`;
@@ -65,6 +93,20 @@ describe('read-through cache resilience', () => {
     generation.get.mockRejectedValue(new Error('redis unavailable'));
 
     await expect(cache.get('user-1')).resolves.toEqual(expect.objectContaining({ hit: false }));
+  });
+
+  test('a generation-read failure marks the fill as uncacheable', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    generation.get.mockRejectedValue(new Error('redis unavailable'));
+
+    const miss = await cache.get('user-1');
+    expect(miss.fill).toEqual({ key: 'user-1', generation: null });
+
+    generation.get.mockResolvedValue(undefined);
+    await cache.set('user-1', 'must-not-be-shared', miss.fill);
+    expect(entry.set).not.toHaveBeenCalled();
   });
 
   test('a generation failure cannot revive generation-zero entries', async () => {
@@ -95,13 +137,13 @@ describe('read-through cache resilience', () => {
     );
   });
 
-  test('generation write failure on invalidateAll never rejects', async () => {
+  test('generation write failure on invalidateAll is propagated', async () => {
     const namespace = `rtac-r-${randomUUID()}`;
     const cache = new ReadThroughAllCache<string>(namespace, 60_000);
     const { generation } = storesFor(namespace);
     generation.set.mockRejectedValue(new Error('redis unavailable'));
 
-    await expect(cache.invalidateAll()).resolves.toBeUndefined();
+    await expect(cache.invalidateAll()).rejects.toThrow('redis unavailable');
   });
 
   test('an invalidation landing mid-read is not memoized', async () => {
@@ -111,7 +153,15 @@ describe('read-through cache resilience', () => {
     entry.get.mockResolvedValue('pre-mutation-value');
     /** First read sees g1; the recheck after the entry fetch observes the
      *  invalidation that landed in between. */
-    generation.get.mockResolvedValueOnce('g1').mockResolvedValue('g2');
+    generation.get.mockImplementation(async (key: string) => {
+      if (key === '__global_generation__') {
+        return 'global';
+      }
+      return generation.get.mock.calls.filter(([calledKey]) => calledKey === '__generation__')
+        .length === 1
+        ? 'g1'
+        : 'g2';
+    });
 
     const raced = await cache.get('user-1');
     expect(raced.hit).toBe(false);
@@ -123,11 +173,10 @@ describe('read-through cache resilience', () => {
     /** The value was never memoized, so the next read recomputes from the
      *  store under the new generation rather than replaying the stale hit. */
     entry.get.mockClear();
-    generation.get.mockResolvedValueOnce('g2').mockResolvedValueOnce('g2');
     await expect(cache.get('user-1')).resolves.toEqual(
       expect.objectContaining({ hit: true, value: 'pre-mutation-value' }),
     );
-    expect(entry.get).toHaveBeenCalledWith('g2::user-1');
+    expect(entry.get).toHaveBeenCalledWith('global:g2::user-1');
   });
 
   test('a fill computed across an invalidation is fenced', async () => {
@@ -136,12 +185,15 @@ describe('read-through cache resilience', () => {
     const { entry, generation } = storesFor(namespace);
     /** The miss happens under g1; the caller is still computing when the
      *  generation moves to g2, so the fill must not be written or memoized. */
-    generation.get.mockResolvedValueOnce('g1');
+    const values = installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'g1',
+    });
     entry.get.mockResolvedValueOnce(undefined);
     const miss = await cache.get('user-1');
-    expect(miss.fill).toEqual({ key: 'user-1', generation: 'g1' });
+    expect(miss.fill).toEqual({ key: 'user-1', generation: 'global:g1' });
 
-    generation.get.mockResolvedValue('g2');
+    values.set('__generation__', 'g2');
     await cache.set('user-1', 'stale-computed', miss.fill);
 
     expect(entry.set).not.toHaveBeenCalled();
@@ -154,12 +206,15 @@ describe('read-through cache resilience', () => {
     const { entry, generation } = storesFor(namespace);
     /** The Redis read fails under g1 but recovers by the time the fill lands,
      *  after an invalidation moved the generation: the fill is still stale. */
-    generation.get.mockResolvedValueOnce('g1');
+    const values = installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'g1',
+    });
     entry.get.mockRejectedValueOnce(new Error('redis unavailable'));
     const miss = await cache.get('user-1');
     expect(miss.hit).toBe(false);
 
-    generation.get.mockResolvedValue('g2');
+    values.set('__generation__', 'g2');
     await cache.set('user-1', 'stale-computed', miss.fill);
 
     expect(entry.set).not.toHaveBeenCalled();
@@ -169,13 +224,16 @@ describe('read-through cache resilience', () => {
     const namespace = `rtac-r-${randomUUID()}`;
     const cache = new ReadThroughAllCache<string>(namespace, 40);
     const { entry, generation } = storesFor(namespace);
-    generation.get.mockResolvedValueOnce('g1');
+    const values = installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'g1',
+    });
     entry.get.mockResolvedValueOnce(undefined);
     const miss = await cache.get('user-1');
     expect(miss.hit).toBe(false);
 
     await new Promise((resolve) => setTimeout(resolve, 80));
-    generation.get.mockResolvedValue('g2');
+    values.set('__generation__', 'g2');
 
     /** The miss generation travels with the fill, so a compute slower than the
      *  entry TTL is still fenced when it lands. */
@@ -190,19 +248,71 @@ describe('read-through cache resilience', () => {
     /** Fill A misses under g1; an invalidation moves to g2; fill B misses
      *  under g2. A's later set must stay fenced even though B's fence is
      *  current, which a shared per-key marker could not express. */
-    generation.get.mockResolvedValueOnce('g1').mockResolvedValue('g2');
+    const values = installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'g1',
+    });
     entry.get.mockResolvedValueOnce(undefined);
     const missA = await cache.get('user-1');
 
+    values.set('__generation__', 'g2');
     entry.get.mockResolvedValueOnce(undefined);
     const missB = await cache.get('user-1');
-    expect(missB.fill).toEqual({ key: 'user-1', generation: 'g2' });
+    expect(missB.fill).toEqual({ key: 'user-1', generation: 'global:g2' });
 
     await cache.set('user-1', 'stale-from-A', missA.fill);
     expect(entry.set).not.toHaveBeenCalled();
 
     await cache.set('user-1', 'fresh-from-B', missB.fill);
-    expect(entry.set).toHaveBeenCalledWith('g2::user-1', 'fresh-from-B');
+    expect(entry.set).toHaveBeenCalledWith('global:g2::user-1', 'fresh-from-B');
+  });
+
+  test('invalidateAll evicts a memo repopulated while the generation write is pending', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    const values = installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'g1',
+    });
+    const generationWrite = deferred<void>();
+    generation.set.mockImplementation(async (key: string, value: string) => {
+      await generationWrite.promise;
+      values.set(key, value);
+      return true;
+    });
+
+    await cache.set('user-1', 'memoized-old');
+    entry.get.mockResolvedValue('stored-old');
+
+    const invalidation = cache.invalidateAll();
+    const racedRead = await cache.get('user-1');
+    expect(racedRead).toEqual(expect.objectContaining({ hit: true, value: 'stored-old' }));
+
+    generationWrite.resolve();
+    await invalidation;
+
+    entry.get.mockClear();
+    await cache.get('user-1');
+    expect(entry.get).toHaveBeenCalled();
+  });
+
+  test('invalidateAllGlobal rotates the shared fence for in-flight fills', async () => {
+    const namespace = `rtac-r-${randomUUID()}`;
+    const cache = new ReadThroughAllCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    installGenerationStore(generation, {
+      __global_generation__: 'global-1',
+      __generation__: 'tenant-1',
+    });
+    entry.get.mockResolvedValueOnce(undefined);
+    const miss = await cache.get('user-1');
+
+    await cache.invalidateAllGlobal();
+    await cache.set('user-1', 'pre-reset-value', miss.fill);
+
+    expect(generation.set).toHaveBeenCalledWith('__global_generation__', expect.any(String));
+    expect(entry.set).not.toHaveBeenCalled();
   });
 
   test("invalidation in one tenant does not orphan another tenant's entries", async () => {
@@ -241,7 +351,8 @@ describe('read-through cache resilience', () => {
   test('invalidateAllGlobal clears the shared namespace across tenants', async () => {
     const namespace = `rtac-r-${randomUUID()}`;
     const cache = new ReadThroughAllCache<string>(namespace, 60_000);
-    const { entry } = storesFor(namespace);
+    const { entry, generation } = storesFor(namespace);
+    installGenerationStore(generation);
     entry.get.mockResolvedValue('stored-value');
     await cache.set('user-1', 'memoized');
 
@@ -251,7 +362,7 @@ describe('read-through cache resilience', () => {
      *  next read goes back to the shared store instead of replaying it. */
     expect(entry.clear).toHaveBeenCalled();
     await cache.get('user-1');
-    expect(entry.get).toHaveBeenCalledWith('0::user-1');
+    expect(entry.get).toHaveBeenCalledWith(expect.stringMatching(/^[^:]+:0::user-1$/));
   });
 });
 
@@ -315,13 +426,14 @@ describe('per-server ReadThroughCache resilience', () => {
     await expect(cache.getEntry('server::user')).resolves.toEqual(
       expect.objectContaining({ hit: false }),
     );
-    expect(store.delete).toHaveBeenCalledWith('server::user');
+    expect(store.delete).toHaveBeenCalledWith('0:0::server::user');
   });
 
   test('a fill finishing after a targeted delete is fenced', async () => {
     const namespace = `rtc-r-${randomUUID()}`;
     const cache = new ReadThroughCache<string>(namespace, 60_000);
-    const store = storeFor(namespace);
+    const { entry: store, generation } = storesFor(namespace);
+    installGenerationStore(generation);
     store.get.mockResolvedValueOnce(undefined);
     const miss = await cache.getEntry('server::user');
     expect(miss.hit).toBe(false);
@@ -337,7 +449,8 @@ describe('per-server ReadThroughCache resilience', () => {
   test('a fill finishing after a namespace clear is fenced', async () => {
     const namespace = `rtc-r-${randomUUID()}`;
     const cache = new ReadThroughCache<string>(namespace, 60_000);
-    const store = storeFor(namespace);
+    const { entry: store, generation } = storesFor(namespace);
+    installGenerationStore(generation);
     store.get.mockResolvedValueOnce(undefined);
     const miss = await cache.getEntry('server::user');
     expect(miss.hit).toBe(false);
@@ -358,13 +471,14 @@ describe('per-server ReadThroughCache resilience', () => {
 
     await cache.set('server::user', 'fresh', miss.fill);
 
-    expect(store.set).toHaveBeenCalledWith('server::user', 'fresh');
+    expect(store.set).toHaveBeenCalledWith('0:0::server::user', 'fresh');
   });
 
   test('concurrent fills for one key keep distinct fences', async () => {
     const namespace = `rtc-r-${randomUUID()}`;
     const cache = new ReadThroughCache<string>(namespace, 60_000);
-    const store = storeFor(namespace);
+    const { entry: store, generation } = storesFor(namespace);
+    installGenerationStore(generation);
     /** Fill A misses; a targeted delete lands; fill B misses. A's later write
      *  must stay fenced even though B's fence is current. */
     store.get.mockResolvedValue(undefined);
@@ -377,6 +491,59 @@ describe('per-server ReadThroughCache resilience', () => {
     expect(store.set).not.toHaveBeenCalled();
 
     await cache.set('server::user', 'fresh-from-B', missB.fill);
-    expect(store.set).toHaveBeenCalledWith('server::user', 'fresh-from-B');
+    expect(store.set).toHaveBeenCalledWith(
+      expect.stringContaining('::server::user'),
+      'fresh-from-B',
+    );
+  });
+
+  test('a cross-instance invalidation fences a write already awaiting encode', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const encodeStarted = deferred<void>();
+    const releaseEncode = deferred<void>();
+    const writer = new ReadThroughCache<string>(namespace, 60_000, {
+      encode: async (value) => {
+        encodeStarted.resolve();
+        await releaseEncode.promise;
+        return value;
+      },
+    });
+    const invalidator = new ReadThroughCache<string>(namespace, 60_000);
+    const { entry, generation } = storesFor(namespace);
+    installGenerationStore(generation, {
+      __global_generation__: 'global',
+      __generation__: 'tenant-1',
+    });
+    entry.get.mockResolvedValueOnce(undefined);
+    const miss = await writer.getEntry('server::user');
+
+    const write = writer.set('server::user', 'pre-mutation-value', miss.fill);
+    await encodeStarted.promise;
+    await invalidator.delete('server::user');
+    releaseEncode.resolve();
+    await write;
+
+    expect(entry.set).toHaveBeenCalledWith('global:tenant-1::server::user', 'pre-mutation-value');
+    expect(entry.delete).toHaveBeenLastCalledWith('global:tenant-1::server::user');
+
+    entry.get.mockClear();
+    await expect(invalidator.getEntry('server::user')).resolves.toEqual(
+      expect.objectContaining({ hit: false }),
+    );
+    expect(entry.get).toHaveBeenCalledWith(expect.not.stringContaining('tenant-1'));
+  });
+
+  test('targeted invalidations reuse one shared tenant generation key', async () => {
+    const namespace = `rtc-r-${randomUUID()}`;
+    const cache = new ReadThroughCache<string>(namespace, 60_000);
+    const { generation } = storesFor(namespace);
+    installGenerationStore(generation);
+
+    await cache.delete('server-a::user');
+    await cache.delete('server-b::user');
+    await cache.delete('server-c::user');
+
+    expect(generation.set).toHaveBeenCalledTimes(3);
+    expect(generation.set.mock.calls.every(([key]) => key === '__generation__')).toBe(true);
   });
 });

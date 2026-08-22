@@ -136,6 +136,59 @@ describe('MCPServersRegistry', () => {
       expect(dbGetAll).toHaveBeenCalledTimes(2);
     });
 
+    it('does not join or erase a single-flight fetch from another generation', async () => {
+      let resolveOld!: (value: Record<string, t.ParsedServerConfig>) => void;
+      let resolveFresh!: (value: Record<string, t.ParsedServerConfig>) => void;
+      let signalOldStarted!: () => void;
+      let signalFreshStarted!: () => void;
+      const oldResult = new Promise<Record<string, t.ParsedServerConfig>>((resolve) => {
+        resolveOld = resolve;
+      });
+      const freshResult = new Promise<Record<string, t.ParsedServerConfig>>((resolve) => {
+        resolveFresh = resolve;
+      });
+      const oldStarted = new Promise<void>((resolve) => {
+        signalOldStarted = resolve;
+      });
+      const freshStarted = new Promise<void>((resolve) => {
+        signalFreshStarted = resolve;
+      });
+      const dbGetAll = jest
+        .spyOn(registry['dbConfigsRepo'], 'getAll')
+        .mockImplementationOnce(async () => {
+          signalOldStarted();
+          return oldResult;
+        })
+        .mockImplementationOnce(async () => {
+          signalFreshStarted();
+          return freshResult;
+        });
+
+      const oldRequest = registry.getAllServerConfigs('user-1');
+      await oldStarted;
+      expect(dbGetAll).toHaveBeenCalledTimes(1);
+
+      await registry['readThroughCacheAll'].invalidateAll();
+      const freshRequest = registry.getAllServerConfigs('user-1');
+      await freshStarted;
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      resolveOld({ old_server: testParsedConfig });
+      await expect(oldRequest).resolves.toEqual({ old_server: testParsedConfig });
+
+      const joinedFreshRequest = registry.getAllServerConfigs('user-1');
+
+      resolveFresh({ fresh_server: testParsedConfig });
+      await expect(freshRequest).resolves.toEqual({ fresh_server: testParsedConfig });
+      await expect(joinedFreshRequest).resolves.toEqual({ fresh_server: testParsedConfig });
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+
+      await expect(registry.getAllServerConfigs('user-1')).resolves.toEqual({
+        fresh_server: testParsedConfig,
+      });
+      expect(dbGetAll).toHaveBeenCalledTimes(2);
+    });
+
     it('should keep YAML servers authoritative when a DB server has the same name', async () => {
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
       const yamlConfig = { ...testParsedConfig, source: 'yaml' as const, title: 'YAML Slack' };

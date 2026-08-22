@@ -200,7 +200,10 @@ export class MCPServersRegistry {
   private readonly readThroughCacheAll: ReadThroughAllCache<Record<string, t.ParsedServerConfig>>;
   private readonly pendingGetAllPromises = new Map<
     string,
-    Promise<Record<string, t.ParsedServerConfig>>
+    {
+      generation: string;
+      promise: Promise<Record<string, t.ParsedServerConfig>>;
+    }
   >();
 
   /** Tracks in-flight config server initializations to prevent duplicate work. */
@@ -446,18 +449,26 @@ export class MCPServersRegistry {
       return cached.value ?? {};
     }
 
-    const pending = this.pendingGetAllPromises.get(cacheKey);
-    if (pending) {
-      return pending;
+    const fill = cached.fill;
+    if (fill?.generation == null) {
+      return this.fetchBaseServerConfigs(cacheKey, userId, role, fill);
     }
 
-    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role, cached.fill);
-    this.pendingGetAllPromises.set(cacheKey, fetchPromise);
+    const pending = this.pendingGetAllPromises.get(cacheKey);
+    if (pending?.generation === fill.generation) {
+      return pending.promise;
+    }
+
+    const fetchPromise = this.fetchBaseServerConfigs(cacheKey, userId, role, fill);
+    const pendingFill = { generation: fill.generation, promise: fetchPromise };
+    this.pendingGetAllPromises.set(cacheKey, pendingFill);
 
     try {
       return await fetchPromise;
     } finally {
-      this.pendingGetAllPromises.delete(cacheKey);
+      if (this.pendingGetAllPromises.get(cacheKey) === pendingFill) {
+        this.pendingGetAllPromises.delete(cacheKey);
+      }
     }
   }
 

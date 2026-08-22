@@ -620,10 +620,9 @@ export function createAgentMethods(
     Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
   > {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.find(
-      { mcpServerNames: { $exists: true, $not: { $size: 0 } } },
-      { mcpServerNames: 1 },
-    ).lean<Array<Pick<IAgent, '_id' | 'mcpServerNames'>>>();
+    return await Agent.find({ mcpServerNames: { $type: 'string' } }, { mcpServerNames: 1 }).lean<
+      Array<Pick<IAgent, '_id' | 'mcpServerNames'>>
+    >();
   }
 
   /**
