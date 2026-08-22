@@ -32,6 +32,7 @@ import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { HostSubagentTaskConfig } from './subagentDelivery';
 import {
   SubagentActivityStream,
+  type SubagentActivityUpdateEvent,
   type SubagentActivitySubscriber,
   type SubagentActivitySubscription,
   type SubagentActivityTerminalStatus,
@@ -648,15 +649,20 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
                 );
               }
               const preparedThread = prepared;
+              let activitySequence = 0;
               const activityRuntime: SubagentTaskRuntime = {
                 ...runtime,
                 reportProgress: (event) => {
-                  runtime.reportProgress(event);
+                  const activityEvent: SubagentActivityUpdateEvent = {
+                    ...event,
+                    activityEventId: `${runtime.taskId}:${activitySequence++}`,
+                  };
+                  runtime.reportProgress(activityEvent);
                   this.publishActivity(
                     lease,
                     preparedThread.conversation.conversationId,
                     runtime.taskId,
-                    event,
+                    activityEvent,
                   );
                 },
               };

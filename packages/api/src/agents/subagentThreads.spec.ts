@@ -397,7 +397,13 @@ describe('SubagentThreadTaskStore', () => {
 
     await expect(terminal).resolves.toBe('completed');
     expect(events).toEqual([
-      { event: 'on_subagent_update', data: expect.objectContaining({ data: progress.data }) },
+      {
+        event: 'on_subagent_update',
+        data: expect.objectContaining({
+          activityEventId: `${accepted.task.taskId}:0`,
+          data: progress.data,
+        }),
+      },
     ]);
     const messages = await methods.getMessages(
       {

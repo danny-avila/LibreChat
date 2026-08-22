@@ -66,26 +66,10 @@ const hashString = (value: string): string => {
   return (hash >>> 0).toString(36);
 };
 
-const eventKey = (event: SubagentUpdateEvent): string => {
-  let data = '[redacted]';
-  if (event.phase !== 'reasoning_delta') {
-    try {
-      data = JSON.stringify(event.data) ?? '';
-    } catch {
-      data = '[unserializable]';
-    }
-  }
-  return hashString(
-    [
-      event.subagentRunId,
-      event.parentToolCallId ?? '',
-      event.memberAgentId ?? '',
-      event.phase,
-      event.timestamp,
-      event.label ?? '',
-      data,
-    ].join('\u0000'),
-  );
+const eventKey = (event: SubagentUpdateEvent): string | undefined => {
+  const activityEventId = event.activityEventId?.trim();
+  if (!activityEventId) return undefined;
+  return hashString(`${event.subagentRunId}\u0000${activityEventId}`);
 };
 
 /** One child invocation selected for the shared read-only activity panel. */
@@ -155,10 +139,10 @@ export function reduceSubagentProgress(
   const uniqueEvents: SubagentUpdateEvent[] = [];
   for (const event of events) {
     const key = eventKey(event);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (key != null && seen.has(key)) continue;
+    if (key != null) seen.add(key);
     uniqueEvents.push(event);
-    recentEventKeys.push(key);
+    if (key != null) recentEventKeys.push(key);
   }
   if (uniqueEvents.length === 0) return previous;
   const boundedEventKeys = recentEventKeys.slice(-MAX_RECENT_EVENT_KEYS);

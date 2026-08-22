@@ -6,6 +6,7 @@ const update = (overrides: Partial<SubagentUpdateEvent> = {}): SubagentUpdateEve
   runId: 'root-run',
   parentRunId: 'parent-run',
   subagentRunId: 'child-run',
+  activityEventId: 'activity-1',
   subagentType: 'researcher',
   subagentKind: 'agent',
   subagentAgentId: 'agent-1',
@@ -28,6 +29,15 @@ describe('reduceSubagentProgress', () => {
     expect(replay).toBe(first);
     expect(first?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.' }]);
     expect(first?.tickerState.lines).toHaveLength(1);
+  });
+
+  it('preserves equal chunks that carry distinct host event identities', () => {
+    const progress = reduceSubagentProgress(null, [
+      update({ activityEventId: 'activity-1' }),
+      update({ activityEventId: 'activity-2' }),
+    ]);
+
+    expect(progress?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.Working.' }]);
   });
 
   it('preserves a reasoning activity marker without retaining private reasoning text', () => {

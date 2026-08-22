@@ -18,9 +18,14 @@ const DEMAND_CACHE_MS = 250;
 
 export type SubagentActivityTerminalStatus = 'completed' | 'failed' | 'cancelled';
 
+export type SubagentActivityUpdateEvent = SubagentUpdateEvent & {
+  /** Host-assigned identity shared by parent and detached delivery paths. */
+  activityEventId?: string;
+};
+
 export type SubagentActivityEnvelope = {
   event: 'on_subagent_update';
-  data: SubagentUpdateEvent;
+  data: SubagentActivityUpdateEvent;
 };
 
 export type SubagentActivitySubscription = {
@@ -69,11 +74,14 @@ const boundedData = (data: unknown, budget: number): unknown => {
   }
 };
 
-const boundedUpdate = (event: SubagentUpdateEvent): SubagentUpdateEvent => {
-  let base: SubagentUpdateEvent = {
+const boundedUpdate = (event: SubagentActivityUpdateEvent): SubagentActivityUpdateEvent => {
+  let base: SubagentActivityUpdateEvent = {
     runId: boundedString(event.runId) ?? '',
     parentRunId: boundedString(event.parentRunId) ?? '',
     subagentRunId: boundedString(event.subagentRunId) ?? '',
+    ...(boundedString(event.activityEventId) == null
+      ? {}
+      : { activityEventId: boundedString(event.activityEventId) }),
     subagentType: boundedString(event.subagentType) ?? '',
     subagentKind: event.subagentKind,
     subagentAgentId: boundedString(event.subagentAgentId) ?? '',
@@ -182,7 +190,11 @@ export class SubagentActivityStream {
     this.demandCache.set(streamId, { demanded: true, expiresAt: Date.now() + DEMAND_CACHE_MS });
   }
 
-  async publish(threadId: string, taskId: string, event: SubagentUpdateEvent): Promise<void> {
+  async publish(
+    threadId: string,
+    taskId: string,
+    event: SubagentActivityUpdateEvent,
+  ): Promise<void> {
     const streamId = subagentActivityStreamId(threadId, taskId);
     if (!(await this.isDemanded(streamId))) return;
     const envelope: SubagentActivityEnvelope = {

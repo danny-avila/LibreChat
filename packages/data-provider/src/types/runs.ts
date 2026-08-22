@@ -378,6 +378,8 @@ export interface SubagentUpdateEvent {
   runId: string;
   parentRunId?: string;
   subagentRunId: string;
+  /** Host-assigned identity preserved when one detached update overlaps delivery streams. */
+  activityEventId?: string;
   /** Parent-side `tool_call_id` for the `subagent` tool invocation that
    *  triggered this run. Surfaces from the SDK (`3.1.67-dev.2`+) so hosts
    *  can correlate child progress to the parent tool call deterministically. */

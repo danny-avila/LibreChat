@@ -103,6 +103,7 @@ describe('useSubagentActivityStream', () => {
           runId: 'root',
           parentRunId: 'parent',
           subagentRunId: 'child',
+          activityEventId: 'task-1:0',
           subagentType: 'researcher',
           subagentKind: 'agent',
           subagentAgentId: 'agent-1',
@@ -172,6 +173,22 @@ describe('useSubagentActivityStream', () => {
     });
 
     expect(result.current?.contentParts).toEqual([{ type: 'text', text: 'Compatible update' }]);
+  });
+
+  it('reconnects with bounded backoff after a transient stream error', () => {
+    jest.useFakeTimers();
+    const { unmount } = renderHook(() => useSubagentActivityStream(selection), { wrapper });
+
+    act(() => streams[0]?.emit('error', {}));
+    expect(streams[0]?.close).toHaveBeenCalledTimes(1);
+    expect(streams).toHaveLength(1);
+
+    act(() => jest.advanceTimersByTime(500));
+    expect(streams).toHaveLength(2);
+
+    unmount();
+    expect(streams[1]?.close).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
   });
 
   it('never opens the private task stream for shares or foreground children', () => {
