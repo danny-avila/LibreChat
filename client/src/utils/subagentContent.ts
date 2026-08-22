@@ -317,11 +317,15 @@ export function initSubagentTickerState(): SubagentTickerState {
  *  CSS ellipsis — double-eliding would render a stray dot character
  *  right next to the "Writing:" / "Reasoning:" label. */
 const PREVIEW_MAX_CHARS = 300;
+const PREVIEW_BUFFER_MAX_CHARS = PREVIEW_MAX_CHARS * 4;
 const truncatePreview = (input: string): string => {
   const normalized = input.replace(/\s+/g, ' ').trim();
   if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;
   return normalized.slice(-PREVIEW_MAX_CHARS);
 };
+
+const truncatePreviewBuffer = (input: string): string =>
+  input.length <= PREVIEW_BUFFER_MAX_CHARS ? input : input.slice(-PREVIEW_BUFFER_MAX_CHARS);
 
 const SNIPPET_MAX_CHARS = 48;
 /** Short head-truncation for tool args/output — caller labels what each
@@ -396,8 +400,8 @@ export function foldSubagentEventIntoTicker(
       state.thinkLineIdx != null || state.thinkBuffer
         ? { ...state, thinkLineIdx: null, thinkBuffer: '' }
         : state;
-    const textBuffer = truncatePreview(afterClose.textBuffer + chunk);
-    const body = textBuffer;
+    const textBuffer = truncatePreviewBuffer(afterClose.textBuffer + chunk);
+    const body = truncatePreview(textBuffer);
     const line: SubagentTickerLine = { kind: 'writing', body };
     if (afterClose.textLineIdx == null) {
       const lines = afterClose.lines.concat(line);
@@ -416,8 +420,8 @@ export function foldSubagentEventIntoTicker(
       state.textLineIdx != null || state.textBuffer
         ? { ...state, textLineIdx: null, textBuffer: '' }
         : state;
-    const thinkBuffer = truncatePreview(afterClose.thinkBuffer + chunk);
-    const body = thinkBuffer;
+    const thinkBuffer = truncatePreviewBuffer(afterClose.thinkBuffer + chunk);
+    const body = truncatePreview(thinkBuffer);
     const line: SubagentTickerLine = { kind: 'reasoning', body };
     if (afterClose.thinkLineIdx == null) {
       const lines = afterClose.lines.concat(line);
