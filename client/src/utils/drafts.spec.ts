@@ -7,6 +7,7 @@ import {
   encodeBase64,
   resolvePendingPasteInsertStart,
   getComposerDraftId,
+  getBrowserTabId,
   getDraft,
   getFilesDraft,
   getNewConversationDraftId,
@@ -268,6 +269,75 @@ describe('pending paste encoding', () => {
     });
 
     expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(hugePaste);
+  });
+});
+
+describe('browser tab ownership of unsaved-chat drafts', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('returns a stable id per tab session', () => {
+    const first = getBrowserTabId();
+    expect(first).toBe(getBrowserTabId());
+  });
+
+  /** jsdom's performance object has no navigation-timing entries at all, so the stub installs
+   * the method rather than spying on it. */
+  const withNavigationType = (type: string, run: () => void): void => {
+    const performanceStub = performance as unknown as {
+      getEntriesByType?: (type: string) => PerformanceEntry[];
+    };
+    const original = performanceStub.getEntriesByType;
+    performanceStub.getEntriesByType = () => [{ type } as unknown as PerformanceEntry];
+    try {
+      run();
+    } finally {
+      if (original != null) {
+        performanceStub.getEntriesByType = original;
+      } else {
+        delete performanceStub.getEntriesByType;
+      }
+    }
+  };
+
+  it('adopts the stored id when the same tab reloaded', () => {
+    sessionStorage.setItem('librechat-tab-session', 'kept-through-reload');
+    withNavigationType('reload', () => {
+      expect(getBrowserTabId()).toBe('kept-through-reload');
+    });
+  });
+
+  it('mints a fresh id when storage was inherited by a cloned tab', () => {
+    sessionStorage.setItem('librechat-tab-session', 'inherited-from-original');
+    withNavigationType('navigate', () => {
+      const minted = getBrowserTabId();
+      expect(minted).not.toBe('inherited-from-original');
+      expect(minted).toBe(sessionStorage.getItem('librechat-tab-session'));
+    });
+  });
+
+  it('stamps the writing tab on unsaved-chat drafts', () => {
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(getBrowserTabId());
+  });
+
+  it('stamps conversation drafts too: their key is shared by every tab viewing the chat', () => {
+    setFilesDraft('convo-1', { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft('convo-1').tabId).toBe(getBrowserTabId());
+  });
+
+  it('restamps on every write, so a draft always names its current owner', () => {
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+    const stamped = getFilesDraft(Constants.NEW_CONVO).tabId;
+
+    sessionStorage.clear();
+    setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).not.toBe(stamped);
   });
 });
 

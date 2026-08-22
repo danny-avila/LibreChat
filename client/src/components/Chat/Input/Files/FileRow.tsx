@@ -29,6 +29,10 @@ export default function FileRow({
   fileFilter,
   isRTL = false,
   Wrapper,
+  isPastedTextFile,
+  isPasteActionPending,
+  onEditPastedText,
+  onMovePastedTextInline,
 }: {
   files: Map<string, ExtendedFile> | undefined;
   abortUpload?: (fileId?: string) => void;
@@ -40,6 +44,16 @@ export default function FileRow({
   tool_resource?: EToolResources;
   isRTL?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
+  /** Marks chips the composer generated from a long paste. Provenance comes from the caller's
+   * marker registry rather than the filename, which a deliberate upload can share. */
+  isPastedTextFile?: (file: ExtendedFile) => boolean;
+  /** Hides the paste actions while a replacement upload or inline move is in flight for the
+   * chip, so the same original cannot be acted on twice. */
+  isPasteActionPending?: (file: ExtendedFile) => boolean;
+  /** Opens the paste editor. Only the composer passes it, so other rows stay inert chips. */
+  onEditPastedText?: (file: ExtendedFile) => void;
+  /** Returns a paste to the composer, offered from the chip's subtitle line. */
+  onMovePastedTextInline?: (file: ExtendedFile) => void;
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -133,6 +147,15 @@ export default function FileRow({
               deleteFile({ file, setFiles });
             };
             const isImage = file.type?.startsWith('image') ?? false;
+            /** An upload still in flight has no stored text to open yet, and without a paste
+             * marker the chip is an ordinary attachment however it is named. An action already
+             * in flight against the chip hides both affordances until it settles. */
+            const isEditablePaste =
+              onEditPastedText != null &&
+              isPastedTextFile != null &&
+              file.progress >= 1 &&
+              isPastedTextFile(file) &&
+              !isPasteActionPending?.(file);
 
             return (
               <div
@@ -151,7 +174,24 @@ export default function FileRow({
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  <FileContainer
+                    file={file}
+                    onDelete={handleDelete}
+                    onClick={isEditablePaste ? () => onEditPastedText(file) : undefined}
+                    ariaLabel={
+                      isEditablePaste
+                        ? localize('com_ui_pasted_text_edit_chip', { 0: file.filename ?? '' })
+                        : undefined
+                    }
+                    subtitleAction={
+                      isEditablePaste && onMovePastedTextInline != null
+                        ? {
+                            label: localize('com_ui_pasted_text_move_inline'),
+                            onClick: () => onMovePastedTextInline(file),
+                          }
+                        : undefined
+                    }
+                  />
                 )}
               </div>
             );

@@ -16,6 +16,14 @@ export type PendingTextAttachmentDraft = {
 export type FilesDraft = {
   fileIds: string[];
   pendingPastes: Record<string, PendingTextAttachmentDraft>;
+  /** Paste-generated attachment ids, kept after `pendingPastes` is consumed so provenance
+   * survives reloads without holding the (much larger) paste text indefinitely. */
+  pastedTextIds?: string[];
+  /** The browser tab that last wrote the draft. Every draft key is reachable from more than
+   * one tab (the unsaved-chat key by every default composer, a conversation key by every tab
+   * viewing it), so destructive actions read this to leave other tabs' composers alone.
+   * Undefined on records older than the stamp. */
+  tabId?: string;
 };
 
 type StoredPendingTextAttachmentDraft = {
@@ -32,6 +40,8 @@ type StoredPendingTextAttachmentDraft = {
 type StoredFilesDraft = {
   fileIds: string[];
   pendingPastes: Record<string, StoredPendingTextAttachmentDraft>;
+  pastedTextIds?: string[];
+  tabId?: string;
 };
 
 const newConversationDraftTokens = new Map<number, symbol>();
@@ -376,22 +386,109 @@ export const getFilesDraft = (id: string): FilesDraft => {
     return {
       fileIds: Array.isArray(storedDraft.fileIds) ? storedDraft.fileIds : [],
       pendingPastes,
+      pastedTextIds: Array.isArray(storedDraft.pastedTextIds) ? storedDraft.pastedTextIds : [],
+      tabId: typeof storedDraft.tabId === 'string' ? storedDraft.tabId : undefined,
     };
   } catch {
     return { fileIds: [], pendingPastes: {} };
   }
 };
 
+const TAB_SESSION_STORAGE_KEY = 'librechat-tab-session';
+
+let documentTabId: string | null = null;
+
+/** Identifies this browser tab for the session. `sessionStorage` is per-tab and survives that
+ * tab's reloads, which is exactly the ownership an unsaved-chat draft needs: the draft key is
+ * shared through `localStorage` by every tab's default composer, while the composer that owns
+ * the record stays identifiable.
+ *
+ * One caveat decides the shape below: duplicated and opener-created tabs start with a COPY of
+ * the original's `sessionStorage`, so a stored id on its own proves nothing. Only a reload of
+ * the same document legitimately keeps it; every other entry into a document mints a fresh id,
+ * because an inherited one would attribute another tab's live drafts to this composer. */
+export const getBrowserTabId = (): string => {
+  try {
+    const stored = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
+    if (documentTabId != null && stored === documentTabId) {
+      return documentTabId;
+    }
+    const navigationType =
+      typeof performance.getEntriesByType === 'function'
+        ? performance.getEntriesByType('navigation')[0]?.type
+        : undefined;
+    if (stored != null && stored !== '' && navigationType === 'reload') {
+      documentTabId = stored;
+      return stored;
+    }
+    documentTabId = crypto.randomUUID();
+    sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, documentTabId);
+    return documentTabId;
+  } catch {
+    // Privacy-blocked storage cannot attribute drafts to a tab; share one identity instead.
+    return '';
+  }
+};
+
+let filesDraftCache: { id: string; raw: string | null; draft: FilesDraft } | null = null;
+
+/** Reads a files draft without re-parsing storage when the record has not changed. Paste text can
+ * dominate the draft's size, and consumers re-read per file-map change, not per write. */
+export const getFilesDraftCached = (id: string): FilesDraft => {
+  const raw = getLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  if (filesDraftCache != null && filesDraftCache.id === id && filesDraftCache.raw === raw) {
+    return filesDraftCache.draft;
+  }
+  const draft = getFilesDraft(id);
+  filesDraftCache = { id, raw, draft };
+  return draft;
+};
+
+/** Adds a paste-generated file id to a draft's persistent provenance record. */
+export const addPastedTextDraftFile = ({ id, fileId }: { id: string; fileId: string }): void => {
+  const draft = getFilesDraft(id);
+  if (draft.pastedTextIds?.includes(fileId) === true) {
+    return;
+  }
+  setFilesDraft(id, {
+    ...draft,
+    pastedTextIds: [...(draft.pastedTextIds ?? []), fileId],
+  });
+};
+
 export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
-  if (draft.fileIds.length === 0 && pendingPasteEntries.length === 0) {
+  /** Every draft key is reachable from more than one tab: the unsaved-chat key by every
+   * default composer, a conversation key by every tab viewing that conversation. Stamping
+   * the writing tab lets a destructive reader tell its own record from another live
+   * composer's. */
+  const tabId = getBrowserTabId() || undefined;
+  filesDraftCache = null;
+  if (
+    draft.fileIds.length === 0 &&
+    pendingPasteEntries.length === 0 &&
+    (draft.pastedTextIds?.length ?? 0) === 0
+  ) {
     removeLocalStorageItem(key);
     return;
   }
 
   if (pendingPasteEntries.length === 0) {
-    setLocalStorageItem(key, JSON.stringify(draft.fileIds));
+    /** Keep the bare array shape when there is nothing to add, so older readers are unaffected. */
+    const bareFileIds = !draft.pastedTextIds?.length && !tabId;
+    setLocalStorageItem(
+      key,
+      JSON.stringify(
+        bareFileIds
+          ? draft.fileIds
+          : {
+              fileIds: draft.fileIds,
+              ...(draft.pastedTextIds?.length ? { pastedTextIds: draft.pastedTextIds } : {}),
+              ...(tabId ? { tabId } : {}),
+            },
+      ),
+    );
     return;
   }
 
@@ -424,7 +521,12 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
 
   setLocalStorageItem(
     key,
-    JSON.stringify({ fileIds: draft.fileIds, pendingPastes } satisfies StoredFilesDraft),
+    JSON.stringify({
+      fileIds: draft.fileIds,
+      pendingPastes,
+      ...(draft.pastedTextIds?.length ? { pastedTextIds: draft.pastedTextIds } : {}),
+      ...(tabId ? { tabId } : {}),
+    } satisfies StoredFilesDraft),
   );
 };
 
@@ -494,6 +596,7 @@ export const setPendingTextAttachmentDraft = ({
     Math.max(0, ...Object.values(draft.pendingPastes).map((paste) => paste.sequence ?? 0)) + 1;
   setFilesDraft(id, {
     fileIds: draft.fileIds.includes(fileId) ? draft.fileIds : [...draft.fileIds, fileId],
+    pastedTextIds: draft.pastedTextIds,
     pendingPastes: {
       ...draft.pendingPastes,
       [fileId]: {
@@ -526,6 +629,7 @@ export const removePendingTextAttachmentDraft = ({
     fileIds: removeFile
       ? draft.fileIds.filter((draftFileId) => draftFileId !== fileId)
       : draft.fileIds,
+    pastedTextIds: draft.pastedTextIds,
     pendingPastes,
   });
 };

@@ -21,7 +21,13 @@ import {
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig, RegexLike } from 'librechat-data-provider';
+import type {
+  TFile,
+  EndpointFileConfig,
+  FileConfig,
+  FileSources,
+  RegexLike,
+} from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
@@ -494,6 +500,54 @@ export const PASTE_AS_FILE_MIN_LENGTH = 2500;
 
 export const PASTED_TEXT_FILENAME = 'pasted-text.txt';
 
+/** Matches every name `nextPastedTextFilename` can produce, and nothing else: the counter
+ * starts at the bare name and jumps to 2, so `-0`, `-1`, and zero-padded variants are never
+ * generated and must not read as generated. The alternation is "any integer of 2 or more":
+ * a single digit 2-9, or two or more digits. */
+const PASTED_TEXT_FILENAME_PATTERN = /^pasted-text(-([2-9]|[1-9]\d+))?\.txt$/;
+
+/**
+ * Whether a filename is one `nextPastedTextFilename` can produce. Name alone cannot prove an
+ * attachment is a paste, though: a user can deliberately upload a file with one of these names.
+ * Provenance comes from the paste registry and the files draft, not the name.
+ */
+export const isPastedTextFilename = (filename?: string | null): boolean =>
+  filename != null && PASTED_TEXT_FILENAME_PATTERN.test(filename);
+
+const pastedTextFileIds = new Set<string>();
+
+/** Records that a file id belongs to a paste the composer generated, so its chip can offer the
+ * paste affordances. The registry lives for the session; the files draft persists the ids. */
+export const markPastedTextFile = (fileId: string): void => {
+  pastedTextFileIds.add(fileId);
+};
+
+export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
+  fileId != null && pastedTextFileIds.has(fileId);
+
+/** A file deletion whose request failed, kept with everything needed to retry it: the chip it
+ * came from is already gone, so the payload cannot be rebuilt from the composer. */
+export type PendingFileDeletion = {
+  file_id: string;
+  embedded: boolean;
+  filepath: string;
+  source: FileSources;
+};
+
+const retainedFileDeletions = new Map<string, PendingFileDeletion>();
+
+export const retainFileDeletion = (record: PendingFileDeletion): void => {
+  retainedFileDeletions.set(record.file_id, record);
+};
+
+export const clearRetainedFileDeletion = (fileId: string): void => {
+  retainedFileDeletions.delete(fileId);
+};
+
+/** The deletions waiting for a retry; ownership stays with the store until one succeeds. */
+export const takeRetainedFileDeletions = (): PendingFileDeletion[] =>
+  Array.from(retainedFileDeletions.values());
+
 export type PasteAsFileContext = {
   /** The user's `pasteLongTextAsFile` preference. */
   enabled: boolean;
@@ -511,7 +565,7 @@ export type PasteAsFileContext = {
  * alone for pastes and reject a second, different paste that merely matched the first one's
  * length. Numbering keeps every paste attachable while staying readable in the UI.
  */
-const nextPastedTextFilename = (taken: Set<string>): string => {
+export const nextPastedTextFilename = (taken: Set<string>): string => {
   let candidate = PASTED_TEXT_FILENAME;
   let suffix = 1;
   while (taken.has(candidate)) {
