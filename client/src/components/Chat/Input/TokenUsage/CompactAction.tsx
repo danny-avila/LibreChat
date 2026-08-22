@@ -1,6 +1,6 @@
-import { memo } from 'react';
+import { memo, useId } from 'react';
 import { ScrollText } from 'lucide-react';
-import { Button, Spinner } from '@librechat/client';
+import { Button, Spinner, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface CompactActionProps {
@@ -21,26 +21,41 @@ interface CompactActionProps {
  */
 function CompactAction({ compact, canCompact, isCompacting }: CompactActionProps) {
   const localize = useLocalize();
+  const descriptionId = useId();
+  const description = localize('com_ui_context_compact_info');
 
   return (
-    <div className="space-y-1.5">
-      <Button
-        type="button"
-        variant="outline"
-        onClick={compact}
-        disabled={!canCompact}
-        aria-busy={isCompacting}
-        className="h-8 w-full justify-center gap-2 text-sm"
-      >
-        {isCompacting ? (
-          <Spinner className="size-4" />
-        ) : (
-          <ScrollText className="size-4" aria-hidden="true" />
-        )}
-        {isCompacting ? localize('com_ui_context_compacting') : localize('com_ui_context_compact')}
-      </Button>
-      <p className="text-xs text-text-secondary">{localize('com_ui_context_compact_info')}</p>
-    </div>
+    <>
+      <TooltipAnchor
+        side="bottom"
+        description={description}
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={compact}
+            disabled={!canCompact}
+            aria-busy={isCompacting}
+            aria-describedby={descriptionId}
+            className="h-8 w-full justify-center gap-2 text-sm"
+          >
+            {isCompacting ? (
+              <Spinner className="size-4" />
+            ) : (
+              <ScrollText className="size-4" aria-hidden="true" />
+            )}
+            {isCompacting
+              ? localize('com_ui_context_compacting')
+              : localize('com_ui_context_compact')}
+          </Button>
+        }
+      />
+      {/* Ariakit's tooltip anchor sets no `aria-describedby`, and the tooltip
+          exists only while hovered, so the copy stays reachable here. */}
+      <span id={descriptionId} className="sr-only">
+        {description}
+      </span>
+    </>
   );
 }
 
