@@ -109,10 +109,110 @@ function sniffBase64Mime(base64) {
   return 'image/png';
 }
 
+const IMAGE_FILE_RE = /\.(png|jpe?g|webp|gif|bmp)$/i;
+
+function isImageFile(filename) {
+  return IMAGE_FILE_RE.test(filename);
+}
+
+/**
+ * Lists the image directories where LibreChat stores user attachments,
+ * public images and MCP-generated files (subdirectories of the roots).
+ */
+function collectImageDirs() {
+  const roots = [UPLOADS_ROOT, PUBLIC_IMAGES_ROOT, IMAGES_PATH];
+  const out = [];
+  for (const root of roots) {
+    try {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          out.push(path.join(root, entry.name));
+        }
+      }
+    } catch {
+      /* root missing — skip */
+    }
+  }
+  return [IMAGES_PATH, ...out];
+}
+
+/**
+ * Fuzzy-matches a model-provided reference against stored files.
+ * Models see attached images inline but never learn their real path, so they
+ * often send a plausible-but-wrong path (e.g. /uploads/userid/foo.png while
+ * the real file is /uploads/{userId}/{fileId}__foo.png). Match by basename
+ * containment across all image directories and return the newest hit.
+ */
+function fuzzyFindImage(reference) {
+  const basename = path.posix.basename(reference.trim()).toLowerCase();
+  if (!basename || basename === '/' || !basename.includes('.')) {
+    return null;
+  }
+  const candidates = [];
+  for (const dir of collectImageDirs()) {
+    try {
+      for (const entry of fs.readdirSync(dir)) {
+        if (!isImageFile(entry)) {
+          continue;
+        }
+        if (entry.toLowerCase().includes(basename)) {
+          const full = path.join(dir, entry);
+          try {
+            const stat = fs.statSync(full);
+            candidates.push({ path: full, mtime: stat.mtimeMs });
+          } catch {
+            /* unreadable — skip */
+          }
+        }
+      }
+    } catch {
+      /* directory missing — skip */
+    }
+  }
+  if (candidates.length === 0) {
+    return null;
+  }
+  candidates.sort((a, b) => b.mtime - a.mtime);
+  return candidates[0].path;
+}
+
+/**
+ * Lists the most recent images available for editing, across user attachments,
+ * public images and MCP-generated files. Newest first.
+ */
+function listRecentImages(filter, limit = 20) {
+  const results = [];
+  const needle = filter ? filter.toLowerCase() : null;
+  for (const dir of collectImageDirs()) {
+    try {
+      for (const entry of fs.readdirSync(dir)) {
+        if (!isImageFile(entry)) {
+          continue;
+        }
+        if (needle && !entry.toLowerCase().includes(needle)) {
+          continue;
+        }
+        const full = path.join(dir, entry);
+        try {
+          const stat = fs.statSync(full);
+          results.push({ path: full, filename: entry, size: stat.size, mtime: stat.mtimeMs });
+        } catch {
+          /* unreadable — skip */
+        }
+      }
+    } catch {
+      /* directory missing — skip */
+    }
+  }
+  results.sort((a, b) => b.mtime - a.mtime);
+  return results.slice(0, limit);
+}
+
 /**
  * DashScope image editing accepts public URLs or base64 data URIs only.
  * LibreChat-attached images live on local paths the API cannot fetch, so:
  *  - local paths/URLs are read from disk and inlined as data URIs
+ *  - exact misses fall back to a fuzzy basename search across image dirs
  *  - raw base64 payloads are wrapped with a data: prefix
  *  - external URLs and data URIs pass through untouched
  */
@@ -133,6 +233,14 @@ async function prepareImageUrl(imageUrl) {
     // Bare filename or relative path — look in the generated files directory
     const candidate = path.join(IMAGES_PATH, trimmed);
     localPath = fs.existsSync(candidate) ? candidate : null;
+  }
+  if (!localPath || !fs.existsSync(localPath)) {
+    // Models never see the real storage path — try a fuzzy basename match
+    const fuzzy = fuzzyFindImage(trimmed);
+    if (fuzzy) {
+      console.error(`[image MCP] fuzzy match: ${trimmed} -> ${fuzzy}`);
+      localPath = fuzzy;
+    }
   }
   if (!localPath || !fs.existsSync(localPath)) {
     return trimmed; // external URL or not found locally — let DashScope fetch it
@@ -189,13 +297,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'edit_image',
-        description: 'Edit or modify an existing image using Qwen Image model. Accepts a public image URL, a LibreChat attachment path (/uploads/... or /images/...), or a base64 data URI. Describe the changes to make.',
+        description: 'Edit or modify an existing image using Qwen Image model. Accepts a public image URL, a LibreChat attachment path (/uploads/... or /images/...), or a base64 data URI. Local images are located automatically even if the exact path is unknown (matched by filename). If unsure which image to edit, call list_images first. Describe the changes to make.',
         inputSchema: {
           type: 'object',
           properties: {
             image_url: {
               type: 'string',
-              description: 'The image to edit: a public URL, a LibreChat path (/uploads/... or /images/...), or a data URI. Local images are converted automatically.',
+              description: 'The image to edit: a public URL, a LibreChat path, a filename, or a data URI. The most recently stored image with a matching filename is used when the exact path is unknown.',
             },
             prompt: {
               type: 'string',
@@ -209,6 +317,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ['image_url', 'prompt'],
+        },
+      },
+      {
+        name: 'list_images',
+        description: 'Lists the most recent images available for editing (user attachments, generated images), newest first. Use this to discover the exact filename/path of an image the user refers to before calling edit_image. Optionally filter by a substring of the filename.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            filter: {
+              type: 'string',
+              description: 'Optional. Substring to match against filenames (case-insensitive).',
+            },
+            limit: {
+              type: 'number',
+              description: 'Optional. Maximum number of images to return. Default: 20.',
+              default: 20,
+            },
+          },
+          required: [],
         },
       },
     ],
@@ -371,6 +498,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: responseText,
           },
         ],
+      };
+    }
+
+    if (name === 'list_images') {
+      const { filter, limit } = args;
+      const max = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+      const images = listRecentImages(typeof filter === 'string' ? filter : undefined, max);
+
+      if (images.length === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: filter
+              ? `No images found matching "${filter}".`
+              : 'No images available.',
+          }],
+        };
+      }
+
+      const lines = images.map((img) => {
+        const date = new Date(img.mtime).toISOString().slice(0, 19).replace('T', ' ');
+        const kb = (img.size / 1024).toFixed(0);
+        return `- ${img.path} (${kb} KB, ${date})`;
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Images available for editing (newest first):\n${lines.join('\n')}`,
+        }],
       };
     }
 
