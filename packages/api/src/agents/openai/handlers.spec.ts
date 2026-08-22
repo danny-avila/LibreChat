@@ -62,4 +62,26 @@ describe('OpenAI-compatible agent stream handlers', () => {
       },
     });
   });
+
+  it('finishes as tool_calls even when the model also streamed text', () => {
+    const tracker = createOpenAIStreamTracker();
+    tracker.addText();
+    tracker.toolCalls.set(0, {
+      id: 'tooluse_1',
+      type: 'function',
+      function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
+    });
+
+    const writes: string[] = [];
+    const res = {
+      write: (chunk: string) => {
+        writes.push(chunk);
+      },
+    } as unknown as ServerResponse;
+
+    sendFinalChunk({ context, tracker, res });
+
+    const finalChunk = JSON.parse(writes[0].replace(/^data: /, '').trim());
+    expect(finalChunk.choices[0].finish_reason).toBe('tool_calls');
+  });
 });
