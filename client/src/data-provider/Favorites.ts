@@ -10,13 +10,18 @@ import { enqueue } from '~/utils';
  *  pre-write state and land after it, putting the old value back. `onMutate`
  *  cancels what is already running, but nothing stops a later focus or
  *  reconnect from starting a fresh one, so those are held off until the write
- *  settles. The cross-tab reconciliation they provide is kept. */
+ *  settles. The cross-tab reconciliation they provide is kept.
+ *
+ *  Mount counts as a reconciliation point too: a sidebar search unmounts the
+ *  Pinned section, and a query with no observer never sees the focus event, so
+ *  clearing the search would otherwise restore data fetched before another tab
+ *  changed it and the next reorder would post it back over that change. */
 /* Asked of the client at the moment the event fires rather than read from a
  * hook: `useIsMutating` only reaches the query's options on the next render,
  * which is a race against the very event this is meant to gate. */
 const reconcileWhenIdle = (queryClient: QueryClient, mutationKey: MutationKeys) => {
   const idle = () => queryClient.isMutating({ mutationKey: [mutationKey] }) === 0;
-  return { refetchOnWindowFocus: idle, refetchOnReconnect: idle };
+  return { refetchOnWindowFocus: idle, refetchOnReconnect: idle, refetchOnMount: idle };
 };
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
@@ -49,7 +54,6 @@ export const useGetFavoritesQuery = (
     () => dataService.getFavorites() as Promise<FavoritesState>,
     {
       ...reconcile,
-      refetchOnMount: false,
       ...config,
     },
   );
@@ -91,7 +95,6 @@ export const useGetPinnedOrderQuery = (
   const reconcile = reconcileWhenIdle(queryClient, MutationKeys.updatePinnedOrder);
   return useQuery<string[], Error>([QueryKeys.pinnedOrder], () => dataService.getPinnedOrder(), {
     ...reconcile,
-    refetchOnMount: false,
     ...config,
   });
 };
@@ -125,6 +128,15 @@ export const useUpdatePinnedOrderMutation = () => {
          * it would write one account's order into another's document. */
         if (isForeignSession(owner)) {
           throw new Error('pinnedOrder write abandoned: the signed-in user changed');
+        }
+        /* Superseded while it waited its turn. Key repeat on the reorder
+         * shortcut asks for one write per intermediate position, and the whole
+         * array is posted each time, so sending every one of them would put
+         * hundreds of writes on a user document to describe a single move. The
+         * newest arrangement is already queued behind this one and is the only
+         * one the server needs. */
+        if (latestPinnedOrder !== pinnedOrder) {
+          return pinnedOrder;
         }
         try {
           return await dataService.updatePinnedOrder(pinnedOrder);

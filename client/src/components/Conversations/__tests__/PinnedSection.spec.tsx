@@ -10,6 +10,7 @@ const mockSetExpanded = jest.fn();
 let mockIsExpanded = true;
 let mockPinnedOrder: string[] | undefined;
 let mockOrderFetched = true;
+let mockOrderFetching = false;
 /** When each side of the pruning decision was fetched. Membership later than
  *  the order is the ordinary case: the order is one small record while the
  *  pinned list drains page by page. */
@@ -46,6 +47,7 @@ jest.mock('~/data-provider', () => ({
   useGetPinnedOrderQuery: () => ({
     data: mockPinnedOrder,
     isSuccess: mockOrderFetched,
+    isFetching: mockOrderFetching,
     dataUpdatedAt: mockOrderUpdatedAt,
   }),
   useUpdatePinnedOrderMutation: () => ({ mutate: mockUpdatePinnedOrder }),
@@ -124,12 +126,13 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
 const pinnedConvo = (id: string, title: string) =>
   ({ conversationId: id, title, pinned: true }) as unknown as TConversation;
 
-const renderSection = (conversations: TConversation[]) =>
-  render(
-    <DndProvider backend={HTML5Backend}>
-      <PinnedSection conversations={conversations} toggleNav={jest.fn()} />
-    </DndProvider>,
-  );
+const renderTree = (conversations: TConversation[]) => (
+  <DndProvider backend={HTML5Backend}>
+    <PinnedSection conversations={conversations} toggleNav={jest.fn()} />
+  </DndProvider>
+);
+
+const renderSection = (conversations: TConversation[]) => render(renderTree(conversations));
 
 const itemLabels = () =>
   Array.from(
@@ -143,6 +146,7 @@ describe('PinnedSection unified list', () => {
     mockIsExpanded = true;
     mockPinnedOrder = undefined;
     mockOrderFetched = true;
+    mockOrderFetching = false;
     mockOrderUpdatedAt = 1000;
     mockSetExpanded.mockReset();
     mockReorderFavorites.mockReset();
@@ -445,6 +449,25 @@ describe('PinnedSection unified list', () => {
     fireEvent.dragEnd(row);
 
     expect(mockUpdatePinnedOrder).not.toHaveBeenCalled();
+  });
+
+  /* An arrangement that arrives while the order is reconciling is held and
+   * written when the fresh order lands. The flush runs on every settle, so it
+   * has to stay quiet when there is nothing being held: reposting a committed
+   * arrangement would undo whatever that reconciliation just brought in. */
+  it('does not repost an arrangement that was already written', () => {
+    mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+    const view = renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+    fireEvent.keyDown(screen.getByText('gpt-4o'), { key: 'ArrowDown', altKey: true });
+    expect(mockUpdatePinnedOrder).toHaveBeenCalledTimes(1);
+
+    mockOrderFetching = true;
+    view.rerender(renderTree([pinnedConvo('c1', 'Pinned Chat')]));
+    mockOrderFetching = false;
+    view.rerender(renderTree([pinnedConvo('c1', 'Pinned Chat')]));
+
+    expect(mockUpdatePinnedOrder).toHaveBeenCalledTimes(1);
   });
 
   it('keeps two model favorites distinct when a component contains the delimiter', () => {

@@ -102,4 +102,23 @@ describe('Button', () => {
     expect(sectionAction).toContain('rounded-lg');
     expect(cn(sectionAction)).not.toContain('rounded-lg');
   });
+
+  /**
+   * Every other variant is given a size by its call sites, but a section
+   * heading is sized by its own text and all three headers ask for the recipe
+   * alone. The default size recipe is emitted after the variant, so without an
+   * opt out it wins the merge and puts a 40px control in a 32px header row.
+   */
+  it('keeps section headers out of the default size recipe', () => {
+    const header = cn(buttonVariants({ variant: 'section-header' }));
+
+    expect(header).toContain('px-1');
+    expect(header).toContain('h-auto');
+    expect(header).not.toContain('h-10');
+    expect(header).not.toContain('px-4');
+  });
+
+  it('still takes a size when a caller asks for one', () => {
+    expect(cn(buttonVariants({ variant: 'section-header', size: 'sm' }))).toContain('h-9');
+  });
 });
