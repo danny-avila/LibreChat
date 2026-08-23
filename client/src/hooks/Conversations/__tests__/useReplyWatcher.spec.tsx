@@ -351,6 +351,50 @@ describe('useReplyWatcher', () => {
     expect(invalidate).not.toHaveBeenCalled();
   });
 
+  it('discards an away snapshot that resolves after the user returns', async () => {
+    /* The poll's request bypasses React Query, so the seen mutation's cancellation cannot
+       reach it: a snapshot read before the focus-triggered acknowledgement settled carries
+       the same reply stamp with the older catch-up, and writing it back would re-light a dot
+       the server no longer backs. */
+    const { queryClient, cachedConvo } = setup({ notifications: true });
+
+    act(() => {
+      queryClient.setQueryData<InfiniteData<ConversationCursorData>>(listKey, {
+        pages: [
+          {
+            conversations: [
+              {
+                conversationId: CONVO_ID,
+                title: 'Watched',
+                endpoint: EModelEndpoint.openAI,
+                createdAt: RESPONDED_AT,
+                updatedAt: RESPONDED_AT,
+                lastResponseAt: RESPONDED_AT,
+                lastSeenAt: RESPONDED_AT,
+              },
+            ],
+            nextCursor: null,
+          },
+        ],
+        pageParams: [null],
+      });
+    });
+
+    mockListConversations.mockImplementation(async () => {
+      (document.hasFocus as jest.Mock).mockReturnValue(true);
+      return {
+        conversations: [{ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT }],
+        nextCursor: null,
+      };
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+
+    expect(cachedConvo()?.lastSeenAt).toBe(RESPONDED_AT);
+  });
+
   it('withholds the stamp when the open conversation failed to reload its messages', async () => {
     /* Invalidation settles rather than throwing, so the failure has to be read off the query.
        Exposing the stamp would credit a reply the tab never managed to load. */
