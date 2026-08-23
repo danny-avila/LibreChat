@@ -1,0 +1,110 @@
+import { ProviderId } from 'librechat-data-provider';
+import type { ComponentType, SVGProps } from 'react';
+import GoogleMinimalIcon from '../../svgs/GoogleMinimalIcon';
+import CustomMinimalIcon from '../../svgs/CustomMinimalIcon';
+import AzureMinimalIcon from '../../svgs/AzureMinimalIcon';
+import AnthropicIcon from '../../svgs/AnthropicIcon';
+import MoonshotIcon from '../../svgs/MoonshotIcon';
+import BedrockIcon from '../../svgs/BedrockIcon';
+import GeminiIcon from '../../svgs/GeminiIcon';
+import GPTIcon from '../../svgs/GPTIcon';
+import XAIcon from '../../svgs/XAIcon';
+
+type ProviderArtComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
+
+export type ProviderArt =
+  | { kind: 'component'; Component: ProviderArtComponent }
+  | { kind: 'asset'; src: string };
+
+export interface ProviderIconDef {
+  art: ProviderArt;
+  label: string;
+  /** Avatar tile background. Absent means the tile renders with no background. */
+  brandColor?: string;
+  /** Art inherits currentColor and follows the active theme. */
+  mono?: boolean;
+  /** Per provider layout correction, replacing the old knownEndpointClasses map. */
+  className?: string;
+  /** Model level refinement merged over the base definition. */
+  byModel?: (model: string) => Partial<ProviderIconDef> | undefined;
+}
+
+const asset = (src: string): ProviderArt => ({ kind: 'asset', src });
+
+const component = (Component: ProviderArtComponent): ProviderArt => ({
+  kind: 'component',
+  Component,
+});
+
+const openAIBrandColor = (model: string): string => {
+  const value = model.toLowerCase();
+  if (/\b(o\d)\b/.test(value) || /\bgpt-[5-9](?:\.\d+)?\b/.test(value)) {
+    return '#000000';
+  }
+  return value.includes('gpt-4') ? '#AB68FF' : '#19C37D';
+};
+
+export const providerIcons: Record<ProviderId, ProviderIconDef> = {
+  [ProviderId.openai]: {
+    art: component(GPTIcon),
+    label: 'OpenAI',
+    mono: true,
+    brandColor: '#19C37D',
+    byModel: (model) => ({ brandColor: openAIBrandColor(model) }),
+  },
+  [ProviderId.anthropic]: {
+    art: component(AnthropicIcon),
+    label: 'Anthropic',
+    mono: true,
+    brandColor: '#d09a74',
+  },
+  [ProviderId.google]: {
+    art: component(GoogleMinimalIcon),
+    label: 'Google',
+    mono: true,
+    byModel: (model) =>
+      /gemini|gemma|learnlm/.test(model.toLowerCase())
+        ? { art: component(GeminiIcon), mono: false, label: 'Gemini' }
+        : undefined,
+  },
+  [ProviderId.azure]: {
+    art: component(AzureMinimalIcon),
+    label: 'Azure OpenAI',
+    mono: true,
+    brandColor: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
+  },
+  [ProviderId.bedrock]: {
+    art: component(BedrockIcon),
+    label: 'AWS Bedrock',
+    mono: true,
+    brandColor: '#268672',
+  },
+  [ProviderId.xai]: { art: component(XAIcon), label: 'xAI', mono: true },
+  [ProviderId.moonshot]: { art: component(MoonshotIcon), label: 'Moonshot', mono: true },
+  [ProviderId.anyscale]: { art: asset('assets/anyscale.png'), label: 'Anyscale' },
+  [ProviderId.apipie]: { art: asset('assets/apipie.png'), label: 'APIpie' },
+  [ProviderId.cohere]: {
+    art: asset('assets/cohere.png'),
+    label: 'Cohere',
+    className: 'p-2',
+  },
+  [ProviderId.deepseek]: { art: asset('assets/deepseek.svg'), label: 'DeepSeek' },
+  [ProviderId.fireworks]: { art: asset('assets/fireworks.png'), label: 'Fireworks' },
+  [ProviderId.groq]: { art: asset('assets/groq.png'), label: 'Groq' },
+  [ProviderId.helicone]: { art: asset('assets/helicone.svg'), label: 'Helicone' },
+  [ProviderId.huggingface]: { art: asset('assets/huggingface.svg'), label: 'Hugging Face' },
+  [ProviderId.mistral]: { art: asset('assets/mistral.png'), label: 'Mistral' },
+  [ProviderId.mlx]: { art: asset('assets/mlx.png'), label: 'MLX' },
+  [ProviderId.ollama]: { art: asset('assets/ollama.png'), label: 'Ollama' },
+  [ProviderId.openrouter]: { art: asset('assets/openrouter.png'), label: 'OpenRouter' },
+  [ProviderId.perplexity]: { art: asset('assets/perplexity.png'), label: 'Perplexity' },
+  [ProviderId.qwen]: { art: asset('assets/qwen.svg'), label: 'Qwen' },
+  [ProviderId.shuttleai]: { art: asset('assets/shuttleai.png'), label: 'ShuttleAI' },
+  [ProviderId.together]: { art: asset('assets/together.png'), label: 'Together AI' },
+  [ProviderId.unify]: { art: asset('assets/unify.webp'), label: 'Unify' },
+  [ProviderId.vercel]: {
+    art: component(CustomMinimalIcon),
+    label: 'Vercel',
+    mono: true,
+  },
+};
