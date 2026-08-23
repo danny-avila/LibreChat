@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useDrag, useDragLayer, useDrop } from 'react-dnd';
 import { Skeleton, useMediaQuery, useToastContext, buttonVariants } from '@librechat/client';
@@ -523,6 +523,14 @@ const PinnedSection = ({
       if (!hasReorderedRef.current) {
         return;
       }
+      /* A reconciling refetch is in flight. `canDrag` only disconnects the
+       * source for drags that have not started, so one already under the
+       * pointer still lands here, and the array built now would be merged onto
+       * the order that refetch is about to replace. The arrangement is kept
+       * and written once the fresh order arrives, below. */
+      if (!handledElsewhere && !orderLoadedRef.current) {
+        return;
+      }
       hasReorderedRef.current = false;
       const arrangement = arrangementRef.current;
       if (handledElsewhere) {
@@ -593,6 +601,15 @@ const PinnedSection = ({
    * into a dependency cycle. */
   const commitOrderRef = useRef(commitOrder);
   commitOrderRef.current = commitOrder;
+
+  /* Flushes an arrangement that arrived while the order was reconciling. The
+   * query settling is the external event being waited on, and `commitOrder`
+   * returns immediately unless one is actually held. */
+  useEffect(() => {
+    if (orderLoaded) {
+      commitOrderRef.current();
+    }
+  }, [orderLoaded]);
 
   /* `FavoriteItem` reports the removal only once its row is already gone, so
    * there is no position left to search around: focus goes to the first

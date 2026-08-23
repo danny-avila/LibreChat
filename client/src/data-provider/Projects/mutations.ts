@@ -114,16 +114,14 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
   unknown
 > => {
   const queryClient = useQueryClient();
+  /* Only the project field is published. `updateConversationSelector` spreads
+   * whatever it is given over the active conversation, so passing the whole
+   * response would also reinstate every other field as the server held it when
+   * the assignment ran, undoing a rename that landed in between. */
   const updateActiveConversation = useRecoilCallback(
     ({ set }) =>
-      (conversation: TConversation) => {
-        if (!conversation.conversationId) {
-          return;
-        }
-        set(store.updateConversationSelector(conversation.conversationId), {
-          ...conversation,
-          chatProjectId: conversation.chatProjectId ?? null,
-        });
+      (conversationId: string, chatProjectId: string | null) => {
+        set(store.updateConversationSelector(conversationId), { chatProjectId });
       },
     [],
   );
@@ -173,7 +171,16 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
           if (isForeignSession(owner)) {
             throw new Error('assignment abandoned: the signed-in user changed');
           }
-          queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
+          /* Merged rather than replaced, for the same reason: an assignment that
+           * reached the database before a concurrent rename can still answer
+           * after it, and its copy of the conversation predates that rename. */
+          queryClient.setQueryData<TConversation>(
+            [QueryKeys.conversation, conversationId],
+            (previous) =>
+              previous
+                ? { ...previous, chatProjectId: result.conversation.chatProjectId ?? null }
+                : result.conversation,
+          );
           return result;
         } finally {
           /* Only the newest write clears the entry; by now the conversation
@@ -187,7 +194,12 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
     {
       onSuccess: (result) => {
         /* The conversation cache is written in the request itself, above. */
-        updateActiveConversation(result.conversation);
+        if (result.conversation.conversationId) {
+          updateActiveConversation(
+            result.conversation.conversationId,
+            result.conversation.chatProjectId ?? null,
+          );
+        }
         [result.previousProjectId, result.projectId].forEach((projectId) => {
           if (projectId) {
             queryClient.invalidateQueries([QueryKeys.project, projectId]);

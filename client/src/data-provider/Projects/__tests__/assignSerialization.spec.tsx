@@ -236,6 +236,36 @@ describe('useAssignConversationToProjectMutation', () => {
     expect(getPendingAssignment('c-6')).toBeUndefined();
   });
 
+  /* An assignment can reach the database before a concurrent rename and still
+   * answer after it, and the conversation it carries predates that rename.
+   * Replacing the cached document with it would put the old title back. */
+  it('merges the project into the cached conversation without restoring stale fields', async () => {
+    assignConversationToProject.mockResolvedValueOnce({
+      conversation: { conversationId: 'c-8', chatProjectId: 'project-b', title: 'Old Title' },
+      projectId: 'project-b',
+      previousProjectId: null,
+    } as never);
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+
+    activeQueryClient.setQueryData([QueryKeys.conversation, 'c-8'], {
+      conversationId: 'c-8',
+      title: 'Renamed While Assigning',
+      chatProjectId: null,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'c-8', projectId: 'project-b' });
+    });
+
+    expect(
+      activeQueryClient.getQueryData<{ title: string; chatProjectId: string | null }>([
+        QueryKeys.conversation,
+        'c-8',
+      ]),
+    ).toMatchObject({ title: 'Renamed While Assigning', chatProjectId: 'project-b' });
+  });
+
   /* Cancelling waits on whatever fetch is already running, so the session can
    * turn over inside that await. The write on the far side of it would then
    * install one account's conversation in the next account's cache and report

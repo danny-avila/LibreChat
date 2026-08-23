@@ -423,4 +423,63 @@ describe('useUpdatePinnedOrderMutation', () => {
       await write;
     });
   });
+
+  /* Key repeat on the reorder shortcut asks for a write per intermediate
+   * position, and each one posts the whole array. Sending every superseded one
+   * would put a long run of writes on the user document to describe a single
+   * move, so only the newest arrangement is worth the round trip. */
+  it('skips writes that a newer arrangement has superseded', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValue(['d', 'c', 'b', 'a']);
+
+    const { result, queryClient } = setup();
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    for (const order of [
+      ['a', 'c', 'b'],
+      ['c', 'a', 'b'],
+      ['d', 'c', 'b', 'a'],
+    ]) {
+      await act(async () => {
+        result.current.mutate(order);
+      });
+    }
+
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+    });
+
+    /* The one in flight, then the newest. The two in between are dropped. */
+    await waitFor(() => expect(updatePinnedOrder).toHaveBeenCalledTimes(2));
+    expect(updatePinnedOrder.mock.calls[1][0]).toEqual(['d', 'c', 'b', 'a']);
+    expect(cached(queryClient)).toEqual(['d', 'c', 'b', 'a']);
+  });
+
+  /* A sidebar search unmounts the Pinned section, and a query with no observer
+   * never sees the focus event. Remounting on cached data would show an order
+   * fetched before another tab changed it, and the next reorder would post
+   * that stale array straight back over the change. */
+  it('reconciles the order when the section mounts again', async () => {
+    signInAs('user-a');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const first = renderHook(() => useGetPinnedOrderQuery(), { wrapper });
+    await waitFor(() => expect(getPinnedOrder).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    getPinnedOrder.mockResolvedValue(['c', 'b', 'a']);
+    const second = renderHook(() => useGetPinnedOrderQuery(), { wrapper });
+
+    await waitFor(() => expect(getPinnedOrder).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(second.result.current.data).toEqual(['c', 'b', 'a']));
+  });
 });
