@@ -10,6 +10,17 @@ on:
       - 'package-lock.json'
       - '.github/workflows/frontend-review.yml'
       - '!**.md'
+  # Post-merge safety net and full-run baseline for gated selection (same rationale as
+  # backend-review.yml stage 1): every dev merge touching frontend paths runs the full suite.
+  push:
+    branches:
+      - dev
+    paths:
+      - 'client/**'
+      - 'packages/client/**'
+      - 'packages/data-provider/**'
+      - 'package.json'
+      - 'package-lock.json'
 
 permissions:
   contents: read
@@ -22,6 +33,94 @@ env:
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
 
 jobs:
+  # Stage 1.5 of codegraph gating (stage 1 = backend jest, #15132; stage 2 = matrix lanes,
+  # #15136). Same mechanism, same record: across 604 finalized shadow receipts the frontend
+  # selection has zero structural misses (its one raw MISSED was a chronic flake), over 500
+  # narrowed decisions. Selected (safe mode) on synchronize only; full on PR open/reopen, on
+  # every dev push, and on any doubt. A workspace skips ONLY on an explicit NONE. Kill switch:
+  # repo variable CODEGRAPH_GATING=off. Neither frontend workspace defines
+  # testPathIgnorePatterns, so --runTestsByPath needs no exclude mirroring here.
+  codegraph_select:
+    name: Codegraph select
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      vars.CODEGRAPH_GATING != 'off'
+    outputs:
+      decided: ${{ steps.sel.outputs.decided }}
+      client_run: ${{ steps.sel.outputs.client_run }}
+      client_files: ${{ steps.sel.outputs.client_files }}
+      clientpkg_run: ${{ steps.sel.outputs.clientpkg_run }}
+      clientpkg_files: ${{ steps.sel.outputs.clientpkg_files }}
+    steps:
+      - name: Select tests, fail open on any doubt
+        id: sel
+        env:
+          URL: ${{ secrets.CODEGRAPH_URL }}
+          TOKEN: ${{ secrets.CODEGRAPH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set +e
+          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          note "### Codegraph select — GATING (frontend jest)"
+          if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_no codegraph config; running FULL_"; exit 0; fi
+          if ! gh api "repos/$REPO/pulls/$PR/files" --paginate \
+              --jq '.[] | {path: .filename, status, patch}' > files.ndjson; then
+            note "_could not fetch changed files; running FULL_"; exit 0
+          fi
+          jq -s . files.ndjson > files.json
+          N=$(jq 'length' files.json)
+          if [ "$N" -eq 0 ] || { [ -n "$CHANGED" ] && [ "$N" -ne "$CHANGED" ]; }; then
+            note "_changed-file list incomplete ($N of ${CHANGED:-?}); running FULL_"; exit 0
+          fi
+          jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
+            '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
+          RESP=$(curl -sS --fail-with-body -m 45 -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select"); RC=$?
+          if [ "$RC" -ne 0 ] || [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.selected.client.mode' >/dev/null 2>&1; then
+            note "_codegraph unavailable (curl exit $RC: ${RESP:0:120}); running FULL_"
+            exit 0
+          fi
+          emit() {
+            key="$1"; ws="$2"
+            mode=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].mode')
+            files=""
+            if [ "$mode" = "FILES" ]; then
+              files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" \
+                '.selected[$w].files // [] | map(select(test(" ") | not)) | map(ltrimstr($p)) | join(" ")')
+              spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
+              if [ "$spaced" != "0" ]; then mode="FULL"; files=""; fi
+              if [ "$mode" = "FILES" ] && [ -z "$files" ]; then mode="NONE"; fi
+            fi
+            if [ "$mode" = "NONE" ]; then
+              echo "${key}_run=false" >> "$GITHUB_OUTPUT"
+              note "| $ws | skip (no reachable tests) |"
+            elif [ "$mode" = "FILES" ]; then
+              n=$(echo "$files" | wc -w | tr -d ' ')
+              echo "${key}_run=true" >> "$GITHUB_OUTPUT"
+              echo "${key}_files=$files" >> "$GITHUB_OUTPUT"
+              note "| $ws | $n selected files |"
+            else
+              echo "${key}_run=true" >> "$GITHUB_OUTPUT"
+              note "| $ws | FULL |"
+            fi
+          }
+          note "| workspace | decision |"
+          note "|---|---|"
+          emit client client
+          emit clientpkg packages/client
+          echo "decided=true" >> "$GITHUB_OUTPUT"
+          note ""
+          note "kill switch: repo variable \`CODEGRAPH_GATING=off\`; full runs remain on PR open and on every dev push"
+          exit 0
+
   build:
     name: Build packages
     runs-on: ubuntu-latest
@@ -131,7 +230,10 @@ jobs:
 
   test-packages-client:
     name: 'Tests: @librechat/client'
-    needs: build
+    needs: [build, codegraph_select]
+    if: >-
+      always() && needs.build.result == 'success' &&
+      needs.codegraph_select.outputs.clientpkg_run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -164,12 +266,22 @@ jobs:
           path: packages/data-provider/dist
 
       - name: Run unit tests
-        run: npm run test:ci
+        env:
+          SELECTED: ${{ needs.codegraph_select.outputs.clientpkg_files }}
+        run: |
+          if [ -n "$SELECTED" ]; then
+            npm run test:ci -- --passWithNoTests --runTestsByPath $SELECTED
+          else
+            npm run test:ci
+          fi
         working-directory: packages/client
 
   test-ubuntu:
     name: 'Tests: Ubuntu (shard ${{ matrix.shard }}/2)'
-    needs: build
+    needs: [build, codegraph_select]
+    if: >-
+      always() && needs.build.result == 'success' &&
+      needs.codegraph_select.outputs.client_run != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -212,7 +324,14 @@ jobs:
           path: packages/client/dist
 
       - name: Run unit tests (shard ${{ matrix.shard }}/2)
-        run: npm run test:ci -- --shard=${{ matrix.shard }}/2
+        env:
+          SELECTED: ${{ needs.codegraph_select.outputs.client_files }}
+        run: |
+          if [ -n "$SELECTED" ]; then
+            npm run test:ci -- --shard=${{ matrix.shard }}/2 --passWithNoTests --runTestsByPath $SELECTED
+          else
+            npm run test:ci -- --shard=${{ matrix.shard }}/2
+          fi
         working-directory: client
 
   build-verify:
