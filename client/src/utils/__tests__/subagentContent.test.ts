@@ -36,6 +36,42 @@ describe('aggregateSubagentContent', () => {
     expect(parts).toEqual([{ type: ContentTypes.TEXT, text: 'Hello world!' }]);
   });
 
+  it('preserves message-creation phases and keeps their text runs separate', () => {
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'commentary' },
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Commentary.' }] } },
+      }),
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'final_answer' },
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Final answer.' }] } },
+      }),
+    ]);
+
+    expect(parts).toEqual([
+      { type: ContentTypes.TEXT, text: 'Commentary.', phase: 'commentary' },
+      { type: ContentTypes.TEXT, text: 'Final answer.', phase: 'final_answer' },
+    ]);
+  });
+
   it('concatenates reasoning_delta chunks into a single THINK part', () => {
     const parts = aggregateSubagentContent([
       makeEvent({
@@ -106,6 +142,45 @@ describe('aggregateSubagentContent', () => {
     const tc = (parts[0] as { tool_call: { output?: string; progress: number } }).tool_call;
     expect(tc.output).toBe('1+1 = 2');
     expect(tc.progress).toBe(1);
+  });
+
+  it('preserves input-validation failures on completed tool calls', () => {
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'question-1', name: 'ask_user_question', args: '{}' }],
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'run_step_completed',
+        data: {
+          result: {
+            type: 'tool_call',
+            tool_call: {
+              id: 'question-1',
+              name: 'ask_user_question',
+              output: 'Invalid question schema',
+              progress: 1,
+              inputValidationError: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(parts).toEqual([
+      expect.objectContaining({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: expect.objectContaining({
+          id: 'question-1',
+          inputValidationError: true,
+        }),
+      }),
+    ]);
   });
 
   it('interleaves tool calls between text parts in order', () => {

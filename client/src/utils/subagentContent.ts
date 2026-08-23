@@ -21,6 +21,9 @@ type RunStepData = {
   id?: string;
   stepDetails?: {
     type?: string;
+    message_creation?: {
+      phase?: 'commentary' | 'final_answer';
+    };
     tool_calls?: Array<{
       id?: string;
       name?: string;
@@ -39,12 +42,19 @@ type RunStepCompletedData = {
       args?: unknown;
       output?: string;
       progress?: number;
+      inputValidationError?: true;
     };
   };
 };
 
 type MessageDeltaData = {
-  delta?: { content?: Array<{ type?: string; text?: string }> };
+  delta?: {
+    content?: Array<{
+      type?: string;
+      text?: string;
+      phase?: 'commentary' | 'final_answer';
+    }>;
+  };
 };
 
 type ReasoningDeltaData = {
@@ -53,7 +63,8 @@ type ReasoningDeltaData = {
 
 type ErrorData = { message?: string };
 
-type TextPart = { type: ContentTypes.TEXT; text: string };
+type AssistantTextPhase = 'commentary' | 'final_answer';
+type TextPart = { type: ContentTypes.TEXT; text: string; phase?: AssistantTextPhase };
 type ThinkPart = { type: ContentTypes.THINK; think: string };
 type ToolCallPart = {
   type: ContentTypes.TOOL_CALL;
@@ -63,6 +74,7 @@ type ToolCallPart = {
     args: string;
     output?: string;
     progress: number;
+    inputValidationError?: true;
     type?: string;
   };
 };
@@ -71,15 +83,21 @@ type ToolCallPart = {
  *  matches the subset of `TMessageContentParts` a subagent run emits. */
 export type SubagentContentPart = TextPart | ThinkPart | ToolCallPart;
 
-const extractTextChunk = (data: MessageDeltaData | undefined): string => {
+const extractTextChunk = (
+  data: MessageDeltaData | undefined,
+): { text: string; phase?: AssistantTextPhase } => {
   const content = data?.delta?.content;
-  if (!Array.isArray(content)) return '';
+  if (!Array.isArray(content)) return { text: '' };
   for (const block of content) {
     if (block?.type === 'text' && typeof block.text === 'string') {
-      return block.text;
+      const phase = block.phase;
+      return {
+        text: block.text,
+        ...(phase === 'commentary' || phase === 'final_answer' ? { phase } : {}),
+      };
     }
   }
-  return '';
+  return { text: '' };
 };
 
 const extractThinkChunk = (data: ReasoningDeltaData | undefined): string => {
@@ -107,6 +125,8 @@ export interface SubagentAggregatorState {
   openTextIdx: number | null;
   /** Index of the currently-open THINK part, or `null` when none. */
   openThinkIdx: number | null;
+  /** Phase declared by the latest message-creation step. */
+  activeTextPhase?: AssistantTextPhase;
   /** `tool_call.id` → its index in `contentParts` for O(1) updates. */
   toolCallIndexById: Record<string, number>;
 }
@@ -142,21 +162,29 @@ export function foldSubagentEvent(
   event: SubagentUpdateEvent,
 ): { parts: SubagentContentPart[]; state: SubagentAggregatorState } {
   if (event.phase === 'message_delta') {
-    const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
+    const extracted = extractTextChunk(event.data as MessageDeltaData | undefined);
+    const chunk = extracted.text;
     if (!chunk) return { parts, state };
+    const phase = extracted.phase ?? state.activeTextPhase;
     /** Reasoning→text transition: close the open THINK so the THINK part
      *  lands BEFORE the TEXT part in chronological order. */
     const afterThinkClose = state.openThinkIdx != null ? { ...state, openThinkIdx: null } : state;
     if (afterThinkClose.openTextIdx != null) {
       const idx = afterThinkClose.openTextIdx;
       const existing = parts[idx] as TextPart;
-      const next = parts.slice();
-      next[idx] = { type: ContentTypes.TEXT, text: existing.text + chunk };
-      return { parts: next, state: afterThinkClose };
+      if ((existing.phase ?? null) === (phase ?? null)) {
+        const next = parts.slice();
+        next[idx] = { ...existing, text: existing.text + chunk };
+        return { parts: next, state: afterThinkClose };
+      }
     }
     const next = parts.slice();
     const newIdx = next.length;
-    next.push({ type: ContentTypes.TEXT, text: chunk });
+    next.push({
+      type: ContentTypes.TEXT,
+      text: chunk,
+      ...(phase == null ? {} : { phase }),
+    });
     return { parts: next, state: { ...afterThinkClose, openTextIdx: newIdx } };
   }
 
@@ -179,8 +207,23 @@ export function foldSubagentEvent(
 
   if (event.phase === 'run_step') {
     const data = event.data as RunStepData | undefined;
-    if (data?.stepDetails?.type !== 'tool_calls') return { parts, state };
-    const toolCalls = data.stepDetails.tool_calls ?? [];
+    const details = data?.stepDetails;
+    if (details?.type === 'message_creation') {
+      const phase = details.message_creation?.phase;
+      const activeTextPhase =
+        phase === 'commentary' || phase === 'final_answer' ? phase : undefined;
+      const phaseChanged = (state.activeTextPhase ?? null) !== (activeTextPhase ?? null);
+      return {
+        parts,
+        state: {
+          ...state,
+          activeTextPhase,
+          ...(phaseChanged ? { openTextIdx: null } : {}),
+        },
+      };
+    }
+    if (details?.type !== 'tool_calls') return { parts, state };
+    const toolCalls = details.tool_calls ?? [];
     let next = parts;
     const toolCallIndexById = { ...state.toolCallIndexById };
     for (const tc of toolCalls) {
@@ -203,7 +246,12 @@ export function foldSubagentEvent(
      *  them — close the buffers. */
     return {
       parts: next,
-      state: { openTextIdx: null, openThinkIdx: null, toolCallIndexById },
+      state: {
+        openTextIdx: null,
+        openThinkIdx: null,
+        activeTextPhase: undefined,
+        toolCallIndexById,
+      },
     };
   }
 
@@ -221,6 +269,7 @@ export function foldSubagentEvent(
           ...(tc.name ? { name: tc.name } : {}),
           ...(tc.args != null ? { args: stringifyArgs(tc.args) } : {}),
           ...(tc.output != null ? { output: tc.output } : {}),
+          ...(tc.inputValidationError === true ? { inputValidationError: true } : {}),
           progress: tc.progress ?? 1,
         },
       };
@@ -239,6 +288,7 @@ export function foldSubagentEvent(
         name: tc.name ?? '',
         args: stringifyArgs(tc.args),
         output: tc.output,
+        ...(tc.inputValidationError === true ? { inputValidationError: true } : {}),
         progress: tc.progress ?? 1,
         type: ToolCallTypes.TOOL_CALL,
       },
@@ -248,6 +298,7 @@ export function foldSubagentEvent(
       state: {
         openTextIdx: null,
         openThinkIdx: null,
+        activeTextPhase: undefined,
         toolCallIndexById: { ...state.toolCallIndexById, [tc.id]: newIdx },
       },
     };
@@ -393,7 +444,7 @@ export function foldSubagentEventIntoTicker(
   event: SubagentUpdateEvent,
 ): SubagentTickerState {
   if (event.phase === 'message_delta') {
-    const chunk = extractTextChunk(event.data as MessageDeltaData | undefined);
+    const chunk = extractTextChunk(event.data as MessageDeltaData | undefined).text;
     if (!chunk) return state;
     /** Delta-type transition: close any open reasoning buffer/cursor so
      *  a later `reasoning_delta` starts a NEW line below this text,

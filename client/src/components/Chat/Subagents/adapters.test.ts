@@ -1,7 +1,14 @@
 import { ContentTypes } from 'librechat-data-provider';
-import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
-import type { SubagentProgress } from '~/store/subagents';
-import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
+import type {
+  SubagentThreadView,
+  SubagentUpdateEvent,
+  TMessageContentParts,
+} from 'librechat-data-provider';
+import {
+  aggregateSubagentContent,
+  initSubagentAggregatorState,
+  initSubagentTickerState,
+} from '~/utils/subagentContent';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 
 describe('child activity adapters', () => {
@@ -177,15 +184,38 @@ describe('child activity adapters', () => {
   });
 
   it('does not merge detached writing across explicit phase boundaries', () => {
+    const liveParts = aggregateSubagentContent([
+      {
+        runId: 'parent-run',
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        subagentAgentId: 'child',
+        phase: 'run_step',
+        timestamp: '2026-08-23T00:00:00Z',
+        data: {
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'final_answer' },
+          },
+        },
+      },
+      {
+        runId: 'parent-run',
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        subagentAgentId: 'child',
+        phase: 'message_delta',
+        timestamp: '2026-08-23T00:00:01Z',
+        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'Final answer.' }] } },
+      },
+    ] satisfies SubagentUpdateEvent[]);
     const activity = adaptLivePersistedActivity({
       title: 'researcher',
       progress: {
         subagentRunId: 'run',
         subagentType: 'researcher',
         status: 'message_delta',
-        contentParts: [
-          { type: ContentTypes.TEXT, text: 'Final answer.', phase: 'final_answer' },
-        ] as unknown as SubagentProgress['contentParts'],
+        contentParts: liveParts,
         aggregatorState: initSubagentAggregatorState(),
         tickerState: initSubagentTickerState(),
         coverage: 'suffix',
@@ -205,23 +235,39 @@ describe('child activity adapters', () => {
   });
 
   it('preserves schema-validation failures on reconstructed question tools', () => {
-    const activity = adaptLivePersistedActivity({
-      title: 'researcher',
-      progress: null,
-      persistedContent: [
-        {
-          type: ContentTypes.TOOL_CALL,
-          tool_call: {
-            id: 'question-1',
-            name: 'ask_user_question',
-            args: '{}',
-            output: 'Invalid question schema',
-            progress: 1,
-            runStepStatus: 'completed',
-            inputValidationError: true,
+    const liveParts = aggregateSubagentContent([
+      {
+        runId: 'parent-run',
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        subagentAgentId: 'child',
+        phase: 'run_step_completed',
+        timestamp: '2026-08-23T00:00:00Z',
+        data: {
+          result: {
+            type: 'tool_call',
+            tool_call: {
+              id: 'question-1',
+              name: 'ask_user_question',
+              args: '{}',
+              output: 'Invalid question schema',
+              progress: 1,
+              inputValidationError: true,
+            },
           },
         },
-      ] as unknown as TMessageContentParts[],
+      },
+    ] satisfies SubagentUpdateEvent[]);
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'run_step_completed',
+        contentParts: liveParts,
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+      },
       initialProgress: 1,
       isSubmitting: false,
     });

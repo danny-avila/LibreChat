@@ -202,6 +202,7 @@ const boundContentParts = (
   return {
     parts: bounded,
     state: {
+      ...state,
       openTextIdx: rebase(state.openTextIdx),
       openThinkIdx: rebase(state.openThinkIdx),
       toolCallIndexById,
