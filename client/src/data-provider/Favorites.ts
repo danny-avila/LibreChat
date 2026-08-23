@@ -1,42 +1,24 @@
-import { useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { QueryClient, UseQueryOptions } from '@tanstack/react-query';
+import type { UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
+import { getSessionUserId } from '~/utils/session';
 import { enqueue } from '~/utils';
-import store from '~/store';
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
 
-/** The signed-in account, tracked at module scope so a queued write can still
- *  check it after its component has unmounted. AuthContext is the authoritative
- *  source: right after login it already holds the user while `[QueryKeys.user]`
- *  is still fetching, and an ownership check that read undefined there would
- *  mis-attribute writes made in that window. */
-let signedInUserId: string | undefined;
-
-/** The user query is authoritative once it has an answer; the atom covers the
- *  window before that, and outlives the hook so queued work can still be
- *  attributed after the sidebar has dropped the section it lives in. */
-const currentUserId = (queryClient: QueryClient): string | undefined =>
-  queryClient.getQueryData<{ id?: string }>([QueryKeys.user])?.id ?? signedInUserId;
-
 /**
- * Whether a write started by `owner` may still touch the shared pinned-order
- * cache, which is not scoped by user.
+ * Whether a write started by `owner` still belongs to the account that is
+ * signed in, which decides both whether it may be sent and whether it may touch
+ * the shared pinned-order cache, since that key is not scoped by user.
  *
- * Only a positively different account refuses it. Refusing whenever the current
- * account cannot be read would strand legitimate work instead: the section is
- * unmounted during a search, and a queued write for the very same account would
- * then be abandoned and, worse, denied its rollback, leaving an order on screen
- * that was never stored.
+ * The identity comes from the auth provider rather than from this hook, which
+ * lives in a section the sidebar unmounts during a search. A signed-out session
+ * reads as `undefined` and so is foreign to any owner: work queued by an
+ * account that has since left must not ride out on the next one's credentials.
  */
-const isForeignSession = (queryClient: QueryClient, owner?: string): boolean => {
-  const current = currentUserId(queryClient);
-  return current != null && current !== owner;
-};
+const isForeignSession = (owner?: string): boolean => getSessionUserId() !== owner;
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -97,30 +79,17 @@ let latestPinnedOrder: string[] | null = null;
 
 export const useUpdatePinnedOrderMutation = () => {
   const queryClient = useQueryClient();
-  /* The same atom `AuthContext` populates from the login response, which is set
-   * before the user query resolves, so ownership is known from the first
-   * authenticated render rather than only once that fetch lands. */
-  const user = useRecoilValue(store.user);
-  const observedUserId = user?.id;
-  useEffect(() => {
-    /* Deliberately not cleared on unmount: the section goes away during a
-     * search while its writes are still queued, and dropping the identity there
-     * is what stranded them. The query cache above takes precedence once it has
-     * an answer, so a session change is still seen. */
-    signedInUserId = observedUserId;
-  }, [observedUserId]);
-
   return useMutation(
     /* Two drags completed inside one round trip would otherwise race, and the
      * server would keep whichever request happened to land last rather than the
      * order the user finished on. */
     (pinnedOrder: string[]) => {
-      const owner = currentUserId(queryClient);
+      const owner = getSessionUserId();
       return enqueue(`${PINNED_ORDER_QUEUE}:${owner ?? ''}`, async () => {
         /* A queued write runs later and carries whatever Authorization header
          * is current by then. If the session changed while it waited, sending
          * it would write one account's order into another's document. */
-        if (isForeignSession(queryClient, owner)) {
+        if (isForeignSession(owner)) {
           throw new Error('pinnedOrder write abandoned: the signed-in user changed');
         }
         try {
@@ -134,7 +103,7 @@ export const useUpdatePinnedOrderMutation = () => {
            * Restoring a captured previous value is not safe either: queued
            * behind another write it may itself be unpersisted, and before the
            * first fetch resolves there is none. */
-          if (latestPinnedOrder === pinnedOrder && !isForeignSession(queryClient, owner)) {
+          if (latestPinnedOrder === pinnedOrder && !isForeignSession(owner)) {
             queryClient.resetQueries([QueryKeys.pinnedOrder]);
           }
           throw error;
@@ -143,14 +112,14 @@ export const useUpdatePinnedOrderMutation = () => {
     },
     {
       onMutate: async (newOrder) => {
-        const owner = currentUserId(queryClient);
+        const owner = getSessionUserId();
         latestPinnedOrder = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
         return { owner };
       },
       onSuccess: (savedOrder, newOrder, context) => {
-        if (isForeignSession(queryClient, context?.owner)) {
+        if (isForeignSession(context?.owner)) {
           return;
         }
         if (latestPinnedOrder !== newOrder) {
