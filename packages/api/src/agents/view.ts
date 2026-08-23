@@ -181,8 +181,9 @@ const taskIdFromMessageId = (messageId: string): string | undefined => {
 const publicTaskStatus = (
   status: NonNullable<ParentSubagentTaskRecord['tasks'][number]['status']>,
   active: boolean,
+  statusDerived = false,
 ): SubagentThreadStatus => {
-  if (active && status === 'running') return 'running';
+  if (active && (status === 'running' || statusDerived)) return 'running';
   switch (status) {
     case 'running':
       return 'interrupted';
@@ -212,7 +213,7 @@ const publicTaskSummaries = (
     if (taskId == null) continue;
     tasks.push({
       taskId: truncateUtf8(taskId, MAX_PUBLIC_ID_BYTES).text,
-      status: publicTaskStatus(task.status, taskId === activeTaskId),
+      status: publicTaskStatus(task.status, taskId === activeTaskId, task.statusDerived),
       ...(isoDate(task.createdAt) == null ? {} : { createdAt: isoDate(task.createdAt) }),
     });
   }

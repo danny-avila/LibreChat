@@ -367,7 +367,7 @@ const terminalTaskStatus = async (
     if (message.error === true) {
       status = 'error';
     } else if (message.unfinished === true) {
-      status = 'cancelled';
+      return undefined;
     } else {
       status = 'completed';
     }

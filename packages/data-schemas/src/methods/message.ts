@@ -264,6 +264,8 @@ export type ParentSubagentTaskRecord = {
   tasks: Array<
     Pick<IMessage, 'messageId' | 'createdAt'> & {
       status: NonNullable<IMessage['subagentTask']>['status'];
+      /** True when status was inferred from an ordinary event-turn row. */
+      statusDerived?: boolean;
       /** Private ordering token used only while merging bounded storage reads. */
       occurrenceId?: unknown;
     }
@@ -1203,6 +1205,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       messageId: '$messageId',
       createdAt: '$createdAt',
       occurrenceId: '$_id',
+      statusDerived: {
+        $eq: [{ $ifNull: ['$subagentTask.status', null] }, null],
+      },
       status: {
         $ifNull: [
           '$subagentTask.status',

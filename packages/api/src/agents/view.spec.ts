@@ -654,6 +654,42 @@ describe('parent child-thread index', () => {
     );
   });
 
+  it('keeps a derived partial event snapshot running while its exact lease is active', async () => {
+    const handler = createParentSubagentIndexHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      listSubagentThreadsForParent: jest.fn().mockResolvedValue([
+        {
+          ...eventChild,
+          subagentThreadLease: {
+            token: 'lease-token',
+            taskId: 'delivery-active',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+        },
+      ]),
+      listSubagentTasksForThreads: jest.fn().mockResolvedValue([
+        {
+          conversationId: 'event-thread',
+          tasks: [
+            {
+              messageId: 'delivery-active:assistant',
+              status: 'cancelled',
+              statusDerived: true,
+              createdAt: new Date('2026-08-21T11:01:00.000Z'),
+            },
+          ],
+        },
+      ]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0].children[0]).toEqual(
+      expect.objectContaining({ status: 'running', latestTaskId: 'delivery-active' }),
+    );
+  });
+
   it('redacts event delivery identity from the detailed child view', async () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership: jest.fn().mockResolvedValue(parent),

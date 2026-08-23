@@ -1184,9 +1184,21 @@ describe('Message Operations', () => {
       });
 
       expect(record.tasks).toEqual([
-        expect.objectContaining({ messageId: 'delivery-error:assistant', status: 'error' }),
-        expect.objectContaining({ messageId: 'delivery-complete:assistant', status: 'completed' }),
-        expect.objectContaining({ messageId: 'delivery-running:user', status: 'running' }),
+        expect.objectContaining({
+          messageId: 'delivery-error:assistant',
+          status: 'error',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-complete:assistant',
+          status: 'completed',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-running:user',
+          status: 'running',
+          statusDerived: true,
+        }),
       ]);
     });
 
