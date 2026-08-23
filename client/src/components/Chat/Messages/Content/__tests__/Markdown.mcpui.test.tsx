@@ -14,12 +14,18 @@ import Markdown from '../Markdown';
 
 // Mocks for hooks used by MCPUIResource when rendered inside Markdown.
 // Keep Provider components intact while mocking only the hooks we use.
-jest.mock('~/Providers', () => ({
-  ...jest.requireActual('~/Providers'),
-  useMessageContext: jest.fn(),
-  useOptionalMessagesConversation: jest.fn(),
-  useOptionalMessagesOperations: jest.fn(),
-}));
+jest.mock('~/Providers', () => {
+  const globals = globalThis as Record<string, unknown>;
+  globals.mockProviderHooks = globals.mockProviderHooks ?? {
+    useMessageContext: jest.fn(),
+    useOptionalMessagesConversation: jest.fn(),
+    useOptionalMessagesOperations: jest.fn(),
+  };
+  return {
+    ...jest.requireActual('~/Providers'),
+    ...(globals.mockProviderHooks as Record<string, unknown>),
+  };
+});
 jest.mock('~/data-provider');
 jest.mock('~/hooks');
 
@@ -111,6 +117,13 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
 });
 
 describe('Markdown table rendering', () => {
+  /* `Markdown` reads the message context on every render. Without this the
+   * block only passed because the suite above it happened to run first and
+   * leave a return value behind, so the tests failed whenever they ran alone. */
+  beforeEach(() => {
+    mockUseMessageContext.mockReturnValue({} as any);
+  });
+
   const tableMarkdown = [
     '| Alpha | Bravo | Charlie | Delta | Echo | Foxtrot | Golf | Hotel |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
