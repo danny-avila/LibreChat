@@ -383,6 +383,7 @@ export type SubagentUpdatePhase =
   | 'run_step'
   | 'run_step_delta'
   | 'run_step_completed'
+  | 'run_step_closed'
   | 'message_delta'
   | 'reasoning_delta'
   | 'stop'

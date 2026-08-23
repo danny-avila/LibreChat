@@ -80,6 +80,47 @@ describe('aggregateSubagentContent', () => {
     ]);
   });
 
+  it('retains a long-lived message phase while later completed steps are retired', () => {
+    const laterSteps = Array.from({ length: 100 }, (_, index) => `later-step-${index}`);
+    const events: SubagentUpdateEvent[] = [
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          id: 'long-lived-step',
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'commentary' },
+          },
+        },
+      }),
+      ...laterSteps.flatMap((id) => [
+        makeEvent({
+          phase: 'run_step',
+          data: {
+            id,
+            stepDetails: {
+              type: 'message_creation',
+              message_creation: { phase: 'final_answer' },
+            },
+          },
+        }),
+        makeEvent({ phase: 'run_step_closed', data: { id } }),
+      ]),
+      makeEvent({
+        phase: 'message_delta',
+        data: {
+          id: 'long-lived-step',
+          delta: { content: [{ type: 'text', text: 'Still commentary.' }] },
+        },
+      }),
+      makeEvent({ phase: 'run_step_closed', data: { id: 'long-lived-step' } }),
+    ];
+
+    expect(aggregateSubagentContent(events)).toEqual([
+      { type: ContentTypes.TEXT, text: 'Still commentary.', phase: 'commentary' },
+    ]);
+  });
+
   it('concatenates reasoning_delta chunks into a single THINK part', () => {
     const parts = aggregateSubagentContent([
       makeEvent({

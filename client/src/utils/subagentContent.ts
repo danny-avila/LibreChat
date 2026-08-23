@@ -47,6 +47,10 @@ type RunStepCompletedData = {
   };
 };
 
+type RunStepClosedData = {
+  id?: string;
+};
+
 type MessageDeltaData = {
   id?: string;
   delta?: {
@@ -84,8 +88,6 @@ type ToolCallPart = {
  *  matches the subset of `TMessageContentParts` a subagent run emits. */
 export type SubagentContentPart = TextPart | ThinkPart | ToolCallPart;
 
-const MAX_TRACKED_MESSAGE_PHASES = 100;
-
 const extractTextChunk = (
   data: MessageDeltaData | undefined,
 ): { text: string; phase?: AssistantTextPhase } => {
@@ -122,9 +124,10 @@ const updateMessagePhase = (
   stepId: string,
   phase: AssistantTextPhase | undefined,
 ): Record<string, AssistantTextPhase> => {
-  const entries = Object.entries(phases).filter(([id]) => id !== stepId);
-  if (phase != null) entries.push([stepId, phase]);
-  return Object.fromEntries(entries.slice(-MAX_TRACKED_MESSAGE_PHASES));
+  const next = { ...phases };
+  if (phase == null) delete next[stepId];
+  else next[stepId] = phase;
+  return next;
 };
 
 /**
@@ -138,7 +141,11 @@ export interface SubagentAggregatorState {
   openTextIdx: number | null;
   /** Index of the currently-open THINK part, or `null` when none. */
   openThinkIdx: number | null;
-  /** Message-step ID to its declared text phase; graph members can overlap. */
+  /**
+   * Active message-step ID to its declared text phase; graph members can
+   * overlap. Entries leave on `run_step_closed`, so the runtime's bounded
+   * concurrent graph width—not historical step count—bounds this table.
+   */
   messagePhaseByStepId: Record<string, AssistantTextPhase>;
   /** Compatibility phase for legacy message events that omit their step ID. */
   idlessTextPhase?: AssistantTextPhase;
@@ -330,6 +337,18 @@ export function foldSubagentEvent(
         openThinkIdx: null,
         idlessTextPhase: undefined,
         toolCallIndexById: { ...state.toolCallIndexById, [tc.id]: newIdx },
+      },
+    };
+  }
+
+  if (event.phase === 'run_step_closed') {
+    const stepId = (event.data as RunStepClosedData | undefined)?.id;
+    if (typeof stepId !== 'string' || stepId === '') return { parts, state };
+    return {
+      parts,
+      state: {
+        ...state,
+        messagePhaseByStepId: updateMessagePhase(state.messagePhaseByStepId, stepId, undefined),
       },
     };
   }
