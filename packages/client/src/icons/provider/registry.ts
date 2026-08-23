@@ -108,3 +108,16 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
     mono: true,
   },
 };
+
+/** Merges any model level refinement over the base definition for a provider. */
+export function getProviderIconDef(
+  provider?: ProviderId | null,
+  model?: string | null,
+): ProviderIconDef {
+  const base = provider ? providerIcons[provider] : undefined;
+  if (!base) {
+    return { art: component(CustomMinimalIcon), label: 'Custom', mono: true };
+  }
+  const refinement = model ? base.byModel?.(model) : undefined;
+  return refinement ? { ...base, ...refinement } : base;
+}
