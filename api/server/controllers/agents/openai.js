@@ -23,6 +23,7 @@ const {
   createMCPRuntimeRequestBody,
   loadSkillStates,
   sendFinalChunk,
+  buildCompletionUsage,
   createSafeUser,
   validateRequest,
   initializeAgent,
@@ -62,7 +63,7 @@ const {
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
-  markSummarizationUsage,
+  contextualizeModelUsage,
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
@@ -659,12 +660,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     // Create tracker for streaming or aggregator for non-streaming
     const tracker = isStreaming ? createOpenAIStreamTracker() : null;
     const aggregator = isStreaming ? null : createOpenAIContentAggregator();
-    const accumulateResponseUsage = (usage) => {
-      const target = isStreaming ? tracker : aggregator;
-      target.usage.promptTokens += usage.input_tokens ?? 0;
-      target.usage.completionTokens += usage.output_tokens ?? 0;
-    };
-
     // Set up response for streaming
     if (isStreaming) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -915,12 +910,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
       // Usage tracking
       on_chat_model_end: {
-        handle: (_event, data, metadata) => {
+        handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const taggedUsage = markSummarizationUsage(usage, metadata);
+            const agentContext = graph?.getAgentContext?.(metadata);
+            const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
             collectedUsage.push(taggedUsage);
-            accumulateResponseUsage(taggedUsage);
           }
         },
       },
@@ -1000,7 +995,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       tenantId: principal.tenantId,
       /** Bills subagent child-run model calls (reported outside the
        *  streamEvents loop) into the same collectedUsage array. */
-      subagentUsageSink: createSubagentUsageSink(collectedUsage, accumulateResponseUsage),
+      subagentUsageSink: createSubagentUsageSink(collectedUsage),
     });
 
     if (!run) {
@@ -1056,10 +1051,12 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
     });
 
+    const usage = buildCompletionUsage(collectedUsage);
+
     // Finalize response
     const duration = Date.now() - requestStartTime;
     if (isStreaming) {
-      sendFinalChunk(handlerConfig);
+      sendFinalChunk(handlerConfig, 'stop', usage);
       res.end();
       logger.debug(`[OpenAI API] Response ${responseId} completed in ${duration}ms (streaming)`);
 
@@ -1083,19 +1080,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             getSafeErrorMetadata(artifactError),
           );
         }
-      }
-
-      // Build usage from aggregated data
-      const usage = {
-        prompt_tokens: aggregator.usage.promptTokens,
-        completion_tokens: aggregator.usage.completionTokens,
-        total_tokens: aggregator.usage.promptTokens + aggregator.usage.completionTokens,
-      };
-
-      if (aggregator.usage.reasoningTokens > 0) {
-        usage.completion_tokens_details = {
-          reasoning_tokens: aggregator.usage.reasoningTokens,
-        };
       }
 
       const response = buildNonStreamingResponse(
