@@ -34,6 +34,39 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
     expect(contextualizeModelUsage(usage, undefined, undefined)).toEqual(usage);
   });
 
+  it('prefers the actually invoked fallback provider and model', () => {
+    const usage = { input_tokens: 10, output_tokens: 5 };
+    const result = contextualizeModelUsage(
+      usage,
+      {
+        __invoked_provider: 'anthropic',
+        __invoked_model: 'claude-fallback',
+      },
+      {
+        provider: 'bedrock',
+        agentId: 'agent-1',
+        clientOptions: { model: 'configured-model' },
+      },
+    );
+
+    expect(result).toEqual({
+      ...usage,
+      provider: 'anthropic',
+      model: 'claude-fallback',
+      agentId: 'agent-1',
+    });
+  });
+
+  it('prefers provider-reported model metadata over the invoked fallback model', () => {
+    expect(
+      contextualizeModelUsage(
+        { input_tokens: 10, output_tokens: 5 },
+        { ls_model_name: 'reported-model', __invoked_model: 'fallback-model' },
+        { clientOptions: { model: 'configured-model' } },
+      ).model,
+    ).toBe('reported-model');
+  });
+
   it('maps non-empty signatures onto tool_call_ids in order', async () => {
     const collectedUsage = [];
     const collectedThoughtSignatures = {};

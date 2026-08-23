@@ -304,7 +304,7 @@ jest.mock('@librechat/api', () => ({
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   setupStreamingResponse: jest.fn(),
   emitResponseInProgress: jest.fn(),
@@ -320,7 +320,7 @@ jest.mock('@librechat/api', () => ({
   }),
   buildResponsesUsage: mockBuildResponsesUsage,
   createResponseAggregator: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   sendResponsesErrorResponse: jest.fn(),
   createResponsesEventHandlers: jest.fn().mockReturnValue({
@@ -628,6 +628,7 @@ describe('createResponse controller', () => {
         isCreatedByUser: false,
         langfuseSampled: true,
         langfuseDestinationIds: ['destination-1'],
+        tokenCount: 50,
       }),
       { context: 'Responses API - save assistant response' },
     );
