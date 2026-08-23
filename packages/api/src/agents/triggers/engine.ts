@@ -138,6 +138,12 @@ export interface AgentTriggerDeliveryEngineDeps {
   workerId?: string;
 }
 
+interface ClaimPassResult {
+  count: number;
+  processing: Promise<void>[];
+  claimFailed?: boolean;
+}
+
 export interface AgentTriggerDeliveryEngine {
   start: () => void;
   stop: () => Promise<void>;
@@ -246,7 +252,7 @@ export function createAgentTriggerDeliveryEngine(
   let started = false;
   let repumpRequested = false;
   let timer: NodeJS.Timeout | undefined;
-  let activeClaim: Promise<{ count: number; processing: Promise<void>[] }> | undefined;
+  let activeClaim: Promise<ClaimPassResult> | undefined;
 
   const processDelivery = async (delivery: AgentTriggerDeliveryRecord): Promise<void> => {
     const userId = String(delivery.user);
@@ -465,7 +471,7 @@ export function createAgentTriggerDeliveryEngine(
     });
   };
 
-  const runClaimPass = async (): Promise<{ count: number; processing: Promise<void>[] }> => {
+  const runClaimPass = async (): Promise<ClaimPassResult> => {
     if (stopped) {
       return { count: 0, processing: [] };
     }
@@ -483,7 +489,7 @@ export function createAgentTriggerDeliveryEngine(
       deliveries.push(first);
     } catch (error) {
       logger.error('[agent-triggers] delivery claim failed:', error);
-      return { count: 0, processing: [] };
+      return { count: 0, processing: [], claimFailed: true };
     }
 
     if (openSlots > 1) {
@@ -525,13 +531,16 @@ export function createAgentTriggerDeliveryEngine(
     return { count: deliveries.length, processing: batch };
   };
 
-  const claimAvailable = (): Promise<{ count: number; processing: Promise<void>[] }> => {
+  const claimAvailable = (): Promise<ClaimPassResult> => {
     if (activeClaim != null) {
       return activeClaim;
     }
     activeClaim = runAsSystem(runClaimPass)
       .then((result) => {
-        idleStreak = result.count > 0 ? 0 : idleStreak + 1;
+        /** Only a pass that confirmed an empty queue may advance the idle backoff: work
+         *  resets it, and a failed claim proves nothing, so it polls on at the base
+         *  cadence — the pre-backoff status quo through an outage and at recovery. */
+        idleStreak = result.count === 0 && result.claimFailed !== true ? idleStreak + 1 : 0;
         return result;
       })
       .finally(() => {

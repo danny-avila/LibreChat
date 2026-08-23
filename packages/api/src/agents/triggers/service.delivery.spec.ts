@@ -312,6 +312,39 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  it('wakes the delivery engine when a dead letter is requeued locally', async () => {
+    const claimNextAgentTriggerDelivery = jest.fn(async () => null);
+    const requeueAgentTriggerDelivery = jest
+      .fn()
+      .mockResolvedValueOnce(deliveryRecord())
+      .mockResolvedValueOnce(null);
+    const methods = deliveryMethods({
+      claimNextAgentTriggerDelivery,
+      requeueAgentTriggerDelivery,
+    });
+    const service = createAgentTriggerService({
+      methods,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const claimsBefore = claimNextAgentTriggerDelivery.mock.calls.length;
+
+    await service.requeue('delivery-row-1', START);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(claimNextAgentTriggerDelivery.mock.calls.length).toBeGreaterThan(claimsBefore);
+
+    /** A requeue that revived nothing must not wake anything. */
+    const claimsAfterWake = claimNextAgentTriggerDelivery.mock.calls.length;
+    await service.requeue('delivery-row-1', START);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(claimNextAgentTriggerDelivery.mock.calls.length).toBe(claimsAfterWake);
+
+    await service.stop();
+  });
+
   it('does not become ready when the required unique indexes fail', async () => {
     const methods = deliveryMethods({
       ensureAgentTriggerDeliveryIndexes: jest.fn(async () =>

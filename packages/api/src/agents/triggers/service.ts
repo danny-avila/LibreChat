@@ -414,7 +414,13 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     getDeadLetters: (limit) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>
-      runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
+      runAsSystem(async () => {
+        const revived = await requireMethods().requeueAgentTriggerDelivery(id, availableAt);
+        if (revived != null) {
+          deliveryEngine?.wake();
+        }
+        return revived;
+      }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>

@@ -524,6 +524,32 @@ describe('createAgentTriggerDeliveryEngine', () => {
     }
   });
 
+  it('keeps polling at the base cadence while claims are failing', async () => {
+    jest.useFakeTimers();
+    try {
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          throw new Error('mongo unavailable');
+        }),
+      });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      /** A failed claim proves nothing about the queue, so recovery attempts stay
+       *  one second apart instead of stretching toward the idle ceiling. */
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect((store.claimNext as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(10);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping ticks into one claim pass', async () => {
     let releaseClaim: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
