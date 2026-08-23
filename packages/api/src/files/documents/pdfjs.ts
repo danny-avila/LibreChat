@@ -66,6 +66,7 @@ export async function extractPageText(
     throwIfAborted(signal);
     // Imported inline so that Jest can test other routes without failing due to loading ESM
     const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    throwIfAborted(signal);
     loadingTask = getDocument({ data: new Uint8Array(data) });
     stopLoading = watchForAbort(loadingTask, signal);
     const pdf: PDFDocumentProxy = await loadingTask.promise;
@@ -129,6 +130,7 @@ export async function extractDocumentTextWithPages(
 ): Promise<ExtractedDocumentText> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  throwIfAborted(signal);
 
   const loadingTask = getDocument({ data: new Uint8Array(data) });
   const stopLoading = watchForAbort(loadingTask, signal);

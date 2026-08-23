@@ -554,6 +554,41 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0].text).toBe('text layer plus the scanned page');
     });
 
+    test('uses the canonical parser format to check OCR support for a configured MIME alias', async () => {
+      const vendorMime = 'application/vnd.vendor.word';
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          documentParserSupportedMimeTypes: [vendorMime],
+          ocrSupportedMimeTypes: [DOCX_MIME],
+        }),
+      );
+      const localUpload = jest.fn().mockResolvedValue({
+        text: 'text layer only',
+        bytes: 15,
+        filepath: DocumentParser.anydoc,
+        mayOmitContent: true,
+      });
+      const remoteOCR = jest.fn().mockResolvedValue({
+        text: 'text layer plus the scanned page',
+        bytes: 31,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteOCR,
+      }));
+      const req = makeReq({
+        mimetype: vendorMime,
+        originalname: 'report.docx',
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(localUpload).toHaveBeenCalledTimes(1);
+      expect(remoteOCR).toHaveBeenCalledTimes(1);
+      expect(db.createFile.mock.calls[0][0].text).toBe('text layer plus the scanned page');
+    });
+
     test('keeps the local text when embedded media is reported and no OCR is configured', async () => {
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockResolvedValue({
@@ -1094,6 +1129,56 @@ describe('processAgentFileUpload', () => {
         }),
       );
     });
+
+    test.each([
+      ['missing PDF pages', PDF_MIME, DocumentParser.pdf_inspector, { pagesNeedingOcr: [2] }],
+      ['embedded document media', DOCX_MIME, DocumentParser.anydoc, { mayOmitContent: true }],
+    ])(
+      'fails closed when strict extracted-text policy cannot inspect %s',
+      async (_label, mimetype, filepath, incompleteResult) => {
+        mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mimetype] }));
+        checkCapability.mockResolvedValue(false);
+        const localUpload = jest.fn().mockResolvedValue({
+          text: 'local partial text',
+          bytes: 18,
+          filepath,
+          ...incompleteResult,
+        });
+        const remoteOCR = jest.fn();
+        getStrategyFunctions.mockImplementation((source) => ({
+          handleFileUpload: source === FileSources.document_parser ? localUpload : remoteOCR,
+        }));
+        assertExtractedTextInspectable.mockImplementationOnce(({ text }) => {
+          expect(text).toBeUndefined();
+          throw makeUninspectableExtractedTextError();
+        });
+        const req = makeReq({
+          mimetype,
+          originalname: mimetype === PDF_MIME ? 'mixed.pdf' : 'scanned.docx',
+          ocrConfig: { strategy: FileSources.mistral_ocr },
+          filters: {
+            files: {
+              pii: {
+                fields: ['extracted_text'],
+                uninspectable: 'block',
+              },
+            },
+          },
+        });
+
+        await expect(
+          processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+        ).rejects.toMatchObject({
+          code: 'content_filter_uninspectable',
+          body: { field: 'extracted_text' },
+        });
+
+        expect(localUpload).toHaveBeenCalledTimes(1);
+        expect(remoteOCR).not.toHaveBeenCalled();
+        expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+        expect(db.createFile).not.toHaveBeenCalled();
+      },
+    );
 
     test('uses document_parser (no capability check) when OCR capability returns false but no OCR config', async () => {
       checkCapability.mockResolvedValue(false);

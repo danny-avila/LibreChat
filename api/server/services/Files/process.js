@@ -905,12 +905,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       ocrConfigured: appConfig?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
     });
-    const shouldUseConfiguredOCR = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
     const shouldUseConfiguredText = extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
     const parserMimeTypes =
       fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes;
     const isKnownDocumentType = fileConfig.checkType(effectiveMimeType, documentParserMimeTypes);
     const isDocumentParserEligible = fileConfig.checkType(effectiveMimeType, parserMimeTypes);
+    const parserResolvedMimeType =
+      !isKnownDocumentType && isDocumentParserEligible
+        ? resolveEffectiveMimeType(file.originalname, '')
+        : effectiveMimeType;
+    const parserAliasSupportsOCR =
+      !shouldUseConfiguredText &&
+      !isKnownDocumentType &&
+      isDocumentParserEligible &&
+      fileConfig.checkType(parserResolvedMimeType, fileConfig.ocr?.supportedMimeTypes ?? []);
+    const shouldUseConfiguredOCR =
+      appConfig?.ocr != null &&
+      (extractedTextPlan === UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR || parserAliasSupportsOCR);
     const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
     const resolveDocumentText = async () => {
@@ -1060,6 +1071,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           }
 
           if (hasLocalText) {
+            assertExtractedTextInspectable({
+              filters: appConfig?.filters,
+              text: undefined,
+            });
             return localResult;
           }
           return isDelimitedTextType(effectiveMimeType)

@@ -284,6 +284,20 @@ describe('Office HTML producers', () => {
       expect(html).not.toContain('class="lc-sheet-tabs"');
     });
 
+    test('renders a legacy CFB workbook with a nested ZIP attachment', async () => {
+      const attachment = new JSZip();
+      attachment.file('attachment.txt', 'nested archive');
+      const buffer = Buffer.concat([
+        readFixture('sample.xls'),
+        await attachment.generateAsync({ type: 'nodebuffer' }),
+      ]);
+
+      const html = await excelSheetToHtml(buffer);
+
+      expect(html).toContain('first');
+      expect(html).toContain('<table');
+    });
+
     test('renders ods workbooks the same way', async () => {
       const html = await excelSheetToHtml(readFixture('sample.ods'));
       expect(html).toContain('Sheet One');

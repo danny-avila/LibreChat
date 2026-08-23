@@ -761,7 +761,10 @@ function escapeHtml(input: string): string {
  * skips the validator.
  */
 export async function excelSheetToHtml(buffer: Buffer): Promise<string> {
-  await assertSafeZipSizeIfArchive(buffer, { name: 'spreadsheet' });
+  await assertSafeZipSizeIfArchive(buffer, {
+    name: 'spreadsheet',
+    knownOuterContainer: 'cfb',
+  });
   const XLSX = await import('xlsx');
   const workbook = XLSX.read(buffer, { type: 'buffer' });
   const sheets = await renderWorkbookSheets(workbook, XLSX);
