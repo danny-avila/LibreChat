@@ -39,6 +39,7 @@ import {
   describeCadence,
   formatRunInstant,
   formatScheduleDay,
+  formatScheduleDayNarrow,
   resolveLocalTimezone,
   buildTimezoneOptions,
   formatTimezoneOffset,
@@ -72,7 +73,7 @@ type ScheduleFormValues = {
   hour12: number;
   minute: number;
   meridiem: Meridiem;
-  dayOfWeek: number;
+  daysOfWeek: number[];
   /** Only read when `frequency` is `cron`; held across a switch away and back so a
    *  user who tries a preset does not lose the expression they typed. */
   expression: string;
@@ -92,6 +93,13 @@ const BASE_MINUTES = [0, 15, 30, 45];
 /** Every weekday at 09:00: a recognisable starting point to edit rather than an
  *  empty field the user has to guess the field order from. */
 const DEFAULT_CRON = '0 9 * * 1-5';
+
+/** Mirrors the server's default weekly day (Monday) when a weekly cadence carries no
+ *  days, so a new weekly schedule opens on the same day an API-created one fires. */
+const DEFAULT_WEEKLY_DAYS = [1];
+
+/** Sunday-first, matching the numeric day indices the cadence stores. */
+const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6];
 
 /** Enough previewed occurrences to show the SHAPE of a cadence (that `0 9,17 * * 1-5`
  *  fires twice a day), which a single row cannot. Kept small deliberately: the dialog
@@ -113,7 +121,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       hour12: 9,
       minute: 0,
       meridiem: 'AM',
-      dayOfWeek: 1,
+      daysOfWeek: DEFAULT_WEEKLY_DAYS,
       expression: DEFAULT_CRON,
       timezone: localTimezone,
     };
@@ -138,7 +146,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       hour12: 9,
       minute: 0,
       meridiem: 'AM',
-      dayOfWeek: 1,
+      daysOfWeek: DEFAULT_WEEKLY_DAYS,
       expression: cadence.expression,
     };
   }
@@ -149,17 +157,19 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     hour12,
     minute: cadence.minute,
     meridiem,
-    dayOfWeek: cadence.daysOfWeek?.[0] ?? 1,
+    daysOfWeek: cadence.daysOfWeek?.length
+      ? [...cadence.daysOfWeek].sort((a, b) => a - b)
+      : DEFAULT_WEEKLY_DAYS,
     expression: DEFAULT_CRON,
   };
 };
 
 type CadenceFormValues = Pick<
   ScheduleFormValues,
-  'frequency' | 'hour12' | 'minute' | 'meridiem' | 'dayOfWeek' | 'expression'
+  'frequency' | 'hour12' | 'minute' | 'meridiem' | 'daysOfWeek' | 'expression'
 >;
 
-const buildCadence = (values: CadenceFormValues, overrideDays?: number[]): TScheduleCadence => {
+const buildCadence = (values: CadenceFormValues): TScheduleCadence => {
   if (values.frequency === 'cron') {
     return { frequency: 'cron', expression: values.expression.trim() };
   }
@@ -168,13 +178,13 @@ const buildCadence = (values: CadenceFormValues, overrideDays?: number[]): TSche
   }
   const hour = to24Hour(values.hour12, values.meridiem);
   if (values.frequency === 'weekly') {
-    // `overrideDays` preserves a stored multi-day set (which this single-day
-    // picker can't represent) when only the time — not the day — was changed.
     return {
       frequency: 'weekly',
       hour,
       minute: values.minute,
-      daysOfWeek: overrideDays ?? [values.dayOfWeek],
+      daysOfWeek: values.daysOfWeek.length
+        ? [...values.daysOfWeek].sort((a, b) => a - b)
+        : DEFAULT_WEEKLY_DAYS,
     };
   }
   return { frequency: values.frequency, hour, minute: values.minute };
@@ -211,7 +221,7 @@ export default function ScheduleDialog({
   const hour12 = watch('hour12');
   const minute = watch('minute');
   const meridiem = watch('meridiem');
-  const dayOfWeek = watch('dayOfWeek');
+  const daysOfWeek = watch('daysOfWeek');
   const expression = watch('expression');
   const timezone = watch('timezone');
 
@@ -303,15 +313,6 @@ export default function ScheduleDialog({
     [localize],
   );
 
-  const dayOptions = useMemo(
-    () =>
-      Array.from({ length: 7 }, (_, day) => ({
-        value: String(day),
-        label: formatScheduleDay(day, locale),
-      })),
-    [locale],
-  );
-
   const timezoneItems = useMemo(() => {
     const zones = buildTimezoneOptions(resolveLocalTimezone(), schedule?.timezone);
     return zones.map((zone) => {
@@ -358,20 +359,6 @@ export default function ScheduleDialog({
 
   const isLoading = createSchedule.isLoading || updateSchedule.isLoading;
 
-  /** The stored weekly days an edit deliberately keeps: the form's single-day picker
-   *  only holds `daysOfWeek[0]`, so an untouched picker must not collapse a
-   *  multi-day (API-created) weekly schedule. ONE rule, used by both the submitted
-   *  cadence and the summary — a summary built without it told the user the schedule
-   *  runs on one day while the submit preserved (and kept firing) all of them. */
-  const resolvePreservedWeeklyDays = (nextFrequency: ScheduleFormValues['frequency']) =>
-    schedule &&
-    !dirtyFields.dayOfWeek &&
-    !dirtyFields.frequency &&
-    schedule.cadence.frequency === 'weekly' &&
-    nextFrequency === 'weekly'
-      ? schedule.cadence.daysOfWeek
-      : undefined;
-
   /** Whether this submit carries a cadence at all: a pure rename does not, and the
    *  API only validates a cadence it actually receives. Only touched cadence
    *  CONTROLS count: a zone-only edit must not ship a cadence rebuilt from this
@@ -382,7 +369,7 @@ export default function ScheduleDialog({
     dirtyFields.hour12 === true ||
     dirtyFields.minute === true ||
     dirtyFields.meridiem === true ||
-    dirtyFields.dayOfWeek === true ||
+    dirtyFields.daysOfWeek != null ||
     dirtyFields.expression === true;
   /** Whether this submit changes the schedule's TIMING. The zone alone re-times
    *  every occurrence (the server recomputes the next run and re-measures the
@@ -394,7 +381,7 @@ export default function ScheduleDialog({
     if (schedule) {
       // Preserve the stored cadence entirely on a pure rename (no cadence control
       // touched).
-      const cadence = buildCadence(values, resolvePreservedWeeklyDays(values.frequency));
+      const cadence = buildCadence(values);
       // PATCH only the fields the user actually touched, like the cadence handling
       // above: submitting the whole form snapshot silently overwrites fields another
       // tab or session edited while this dialog sat open (the server's revision fence
@@ -465,21 +452,22 @@ export default function ScheduleDialog({
     createSchedule.mutate(payload);
   };
 
-  /** The stored multi-day set an untouched weekly picker keeps, flattened to a string
-   *  so the memos below can depend on its VALUE: the array identity changes whenever
-   *  the schedules query polls, which would re-walk croner on every refresh. */
-  const preservedWeeklyDays = resolvePreservedWeeklyDays(frequency)?.join(',') ?? '';
+  /** Flattened so the memo below depends on its VALUE: the array identity changes on
+   *  every render, which would re-walk croner each time. */
+  const daysKey = daysOfWeek.join(',');
 
   /** Read by the summary, the preview and the interval floor, each of which walks
    *  croner. Memoized so a name or prompt keystroke does not re-derive all three. */
   const previewCadence = useMemo(
-    () =>
-      buildCadence(
-        { frequency, hour12, minute, meridiem, dayOfWeek, expression },
-        preservedWeeklyDays === '' ? undefined : preservedWeeklyDays.split(',').map(Number),
-      ),
-    [frequency, hour12, minute, meridiem, dayOfWeek, expression, preservedWeeklyDays],
+    () => buildCadence({ frequency, hour12, minute, meridiem, daysOfWeek, expression }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `daysKey` IS `daysOfWeek`
+    [frequency, hour12, minute, meridiem, daysKey, expression],
   );
+
+  /** Weekly with nothing selected is expressible in the form but not on the wire (the
+   *  payload schema requires at least one day), so it blocks submit rather than
+   *  silently saving as Monday. */
+  const daysAreValid = frequency !== 'weekly' || daysOfWeek.length > 0;
 
   /** Validated in the schedule's own timezone, the same argument the server passes, so
    *  a zone-sensitive expression cannot pass here and be refused there. */
@@ -492,10 +480,10 @@ export default function ScheduleDialog({
 
   const previewRuns = useMemo(
     () =>
-      frequency === 'cron' && cronIsValid
+      frequency === 'cron' && cronIsValid && daysAreValid
         ? nextRunInstants(previewCadence, timezone, PREVIEW_RUN_COUNT)
         : [],
-    [frequency, cronIsValid, previewCadence, timezone],
+    [frequency, cronIsValid, daysAreValid, previewCadence, timezone],
   );
 
   /** The floor binds exactly where the API binds it: to a cadence that will actually
@@ -513,19 +501,26 @@ export default function ScheduleDialog({
     () =>
       floorApplies &&
       cronIsValid &&
+      daysAreValid &&
       minIntervalMinutes != null &&
       // The zone is load-bearing, not decoration: without it this measures the nominal
       // gap while the API measures the DST-compressed one, and the dialog offers a
       // Create the API then rejects.
       cadenceIntervalMinutes(previewCadence, timezone) < minIntervalMinutes,
-    [floorApplies, cronIsValid, minIntervalMinutes, previewCadence, timezone],
+    [floorApplies, cronIsValid, daysAreValid, minIntervalMinutes, previewCadence, timezone],
   );
 
-  const cadenceError =
-    belowFloor && minIntervalMinutes != null
-      ? localize('com_ui_schedule_min_interval', { minutes: minIntervalMinutes })
-      : null;
-  const canSubmit = cronIsValid && !belowFloor && !isLoading;
+  const resolveCadenceError = (): string | null => {
+    if (!daysAreValid) {
+      return localize('com_ui_schedule_days_required');
+    }
+    if (belowFloor && minIntervalMinutes != null) {
+      return localize('com_ui_schedule_min_interval', { minutes: minIntervalMinutes });
+    }
+    return null;
+  };
+  const cadenceError = resolveCadenceError();
+  const canSubmit = cronIsValid && daysAreValid && !belowFloor && !isLoading;
 
   /** The offset disambiguates two similar names, which matters now that the zone is
    *  something the user picks rather than the browser's own. Memoized because it
@@ -534,6 +529,18 @@ export default function ScheduleDialog({
   const summary = `${describeCadence(previewCadence, localize, locale)} · ${
     timezoneOffset ? `${timezone} (${timezoneOffset})` : timezone
   }`;
+
+  /** Both labels for every pill, built once per locale: inline they cost fourteen
+   *  `Intl.DateTimeFormat` constructions on every keystroke this form re-renders on. */
+  const weekdayOptions = useMemo(
+    () =>
+      WEEKDAY_INDEXES.map((day) => ({
+        day,
+        label: formatScheduleDay(day, locale),
+        narrow: formatScheduleDayNarrow(day, locale),
+      })),
+    [locale],
+  );
 
   /** A CELL in the cadence grid rather than a row of its own, in both modes. The
    *  template's height budget is a contract (see its className below): scrolling is
@@ -842,25 +849,58 @@ export default function ScheduleDialog({
                   <fieldset className="space-y-2">
                     <legend>
                       <Label
-                        id="schedule-day-label"
+                        id="schedule-days-label"
                         className="text-sm font-medium text-text-primary"
                       >
-                        {localize('com_ui_schedule_day')}
+                        {localize('com_ui_schedule_days')}
                       </Label>
                     </legend>
+                    {/* The fieldset and its legend already name this group, so the
+                        button row carries no second role="group": that would announce
+                        the same set twice. Each pill is a toggle button rather than a
+                        checkbox because it renders as one, and aria-pressed says so
+                        without claiming a form control that is not there. */}
                     <Controller
-                      name="dayOfWeek"
+                      name="daysOfWeek"
                       control={control}
                       render={({ field }) => (
-                        <Dropdown
-                          value={String(field.value)}
-                          onChange={(value) => field.onChange(Number(value))}
-                          options={dayOptions}
-                          variant="field"
-                          portal={false}
-                          aria-labelledby="schedule-day-label"
-                          testId="schedule-day-select"
-                        />
+                        // No wrap, and every pill shares the row's width equally: at
+                        // `md` this cell is a third of the dialog, and a second pill
+                        // line would spend height the budget above does not have.
+                        <div className="flex gap-1">
+                          {weekdayOptions.map(({ day, label, narrow }) => {
+                            const selected = field.value.includes(day);
+                            return (
+                              <Button
+                                key={day}
+                                variant="outline"
+                                size="sm"
+                                aria-pressed={selected}
+                                aria-label={label}
+                                // The narrow labels repeat within a week ("T", "T");
+                                // position disambiguates at a glance and the title
+                                // names the day outright on hover.
+                                title={label}
+                                data-testid={`schedule-day-${day}`}
+                                onClick={() =>
+                                  field.onChange(
+                                    selected
+                                      ? field.value.filter((value: number) => value !== day)
+                                      : [...field.value, day].sort((a, b) => a - b),
+                                  )
+                                }
+                                className={cn(
+                                  'min-w-0 flex-1 px-0 font-normal',
+                                  selected
+                                    ? 'border-border-medium bg-surface-active text-text-primary hover:bg-surface-active'
+                                    : 'text-text-secondary',
+                                )}
+                              >
+                                {narrow}
+                              </Button>
+                            );
+                          })}
+                        </div>
                       )}
                     />
                   </fieldset>
@@ -940,12 +980,17 @@ export default function ScheduleDialog({
             )}
 
             <div className="space-y-2">
-              <p
-                className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
-                data-testid="schedule-summary"
-              >
-                {summary}
-              </p>
+              {/* With no day selected, `buildCadence` substitutes Monday so the maths
+                  downstream stays defined — but describing that substitution would
+                  contradict the "pick at least one day" message right below it. */}
+              {daysAreValid && (
+                <p
+                  className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
+                  data-testid="schedule-summary"
+                >
+                  {summary}
+                </p>
+              )}
               <FieldMessage id="schedule-cadence-message" message={cadenceError ?? undefined} />
               {previewRuns.length > 0 && (
                 <div className="space-y-1" data-testid="schedule-preview">

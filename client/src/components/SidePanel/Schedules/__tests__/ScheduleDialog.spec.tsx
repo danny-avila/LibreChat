@@ -146,9 +146,9 @@ describe('ScheduleDialog', () => {
     const user = userEvent.setup();
     renderDialog();
 
-    expect(screen.queryByTestId('schedule-day-select')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('schedule-day-1')).not.toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_weekly' }));
-    expect(screen.getByTestId('schedule-day-select')).toBeInTheDocument();
+    expect(screen.getByTestId('schedule-day-1')).toBeInTheDocument();
   });
 
   /** The submit button sits in the dialog footer, outside the <form>, so it has to
@@ -329,6 +329,89 @@ describe('ScheduleDialog', () => {
       await user.click(save);
       await waitFor(() => expect(mockMutate).toHaveBeenCalled());
       expect(mockMutate.mock.calls[0][0].payload.cadence).toBeUndefined();
+    });
+  });
+
+  describe('weekly days', () => {
+    it('offers every day as a toggle, defaulting to the server default day', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_weekly' }));
+
+      // The long name is the accessible one: "Mon" reads fine at a glance but poorly
+      // aloud.
+      const monday = screen.getByRole('button', { name: 'Monday' });
+      expect(monday).toHaveAttribute('aria-pressed', 'true');
+      // And on hover: the narrow visible labels repeat within a week, so the
+      // title spells the day out for a sighted user too.
+      expect(monday).toHaveAttribute('title', 'Monday');
+      expect(screen.getByRole('button', { name: 'Saturday' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
+
+    it('submits several days, sorted, from one weekly cadence', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_weekly' }));
+      // Clicked out of order, to prove the submitted set is sorted rather than
+      // whatever order the user happened to press.
+      await user.click(screen.getByRole('button', { name: 'Friday' }));
+      await user.click(screen.getByRole('button', { name: 'Wednesday' }));
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].cadence).toEqual({
+        frequency: 'weekly',
+        hour: 9,
+        minute: 0,
+        daysOfWeek: [1, 3, 5],
+      });
+    });
+
+    it('shows a stored multi-day schedule as the set it actually runs on', () => {
+      // The single-day picker this replaces could only hold `daysOfWeek[0]`, so an
+      // API-created multi-day schedule read as running on one day.
+      renderDialog(
+        storedSchedule({
+          cadence: { frequency: 'weekly', hour: 8, minute: 0, daysOfWeek: [2, 4] },
+        }),
+      );
+
+      expect(screen.getByRole('button', { name: 'Tuesday' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Thursday' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Monday' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+      expect(screen.getByTestId('schedule-summary')).toHaveTextContent(
+        'com_ui_schedule_runs_weekly',
+      );
+    });
+
+    it('blocks submit when every day has been cleared', async () => {
+      // Expressible in the form but not on the wire: the payload schema requires at
+      // least one day, so this must not silently save as Monday.
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_weekly' }));
+      await user.click(screen.getByRole('button', { name: 'Monday' }));
+
+      expect(screen.getByText('com_ui_schedule_days_required')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'com_ui_create' })).toBeDisabled();
+      // The summary must not contradict that message by describing the Monday
+      // fallback `buildCadence` substitutes for the empty set.
+      expect(screen.queryByTestId('schedule-summary')).not.toBeInTheDocument();
     });
   });
 
