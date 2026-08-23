@@ -79,10 +79,13 @@ jobs:
           fi
           jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
             '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
-          RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN" \
-            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select")
-          if [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.matrix["docker-smoke"]' >/dev/null 2>&1; then
-            note "_codegraph unavailable (${RESP:0:120}); running FULL_"
+          # curl's status is checked explicitly: a transfer that times out or truncates after a
+          # parseable body must fail open, not be honoured (Codex P1, #15136). --fail-with-body
+          # also turns HTTP errors into a failure while keeping the error text for the summary.
+          RESP=$(curl -sS --fail-with-body -m 45 -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select"); RC=$?
+          if [ "$RC" -ne 0 ] || [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.matrix["docker-smoke"]' >/dev/null 2>&1; then
+            note "_codegraph unavailable (curl exit $RC: ${RESP:0:120}); running FULL_"
             exit 0
           fi
           # A smoke is skipped only on the JSON boolean false — tested inside jq, because `jq -r`
