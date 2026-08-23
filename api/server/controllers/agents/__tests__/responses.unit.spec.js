@@ -138,6 +138,16 @@ const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
 const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
 const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
 const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
+const mockResponsesUsage = {
+  input_tokens: 125,
+  output_tokens: 50,
+  total_tokens: 175,
+  input_tokens_details: { cached_tokens: 0 },
+  output_tokens_details: { reasoning_tokens: 0 },
+  primary: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+  subagent: { input_tokens: 25, output_tokens: 10, total_tokens: 35 },
+};
+const mockBuildResponsesUsage = jest.fn().mockReturnValue(mockResponsesUsage);
 
 jest.mock('nanoid', () => ({
   nanoid: jest.fn(() => 'mock-nanoid-123'),
@@ -294,7 +304,7 @@ jest.mock('@librechat/api', () => ({
   emitResponseCreated: jest.fn(),
   createResponseContext: jest.fn().mockReturnValue({ responseId: 'resp_123' }),
   createResponseTracker: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   setupStreamingResponse: jest.fn(),
   emitResponseInProgress: jest.fn(),
@@ -308,8 +318,9 @@ jest.mock('@librechat/api', () => ({
     output: [],
     usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
   }),
+  buildResponsesUsage: mockBuildResponsesUsage,
   createResponseAggregator: jest.fn().mockReturnValue({
-    usage: { promptTokens: 100, completionTokens: 50 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cachedTokens: 0 },
   }),
   sendResponsesErrorResponse: jest.fn(),
   createResponsesEventHandlers: jest.fn().mockReturnValue({
@@ -346,7 +357,7 @@ jest.mock('~/server/controllers/agents/callbacks', () => {
   return {
     createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
     createResponsesToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
-    markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+    contextualizeModelUsage: jest.fn().mockImplementation((usage) => usage),
     agentLogHandlerObj: noop,
     buildSummarizationHandlers: jest.fn().mockReturnValue({
       on_summarize_start: noop,
@@ -617,6 +628,7 @@ describe('createResponse controller', () => {
         isCreatedByUser: false,
         langfuseSampled: true,
         langfuseDestinationIds: ['destination-1'],
+        tokenCount: 50,
       }),
       { context: 'Responses API - save assistant response' },
     );
@@ -1880,23 +1892,34 @@ describe('createResponse controller', () => {
       );
     });
 
-    it('adds subagent usage to the response usage handler', async () => {
+    it('uses collected usage for the non-streaming response', async () => {
       const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: false },
+      });
 
       await createResponse(req, res);
 
-      const onSubagentUsage = api.createSubagentUsageSink.mock.calls.at(-1)[1];
-      const aggregatorHandlers =
-        api.createAggregatorEventHandlers.mock.results.at(-1)?.value ??
-        api.createResponsesEventHandlers.mock.results.at(-1)?.value.handlers;
-      onSubagentUsage({ input_tokens: 25, output_tokens: 10 });
-
-      expect(aggregatorHandlers.on_chat_model_end.handle).toHaveBeenCalledWith(
-        'on_chat_model_end',
-        {
-          output: { usage_metadata: { input_tokens: 25, output_tokens: 10 } },
-        },
+      const collectedUsage = mockRecordCollectedUsage.mock.calls.at(-1)[1].collectedUsage;
+      expect(mockBuildResponsesUsage).toHaveBeenCalledWith(collectedUsage);
+      expect(api.buildAggregatedResponse).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        mockResponsesUsage,
       );
+    });
+
+    it('uses collected usage for the completed streaming event', async () => {
+      const api = require('@librechat/api');
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream: true },
+      });
+
+      await createResponse(req, res);
+
+      const finalizeStream =
+        api.createResponsesEventHandlers.mock.results.at(-1).value.finalizeStream;
+      expect(finalizeStream).toHaveBeenCalledWith(mockResponsesUsage);
     });
   });
 

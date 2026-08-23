@@ -18,6 +18,14 @@ const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
 const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
 const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
 const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
+const mockCompletionUsage = {
+  prompt_tokens: 125,
+  completion_tokens: 50,
+  total_tokens: 175,
+  primary: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
+  subagent: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 },
+};
+const mockBuildCompletionUsage = jest.fn().mockReturnValue(mockCompletionUsage);
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
 const mockGetSafeErrorMetadata = jest.fn((error) => {
   const status = error?.status ?? error?.statusCode ?? error?.response?.status;
@@ -190,6 +198,7 @@ jest.mock('@librechat/api', () => ({
     .mockImplementation(({ accessibleSkillIds }) => accessibleSkillIds),
   loadSkillStates: jest.fn().mockResolvedValue({ skillStates: {}, defaultActiveOnShare: false }),
   sendFinalChunk: jest.fn(),
+  buildCompletionUsage: mockBuildCompletionUsage,
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   validateRequest: jest
     .fn()
@@ -312,7 +321,7 @@ const mockGetCacheMultiplier = jest.fn().mockReturnValue(null);
 jest.mock('~/server/controllers/agents/callbacks', () => ({
   createToolEndCallback: jest.fn().mockReturnValue(jest.fn()),
   buildSummarizationHandlers: jest.fn().mockReturnValue({}),
-  markSummarizationUsage: jest.fn().mockImplementation((usage) => usage),
+  contextualizeModelUsage: jest.fn().mockImplementation((usage) => usage),
   agentLogHandlerObj: { handle: jest.fn() },
 }));
 
@@ -462,15 +471,34 @@ describe('OpenAIChatCompletionController', () => {
     expect(createRun).toHaveBeenCalledWith(
       expect.objectContaining({ initialSessions: mockInitialSessions }),
     );
-    expect(createSubagentUsageSink).toHaveBeenCalledWith(expect.any(Array), expect.any(Function));
-    const aggregator =
-      require('@librechat/api').createOpenAIContentAggregator.mock.results.at(-1).value;
-    const initialPromptTokens = aggregator.usage.promptTokens;
-    const initialCompletionTokens = aggregator.usage.completionTokens;
-    const onSubagentUsage = createSubagentUsageSink.mock.calls.at(-1)[1];
-    onSubagentUsage({ input_tokens: 25, output_tokens: 10 });
-    expect(aggregator.usage.promptTokens).toBe(initialPromptTokens + 25);
-    expect(aggregator.usage.completionTokens).toBe(initialCompletionTokens + 10);
+    expect(createSubagentUsageSink).toHaveBeenCalledWith(expect.any(Array));
+  });
+
+  it('uses collected usage for the non-streaming response', async () => {
+    const { buildNonStreamingResponse } = require('@librechat/api');
+
+    await OpenAIChatCompletionController(req, res);
+
+    const collectedUsage = mockRecordCollectedUsage.mock.calls.at(-1)[1].collectedUsage;
+    expect(mockBuildCompletionUsage).toHaveBeenCalledWith(collectedUsage);
+    expect(buildNonStreamingResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      mockCompletionUsage,
+    );
+  });
+
+  it('uses collected usage in the final streaming chunk', async () => {
+    const { validateRequest, sendFinalChunk } = require('@librechat/api');
+    validateRequest.mockReturnValueOnce({
+      request: { model: 'agent-123', messages: [], stream: true },
+    });
+
+    await OpenAIChatCompletionController(req, res);
+
+    expect(sendFinalChunk).toHaveBeenCalledWith(expect.anything(), 'stop', mockCompletionUsage);
   });
 
   describe('content filtering', () => {

@@ -149,20 +149,7 @@ class ModelEndHandler {
       if (!usage) {
         return this.finalize(errorMessage);
       }
-      const modelName = metadata?.ls_model_name || agentContext.clientOptions?.model;
-      if (modelName) {
-        usage.model = modelName;
-      }
-      if (agentContext.provider) {
-        usage.provider = agentContext.provider;
-      }
-      /** Tag the producing agent so multi-endpoint graphs can price each call
-       *  with its own endpoint token config (recordCollectedUsage resolver). */
-      if (agentContext.agentId) {
-        usage.agentId = agentContext.agentId;
-      }
-
-      let taggedUsage = markSummarizationUsage(usage, metadata);
+      let taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
       /** Hidden intermediate sequential-agent calls are billed but never shown.
        *  Tag them non-primary on the COLLECTED usage too (not just the emit) so
        *  recordCollectedUsage excludes their output from the parent's tokenCount
@@ -1442,6 +1429,35 @@ function markSummarizationUsage(usage, metadata) {
   return usage;
 }
 
+/**
+ * Stamps provider/model/agent identity onto one model call before billing or
+ * API response aggregation. The graph owns this context; provider payloads do
+ * not consistently include it, and cache normalization depends on it.
+ */
+function contextualizeModelUsage(usage, metadata, agentContext = {}) {
+  const taggedUsage = { ...usage };
+  const context = agentContext ?? {};
+  const invokedProvider = metadata?.__invoked_provider;
+  const invokedModel = metadata?.__invoked_model;
+  const modelName =
+    metadata?.ls_model_name ||
+    (typeof invokedModel === 'string' && invokedModel !== '' ? invokedModel : undefined) ||
+    context.clientOptions?.model;
+  const provider =
+    (typeof invokedProvider === 'string' && invokedProvider !== '' ? invokedProvider : undefined) ||
+    context.provider;
+  if (modelName) {
+    taggedUsage.model = modelName;
+  }
+  if (provider) {
+    taggedUsage.provider = provider;
+  }
+  if (context.agentId) {
+    taggedUsage.agentId = context.agentId;
+  }
+  return markSummarizationUsage(taggedUsage, metadata);
+}
+
 const agentLogHandlerObj = { handle: agentLogHandler };
 
 /**
@@ -1480,6 +1496,7 @@ module.exports = {
   createBackgroundCodeResultHandler,
   isStreamWritable,
   markSummarizationUsage,
+  contextualizeModelUsage,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,
 };

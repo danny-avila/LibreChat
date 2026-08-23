@@ -66,6 +66,7 @@ const {
   convertInputToMessages,
   validateResponseRequest,
   buildAggregatedResponse,
+  buildResponsesUsage,
   createResponseAggregator,
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
@@ -77,7 +78,7 @@ const {
 const {
   createResponsesToolEndCallback,
   buildSummarizationHandlers,
-  markSummarizationUsage,
+  contextualizeModelUsage,
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
@@ -355,9 +356,17 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
  * @param {string} responseId
  * @param {import('@librechat/api').Response} response
  * @param {string} agentId
+ * @param {number | undefined} visibleOutputTokens
  * @returns {Promise<void>}
  */
-async function saveResponseOutput(req, conversationId, responseId, response, agentId) {
+async function saveResponseOutput(
+  req,
+  conversationId,
+  responseId,
+  response,
+  agentId,
+  visibleOutputTokens,
+) {
   // Extract text content from output items
   let responseText = '';
   for (const item of response.output) {
@@ -386,7 +395,7 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
       endpoint: EModelEndpoint.agents,
       model: agentId,
       finish_reason: response.status === 'completed' ? 'stop' : response.status,
-      tokenCount: response.usage?.output_tokens,
+      tokenCount: visibleOutputTokens ?? response.usage?.output_tokens,
     },
     { context: 'Responses API - save assistant response' },
   );
@@ -1056,11 +1065,12 @@ const executeResponse = async (envelope, { req, res }) => {
         on_run_step: responsesHandlers.on_run_step,
         on_run_step_delta: responsesHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data, metadata) => {
+          handle: (event, data, metadata, graph) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1098,11 +1108,7 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
-          responsesHandlers.on_chat_model_end.handle('on_chat_model_end', {
-            output: { usage_metadata: usage },
-          });
-        }),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
@@ -1158,8 +1164,10 @@ const executeResponse = async (envelope, { req, res }) => {
         logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
       });
 
+      const usage = buildResponsesUsage(collectedUsage);
+
       // Finalize the stream
-      finalizeStream();
+      finalizeStream(usage);
       res.end();
 
       const duration = Date.now() - requestStartTime;
@@ -1176,7 +1184,14 @@ const executeResponse = async (envelope, { req, res }) => {
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
-          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            finalResponse,
+            agentId,
+            tracker.usage.outputTokens,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1246,11 +1261,12 @@ const executeResponse = async (envelope, { req, res }) => {
         on_run_step: aggregatorHandlers.on_run_step,
         on_run_step_delta: aggregatorHandlers.on_run_step_delta,
         on_chat_model_end: {
-          handle: (event, data, metadata) => {
+          handle: (event, data, metadata, graph) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1287,11 +1303,7 @@ const executeResponse = async (envelope, { req, res }) => {
         tenantId: principal.tenantId,
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
-        subagentUsageSink: createSubagentUsageSink(collectedUsage, (usage) => {
-          aggregatorHandlers.on_chat_model_end.handle('on_chat_model_end', {
-            output: { usage_metadata: usage },
-          });
-        }),
+        subagentUsageSink: createSubagentUsageSink(collectedUsage),
       });
 
       if (!run) {
@@ -1357,7 +1369,11 @@ const executeResponse = async (envelope, { req, res }) => {
         }
       }
 
-      const response = buildAggregatedResponse(context, aggregator);
+      const response = buildAggregatedResponse(
+        context,
+        aggregator,
+        buildResponsesUsage(collectedUsage),
+      );
 
       if (request.store === true) {
         try {
@@ -1365,7 +1381,14 @@ const executeResponse = async (envelope, { req, res }) => {
 
           await saveInputMessages(req, conversationId, inputMessages, agentId);
 
-          await saveResponseOutput(req, conversationId, responseId, response, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            response,
+            agentId,
+            aggregator.usage.outputTokens,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
