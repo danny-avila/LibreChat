@@ -79,6 +79,11 @@ jobs:
             echo "no codegraph config; skipping"
           fi
           echo "codegraph-votes: running $N skippable specs"
+          # The exact list, one log line: the shadow's per-spec graduation ledger counts a clean
+          # trial for every spec a green vote run covered, and until this line existed it had to
+          # approximate coverage from the decision event's tier (drift: the tier is recomputed
+          # here at the merge commit against a possibly newer graph head).
+          if [ "$N" != "0" ]; then echo "codegraph-votes-specs: $(tr '\n' ' ' < skippable.txt)"; fi
           echo "count=$N" >> "$GITHUB_OUTPUT"
           exit 0
 
