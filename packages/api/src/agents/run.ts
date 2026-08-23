@@ -779,7 +779,7 @@ function shapeSummarizationConfig(
  * Below this context budget a summarization cycle cannot make progress: the
  * summary allocation rounds down to a handful of tokens, the rewritten history
  * still overflows, and the graph re-triggers summarization on every step until
- * the recursion limit aborts the run — dozens of wasted LLM calls surfaced to
+ * the recursion limit aborts the run. Dozens of wasted LLM calls surfaced to
  * the user as an opaque LangGraph error. Falling back to plain pruning instead
  * either fits the request or fails fast with the actionable `empty_messages`
  * token-budget breakdown. Matches the floor `initializeAgent` applies when the

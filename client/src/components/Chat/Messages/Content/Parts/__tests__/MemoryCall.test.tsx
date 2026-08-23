@@ -12,6 +12,7 @@ jest.mock('~/hooks', () => ({
         com_ui_memory_deleting: 'Deleting memory',
         com_ui_memory_removed: 'Deleted memory',
         com_ui_memory_deleted: 'Memory deleted',
+        com_ui_memory: 'Memory',
         com_ui_cancelled: 'Cancelled',
         com_ui_tool_failed: 'failed',
       };
@@ -26,24 +27,22 @@ jest.mock('~/utils', () => ({
 jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
   __esModule: true,
   default: ({
-    progress,
+    phase,
     inProgressText,
     finishedText,
     subtitle,
-    errorSuffix,
     hasInput,
   }: {
-    progress: number;
+    phase: 'running' | 'completed' | 'cancelled' | 'failed';
     inProgressText: string;
     finishedText: string;
     subtitle?: string;
-    errorSuffix?: string;
     hasInput?: boolean;
   }) => (
     <div data-testid="progress-text" data-has-input={String(!!hasInput)}>
-      {progress < 1 ? inProgressText : finishedText}
+      {phase === 'running' ? inProgressText : finishedText}
       {subtitle ? ` ${subtitle}` : ''}
-      {errorSuffix ? ` ${errorSuffix}` : ''}
+      {phase === 'failed' ? ' failed' : ''}
     </div>
   ),
 }));
@@ -54,17 +53,30 @@ jest.mock('../Attachment', () => ({
 
 jest.mock('../useToolCallState', () => ({
   __esModule: true,
-  default: (initialProgress: number, _isSubmitting: boolean, output: string) => ({
-    showCode: true,
-    toggleCode: jest.fn(),
-    expandStyle: {},
-    expandRef: { current: null },
-    progress: initialProgress,
-    cancelled: false,
-    hasError: output.startsWith('Error'),
-    hasOutput: output.length > 0,
-    hasContent: true,
-  }),
+  default: ({
+    initialProgress,
+    runStepStatus,
+    extraError,
+  }: {
+    initialProgress: number;
+    runStepStatus?: 'completed' | 'cancelled' | 'failed';
+    extraError?: boolean;
+  }) => {
+    let phase: 'running' | 'completed' | 'cancelled' | 'failed' =
+      initialProgress < 1 ? 'running' : 'completed';
+    if (runStepStatus === 'cancelled') {
+      phase = 'cancelled';
+    } else if (runStepStatus === 'failed' || extraError) {
+      phase = 'failed';
+    }
+    return {
+      showCode: true,
+      toggleCode: jest.fn(),
+      expandStyle: {},
+      expandRef: { current: null },
+      phase,
+    };
+  },
 }));
 
 describe('MemoryCall', () => {
@@ -75,14 +87,14 @@ describe('MemoryCall', () => {
         initialProgress={1}
         isSubmitting={false}
         args={{ key: 'preferences', value: 'Prefers dark mode.' }}
-        output="Memory saved."
+        output={'Memory set for key "preferences" (4 tokens)'}
       />,
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Saved memory preferences');
     expect(screen.getByText('preferences')).toHaveClass('font-bold', 'uppercase');
     expect(screen.getByText('Prefers dark mode.')).toBeInTheDocument();
-    expect(screen.queryByText('Memory saved.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Memory set for key/)).not.toBeInTheDocument();
   });
 
   it('labels an in-flight save without a parsed key', () => {
@@ -107,7 +119,7 @@ describe('MemoryCall', () => {
         initialProgress={1}
         isSubmitting={false}
         args={{ key: 'outdated_note' }}
-        output="Memory deleted."
+        output={'Memory deleted for key "outdated_note"'}
       />,
     );
 
@@ -116,18 +128,43 @@ describe('MemoryCall', () => {
     expect(screen.getByText('Memory deleted')).toBeInTheDocument();
   });
 
-  it('surfaces the error output inside the panel', () => {
+  it.each([
+    ['set_memory', 'Invalid key "invalid". Must be one of: preferences'],
+    ['set_memory', 'Memory storage would exceed limit. Cannot save this memory.'],
+    ['set_memory', 'Failed to set memory for key "preferences"'],
+    ['set_memory', '{"type":"content_filter","message":"Blocked"}'],
+    ['delete_memory', 'Failed to delete memory for key "preferences"'],
+  ] as const)('surfaces %s failure output instead of optimistic content', (toolName, output) => {
+    render(
+      <MemoryCall
+        toolName={toolName}
+        initialProgress={1}
+        isSubmitting={false}
+        args={{ key: 'preferences', value: 'requested value' }}
+        output={output}
+      />,
+    );
+
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Memory preferences failed');
+    expect(screen.getByText(output)).toBeInTheDocument();
+    expect(screen.queryByText('requested value')).not.toBeInTheDocument();
+    expect(screen.queryByText('Memory deleted')).not.toBeInTheDocument();
+  });
+
+  it('honors an explicit failed run step even when the output resembles success', () => {
     render(
       <MemoryCall
         toolName="set_memory"
         initialProgress={1}
         isSubmitting={false}
-        args={{ key: 'preferences', value: 'value' }}
-        output="Error: memory storage full"
+        runStepStatus="failed"
+        args={{ key: 'preferences', value: 'requested value' }}
+        output={'Memory set for key "preferences" (4 tokens)'}
       />,
     );
 
-    expect(screen.getByTestId('progress-text')).toHaveTextContent('failed');
-    expect(screen.getByText('Error: memory storage full')).toBeInTheDocument();
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Memory preferences failed');
+    expect(screen.getByText(/Memory set for key/)).toBeInTheDocument();
+    expect(screen.queryByText('requested value')).not.toBeInTheDocument();
   });
 });

@@ -2,8 +2,8 @@ import { useContext, useMemo, useState } from 'react';
 import { Button, TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { ChevronUp, MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
-import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
+import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
 import { ChatContext } from '~/Providers/ChatContext';
@@ -127,7 +127,7 @@ function AskUserQuestionSingle({
   };
 
   /** `answerMode.skip()` is gated on answer mode being ACTIVE, which a
-   *  question moved to the chat is not — and that is precisely when this card
+   *  question moved to the chat is not. That is precisely when this card
    *  is the only surface left. Decline through the answer path instead,
    *  which is gated on the live pause rather than on answer mode. */
   const handleSkip = () => {
@@ -161,7 +161,7 @@ function AskUserQuestionSingle({
    * The live card shares its view-transition-name with the popover panel, so
    * collapse/expand morphs one surface into the other. The placeholder copy
    * is `visibility: hidden` (out of the tab order and the a11y tree) and
-   * carries NO transition name — duplicate names would void the morph — but
+   * carries NO transition name because duplicate names would void the morph, but
    * it still occupies the card's exact footprint, so the thread reserves the
    * space while the question lives in the composer and nothing reflows when
    * it moves back.

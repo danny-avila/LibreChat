@@ -58,7 +58,7 @@ describe('Error — typed provider errors', () => {
   });
 });
 
-describe('Error — agent context budget errors', () => {
+describe('Error: agent context budget errors', () => {
   beforeAll(() => {
     /** CodeBlock observes its code bar; jsdom ships no IntersectionObserver. */
     (global as { IntersectionObserver?: unknown }).IntersectionObserver = class {

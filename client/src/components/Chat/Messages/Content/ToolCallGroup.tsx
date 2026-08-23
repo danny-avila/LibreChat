@@ -153,7 +153,7 @@ export default function ToolCallGroup({
   const retainedForPendingApprovalRef = useRef(false);
 
   /** `parts` may include interleaved reasoning ("Thoughts") parts that render
-   *  inside the body but are not actions — count and summarize only the real
+   *  inside the body but are not actions. Count and summarize only the real
    *  tool calls so the header and stacked icons stay accurate. */
   const toolMetadata = useMemo(
     () => parts.map((p) => getToolMeta(p.part)).filter((m): m is ToolMeta => m != null),
@@ -233,7 +233,7 @@ export default function ToolCallGroup({
   }, [toolMetadata, localize, mcpServerNames]);
 
   /** Reasoning interleaved with the tool calls renders inside the body but is
-   *  hidden while collapsed — note it in the header's accessible label so screen
+   *  hidden while collapsed. Note it in the header's accessible label so screen
    *  readers know the group also contains thoughts. */
   const hasReasoning = useMemo(
     () => parts.some((p) => p.part.type === ContentTypes.THINK),
@@ -255,7 +255,7 @@ export default function ToolCallGroup({
 
   /** `ask_user_question` calls form their own category, mirroring subagents:
    *  a homogeneous group reads "Asking/Asked N questions" (never "Used N
-   *  tools — ask_user_question") with a question glyph. */
+   *  tools: ask_user_question") with a question glyph. */
   const allAskQuestions =
     activitySummary.askQuestionCount > 0 && activitySummary.askQuestionCount === count;
   /** Past tense once the turn is settled — matches the Asking/Asked record
@@ -264,7 +264,7 @@ export default function ToolCallGroup({
   const askQuestionsDone = allAskQuestions && (allCompleted || !isSubmitting);
 
   /** For a single-tool group, lead with the tool's own (capitalized) label
-   *  instead of the generic "Used 1 tool — name", which reads awkwardly. */
+   *  instead of the generic "Used 1 tool: name", which reads awkwardly. */
   const singleToolLabel = useMemo(() => {
     const raw = getToolDisplayLabel(toolMetadata[0]?.name ?? '', localize, mcpServerNames);
     return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';

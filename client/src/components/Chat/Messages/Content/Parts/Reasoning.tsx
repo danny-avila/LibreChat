@@ -5,9 +5,9 @@ import { ContentTypes } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar, useInViewport } from './Thinking';
 import { disclosureChevronClassName } from '~/components/Chat/Messages/Content/disclosure';
-import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
+import CopyButton from '~/components/Messages/Content/CopyButton';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
@@ -21,7 +21,7 @@ const stripThinkTags = (reasoning: string): string =>
 
 const PEEK_SENTENCES = 4;
 
-/** Tail of streaming reasoning — the last few sentences — for the collapsed
+/** Tail of streaming reasoning, specifically the last few sentences, for the collapsed
  *  live peek. Bounds work on long reasoning by scanning only the trailing
  *  slice before splitting on sentence boundaries. */
 const lastSentences = (text: string): string => {
@@ -41,7 +41,7 @@ const PEEK_FADE =
 
 /**
  * Collapsed live preview of streaming reasoning. Mirrors the expanded thought
- * panel — same rounded outline and text treatment — but with a border instead
+ * panel. It uses the same rounded outline and text treatment, but with a border instead
  * of a surface fill, showing the trailing few sentences in a short,
  * bottom-pinned window whose top and bottom edges fade out, so the newest
  * thought stays in view while older lines scroll up and dissolve (the "thinking
@@ -256,7 +256,7 @@ type ReasoningCompactProps = {
  * Compact reasoning row for use INSIDE a ToolCallGroup. Keeps the tool-row
  * header rhythm (icon + label + chevron) so an interleaved thought reads as a
  * sibling of the surrounding tool calls, while retaining the standalone
- * {@link Reasoning} affordances — a hover-revealed copy button on the header and
+ * {@link Reasoning} affordances: a hover-revealed copy button on the header and
  * a floating collapse + copy bar inside the rounded content panel.
  */
 export const ReasoningCompact = memo(
