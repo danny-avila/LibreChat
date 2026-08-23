@@ -77,6 +77,15 @@ export const useGetPinnedOrderQuery = (
  *  still in flight. */
 let latestPinnedOrder: string[] | null = null;
 
+/** The account each order was initiated by.
+ *
+ *  `onMutate` runs before the mutation function and awaits `cancelQueries`, so
+ *  the credentials can turn over in between. Reading the session again in the
+ *  mutation function would attribute the write to whoever is signed in by then
+ *  and send the previous account's order as them, so the owner is recorded in
+ *  `onMutate`'s first synchronous statement and carried on the order itself. */
+const ownerByOrder = new WeakMap<string[], string | undefined>();
+
 export const useUpdatePinnedOrderMutation = () => {
   const queryClient = useQueryClient();
   return useMutation(
@@ -84,7 +93,7 @@ export const useUpdatePinnedOrderMutation = () => {
      * server would keep whichever request happened to land last rather than the
      * order the user finished on. */
     (pinnedOrder: string[]) => {
-      const owner = getSessionUserId();
+      const owner = ownerByOrder.get(pinnedOrder);
       return enqueue(`${PINNED_ORDER_QUEUE}:${owner ?? ''}`, async () => {
         /* A queued write runs later and carries whatever Authorization header
          * is current by then. If the session changed while it waited, sending
@@ -112,9 +121,17 @@ export const useUpdatePinnedOrderMutation = () => {
     },
     {
       onMutate: async (newOrder) => {
+        /* First, before the await below can let the session change. */
         const owner = getSessionUserId();
+        ownerByOrder.set(newOrder, owner);
         latestPinnedOrder = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
+        if (isForeignSession(owner)) {
+          /* The session turned over while that await was outstanding. This
+           * cache is shared, so showing one account's order to the next is the
+           * same mistake as sending it. */
+          return { owner };
+        }
         queryClient.setQueryData([QueryKeys.pinnedOrder], newOrder);
         return { owner };
       },

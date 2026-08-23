@@ -339,4 +339,41 @@ describe('useUpdatePinnedOrderMutation', () => {
 
     expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
   });
+
+  /* `onMutate` awaits `cancelQueries` before the request is built, so the
+   * credentials can turn over inside that gap. The owner has to be the account
+   * that started the reorder, not whoever is signed in once setup finishes. */
+  it('attributes a write to the account that started it, not the one setup ended on', async () => {
+    updatePinnedOrder.mockResolvedValueOnce(['b', 'a', 'c']);
+
+    const { queryClient, result, signInAs } = setup('user-a');
+    queryClient.setQueryData([QueryKeys.pinnedOrder], ['a', 'b', 'c']);
+
+    /* Turn the session over while `onMutate` is still awaiting. */
+    const cancelQueries = jest.spyOn(queryClient, 'cancelQueries').mockImplementation(async () => {
+      signInAs('user-b');
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync(['b', 'a', 'c']).catch(() => undefined);
+    });
+
+    expect(updatePinnedOrder).not.toHaveBeenCalled();
+    /* Nor may the optimistic value be shown to the account that arrived. */
+    expect(cached(queryClient)).toEqual(['a', 'b', 'c']);
+    cancelQueries.mockRestore();
+  });
+
+  it('still sends when the session is unchanged through setup', async () => {
+    updatePinnedOrder.mockResolvedValueOnce(['b', 'a', 'c']);
+
+    const { queryClient, result } = setup('user-a');
+
+    await act(async () => {
+      await result.current.mutateAsync(['b', 'a', 'c']);
+    });
+
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
+    expect(cached(queryClient)).toEqual(['b', 'a', 'c']);
+  });
 });
