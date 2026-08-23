@@ -72,7 +72,7 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
         const percent = meta?.width;
         let widthStyle: React.CSSProperties | undefined;
         if (cell.column.id === 'select') {
-          widthStyle = { width: '32px', maxWidth: '32px', minWidth: '32px' };
+          widthStyle = { width: '2rem', maxWidth: '2rem', minWidth: '2rem' };
         } else if (percent) {
           widthStyle = {
             width: `${percent}%`,

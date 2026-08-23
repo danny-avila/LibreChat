@@ -636,7 +636,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                     ?.width;
                   let widthStyle: React.CSSProperties = {};
                   if (isSelectHeader) {
-                    widthStyle = { width: '32px', maxWidth: '32px', minWidth: '32px' };
+                    widthStyle = { width: '2rem', maxWidth: '2rem', minWidth: '2rem' };
                   } else if (metaWidth != null && metaWidth >= 1 && metaWidth <= 100) {
                     widthStyle = {
                       width: `${metaWidth}%`,
