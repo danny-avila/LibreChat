@@ -364,7 +364,7 @@ interface StreamState {
 export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
-  finalizeStream: () => void;
+  finalizeStream: (usage?: Usage) => void;
 } {
   const state: StreamState = {
     messageStarted: false,
