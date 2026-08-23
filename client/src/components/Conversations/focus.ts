@@ -3,6 +3,25 @@
  *  the focus, so both shapes have to be handled. */
 const PINNED_ROW_SELECTOR = '[data-testid="convo-item"],[data-testid="favorite-item"]';
 
+/** Where focus goes when a removed row has no neighbour left. In sidebar order:
+ *  the expanded panel's own control, the mobile drawer's, then the chat
+ *  header's. */
+const NEW_CHAT_CONTROLS = [
+  '[data-testid="new-chat-button"]',
+  '[data-testid="nav-new-chat-fab"]',
+  '[data-testid="header-new-chat-button"]',
+];
+
+const findNewChatControl = (): HTMLElement | null => {
+  for (const selector of NEW_CHAT_CONTROLS) {
+    const control = document.querySelector<HTMLElement>(selector);
+    if (control) {
+      return control;
+    }
+  }
+  return null;
+};
+
 const focusableWithin = (row: HTMLElement): HTMLElement | null => {
   if (row.matches('a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])')) {
     return row;
@@ -34,7 +53,7 @@ export const resolveRowBeside = (row: HTMLElement | null): HTMLElement | null =>
   if (!scope) {
     return null;
   }
-  return document.querySelector<HTMLElement>('[data-testid="nav-new-chat-button"]');
+  return findNewChatControl();
 };
 
 /** Resolves and focuses in one step, for removals that happen synchronously. */
@@ -51,9 +70,7 @@ export const focusRowBeside = (row: HTMLElement | null): boolean => {
  */
 export const focusFirstRow = (scope: HTMLElement | null): boolean => {
   const row = scope?.querySelector<HTMLElement>(PINNED_ROW_SELECTOR) ?? null;
-  const target =
-    (row && focusableWithin(row)) ??
-    document.querySelector<HTMLElement>('[data-testid="nav-new-chat-button"]');
+  const target = (row && focusableWithin(row)) ?? findNewChatControl();
   target?.focus();
   return target != null && document.activeElement === target;
 };
