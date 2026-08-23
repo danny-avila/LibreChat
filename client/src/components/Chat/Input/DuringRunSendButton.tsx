@@ -208,7 +208,7 @@ const DuringRunSendButton = React.memo(
           gutter={8}
           unmountOnHide
           aria-label={localize('com_ui_during_run_actions')}
-          className="z-50 min-w-[12rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
+          className="z-50 min-w-[min(12rem,90vw)] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
         >
           {rows.map((row) => (
             <button

@@ -17,7 +17,7 @@ export const ICON_BTN_CLASS =
 export const PRIMARY_BTN_CLASS =
   'flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
 const MENU_CLASS =
-  'z-50 min-w-[13rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none';
+  'z-50 min-w-[min(13rem,90vw)] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none';
 const MENU_ITEM_CLASS =
   'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-primary data-[active-item]:bg-surface-tertiary aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
 const ESCALATION_MESSAGE_LABEL_MAX_LENGTH = 80;

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -20,6 +19,7 @@ import {
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
@@ -30,7 +30,7 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
   const { setSidebarOpen } = useSidebarToggle();
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);

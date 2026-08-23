@@ -53,6 +53,7 @@ jest.mock('~/Providers', () => ({ useFileMapContext: () => ({}) }));
 jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
   useToastContext: () => ({ showToast: jest.fn() }),
+  useRemScale: () => 1,
 }));
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
