@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useNavigate, useLocation } from 'react-router-dom';
-import type { UnseenConversation } from './useUnseenConversations';
+import type { ReplyReadState } from './useUnseenConversations';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -93,7 +93,7 @@ export const requestReplyNotificationPermission = (): void => {
  * where the user is looking at the app, and interrupting them there would be noise. The first
  * pass only records what is already unseen, so signing in with a backlog does not fire a burst.
  */
-export default function useReplyAlerts(unseen: UnseenConversation[] | null) {
+export default function useReplyAlerts(state: ReplyReadState | null) {
   const notificationsEnabled = useRecoilValue(store.replyNotifications);
   const soundEnabled = useRecoilValue(store.replyNotificationSound);
   const localize = useLocalize();
@@ -135,19 +135,22 @@ export default function useReplyAlerts(unseen: UnseenConversation[] | null) {
     /* Null means no list has resolved yet, which is not an empty backlog. Initializing from it
        would let the real backlog arrive as a burst of alerts on a tab restored in the
        background, where the focus guard below never gets a chance to suppress them. */
-    if (unseen === null) {
+    if (state === null) {
       return;
     }
+    const { unseen, stamps } = state;
 
     const known = knownRef.current;
     const priorStamps = new Map(known ?? []);
-    /* Stamps are retained rather than replaced. A conversation that has been read leaves the
-       unseen set, and if another device later marks it unread it comes back with the same
-       reply stamp it always had. Dropping it would make that re-entry look like a new reply
-       and announce one that never happened. */
+    /* The baseline records the seen conversations too, and stamps are retained rather than
+       replaced when a row leaves the cache. A conversation that has been read, whether during
+       this session or before it started, keeps the reply stamp it always had, and if another
+       device later marks it unread it re-enters the unseen set carrying that same stamp.
+       Without the baseline that re-entry would look like a new reply and announce one that
+       never happened. */
     const next = known === null ? new Map<string, string>() : known;
-    for (const conversation of unseen) {
-      next.set(conversation.conversationId, conversation.lastResponseAt);
+    for (const [conversationId, lastResponseAt] of stamps) {
+      next.set(conversationId, lastResponseAt);
     }
     knownRef.current = next;
 
@@ -198,5 +201,5 @@ export default function useReplyAlerts(unseen: UnseenConversation[] | null) {
         /* Constructor unsupported on this platform, or the notification was rejected. */
       }
     }
-  }, [unseen, soundEnabled, notificationsEnabled, localize, navigate]);
+  }, [state, soundEnabled, notificationsEnabled, localize, navigate]);
 }

@@ -12,12 +12,14 @@ import { useMarkConversationSeenMutation } from '~/data-provider';
  * not merely that the route is open, so a backgrounded tab restoring on reload does not silently
  * clear every indicator.
  *
- * Four events can satisfy those conditions, and all four are already available without polling:
+ * Five events can satisfy those conditions, and all five are already available without polling:
  * the messages-end intersection flipping, a response finishing while the user sits at the bottom,
- * the window regaining focus on a conversation left open, and the list cache itself reporting the
- * conversation (a direct-URL open fires the initial intersection before the list query resolves).
- * Each one re-checks imperatively against the cached list rather than subscribing to it, which
- * keeps the check off the render path.
+ * the window regaining focus on a conversation left open, the list cache itself reporting the
+ * conversation (a direct-URL open fires the initial intersection before the list query resolves),
+ * and the messages query settling a revalidation (a warm-cache open reports the bottom of the
+ * old tree before the reply it is acknowledging has rendered). Each one re-checks imperatively
+ * against the cached list rather than subscribing to it, which keeps the check off the render
+ * path.
  *
  * The unseen check is also the cost guard: re-reading a conversation already caught up sends
  * nothing.
@@ -40,6 +42,18 @@ export default function useConversationSeen(
       return;
     }
     if (!isNearBottomRef.current || !document.hasFocus()) {
+      return;
+    }
+    /* A warm-cache open renders the old tree while the messages query revalidates in the
+       background, and that tree's end marker reports the bottom of a reply the user has not
+       seen. Acknowledging then would clear the indicator for a message that never rendered,
+       so the check waits out the fetch; its success is a cache event the subscription below
+       turns into the re-check. */
+    const messagesFetchStatus = queryClient.getQueryState([
+      QueryKeys.messages,
+      conversationId,
+    ])?.fetchStatus;
+    if (messagesFetchStatus != null && messagesFetchStatus !== 'idle') {
       return;
     }
     const cached = findConvoInAllQueries(queryClient, conversationId);
@@ -109,6 +123,17 @@ export default function useConversationSeen(
          after the messages have already reported the bottom; that arrival is then the last
          trigger left to notice the conversation at all. */
       const root = event?.query?.queryKey?.[0];
+      /* Only a messages fetch actually resolving: it is what the revalidation guard above
+         waits for, and it means the reply is in cache with its render committing. Streamed
+         tokens also land in this cache, but through `setQueryData`, which marks its success
+         action manual; re-checking on each of those would scan the lists once per token. */
+      if (root === QueryKeys.messages) {
+        if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) {
+          return;
+        }
+        markSeenIfCaughtUp();
+        return;
+      }
       if (
         root !== QueryKeys.allConversations &&
         root !== QueryKeys.pinnedConversations &&
