@@ -71,6 +71,39 @@ const playChime = () => {
 
 const canNotify = (): boolean => 'Notification' in window && Notification.permission === 'granted';
 
+const ANNOUNCED_KEY = 'replyAlerts:announced';
+const ANNOUNCED_LIMIT = 100;
+
+/**
+ * Claims one reply announcement across every open tab.
+ *
+ * Each tab polls on its own timer and keeps its own baseline, so without a shared record the
+ * same reply would chime once per tab, seconds apart, and stack duplicate notifications.
+ * localStorage is the coordination channel because it is synchronous and shared per origin:
+ * the first tab to reach an arrival records its stamp and the rest read it before announcing.
+ * A dead-heat between two timers can still double one alert, which was the failure mode
+ * everywhere before; unavailable storage (private windows, quota) falls back to announcing
+ * locally for the same reason.
+ */
+const claimReplyAnnouncement = (conversationId: string, lastResponseAt: string): boolean => {
+  try {
+    const raw = window.localStorage.getItem(ANNOUNCED_KEY);
+    const parsed: unknown = raw != null ? JSON.parse(raw) : [];
+    const entries = (Array.isArray(parsed) ? parsed : []) as Array<[string, string]>;
+    if (entries.some(([id, stamp]) => id === conversationId && stamp === lastResponseAt)) {
+      return false;
+    }
+    const next: Array<[string, string]> = [
+      [conversationId, lastResponseAt],
+      ...entries.filter(([id]) => id !== conversationId),
+    ];
+    window.localStorage.setItem(ANNOUNCED_KEY, JSON.stringify(next.slice(0, ANNOUNCED_LIMIT)));
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 /**
  * Requests desktop-notification permission on behalf of the settings toggle.
  *
@@ -167,6 +200,15 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
+    /* After the focus guard, so a focused tab never claims a reply it would not announce and
+       the unfocused tab that would is not silenced by it. */
+    const announced = arrivals.filter((conversation) =>
+      claimReplyAnnouncement(conversation.conversationId, conversation.lastResponseAt),
+    );
+    if (announced.length === 0) {
+      return;
+    }
+
     if (soundEnabled) {
       playChime();
     }
@@ -175,7 +217,7 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    for (const conversation of arrivals) {
+    for (const conversation of announced) {
       try {
         /* Android Chrome exposes the API and the permission but throws here: notifications
            have to come from the service worker there. A missed alert degrades quietly rather
