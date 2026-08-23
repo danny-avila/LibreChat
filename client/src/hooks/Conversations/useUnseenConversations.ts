@@ -14,9 +14,17 @@ export type UnseenConversation = {
   lastResponseAt: string;
 };
 
+export type ReplyReadState = {
+  unseen: UnseenConversation[];
+  /** The reply stamp of every replied-to conversation in cache, seen rows included. The alerts
+   *  baseline on it: a seen conversation marked unread from another device re-enters `unseen`
+   *  carrying the stamp it always had, which only this record can tell from a new reply. */
+  stamps: Array<[conversationId: string, lastResponseAt: string]>;
+};
+
 /** Null until a conversation list has actually resolved, which is not the same as an empty
  *  one: treating "not loaded yet" as "nothing unseen" makes the backlog look like arrivals. */
-const readUnseen = (queryClient: QueryClient): UnseenConversation[] | null => {
+const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
   /* Keyed rather than first-wins: the same row is cached once per list variant and only the
      mounted ones refetch, so an older copy would otherwise shadow a newer reply and drop it
      from the count. `freshestCandidate` settles which copy is actually current. */
@@ -76,30 +84,40 @@ const readUnseen = (queryClient: QueryClient): UnseenConversation[] | null => {
   }
 
   const unseen: UnseenConversation[] = [];
+  const stamps: ReplyReadState['stamps'] = [];
   for (const [conversationId, candidate] of byId) {
     const { convo } = candidate;
     const { lastResponseAt } = convo;
-    if (isConversationUnseen(convo) && lastResponseAt) {
+    if (!lastResponseAt) {
+      continue;
+    }
+    stamps.push([conversationId, lastResponseAt]);
+    if (isConversationUnseen(convo)) {
       unseen.push({ conversationId, title: convo.title ?? '', lastResponseAt });
     }
   }
-  return unseen;
+  /* Ordered by id so the identity below does not depend on cache scan order. */
+  stamps.sort(([a], [b]) => a.localeCompare(b));
+  return { unseen, stamps };
 };
 
 /* Title and reply stamp are part of the identity, not just the id: a conversation is auto-titled
    moments after the reply that made it unseen, and a second reply to an already-unseen chat has
-   to reach the alerts as its own arrival. */
-const identityOf = (unseen: UnseenConversation[] | null): string =>
-  unseen === null
+   to reach the alerts as its own arrival. The seen rows' stamps count too, so the alerts'
+   baseline keeps up with replies that were caught up the moment they landed. */
+const identityOf = (state: ReplyReadState | null): string =>
+  state === null
     ? 'pending'
-    : JSON.stringify(
-        unseen
+    : JSON.stringify([
+        state.unseen
           .map((c): [string, string, string] => [c.conversationId, c.title, c.lastResponseAt])
           .sort(([a], [b]) => a.localeCompare(b)),
-      );
+        state.stamps,
+      ]);
 
 /**
- * The set of conversations that have replied since the user last caught up with them.
+ * The set of conversations that have replied since the user last caught up with them, alongside
+ * the reply stamps of everything the cache knows.
  *
  * Derived from the conversation list already in cache, so it costs no request of its own and
  * needs no count endpoint. A reply lifts its conversation, so an unseen one normally sits on the
@@ -114,13 +132,13 @@ const identityOf = (unseen: UnseenConversation[] | null): string =>
  * Returns null while no list has resolved yet, so callers can tell "nothing is unseen" apart
  * from "nothing is known".
  */
-export default function useUnseenConversations(): UnseenConversation[] | null {
+export default function useUnseenConversations(): ReplyReadState | null {
   const queryClient = useQueryClient();
-  const [unseen, setUnseen] = useState<UnseenConversation[] | null>(() => readUnseen(queryClient));
+  const [state, setState] = useState<ReplyReadState | null>(() => readReplyState(queryClient));
 
   const refresh = useCallback(() => {
-    const next = readUnseen(queryClient);
-    setUnseen((current) => (identityOf(current) === identityOf(next) ? current : next));
+    const next = readReplyState(queryClient);
+    setState((current) => (identityOf(current) === identityOf(next) ? current : next));
   }, [queryClient]);
 
   useEffect(() => {
@@ -135,5 +153,5 @@ export default function useUnseenConversations(): UnseenConversation[] | null {
     return unsubscribe;
   }, [queryClient, refresh]);
 
-  return unseen;
+  return state;
 }

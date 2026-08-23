@@ -200,6 +200,37 @@ describe('useConversationSeen', () => {
     });
   });
 
+  it('waits out a messages revalidation before acknowledging', async () => {
+    /* A warm-cache open renders the old tree and reports its bottom while the messages query
+       refetches in the background; acknowledging then would clear the indicator for a reply
+       that has not rendered. The fetch settling is itself a cache event, so the reply is
+       credited once it has actually arrived. */
+    const { result, queryClient } = setup({ lastResponseAt: RESPONDED_AT });
+    mockMarkSeen.mockClear();
+
+    let resolveFetch!: (messages: unknown[]) => void;
+    const fetching = queryClient.prefetchQuery(
+      [QueryKeys.messages, CONVO_ID],
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    act(() => result.current(true));
+    expect(mockMarkSeen).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveFetch([]);
+      await fetching;
+    });
+
+    expect(mockMarkSeen).toHaveBeenCalledWith({
+      conversationId: CONVO_ID,
+      lastResponseAt: RESPONDED_AT,
+    });
+  });
+
   it('does not re-send the same acknowledgement when a failed write re-arms the cache', () => {
     /* A rejected `/seen` rolls the row back to unseen, and that rollback is itself a cache
        event this hook listens to. Without a guard an offline tab would spin requests for as

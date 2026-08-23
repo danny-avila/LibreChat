@@ -3,7 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { MutableSnapshot } from 'recoil';
-import type { UnseenConversation } from '../useUnseenConversations';
+import type { ReplyReadState, UnseenConversation } from '../useUnseenConversations';
 import useReplyAlerts, { requestReplyNotificationPermission } from '../useReplyAlerts';
 import { consumeFocusSuppression } from '../notificationNavigation';
 import store from '~/store';
@@ -69,9 +69,25 @@ const row = (
   lastResponseAt = '2026-08-16T10:00:00.000Z',
 ): UnseenConversation => ({ conversationId, title, lastResponseAt });
 
+/** Mirrors the hook's real feed: every unseen row's stamp is in the baseline, and seen
+ *  conversations contribute stamps without appearing in the unseen set. */
+const stateOf = (
+  unseen: UnseenConversation[] | null,
+  seenStamps: Array<[string, string]> = [],
+): ReplyReadState | null =>
+  unseen === null
+    ? null
+    : {
+        unseen,
+        stamps: [
+          ...seenStamps,
+          ...unseen.map((c): [string, string] => [c.conversationId, c.lastResponseAt]),
+        ],
+      };
+
 function setup(
   toggles: Toggles = {},
-  initialUnseen: UnseenConversation[] | null = [],
+  initialState: ReplyReadState | null = stateOf([]),
   initialRoute = '/',
 ) {
   const { notifications = false, sound = false } = toggles;
@@ -98,8 +114,8 @@ function setup(
   );
 
   return {
-    ...renderHook((unseen: UnseenConversation[] | null) => useReplyAlerts(unseen), {
-      initialProps: initialUnseen,
+    ...renderHook((state: ReplyReadState | null) => useReplyAlerts(state), {
+      initialProps: initialState,
       wrapper,
     }),
     pathnameRef,
@@ -155,7 +171,7 @@ describe('useReplyAlerts', () => {
 
   it('does not fire a burst for a backlog that predates the session', () => {
     /* Signing in with unread conversations: the first pass only records them. */
-    setup({ notifications: true }, [row('convo-backlog', 'Backlog')]);
+    setup({ notifications: true }, stateOf([row('convo-backlog', 'Backlog')]));
 
     expect(createdNotifications).toHaveLength(0);
   });
@@ -166,19 +182,20 @@ describe('useReplyAlerts', () => {
     const { rerender } = setup({ notifications: true }, null);
 
     act(() => {
-      rerender([row('convo-backlog', 'Backlog')]);
+      rerender(stateOf([row('convo-backlog', 'Backlog')]));
     });
 
     expect(createdNotifications).toHaveLength(0);
   });
 
   it('alerts again when an already-unseen conversation gets another reply', async () => {
-    const { rerender } = setup({ notifications: true }, [
-      row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z'),
-    ]);
+    const { rerender } = setup(
+      { notifications: true },
+      stateOf([row('convo-b', 'Beta', '2026-08-16T10:00:00.000Z')]),
+    );
 
     act(() => {
-      rerender([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]);
+      rerender(stateOf([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]));
     });
 
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
@@ -186,38 +203,54 @@ describe('useReplyAlerts', () => {
   });
 
   it('stays quiet when only the title of an unseen conversation changes', () => {
-    const { rerender } = setup({ notifications: true }, [row('convo-b', 'Untitled')]);
+    const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Untitled')]));
 
     act(() => {
-      rerender([row('convo-b', 'Auto Titled')]);
+      rerender(stateOf([row('convo-b', 'Auto Titled')]));
     });
 
     expect(createdNotifications).toHaveLength(0);
   });
 
   it('stays quiet when a read conversation is marked unread from another device', () => {
-    /* It re-enters the unseen set carrying the same reply stamp it always had. Only a stamp
-       that actually moved is a new reply. */
-    const { rerender } = setup({ notifications: true }, [row('convo-b', 'Beta')]);
+    /* It re-enters the unseen set carrying the same reply stamp it always had, even when the
+       row has meanwhile left the cache entirely. Only a stamp that actually moved is a new
+       reply. */
+    const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Beta')]));
 
     act(() => {
-      rerender([]);
+      rerender(stateOf([]));
     });
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    expect(createdNotifications).toHaveLength(0);
+  });
+
+  it('stays quiet when a conversation seen since sign-in is marked unread elsewhere', () => {
+    /* This tab never saw the conversation unseen, so only the seen rows' baseline can tell
+       its re-entry, carrying the stamp it always had, apart from a new reply. */
+    const { rerender } = setup(
+      { notifications: true },
+      stateOf([], [['convo-b', '2026-08-16T10:00:00.000Z']]),
+    );
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
 
     expect(createdNotifications).toHaveLength(0);
   });
 
   it('still alerts for a reply to a conversation that had been read', () => {
-    const { rerender } = setup({ notifications: true }, [row('convo-b', 'Beta')]);
+    const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Beta')]));
 
     act(() => {
-      rerender([]);
+      rerender(stateOf([]));
     });
     act(() => {
-      rerender([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]);
+      rerender(stateOf([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]));
     });
 
     expect(createdNotifications).toHaveLength(1);
@@ -233,7 +266,7 @@ describe('useReplyAlerts', () => {
 
     expect(() =>
       act(() => {
-        rerender([row('convo-b', 'Beta')]);
+        rerender(stateOf([row('convo-b', 'Beta')]));
       }),
     ).not.toThrow();
   });
@@ -242,7 +275,7 @@ describe('useReplyAlerts', () => {
     const { rerender } = setup({ notifications: true });
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
 
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
@@ -255,7 +288,7 @@ describe('useReplyAlerts', () => {
     const { rerender } = setup({ notifications: true });
 
     act(() => {
-      rerender([row('convo-c', '')]);
+      rerender(stateOf([row('convo-c', '')]));
     });
 
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
@@ -267,7 +300,7 @@ describe('useReplyAlerts', () => {
     const { rerender } = setup({ notifications: true });
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
 
     expect(createdNotifications).toHaveLength(0);
@@ -277,7 +310,7 @@ describe('useReplyAlerts', () => {
     const { rerender } = setup({ sound: true });
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
 
     expect(createdNotifications).toHaveLength(0);
@@ -288,10 +321,10 @@ describe('useReplyAlerts', () => {
     /* That click navigates nowhere, so suppressing would swallow the one trigger that
        acknowledges the reply the user is looking at. */
     const windowFocus = jest.spyOn(window, 'focus').mockImplementation(() => undefined);
-    const { rerender } = setup({ notifications: true }, [], '/c/convo-b');
+    const { rerender } = setup({ notifications: true }, stateOf([]), '/c/convo-b');
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
 
@@ -306,10 +339,10 @@ describe('useReplyAlerts', () => {
 
   it('suppresses the focus trigger when the notification leads elsewhere', async () => {
     const windowFocus = jest.spyOn(window, 'focus').mockImplementation(() => undefined);
-    const { rerender } = setup({ notifications: true }, [], '/c/convo-open');
+    const { rerender } = setup({ notifications: true }, stateOf([]), '/c/convo-open');
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
 
@@ -327,7 +360,7 @@ describe('useReplyAlerts', () => {
     const { rerender, pathnameRef } = setup({ notifications: true });
 
     act(() => {
-      rerender([row('convo-b', 'Beta')]);
+      rerender(stateOf([row('convo-b', 'Beta')]));
     });
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
 

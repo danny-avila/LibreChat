@@ -45,10 +45,10 @@ import store from '~/store';
 
 /** Isolates the unseen-reply subscription so its updates re-render only this node, not `Root`. */
 function ReplyNotifications() {
-  const unseen = useUnseenConversations();
+  const replyState = useUnseenConversations();
   useReplyWatcher();
-  useUnseenBadge(unseen?.length ?? 0);
-  useReplyAlerts(unseen);
+  useUnseenBadge(replyState?.unseen.length ?? 0);
+  useReplyAlerts(replyState);
   return null;
 }
 
