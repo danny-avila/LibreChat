@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, ProviderId } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import MessageEndpointIcon from './MessageEndpointIcon';
 
 describe('MessageEndpointIcon', () => {
@@ -65,7 +66,9 @@ describe('MessageEndpointIcon', () => {
       />,
     );
 
-    expect(container.querySelector('[title="OpenAI"]')).toHaveStyle({ background: '#000000' });
+    expect(container.querySelector('[title="OpenAI"]')).toHaveStyle({
+      background: 'var(--provider-openai-reasoning)',
+    });
   });
 
   it('marks the tile when the message errored', () => {
@@ -98,5 +101,40 @@ describe('MessageEndpointIcon', () => {
       'src',
       'https://cdn.example.com/logo.png',
     );
+  });
+
+  it('uses the server providerId when the message has no iconURL', () => {
+    const endpointsConfig = {
+      'My OpenRouter': {
+        type: EModelEndpoint.custom,
+        providerId: ProviderId.openrouter,
+        order: 0,
+      },
+    } as TEndpointsConfig;
+
+    render(
+      <MessageEndpointIcon
+        endpoint="My OpenRouter"
+        endpointsConfig={endpointsConfig}
+        model="some-model"
+        size={30}
+        isCreatedByUser={false}
+      />,
+    );
+
+    expect(screen.getByRole('img', { name: 'OpenRouter' })).toBeInTheDocument();
+  });
+
+  it('labels a Gemma model as Gemma', () => {
+    render(
+      <MessageEndpointIcon
+        endpoint={EModelEndpoint.google}
+        model="gemma-3-27b"
+        size={30}
+        isCreatedByUser={false}
+      />,
+    );
+
+    expect(screen.getByTitle('Gemma')).toBeInTheDocument();
   });
 });

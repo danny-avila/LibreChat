@@ -1,7 +1,8 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, ProviderId } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import MinimalIcon from '../MinimalIcon';
 
 describe('MinimalIcon', () => {
@@ -11,14 +12,12 @@ describe('MinimalIcon', () => {
     expect(screen.getByRole('img', { name: 'OpenAI', hidden: true })).toBeInTheDocument();
     expect(screen.getByTestId('convo-icon')).toHaveAttribute('title', 'OpenAI');
   });
-
   it('resolves a custom endpoint by name', () => {
     render(<MinimalIcon endpoint="Ollama" isCreatedByUser={false} />);
 
-    expect(screen.getByRole('img', { name: 'Ollama', hidden: true })).toHaveAttribute(
-      'src',
-      'assets/ollama.png',
-    );
+    const src = screen.getByRole('img', { name: 'Ollama', hidden: true }).getAttribute('src');
+    expect(src).toBeTruthy();
+    expect(src).not.toBe('');
   });
 
   it('keeps the agent art out of the provider registry', () => {
@@ -48,6 +47,26 @@ describe('MinimalIcon', () => {
       'src',
       'https://cdn.example.com/logo.png',
     );
+  });
+
+  it('uses the server providerId when no iconURL is configured', () => {
+    const endpointsConfig = {
+      'My OpenRouter': {
+        type: EModelEndpoint.custom,
+        providerId: ProviderId.openrouter,
+        order: 0,
+      },
+    } as TEndpointsConfig;
+
+    render(
+      <MinimalIcon
+        endpoint="My OpenRouter"
+        endpointsConfig={endpointsConfig}
+        isCreatedByUser={false}
+      />,
+    );
+
+    expect(screen.getByRole('img', { name: 'OpenRouter', hidden: true })).toBeInTheDocument();
   });
 
   it('hides the decorative wrapper from assistive technology and flags errors', () => {

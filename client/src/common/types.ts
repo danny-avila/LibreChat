@@ -516,6 +516,7 @@ export type IconProps = Pick<t.TMessage, 'isCreatedByUser' | 'model'> &
     iconClassName?: string;
     endpoint?: t.EModelEndpoint | string | null;
     endpointType?: t.EModelEndpoint | null;
+    endpointsConfig?: t.TEndpointsConfig | null;
     assistantName?: string;
     agentName?: string;
     error?: boolean;

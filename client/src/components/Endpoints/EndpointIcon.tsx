@@ -1,4 +1,9 @@
-import { getEndpointField, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import {
+  getEndpointField,
+  isAssistantsEndpoint,
+  isAgentsEndpoint,
+  ProviderId,
+} from 'librechat-data-provider';
 import type {
   TPreset,
   TConversation,
@@ -8,7 +13,7 @@ import type {
 } from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
-import { getAgentAvatarUrl, getIconEndpoint } from '~/utils';
+import { getAgentAvatarUrl, getIconEndpoint, cn } from '~/utils';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import { isImageURL } from '~/utils/icons';
 
@@ -68,19 +73,20 @@ export default function EndpointIcon({
         agentName={agentName}
       />
     );
-  } else {
-    return (
-      <MinimalIcon
-        iconURL={endpointIconURL}
-        endpoint={endpoint}
-        model={conversation?.model}
-        error={false}
-        className={className}
-        size={size}
-        isCreatedByUser={false}
-        chatGptLabel={undefined}
-        modelLabel={undefined}
-      />
-    );
   }
+
+  return (
+    <MinimalIcon
+      iconURL={endpointIconURL}
+      endpoint={endpoint}
+      endpointsConfig={endpointsConfig}
+      model={conversation?.model}
+      error={false}
+      className={cn(className, context === 'landing' && provider === ProviderId.cohere && 'p-2')}
+      size={size}
+      isCreatedByUser={false}
+      chatGptLabel={undefined}
+      modelLabel={undefined}
+    />
+  );
 }

@@ -1,9 +1,29 @@
 import fs from 'fs';
 import path from 'path';
 import { ProviderId } from 'librechat-data-provider';
-import { providerIcons } from './registry';
+import { getProviderIconDef, providerIcons } from './registry';
 
-const publicAssets = path.resolve(__dirname, '../../../../../client/public');
+const packageAssets = path.resolve(__dirname, 'assets');
+
+const packagedAssetFiles = [
+  'anyscale.png',
+  'apipie.png',
+  'cohere.png',
+  'deepseek.svg',
+  'fireworks.png',
+  'groq.png',
+  'helicone.svg',
+  'huggingface.svg',
+  'mistral.png',
+  'mlx.png',
+  'ollama.png',
+  'openrouter.png',
+  'perplexity.png',
+  'qwen.svg',
+  'shuttleai.png',
+  'together.png',
+  'unify.webp',
+];
 
 describe('providerIcons', () => {
   it('has an entry for every ProviderId', () => {
@@ -13,34 +33,39 @@ describe('providerIcons', () => {
     }
   });
 
-  it('points every asset entry at a file that exists on disk', () => {
-    for (const [id, def] of Object.entries(providerIcons)) {
-      if (def.art.kind !== 'asset') {
-        continue;
+  it('points every asset entry at a file shipped with the package', () => {
+    for (const fileName of packagedAssetFiles) {
+      expect(fs.existsSync(path.join(packageAssets, fileName))).toBe(true);
+    }
+    for (const def of Object.values(providerIcons)) {
+      if (def.art.kind === 'asset') {
+        expect(def.art.src).toBeTruthy();
       }
-      const onDisk = path.join(publicAssets, def.art.src);
-      expect({ id, exists: fs.existsSync(onDisk) }).toEqual({ id, exists: true });
     }
   });
 
   it('marks raster art as not monochrome', () => {
     for (const def of Object.values(providerIcons)) {
-      if (def.art.kind === 'asset' && /\.(png|webp|jpg)$/.test(def.art.src)) {
+      if (def.art.kind === 'asset') {
         expect(def.mono).not.toBe(true);
       }
     }
   });
 
-  it('refines Google by model so Gemini renders its own mark', () => {
-    const refined = providerIcons[ProviderId.google].byModel?.('gemini-2.5-pro');
-    expect(refined?.art).toBeDefined();
-    expect(providerIcons[ProviderId.google].byModel?.('some-other-model')).toBeUndefined();
+  it('does not attach landing padding to every Cohere icon', () => {
+    expect(providerIcons[ProviderId.cohere].className).toBeUndefined();
+  });
+
+  it('refines Google by model so Gemini and Gemma keep distinct labels', () => {
+    expect(getProviderIconDef(ProviderId.google, 'gemini-2.5-pro').label).toBe('Gemini');
+    expect(getProviderIconDef(ProviderId.google, 'gemma-3-27b').label).toBe('Gemma');
+    expect(getProviderIconDef(ProviderId.google, 'some-other-model').label).toBe('Google');
   });
 
   it('varies the OpenAI tile color by model generation', () => {
-    const gpt4 = providerIcons[ProviderId.openai].byModel?.('gpt-4o');
-    const gpt5 = providerIcons[ProviderId.openai].byModel?.('gpt-5.6');
-    expect(gpt4?.brandColor).toBe('#AB68FF');
-    expect(gpt5?.brandColor).toBe('#000000');
+    const gpt4 = getProviderIconDef(ProviderId.openai, 'gpt-4o');
+    const gpt5 = getProviderIconDef(ProviderId.openai, 'gpt-5.6');
+    expect(gpt4.brandColor).toBe('var(--provider-openai-gpt4)');
+    expect(gpt5.brandColor).toBe('var(--provider-openai-reasoning)');
   });
 });

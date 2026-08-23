@@ -9,7 +9,7 @@ describe('ProviderIcon', () => {
     expect(screen.getByRole('img', { name: 'OpenAI' })).toBeInTheDocument();
   });
 
-  it('renders asset art as an image pointing at the registry path', () => {
+  it('renders asset art as an image from the packaged module', () => {
     render(<ProviderIcon provider={ProviderId.ollama} />);
     expect(screen.getByRole('img', { name: 'Ollama' })).toHaveAttribute('src', 'assets/ollama.png');
   });
@@ -19,14 +19,16 @@ describe('ProviderIcon', () => {
     expect(container.firstChild).toHaveClass('text-text-primary');
   });
 
-  it('applies the registry layout correction', () => {
+  it('does not shrink Cohere art with landing-only padding', () => {
     const { container } = render(<ProviderIcon provider={ProviderId.cohere} />);
-    expect(container.firstChild).toHaveClass('p-2');
+    expect(container.firstChild).not.toHaveClass('p-2');
   });
 
-  it('applies the model refinement, so Gemini gets its own mark', () => {
+  it('applies the model refinement, so Gemini and Gemma keep distinct labels', () => {
     render(<ProviderIcon provider={ProviderId.google} model="gemini-2.5-pro" />);
     expect(screen.getByRole('img', { name: 'Gemini' })).toBeInTheDocument();
+    render(<ProviderIcon provider={ProviderId.google} model="gemma-3-27b" />);
+    expect(screen.getByRole('img', { name: 'Gemma' })).toBeInTheDocument();
   });
 
   it('falls back to the generic mark for an unknown provider', () => {

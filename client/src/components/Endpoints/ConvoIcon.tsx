@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Feather } from 'lucide-react';
 import { Sparkles, AssistantIcon, ProviderIcon } from '@librechat/client';
+import { ProviderId } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { cn, getEntity, getIconEndpoint } from '~/utils';
@@ -150,7 +151,7 @@ export default function ConvoIcon({
         provider={provider}
         model={conversation?.model}
         size={size != null ? Math.round(size * artScale) : undefined}
-        className={className}
+        className={cn(className, context === 'landing' && provider === ProviderId.cohere && 'p-2')}
       />
     );
   };

@@ -1,10 +1,11 @@
-import { Input, Label, ProviderIcon } from '@librechat/client';
+import { Input, Label } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import AgentCategorySelector from './AgentCategorySelector';
 import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { useAgentFileEntries } from './Tools/hooks';
 import { useAgentPanelContext } from '~/Providers';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import ToolsSection from './Tools/ToolsSection';
 import { validateEmail, cn } from '~/utils';
@@ -32,7 +33,7 @@ export default function AgentConfig() {
   const { contextFiles } = useAgentFileEntries();
 
   const providerValue = typeof provider === 'string' ? provider : provider?.value;
-  const { provider: providerId } = useProviderIcon({
+  const { provider: providerId, imageURL } = useProviderIcon({
     endpoint: providerValue as string,
     endpointsConfig,
   });
@@ -111,7 +112,12 @@ export default function AgentConfig() {
             <div className="flex w-full min-w-0 items-center gap-2">
               {providerValue !== undefined && (
                 <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
-                  <ProviderIcon provider={providerId} size={16} className="h-2/3 w-2/3" />
+                  <ResolvedProviderIcon
+                    provider={providerId}
+                    imageURL={imageURL}
+                    size={16}
+                    className="h-2/3 w-2/3"
+                  />
                 </div>
               )}
               <span className="truncate">

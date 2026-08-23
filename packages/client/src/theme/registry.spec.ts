@@ -1,7 +1,9 @@
 import type { ThemeDefinition } from './types';
 import {
   defaultAppearance,
+  defaultBrands,
   fromLegacyTheme,
+  libreChatTheme,
   resolveTheme,
   themeColorTokens,
   validateThemeDefinition,
@@ -46,6 +48,24 @@ describe('theme registry', () => {
     expect(light.appearance.fontFamily).toBe(defaultAppearance.fontFamily);
     expect(dark.colors['rgb-text-primary']).toBe(darkTheme['rgb-text-primary']);
     expect(dark.appearance).toEqual(defaultAppearance);
+  });
+
+  it('resolves provider brand tokens and lets a theme override them', () => {
+    const defaults = resolveTheme(libreChatTheme, 'light');
+    expect(defaults.brands['provider-anthropic']).toBe('#d09a74');
+    expect(defaults.brands['provider-openai']).toBe(defaultBrands['provider-openai']);
+
+    const custom = resolveTheme(
+      {
+        version: 1,
+        name: 'white-label',
+        modes: { light: {} },
+        brands: { 'provider-anthropic': '#ffffff' },
+      },
+      'light',
+    );
+    expect(custom.brands['provider-anthropic']).toBe('#ffffff');
+    expect(custom.brands['provider-openai']).toBe(defaultBrands['provider-openai']);
   });
 
   it('preserves hover overrides from themes created before the composer hover token', () => {

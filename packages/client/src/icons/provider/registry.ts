@@ -39,9 +39,20 @@ const component = (Component: ProviderArtComponent): ProviderArt => ({
 const openAIBrandColor = (model: string): string => {
   const value = model.toLowerCase();
   if (/\b(o\d)\b/.test(value) || /\bgpt-[5-9](?:\.\d+)?\b/.test(value)) {
-    return '#000000';
+    return 'var(--provider-openai-reasoning)';
   }
-  return value.includes('gpt-4') ? '#AB68FF' : '#19C37D';
+  return value.includes('gpt-4') ? 'var(--provider-openai-gpt4)' : 'var(--provider-openai)';
+};
+
+const googleByModel = (model: string): Partial<ProviderIconDef> | undefined => {
+  const value = model.toLowerCase();
+  if (/gemini|learnlm/.test(value)) {
+    return { art: component(GeminiIcon), mono: false, label: 'Gemini' };
+  }
+  if (value.includes('gemma')) {
+    return { art: component(GeminiIcon), mono: false, label: 'Gemma' };
+  }
+  return undefined;
 };
 
 export const providerIcons: Record<ProviderId, ProviderIconDef> = {
@@ -49,35 +60,32 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
     art: component(GPTIcon),
     label: 'OpenAI',
     mono: true,
-    brandColor: '#19C37D',
+    brandColor: 'var(--provider-openai)',
     byModel: (model) => ({ brandColor: openAIBrandColor(model) }),
   },
   [ProviderId.anthropic]: {
     art: component(AnthropicIcon),
     label: 'Anthropic',
     mono: true,
-    brandColor: '#d09a74',
+    brandColor: 'var(--provider-anthropic)',
   },
   [ProviderId.google]: {
     art: component(GoogleMinimalIcon),
     label: 'Google',
     mono: true,
-    byModel: (model) =>
-      /gemini|gemma|learnlm/.test(model.toLowerCase())
-        ? { art: component(GeminiIcon), mono: false, label: 'Gemini' }
-        : undefined,
+    byModel: googleByModel,
   },
   [ProviderId.azure]: {
     art: component(AzureMinimalIcon),
     label: 'Azure OpenAI',
     mono: true,
-    brandColor: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
+    brandColor: 'var(--provider-azure)',
   },
   [ProviderId.bedrock]: {
     art: component(BedrockIcon),
     label: 'AWS Bedrock',
     mono: true,
-    brandColor: '#268672',
+    brandColor: 'var(--provider-bedrock)',
   },
   [ProviderId.xai]: { art: component(XAIcon), label: 'xAI', mono: true },
   [ProviderId.moonshot]: { art: component(MoonshotIcon), label: 'Moonshot', mono: true },
@@ -86,7 +94,6 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.cohere]: {
     art: asset('assets/cohere.png'),
     label: 'Cohere',
-    className: 'p-2',
   },
   [ProviderId.deepseek]: { art: asset('assets/deepseek.svg'), label: 'DeepSeek' },
   [ProviderId.fireworks]: { art: asset('assets/fireworks.png'), label: 'Fireworks' },

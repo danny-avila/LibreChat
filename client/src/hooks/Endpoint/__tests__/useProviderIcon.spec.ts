@@ -21,6 +21,13 @@ describe('useProviderIcon', () => {
     });
   });
 
+  it('treats a relative asset path as an image', () => {
+    expect(run('Custom', 'assets/company.png')).toEqual({
+      provider: null,
+      imageURL: 'assets/company.png',
+    });
+  });
+
   it('rule 2: an iconURL naming a provider resolves to that provider', () => {
     expect(run('Declared')).toEqual({ provider: ProviderId.mistral, imageURL: null });
   });

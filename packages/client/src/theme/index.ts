@@ -15,10 +15,12 @@ export {
 export {
   THEME_VERSION,
   defaultAppearance,
+  defaultBrands,
   fromLegacyTheme,
   libreChatTheme,
   resolveTheme,
   themeAppearanceProperties,
+  themeBrandTokens,
   themeColorTokens,
   validateThemeDefinition,
 } from './registry';

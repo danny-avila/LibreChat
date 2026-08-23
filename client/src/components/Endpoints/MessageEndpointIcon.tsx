@@ -7,8 +7,17 @@ import { useProviderIcon } from '~/hooks/Endpoint';
 import { cn } from '~/utils';
 
 const MessageEndpointIcon: React.FC<IconProps> = (props) => {
-  const { error, iconURL = '', endpoint, size = 30, model = '', assistantName, agentName } = props;
-  const { provider, imageURL } = useProviderIcon({ endpoint, iconURL });
+  const {
+    error,
+    iconURL = '',
+    endpoint,
+    size = 30,
+    model = '',
+    assistantName,
+    agentName,
+    endpointsConfig,
+  } = props;
+  const { provider, imageURL } = useProviderIcon({ endpoint, iconURL, endpointsConfig });
 
   const assistantsIcon = {
     icon: iconURL ? (

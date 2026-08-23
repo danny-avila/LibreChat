@@ -11,7 +11,6 @@ import {
   TrashIcon,
   DropdownPopup,
   TooltipAnchor,
-  ProviderIcon,
   useToastContext,
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +25,7 @@ import type { MenuItemProps } from '@librechat/client';
 import type { TPreset } from 'librechat-data-provider';
 import type { ChangeEvent, FC } from 'react';
 import { resolveProviderIcon } from '~/hooks/Endpoint';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getPresetTitle } from '~/utils';
 import { MenuSeparator } from '../UI';
@@ -226,7 +226,7 @@ const PresetItems: FC<{
               return null;
             }
 
-            const { provider } = resolveProviderIcon({
+            const { provider, imageURL } = resolveProviderIcon({
               endpoint: preset.endpoint,
               endpointsConfig,
             });
@@ -245,7 +245,12 @@ const PresetItems: FC<{
                         aria-label={presetTitle}
                         data-testid={`preset-item-${presetId}`}
                       >
-                        <ProviderIcon provider={provider} size={20} className="icon-md shrink-0" />
+                        <ResolvedProviderIcon
+                          provider={provider}
+                          imageURL={imageURL}
+                          size={20}
+                          className="icon-md shrink-0"
+                        />
                         <span className="truncate">{presetTitle}</span>
                       </Button>
                       <div className="flex items-center justify-end gap-1">

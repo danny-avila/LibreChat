@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Button, ProviderIcon } from '@librechat/client';
+import { Button } from '@librechat/client';
 import { alternateName, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import { formatKeyExpiryLabel } from '~/components/Input/SetKeyDialog/utils';
+import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import { useUserKey, useLocalize } from '~/hooks';
@@ -18,7 +19,7 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
   const { getExpiry, checkExpiry } = useUserKey(endpoint);
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const { provider } = useProviderIcon({ endpoint, endpointsConfig });
+  const { provider, imageURL } = useProviderIcon({ endpoint, endpointsConfig });
 
   const label = useMemo(() => alternateName[endpoint] || endpoint, [endpoint]);
   const expiry = getExpiry();
@@ -38,7 +39,12 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
       <div className="flex items-center justify-between gap-3 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
-            <ProviderIcon provider={provider} size={20} className="icon-md shrink-0" />
+            <ResolvedProviderIcon
+              provider={provider}
+              imageURL={imageURL}
+              size={20}
+              className="icon-md shrink-0"
+            />
           </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-text-primary">{label}</div>

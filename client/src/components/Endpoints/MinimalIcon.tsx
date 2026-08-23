@@ -9,9 +9,18 @@ import { cn } from '~/utils';
 const maxArtSize = 16;
 
 const MinimalIcon: React.FC<IconProps> = (props) => {
-  const { size = 30, iconURL = '', iconClassName, error, model, modelLabel, chatGptLabel } = props;
+  const {
+    size = 30,
+    iconURL = '',
+    iconClassName,
+    error,
+    model,
+    modelLabel,
+    chatGptLabel,
+    endpointsConfig,
+  } = props;
   const endpoint = typeof props.endpoint === 'string' ? props.endpoint : '';
-  const { provider, imageURL } = useProviderIcon({ endpoint, iconURL });
+  const { provider, imageURL } = useProviderIcon({ endpoint, iconURL, endpointsConfig });
 
   const renderWrapper = (icon: React.ReactNode, name: string) => (
     <div

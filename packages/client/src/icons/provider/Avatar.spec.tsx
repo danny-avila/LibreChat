@@ -7,7 +7,7 @@ describe('ProviderAvatar', () => {
   it('paints the brand background and switches art to white on it', () => {
     const { container } = render(<ProviderAvatar provider={ProviderId.anthropic} />);
     const tile = container.firstChild as HTMLElement;
-    expect(tile).toHaveStyle({ background: '#d09a74' });
+    expect(tile).toHaveStyle({ background: 'var(--provider-anthropic)' });
     expect(tile).toHaveClass('text-white');
   });
 
@@ -23,8 +23,8 @@ describe('ProviderAvatar', () => {
     const { container: five } = render(
       <ProviderAvatar provider={ProviderId.openai} model="gpt-5.6" />,
     );
-    expect(four.firstChild).toHaveStyle({ background: '#AB68FF' });
-    expect(five.firstChild).toHaveStyle({ background: '#000000' });
+    expect(four.firstChild).toHaveStyle({ background: 'var(--provider-openai-gpt4)' });
+    expect(five.firstChild).toHaveStyle({ background: 'var(--provider-openai-reasoning)' });
   });
 
   it('labels the tile with the provider name', () => {

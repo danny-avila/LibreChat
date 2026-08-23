@@ -1,7 +1,7 @@
 import React from 'react';
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, ProviderId } from 'librechat-data-provider';
 import type {
   Agent,
   Assistant,
@@ -16,6 +16,7 @@ const endpointsConfig = {
   [EModelEndpoint.agents]: { order: 0 },
   [EModelEndpoint.assistants]: { order: 1 },
   [EModelEndpoint.anthropic]: { order: 2 },
+  [ProviderId.cohere]: { order: 3 },
 } as TEndpointsConfig;
 
 const agent = {
@@ -87,5 +88,24 @@ describe('ConvoIcon', () => {
       'src',
       '/images/assistants/asst_123/avatar.png',
     );
+  });
+
+  it('keeps Cohere landing padding off other contexts and on landing', () => {
+    const { container: landing } = renderIcon({
+      endpoint: ProviderId.cohere,
+    } as TConversation);
+    expect(landing.querySelector('img')).toHaveClass('p-2');
+
+    const { container: nav } = render(
+      <ConvoIcon
+        conversation={{ endpoint: ProviderId.cohere } as TConversation}
+        endpointsConfig={endpointsConfig}
+        assistantMap={assistantMap}
+        agentsMap={agentsMap}
+        context="nav"
+        size={20}
+      />,
+    );
+    expect(nav.querySelector('img')).not.toHaveClass('p-2');
   });
 });
