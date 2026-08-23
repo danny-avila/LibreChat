@@ -174,7 +174,10 @@ export function aggregateCollectedUsage(
     }
     const { totalInput, cacheRead, completion } = splitUsage(usage);
     const bucket = usage.usage_type === 'subagent' ? subagent : primary;
-    const reasoningTokens = Number(usage.output_token_details?.reasoning) || 0;
+    const reasoningTokens =
+      Number(
+        usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens,
+      ) || 0;
     bucket.inputTokens += totalInput;
     bucket.outputTokens += completion;
     bucket.totalTokens += totalInput + completion;

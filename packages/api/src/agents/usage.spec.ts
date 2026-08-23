@@ -107,7 +107,7 @@ describe('aggregateCollectedUsage', () => {
         output_tokens: 10,
         provider: 'openai',
         usage_type: 'subagent',
-        output_token_details: { reasoning: 3 },
+        output_token_details: { reasoning_tokens: 3 },
       },
     ]);
 
