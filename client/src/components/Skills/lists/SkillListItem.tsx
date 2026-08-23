@@ -140,12 +140,12 @@ function FileTreeNode({
 }) {
   const isFolder = data.nodeType === 'folder';
   const isFileActive = !isFolder && treeData?.activeFile === data.path;
-  const indent = data.depth * 16 + (isFolder ? 8 : 24);
+  const indentRem = (data.depth * 16 + (isFolder ? 8 : 24)) / 16;
 
   return (
     <button
       type="button"
-      style={{ ...style, paddingLeft: `${indent}px` }}
+      style={{ ...style, paddingLeft: `${indentRem}rem` }}
       onClick={(e) => {
         e.stopPropagation();
         if (isFolder) {
