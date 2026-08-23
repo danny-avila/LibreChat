@@ -18,6 +18,7 @@ export type ChildActivityItem =
   | {
       type: 'reasoning';
       text?: string;
+      label?: string;
     }
   | {
       type: 'tool';
@@ -29,6 +30,18 @@ export type ChildActivityItem =
       approval?: Agents.ToolCall['approval'];
       inputTruncated?: boolean;
       outputTruncated?: boolean;
+    }
+  | {
+      type: 'activity_label';
+      label: string;
+      labelType?: 'phase';
+      toolCallIds?: string[];
+      activityStartIndex?: number;
+      activityEndIndex?: number;
+      activityCount?: number;
+      agentIds?: string[];
+      status?: 'ok' | 'partial' | 'failed';
+      pending?: boolean;
     };
 
 export type ChildActivity = {
@@ -63,6 +76,38 @@ const contentPartsToActivity = (
         {
           type: 'reasoning',
           ...(reasoningVisibility === 'visible' ? { text: (part as { think: string }).think } : {}),
+          ...(reasoningVisibility === 'visible' &&
+          typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
+            ? { label: (part as { reasoning_label: string }).reasoning_label }
+            : {}),
+        },
+      ];
+    }
+    if (part.type === ContentTypes.ACTIVITY_LABEL) {
+      const labelPart = part as Extract<
+        TMessageContentParts,
+        { type: ContentTypes.ACTIVITY_LABEL }
+      >;
+      const label = labelPart[ContentTypes.ACTIVITY_LABEL]?.trim();
+      if (!label) return [];
+      return [
+        {
+          type: 'activity_label',
+          label,
+          ...(labelPart.activity_label_type == null
+            ? {}
+            : { labelType: labelPart.activity_label_type }),
+          ...(labelPart.tool_call_ids == null ? {} : { toolCallIds: labelPart.tool_call_ids }),
+          ...(labelPart.activity_start_index == null
+            ? {}
+            : { activityStartIndex: labelPart.activity_start_index }),
+          ...(labelPart.activity_end_index == null
+            ? {}
+            : { activityEndIndex: labelPart.activity_end_index }),
+          ...(labelPart.activity_count == null ? {} : { activityCount: labelPart.activity_count }),
+          ...(labelPart.agent_ids == null ? {} : { agentIds: labelPart.agent_ids }),
+          ...(labelPart.status == null ? {} : { status: labelPart.status }),
+          ...(labelPart.pending == null ? {} : { pending: labelPart.pending }),
         },
       ];
     }
@@ -139,7 +184,11 @@ const mergePersistedAndLiveActivity = (
       merged.push(item);
       continue;
     }
-    const previousText = previous.text ?? '';
+    if (item.type === 'activity_label') {
+      merged.push(item);
+      continue;
+    }
+    const previousText = 'text' in previous ? (previous.text ?? '') : '';
     const nextText = item.text ?? '';
     merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
   }
@@ -229,6 +278,13 @@ export function adaptDurableThreadActivity(
     ...(prompt == null ? {} : { prompt }),
     status,
     items,
-    activityTruncated: view.activityTruncated || view.historyTruncated,
+    activityTruncated:
+      view.activityTruncated ||
+      view.historyTruncated ||
+      (view.activity ?? []).some(
+        (item) =>
+          (item.type === 'writing' && item.textTruncated === true) ||
+          (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+      ),
   };
 }

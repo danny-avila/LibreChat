@@ -214,6 +214,8 @@ describe('SubagentCall', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Using')).toBeInTheDocument());
+    expect(screen.getByText('Working…')).toBeInTheDocument();
+    expect(screen.queryByText('Writing')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Running agent' }));
 
     expect(rendered.getSelection()).toEqual(

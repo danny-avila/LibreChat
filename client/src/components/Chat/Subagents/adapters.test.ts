@@ -45,6 +45,46 @@ describe('child activity adapters', () => {
     ]);
   });
 
+  it('preserves regular-chat reasoning and parent phase labels at the adapter seam', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        {
+          type: ContentTypes.THINK,
+          think: 'Visible reasoning.',
+          reasoning_label: 'Checked constraints',
+        },
+        { type: ContentTypes.TEXT, text: 'Prepared the answer.' },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: 'Prepared the release',
+          activity_label_type: 'phase',
+          activity_start_index: 0,
+          activity_end_index: 2,
+          activity_count: 2,
+          status: 'ok',
+        },
+      ] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: false,
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'reasoning', text: 'Visible reasoning.', label: 'Checked constraints' },
+      { type: 'writing', text: 'Prepared the answer.' },
+      {
+        type: 'activity_label',
+        label: 'Prepared the release',
+        labelType: 'phase',
+        activityStartIndex: 0,
+        activityEndIndex: 2,
+        activityCount: 2,
+        status: 'ok',
+      },
+    ]);
+  });
+
   it('merges a forward-only detached suffix with the partial parent snapshot', () => {
     const activity = adaptLivePersistedActivity({
       title: 'researcher',
