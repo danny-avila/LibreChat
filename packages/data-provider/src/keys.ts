@@ -111,6 +111,9 @@ export enum MutationKeys {
   subagentControl = 'subagentControl',
   enqueueAgentQueuedTurn = 'enqueueAgentQueuedTurn',
   cancelAgentQueuedTurn = 'cancelAgentQueuedTurn',
+  /** Whole-array favorites write, keyed so every hook instance's write is
+   *  visible to the others through the query client. */
+  updateFavorites = 'updateFavorites',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',

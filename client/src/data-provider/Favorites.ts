@@ -1,24 +1,24 @@
-import { dataService, QueryKeys } from 'librechat-data-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
-import { getSessionUserId } from '~/utils/session';
+import { getSessionPrincipal } from '~/utils/session';
 import { enqueue } from '~/utils';
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
 
 /**
- * Whether a write started by `owner` still belongs to the account that is
+ * Whether a write started by `owner` still belongs to the session that is
  * signed in, which decides both whether it may be sent and whether it may touch
  * the shared pinned-order cache, since that key is not scoped by user.
  *
- * The identity comes from the auth provider rather than from this hook, which
- * lives in a section the sidebar unmounts during a search. A signed-out session
- * reads as `undefined` and so is foreign to any owner: work queued by an
- * account that has since left must not ride out on the next one's credentials.
+ * An owner that could not be identified is foreign to everything, itself
+ * included: treating two unidentified sessions as the same one is how a queued
+ * write would reach the next account.
  */
-const isForeignSession = (owner?: string): boolean => getSessionUserId() !== owner;
+const isForeignSession = (owner?: string): boolean =>
+  owner == null || getSessionPrincipal() !== owner;
 
 const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
   a.itemType === b.itemType && a.itemId === b.itemId;
@@ -44,6 +44,10 @@ export const useUpdateFavoritesMutation = () => {
     (favorites: FavoritesState) =>
       dataService.updateFavorites(favorites) as Promise<FavoritesState>,
     {
+      /* Keyed so the write is observable from other hook instances: a favorite
+       * row runs its own `useFavorites`, so its removal is invisible to the
+       * mutation state the pinned section holds. */
+      mutationKey: [MutationKeys.updateFavorites],
       // Optimistic update to prevent UI flickering when toggling favorites
       onMutate: async (newFavorites) => {
         await queryClient.cancelQueries([QueryKeys.favorites]);
@@ -122,7 +126,7 @@ export const useUpdatePinnedOrderMutation = () => {
     {
       onMutate: async (newOrder) => {
         /* First, before the await below can let the session change. */
-        const owner = getSessionUserId();
+        const owner = getSessionPrincipal();
         ownerByOrder.set(newOrder, owner);
         latestPinnedOrder = newOrder;
         await queryClient.cancelQueries([QueryKeys.pinnedOrder]);
