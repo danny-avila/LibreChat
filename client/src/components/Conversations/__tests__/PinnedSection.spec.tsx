@@ -95,13 +95,15 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
   default: ({
     item,
     type,
+    keyShortcuts,
   }: {
     item: { model?: string; id?: string; label?: string };
     type: string;
+    keyShortcuts?: string;
   }) => {
     const label = item.id ?? item.label ?? item.model ?? '';
     return (
-      <div data-testid="favorite-item" data-type={type}>
+      <div data-testid="favorite-item" data-type={type} aria-keyshortcuts={keyShortcuts}>
         {label}
       </div>
     );
@@ -442,5 +444,49 @@ describe('PinnedSection unified list', () => {
     renderSection([]);
 
     expect(screen.getAllByTestId('favorite-item')).toHaveLength(2);
+  });
+
+  /* A screen-reader user tabbing straight to a row never meets the section's
+   * written hint, so the shortcut has to be declared where focus lands. */
+  it('declares the reorder shortcut on the rows that take focus', () => {
+    mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+    renderSection([pinnedConvo('c1', 'Pinned Chat')]);
+
+    expect(screen.getByTestId('favorite-item')).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Alt+ArrowUp Alt+ArrowDown',
+    );
+  });
+
+  it('does not advertise the shortcut before reordering is possible', () => {
+    mockOrderFetched = false;
+    mockFavoritesData.favorites = [{ model: 'gpt-4o', endpoint: 'openAI' }];
+    renderSection([]);
+
+    expect(screen.getByTestId('favorite-item')).not.toHaveAttribute('aria-keyshortcuts');
+  });
+
+  /* An optimistic favorite removal leaves the earlier GET's success standing,
+   * so pruning then would drop the ordering key of a write that has not landed
+   * and cannot be recovered if it fails. */
+  it('keeps merging while a favorites write is in flight', () => {
+    mockFavoritesData.isLoaded = false;
+    mockPinnedOrder = ['convo:gone', 'convo:c1'];
+    render(
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection
+          conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
+          toggleNav={jest.fn()}
+          membershipComplete
+        />
+      </DndProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByText('Pinned Chat'), { key: 'ArrowDown', altKey: true });
+
+    expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+      ['convo:gone', 'convo:c2', 'convo:c1'],
+      expect.anything(),
+    );
   });
 });
