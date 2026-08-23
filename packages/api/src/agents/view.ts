@@ -139,11 +139,21 @@ const publicStatus = (
     return publicStatus([activeTaskMessage], undefined);
   }
   const message = messages.find(
-    (candidate) =>
-      candidate.subagentTask != null &&
-      (requestedTaskId == null || candidate.messageId.startsWith(`${requestedTaskId}:`)),
+    (candidate) => requestedTaskId == null || candidate.messageId.startsWith(`${requestedTaskId}:`),
   );
-  switch (message?.subagentTask?.status) {
+  let persistedStatus = message?.subagentTask?.status;
+  if (persistedStatus == null && message != null) {
+    if (message.isCreatedByUser) {
+      persistedStatus = 'running';
+    } else if (message.error === true) {
+      persistedStatus = 'error';
+    } else if (message.unfinished === true) {
+      persistedStatus = 'cancelled';
+    } else {
+      persistedStatus = 'completed';
+    }
+  }
+  switch (persistedStatus) {
     case 'running':
       return 'interrupted';
     case 'completed':

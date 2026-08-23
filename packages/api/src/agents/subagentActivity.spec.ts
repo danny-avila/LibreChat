@@ -511,6 +511,27 @@ describe('subagent activity stream authorization', () => {
     res.emit('close');
   });
 
+  it('recognizes an ordinary persisted event assistant row as terminal', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest
+          .fn()
+          .mockResolvedValue([{ messageId: `${taskId}:assistant`, error: false }]),
+      },
+      stream,
+    );
+    const res = response();
+
+    await handler(request(), res);
+
+    expect(res.chunks.join('')).toContain('"status":"completed"');
+    expect(transport.handlers.size).toBe(0);
+  });
+
   it('returns the same 404 for a mismatched task without subscribing', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);

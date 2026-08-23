@@ -668,6 +668,30 @@ describe('parent child-thread index', () => {
     expect(JSON.stringify(json.mock.calls[0][0])).not.toContain('private-binding-id');
   });
 
+  it('derives a completed event task from its ordinary persisted assistant row', async () => {
+    const getMessagesForSubagentThreadView = jest.fn().mockResolvedValue([
+      {
+        messageId: 'delivery-1:assistant',
+        isCreatedByUser: false,
+        text: 'Event result',
+        createdAt: new Date('2026-08-21T11:01:00.000Z'),
+      },
+    ]);
+    const handler = createSubagentThreadViewHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      getSubagentThreadForParent: jest.fn().mockResolvedValue(eventChild),
+      getMessagesForSubagentThreadView,
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest({ threadId: 'event-thread' }, { taskId: 'delivery-1' }), response);
+
+    expect(json.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'completed' }));
+    expect(getMessagesForSubagentThreadView).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'delivery-1' }),
+    );
+  });
+
   it('projects ordinary and event children together without exposing event delivery identity', async () => {
     const handler = createParentSubagentIndexHandler({
       getConvoOwnership: jest.fn().mockResolvedValue(parent),

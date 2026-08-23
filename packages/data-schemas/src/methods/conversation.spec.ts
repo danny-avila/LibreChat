@@ -1613,6 +1613,17 @@ describe('Conversation Operations', () => {
       expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
     });
 
+    it('hides retention-expired conversations before TTL cleanup', async () => {
+      await Conversation.create({
+        conversationId: 'expired-owner',
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(methods.getConvoOwnership('user123', 'expired-owner')).resolves.toBeNull();
+    });
+
     it('includes child-thread identity without materializing conversation content', async () => {
       await Conversation.create({
         conversationId: 'child-conversation',
@@ -3754,6 +3765,41 @@ describe('Conversation Operations', () => {
       );
       expect(JSON.stringify(records)).not.toContain('private-key');
       expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
+    });
+
+    it('hides retention-expired children before TTL cleanup', async () => {
+      const parentConversationId = uuidv4();
+      const expiredThreadId = uuidv4();
+      await Conversation.create({
+        conversationId: expiredThreadId,
+        user: 'expired-child-user',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+        subagentThread: {
+          rootConversationId: parentConversationId,
+          parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          conversationId: expiredThreadId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.listSubagentThreadsForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          limit: 10,
+        }),
+      ).resolves.toEqual([]);
     });
 
     it('keeps an older child with a live lease inside the bounded parent index', async () => {

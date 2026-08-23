@@ -249,6 +249,7 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'text'
   | 'createdAt'
   | 'error'
+  | 'unfinished'
   | 'subagentTranscript'
   | 'subagentTask'
 > & {
@@ -263,6 +264,8 @@ export type ParentSubagentTaskRecord = {
   tasks: Array<
     Pick<IMessage, 'messageId' | 'createdAt'> & {
       status: NonNullable<IMessage['subagentTask']>['status'];
+      /** Private ordering token used only while merging bounded storage reads. */
+      occurrenceId?: unknown;
     }
   >;
 };
@@ -1113,6 +1116,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
             createdAt: 1,
             error: 1,
+            unfinished: 1,
             ...(input.taskId == null
               ? {}
               : {
@@ -1194,12 +1198,29 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       conversationId: { $in: input.conversationIds },
       ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
       messageId: { $regex: /:(user|assistant)$/ },
-      'subagentTask.status': { $exists: true },
     };
     const taskProjection = {
       messageId: '$messageId',
       createdAt: '$createdAt',
-      status: '$subagentTask.status',
+      occurrenceId: '$_id',
+      status: {
+        $ifNull: [
+          '$subagentTask.status',
+          {
+            $cond: [
+              { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+              {
+                $cond: [
+                  { $eq: ['$error', true] },
+                  'error',
+                  { $cond: [{ $eq: ['$unfinished', true] }, 'cancelled', 'completed'] },
+                ],
+              },
+              'running',
+            ],
+          },
+        ],
+      },
     };
     const sourceLimit = Math.min(
       4096,
@@ -1209,6 +1230,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       ),
     );
     type AggregateRecord = ParentSubagentTaskRecord & { sourceRows?: number };
+    const compareOccurrenceIds = (left: unknown, right: unknown): number => {
+      const leftValue = String(left ?? '');
+      const rightValue = String(right ?? '');
+      if (leftValue === rightValue) return 0;
+      return leftValue > rightValue ? 1 : -1;
+    };
     const [latestRecords, recentRecords] = await Promise.all([
       Message.aggregate<ParentSubagentTaskRecord>([
         { $match: match },
@@ -1260,7 +1287,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             sourceRows: { $sum: 1 },
           },
         },
-        { $sort: { '_id.conversationId': 1, 'task.createdAt': -1, '_id.taskId': 1 } },
+        {
+          $sort: {
+            '_id.conversationId': 1,
+            'task.createdAt': -1,
+            'task.occurrenceId': -1,
+            '_id.taskId': 1,
+          },
+        },
         {
           $group: {
             _id: '$_id.conversationId',
@@ -1310,10 +1344,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           existing == null ? Number.NEGATIVE_INFINITY : new Date(existing.createdAt).getTime();
         const candidateIsAssistant = candidate.messageId.endsWith(':assistant');
         const existingIsAssistant = existing?.messageId.endsWith(':assistant') === true;
+        const occurrenceDifference = compareOccurrenceIds(
+          candidate.occurrenceId,
+          existing?.occurrenceId,
+        );
         if (
           existing == null ||
           candidateTime > existingTime ||
-          (candidateTime === existingTime && candidateIsAssistant && !existingIsAssistant)
+          (candidateTime === existingTime && occurrenceDifference > 0) ||
+          (candidateTime === existingTime &&
+            occurrenceDifference === 0 &&
+            candidateIsAssistant &&
+            !existingIsAssistant)
         ) {
           tasksById.set(taskId, candidate);
         }
@@ -1323,6 +1365,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           const timeDifference =
             new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
           if (timeDifference !== 0) return timeDifference;
+          const occurrenceDifference = compareOccurrenceIds(right.occurrenceId, left.occurrenceId);
+          if (occurrenceDifference !== 0) return occurrenceDifference;
           const assistantDifference =
             Number(right.messageId.endsWith(':assistant')) -
             Number(left.messageId.endsWith(':assistant'));

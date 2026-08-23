@@ -5,7 +5,13 @@ import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-pro
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 
 const ACTIVE_THREAD_REFRESH_MS = 2_000;
+const IDLE_PARENT_REFRESH_MS = 10_000;
 const CHILD_READY_POLL_WINDOW_MS = 60_000;
+
+export const parentSubagentsRefetchInterval = (index: ParentSubagentIndex | undefined): number =>
+  index?.children.some((child) => child.status === 'running') === true
+    ? ACTIVE_THREAD_REFRESH_MS
+    : IDLE_PARENT_REFRESH_MS;
 
 export const useParentSubagentsQuery = (
   parentConversationId: string,
@@ -21,6 +27,8 @@ export const useParentSubagentsQuery = (
         parentConversationId !== Constants.PENDING_CONVO,
       staleTime: 5_000,
       refetchOnWindowFocus: true,
+      refetchInterval: parentSubagentsRefetchInterval,
+      refetchIntervalInBackground: false,
       ...config,
     },
   );

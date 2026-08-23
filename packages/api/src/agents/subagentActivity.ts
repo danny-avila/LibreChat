@@ -358,10 +358,21 @@ const terminalTaskStatus = async (
       messageId: `${taskId}:assistant`,
       ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
     },
-    'messageId +subagentTask',
+    'messageId error unfinished +subagentTask',
     { limit: 1 },
   );
-  return terminalStatus(messages[0]?.subagentTask?.status);
+  const message = messages[0];
+  let status = message?.subagentTask?.status;
+  if (status == null && message != null) {
+    if (message.error === true) {
+      status = 'error';
+    } else if (message.unfinished === true) {
+      status = 'cancelled';
+    } else {
+      status = 'completed';
+    }
+  }
+  return terminalStatus(status);
 };
 
 const notFound = (res: Response): void => {

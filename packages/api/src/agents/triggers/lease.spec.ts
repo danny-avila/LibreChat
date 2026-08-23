@@ -171,12 +171,13 @@ describe('event child generation lease', () => {
       tenantId: 'tenant-1',
       conversationId: 'child-1',
       streamId: 'child-1',
+      taskId: 'delivery-1',
       jobCreatedAt: 123,
       retentionExpiresAt,
     });
 
     expect(acquireSubagentThreadLease).toHaveBeenCalledWith(
-      expect.objectContaining({ expiresAt: retentionExpiresAt }),
+      expect.objectContaining({ taskId: 'delivery-1', expiresAt: retentionExpiresAt }),
     );
     await jest.advanceTimersByTimeAsync(4_999);
     expect(abortGeneration).not.toHaveBeenCalled();

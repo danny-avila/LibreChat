@@ -1150,6 +1150,46 @@ describe('Message Operations', () => {
   });
 
   describe('listSubagentTasksForThreads', () => {
+    it('derives event task status from ordinary durable turn rows', async () => {
+      const conversationId = uuidv4();
+      await Message.create([
+        {
+          user: 'user123',
+          messageId: 'delivery-running:user',
+          conversationId,
+          isCreatedByUser: true,
+          createdAt: new Date('2026-08-21T10:00:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-complete:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          createdAt: new Date('2026-08-21T10:01:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-error:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          error: true,
+          createdAt: new Date('2026-08-21T10:02:00.000Z'),
+        },
+      ]);
+
+      const [record] = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [conversationId],
+        limitPerThread: 3,
+      });
+
+      expect(record.tasks).toEqual([
+        expect.objectContaining({ messageId: 'delivery-error:assistant', status: 'error' }),
+        expect.objectContaining({ messageId: 'delivery-complete:assistant', status: 'completed' }),
+        expect.objectContaining({ messageId: 'delivery-running:user', status: 'running' }),
+      ]);
+    });
+
     it('batches threads, deduplicates task rows, and bounds each newest task list', async () => {
       const firstThread = uuidv4();
       const secondThread = uuidv4();
@@ -1294,6 +1334,58 @@ describe('Message Operations', () => {
               expect.objectContaining({ messageId: 'task-old:assistant' }),
             ],
           },
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
+
+    it('preserves Mongo occurrence ordering when task timestamps tie', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-b:user',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: '000000000000000000000002',
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-a:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: '000000000000000000000001',
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        const [record] = await listSubagentTasksForThreads({
+          user: 'user123',
+          conversationIds: [conversationId],
+          limitPerThread: 2,
+        });
+
+        expect(record.tasks.map((task) => task.messageId)).toEqual([
+          'task-b:user',
+          'task-a:assistant',
         ]);
       } finally {
         aggregate.mockRestore();

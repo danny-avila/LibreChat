@@ -332,6 +332,7 @@ export function createConversationMethods(
         conversationId: input.conversationId,
         'subagentThread.parentConversationId': input.parentConversationId,
         ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
       })
         .select(
           'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease +agentEventBinding',
@@ -361,6 +362,7 @@ export function createConversationMethods(
         user: input.user,
         'subagentThread.parentConversationId': input.parentConversationId,
         ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
       })
         .select(
           'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease +agentEventBinding',
@@ -610,6 +612,7 @@ export function createConversationMethods(
           user,
           conversationId,
           ...tenantFilter,
+          ...activeExpirationFilter<IConversation>(),
         },
         'user tenantId subagentThread',
       ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
