@@ -292,8 +292,8 @@ const Conversations: FC<ConversationsProps> = ({
   }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
   /** Rows are sized in rem, so a UI scale change resizes them without changing the
-   *  sidebar's physical width (it can stay pinned at its cap) — the width effect below
-   *  would never fire, leaving every cached height stale. */
+   *  sidebar's physical width: pinned at its cap, the width effect below never fires
+   *  and every cached height stays stale. */
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       cache.clearAll();
