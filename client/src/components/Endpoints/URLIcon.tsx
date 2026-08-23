@@ -41,7 +41,7 @@ export const URLIcon = memo(
               className="absolute flex items-center justify-center rounded-full bg-status-error-strong"
               style={{ width: pxToRem(14), height: pxToRem(14), top: 0, right: 0 }}
             >
-              <AlertCircle size="0.625rem" className="text-text-on-status" aria-hidden="true" />
+              <AlertCircle className="size-2.5 text-text-on-status" aria-hidden="true" />
             </div>
           )}
         </div>
