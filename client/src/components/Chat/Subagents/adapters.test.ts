@@ -1,5 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
+import type { SubagentProgress } from '~/store/subagents';
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 
@@ -147,6 +148,91 @@ describe('child activity adapters', () => {
 
     expect(activity.items).toEqual([
       { type: 'writing', text: 'Dispatch-time snapshot; latest detached text.' },
+    ]);
+  });
+
+  it('retains the persisted phase when an unphased detached suffix continues it', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [{ type: ContentTypes.TEXT, text: 'continued.' }],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'suffix',
+      },
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Commentary ', phase: 'commentary' },
+      ] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'writing', text: 'Commentary continued.', phase: 'commentary' },
+    ]);
+  });
+
+  it('does not merge detached writing across explicit phase boundaries', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: {
+        subagentRunId: 'run',
+        subagentType: 'researcher',
+        status: 'message_delta',
+        contentParts: [
+          { type: ContentTypes.TEXT, text: 'Final answer.', phase: 'final_answer' },
+        ] as unknown as SubagentProgress['contentParts'],
+        aggregatorState: initSubagentAggregatorState(),
+        tickerState: initSubagentTickerState(),
+        coverage: 'suffix',
+      },
+      persistedContent: [
+        { type: ContentTypes.TEXT, text: 'Commentary.', phase: 'commentary' },
+      ] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: true,
+      isDetached: true,
+    });
+
+    expect(activity.items).toEqual([
+      { type: 'writing', text: 'Commentary.', phase: 'commentary' },
+      { type: 'writing', text: 'Final answer.', phase: 'final_answer' },
+    ]);
+  });
+
+  it('preserves schema-validation failures on reconstructed question tools', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'question-1',
+            name: 'ask_user_question',
+            args: '{}',
+            output: 'Invalid question schema',
+            progress: 1,
+            runStepStatus: 'completed',
+            inputValidationError: true,
+          },
+        },
+      ] as unknown as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: false,
+    });
+
+    expect(activity.items).toEqual([
+      expect.objectContaining({
+        type: 'tool',
+        toolCallId: 'question-1',
+        status: 'completed',
+        inputValidationError: true,
+      }),
     ]);
   });
 

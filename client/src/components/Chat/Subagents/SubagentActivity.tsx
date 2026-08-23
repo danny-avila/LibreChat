@@ -85,6 +85,7 @@ const toContentPart = (
       output: item.output ?? '',
       progress: item.status === 'running' ? 0.1 : 1,
       ...(item.status === 'running' ? {} : { runStepStatus: item.status }),
+      ...(item.inputValidationError === true ? { inputValidationError: true } : {}),
       ...(item.approval == null ? {} : { approval: item.approval }),
     },
   } as TMessageContentParts;

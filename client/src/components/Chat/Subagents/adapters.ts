@@ -28,6 +28,7 @@ export type ChildActivityItem =
       input?: string | Record<string, unknown>;
       output?: string;
       status: 'running' | 'completed' | 'failed' | 'cancelled';
+      inputValidationError?: true;
       approval?: Agents.ToolCall['approval'];
       inputTruncated?: boolean;
       outputTruncated?: boolean;
@@ -60,6 +61,7 @@ type ContentToolCall = {
   name?: string;
   progress?: number;
   runStepStatus?: PartMetadata['runStepStatus'];
+  inputValidationError?: true;
   approval?: Agents.ToolCall['approval'];
 };
 
@@ -141,6 +143,7 @@ const contentPartsToActivity = (
         ...(tool.args == null ? {} : { input: tool.args }),
         ...(tool.output == null ? {} : { output: tool.output }),
         status: runStepStatus ?? (completed ? 'completed' : 'running'),
+        ...(tool.inputValidationError === true ? { inputValidationError: true } : {}),
         ...(tool.approval == null || approvalVisibility === 'hidden'
           ? {}
           : { approval: tool.approval }),
@@ -198,9 +201,31 @@ const mergePersistedAndLiveActivity = (
       merged.push(item);
       continue;
     }
+    if (
+      item.type === 'writing' &&
+      previous.type === 'writing' &&
+      previous.phase !== item.phase &&
+      !(previous.phase != null && item.phase == null)
+    ) {
+      merged.push(item);
+      continue;
+    }
+    if (
+      item.type === 'reasoning' &&
+      previous.type === 'reasoning' &&
+      previous.label !== item.label &&
+      !(previous.label != null && item.label == null)
+    ) {
+      merged.push(item);
+      continue;
+    }
     const previousText = 'text' in previous ? (previous.text ?? '') : '';
     const nextText = item.text ?? '';
-    merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
+    merged[merged.length - 1] = {
+      ...previous,
+      ...item,
+      text: `${previousText}${nextText}`,
+    };
   }
   return merged;
 };

@@ -35,6 +35,7 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
         name: string;
         args?: unknown;
         output?: string;
+        inputValidationError?: true;
         approval?: unknown;
         runStepStatus?: string;
       };
@@ -68,6 +69,7 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
                 type="button"
                 aria-expanded={expandedTool === tool.id}
                 data-run-step-status={tool.runStepStatus}
+                data-input-validation-error={tool.inputValidationError}
                 onClick={() => setExpandedTool(expandedTool === tool.id ? null : tool.id)}
               >
                 {tool.name}
@@ -213,6 +215,31 @@ describe('SubagentActivity', () => {
       expect(screen.getByText(`com_ui_subagent_thread_status_${status}`)).toBeInTheDocument();
     },
   );
+
+  it('preserves question input-validation failure for the regular renderer', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          items: [
+            {
+              type: 'tool',
+              toolCallId: 'question',
+              name: 'ask_user_question',
+              output: 'Invalid question schema',
+              status: 'completed',
+              inputValidationError: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'ask_user_question' })).toHaveAttribute(
+      'data-input-validation-error',
+      'true',
+    );
+  });
 
   it('renders approval controls when the provider persists an empty output', () => {
     render(
