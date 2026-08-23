@@ -12,6 +12,32 @@ export type UnseenConversation = {
   title: string;
   /** The reply that made it unseen; a later one to the same chat is its own arrival. */
   lastResponseAt: string;
+  /** The indicator comes from "mark as unread" on a conversation that has never been replied
+   *  to, so the stamp is the manual flag rather than a reply the alerts should announce. */
+  flagged: boolean;
+};
+
+const MANUAL_FLAG_SLACK_MS = 60_000;
+
+/**
+ * Whether a stamp is the manual-unread marker rather than a real reply.
+ *
+ * A reply moves `updatedAt` with it, while "mark as unread" deliberately leaves it alone
+ * (`timestamps: false` server-side), so a stamp running well ahead of `updatedAt` can only be
+ * the flag stamped onto a conversation that had never been replied to. Both stamps are written
+ * by the server, so the comparison is skew-free; the slack absorbs the jitter between a reply's
+ * precomputed stamp and its write time, erring toward announcing.
+ */
+const isManualFlagStamp = (lastResponseAt: string, updatedAt: string | undefined): boolean => {
+  if (updatedAt == null) {
+    return false;
+  }
+  const stamp = Date.parse(lastResponseAt);
+  const activity = Date.parse(updatedAt);
+  if (Number.isNaN(stamp) || Number.isNaN(activity)) {
+    return false;
+  }
+  return stamp > activity + MANUAL_FLAG_SLACK_MS;
 };
 
 export type ReplyReadState = {
@@ -93,7 +119,12 @@ const readReplyState = (queryClient: QueryClient): ReplyReadState | null => {
     }
     stamps.push([conversationId, lastResponseAt]);
     if (isConversationUnseen(convo)) {
-      unseen.push({ conversationId, title: convo.title ?? '', lastResponseAt });
+      unseen.push({
+        conversationId,
+        title: convo.title ?? '',
+        lastResponseAt,
+        flagged: isManualFlagStamp(lastResponseAt, convo.updatedAt),
+      });
     }
   }
   /* Ordered by id so the identity below does not depend on cache scan order. */
