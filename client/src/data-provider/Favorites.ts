@@ -1,10 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, MutationKeys, QueryKeys } from 'librechat-data-provider';
-import type { UseQueryOptions } from '@tanstack/react-query';
+import type { QueryClient, UseQueryOptions } from '@tanstack/react-query';
 import type { TToolFavorite } from 'librechat-data-provider';
 import type { FavoritesState } from '~/store/favorites';
 import { getSessionPrincipal } from '~/utils/session';
 import { enqueue } from '~/utils';
+
+/** A background refetch that starts while a write is in flight can read the
+ *  pre-write state and land after it, putting the old value back. `onMutate`
+ *  cancels what is already running, but nothing stops a later focus or
+ *  reconnect from starting a fresh one, so those are held off until the write
+ *  settles. The cross-tab reconciliation they provide is kept. */
+/* Asked of the client at the moment the event fires rather than read from a
+ * hook: `useIsMutating` only reaches the query's options on the next render,
+ * which is a race against the very event this is meant to gate. */
+const reconcileWhenIdle = (queryClient: QueryClient, mutationKey: MutationKeys) => {
+  const idle = () => queryClient.isMutating({ mutationKey: [mutationKey] }) === 0;
+  return { refetchOnWindowFocus: idle, refetchOnReconnect: idle };
+};
 
 const PINNED_ORDER_QUEUE = 'pinnedOrder';
 
@@ -26,18 +39,16 @@ const sameFavorite = (a: TToolFavorite, b: TToolFavorite) =>
 export const useGetFavoritesQuery = (
   config?: Omit<UseQueryOptions<FavoritesState, Error>, 'queryKey' | 'queryFn'>,
 ) => {
+  /* Membership that never refreshed would let a second tab prune the saved
+   * position of a favorite the first tab had added, and the pruning gate can
+   * only wait for a fetch that actually happens. */
+  const queryClient = useQueryClient();
+  const reconcile = reconcileWhenIdle(queryClient, MutationKeys.updateFavorites);
   return useQuery<FavoritesState, Error>(
     [QueryKeys.favorites],
     () => dataService.getFavorites() as Promise<FavoritesState>,
     {
-      /* Reconciled on focus and reconnect, like the pinned order it is ordered
-       * alongside. Membership that never refreshed would let a second tab prune
-       * the saved position of a favorite the first tab had added, and the
-       * pruning gate can only wait for a fetch that actually happens. The
-       * update mutation cancels this query before writing, so an optimistic
-       * change is not overtaken by one. */
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
+      ...reconcile,
       refetchOnMount: false,
       ...config,
     },
@@ -73,13 +84,13 @@ export const useUpdateFavoritesMutation = () => {
 export const useGetPinnedOrderQuery = (
   config?: Omit<UseQueryOptions<string[], Error>, 'queryKey' | 'queryFn'>,
 ) => {
+  /* This order is one shared per-user record, so a second tab that never
+   * refetched would both show a stale arrangement and, on its next reorder,
+   * post a full array that undoes whatever the other tab saved. */
+  const queryClient = useQueryClient();
+  const reconcile = reconcileWhenIdle(queryClient, MutationKeys.updatePinnedOrder);
   return useQuery<string[], Error>([QueryKeys.pinnedOrder], () => dataService.getPinnedOrder(), {
-    /* Reconciled when the tab is returned to, and after a reconnect. This order
-     * is one shared per-user record, so a second tab that never refetched would
-     * both show a stale arrangement and, on its next reorder, post a full array
-     * that undoes whatever the other tab saved. */
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
+    ...reconcile,
     refetchOnMount: false,
     ...config,
   });
@@ -134,6 +145,7 @@ export const useUpdatePinnedOrderMutation = () => {
       });
     },
     {
+      mutationKey: [MutationKeys.updatePinnedOrder],
       onMutate: async (newOrder) => {
         /* First, before the await below can let the session change. */
         const owner = getSessionPrincipal();
