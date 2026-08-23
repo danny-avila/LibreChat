@@ -1364,7 +1364,7 @@ describe('Message Operations', () => {
                 {
                   messageId: 'task-b:user',
                   createdAt: new Date('2026-08-21T10:00:00.000Z'),
-                  occurrenceId: '000000000000000000000002',
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000002'),
                   status: 'running',
                 },
               ],
@@ -1380,7 +1380,7 @@ describe('Message Operations', () => {
                 {
                   messageId: 'task-a:assistant',
                   createdAt: new Date('2026-08-21T10:00:00.000Z'),
-                  occurrenceId: '000000000000000000000001',
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000001'),
                   status: 'completed',
                 },
               ],

@@ -1113,6 +1113,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
           tenantId: req._agentEventBindingTenantId,
           conversationId,
           streamId,
+          taskId: job.metadata.idempotencyClientRequestId,
           jobCreatedAt: job.createdAt,
           retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
         });

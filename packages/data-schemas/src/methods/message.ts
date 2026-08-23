@@ -1,6 +1,6 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
-import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
 import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
@@ -267,7 +267,7 @@ export type ParentSubagentTaskRecord = {
       /** True when status was inferred from an ordinary event-turn row. */
       statusDerived?: boolean;
       /** Private ordering token used only while merging bounded storage reads. */
-      occurrenceId?: unknown;
+      occurrenceId?: Types.ObjectId;
     }
   >;
 };
@@ -1235,9 +1235,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       ),
     );
     type AggregateRecord = ParentSubagentTaskRecord & { sourceRows?: number };
-    const compareOccurrenceIds = (left: unknown, right: unknown): number => {
-      const leftValue = String(left ?? '');
-      const rightValue = String(right ?? '');
+    const compareOccurrenceIds = (left?: Types.ObjectId, right?: Types.ObjectId): number => {
+      const leftValue = left?.toHexString() ?? '';
+      const rightValue = right?.toHexString() ?? '';
       if (leftValue === rightValue) return 0;
       return leftValue > rightValue ? 1 : -1;
     };

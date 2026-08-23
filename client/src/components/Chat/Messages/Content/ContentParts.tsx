@@ -689,14 +689,12 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   return (
     <>
       <ContentPartsBody {...props} />
-      {props.nestedActivityPhase !== true &&
-        props.isCreatedByUser !== true &&
-        props.edit !== true && (
-          <EventSubagentActivityGroup
-            conversationId={props.conversationId ?? ''}
-            parentMessageId={props.messageId}
-          />
-        )}
+      {props.nestedActivityPhase !== true && props.edit !== true && (
+        <EventSubagentActivityGroup
+          conversationId={props.conversationId ?? ''}
+          parentMessageId={props.messageId}
+        />
+      )}
     </>
   );
 });
