@@ -78,6 +78,24 @@ describe('AskUserQuestionCall', () => {
     expect(screen.queryByText('You answered:')).not.toBeInTheDocument();
   });
 
+  test.each(['cancelled', 'failed'] as const)(
+    'does not render a terminal %s question as pending while its message streams',
+    (runStepStatus) => {
+      renderCall(
+        <AskUserQuestionCall
+          args={args}
+          output=""
+          toolCallId="call_1"
+          isSubmitting
+          runStepStatus={runStepStatus}
+        />,
+      );
+
+      expect(screen.queryByTestId('ask-progress')).not.toBeInTheDocument();
+      expect(screen.getByTestId('ask-user-question-call')).toBeInTheDocument();
+    },
+  );
+
   test('mounts collapsed and opens on click, like any other tool card', () => {
     renderCall(<AskUserQuestionCall args={args} output="public" />);
 

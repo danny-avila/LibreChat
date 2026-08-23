@@ -11,18 +11,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { TMessageContentParts } from 'librechat-data-provider';
-import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import type { ChildActivity, ChildActivityItem } from './adapters';
-import ToolCallGroup from '~/components/Chat/Messages/Content/ToolCallGroup';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import ToolApproval from '~/components/Chat/Messages/Content/ToolApproval';
-import Reasoning from '~/components/Chat/Messages/Content/Parts/Reasoning';
+import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import Container from '~/components/Chat/Messages/Content/Container';
-import ToolCall from '~/components/Chat/Messages/Content/ToolCall';
-import Text from '~/components/Chat/Messages/Content/Parts/Text';
-import { MessageContext } from '~/Providers/MessageContext';
-import { cn, groupSequentialToolCalls } from '~/utils';
+import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
 
@@ -42,12 +37,44 @@ const statusLabels = {
   cancelled: 'com_ui_subagent_thread_status_cancelled',
 } as const;
 
-const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
+const toContentPart = (
+  item: ChildActivityItem,
+  reasoningMarkerLabel: string,
+): TMessageContentParts => {
   if (item.type === 'writing') {
-    return { type: ContentTypes.TEXT, text: item.text } as TMessageContentParts;
+    return {
+      type: ContentTypes.TEXT,
+      text: item.text,
+      ...(item.phase == null ? {} : { phase: item.phase }),
+    } as TMessageContentParts;
   }
   if (item.type === 'reasoning') {
-    return { type: ContentTypes.THINK, think: item.text ?? '' } as TMessageContentParts;
+    if (item.text == null || item.text === '') {
+      return {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: item.label ?? reasoningMarkerLabel,
+        activity_label_type: 'phase',
+      } as TMessageContentParts;
+    }
+    return {
+      type: ContentTypes.THINK,
+      think: item.text ?? '',
+      ...(item.label == null ? {} : { reasoning_label: item.label }),
+    } as TMessageContentParts;
+  }
+  if (item.type === 'activity_label') {
+    return {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: item.label,
+      ...(item.labelType == null ? {} : { activity_label_type: item.labelType }),
+      ...(item.toolCallIds == null ? {} : { tool_call_ids: item.toolCallIds }),
+      ...(item.activityStartIndex == null ? {} : { activity_start_index: item.activityStartIndex }),
+      ...(item.activityEndIndex == null ? {} : { activity_end_index: item.activityEndIndex }),
+      ...(item.activityCount == null ? {} : { activity_count: item.activityCount }),
+      ...(item.agentIds == null ? {} : { agent_ids: item.agentIds }),
+      ...(item.status == null ? {} : { status: item.status }),
+      ...(item.pending == null ? {} : { pending: item.pending }),
+    } as TMessageContentParts;
   }
   return {
     type: ContentTypes.TOOL_CALL,
@@ -57,98 +84,12 @@ const toContentPart = (item: ChildActivityItem): TMessageContentParts => {
       args: item.input ?? '',
       output: item.output ?? '',
       progress: item.status === 'running' ? 0.1 : 1,
+      ...(item.status === 'running' ? {} : { runStepStatus: item.status }),
+      ...(item.inputValidationError === true ? { inputValidationError: true } : {}),
       ...(item.approval == null ? {} : { approval: item.approval }),
     },
   } as TMessageContentParts;
 };
-
-function ActivityPart({
-  item,
-  part,
-  isSubmitting,
-  showCursor,
-  isLast,
-  onToolExpand,
-}: {
-  item: ChildActivityItem;
-  part: TMessageContentParts;
-  isSubmitting: boolean;
-  showCursor: boolean;
-  isLast: boolean;
-  onToolExpand?: () => void;
-}) {
-  const localize = useLocalize();
-  if (item.type === 'writing') {
-    return (
-      <Container>
-        <div className="mb-1 text-xs font-medium text-text-secondary">
-          {localize('com_ui_subagent_ticker_writing')}
-        </div>
-        <Text text={item.text} showCursor={showCursor} isCreatedByUser={false} />
-        {item.textTruncated === true && (
-          <div className="mt-2 text-xs italic text-text-secondary">
-            {localize('com_ui_subagent_thread_message_truncated')}
-          </div>
-        )}
-      </Container>
-    );
-  }
-  if (item.type === 'reasoning') {
-    if (item.text == null || item.text === '') {
-      return (
-        <div className="my-2 text-sm text-text-secondary" role="status">
-          {localize('com_ui_subagent_ticker_reasoning')}
-        </div>
-      );
-    }
-    return <Reasoning reasoning={item.text} isLast={isLast} />;
-  }
-  const tool = (
-    part as {
-      [ContentTypes.TOOL_CALL]: {
-        id: string;
-        args: string | Record<string, unknown>;
-        output: string;
-        name: string;
-        progress: number;
-      };
-    }
-  )[ContentTypes.TOOL_CALL];
-  const toolCall = (
-    <ToolCall
-      args={tool.args}
-      output={tool.output}
-      initialProgress={tool.progress}
-      isSubmitting={isSubmitting && item.status === 'running'}
-      isLast={isLast}
-      toolCallId={tool.id}
-      name={tool.name}
-      onExpand={onToolExpand}
-      runStepStatus={item.status === 'running' ? undefined : item.status}
-    />
-  );
-  const truncationNotice =
-    item.inputTruncated === true || item.outputTruncated === true ? (
-      <div className="mb-2 text-xs italic text-text-secondary">
-        {localize('com_ui_subagent_thread_message_truncated')}
-      </div>
-    ) : null;
-  if (item.approval != null && (item.output?.length ?? 0) === 0) {
-    return (
-      <>
-        {toolCall}
-        {truncationNotice}
-        <ToolApproval approval={item.approval} toolCallId={item.toolCallId} args={item.input} />
-      </>
-    );
-  }
-  return (
-    <>
-      {toolCall}
-      {truncationNotice}
-    </>
-  );
-}
 
 function SubagentPrompt({ prompt }: { prompt: string }) {
   const localize = useLocalize();
@@ -202,9 +143,11 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
 
 export default function SubagentActivity({
   activity,
+  activityId,
   state = 'ready',
 }: {
   activity: ChildActivity;
+  activityId?: string;
   state?: 'ready' | 'loading' | 'error';
 }) {
   const localize = useLocalize();
@@ -213,35 +156,18 @@ export default function SubagentActivity({
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
   const StatusIcon = statusIcon(activity.status);
-  const parts = useMemo(() => activity.items.map(toContentPart), [activity.items]);
-  const groupedParts = useMemo(() => {
-    const indexed: PartWithIndex[] = parts.map((part, idx) => ({ part, idx }));
-    return groupSequentialToolCalls(indexed);
-  }, [parts]);
-  const context = useMemo(
-    () => ({
-      messageId: 'subagent-activity-panel',
-      isExpanded: true,
-      isSubmitting,
-      isLatestMessage: isSubmitting,
-      conversationId: null,
-    }),
-    [isSubmitting],
+  const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
+  const parts = useMemo(
+    () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
+    [activity.items, reasoningMarkerLabel],
   );
-  const renderPart = useCallback(
-    (part: TMessageContentParts, idx: number, isLast: boolean, onToolExpand?: () => void) => (
-      <ActivityPart
-        key={`activity-${idx}`}
-        item={activity.items[idx]}
-        part={part}
-        isSubmitting={isSubmitting}
-        showCursor={isSubmitting && isLast}
-        isLast={isLast}
-        onToolExpand={onToolExpand}
-      />
-    ),
-    [activity.items, isSubmitting],
-  );
+  const activityTruncated =
+    activity.activityTruncated === true ||
+    activity.items.some(
+      (item) =>
+        (item.type === 'writing' && item.textTruncated === true) ||
+        (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+    );
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -264,9 +190,9 @@ export default function SubagentActivity({
   let body: React.ReactNode;
   if (state === 'loading') {
     body = (
-      <div className="py-8 text-center text-sm text-text-secondary" role="status">
-        {localize('com_ui_subagent_waiting')}
-      </div>
+      <Container>
+        <EmptyText />
+      </Container>
     );
   } else if (state === 'error') {
     body = (
@@ -275,32 +201,26 @@ export default function SubagentActivity({
       </div>
     );
   } else if (activity.items.length === 0) {
-    body = (
+    body = isSubmitting ? (
+      <Container>
+        <EmptyText />
+      </Container>
+    ) : (
       <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm text-text-secondary">
-        {isSubmitting
-          ? localize('com_ui_subagent_no_result_yet')
-          : localize('com_ui_subagent_empty_result')}
+        {localize('com_ui_subagent_empty_result')}
       </div>
     );
   } else {
-    const last = parts.length - 1;
     body = (
-      <MessageContext.Provider value={context}>
-        {groupedParts.map((group) =>
-          group.type === 'single' ? (
-            renderPart(group.part.part, group.part.idx, group.part.idx === last)
-          ) : (
-            <ToolCallGroup
-              key={`activity-group-${group.parts[0].idx}`}
-              parts={group.parts}
-              isSubmitting={isSubmitting}
-              isLast={group.parts.some((part) => part.idx === last)}
-              renderPart={renderPart}
-              lastContentIdx={last}
-            />
-          ),
-        )}
-      </MessageContext.Provider>
+      <ContentParts
+        content={parts}
+        messageId={activityId ?? 'subagent-activity-panel'}
+        conversationId={null}
+        isCreatedByUser={false}
+        isLast
+        isSubmitting={isSubmitting}
+        isLatestMessage={isSubmitting}
+      />
     );
   }
 
@@ -344,7 +264,7 @@ export default function SubagentActivity({
         )}
         <div ref={contentRef} className="flex max-w-full flex-col gap-0">
           {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
-          {activity.activityTruncated === true && (
+          {activityTruncated && (
             <div className="mb-3 text-xs italic text-text-secondary">
               {localize('com_ui_subagent_thread_history_truncated')}
             </div>

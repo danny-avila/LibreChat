@@ -2178,7 +2178,6 @@
   "com_ui_subagent_no_result_yet": "Still running — no final result yet.",
   "com_ui_subagent_thread_history_truncated": "Earlier activity is not shown.",
   "com_ui_subagent_thread_load_error": "The agent activity could not be loaded.",
-  "com_ui_subagent_thread_message_truncated": "This entry was shortened for display.",
   "com_ui_subagent_thread_panel": "Child agent activity",
   "com_ui_subagent_thread_read_only": "This child thread is view-only here. Its parent agent owns this execution and can continue it with the saved thread history.",
   "com_ui_subagent_thread_status_cancelled": "Cancelled",

@@ -13,11 +13,13 @@ export type ChildActivityItem =
   | {
       type: 'writing';
       text: string;
+      phase?: 'commentary' | 'final_answer';
       textTruncated?: boolean;
     }
   | {
       type: 'reasoning';
       text?: string;
+      label?: string;
     }
   | {
       type: 'tool';
@@ -26,9 +28,22 @@ export type ChildActivityItem =
       input?: string | Record<string, unknown>;
       output?: string;
       status: 'running' | 'completed' | 'failed' | 'cancelled';
+      inputValidationError?: true;
       approval?: Agents.ToolCall['approval'];
       inputTruncated?: boolean;
       outputTruncated?: boolean;
+    }
+  | {
+      type: 'activity_label';
+      label: string;
+      labelType?: 'phase';
+      toolCallIds?: string[];
+      activityStartIndex?: number;
+      activityEndIndex?: number;
+      activityCount?: number;
+      agentIds?: string[];
+      status?: 'ok' | 'partial' | 'failed';
+      pending?: boolean;
     };
 
 export type ChildActivity = {
@@ -46,6 +61,7 @@ type ContentToolCall = {
   name?: string;
   progress?: number;
   runStepStatus?: PartMetadata['runStepStatus'];
+  inputValidationError?: true;
   approval?: Agents.ToolCall['approval'];
 };
 
@@ -56,13 +72,54 @@ const contentPartsToActivity = (
 ): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
     if (part.type === ContentTypes.TEXT) {
-      return [{ type: 'writing', text: (part as { text: string }).text }];
+      const textPart = part as {
+        text: string;
+        phase?: 'commentary' | 'final_answer';
+      };
+      return [
+        {
+          type: 'writing',
+          text: textPart.text,
+          ...(textPart.phase == null ? {} : { phase: textPart.phase }),
+        },
+      ];
     }
     if (part.type === ContentTypes.THINK) {
       return [
         {
           type: 'reasoning',
           ...(reasoningVisibility === 'visible' ? { text: (part as { think: string }).think } : {}),
+          ...(reasoningVisibility === 'visible' &&
+          typeof (part as { reasoning_label?: string }).reasoning_label === 'string'
+            ? { label: (part as { reasoning_label: string }).reasoning_label }
+            : {}),
+        },
+      ];
+    }
+    if (part.type === ContentTypes.ACTIVITY_LABEL) {
+      const labelPart = part as Extract<
+        TMessageContentParts,
+        { type: ContentTypes.ACTIVITY_LABEL }
+      >;
+      const label = labelPart[ContentTypes.ACTIVITY_LABEL]?.trim() ?? '';
+      return [
+        {
+          type: 'activity_label',
+          label,
+          ...(labelPart.activity_label_type == null
+            ? {}
+            : { labelType: labelPart.activity_label_type }),
+          ...(labelPart.tool_call_ids == null ? {} : { toolCallIds: labelPart.tool_call_ids }),
+          ...(labelPart.activity_start_index == null
+            ? {}
+            : { activityStartIndex: labelPart.activity_start_index }),
+          ...(labelPart.activity_end_index == null
+            ? {}
+            : { activityEndIndex: labelPart.activity_end_index }),
+          ...(labelPart.activity_count == null ? {} : { activityCount: labelPart.activity_count }),
+          ...(labelPart.agent_ids == null ? {} : { agentIds: labelPart.agent_ids }),
+          ...(labelPart.status == null ? {} : { status: labelPart.status }),
+          ...(labelPart.pending == null ? {} : { pending: labelPart.pending }),
         },
       ];
     }
@@ -86,6 +143,7 @@ const contentPartsToActivity = (
         ...(tool.args == null ? {} : { input: tool.args }),
         ...(tool.output == null ? {} : { output: tool.output }),
         status: runStepStatus ?? (completed ? 'completed' : 'running'),
+        ...(tool.inputValidationError === true ? { inputValidationError: true } : {}),
         ...(tool.approval == null || approvalVisibility === 'hidden'
           ? {}
           : { approval: tool.approval }),
@@ -139,9 +197,35 @@ const mergePersistedAndLiveActivity = (
       merged.push(item);
       continue;
     }
-    const previousText = previous.text ?? '';
+    if (item.type === 'activity_label') {
+      merged.push(item);
+      continue;
+    }
+    if (
+      item.type === 'writing' &&
+      previous.type === 'writing' &&
+      previous.phase !== item.phase &&
+      !(previous.phase != null && item.phase == null)
+    ) {
+      merged.push(item);
+      continue;
+    }
+    if (
+      item.type === 'reasoning' &&
+      previous.type === 'reasoning' &&
+      previous.label !== item.label &&
+      !(previous.label != null && item.label == null)
+    ) {
+      merged.push(item);
+      continue;
+    }
+    const previousText = 'text' in previous ? (previous.text ?? '') : '';
     const nextText = item.text ?? '';
-    merged[merged.length - 1] = { ...item, text: `${previousText}${nextText}` };
+    merged[merged.length - 1] = {
+      ...previous,
+      ...item,
+      text: `${previousText}${nextText}`,
+    };
   }
   return merged;
 };
@@ -229,6 +313,13 @@ export function adaptDurableThreadActivity(
     ...(prompt == null ? {} : { prompt }),
     status,
     items,
-    activityTruncated: view.activityTruncated || view.historyTruncated,
+    activityTruncated:
+      view.activityTruncated ||
+      view.historyTruncated ||
+      (view.activity ?? []).some(
+        (item) =>
+          (item.type === 'writing' && item.textTruncated === true) ||
+          (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
+      ),
   };
 }
