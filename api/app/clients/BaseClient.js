@@ -1149,6 +1149,11 @@ class BaseClient {
   async loadHistory(conversationId, parentMessageId = null) {
     logger.debug('[BaseClient] Loading history:', { conversationId, parentMessageId });
 
+    /** No message has the root sentinel as its id, so the chain walk from it is empty. */
+    if (parentMessageId === Constants.NO_PARENT) {
+      return [];
+    }
+
     const messages = (await db.getMessages({ conversationId, user: this.user })) ?? [];
 
     if (messages.length === 0) {
@@ -1389,15 +1394,19 @@ class BaseClient {
     const orderedMessages = [];
     let currentMessageId = parentMessageId;
     const visitedMessageIds = new Set();
+    const messagesById = new Map();
+    for (const msg of messages) {
+      const messageId = msg.messageId ?? msg.id;
+      if (!messagesById.has(messageId)) {
+        messagesById.set(messageId, msg);
+      }
+    }
 
     while (currentMessageId) {
       if (visitedMessageIds.has(currentMessageId)) {
         break;
       }
-      const message = messages.find((msg) => {
-        const messageId = msg.messageId ?? msg.id;
-        return messageId === currentMessageId;
-      });
+      const message = messagesById.get(currentMessageId);
 
       visitedMessageIds.add(currentMessageId);
 
