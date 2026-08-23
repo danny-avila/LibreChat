@@ -318,9 +318,13 @@ export default function usePastedTextEdit({
       /** The replacement is itself a generated paste: without recording its provenance the
        * fresh chip immediately loses the Edit and Move back affordances it exists for. */
       markPastedTextFile(uploadId);
-      if (saveDrafts) {
+      const replacementDraftId = getComposerDraftId(index, conversationIdRef.current, isSubmitting);
+      /** Same rule as the original paste: a record another open tab owns is not ours to write to.
+       * `setFilesDraft` keeps that tab's stamp, so recording the replacement there would hand it
+       * a chip this composer is still holding, which it could then delete through New Chat. */
+      if (saveDrafts && isFilesDraftOwnedByThisTab(getFilesDraftCached(replacementDraftId))) {
         addPastedTextDraftFile({
-          id: getComposerDraftId(index, conversationIdRef.current, isSubmitting),
+          id: replacementDraftId,
           fileId: uploadId,
         });
       }

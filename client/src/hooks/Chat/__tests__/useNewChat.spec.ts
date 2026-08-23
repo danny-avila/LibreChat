@@ -31,6 +31,7 @@ const mockState = {
   retainedDeletions: [] as { file_id: string; filepath: string; source: string }[],
   markedPasteIds: [] as string[],
   liveAttachmentIds: [] as string[],
+  retainedPassInFlight: false,
   persistedPendingDiscardIds: [] as string[],
   retainedListener: null as (() => void) | null,
   fileList: undefined as
@@ -106,6 +107,16 @@ jest.mock('~/utils', () => ({
   scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
   isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
   collectLiveAttachmentIds: () => new Set<string>(mockState.liveAttachmentIds),
+  beginRetainedDeletionPass: () => {
+    if (mockState.retainedPassInFlight) {
+      return false;
+    }
+    mockState.retainedPassInFlight = true;
+    return true;
+  },
+  endRetainedDeletionPass: () => {
+    mockState.retainedPassInFlight = false;
+  },
   /** Stands in for the localStorage sweep: the ids every mocked draft is holding. */
   collectDraftedAttachmentIds: () => {
     const ids = new Set<string>();
@@ -171,6 +182,7 @@ describe('useNewChat', () => {
     mockState.retainedListener = null;
     mockState.markedPasteIds = [];
     mockState.liveAttachmentIds = [];
+    mockState.retainedPassInFlight = false;
     mockScheduleRetainedRetry.mockClear();
   });
 

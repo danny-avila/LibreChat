@@ -8,8 +8,8 @@ import {
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import {
   apiBaseUrl,
   SystemRoles,
@@ -26,8 +26,13 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import {
+  SESSION_KEY,
+  isSafeRedirect,
+  getPostLoginRedirect,
+  clearRetainedFileDeletions,
+} from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -160,6 +165,10 @@ const AuthContextProvider = ({
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
+      /** Cleanup still queued from a failed delete belongs to the account that uploaded those
+       * files. Carrying it across a sign-out would retry them under whoever signs in next, which
+       * the ownership check rejects forever instead of cleaning anything up. */
+      clearRetainedFileDeletions();
       logoutUser.mutate(undefined);
     },
     [logoutUser],

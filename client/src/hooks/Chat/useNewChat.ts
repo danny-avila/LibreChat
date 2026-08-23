@@ -7,6 +7,7 @@ import type { MouseEvent } from 'react';
 import type { ExtendedFile } from '~/common';
 import type { FilesDraft } from '~/utils';
 import {
+  beginRetainedDeletionPass,
   clearAllDrafts,
   clearMessagesCache,
   clearRetainedFileDeletion,
@@ -15,6 +16,7 @@ import {
   getNewConversationDraftId,
   collectDraftedAttachmentIds,
   collectLiveAttachmentIds,
+  endRetainedDeletionPass,
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   isPastedTextFileMarked,
@@ -149,6 +151,12 @@ export default function useNewChat({
     if ((pendingDiscardIds.length === 0 && retained.length === 0) || fileList == null) {
       return;
     }
+    /** Another mounted instance is already running this pass. Ask for a later one rather than
+     * dropping the work: whatever it does not resolve has to be revisited by someone. */
+    if (!beginRetainedDeletionPass()) {
+      scheduleRetainedFileDeletionRetry();
+      return;
+    }
     let cancelled = false;
     const attempt = async () => {
       /** An id that came back, as a live chip or inside any draft, is no longer the discarded
@@ -232,7 +240,7 @@ export default function useNewChat({
         setPendingDiscardIds(stillPending);
       }
     };
-    void attempt();
+    void attempt().finally(endRetainedDeletionPass);
     return () => {
       cancelled = true;
     };

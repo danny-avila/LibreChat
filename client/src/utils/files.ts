@@ -615,6 +615,36 @@ export const scheduleRetainedFileDeletionRetry = (): void => {
   }, retainedRetryDelayMs);
 };
 
+let retainedPassInFlight = false;
+
+/** The header, sidebar, mobile bar and shortcut hooks each mount the cleanup effect, and the
+ * store they read is shared, so without a claim every one of them would issue the same DELETE and
+ * toast about it. Only the instance that takes this runs the pass. */
+export const beginRetainedDeletionPass = (): boolean => {
+  if (retainedPassInFlight) {
+    return false;
+  }
+  retainedPassInFlight = true;
+  return true;
+};
+
+export const endRetainedDeletionPass = (): void => {
+  retainedPassInFlight = false;
+};
+
+/** Drops the queue outright. The payloads belong to the account that uploaded them, so carrying
+ * them across a sign-out would retry another user's credentials against files they do not own,
+ * failing the ownership check forever instead of cleaning anything up. */
+export const clearRetainedFileDeletions = (): void => {
+  retainedFileDeletions.clear();
+  persistRetainedFileDeletions();
+  retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
+  if (retainedRetryTimer != null) {
+    clearTimeout(retainedRetryTimer);
+    retainedRetryTimer = null;
+  }
+};
+
 export const retainFileDeletion = (record: PendingFileDeletion): void => {
   retainedFileDeletions.set(record.file_id, record);
   persistRetainedFileDeletions();

@@ -66,6 +66,28 @@ describe('retained file deletions', () => {
     }
   });
 
+  it('lets one worker claim the pass and turns the others away', async () => {
+    const { beginRetainedDeletionPass, endRetainedDeletionPass } = await import('../files');
+
+    expect(beginRetainedDeletionPass()).toBe(true);
+    expect(beginRetainedDeletionPass()).toBe(false);
+
+    endRetainedDeletionPass();
+
+    expect(beginRetainedDeletionPass()).toBe(true);
+  });
+
+  it('drops the queue on sign-out so it is never retried as another user', async () => {
+    const { retainFileDeletion, clearRetainedFileDeletions, takeRetainedFileDeletions } =
+      await import('../files');
+    retainFileDeletion(record);
+
+    clearRetainedFileDeletions();
+
+    expect(takeRetainedFileDeletions()).toEqual([]);
+    expect(sessionStorage.getItem(RETAINED_KEY)).toBeNull();
+  });
+
   it('ignores a corrupt stored payload rather than failing to load', async () => {
     sessionStorage.setItem(RETAINED_KEY, 'not json');
 
