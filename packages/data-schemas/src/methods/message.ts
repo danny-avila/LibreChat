@@ -1172,9 +1172,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
-  /** Returns newest bounded task outcomes for every selected child in one query.
-   * The sort/group/slice shape intentionally avoids newer top-N accumulators so
-   * the read remains compatible with supported DocumentDB deployments. */
+  /** Returns newest bounded task outcomes for every selected child in two
+   * constant-size batch reads. The first read guarantees one latest task per
+   * child; the second caps recent source rows before any grouping accumulator.
+   * This avoids both N+1 reads and newer top-N accumulators that DocumentDB 5
+   * does not support. */
   async function listSubagentTasksForThreads(input: {
     user: string;
     conversationIds: string[];
@@ -1185,74 +1187,107 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return [];
     }
     const Message = mongoose.models.Message as Model<IMessage>;
-    return Message.aggregate<ParentSubagentTaskRecord>([
-      {
-        $match: {
-          user: input.user,
-          conversationId: { $in: input.conversationIds },
-          ...(input.tenantId == null
-            ? { tenantId: { $exists: false } }
-            : { tenantId: input.tenantId }),
-          messageId: { $regex: /:(user|assistant)$/ },
-          'subagentTask.status': { $exists: true },
-        },
-      },
-      {
-        $set: {
-          _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
-          _subagentTaskId: {
-            $substrBytes: [
-              '$messageId',
-              0,
-              {
-                $subtract: [
-                  { $strLenBytes: '$messageId' },
-                  {
-                    $cond: [{ $regexMatch: { input: '$messageId', regex: /:assistant$/ } }, 10, 5],
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      },
-      {
-        $sort: {
-          conversationId: 1,
-          _subagentTaskId: 1,
-          _subagentIsAssistant: -1,
-          createdAt: -1,
-          _id: -1,
-        },
-      },
-      {
-        $group: {
-          _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
-          task: {
-            $first: {
-              messageId: '$messageId',
-              createdAt: '$createdAt',
-              status: '$subagentTask.status',
+    const match = {
+      user: input.user,
+      conversationId: { $in: input.conversationIds },
+      ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
+      messageId: { $regex: /:(user|assistant)$/ },
+      'subagentTask.status': { $exists: true },
+    };
+    const taskProjection = {
+      messageId: '$messageId',
+      createdAt: '$createdAt',
+      status: '$subagentTask.status',
+    };
+    const sourceLimit = Math.min(
+      4096,
+      Math.max(
+        input.conversationIds.length,
+        input.conversationIds.length * input.limitPerThread * 2,
+      ),
+    );
+    const [latestRecords, recentRecords] = await Promise.all([
+      Message.aggregate<ParentSubagentTaskRecord>([
+        { $match: match },
+        { $sort: { conversationId: 1, createdAt: -1, _id: -1 } },
+        { $group: { _id: '$conversationId', task: { $first: taskProjection } } },
+        { $project: { _id: 0, conversationId: '$_id', tasks: ['$task'] } },
+        { $sort: { conversationId: 1 } },
+      ]),
+      Message.aggregate<ParentSubagentTaskRecord>([
+        { $match: match },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: sourceLimit },
+        {
+          $set: {
+            _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+            _subagentTaskId: {
+              $substrBytes: [
+                '$messageId',
+                0,
+                {
+                  $subtract: [
+                    { $strLenBytes: '$messageId' },
+                    {
+                      $cond: [
+                        { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+                        10,
+                        5,
+                      ],
+                    },
+                  ],
+                },
+              ],
             },
           },
         },
-      },
-      { $sort: { '_id.conversationId': 1, 'task.createdAt': -1, '_id.taskId': 1 } },
-      {
-        $group: {
-          _id: '$_id.conversationId',
-          tasks: { $push: '$task' },
+        {
+          $sort: {
+            conversationId: 1,
+            _subagentTaskId: 1,
+            _subagentIsAssistant: -1,
+            createdAt: -1,
+            _id: -1,
+          },
         },
-      },
-      {
-        $project: {
-          _id: 0,
-          conversationId: '$_id',
-          tasks: { $slice: ['$tasks', input.limitPerThread] },
+        {
+          $group: {
+            _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
+            task: { $first: taskProjection },
+          },
         },
-      },
-      { $sort: { conversationId: 1 } },
+        { $sort: { '_id.conversationId': 1, 'task.createdAt': -1, '_id.taskId': 1 } },
+        { $group: { _id: '$_id.conversationId', tasks: { $push: '$task' } } },
+        {
+          $project: {
+            _id: 0,
+            conversationId: '$_id',
+            tasks: { $slice: ['$tasks', input.limitPerThread] },
+          },
+        },
+        { $sort: { conversationId: 1 } },
+      ]),
     ]);
+    const records = new Map(recentRecords.map((record) => [record.conversationId, record]));
+    for (const latest of latestRecords) {
+      const current = records.get(latest.conversationId);
+      if (current == null) {
+        records.set(latest.conversationId, latest);
+        continue;
+      }
+      const latestTask = latest.tasks[0];
+      const latestTaskId = latestTask?.messageId.replace(/:(user|assistant)$/, '');
+      const withoutLatest = current.tasks.filter(
+        (task) => task.messageId.replace(/:(user|assistant)$/, '') !== latestTaskId,
+      );
+      current.tasks =
+        latestTask == null
+          ? withoutLatest
+          : [latestTask, ...withoutLatest].slice(0, input.limitPerThread);
+    }
+    return [...records.values()].sort((left, right) =>
+      left.conversationId.localeCompare(right.conversationId),
+    );
   }
 
   /**

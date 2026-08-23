@@ -81,7 +81,10 @@ describe('EventSubagentActivityGroup', () => {
         parentMessageId: 'parent-message',
         toolCallId: 'event-thread:event-thread',
         durable: { threadId: 'event-thread', taskId: 'task-1' },
-        event: { actorId: 'actor-a' },
+        event: {
+          actorId: 'actor-a',
+          progressKey: 'event-task:event-thread:task-1',
+        },
       }),
     );
   });

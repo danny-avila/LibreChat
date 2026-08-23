@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
-import { Button, useMediaQuery, useToastContext } from '@librechat/client';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  useMediaQuery,
+  useToastContext,
+} from '@librechat/client';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   subagentThreadHasTaskEvidence,
@@ -17,9 +26,9 @@ import {
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
+import { eventSubagentSelection, eventTaskProgressKey } from './eventSelection';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
-import { eventSubagentSelection } from './eventSelection';
 import SubagentActivity from './SubagentActivity';
 import { useAgentsMapContext } from '~/Providers';
 
@@ -35,7 +44,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { byMessageId, byThreadId, refresh } = useParentSubagents();
   const progress = useRecoilValue(
     subagentProgressByToolCallId(
-      subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
+      subagentProgressKey(
+        selection.parentMessageId,
+        selection.event?.progressKey ?? selection.toolCallId,
+        selection.partIndex,
+      ),
     ),
   );
   const foregroundTitle =
@@ -191,6 +204,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       setSelection({
         ...selection,
         durable: { ...selection.durable, taskId: nextTaskId },
+        event: {
+          ...selection.event,
+          progressKey: eventTaskProgressKey(selection.durable.threadId, nextTaskId),
+        },
         initialProgress: nextTask?.status === 'completed' ? 1 : 0,
         isSubmitting: nextTask?.status === 'running',
       });
@@ -253,43 +270,45 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
 
       {selection.event != null && (
         <div className="flex shrink-0 items-center gap-2 border-b border-border-light px-4 py-2">
-          <label className="min-w-0 flex-1 text-xs text-text-secondary">
-            <span className="sr-only">{localize('com_ui_subagent_actor')}</span>
-            <select
-              aria-label={localize('com_ui_subagent_actor')}
-              value={threadId}
-              onChange={(event) => selectActor(event.target.value)}
-              className="h-8 w-full rounded-md border border-border-medium bg-surface-secondary px-2 text-sm text-text-primary"
-            >
-              {eventSiblings.map((child) => (
-                <option key={child.threadId} value={child.threadId} disabled={!child.latestTaskId}>
-                  {child.agentId != null && agentsMap?.[child.agentId]?.name
-                    ? agentsMap[child.agentId]?.name
-                    : child.actorId || child.title}
-                  {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
-                    ? ` · ${child.actorId}`
-                    : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="w-32 text-xs text-text-secondary">
-            <span className="sr-only">{localize('com_ui_subagent_turn')}</span>
-            <select
-              aria-label={localize('com_ui_subagent_turn')}
-              value={taskId}
-              onChange={(event) => selectTask(event.target.value)}
-              className="h-8 w-full rounded-md border border-border-medium bg-surface-secondary px-2 text-sm text-text-primary"
-            >
-              {(eventSummary?.tasks ?? []).map((task, index) => (
-                <option key={task.taskId} value={task.taskId}>
-                  {index === 0
-                    ? localize('com_ui_subagent_latest_turn')
-                    : localize('com_ui_subagent_earlier_turn', { 0: String(index) })}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="min-w-0 flex-1">
+            <Select value={threadId} onValueChange={selectActor}>
+              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_actor')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {eventSiblings.map((child) => (
+                  <SelectItem
+                    key={child.threadId}
+                    value={child.threadId}
+                    disabled={!child.latestTaskId}
+                  >
+                    {child.agentId != null && agentsMap?.[child.agentId]?.name
+                      ? agentsMap[child.agentId]?.name
+                      : child.actorId || child.title}
+                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
+                      ? ` · ${child.actorId}`
+                      : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-32">
+            <Select value={taskId} onValueChange={selectTask}>
+              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_turn')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(eventSummary?.tasks ?? []).map((task, index) => (
+                  <SelectItem key={task.taskId} value={task.taskId}>
+                    {index === 0
+                      ? localize('com_ui_subagent_latest_turn')
+                      : localize('com_ui_subagent_earlier_turn', { 0: String(index) })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       )}
 

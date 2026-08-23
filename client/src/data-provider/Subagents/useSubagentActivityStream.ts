@@ -48,7 +48,7 @@ export default function useSubagentActivityStream(
   const queryClient = useQueryClient();
   const key = subagentProgressKey(
     selection.parentMessageId,
-    selection.toolCallId,
+    selection.event?.progressKey ?? selection.toolCallId,
     selection.partIndex,
   );
   const setProgress = useSetRecoilState(subagentProgressByToolCallId(key));

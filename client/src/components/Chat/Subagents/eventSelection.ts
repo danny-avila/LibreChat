@@ -1,6 +1,9 @@
 import type { ParentSubagentSummary } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 
+export const eventTaskProgressKey = (threadId: string, taskId: string) =>
+  `event-task:${threadId}:${taskId}`;
+
 export const eventSubagentSelection = (
   parentConversationId: string,
   child: ParentSubagentSummary,
@@ -17,6 +20,6 @@ export const eventSubagentSelection = (
     initialProgress: child.status === 'completed' ? 1 : 0,
     isSubmitting: child.status === 'running',
     durable: { threadId: child.threadId, taskId },
-    event: { actorId: child.actorId },
+    event: { actorId: child.actorId, progressKey: eventTaskProgressKey(child.threadId, taskId) },
   };
 };

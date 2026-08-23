@@ -269,6 +269,8 @@ export type ActiveSubagentPanel = {
   };
   event?: {
     actorId: string;
+    /** Task-specific live activity identity; the actor thread is reused across turns. */
+    progressKey: string;
   };
 };
 

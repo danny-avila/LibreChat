@@ -105,13 +105,45 @@ jest.mock('./SubagentActivity', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
-    <button {...props}>{children}</button>
-  ),
-  useMediaQuery: () => mockIsMobile,
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+jest.mock('@librechat/client', () => {
+  const mockReact = jest.requireActual<typeof import('react')>('react');
+  const MockSelectContext = mockReact.createContext((_value: string): void => {});
+  return {
+    Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+      <button {...props}>{children}</button>
+    ),
+    Select: ({
+      children,
+      onValueChange,
+    }: {
+      children: React.ReactNode;
+      onValueChange: (value: string) => void;
+    }) => <MockSelectContext.Provider value={onValueChange}>{children}</MockSelectContext.Provider>,
+    SelectTrigger: ({ children, ...props }: React.ComponentProps<'button'>) => (
+      <button role="combobox" aria-controls="mock-select-options" aria-expanded="true" {...props}>
+        {children}
+      </button>
+    ),
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) => (
+      <div id="mock-select-options">{children}</div>
+    ),
+    SelectItem: ({
+      value,
+      children,
+      ...props
+    }: React.ComponentProps<'button'> & { value: string }) => {
+      const onValueChange = mockReact.useContext(MockSelectContext);
+      return (
+        <button role="option" aria-selected="false" onClick={() => onValueChange(value)} {...props}>
+          {children}
+        </button>
+      );
+    },
+    useMediaQuery: () => mockIsMobile,
+    useToastContext: () => ({ showToast: mockShowToast }),
+  };
+});
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
@@ -587,7 +619,7 @@ describe('SubagentThreadPanel', () => {
     });
     const eventSelection: ActiveSubagentPanel = {
       ...selection,
-      event: { actorId: 'actor-1' },
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
     };
     let active: ActiveSubagentPanel | null = eventSelection;
     const Observer = () => {
@@ -602,18 +634,18 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'com_ui_subagent_turn' }), {
-      target: { value: 'task-earlier' },
-    });
+    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_earlier_turn' }));
     expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
+    expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' }), {
-      target: { value: 'child-thread-2' },
-    });
+    fireEvent.click(screen.getByRole('option', { name: /Analyst Two/ }));
     expect(active).toEqual(
       expect.objectContaining({
         subagentType: 'agent-2',
-        event: { actorId: 'actor-2' },
+        event: {
+          actorId: 'actor-2',
+          progressKey: 'event-task:child-thread-2:task-2',
+        },
         durable: { threadId: 'child-thread-2', taskId: 'task-2' },
       }),
     );
