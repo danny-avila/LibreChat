@@ -279,6 +279,10 @@ interface PinnedSectionProps {
    *  pinned query has finished draining. Only then can keys the section cannot
    *  resolve be treated as gone rather than merely unseen. */
   membershipComplete?: boolean;
+  /** When the pinned query last delivered, compared against the stored order's
+   *  own fetch time to tell membership that reconciled with it from membership
+   *  that is merely still inside its own freshness window. */
+  membershipUpdatedAt?: number;
 }
 
 /** Pinned chats and pinned agents/models/specs (favorites) render as ONE
@@ -290,6 +294,7 @@ const PinnedSection = ({
   toggleNav,
   isSmallScreen,
   membershipComplete = false,
+  membershipUpdatedAt = 0,
 }: PinnedSectionProps) => {
   const localize = useLocalize();
   const [isExpanded, setIsExpanded] = useLocalStorage('pinnedSectionExpanded', true);
@@ -306,6 +311,7 @@ const PinnedSection = ({
     data: storedOrder,
     isSuccess: orderFetched,
     isFetching: orderFetching,
+    dataUpdatedAt: orderUpdatedAt,
   } = useGetPinnedOrderQuery();
   const orderLoaded = orderFetched && !orderFetching;
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
@@ -537,7 +543,14 @@ const PinnedSection = ({
        * stopped loading: a favorites fetch that exhausted its retries leaves
        * the list empty, and pruning against that would drop every favorite key
        * from the stored order. */
-      const canPrune = membershipComplete && favoritesData.isLoaded;
+      /* Current enough, too, and not merely settled: the pinned query holds its
+       * data for five minutes while the order has no such window, so focusing a
+       * tab reconciles the order on its own. Pruning that newer order against
+       * the older membership beside it would drop the position of a
+       * conversation another tab pinned in between. Until the membership
+       * catches up, merging keeps those keys. */
+      const membershipCurrent = membershipComplete && membershipUpdatedAt >= orderUpdatedAt;
+      const canPrune = membershipCurrent && favoritesData.isLoaded;
       const nextOrder = canPrune ? visibleKeys : mergeVisibleOrder(storedOrder ?? [], visibleKeys);
 
       updatePinnedOrder.mutate(nextOrder, {
@@ -567,6 +580,8 @@ const PinnedSection = ({
       updatePinnedOrder,
       storedOrder,
       membershipComplete,
+      membershipUpdatedAt,
+      orderUpdatedAt,
       favoritesData.isLoaded,
       showToast,
       localize,

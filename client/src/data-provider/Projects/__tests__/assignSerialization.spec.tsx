@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, setTokenHeader } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { useAssignConversationToProjectMutation } from '../mutations';
+import { useAssignConversationToProjectMutation, getPendingAssignment } from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -54,7 +54,10 @@ const signInAs = (userId: string) => {
 
 describe('useAssignConversationToProjectMutation', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    /* Reset, not clear: clearing leaves an unconsumed `mockResolvedValueOnce`
+     * queued, and the next test's first call would take the previous test's
+     * leftover instead of its own. */
+    jest.resetAllMocks();
     signInAs('user-a');
   });
 
@@ -69,16 +72,16 @@ describe('useAssignConversationToProjectMutation', () => {
     const first = deferred<never>();
     assignConversationToProject
       .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(response('c1', 'project-a'));
+      .mockResolvedValueOnce(response('c-1', 'project-a'));
 
     const dragSurface = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
     const menuSurface = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
 
     await act(async () => {
-      dragSurface.result.current.mutate({ conversationId: 'c1', projectId: 'project-b' });
+      dragSurface.result.current.mutate({ conversationId: 'c-1', projectId: 'project-b' });
     });
     await act(async () => {
-      menuSurface.result.current.mutate({ conversationId: 'c1', projectId: 'project-a' });
+      menuSurface.result.current.mutate({ conversationId: 'c-1', projectId: 'project-a' });
     });
 
     /* The menu write must wait: arriving first would let the older drop land
@@ -86,7 +89,7 @@ describe('useAssignConversationToProjectMutation', () => {
     expect(assignConversationToProject).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      first.resolve(response('c1', 'project-b') as never);
+      first.resolve(response('c-1', 'project-b') as never);
     });
 
     await waitFor(() => expect(assignConversationToProject).toHaveBeenCalledTimes(2));
@@ -103,16 +106,16 @@ describe('useAssignConversationToProjectMutation', () => {
     const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
 
     await act(async () => {
-      result.current.mutate({ conversationId: 'c1', projectId: 'project-b' });
+      result.current.mutate({ conversationId: 'c-2', projectId: 'project-b' });
     });
     await act(async () => {
-      result.current.mutate({ conversationId: 'c2', projectId: 'project-a' });
+      result.current.mutate({ conversationId: 'c-2b', projectId: 'project-a' });
     });
 
     expect(assignConversationToProject).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      held.resolve(response('c1', 'project-b') as never);
+      held.resolve(response('c-2', 'project-b') as never);
     });
   });
 
@@ -121,20 +124,20 @@ describe('useAssignConversationToProjectMutation', () => {
    * reads a conversation's project from this cache, so an older fetch landing
    * after the write would quietly revert the move. */
   it('cancels an in-flight conversation refetch before writing the result', async () => {
-    assignConversationToProject.mockResolvedValueOnce(response('c1', 'project-b'));
+    assignConversationToProject.mockResolvedValueOnce(response('c-3', 'project-b'));
 
     const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
     const cancelQueries = jest.spyOn(activeQueryClient, 'cancelQueries');
 
     await act(async () => {
-      await result.current.mutateAsync({ conversationId: 'c1', projectId: 'project-b' });
+      await result.current.mutateAsync({ conversationId: 'c-3', projectId: 'project-b' });
     });
 
-    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c1']);
+    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c-3']);
     expect(
       activeQueryClient.getQueryData<{ chatProjectId: string | null }>([
         QueryKeys.conversation,
-        'c1',
+        'c-3',
       ])?.chatProjectId,
     ).toBe('project-b');
   });
@@ -144,7 +147,7 @@ describe('useAssignConversationToProjectMutation', () => {
    * drag started right then reads the stale row and refuses a valid drop. */
   it('writes the conversation cache before releasing the pending destination', async () => {
     let cachedDuringSettle: unknown = 'not-read';
-    assignConversationToProject.mockResolvedValueOnce(response('c1', 'project-b'));
+    assignConversationToProject.mockResolvedValueOnce(response('c-4', 'project-b'));
 
     const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
 
@@ -155,15 +158,15 @@ describe('useAssignConversationToProjectMutation', () => {
       .mockImplementation(async () => undefined);
 
     await act(async () => {
-      await result.current.mutateAsync({ conversationId: 'c1', projectId: 'project-b' });
+      await result.current.mutateAsync({ conversationId: 'c-4', projectId: 'project-b' });
     });
 
     cachedDuringSettle = activeQueryClient.getQueryData<{ chatProjectId: string | null }>([
       QueryKeys.conversation,
-      'c1',
+      'c-4',
     ])?.chatProjectId;
 
-    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c1']);
+    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c-4']);
     expect(cachedDuringSettle).toBe('project-b');
     cancelQueries.mockRestore();
   });
@@ -174,17 +177,17 @@ describe('useAssignConversationToProjectMutation', () => {
     const first = deferred<never>();
     assignConversationToProject
       .mockReturnValueOnce(first.promise)
-      .mockResolvedValueOnce(response('c1', 'project-a'));
+      .mockResolvedValueOnce(response('c-5', 'project-a'));
 
     const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
 
     await act(async () => {
-      result.current.mutate({ conversationId: 'c1', projectId: 'project-b' });
+      result.current.mutate({ conversationId: 'c-5', projectId: 'project-b' });
     });
     let queued!: Promise<unknown>;
     await act(async () => {
       queued = result.current
-        .mutateAsync({ conversationId: 'c1', projectId: 'project-a' })
+        .mutateAsync({ conversationId: 'c-5', projectId: 'project-a' })
         .catch(() => 'abandoned');
       await Promise.resolve();
       await Promise.resolve();
@@ -193,10 +196,76 @@ describe('useAssignConversationToProjectMutation', () => {
     setTokenHeader(undefined);
 
     await act(async () => {
-      first.resolve(response('c1', 'project-b') as never);
+      first.resolve(response('c-5', 'project-b') as never);
       await expect(queued).resolves.toBe('abandoned');
     });
 
     expect(assignConversationToProject).toHaveBeenCalledTimes(1);
+  });
+
+  /* An abandoned write still has to give its pending entry back. Kept, it would
+   * describe a destination that was never sent, and `useEffectiveProjectId`
+   * would read it the next time this account signed in and refuse a drop there
+   * as a no-op. */
+  it('releases the pending destination when a queued assignment is abandoned', async () => {
+    const first = deferred<never>();
+    assignConversationToProject.mockReturnValueOnce(first.promise);
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ conversationId: 'c-6', projectId: 'project-b' });
+    });
+    let queued!: Promise<unknown>;
+    await act(async () => {
+      queued = result.current
+        .mutateAsync({ conversationId: 'c-6', projectId: 'project-c' })
+        .catch(() => 'abandoned');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    signInAs('user-b');
+
+    await act(async () => {
+      first.resolve(response('c-6', 'project-b') as never);
+      await expect(queued).resolves.toBe('abandoned');
+    });
+
+    signInAs('user-a');
+    expect(getPendingAssignment('c-6')).toBeUndefined();
+  });
+
+  /* Cancelling waits on whatever fetch is already running, so the session can
+   * turn over inside that await. The write on the far side of it would then
+   * install one account's conversation in the next account's cache and report
+   * success for it. */
+  it('abandons the write when the session turns over while cancelling', async () => {
+    assignConversationToProject.mockResolvedValueOnce(response('c-7', 'project-b'));
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+
+    const cancellation = deferred<undefined>();
+    const cancelQueries = jest
+      .spyOn(activeQueryClient, 'cancelQueries')
+      .mockImplementation(() => cancellation.promise as Promise<void>);
+
+    let settled!: Promise<unknown>;
+    await act(async () => {
+      settled = result.current
+        .mutateAsync({ conversationId: 'c-7', projectId: 'project-b' })
+        .catch(() => 'abandoned');
+      await waitFor(() => expect(cancelQueries).toHaveBeenCalled());
+    });
+
+    signInAs('user-b');
+
+    await act(async () => {
+      cancellation.resolve(undefined);
+      await expect(settled).resolves.toBe('abandoned');
+    });
+
+    expect(activeQueryClient.getQueryData([QueryKeys.conversation, 'c-7'])).toBeUndefined();
+    cancelQueries.mockRestore();
   });
 });
