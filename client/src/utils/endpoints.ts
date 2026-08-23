@@ -6,6 +6,7 @@ import {
   LocalStorageKeys,
   getEndpointField,
   isAgentsEndpoint,
+  resolveProviderId,
   isEphemeralAgentId,
   isAssistantsEndpoint,
   resolveModelSpecEndpoint,
@@ -678,7 +679,10 @@ export function getIconKey({
 }): keyof IconsRecord {
   const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
   const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
-  if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {
+  if (
+    endpointIconURL &&
+    (EModelEndpoint[endpointIconURL] != null || resolveProviderId(endpointIconURL) != null)
+  ) {
     return endpointIconURL;
   }
   return endpointType ? 'unknown' : (endpoint ?? 'unknown');
