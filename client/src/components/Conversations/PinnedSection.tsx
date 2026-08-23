@@ -107,6 +107,11 @@ const DraggablePinnedRow = ({
       return { handlerId: monitor.getHandlerId() };
     },
     hover(item, monitor) {
+      /* Recorded before any of the guards below, including the one for hovering
+       * the dragged row itself. Returning early there would leave an earlier
+       * external hover standing, and a drag that wandered onto a project and
+       * came back to its own position would be discarded as a filing action. */
+      markPinnedHover();
       if (!item.key || item.key === entry.key || !ref.current) {
         return;
       }
@@ -114,7 +119,6 @@ const DraggablePinnedRow = ({
       if (!clientOffset) {
         return;
       }
-      markPinnedHover();
       const rect = ref.current.getBoundingClientRect();
       const swap = shouldSwapOnHover({
         dragIndex: indexOfKey(item.key),

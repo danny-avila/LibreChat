@@ -114,6 +114,17 @@ describe('drag target tracking', () => {
     expect(endedOverExternalTarget()).toBe(false);
   });
 
+  /* Hovering the dragged row itself is a no-op for ordering but still says the
+   * pointer is inside the list, so a drag that wandered onto a project and came
+   * back to its own position is a reorder, not a filing action. */
+  it('counts a return to the dragged row as being back inside the list', () => {
+    markPinnedHover();
+    markExternalHover();
+    /* The row's hover fires for its own key too, before the no-op guard. */
+    markPinnedHover();
+    expect(endedOverExternalTarget()).toBe(false);
+  });
+
   it('starts each drag with no external hover carried over', () => {
     markExternalHover();
     beginPinnedDrag();
