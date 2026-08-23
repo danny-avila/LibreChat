@@ -93,11 +93,18 @@ jobs:
             mode=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].mode')
             files=""
             if [ "$mode" = "FILES" ]; then
-              files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" \
-                '.selected[$w].files // [] | map(select(test(" ") | not)) | map(ltrimstr($p)) | join(" ")')
-              spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
-              if [ "$spaced" != "0" ]; then mode="FULL"; files=""; fi
-              if [ "$mode" = "FILES" ] && [ -z "$files" ]; then mode="NONE"; fi
+              # Only an explicit NONE may skip. FILES with a missing/empty list is a malformed
+              # decision (service/schema skew) and must run FULL (Codex P1 on #15145).
+              raw_n=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].files // [] | length')
+              if [ "$raw_n" = "0" ]; then
+                mode="FULL"
+                note "| $ws | malformed FILES decision (empty list); running FULL |"
+              else
+                files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" \
+                  '.selected[$w].files // [] | map(select(test(" ") | not)) | map(ltrimstr($p)) | join(" ")')
+                spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
+                if [ "$spaced" != "0" ]; then mode="FULL"; files=""; fi
+              fi
             fi
             if [ "$mode" = "NONE" ]; then
               echo "${key}_run=false" >> "$GITHUB_OUTPUT"

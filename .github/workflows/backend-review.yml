@@ -198,10 +198,20 @@ jobs:
             mode=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].mode')
             files=""
             if [ "$mode" = "FILES" ]; then
-              files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" --arg ig "$ignore"                 '.selected[$w].files // [] | map(select((test(" ") | not) and (($ig == "") or (test($ig) | not)))) | map(ltrimstr($p)) | join(" ")')
-              spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
-              if [ "$spaced" != "0" ]; then mode="FULL"; files=""; fi
-              if [ "$mode" = "FILES" ] && [ -z "$files" ]; then mode="NONE"; fi
+              # Only an explicit NONE may skip. FILES with a missing/empty list is malformed and
+              # runs FULL (Codex P1 on #15145). A NON-empty list that the ignore regex filters to
+              # nothing is different and legitimately NONE: those files are exactly what this
+              # workspace's own jest run excludes, so full CI would not run them either.
+              raw_n=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].files // [] | length')
+              if [ "$raw_n" = "0" ]; then
+                mode="FULL"
+                note "| $ws | malformed FILES decision (empty list); running FULL |"
+              else
+                files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" --arg ig "$ignore"                 '.selected[$w].files // [] | map(select((test(" ") | not) and (($ig == "") or (test($ig) | not)))) | map(ltrimstr($p)) | join(" ")')
+                spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
+                if [ "$spaced" != "0" ]; then mode="FULL"; files=""; fi
+                if [ "$mode" = "FILES" ] && [ -z "$files" ]; then mode="NONE"; fi
+              fi
             fi
             if [ "$mode" = "NONE" ]; then
               echo "${key}_run=false" >> "$GITHUB_OUTPUT"
