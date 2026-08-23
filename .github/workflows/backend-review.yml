@@ -262,6 +262,19 @@ jobs:
       - name: Prepare .env.test file
         run: cp api/test/.env.test.example api/test/.env.test
 
+      # mongodb-memory-server cold-downloads a ~122MB MongoDB binary into
+      # ~/.cache/mongodb-binaries on first use — inside a 15s beforeAll hook, which is a
+      # timeout on a slow mirror day. Every MISSED verdict the codegraph shadow evaluator has
+      # ever recorded (9 across 6 PRs) plus several chronically flaky suites trace to exactly
+      # this download. restore-keys keeps the previous binary warm across lockfile churn; a
+      # genuinely new binary version downloads once and re-saves.
+      - name: Cache MongoDB memory-server binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
       - name: Run unit tests (shard ${{ matrix.shard }}/3)
         run: cd api && npm run test:ci -- --shard=${{ matrix.shard }}/3
 
@@ -300,6 +313,19 @@ jobs:
           name: build-data-provider
           path: packages/data-provider/dist
 
+      # mongodb-memory-server cold-downloads a ~122MB MongoDB binary into
+      # ~/.cache/mongodb-binaries on first use — inside a 15s beforeAll hook, which is a
+      # timeout on a slow mirror day. Every MISSED verdict the codegraph shadow evaluator has
+      # ever recorded (9 across 6 PRs) plus several chronically flaky suites trace to exactly
+      # this download. restore-keys keeps the previous binary warm across lockfile churn; a
+      # genuinely new binary version downloads once and re-saves.
+      - name: Cache MongoDB memory-server binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
       - name: Run unit tests
         run: cd packages/data-provider && npm run test:ci
 
@@ -344,6 +370,19 @@ jobs:
           name: build-data-schemas
           path: packages/data-schemas/dist
 
+      # mongodb-memory-server cold-downloads a ~122MB MongoDB binary into
+      # ~/.cache/mongodb-binaries on first use — inside a 15s beforeAll hook, which is a
+      # timeout on a slow mirror day. Every MISSED verdict the codegraph shadow evaluator has
+      # ever recorded (9 across 6 PRs) plus several chronically flaky suites trace to exactly
+      # this download. restore-keys keeps the previous binary warm across lockfile churn; a
+      # genuinely new binary version downloads once and re-saves.
+      - name: Cache MongoDB memory-server binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
       - name: Run unit tests
         run: cd packages/data-schemas && npm run test:ci
 
@@ -402,5 +441,18 @@ jobs:
           name: build-api
           path: packages/api/dist
 
+      # mongodb-memory-server cold-downloads a ~122MB MongoDB binary into
+      # ~/.cache/mongodb-binaries on first use — inside a 15s beforeAll hook, which is a
+      # timeout on a slow mirror day. Every MISSED verdict the codegraph shadow evaluator has
+      # ever recorded (9 across 6 PRs) plus several chronically flaky suites trace to exactly
+      # this download. restore-keys keeps the previous binary warm across lockfile churn; a
+      # genuinely new binary version downloads once and re-saves.
+      - name: Cache MongoDB memory-server binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
       - name: Run unit tests (shard ${{ matrix.shard }}/4)
         run: cd packages/api && npm run test:ci -- --shard=${{ matrix.shard }}/4
