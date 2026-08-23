@@ -126,4 +126,33 @@ describe('useAssignConversationToProjectMutation', () => {
       ])?.chatProjectId,
     ).toBe('project-b');
   });
+
+  /* Between the request settling and the cache write there must be no moment
+   * where neither the pending entry nor the cache names the new project, or a
+   * drag started right then reads the stale row and refuses a valid drop. */
+  it('writes the conversation cache before releasing the pending destination', async () => {
+    let cachedDuringSettle: unknown = 'not-read';
+    assignConversationToProject.mockResolvedValueOnce(response('c1', 'project-b'));
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+
+    /* Observe the cache at the moment the cancellation resolves, which is the
+     * last point before the write. */
+    const cancelQueries = jest
+      .spyOn(activeQueryClient, 'cancelQueries')
+      .mockImplementation(async () => undefined);
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 'c1', projectId: 'project-b' });
+    });
+
+    cachedDuringSettle = activeQueryClient.getQueryData<{ chatProjectId: string | null }>([
+      QueryKeys.conversation,
+      'c1',
+    ])?.chatProjectId;
+
+    expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c1']);
+    expect(cachedDuringSettle).toBe('project-b');
+    cancelQueries.mockRestore();
+  });
 });
