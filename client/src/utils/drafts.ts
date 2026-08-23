@@ -446,7 +446,10 @@ const resolveBrowserTabId = (): string => {
   }
 };
 
-type LiveTabs = Record<string, number>;
+/** `suspended` marks a document sitting in the back-forward cache: frozen rather than gone. */
+type TabPresence = { seenAt: number; suspended?: boolean };
+type LiveTabs = Record<string, TabPresence>;
+type StoredTabPresence = number | { seenAt?: number; suspended?: boolean };
 
 const TAB_LIVENESS_STORAGE_KEY = 'librechat-live-tabs';
 const TAB_HEARTBEAT_MS = 10_000;
@@ -456,6 +459,16 @@ const TAB_HEARTBEAT_MS = 10_000;
  * away from it. Losing a closed tab's claim a couple of minutes late costs nothing; taking a live
  * tab's draft costs the text it was still writing. */
 const TAB_LIVENESS_WINDOW_MS = 150_000;
+/** A bfcached document's heartbeat is frozen, so the ordinary window would expire a tab that can
+ * still be restored with those attachments on screen, and another tab could delete the files
+ * underneath it. It gets a far longer grace, comfortably past the point where browsers evict a
+ * bfcache entry, but still a bounded one: a claim that never expired is exactly what left drafts
+ * stranded under owners that no longer existed. */
+const TAB_SUSPENDED_WINDOW_MS = 1_800_000;
+
+const isPresenceLive = (presence: TabPresence, now: number): boolean =>
+  now - presence.seenAt <=
+  (presence.suspended === true ? TAB_SUSPENDED_WINDOW_MS : TAB_LIVENESS_WINDOW_MS);
 
 const readLiveTabs = (): LiveTabs => {
   try {
@@ -463,11 +476,19 @@ const readLiveTabs = (): LiveTabs => {
     if (raw == null || raw === '') {
       return {};
     }
-    const parsed = JSON.parse(raw) as LiveTabs | null;
+    const parsed = JSON.parse(raw) as Record<string, StoredTabPresence> | null;
     if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
     }
-    return parsed;
+    const tabs: LiveTabs = {};
+    for (const [id, stored] of Object.entries(parsed)) {
+      if (typeof stored === 'number') {
+        tabs[id] = { seenAt: stored };
+      } else if (stored != null && typeof stored.seenAt === 'number') {
+        tabs[id] = { seenAt: stored.seenAt, suspended: stored.suspended === true };
+      }
+    }
+    return tabs;
   } catch {
     return {};
   }
@@ -475,12 +496,14 @@ const readLiveTabs = (): LiveTabs => {
 
 /** Marks this tab as present and drops the tabs that stopped reporting, so the registry cannot
  * grow a permanent entry for every tab the browser has ever opened. */
-const recordTabHeartbeat = (tabId: string): void => {
+const recordTabPresence = (tabId: string, suspended = false): void => {
   const now = Date.now();
-  const live: LiveTabs = { [tabId]: now };
-  for (const [id, seenAt] of Object.entries(readLiveTabs())) {
-    if (id !== tabId && typeof seenAt === 'number' && now - seenAt <= TAB_LIVENESS_WINDOW_MS) {
-      live[id] = seenAt;
+  const live: LiveTabs = {
+    [tabId]: suspended ? { seenAt: now, suspended: true } : { seenAt: now },
+  };
+  for (const [id, presence] of Object.entries(readLiveTabs())) {
+    if (id !== tabId && isPresenceLive(presence, now)) {
+      live[id] = presence;
     }
   }
   try {
@@ -511,25 +534,30 @@ const startTabHeartbeat = (tabId: string): void => {
     return;
   }
   heartbeatTabId = tabId;
-  recordTabHeartbeat(tabId);
+  recordTabPresence(tabId);
   if (heartbeatTimer != null) {
     return;
   }
   const beat = (): void => {
     if (heartbeatTabId != null) {
-      recordTabHeartbeat(heartbeatTabId);
+      recordTabPresence(heartbeatTabId);
     }
   };
   heartbeatTimer = setInterval(beat, TAB_HEARTBEAT_MS);
-  /** `pagehide` is the last event a closing tab is reliably given, so the claim is handed back
-   * at once instead of waiting out the window. `persisted` says the document is going into the
+  /** `pagehide` is the last event a closing tab is reliably given, so the claim is handed back at
+   * once instead of waiting out the window. `persisted` says the document is going into the
    * back-forward cache instead of away: it can still come back with those attachments on screen,
-   * and releasing the claim now would let another tab delete the files underneath it. Its frozen
-   * heartbeat lets the window expire the claim on its own if it is never restored. */
+   * so it is parked as suspended, which holds the claim far longer than a frozen heartbeat could.
+   * `pageshow` beats normally again and clears the flag. */
   window.addEventListener('pagehide', (event) => {
-    if (heartbeatTabId != null && !event.persisted) {
-      forgetTab(heartbeatTabId);
+    if (heartbeatTabId == null) {
+      return;
     }
+    if (event.persisted) {
+      recordTabPresence(heartbeatTabId, true);
+      return;
+    }
+    forgetTab(heartbeatTabId);
   });
   window.addEventListener('pageshow', beat);
 };
@@ -553,8 +581,8 @@ export const isTabLive = (tabId?: string | null): boolean => {
   if (tabId === documentTabId) {
     return true;
   }
-  const seenAt = readLiveTabs()[tabId];
-  return typeof seenAt === 'number' && Date.now() - seenAt <= TAB_LIVENESS_WINDOW_MS;
+  const presence = readLiveTabs()[tabId];
+  return presence != null && isPresenceLive(presence, Date.now());
 };
 
 /** Destructive readers skip a record another tab still owns. Untagged legacy drafts are treated
@@ -696,6 +724,24 @@ export const claimComposerDraftTab = (id: string): void => {
   );
 };
 
+/** Drops a claim with nothing behind it. Once the text is cleared and nothing is attached, the
+ * record is pure residue, and leaving it would lock the shared key to a tab that no longer has a
+ * draft there: the next tab to type could neither restore its own text nor take the key back. */
+export const releaseComposerDraftTab = (id: string): void => {
+  const existing = getFilesDraftCached(id);
+  if (
+    existing.tabId == null ||
+    existing.tabId !== getBrowserTabId() ||
+    existing.fileIds.length > 0 ||
+    Object.keys(existing.pendingPastes).length > 0 ||
+    (existing.pastedTextIds?.length ?? 0) > 0
+  ) {
+    return;
+  }
+  filesDraftCache = null;
+  removeLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+};
+
 /** Moves a text draft between keys, reporting whether there was one to move. */
 export const migrateTextDraft = (fromId: string, toId: string): boolean => {
   const key = `${LocalStorageKeys.TEXT_DRAFT}${fromId}`;
@@ -820,6 +866,9 @@ export const setDraft = ({
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+  if (isSharedComposerDraftId(id)) {
+    releaseComposerDraftTab(id);
+  }
 };
 
 export const getDraft = (id?: string): string | null =>

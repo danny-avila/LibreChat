@@ -366,6 +366,30 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(isTabLive(tabId)).toBe(true);
   });
 
+  it('holds a bfcached claim past the ordinary liveness window', () => {
+    /** A frozen heartbeat must not read as a dead tab: the document can still come back with
+     * those attachments on screen. */
+    const tabId = getBrowserTabId();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    const parked = JSON.parse(localStorage.getItem('librechat-live-tabs') ?? '{}');
+    localStorage.setItem(
+      'librechat-live-tabs',
+      JSON.stringify({ [tabId]: { ...parked[tabId], seenAt: Date.now() - 600_000 } }),
+    );
+
+    expect(isTabLive(tabId)).toBe(true);
+  });
+
+  it('lets a bfcached claim go once even a restorable document would be gone', () => {
+    const tabId = 'parked-tab';
+    localStorage.setItem(
+      'librechat-live-tabs',
+      JSON.stringify({ [tabId]: { seenAt: Date.now() - 3_600_000, suspended: true } }),
+    );
+
+    expect(isTabLive(tabId)).toBe(false);
+  });
+
   it('releases its claim when the page is really going away', () => {
     const tabId = getBrowserTabId();
     window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
@@ -410,6 +434,25 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     /** Ownership rides on the files record, which is only written once something is attached, so
      * a typed-but-unattached draft used to read as nobody's and be cleared by another tab. */
     setDraft({ id: getNewConversationDraftId(), value: 'queued follow-up' });
+
+    expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe(getBrowserTabId());
+  });
+
+  it('gives the shared key back when the text is cleared and nothing is attached', () => {
+    /** Otherwise the empty claim outlives the draft and locks the key to a tab that has nothing
+     * in it, leaving the next tab unable to restore its own text. */
+    setDraft({ id: getNewConversationDraftId(), value: 'queued follow-up' });
+
+    setDraft({ id: getNewConversationDraftId(), value: '' });
+
+    expect(getFilesDraft(getNewConversationDraftId()).tabId).toBeUndefined();
+  });
+
+  it('keeps the claim when clearing the text leaves an attachment behind', () => {
+    setFilesDraft(getNewConversationDraftId(), { fileIds: ['file-1'], pendingPastes: {} });
+    setDraft({ id: getNewConversationDraftId(), value: 'queued follow-up' });
+
+    setDraft({ id: getNewConversationDraftId(), value: '' });
 
     expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe(getBrowserTabId());
   });
