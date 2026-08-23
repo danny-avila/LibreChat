@@ -11,12 +11,19 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('ScheduleEmptyState', () => {
-  it('shows the title and hint when there is nothing to list', () => {
-    render(<ScheduleEmptyState />);
+  it('shows the title and the create hint for a role that can create', () => {
+    render(<ScheduleEmptyState canCreate />);
 
     expect(screen.getByText('com_ui_no_schedules_title')).toBeInTheDocument();
     expect(screen.getByText('com_ui_no_schedules')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('drops the create hint for a role the panel offers no create button to', () => {
+    render(<ScheduleEmptyState />);
+
+    expect(screen.getByText('com_ui_no_schedules_title')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_no_schedules')).not.toBeInTheDocument();
   });
 
   it('swaps to the error message and retries on request', async () => {

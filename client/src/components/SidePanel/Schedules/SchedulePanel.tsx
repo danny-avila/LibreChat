@@ -35,7 +35,7 @@ export default function SchedulePanel() {
   if (isError) {
     panelContent = <ScheduleEmptyState isError onRetry={() => refetch()} />;
   } else if (schedules.length === 0) {
-    panelContent = <ScheduleEmptyState />;
+    panelContent = <ScheduleEmptyState canCreate={hasCreateAccess} />;
   } else {
     panelContent = (
       <div className="space-y-2" role="list" aria-label={localize('com_ui_schedules')}>
