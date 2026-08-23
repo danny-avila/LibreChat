@@ -12,6 +12,8 @@ interface SidebarProps {
   onSelectTab: (tab: SettingsTab) => void;
   showChevron?: boolean;
   hideTabs?: boolean;
+  /** Stacked above the content pane rather than beside it. */
+  stacked?: boolean;
 }
 
 export default function Sidebar({
@@ -21,12 +23,13 @@ export default function Sidebar({
   onSelectTab,
   showChevron = false,
   hideTabs = false,
+  stacked = false,
 }: SidebarProps) {
   const localize = useLocalize();
   const tabs = TABS.filter((t) => !t.show || t.show(ctx));
 
   return (
-    <div className="flex w-full flex-col gap-3 md:w-[14.375rem]">
+    <div className={cn('flex w-full flex-col gap-3', !stacked && 'w-[14.375rem]')}>
       <div className="relative">
         <Search
           className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"

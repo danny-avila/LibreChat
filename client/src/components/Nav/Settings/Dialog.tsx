@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, ChevronLeft } from 'lucide-react';
-import { Button, useMediaQuery } from '@librechat/client';
 import { SettingsTabValues } from 'librechat-data-provider';
+import { Button, useMediaQuery, useRemScale } from '@librechat/client';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import type { TDialogProps } from '~/common';
 import type { SettingsTab } from './types';
@@ -16,7 +16,11 @@ import { cn } from '~/utils';
 export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
   const localize = useLocalize();
   const ctx = useSettingsContext();
-  const isSmallScreen = useMediaQuery('(max-width: 767px)');
+  /** The panel is laid out in rem, so the two-column switch has to compare the
+   *  viewport in the same units: a fixed 768px breakpoint picks the side-by-side
+   *  layout at scales where the scaled sidebar leaves the content pane too narrow. */
+  const remScale = useRemScale();
+  const isSmallScreen = useMediaQuery(`(max-width: ${767 * remScale}px)`);
   const [activeTab, setActiveTab] = useState<SettingsTab>(SettingsTabValues.GENERAL);
   const [query, setQuery] = useState('');
   const [mobileDetail, setMobileDetail] = useState(false);
@@ -64,7 +68,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
             <DialogPanel
               className={cn(
                 'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-surface-dialog shadow-2xl',
-                'md:h-[85vh] md:w-[56.25rem] md:max-w-[calc(100vw-4rem)]',
+                !isSmallScreen && 'h-[85vh] w-[56.25rem] max-w-[calc(100vw-4rem)]',
               )}
             >
               <DialogTitle
@@ -102,7 +106,10 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 value={effectiveTab}
                 onValueChange={(v) => setActiveTab(v as SettingsTab)}
                 orientation="vertical"
-                className="flex flex-1 flex-col gap-4 overflow-hidden p-5 md:flex-row md:gap-6"
+                className={cn(
+                  'flex flex-1 flex-col gap-4 overflow-hidden p-5',
+                  !isSmallScreen && 'flex-row gap-6',
+                )}
               >
                 {showSidebar && (
                   <Sidebar
@@ -112,10 +119,11 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                     onSelectTab={selectTab}
                     showChevron={isSmallScreen}
                     hideTabs={hideTabs}
+                    stacked={isSmallScreen}
                   />
                 )}
                 {showContent && (
-                  <div className="flex-1 overflow-y-auto md:pr-1">
+                  <div className={cn('flex-1 overflow-y-auto', !isSmallScreen && 'pr-1')}>
                     {searching ? (
                       <Content activeTab={effectiveTab} query={query} ctx={ctx} />
                     ) : (
