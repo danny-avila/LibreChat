@@ -1,14 +1,13 @@
 /** Viewport width, in baseline pixels, below which navigation becomes the drawer. */
 export const DRAWER_MAX_WIDTH = 768;
 
-/** Below this the side panel host stacks instead of splitting. */
-export const SIDE_PANEL_MAX_WIDTH = 767;
-
-/** Below this artifacts render as a full-width sheet rather than a panel. */
+/**
+ * Below this artifacts render as a fixed sheet rather than a resizable panel. Every
+ * layout owner reads this one value: `Artifacts` positions itself, while its two hosts
+ * decide whether to reserve a panel for it, so a threshold they did not share left the
+ * conversation squeezed beside an empty panel with the sheet overlaying the viewport.
+ */
 export const ARTIFACTS_SHEET_MAX_WIDTH = 868;
-
-/** Below this the shared-conversation route stops reserving an artifacts panel. */
-export const SHARE_ARTIFACTS_MAX_WIDTH = 1023;
 
 const BASE_FONT_SIZE = 16;
 

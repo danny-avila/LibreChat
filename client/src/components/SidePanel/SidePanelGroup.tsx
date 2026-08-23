@@ -1,7 +1,7 @@
 import { useState, memo } from 'react';
 import { useDefaultLayout } from 'react-resizable-panels';
 import { ResizablePanel, ResizablePanelGroup } from '@librechat/client';
-import { SIDE_PANEL_MAX_WIDTH } from '~/utils/breakpoints';
+import { ARTIFACTS_SHEET_MAX_WIDTH } from '~/utils/breakpoints';
 import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import ArtifactsPanel from './ArtifactsPanel';
 
@@ -15,7 +15,7 @@ interface SidePanelProps {
 
 const SidePanelGroup = memo(({ artifacts, children }: SidePanelProps) => {
   const [shouldRenderArtifacts, setShouldRenderArtifacts] = useState(artifacts != null);
-  const isSmallScreen = useScaledMaxWidth(SIDE_PANEL_MAX_WIDTH);
+  const isSmallScreen = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: 'side-panel-layout',
