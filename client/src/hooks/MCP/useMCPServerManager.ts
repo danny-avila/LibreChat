@@ -59,6 +59,20 @@ export interface MCPServerDefinition {
 // The init states (isInitializing, isCancellable, etc.) are stored in the global Jotai atom
 type PollIntervals = Record<string, NodeJS.Timeout | null>;
 
+export function selectInitializedMCPServer(
+  valuesRef: { current: string[] },
+  setValues: (values: string[]) => void,
+  serverName: string,
+) {
+  const currentValues = valuesRef.current ?? [];
+  if (currentValues.includes(serverName)) {
+    return;
+  }
+  const nextValues = [...currentValues, serverName];
+  valuesRef.current = nextValues;
+  setValues(nextValues);
+}
+
 export function useMCPServerManager({
   conversationId,
   storageContextKey,
@@ -359,10 +373,7 @@ export function useMCPServerManager({
               status: 'success',
             });
 
-            const currentValues = mcpValuesRef.current ?? [];
-            if (!currentValues.includes(serverName)) {
-              setMCPValues([...currentValues, serverName]);
-            }
+            selectInitializedMCPServer(mcpValuesRef, setMCPValues, serverName);
 
             await Promise.all([
               queryClient.invalidateQueries([QueryKeys.mcpServers]),
@@ -506,10 +517,7 @@ export function useMCPServerManager({
             status: 'success',
           });
 
-          const currentValues = mcpValues ?? [];
-          if (!currentValues.includes(serverName)) {
-            setMCPValues([...currentValues, serverName]);
-          }
+          selectInitializedMCPServer(mcpValuesRef, setMCPValues, serverName);
 
           cleanupServerState(serverName);
         }
@@ -530,7 +538,6 @@ export function useMCPServerManager({
       queryClient,
       showToast,
       localize,
-      mcpValues,
       cleanupServerState,
       setMCPValues,
     ],

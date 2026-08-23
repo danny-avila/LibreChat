@@ -8,7 +8,12 @@ import {
   getEndpointFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, TConversation } from 'librechat-data-provider';
+import type {
+  TFile,
+  TConversation,
+  EModelEndpoint,
+  EndpointFileConfig,
+} from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { useGetFileConfig } from '~/data-provider';
 import useLocalize from '~/hooks/useLocalize';
@@ -25,6 +30,9 @@ export interface AttachExistingContext {
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   conversation: TConversation | null;
+  endpoint?: string | null;
+  endpointType?: EModelEndpoint | string;
+  endpointFileConfig?: EndpointFileConfig;
 }
 
 /**
@@ -35,7 +43,14 @@ export interface AttachExistingContext {
 export default function useAttachExisting(context: AttachExistingContext): (file: TFile) => void {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { files, setFiles, conversation } = context;
+  const {
+    files,
+    setFiles,
+    conversation,
+    endpoint: resolvedEndpoint,
+    endpointType: resolvedEndpointType,
+    endpointFileConfig: resolvedFileConfig,
+  } = context;
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
@@ -49,13 +64,12 @@ export default function useAttachExisting(context: AttachExistingContext): (file
          an expired path. */
       const fileData = file;
 
-      if (!fileData.source || !conversation?.endpoint) {
+      const endpoint = resolvedEndpoint ?? conversation?.endpoint;
+      const endpointType = resolvedEndpointType ?? conversation?.endpointType;
+      if (!fileData.source || !endpoint) {
         showToast({ message: localize('com_ui_attach_error'), status: 'error' });
         return;
       }
-
-      const endpoint = conversation.endpoint;
-      const endpointType = conversation.endpointType;
 
       const isOpenAIStorage = checkOpenAIStorage(fileData.source);
       const isAssistants = isAssistantsEndpoint(endpoint);
@@ -69,7 +83,8 @@ export default function useAttachExisting(context: AttachExistingContext): (file
         showToast({ message: localize('com_ui_attach_warn_endpoint'), status: 'warning' });
       }
 
-      const endpointFileConfig = getEndpointFileConfig({ fileConfig, endpoint, endpointType });
+      const endpointFileConfig =
+        resolvedFileConfig ?? getEndpointFileConfig({ fileConfig, endpoint, endpointType });
 
       if (endpointFileConfig.disabled === true) {
         showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
@@ -133,6 +148,16 @@ export default function useAttachExisting(context: AttachExistingContext): (file
         metadata: fileData.metadata,
       });
     },
-    [addFile, files, conversation, localize, showToast, fileConfig],
+    [
+      addFile,
+      files,
+      conversation,
+      resolvedEndpoint,
+      resolvedEndpointType,
+      resolvedFileConfig,
+      localize,
+      showToast,
+      fileConfig,
+    ],
   );
 }

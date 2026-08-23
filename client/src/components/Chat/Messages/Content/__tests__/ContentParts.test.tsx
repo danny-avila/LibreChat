@@ -917,8 +917,8 @@ describe('ContentParts: settled content identity across compaction', () => {
   });
 });
 
-/* The pending block belongs to the reply being written: shown under every
-   message, or after the run has ended, it reads as unsent words piling up. */
+/* The pending block belongs to the latest reply. A late failed receipt can
+   arrive after submission state clears, and its recovery controls must remain. */
 describe('ContentParts: pending steers', () => {
   const withGate = (over: Partial<typeof baseProps> & { conversationId?: string }) =>
     render(<ContentParts {...baseProps} {...over} />);
@@ -928,9 +928,13 @@ describe('ContentParts: pending steers', () => {
     expect(screen.getByTestId('pending-steers')).toBeInTheDocument();
   });
 
+  it('keeps late recovery controls on the last message after the run finishes', () => {
+    withGate({ isLast: true, isSubmitting: false, conversationId: 'convo-1' });
+    expect(screen.getByTestId('pending-steers')).toBeInTheDocument();
+  });
+
   it.each([
     ['an earlier message', { isLast: false, isSubmitting: true, conversationId: 'convo-1' }],
-    ['a finished run', { isLast: true, isSubmitting: false, conversationId: 'convo-1' }],
     ['no conversation yet', { isLast: true, isSubmitting: true, conversationId: undefined }],
   ])('shows nothing for %s', (_label, over) => {
     withGate(over);

@@ -61,12 +61,16 @@ const file = (over: Partial<TFile> = {}): TFile =>
 const staged = (over: Partial<ExtendedFile> = {}): ExtendedFile =>
   ({ file_id: 'other', size: MB, progress: 1, ...over }) as ExtendedFile;
 
-const attach = (target: TFile = file()) => {
+const attach = (
+  target: TFile = file(),
+  resolved: Partial<Parameters<typeof useAttachExisting>[0]> = {},
+) => {
   const { result } = renderHook(() =>
     useAttachExisting({
       files: mockStaged,
       setFiles: jest.fn(),
       conversation: mockConversation as never,
+      ...resolved,
     }),
   );
   result.current(target);
@@ -222,5 +226,20 @@ describe('useAttachExisting', () => {
       expect.objectContaining({ message: 'com_ui_attach_warn_endpoint', status: 'warning' }),
     );
     expect(mockAddFile).toHaveBeenCalled();
+  });
+
+  it('uses the resolved agent provider instead of the stale conversation endpoint', () => {
+    attach(file({ source: FileSources.openai }), {
+      endpoint: EModelEndpoint.assistants,
+      endpointFileConfig: {
+        supportedMimeTypes: [/^application\/pdf$/],
+        fileSizeLimit: 5 * MB,
+      },
+    });
+
+    expect(mockAddFile).toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_attach_error_openai' }),
+    );
   });
 });

@@ -14,7 +14,6 @@ const mockAbortListening = jest.fn();
 const mockStopListening = jest.fn();
 const mockResetTranscript = jest.fn();
 let mockFinalTranscript = '';
-let mockEndpoint: 'browser' | 'external' = 'browser';
 
 jest.mock('react-speech-recognition', () => ({
   __esModule: true,
@@ -41,34 +40,30 @@ jest.mock('librechat-data-provider/react-query', () => ({
   useGetCustomConfigSpeechQuery: () => ({ data: { sttExternal: false } }),
 }));
 
-jest.mock('../useGetAudioSettings', () => ({
-  __esModule: true,
-  default: () => ({ speechToTextEndpoint: mockEndpoint }),
-}));
-
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
 const AUTO_SEND_SECONDS = 3;
 
-function setup({ speechToText = true }: { speechToText?: boolean } = {}) {
+function setup() {
   const setText = jest.fn();
   const onTranscriptionComplete = jest.fn();
+  const onTranscriptionSettled = jest.fn();
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <RecoilRoot
       initializeState={({ set }) => {
         set(store.autoSendText, AUTO_SEND_SECONDS);
-        set(store.speechToText, speechToText);
       }}
     >
       {children}
     </RecoilRoot>
   );
-  const rendered = renderHook(() => useSpeechToTextBrowser(setText, onTranscriptionComplete), {
-    wrapper,
-  });
-  return { ...rendered, setText, onTranscriptionComplete };
+  const rendered = renderHook(
+    () => useSpeechToTextBrowser(setText, onTranscriptionComplete, onTranscriptionSettled),
+    { wrapper },
+  );
+  return { ...rendered, setText, onTranscriptionComplete, onTranscriptionSettled };
 }
 
 describe('useSpeechToTextBrowser', () => {
@@ -76,7 +71,6 @@ describe('useSpeechToTextBrowser', () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockFinalTranscript = '';
-    mockEndpoint = 'browser';
   });
 
   afterEach(() => {
@@ -132,34 +126,25 @@ describe('useSpeechToTextBrowser', () => {
     speech.abortListening = abort;
   });
 
-  /* The shortcut is the one dictation control with no button behind it, so
-     nothing on screen would show a take it started by mistake: it belongs to
-     the browser engine only, and only while Speech to Text is on. */
-  describe('the Shift+Alt+L shortcut', () => {
-    const press = () =>
-      act(() => {
-        window.dispatchEvent(
-          new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
-        );
-      });
+  it('settles only after the recognizer finishes stopping', async () => {
+    let finishStop: () => void = () => undefined;
+    mockStopListening.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishStop = resolve;
+      }),
+    );
+    const { result, onTranscriptionSettled } = setup();
 
-    it('toggles the take when the browser engine is the selected one', () => {
-      setup();
-      press();
-      expect(mockStopListening).toHaveBeenCalled();
+    let stopping: Promise<void> | undefined;
+    act(() => {
+      stopping = result.current.stopRecording();
     });
+    expect(onTranscriptionSettled).not.toHaveBeenCalled();
 
-    it('leaves the take to the external engine when that is what is selected', () => {
-      mockEndpoint = 'external';
-      setup();
-      press();
-      expect(mockStopListening).not.toHaveBeenCalled();
+    await act(async () => {
+      finishStop();
+      await stopping;
     });
-
-    it('does nothing while Speech to Text is off', () => {
-      setup({ speechToText: false });
-      press();
-      expect(mockStopListening).not.toHaveBeenCalled();
-    });
+    expect(onTranscriptionSettled).toHaveBeenCalledTimes(1);
   });
 });

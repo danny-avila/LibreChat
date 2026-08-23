@@ -64,6 +64,11 @@ describe('useComposerItems', () => {
     expect(result.current.quotes).toEqual(['same words']);
   });
 
+  it('keeps repeated quote ids distinct from literal suffix text', () => {
+    const { result } = withStaged(['same words', 'same words', 'same words#1']);
+    expect(new Set(result.current.items.map((item) => item.id)).size).toBe(3);
+  });
+
   /* An index inside the id rewrote every id after a removal, which remounts
      those chips and drops focus off whichever one was being used. */
   it('leaves the ids of the surviving chips alone', () => {

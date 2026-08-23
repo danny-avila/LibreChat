@@ -609,6 +609,20 @@ export function useShortcutActions(): ShortcutAction[] {
     return copy(text.trim(), { format: 'text/plain' });
   }, []);
 
+  const getFocusedChatPane = useCallback((): HTMLElement | null => {
+    const activeElement = document.activeElement as HTMLElement | null;
+    const directPane = activeElement?.closest<HTMLElement>('[data-chat-pane]');
+    if (directPane != null) {
+      return directPane;
+    }
+    const portaledPane = activeElement?.closest<HTMLElement>('[data-chat-pane-portal]');
+    const paneIndex = portaledPane?.dataset.chatPanePortal;
+    if (paneIndex != null && /^\d+$/.test(paneIndex)) {
+      return document.querySelector<HTMLElement>(`[data-chat-pane="${paneIndex}"]`);
+    }
+    return activeElement?.closest<HTMLElement>('form') ?? null;
+  }, []);
+
   const handleStopGenerating = useCallback(() => {
     /* Both split panes can be generating at once, each advertising this
        shortcut under its own composer; stop the run the user is focused in
@@ -616,7 +630,7 @@ export function useShortcutActions(): ShortcutAction[] {
        mounted (hidden) whenever the during-run send button takes the visible
        slot, so typing a steer never costs the focused form its match. The
        document-wide fallback is for focus that sits outside any composer. */
-    const focusedPane = document.activeElement?.closest('form');
+    const focusedPane = getFocusedChatPane();
     const scoped = focusedPane?.querySelector<HTMLElement>(
       '[data-testid="stop-generation-button"]',
     );
@@ -624,7 +638,7 @@ export function useShortcutActions(): ShortcutAction[] {
       return clickTarget(scoped);
     }
     return clickElement('[data-testid="stop-generation-button"]');
-  }, []);
+  }, [getFocusedChatPane]);
 
   const handleRegenerateResponse = useCallback(
     () => clickElement('[data-testid="regenerate-generation-button"]'),
@@ -636,7 +650,7 @@ export function useShortcutActions(): ShortcutAction[] {
    *  button's semantics. A waiting steer bubble beats a queued follow-up (it
    *  is closer to the run); newest-last matches how both stacks append. */
   const handleEscalateSteer = useCallback(() => {
-    const focusedPane = document.activeElement?.closest<HTMLElement>('[data-chat-pane]');
+    const focusedPane = getFocusedChatPane();
     const scope: ParentNode = focusedPane ?? document;
     const active = scope.querySelector<HTMLButtonElement>('[data-escalate-steer-active="true"]');
     if (clickTarget(active)) {
@@ -653,7 +667,7 @@ export function useShortcutActions(): ShortcutAction[] {
       return null;
     };
     return clickTarget(pick('bubble') ?? pick('queued'));
-  }, []);
+  }, [getFocusedChatPane]);
 
   const handleEditLastMessage = useCallback(() => {
     const userTurns = document.querySelectorAll('.user-turn');
@@ -733,7 +747,7 @@ export function useShortcutActions(): ShortcutAction[] {
        one the user is focused in rather than always the first in the document.
        The document-wide lookups behind it cover focus sitting outside any
        composer, and `#attach-file` is the single-instance legacy control. */
-    const focusedPane = document.activeElement?.closest('form');
+    const focusedPane = getFocusedChatPane();
     const scoped = focusedPane?.querySelector<HTMLElement>(
       '[data-testid="composer-palette-button"]',
     );
@@ -751,7 +765,7 @@ export function useShortcutActions(): ShortcutAction[] {
         '[data-testid="composer-palette-button"][data-upload-shortcut="true"]',
       ) ?? document.querySelector<HTMLButtonElement>('#attach-file');
     return clickTarget(btn);
-  }, []);
+  }, [getFocusedChatPane]);
 
   const handleArchiveConversation = useCallback(() => {
     const convoId = conversation?.conversationId;

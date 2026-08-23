@@ -313,7 +313,7 @@ const ChatForm = memo(function ChatForm({
     // The composer IS the free-form answer box while a question pause is live.
     placeholder: composerReserved ? answerPlaceholder : placeholder,
     // Enter stays live during a run when it can steer/queue instead of send.
-    allowSubmitWhileGenerating: steering.duringRunActive,
+    allowSubmitWhileGenerating: steering.duringRunActive || answerMode.composerAnswers,
     onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
     answerModeActive: answerMode.composerAnswers,
   });
@@ -451,9 +451,7 @@ const ChatForm = memo(function ChatForm({
      control, Stop, and nothing, so an empty one falls through to send. */
   const actionSlot = useMemo(
     () =>
-      isSubmitting &&
-      !answerMode.composerAnswers &&
-      duringRunSlot != null
+      isSubmitting && !answerMode.composerAnswers && duringRunSlot != null
         ? duringRunSlot
         : endpoint && (
             <SendButton
@@ -700,9 +698,7 @@ const ChatForm = memo(function ChatForm({
                   showTools={showTools}
                   isSubmitting={isSubmitting}
                   showSpeech={SpeechToText}
-                  speechDisabled={
-                    disableInputs || isNotAppendable || answerMode.composerLocked
-                  }
+                  speechDisabled={disableInputs || isNotAppendable || answerMode.composerLocked}
                   dictation={dictation}
                   actionSlot={actionSlot}
                 />

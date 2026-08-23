@@ -2,8 +2,8 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
-import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { Agents, TMessage } from 'librechat-data-provider';
 import type { PendingSteer } from '~/store/families';
 import { applyPendingAction } from '~/utils/approval';
@@ -13,6 +13,13 @@ import store from '~/store';
 const mockRetry = jest.fn();
 const mockSendAsNew = jest.fn();
 const mockEscalate = jest.fn();
+const mockMoveToQueue = jest.fn();
+const mockShowToast = jest.fn();
+
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -26,6 +33,10 @@ jest.mock('~/hooks/Chat/useSteerEscalate', () => ({
 jest.mock('~/hooks/Chat/useSteerRecovery', () => ({
   __esModule: true,
   default: () => ({ retry: mockRetry, sendAsNew: mockSendAsNew }),
+}));
+
+jest.mock('~/hooks/Chat/useSteerCancel', () => ({
+  useSteerMoveToQueue: () => mockMoveToQueue,
 }));
 
 jest.mock('../SteerPart', () => ({
@@ -70,6 +81,7 @@ function renderPending(steers: PendingSteer[], messages?: TMessage[]) {
 describe('PendingSteers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMoveToQueue.mockResolvedValue('reclaimed');
   });
 
   it('renders nothing with no pending steers', () => {
@@ -102,6 +114,43 @@ describe('PendingSteers', () => {
     expect(screen.getByText('com_ui_steer_delivery_uncertain')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_retry')).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_send_as_new')).not.toBeInTheDocument();
+  });
+
+  it('offers only same-id retry for an uncertain protocol-v2 delivery', () => {
+    renderPending([
+      pending({
+        status: 'failed',
+        deliveryUncertain: true,
+        generationProtocolVersion: 2,
+      }),
+    ]);
+
+    expect(screen.getByText('com_ui_steer_delivery_uncertain')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_retry')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_send_as_new')).not.toBeInTheDocument();
+  });
+
+  it('reclaims an acknowledged steer before moving it to the queue', async () => {
+    const steer = pending({ status: 'pending', steerId: 's-ack' });
+    renderPending([steer]);
+
+    fireEvent.click(screen.getByText('com_ui_convert_to_queue'));
+
+    await waitFor(() => expect(mockMoveToQueue).toHaveBeenCalledWith(steer));
+  });
+
+  it('reports when a steer reached the agent before it could be reclaimed', async () => {
+    mockMoveToQueue.mockResolvedValue('applied');
+    renderPending([pending({ status: 'pending' })]);
+
+    fireEvent.click(screen.getByText('com_ui_convert_to_queue'));
+
+    await waitFor(() =>
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_ui_steer_already_applied',
+        status: 'info',
+      }),
+    );
   });
 
   it('retries the failed steer by id', () => {

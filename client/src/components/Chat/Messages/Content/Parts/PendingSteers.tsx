@@ -1,7 +1,9 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';
+import { useSteerMoveToQueue } from '~/hooks/Chat/useSteerCancel';
 import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
 import useSteerRecovery from '~/hooks/Chat/useSteerRecovery';
 import { hasLiveRunPause } from '~/hooks/Chat/useSteering';
@@ -28,9 +30,12 @@ interface PendingSteersProps {
 
 function PendingSteers({ conversationId }: PendingSteersProps) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const { retry, sendAsNew } = useSteerRecovery(conversationId);
   const escalate = useSteerEscalate(conversationId);
+  const moveToQueue = useSteerMoveToQueue(conversationId);
+  const [movingId, setMovingId] = useState<string | null>(null);
   const escalating = useAtomValue(escalatingSteerFamily(conversationId));
   /* Reads the cache the composer already populates, so the escalation control
      is gated on the same pause the composer sees rather than round-tripping to
@@ -55,10 +60,28 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
     return null;
   }
 
+  const queueSteer = async (steer: (typeof steers)[number]) => {
+    if (movingId != null) {
+      return;
+    }
+    setMovingId(steer.steerId);
+    try {
+      const outcome = await moveToQueue(steer);
+      if (outcome === 'applied') {
+        showToast({ message: localize('com_ui_steer_already_applied'), status: 'info' });
+      } else if (outcome === 'failed') {
+        showToast({ message: localize('com_ui_steer_cancel_failed'), status: 'error' });
+      }
+    } finally {
+      setMovingId(null);
+    }
+  };
+
   return (
     <div role="list" aria-label={localize('com_ui_steer_in_flight')} data-testid="pending-steers">
       {steers.map((steer) => {
-        const deliveryUncertain = isLegacyDeliveryUncertain(steer);
+        const deliveryUncertain = steer.deliveryUncertain === true;
+        const retrySafe = !isLegacyDeliveryUncertain(steer);
         return (
           <div
             key={steer.steerId}
@@ -80,23 +103,23 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
                       : 'com_ui_steer_failed_inline',
                   )}
                 </span>
+                {retrySafe && (
+                  <button
+                    type="button"
+                    onClick={() => retry(steer.steerId)}
+                    className={ACTION_CLASS}
+                  >
+                    {localize('com_ui_retry')}
+                  </button>
+                )}
                 {!deliveryUncertain && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => retry(steer.steerId)}
-                      className={ACTION_CLASS}
-                    >
-                      {localize('com_ui_retry')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => sendAsNew(steer.steerId)}
-                      className={ACTION_CLASS}
-                    >
-                      {localize('com_ui_send_as_new')}
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => sendAsNew(steer.steerId)}
+                    className={ACTION_CLASS}
+                  >
+                    {localize('com_ui_send_as_new')}
+                  </button>
                 )}
               </div>
             ) : (
@@ -120,6 +143,16 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
                       })
                     }
                   />
+                )}
+                {steer.status === 'pending' && (
+                  <button
+                    type="button"
+                    disabled={movingId != null}
+                    onClick={() => void queueSteer(steer)}
+                    className={ACTION_CLASS}
+                  >
+                    {localize('com_ui_convert_to_queue')}
+                  </button>
                 )}
               </div>
             )}

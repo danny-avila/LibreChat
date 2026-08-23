@@ -158,6 +158,16 @@ function appendEscalationButton(
   return { button, onClick };
 }
 
+function appendPortalFocus(paneIndex: number, tag: 'button' | 'input' = 'button') {
+  const portal = document.createElement('div');
+  portal.dataset.chatPanePortal = String(paneIndex);
+  const focusTarget = document.createElement(tag);
+  portal.appendChild(focusTarget);
+  document.body.appendChild(portal);
+  focusTarget.focus();
+  return focusTarget;
+}
+
 describe('binding resolution helpers', () => {
   it('falls back to the default binding when there is no override', () => {
     const binding = effectiveBinding('newChat');
@@ -397,6 +407,24 @@ describe('global shortcut dispatch', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('keeps escalation scoped while focus is inside a portaled palette', () => {
+    renderHarness();
+    const firstPane = document.createElement('section');
+    const secondPane = document.createElement('section');
+    firstPane.dataset.chatPane = '0';
+    secondPane.dataset.chatPane = '1';
+    const first = appendEscalationButton('bubble', true, firstPane);
+    const second = appendEscalationButton('bubble', false, secondPane);
+    document.body.append(firstPane, secondPane);
+    const focusTarget = appendPortalFocus(1, 'input');
+
+    const event = dispatchKey({ key: '.', ctrlKey: true, shiftKey: true }, focusTarget);
+
+    expect(second.onClick).toHaveBeenCalledTimes(1);
+    expect(first.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('dispatches the escalation shortcut by physical key on a non-US layout', () => {
     renderHarness();
     const escalation = appendEscalationButton('bubble');
@@ -529,6 +557,21 @@ describe('stop generating shortcut', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('stops the owning pane while focus is inside its portaled palette', () => {
+    renderHarness();
+    const first = appendComposerForm();
+    const second = appendComposerForm();
+    first.form.dataset.chatPane = '0';
+    second.form.dataset.chatPane = '1';
+    const focusTarget = appendPortalFocus(1, 'input');
+
+    const event = dispatchKey({ key: 'x', ctrlKey: true, shiftKey: true }, focusTarget);
+
+    expect(second.onClick).toHaveBeenCalledTimes(1);
+    expect(first.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('does not prevent the event when nothing is generating', () => {
     renderHarness();
 
@@ -556,15 +599,30 @@ describe('upload file shortcut', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('is filtered out while the caret is in a composer', () => {
+  it('opens the owning palette while focus is inside its portal', () => {
+    renderHarness();
+    const first = appendPaletteForm();
+    const second = appendPaletteForm();
+    first.form.dataset.chatPane = '0';
+    second.form.dataset.chatPane = '1';
+    const focusTarget = appendPortalFocus(1);
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, focusTarget);
+
+    expect(second.onClick).toHaveBeenCalledTimes(1);
+    expect(first.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('opens the palette while the caret is in a composer', () => {
     renderHarness();
     const only = appendPaletteForm();
     only.textarea.focus();
 
     const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, only.textarea);
 
-    expect(only.onClick).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(false);
+    expect(only.onClick).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('falls back to the document when focus sits outside any composer', () => {

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useSpeechToTextMutation } from '~/data-provider';
-import useGetAudioSettings from './useGetAudioSettings';
 import store from '~/store';
 
 export const getBestSupportedMimeType = (
@@ -38,10 +37,9 @@ export const getBestSupportedMimeType = (
 const useSpeechToTextExternal = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  onTranscriptionSettled: () => void,
 ) => {
   const { showToast } = useToastContext();
-  const { speechToTextEndpoint } = useGetAudioSettings();
-  const isExternalSTTEnabled = speechToTextEndpoint === 'external';
   const audioStream = useRef<MediaStream | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -60,7 +58,6 @@ const useSpeechToTextExternal = (
    *  from a listener registered at start, so state read there is a render
    *  behind and could pack the blob as a format the audio is not in. */
   const audioMimeTypeRef = useRef<string>('');
-  const [permission, setPermission] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isRequestBeingMade, setIsRequestBeingMade] = useState(false);
 
@@ -82,6 +79,7 @@ const useSpeechToTextExternal = (
       const extractedText = data.text;
       setText(extractedText);
       setIsRequestBeingMade(false);
+      onTranscriptionSettled();
 
       if (autoSendText > -1 && speechToText && extractedText.length > 0) {
         if (autoSendTimerRef.current) {
@@ -99,6 +97,7 @@ const useSpeechToTextExternal = (
         status: 'error',
       });
       setIsRequestBeingMade(false);
+      onTranscriptionSettled();
     },
   });
 
@@ -130,10 +129,9 @@ const useSpeechToTextExternal = (
         streamData?.getTracks().forEach((track) => track.stop());
         return;
       }
-      setPermission(true);
       audioStream.current = streamData ?? null;
     } catch {
-      setPermission(false);
+      audioStream.current = null;
     }
   };
 
@@ -161,6 +159,7 @@ const useSpeechToTextExternal = (
       processAudio(formData);
     } else {
       showToast({ message: 'The audio was too short', status: 'warning' });
+      onTranscriptionSettled();
     }
   };
 
@@ -316,42 +315,6 @@ const useSpeechToTextExternal = (
 
     setIsListening(false);
   };
-
-  const handleKeyDown = async (e: KeyboardEvent) => {
-    /* Gated on the Speech to Text setting, not just the selected engine: with
-       the setting off every dictation control is hidden, and this shortcut was
-       the one path left that could start an invisible recording. */
-    if (e.shiftKey && e.altKey && e.code === 'KeyL' && isExternalSTTEnabled && speechToText) {
-      if (!window.MediaRecorder) {
-        showToast({ message: 'MediaRecorder is not supported in this browser', status: 'error' });
-        return;
-      }
-
-      if (permission === false) {
-        await getMicrophonePermission();
-      }
-
-      if (isListening) {
-        stopRecording();
-      } else {
-        startRecording();
-      }
-
-      e.preventDefault();
-    }
-  };
-
-  /* The engine has to be a dependency, not just a value the handler reads:
-     switching engines while mounted otherwise leaves a listener registered
-     under the old one, which is the same take being armed twice. */
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isExternalSTTEnabled, isListening, speechToText]);
 
   /* Navigating away mid-take ends neither path above: the recorder keeps
      running, the microphone tracks stay live, the silence monitor keeps

@@ -118,25 +118,35 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
      model switch would point at a different level or none at all. Anything that
      no longer resolves falls back to the first level. */
   const conversationKey = conversation?.conversationId ?? '';
-  const [remembered, setRemembered] = useState<{ key: string; value: string } | null>(null);
+  const settingKey = `${setting.key}\u0000${conversation?.endpoint ?? ''}\u0000${conversation?.model ?? ''}\u0000${conversation?.spec ?? ''}`;
+  const [remembered, setRemembered] = useState<{
+    conversationKey: string;
+    settingKey: string;
+    value: string;
+  } | null>(null);
   if (
     activeIndex >= 0 &&
     current != null &&
-    (remembered?.value !== current || remembered.key !== conversationKey)
+    (remembered?.value !== current ||
+      remembered.conversationKey !== conversationKey ||
+      remembered.settingKey !== settingKey)
   ) {
-    setRemembered({ key: conversationKey, value: current });
+    setRemembered({ conversationKey, settingKey, value: current });
   } else if (
     remembered != null &&
-    remembered.key !== conversationKey &&
-    (remembered.key === '' || remembered.key === Constants.NEW_CONVO)
+    remembered.settingKey === settingKey &&
+    remembered.conversationKey !== conversationKey &&
+    (remembered.conversationKey === '' || remembered.conversationKey === Constants.NEW_CONVO)
   ) {
     /* A new chat carries a placeholder id until its first message lands. The
        level chosen before sending is still the same user in the same thread, so
        it follows the conversation into its real id rather than being dropped. */
-    setRemembered({ key: conversationKey, value: remembered.value });
+    setRemembered({ conversationKey, settingKey, value: remembered.value });
   }
   const rememberedIndex =
-    remembered != null && remembered.key === conversationKey
+    remembered != null &&
+    remembered.conversationKey === conversationKey &&
+    remembered.settingKey === settingKey
       ? levels.indexOf(remembered.value)
       : -1;
   const restoreIndex = rememberedIndex >= 0 ? rememberedIndex : 0;

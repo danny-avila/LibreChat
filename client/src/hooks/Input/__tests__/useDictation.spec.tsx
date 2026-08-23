@@ -15,6 +15,7 @@ import store from '~/store';
 let mockSpeechEndpoint: 'browser' | 'external';
 let mockSetTextCallback: (text: string) => void;
 let mockOnTranscriptionComplete: (text: string) => void;
+let mockOnTranscriptionSettled: () => void;
 const mockStart = jest.fn();
 const mockStop = jest.fn();
 const mockAbort = jest.fn();
@@ -23,9 +24,14 @@ let mockIsLoading: boolean;
 
 jest.mock('../useSpeechToText', () => ({
   __esModule: true,
-  default: (setText: (text: string) => void, complete: (text: string) => void) => {
+  default: (
+    setText: (text: string) => void,
+    complete: (text: string) => void,
+    settled: () => void,
+  ) => {
     mockSetTextCallback = setText;
     mockOnTranscriptionComplete = complete;
+    mockOnTranscriptionSettled = settled;
     return {
       isListening: mockIsListening,
       isLoading: mockIsLoading,
@@ -79,7 +85,12 @@ function setup({
     getValues: jest.fn(() => text),
   };
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <RecoilRoot initializeState={({ set }) => set(store.autoSendText, autoSendText)}>
+    <RecoilRoot
+      initializeState={({ set }) => {
+        set(store.autoSendText, autoSendText);
+        set(store.speechToText, true);
+      }}
+    >
       {children}
     </RecoilRoot>
   );
@@ -106,16 +117,14 @@ function setup({
   };
 }
 
-/** Ends the take the way an engine does: listening clears, then the settle
- *  backstop expires. */
+/** Ends the take the way an engine does: listening clears, then the engine
+ * reports that its final transcript has landed. */
 const settle = async (rerender: () => void) => {
   mockIsListening = false;
   act(() => {
     rerender();
   });
-  await act(async () => {
-    jest.advanceTimersByTime(600);
-  });
+  act(() => mockOnTranscriptionSettled());
 };
 
 describe('useDictation', () => {
@@ -143,6 +152,46 @@ describe('useDictation', () => {
 
     expect(ask).toHaveBeenCalledWith({ text: 'take me somewhere' });
     expect(currentText()).toBe('');
+  });
+
+  it('waits for the final browser transcript before sending', async () => {
+    const { result, rerender } = setup();
+    act(() => result.current.start());
+    mockIsListening = true;
+    act(() => rerender());
+
+    act(() => mockSetTextCallback('interim words'));
+    act(() => result.current.stopAndSend());
+    mockIsListening = false;
+    act(() => rerender());
+
+    expect(ask).not.toHaveBeenCalled();
+    act(() => mockSetTextCallback('final words'));
+    act(() => mockOnTranscriptionSettled());
+
+    expect(ask).toHaveBeenCalledWith({ text: 'final words' });
+  });
+
+  it('owns the Shift+Alt+L shortcut through the dictation lifecycle', () => {
+    const { result, rerender } = setup();
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
+      );
+    });
+    expect(mockStart).toHaveBeenCalledTimes(1);
+
+    mockIsListening = true;
+    act(() => rerender());
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
+      );
+    });
+
+    expect(mockStop).toHaveBeenCalledTimes(1);
+    expect(result.current.transcribing).toBe(true);
   });
 
   it('leaves a plain stop in the composer', async () => {

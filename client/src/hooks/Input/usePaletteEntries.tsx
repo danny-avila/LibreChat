@@ -6,6 +6,7 @@ import {
   Globe,
   Layers,
   Settings,
+  X,
   FolderSearch,
   WandSparkles,
   SquareChevronRight,
@@ -61,7 +62,11 @@ export interface PaletteEntry {
   active: boolean;
   /** Keeps an inactive built-in available as a prompt-bar quick control. */
   pinned: boolean;
+  /** Temporary catalog placeholders do not have a durable favorite identity. */
+  favoritable?: boolean;
   onSelect: () => void;
+  /** Removes a persistent pin without changing the tool's active state. */
+  onUnpin?: () => void;
   /** Refinements of this tool, rendered as inline pills on the row while it is
    *  on. Not separately favouritable: they only exist within the parent. */
   modes?: PaletteMode[];
@@ -114,6 +119,7 @@ export default function usePaletteEntries({
   conversationId,
   agentId,
   enabled = true,
+  toolsEnabled = enabled,
   catalogEnabled = true,
 }: {
   conversationId: string;
@@ -121,6 +127,8 @@ export default function usePaletteEntries({
   /** Endpoints without a tool row discard these, so there is nothing to fetch
    *  or build for them. */
   enabled?: boolean;
+  /** Whether ephemeral built-ins and MCP servers belong to this endpoint. */
+  toolsEnabled?: boolean;
   /** Whether to walk the full skills catalog. The bar keeps this off until the
    *  palette has actually been opened: following every cursor on mount pulled
    *  a deployment's whole catalog into every composer that was merely visited. */
@@ -231,6 +239,7 @@ export default function usePaletteEntries({
       active: boolean,
       pinned: boolean,
       onSelect: () => void,
+      onUnpin: () => void,
       modes?: PaletteMode[],
     ) => {
       entries.push({
@@ -243,11 +252,12 @@ export default function usePaletteEntries({
         active,
         pinned,
         onSelect,
+        onUnpin,
         modes,
       });
     };
 
-    if (canUseWebSearch && webSearchEnabled) {
+    if (toolsEnabled && canUseWebSearch && webSearchEnabled) {
       /* Same rule the old tools menu used for its gear: only credentials the
          user can actually provide are editable. Toggling opens the key dialog
          on its own while unauthenticated, so this pill is what keeps existing
@@ -263,6 +273,7 @@ export default function usePaletteEntries({
         webSearch.toggleState === true,
         webSearch.isPinned === true,
         () => webSearch.debouncedChange({ value: !webSearch.toggleState }),
+        () => webSearch.setIsPinned(false),
         searchConfigurable && searchApiKeyForm != null
           ? [
               {
@@ -277,7 +288,7 @@ export default function usePaletteEntries({
       );
     }
 
-    if (canRunCode && codeEnabled) {
+    if (toolsEnabled && canRunCode && codeEnabled) {
       pushTool(
         'execute_code',
         localize('com_ui_run_code'),
@@ -285,10 +296,11 @@ export default function usePaletteEntries({
         codeInterpreter.toggleState === true,
         codeInterpreter.isPinned === true,
         () => codeInterpreter.debouncedChange({ value: !codeInterpreter.toggleState }),
+        () => codeInterpreter.setIsPinned(false),
       );
     }
 
-    if (canUseFileSearch && fileSearchEnabled) {
+    if (toolsEnabled && canUseFileSearch && fileSearchEnabled) {
       pushTool(
         'file_search',
         localize('com_assistants_file_search'),
@@ -296,10 +308,11 @@ export default function usePaletteEntries({
         fileSearch.toggleState === true,
         fileSearch.isPinned === true,
         () => fileSearch.debouncedChange({ value: !fileSearch.toggleState }),
+        () => fileSearch.setIsPinned(false),
       );
     }
 
-    if (skillsListable) {
+    if (toolsEnabled && skillsListable) {
       pushTool(
         'skills',
         localize('com_ui_skills'),
@@ -307,10 +320,11 @@ export default function usePaletteEntries({
         skills.toggleState === true,
         skills.isPinned === true,
         () => skills.debouncedChange({ value: !skills.toggleState }),
+        () => skills.setIsPinned(false),
       );
     }
 
-    if (canUseMemory && memoryEnabled) {
+    if (toolsEnabled && canUseMemory && memoryEnabled) {
       pushTool(
         'memory',
         localize('com_ui_memory'),
@@ -318,10 +332,11 @@ export default function usePaletteEntries({
         memory.toggleState === true,
         memory.isPinned === true,
         () => memory.debouncedChange({ value: !memory.toggleState }),
+        () => memory.setIsPinned(false),
       );
     }
 
-    if (artifactsEnabled) {
+    if (toolsEnabled && artifactsEnabled) {
       const stored = artifacts.toggleState;
       const mode = stored == null || stored === false ? '' : String(stored);
       const artifactsOn = mode !== '';
@@ -347,6 +362,7 @@ export default function usePaletteEntries({
         artifactsOn,
         artifacts.isPinned === true,
         () => artifacts.debouncedChange({ value: artifactsOn ? '' : ArtifactModes.DEFAULT }),
+        () => artifacts.setIsPinned(false),
         artifactsOn
           ? [
               {
@@ -404,6 +420,7 @@ export default function usePaletteEntries({
           section: 'skill',
           active: true,
           pinned: false,
+          favoritable: false,
           onSelect: () => toggleSkill(name),
         });
       }
@@ -417,10 +434,11 @@ export default function usePaletteEntries({
       initializeServer,
       getServerStatusIconProps,
     } = mcpServerManager ?? {};
-    if (canUseMcp && selectableServers) {
+    if (toolsEnabled && canUseMcp && selectableServers) {
       const selected = new Set(mcpValues ?? []);
       for (const server of selectableServers) {
         const title = server.config?.title || server.serverName;
+        const statusProps = getServerStatusIconProps?.(server.serverName);
         /* A row for a server that is not connected routes through the manager
            instead of blindly selecting: credentials first when the server wants
            custom variables, otherwise a reinitialize, which runs the OAuth
@@ -437,7 +455,6 @@ export default function usePaletteEntries({
              yet, which is not the same as being connected: treat it like a
              disconnected server so it initializes before it can be selected. */
           if (connectionStatus?.[server.serverName]?.connectionState !== 'connected') {
-            const statusProps = getServerStatusIconProps?.(server.serverName);
             if (statusProps?.isInitializing) {
               return;
             }
@@ -477,6 +494,22 @@ export default function usePaletteEntries({
           active: selected.has(server.serverName),
           pinned: false,
           onSelect: selectServer,
+          modes:
+            statusProps?.isInitializing === true && statusProps.canCancel === true
+              ? [
+                  {
+                    id: 'cancel',
+                    label: localize('com_ui_cancel'),
+                    active: false,
+                    icon: <X className="h-4 w-4" aria-hidden="true" />,
+                    onSelect: () =>
+                      statusProps.onCancel({
+                        stopPropagation: () => {},
+                        preventDefault: () => {},
+                      } as React.MouseEvent),
+                  },
+                ]
+              : undefined,
         });
       }
     }
@@ -485,6 +518,7 @@ export default function usePaletteEntries({
   }, [
     context,
     enabled,
+    toolsEnabled,
     localize,
     canUseMcp,
     canRunCode,

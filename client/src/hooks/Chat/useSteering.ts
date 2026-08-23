@@ -103,7 +103,7 @@ export function getSteerErrorCode(error: unknown): SteerErrorCode | undefined {
   return response?.data?.code;
 }
 
-function isDefiniteSteerRejection(error: unknown): boolean {
+export function isDefiniteSteerRejection(error: unknown): boolean {
   const status = (error as { response?: { status?: number } } | undefined)?.response?.status;
   return (
     status != null &&

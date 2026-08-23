@@ -5,11 +5,12 @@ import useGetAudioSettings from './useGetAudioSettings';
 const useSpeechToText = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  onTranscriptionSettled: () => void,
 ): {
   isLoading?: boolean;
   isListening?: boolean;
-  stopRecording: () => void | (() => Promise<void>);
-  startRecording: () => void | (() => Promise<void>);
+  stopRecording: () => void | Promise<void>;
+  startRecording: () => void | Promise<void>;
   /** Ends capture without producing a transcript. */
   abortRecording: () => void;
 } => {
@@ -22,7 +23,7 @@ const useSpeechToText = (
     startRecording: startSpeechRecordingBrowser,
     stopRecording: stopSpeechRecordingBrowser,
     abortRecording: abortSpeechRecordingBrowser,
-  } = useSpeechToTextBrowser(setText, onTranscriptionComplete);
+  } = useSpeechToTextBrowser(setText, onTranscriptionComplete, onTranscriptionSettled);
 
   const {
     isListening: speechIsListeningExternal,
@@ -30,7 +31,7 @@ const useSpeechToText = (
     externalStartRecording: startSpeechRecordingExternal,
     externalStopRecording: stopSpeechRecordingExternal,
     externalAbortRecording: abortSpeechRecordingExternal,
-  } = useSpeechToTextExternal(setText, onTranscriptionComplete);
+  } = useSpeechToTextExternal(setText, onTranscriptionComplete, onTranscriptionSettled);
 
   const isListening = externalSpeechToText ? speechIsListeningExternal : speechIsListeningBrowser;
   const isLoading = externalSpeechToText ? speechIsLoadingExternal : speechIsLoadingBrowser;

@@ -168,6 +168,15 @@ describe('Queue', () => {
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
   });
 
+  it('disables send now for a receipt-bound recovery during a live run', () => {
+    renderQueue([queued({ recoverySteerId: 'srv-1' })]);
+    const sendButton = screen.getByText('com_ui_send_now');
+
+    expect(sendButton).toBeDisabled();
+    fireEvent.click(sendButton);
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
+  });
+
   it('moves a message down the queue with the arrow keys', () => {
     renderQueue([queued({ id: 'q1' }), queued({ id: 'q2' })]);
     const grips = screen.getAllByTestId('queued-message-grip');

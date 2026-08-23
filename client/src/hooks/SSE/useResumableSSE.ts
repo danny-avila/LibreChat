@@ -56,7 +56,6 @@ import {
   collectAppliedSteerIds,
   collectDroppedSteerQuotes,
   mergeRestagedQuotes,
-  isLegacyDeliveryUncertain,
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   countTaggedApprovalParts,
@@ -739,8 +738,8 @@ export const ABORT_SWEEP_STATUSES: readonly PendingSteer['status'][] = ['failed'
  * whose `onSuccess`/`onError` will settle them, and sweeping them here too
  * would race that callback, since a late ACK's re-add in
  * `resolveAcknowledgedSteer` could then double-queue the same words.
- * Protocol-v1 uncertain failures are also excluded because there is no
- * correlation id that can prove whether the server committed their POST.
+ * Uncertain failures are also excluded. Protocol v2 makes an explicit retry
+ * idempotent, but a local queue conversion would create a second submission.
  */
 export function selectLocalSteersForQueue(
   chips: PendingSteer[],
@@ -754,7 +753,7 @@ export function selectLocalSteersForQueue(
     .filter(
       (steer) =>
         allowed.has(steer.status) &&
-        !isLegacyDeliveryUncertain(steer) &&
+        steer.deliveryUncertain !== true &&
         !excluded.has(steer.steerId) &&
         (steer.clientSteerId == null || !excluded.has(steer.clientSteerId)),
     )
@@ -1173,15 +1172,38 @@ export default function useResumableSSE(
         },
       ) => {
         const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
-        const settled = selectLocalSteersForQueue(
+        const generationProtocolVersion =
+          options?.generationProtocolVersion ??
+          snapshot
+            .getLoadable(store.activeGenerationProtocolVersionByConvoId(conversationId))
+            .getValue();
+        const statuses =
+          options?.statuses ??
+          (generationProtocolVersion === GENERATION_PROTOCOL_VERSION
+            ? ABORT_SWEEP_STATUSES
+            : undefined);
+        const activeStatuses = statuses ?? RUN_ENDED_STATUSES;
+        const excluded = new Set(options?.excludeSteerIds ?? []);
+        const accepted = selectLocalSteersForQueue(
           chips,
-          options?.statuses,
-          new Set(options?.excludeSteerIds ?? []),
+          activeStatuses.filter((status) => status === 'pending'),
+          excluded,
         );
-        if (settled.length > 0) {
-          convertSteersToQueued(conversationId, settled, {
+        if (accepted.length > 0) {
+          convertSteersToQueued(conversationId, accepted, {
             claimParked: options?.claimParked,
-            generationProtocolVersion: options?.generationProtocolVersion,
+            generationProtocolVersion,
+          });
+        }
+        const failed = selectLocalSteersForQueue(
+          chips,
+          activeStatuses.filter((status) => status === 'failed'),
+          excluded,
+        );
+        if (failed.length > 0) {
+          convertSteersToQueued(conversationId, failed, {
+            generationProtocolVersion,
+            bindRecoverySource: false,
           });
         }
       },

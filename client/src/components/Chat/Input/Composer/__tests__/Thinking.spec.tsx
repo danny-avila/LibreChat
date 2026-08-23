@@ -15,6 +15,9 @@ let mockConversation = {
   conversationId: 'convo-1',
   reasoning_effort: 'low',
 } as TConversation;
+const mockChatContext = React.createContext<{ conversation: TConversation | null }>({
+  conversation: mockConversation,
+});
 
 jest.mock('~/hooks/Input/useThinkingSetting', () => ({
   __esModule: true,
@@ -51,21 +54,23 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
-  useChatContext: () => ({
-    conversation: mockConversation,
-  }),
+  useChatContext: () =>
+    jest.requireActual<typeof import('react')>('react').useContext(mockChatContext),
 }));
 
 function renderInComposer() {
   const textareaRef = createRef<HTMLTextAreaElement>();
   const onComposerClick = jest.fn(() => textareaRef.current?.focus());
-  render(
-    <div onClick={onComposerClick}>
-      <textarea ref={textareaRef} aria-label="Message input" />
-      <Thinking />
-    </div>,
+  const tree = () => (
+    <mockChatContext.Provider value={{ conversation: mockConversation }}>
+      <div onClick={onComposerClick}>
+        <textarea ref={textareaRef} aria-label="Message input" />
+        <Thinking />
+      </div>
+    </mockChatContext.Provider>
   );
-  return { onComposerClick };
+  const view = render(tree());
+  return { ...view, onComposerClick, rerenderConversation: () => view.rerender(tree()) };
 }
 
 describe('Thinking', () => {
@@ -158,5 +163,30 @@ describe('Thinking', () => {
     expect(off).toHaveAttribute('aria-pressed', 'true');
     await user.click(off);
     expect(mockSetValue).toHaveBeenCalledWith('low');
+  });
+
+  it('does not carry a remembered level across model settings', async () => {
+    mockConversation = {
+      conversationId: 'convo-1',
+      endpoint: 'openAI',
+      model: 'model-a',
+      reasoning_effort: 'high',
+    } as unknown as TConversation;
+    const user = userEvent.setup();
+    const { rerenderConversation } = renderInComposer();
+
+    await user.click(screen.getByTestId('composer-thinking-button'));
+    expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('tabindex', '0');
+
+    mockConversation = {
+      ...mockConversation,
+      reasoning_effort: 'auto',
+    } as unknown as TConversation;
+    rerenderConversation();
+    expect(screen.getByRole('radio', { name: 'High' })).toHaveAttribute('tabindex', '0');
+
+    mockConversation = { ...mockConversation, model: 'model-b' };
+    rerenderConversation();
+    expect(screen.getByRole('radio', { name: 'Low' })).toHaveAttribute('tabindex', '0');
   });
 });
