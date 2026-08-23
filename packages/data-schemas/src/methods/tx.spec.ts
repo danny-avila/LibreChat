@@ -473,10 +473,10 @@ describe('getMultiplier', () => {
   it('should use the documented gpt-5.6 pricing', () => {
     const expectedPricing = {
       'gpt-5.6': {
-        standard: { prompt: 5, completion: 30 },
-        cache: { write: 6.25, read: 0.5 },
-        premium: { threshold: 272000, prompt: 10, completion: 45 },
-        premiumCache: { threshold: 272000, write: 12.5, read: 1 },
+        standard: { prompt: 4, completion: 20 },
+        cache: { write: 5, read: 0.4 },
+        premium: { threshold: 272000, prompt: 8, completion: 30 },
+        premiumCache: { threshold: 272000, write: 10, read: 0.8 },
       },
       'gpt-5.6-terra': {
         standard: { prompt: 2, completion: 12 },
