@@ -693,6 +693,54 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   );
 };
 
+/** Every attachment id any persisted composer draft is holding, across every key and therefore
+ * every tab: `localStorage` is shared, so a draft another tab wrote for a conversation this one
+ * has never opened is still readable here. Cleanup that only consulted this pane's own keys would
+ * delete a file a second tab had reattached somewhere else. */
+export const collectDraftedAttachmentIds = (): Set<string> => {
+  const ids = new Set<string>();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key == null || !key.startsWith(LocalStorageKeys.FILES_DRAFT)) {
+        continue;
+      }
+      const draft = getFilesDraft(key.slice(LocalStorageKeys.FILES_DRAFT.length));
+      for (const fileId of draft.fileIds) {
+        ids.add(fileId);
+      }
+      for (const pasteId of draft.pastedTextIds ?? []) {
+        ids.add(pasteId);
+      }
+      for (const pendingId of Object.keys(draft.pendingPastes)) {
+        ids.add(pendingId);
+      }
+    }
+  } catch {
+    // An unreadable store just means no drafted ids to protect beyond the caller's own.
+  }
+  return ids;
+};
+
+const hasDraftAttachments = (draft: FilesDraft): boolean =>
+  draft.fileIds.length > 0 ||
+  Object.keys(draft.pendingPastes).length > 0 ||
+  (draft.pastedTextIds?.length ?? 0) > 0;
+
+/** A record another open tab is holding against files it still has on screen. Writing over its
+ * text, or clearing it, would destroy a draft this tab could never have restored anyway. */
+const isForeignAttachmentClaim = (draft: FilesDraft, tabId: string): boolean =>
+  draft.tabId != null &&
+  draft.tabId !== tabId &&
+  hasDraftAttachments(draft) &&
+  isTabLive(draft.tabId);
+
+/** Whether this tab may write or clear the shared text record behind a composer key. */
+export const mayWriteSharedComposerText = (id: string): boolean => {
+  const tabId = getBrowserTabId();
+  return tabId === '' || !isForeignAttachmentClaim(getFilesDraftCached(id), tabId);
+};
+
 /** Records which tab a shared composer key belongs to when text is all it holds. The files draft
  * doubles as the ownership record, but it is only written once there is an attachment, so a typed
  * but unattached draft read as unowned and another tab's New Chat cleared it. */
@@ -707,19 +755,15 @@ export const claimComposerDraftTab = (id: string): boolean => {
   if (existing.tabId === tabId || tabId === '') {
     return true;
   }
-  const hasAttachments =
-    existing.fileIds.length > 0 ||
-    Object.keys(existing.pendingPastes).length > 0 ||
-    (existing.pastedTextIds?.length ?? 0) > 0;
   /** A claim with nothing behind it speaks only for text, and the caller is about to overwrite
    * that text on a key every tab writes to: the stamp follows whoever's text is actually stored,
    * or the tab that typed last could not restore what it typed. A claim backed by an attachment
    * stays with its owner while that tab is open, because taking it would let this tab delete
    * files the other one still has on screen. */
-  if (existing.tabId != null && hasAttachments && isTabLive(existing.tabId)) {
+  if (isForeignAttachmentClaim(existing, tabId)) {
     return false;
   }
-  if (hasAttachments) {
+  if (hasDraftAttachments(existing)) {
     setFilesDraft(id, { ...existing, tabId });
     return true;
   }
@@ -741,9 +785,7 @@ export const releaseComposerDraftTab = (id: string): void => {
   if (
     existing.tabId == null ||
     existing.tabId !== getBrowserTabId() ||
-    existing.fileIds.length > 0 ||
-    Object.keys(existing.pendingPastes).length > 0 ||
-    (existing.pastedTextIds?.length ?? 0) > 0
+    hasDraftAttachments(existing)
   ) {
     return;
   }
@@ -877,6 +919,11 @@ export const setDraft = ({
       return;
     }
     setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
+    return;
+  }
+  /** Same guard as the write path: an empty composer in this tab must not erase the text another
+   * open tab is still holding behind its attachments. */
+  if (isSharedComposerDraftId(id) && !mayWriteSharedComposerText(id)) {
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);

@@ -11,7 +11,14 @@ const mockDeleteFiles = jest.fn();
 const mockScheduleRetainedRetry = jest.fn();
 
 /** A live composer entry: what the ownership check reads off the file map. */
-type LiveFile = { file_id: string; attached?: boolean; progress?: number };
+type LiveFile = {
+  file_id: string;
+  attached?: boolean;
+  progress?: number;
+  filepath?: string;
+  source?: string;
+  embedded?: boolean;
+};
 
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
@@ -21,6 +28,7 @@ const mockState = {
   pendingFilesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   files: new Map<string, LiveFile>(),
   retainedDeletions: [] as { file_id: string; filepath: string; source: string }[],
+  markedPasteIds: [] as string[],
   persistedPendingDiscardIds: [] as string[],
   retainedListener: null as (() => void) | null,
   fileList: undefined as
@@ -91,6 +99,23 @@ jest.mock('~/utils', () => ({
   failedFileIdsFrom: (result: { failedFileIds?: string[] } | void) =>
     result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [],
   scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
+  isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
+  /** Stands in for the localStorage sweep: the ids every mocked draft is holding. */
+  collectDraftedAttachmentIds: () => {
+    const ids = new Set<string>();
+    for (const draft of [mockState.filesDraft, mockState.pendingFilesDraft]) {
+      for (const fileId of draft.fileIds) {
+        ids.add(fileId);
+      }
+      for (const pasteId of draft.pastedTextIds ?? []) {
+        ids.add(pasteId);
+      }
+      for (const pendingId of Object.keys(draft.pendingPastes)) {
+        ids.add(pendingId);
+      }
+    }
+    return ids;
+  },
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -136,6 +161,7 @@ describe('useNewChat', () => {
     mockState.retainedDeletions = [];
     mockState.persistedPendingDiscardIds = [];
     mockState.retainedListener = null;
+    mockState.markedPasteIds = [];
     mockScheduleRetainedRetry.mockClear();
   });
 
@@ -217,6 +243,57 @@ describe('useNewChat', () => {
     mockState.fileList = [
       { file_id: 'stored-file', filepath: '/uploads/stored.txt', source: 'local' },
     ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('discards a live generated paste the draft could not record', () => {
+    /** Persisting the draft can fail outright (private mode, quota) while the upload and its
+     * chip still succeed, leaving the draft empty and the upload with nothing to clean it up. */
+    mockState.saveDrafts = true;
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.markedPasteIds = ['unrecorded-paste'];
+    mockState.files = new Map([
+      [
+        'unrecorded-paste',
+        {
+          file_id: 'unrecorded-paste',
+          progress: 1,
+          filepath: '/uploads/unrecorded.txt',
+          source: 'local',
+        },
+      ],
+    ]);
+    mockState.fileList = [];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [expect.objectContaining({ file_id: 'unrecorded-paste' })],
+    });
+  });
+
+  it('spares a marked paste that came back re-attached from the library', () => {
+    mockState.saveDrafts = true;
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.markedPasteIds = ['sent-paste'];
+    mockState.files = new Map([
+      [
+        'sent-paste',
+        {
+          file_id: 'sent-paste',
+          progress: 1,
+          attached: true,
+          filepath: '/uploads/sent.txt',
+          source: 'local',
+        },
+      ],
+    ]);
+    mockState.fileList = [];
     const { result } = renderHook(() => useNewChat());
 
     act(() => result.current.startNewChat());

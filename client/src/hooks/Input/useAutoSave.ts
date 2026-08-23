@@ -278,8 +278,19 @@ export const useAutoSave = ({
             setDraft({ id: conversationId, value: textAreaRef.current.value });
           }
           filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
-        } else if (textAreaRef?.current?.value) {
-          setDraft({ id: conversationId, value: textAreaRef.current.value });
+        } else {
+          if (textAreaRef?.current?.value) {
+            setDraft({ id: conversationId, value: textAreaRef.current.value });
+          }
+          /** Nothing is taken from the record, but this tab's own queued attachments still have
+           * to survive the switch. The map is cleared at the top of this effect, and the autosave
+           * that would normally persist them was refused the pending key for the whole run
+           * because another tab owned it, so they are written under the conversation this run
+           * just became and restored from there below. */
+          const liveFileIds = Array.from(filesRef.current.keys());
+          if (liveFileIds.length > 0) {
+            setFilesDraft(conversationId, { fileIds: liveFileIds, pendingPastes: {} });
+          }
         }
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);

@@ -13,9 +13,10 @@ import {
   failedFileIdsFrom,
   getFilesDraft,
   getNewConversationDraftId,
-  getComposerDraftId,
+  collectDraftedAttachmentIds,
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
+  isPastedTextFileMarked,
   loadPendingDiscardIds,
   scheduleRetainedFileDeletionRetry,
   storePendingDiscardIds,
@@ -59,6 +60,19 @@ const toDeletableRecord = (record: TFile): DeletableRecord | null => {
     embedded: record.embedded ?? false,
     filepath: record.filepath,
     source: record.source,
+  };
+};
+
+/** The live chip's own evidence of what it is, used when no draft record exists to read. */
+const toDeletableComposerFile = (file: ExtendedFile): DeletableRecord | null => {
+  if (file.filepath == null || file.filepath === '' || file.source == null) {
+    return null;
+  }
+  return {
+    file_id: file.file_id,
+    embedded: file.embedded ?? false,
+    filepath: file.filepath,
+    source: file.source,
   };
 };
 
@@ -135,28 +149,12 @@ export default function useNewChat({
     }
     let cancelled = false;
     const attempt = async () => {
-      /** An id that came back, as a live chip or inside a draft, is no longer the discarded
-       * draft's to delete. Every key this pane's composer can be holding it under counts, not
-       * just the idle new-chat one: after a reload the `files` map is empty until the autosave
-       * restore renders, so a file the user reattached to the conversation they are viewing, or
-       * to the key a run parks the composer in, would otherwise be deleted out from under them. */
-      const reattached = new Set<string>();
-      for (const draftId of [
-        getNewConversationDraftId(index),
-        getComposerDraftId(index, conversationId),
-        getPendingDraftId(index),
-      ]) {
-        const draft = getFilesDraft(draftId);
-        for (const fileId of draft.fileIds) {
-          reattached.add(fileId);
-        }
-        for (const pasteId of draft.pastedTextIds ?? []) {
-          reattached.add(pasteId);
-        }
-        for (const pendingId of Object.keys(draft.pendingPastes)) {
-          reattached.add(pendingId);
-        }
-      }
+      /** An id that came back, as a live chip or inside any draft, is no longer the discarded
+       * draft's to delete. Every persisted draft is consulted, not just this pane's keys: after
+       * a reload the `files` map is empty until the autosave restore renders, and a second tab
+       * can have reattached the file to a conversation this pane has never opened. Drafts live in
+       * `localStorage`, so that tab's record is readable from here. */
+      const reattached = collectDraftedAttachmentIds();
       files.forEach((file, key) => {
         reattached.add(key);
         if (file.file_id != null) {
@@ -304,6 +302,26 @@ export default function useNewChat({
         seen.add(record.file_id);
         deletable.push(record);
       }
+      /** Persisting a draft can fail outright (private mode, quota) while the upload and its
+       * chip still succeed, leaving nothing in the draft to discard from. A generated paste the
+       * composer is still showing is its own evidence, so it is collected directly. One that came
+       * back `attached` is skipped for the usual reason: the registry also remembers pastes that
+       * were already sent and re-attached, and those belong to the message that sent them. */
+      files.forEach((file) => {
+        if (
+          file.attached === true ||
+          file.progress < 1 ||
+          !isPastedTextFileMarked(file.file_id) ||
+          seen.has(file.file_id)
+        ) {
+          return;
+        }
+        const record = toDeletableComposerFile(file);
+        if (record != null) {
+          seen.add(record.file_id);
+          deletable.push(record);
+        }
+      });
       const deferred = [...idleWork.deferred, ...pendingWork.deferred];
       if (deletable.length > 0) {
         mutateAsync({ files: deletable })

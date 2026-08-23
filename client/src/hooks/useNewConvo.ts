@@ -34,6 +34,9 @@ import {
   buildDefaultConvo,
   requestChatFocus,
   renewNewConversationDraftToken,
+  scheduleRetainedFileDeletionRetry,
+  retainFileDeletion,
+  failedFileIdsFrom,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -405,7 +408,25 @@ const useNewConvo = (index = 0) => {
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));
 
         if (!saveDrafts && filesToDelete.length > 0) {
-          mutateAsync({ files: filesToDelete });
+          /** The map is already cleared above, so a lost request leaves nothing that could
+           * rebuild these payloads. Whatever the server did not delete is retained for the
+           * cleanup pass, since a failed storage delete comes back as a 200 naming the file in
+           * `failedFileIds` rather than as a rejection. */
+          const retainAll = (records: typeof filesToDelete) => {
+            for (const record of records) {
+              retainFileDeletion(record);
+            }
+            scheduleRetainedFileDeletionRetry();
+          };
+          mutateAsync({ files: filesToDelete })
+            .then((result) => {
+              const failed = new Set(failedFileIdsFrom(result));
+              if (failed.size === 0) {
+                return;
+              }
+              retainAll(filesToDelete.filter((record) => failed.has(record.file_id)));
+            })
+            .catch(() => retainAll(filesToDelete));
         }
       }
 
