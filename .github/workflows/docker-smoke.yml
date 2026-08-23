@@ -94,6 +94,7 @@ jobs:
           }
           emit client client_package_target "client package build"
           emit api api_runtime_smoke "api runtime smoke"
+          echo "codegraph-select: $(echo "$RESP" | jq -c '.matrix["docker-smoke"]')"
           echo "decided=true" >> "$GITHUB_OUTPUT"
           note ""
           note "node image smoke keeps its own path filter · kill switch: repo variable \`CODEGRAPH_GATING=off\` · everything runs on PR open"

@@ -97,6 +97,7 @@ jobs:
             exit 0
           fi
           echo "e2e_include=$INCLUDE" >> "$GITHUB_OUTPUT"
+          echo "codegraph-select: redis_transport=$REDIS mcp_tool_list_changed=$MCP matrix_entries=$(echo "$INCLUDE" | jq '.include | length')"
           if [ "$MCP" = "false" ]; then
             echo "mcp_run=false" >> "$GITHUB_OUTPUT"
             note "| MCP list_changed | skip (no reach into MCP) |"
