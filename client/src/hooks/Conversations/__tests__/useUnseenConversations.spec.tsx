@@ -45,7 +45,7 @@ describe('useUnseenConversations', () => {
     });
 
     expect(result.current?.unseen).toEqual([
-      { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT },
+      { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT, flagged: false },
     ]);
   });
 
@@ -86,7 +86,7 @@ describe('useUnseenConversations', () => {
     });
 
     expect(result.current).toEqual({
-      unseen: [{ conversationId: 'dup', title: 'D', lastResponseAt: RESPONDED_AT }],
+      unseen: [{ conversationId: 'dup', title: 'D', lastResponseAt: RESPONDED_AT, flagged: false }],
       stamps: [['dup', RESPONDED_AT]],
     });
   });
@@ -121,7 +121,44 @@ describe('useUnseenConversations', () => {
     });
 
     expect(result.current?.unseen).toEqual([
-      { conversationId: 'old-pin', title: 'Pinned', lastResponseAt: RESPONDED_AT },
+      { conversationId: 'old-pin', title: 'Pinned', lastResponseAt: RESPONDED_AT, flagged: false },
+    ]);
+  });
+
+  it('tags the manual-unread marker of a never-replied conversation', () => {
+    /* "Mark as unread" leaves `updatedAt` alone while stamping `lastResponseAt`, so a stamp
+       running well ahead of the activity date is the flag itself, not a reply the alerts
+       should announce. */
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          {
+            conversationId: 'flagged-a',
+            title: 'F',
+            updatedAt: RESPONDED_AT,
+            lastResponseAt: RESPONDED_AGAIN_AT,
+          },
+          {
+            conversationId: 'replied-a',
+            title: 'R',
+            updatedAt: RESPONDED_AT,
+            lastResponseAt: RESPONDED_AT,
+          },
+        ]),
+      );
+    });
+
+    expect(result.current?.unseen).toEqual([
+      {
+        conversationId: 'flagged-a',
+        title: 'F',
+        lastResponseAt: RESPONDED_AGAIN_AT,
+        flagged: true,
+      },
+      { conversationId: 'replied-a', title: 'R', lastResponseAt: RESPONDED_AT, flagged: false },
     ]);
   });
 
@@ -172,7 +209,12 @@ describe('useUnseenConversations', () => {
 
     expect(result.current).not.toBe(before);
     expect(result.current?.unseen).toEqual([
-      { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AGAIN_AT },
+      {
+        conversationId: 'unseen-a',
+        title: 'A',
+        lastResponseAt: RESPONDED_AGAIN_AT,
+        flagged: false,
+      },
     ]);
   });
 

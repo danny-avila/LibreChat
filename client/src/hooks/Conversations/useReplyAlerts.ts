@@ -191,9 +191,13 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
+    /* Flagged rows carry the manual-unread marker of a never-replied conversation: the dot
+       and the badge count them, but announcing one as "Reply ready" would name a reply that
+       does not exist. */
     const arrivals = unseen.filter(
       (conversation) =>
         conversation.conversationId &&
+        !conversation.flagged &&
         priorStamps.get(conversation.conversationId) !== conversation.lastResponseAt,
     );
     if (arrivals.length === 0 || document.hasFocus()) {
