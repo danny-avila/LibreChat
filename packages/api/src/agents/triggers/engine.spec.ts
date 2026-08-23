@@ -457,6 +457,73 @@ describe('createAgentTriggerDeliveryEngine', () => {
     await tick;
   });
 
+  it('backs off polling while idle and snaps back on a wake', async () => {
+    jest.useFakeTimers();
+    try {
+      const store = storeWith({ claimNext: jest.fn(async () => null) });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.claimNext).toHaveBeenCalledTimes(1);
+
+      /** Idle polls land at +1s, +5s, +13s (doubling, capped at 8s): 3 more claims in 15s, not 15. */
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(store.claimNext).toHaveBeenCalledTimes(4);
+
+      /** A wake — an enqueue nudge or a finished delivery — claims immediately and
+       *  re-arms the base cadence, so the next idle poll is one second out again. */
+      engine.wake();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.claimNext).toHaveBeenCalledTimes(5);
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(store.claimNext).toHaveBeenCalledTimes(6);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('returns to the base cadence after a claimed delivery interrupts an idle stretch', async () => {
+    jest.useFakeTimers();
+    try {
+      const responses: Array<AgentTriggerDeliveryRecord | null> = [
+        null,
+        null,
+        delivery(),
+        null,
+        null,
+      ];
+      const store = storeWith({
+        claimNext: jest.fn(async () => (responses.length > 0 ? (responses.shift() ?? null) : null)),
+      });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START, workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 8_000 },
+      );
+
+      engine.start();
+      /** start (null) -> +1s (null) -> +5s: the third claim finds work. */
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      const claimsAfterWork = (store.claimNext as jest.Mock).mock.calls.length;
+
+      /** The completed delivery wakes the engine, so polling resumes at one-second steps. */
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect((store.claimNext as jest.Mock).mock.calls.length).toBeGreaterThan(claimsAfterWork);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping ticks into one claim pass', async () => {
     let releaseClaim: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {

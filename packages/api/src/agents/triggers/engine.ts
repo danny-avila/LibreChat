@@ -10,6 +10,7 @@ const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_RETRY_BASE_MS = 1_000;
 const DEFAULT_RETRY_CAP_MS = 5 * 60_000;
 const DEFAULT_TICK_MS = 1_000;
+const DEFAULT_MAX_IDLE_TICK_MS = 15_000;
 const ORDERING_RECHECK_MS = 250;
 const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
@@ -121,6 +122,9 @@ export interface AgentTriggerDeliveryEngineOptions {
   retryBaseMs?: number;
   retryCapMs?: number;
   tickMs?: number;
+  /** Ceiling for the poll interval while the queue stays empty; any wake or claimed
+   *  delivery snaps polling back to `tickMs`, so only true idleness ever waits this long. */
+  maxIdleTickMs?: number;
 }
 
 export interface AgentTriggerDeliveryEngineDeps {
@@ -226,10 +230,15 @@ export function createAgentTriggerDeliveryEngine(
   const retryBaseMs = positiveInteger(options.retryBaseMs, DEFAULT_RETRY_BASE_MS, 'retryBaseMs');
   const retryCapMs = positiveInteger(options.retryCapMs, DEFAULT_RETRY_CAP_MS, 'retryCapMs');
   const tickMs = positiveInteger(options.tickMs, DEFAULT_TICK_MS, 'tickMs');
+  const maxIdleTickMs = Math.max(
+    tickMs,
+    positiveInteger(options.maxIdleTickMs, DEFAULT_MAX_IDLE_TICK_MS, 'maxIdleTickMs'),
+  );
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const workerId = deps.workerId ?? `${process.pid}-${randomUUID()}`;
   const controllers = new Map<AbortController, string>();
+  let idleStreak = 0;
   const processing = new Set<Promise<void>>();
   const processingByUser = new Map<string, Set<Promise<void>>>();
   const cancelledUsers = new Set<string>();
@@ -520,13 +529,18 @@ export function createAgentTriggerDeliveryEngine(
     if (activeClaim != null) {
       return activeClaim;
     }
-    activeClaim = runAsSystem(runClaimPass).finally(() => {
-      activeClaim = undefined;
-      if (repumpRequested && !stopped) {
-        repumpRequested = false;
-        queueMicrotask(wake);
-      }
-    });
+    activeClaim = runAsSystem(runClaimPass)
+      .then((result) => {
+        idleStreak = result.count > 0 ? 0 : idleStreak + 1;
+        return result;
+      })
+      .finally(() => {
+        activeClaim = undefined;
+        if (repumpRequested && !stopped) {
+          repumpRequested = false;
+          queueMicrotask(wake);
+        }
+      });
     return activeClaim;
   };
 
@@ -536,10 +550,7 @@ export function createAgentTriggerDeliveryEngine(
     return batch.count;
   };
 
-  function wake(): void {
-    if (stopped) {
-      return;
-    }
+  const claimOnce = (): void => {
     if (activeClaim != null) {
       repumpRequested = true;
       return;
@@ -547,16 +558,38 @@ export function createAgentTriggerDeliveryEngine(
     void claimAvailable().catch((error) =>
       logger.error('[agent-triggers] delivery claim pass failed:', error),
     );
+  };
+
+  /** A wake is evidence of work — an enqueue or a finished delivery — so it snaps the
+   *  idle backoff and the poll timer back to the base cadence before claiming. */
+  function wake(): void {
+    if (stopped) {
+      return;
+    }
+    idleStreak = 0;
+    if (started) {
+      schedule();
+    }
+    claimOnce();
   }
 
   const schedule = () => {
     if (stopped) {
       return;
     }
-    timer = setTimeout(() => {
-      wake();
+    if (timer != null) {
+      clearTimeout(timer);
+    }
+    const delay = Math.min(tickMs * 2 ** idleStreak, maxIdleTickMs);
+    timer = setTimeout(async () => {
+      if (stopped) {
+        return;
+      }
+      await claimAvailable().catch((error) =>
+        logger.error('[agent-triggers] delivery claim pass failed:', error),
+      );
       schedule();
-    }, tickMs);
+    }, delay);
     timer.unref();
   };
 
@@ -567,7 +600,6 @@ export function createAgentTriggerDeliveryEngine(
       }
       started = true;
       wake();
-      schedule();
     },
     stop: async () => {
       stopped = true;
