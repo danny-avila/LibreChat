@@ -17,6 +17,7 @@ import {
   Summary,
   Text,
   SkillCall,
+  MemoryCall,
   ReadFileCall,
   FileAuthoringCall,
   BashCall,
@@ -298,6 +299,21 @@ const Part = memo(function Part({
               hideAttachments={hideAttachments}
             />
           );
+        } else if (toolCall.name === 'set_memory' || toolCall.name === 'delete_memory') {
+          return (
+            <MemoryCall
+              toolName={toolCall.name}
+              args={toolCall.args}
+              output={toolCall.output ?? ''}
+              initialProgress={toolCall.progress ?? 0.1}
+              isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              attachments={attachments}
+              hideAttachments={hideAttachments}
+              onExpand={onToolExpand}
+            />
+          );
         } else if (toolCall.name === 'read_file') {
           return (
             <ReadFileCall
@@ -352,6 +368,7 @@ const Part = memo(function Part({
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
+              hideAttachments={hideAttachments}
               isLast={isLast}
               onExpand={onToolExpand}
             />

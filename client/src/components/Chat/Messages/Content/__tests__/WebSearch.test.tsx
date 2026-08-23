@@ -16,6 +16,8 @@ jest.mock('~/hooks', () => ({
       com_ui_web_searched: 'Searched the web',
       com_ui_web_search_source: `${values?.count ?? 1} source`,
       com_ui_web_search_sources: `${values?.count ?? 0} sources`,
+      com_ui_web_search_details: 'Search details',
+      com_ui_search_query: 'Query',
     };
     return translations[key] || key;
   },
@@ -56,7 +58,12 @@ jest.mock('~/components/Web/Sources', () => ({
 
 jest.mock('lucide-react', () => ({
   Globe: () => <span data-testid="globe-icon" />,
-  ChevronDown: () => <span data-testid="chevron-icon" />,
+  Info: () => <span data-testid="info-icon" />,
+  Star: () => <span data-testid="star-icon" />,
+  MapPin: () => <span data-testid="map-pin-icon" />,
+  ChevronDown: ({ className }: { className?: string }) => (
+    <span data-testid="chevron-icon" className={className} />
+  ),
 }));
 
 function makeSource(link: string, title: string): ValidSource {
@@ -86,6 +93,7 @@ function renderWebSearch({
   isSubmitting = false,
   isLast = false,
   initialProgress = 1,
+  args,
   output,
 }: {
   searchResults?: Record<string, SearchResultData>;
@@ -93,6 +101,7 @@ function renderWebSearch({
   isSubmitting?: boolean;
   isLast?: boolean;
   initialProgress?: number;
+  args?: string | Record<string, unknown>;
   output?: string | null;
 }) {
   return render(
@@ -102,6 +111,7 @@ function renderWebSearch({
           initialProgress={initialProgress}
           isSubmitting={isSubmitting}
           isLast={isLast}
+          args={args}
           output={output}
           attachments={attachments}
         />
@@ -287,6 +297,149 @@ describe('WebSearch', () => {
 
       const matches = screen.getAllByText('Searched the web');
       expect(matches.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders snippets and dates in the source list', () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [
+            {
+              link: 'https://example.com/context',
+              title: 'Context windows explained',
+              snippet: 'How context windows change what assistants can do.',
+              date: 'Jun 12, 2026',
+            },
+          ],
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({ attachments: [attachment] });
+
+      expect(
+        screen.getByText('How context windows change what assistants can do.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Jun 12, 2026')).toBeInTheDocument();
+      expect(screen.getByText('example.com')).toBeInTheDocument();
+    });
+
+    it('tucks the query and answer box behind the details hover card', async () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [{ link: 'https://example.com/context', title: 'Context windows explained' }],
+          answerBox: {
+            title: 'What is a context window?',
+            snippet: 'The amount of text a model can consider at once.',
+          },
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({
+        attachments: [attachment],
+        args: { query: 'largest context window LLM 2026' },
+      });
+
+      expect(screen.queryByText('What is a context window?')).not.toBeInTheDocument();
+
+      const trigger = screen.getByLabelText('Search details');
+      fireEvent.focus(trigger);
+
+      expect(await screen.findByText('What is a context window?')).toBeInTheDocument();
+      expect(
+        screen.getByText('The amount of text a model can consider at once.'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('largest context window LLM 2026')).toBeInTheDocument();
+      expect(screen.getByText('1 source')).toBeInTheDocument();
+    });
+
+    it('renders shopping, image, and place verticals in the expanded panel', () => {
+      const attachment = {
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [{ link: 'https://example.com/a', title: 'A source' }],
+          images: [
+            {
+              title: 'Rain vortex',
+              imageUrl: 'https://img.example.com/full.jpg',
+              thumbnailUrl: 'https://img.example.com/thumb.jpg',
+              thumbnailWidth: 300,
+              thumbnailHeight: 200,
+              link: 'https://host.example.com/page',
+            },
+          ],
+          shopping: [
+            {
+              title: 'Gingko Mini Smart Book',
+              link: 'https://shop.example.com/book',
+              price: '35,70 \u20ac',
+              source: 'Amazon',
+              rating: 4.7,
+              ratingCount: 1284,
+              delivery: 'Free delivery',
+            },
+          ],
+          places: [
+            {
+              name: 'Blue Bottle Coffee',
+              category: 'Coffee shop',
+              address: '300 S Broadway',
+              rating: 4.6,
+              ratingCount: 812,
+            },
+          ],
+        },
+      } as unknown as TAttachment;
+
+      renderWebSearch({ attachments: [attachment] });
+
+      const imageLink = screen.getByLabelText('Rain vortex');
+      expect(imageLink).toHaveAttribute('href', 'https://host.example.com/page');
+      expect(imageLink.querySelector('img')).toHaveAttribute(
+        'src',
+        'https://img.example.com/thumb.jpg',
+      );
+
+      const product = screen.getByText('Gingko Mini Smart Book').closest('a');
+      expect(product).toHaveAttribute('href', 'https://shop.example.com/book');
+      expect(screen.getByText('35,70 \u20ac \u00b7 Amazon')).toBeInTheDocument();
+      expect(screen.getByText('Free delivery')).toBeInTheDocument();
+      expect(screen.getByText('4.7')).toBeInTheDocument();
+
+      expect(screen.getByText('Blue Bottle Coffee')).toBeInTheDocument();
+      const placeLink = screen.getByText('Blue Bottle Coffee').closest('a');
+      expect(placeLink?.getAttribute('href')).toContain('google.com/maps');
+      expect(placeLink?.getAttribute('href')).toContain(
+        encodeURIComponent('Blue Bottle Coffee, 300 S Broadway'),
+      );
+      expect(screen.getByText('Coffee shop \u00b7 300 S Broadway')).toBeInTheDocument();
+      expect(screen.getByText('4.6')).toBeInTheDocument();
+      expect(screen.getByText('(812)')).toBeInTheDocument();
+    });
+
+    it('uses standard tool-row spacing and reveals its chevron on hover or focus', () => {
+      const searchResults = makeSearchResults({
+        0: { organic: [makeSource('https://example.com', 'Example')] },
+      });
+
+      renderWebSearch({ searchResults });
+
+      const button = screen.getByRole('button', { name: /Searched the web/ });
+      expect(button.parentElement).toHaveClass('h-5');
+      expect(button.parentElement?.parentElement).toHaveClass('my-1');
+      expect(button).not.toHaveClass('py-1');
+      expect(button).not.toHaveClass('transition-colors');
+      const chevron = screen.getByTestId('chevron-icon');
+      expect(chevron).toHaveClass(
+        'opacity-0',
+        'group-hover/disclosure:opacity-100',
+        'group-focus-within/disclosure:opacity-100',
+      );
+      expect(chevron).toHaveClass('transition-transform');
+      expect(chevron.className).not.toContain('transition-opacity');
     });
 
     it('renders searching state during streaming', () => {
