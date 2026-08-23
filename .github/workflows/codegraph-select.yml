@@ -31,15 +31,25 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
         run: |
           set +e
           note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
           note "### Codegraph select — observe-only"
           if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_secrets not configured; skipped_"; exit 0; fi
 
-          gh api "repos/$REPO/pulls/$PR/files" --paginate \
-            --jq '.[] | {path: .filename, status, patch}' | jq -s . > files.json
-          if [ ! -s files.json ]; then note "_could not fetch changed files; skipped_"; exit 0; fi
+          # A failed or truncated page must not become a shorter file list: the pipeline would hide
+          # gh's exit status behind jq, and a partial list can turn a required lane off. Check the
+          # fetch status AND the count against the PR's own changed_files (Codex P1, #15136).
+          if ! gh api "repos/$REPO/pulls/$PR/files" --paginate \
+              --jq '.[] | {path: .filename, status, patch}' > files.ndjson; then
+            note "_could not fetch changed files; skipped_"; exit 0
+          fi
+          jq -s . files.ndjson > files.json
+          N=$(jq 'length' files.json)
+          if [ "$N" -eq 0 ] || { [ -n "$CHANGED" ] && [ "$N" -ne "$CHANGED" ]; }; then
+            note "_changed-file list incomplete ($N of ${CHANGED:-?}); skipped_"; exit 0
+          fi
 
           jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
             '{files: ., lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json

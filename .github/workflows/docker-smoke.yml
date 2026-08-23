@@ -59,14 +59,24 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
         run: |
           set +e
           note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
           note "### Codegraph select — GATING (docker smokes)"
           if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_no codegraph config; running FULL_"; exit 0; fi
-          gh api "repos/$REPO/pulls/$PR/files" --paginate \
-            --jq '.[] | {path: .filename, status, patch}' | jq -s . > files.json
-          if [ ! -s files.json ]; then note "_could not fetch changed files; running FULL_"; exit 0; fi
+          # A failed or truncated page must not become a shorter file list: the pipeline would hide
+          # gh's exit status behind jq, and a partial list can turn a required lane off. Check the
+          # fetch status AND the count against the PR's own changed_files (Codex P1, #15136).
+          if ! gh api "repos/$REPO/pulls/$PR/files" --paginate \
+              --jq '.[] | {path: .filename, status, patch}' > files.ndjson; then
+            note "_could not fetch changed files; running FULL_"; exit 0
+          fi
+          jq -s . files.ndjson > files.json
+          N=$(jq 'length' files.json)
+          if [ "$N" -eq 0 ] || { [ -n "$CHANGED" ] && [ "$N" -ne "$CHANGED" ]; }; then
+            note "_changed-file list incomplete ($N of ${CHANGED:-?}); running FULL_"; exit 0
+          fi
           jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
             '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
           RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN" \
@@ -75,16 +85,17 @@ jobs:
             note "_codegraph unavailable (${RESP:0:120}); running FULL_"
             exit 0
           fi
-          # A smoke is skipped only on a literal false; anything else (true, null, missing) runs.
-          if [ "$(echo "$RESP" | jq -r '.e2e.fail_open // false')" = "true" ]; then
+          # A smoke is skipped only on the JSON boolean false — tested inside jq, because `jq -r`
+          # prints the string "false" and the boolean identically (Codex P1, #15136). Anything
+          # else (true, null, a string, missing) runs.
+          if echo "$RESP" | jq -e '.e2e.fail_open == true' >/dev/null 2>&1; then
             note "_fail-open decision (root/workflow/lockfile change or stale graph): everything runs_"
           fi
           note "| smoke | decision |"
           note "|---|---|"
           emit() {
             key="$1"; hint="$2"; label="$3"
-            v=$(echo "$RESP" | jq -r --arg h "$hint" '.matrix["docker-smoke"][$h]')
-            if [ "$v" = "false" ]; then
+            if echo "$RESP" | jq -e --arg h "$hint" '.matrix["docker-smoke"][$h] == false' >/dev/null 2>&1; then
               echo "${key}_run=false" >> "$GITHUB_OUTPUT"
               note "| $label | skip (no reach into its build context) |"
             else
