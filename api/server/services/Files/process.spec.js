@@ -1352,6 +1352,37 @@ describe('processAgentFileUpload', () => {
       expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
     });
 
+    test('propagates a parser input-limit refusal without sending the file to configured OCR', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [DOCX_MIME] }));
+      const inputLimitError = Object.assign(new Error('report.docx exceeds the 15MB limit'), {
+        name: 'ParserInputLimitError',
+        code: 'PARSER_INPUT_LIMIT',
+        userErrorStatusCode: 413,
+      });
+      const localUpload = jest.fn().mockRejectedValue(inputLimitError);
+      const remoteUpload = jest.fn().mockResolvedValue({
+        text: 'remote OCR text',
+        bytes: 15,
+        filepath: FileSources.mistral_ocr,
+      });
+      getStrategyFunctions.mockImplementation((source) => ({
+        handleFileUpload: source === FileSources.document_parser ? localUpload : remoteUpload,
+      }));
+      const req = makeReq({
+        mimetype: DOCX_MIME,
+        originalname: 'report.docx',
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await expect(
+        processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() }),
+      ).rejects.toBe(inputLimitError);
+
+      expect(localUpload).toHaveBeenCalledTimes(1);
+      expect(remoteUpload).not.toHaveBeenCalled();
+      expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
+    });
+
     test('propagates a PDF page-limit refusal without sending the PDF to configured OCR', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const pageLimitError = Object.assign(

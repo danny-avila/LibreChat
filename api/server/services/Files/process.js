@@ -111,6 +111,8 @@ const isPdfPageLimitError = (err) =>
  * configured OCR service, or into "no text found" for a perfectly readable file. */
 const isParserBusyError = (err) =>
   err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
+const isParserInputLimitError = (err) =>
+  err?.code === 'PARSER_INPUT_LIMIT' || err?.name === 'ParserInputLimitError';
 /* The parser declined to hand back an extraction that would not fit. Surfaced rather
  * than swallowed so the file is not reported as unreadable, and so no fallback rebuilds
  * in this process the string a child process just declined to send. */
@@ -122,6 +124,7 @@ const isDocumentParserRefusal = (err) =>
   isArchiveRefusal(err) ||
   isPdfPageLimitError(err) ||
   isParserBusyError(err) ||
+  isParserInputLimitError(err) ||
   isParserOutputLimitError(err);
 
 const isMissingStorageError = (err) => {

@@ -76,6 +76,27 @@ describe('pdfInspector child isolation', () => {
     expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
+  test('refuses an over-limit PDF before spawning the optional classifier', async () => {
+    const extractionChild = new TestChild();
+    mockSpawn.mockReturnValue(extractionChild);
+
+    const extraction = extractPagesMarkdownIsolated('/tmp/page-flood.pdf');
+    extractionChild.emit('message', {
+      ok: true,
+      result: {
+        pages: Array.from({ length: 1001 }, (_, page) => ({ page, markdown: '' })),
+      },
+    });
+
+    await expect(extraction).rejects.toMatchObject({
+      name: 'PdfPageLimitError',
+      code: 'PDF_PAGE_LIMIT',
+      pageCount: 1001,
+      maxPages: 1000,
+    });
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+
   /**
    * Admission wraps the whole document parse, not the child spawn: a PDF is a child,
    * then in-process pdfjs recovery, then possibly a second child, and a slot released

@@ -68,12 +68,12 @@ describe('pdfInspector native', () => {
     }
   }, 30_000);
 
-  test('accepts a document just inside the page cap', async () => {
+  test('accepts a document just inside the PDF page ceiling', async () => {
     const wide = path.join(__dirname, 'sample-at-cap.pdf');
-    fs.writeFileSync(wide, buildManyPagePdf(10_000));
+    fs.writeFileSync(wide, buildManyPagePdf(1000));
     try {
       const { pages } = await extractPagesMarkdownIsolated(wide);
-      expect(pages).toHaveLength(10_000);
+      expect(pages).toHaveLength(1000);
     } finally {
       fs.unlinkSync(wide);
     }

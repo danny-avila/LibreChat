@@ -5,6 +5,8 @@ import {
   PARSER_PAGE_OVERHEAD_BYTES,
   runNativeParserChild,
 } from '../documents/nativeProcess';
+import { PdfPageLimitError } from '../documents/pdfjs';
+import { MAX_PDF_PAGES } from './limits';
 
 /**
  * Runs pdf-inspector's native bindings in a child process.
@@ -183,10 +185,14 @@ export async function extractPagesMarkdownIsolated(
 ): Promise<PdfPageExtraction> {
   const startedAt = Date.now();
   const { pages } = await runPdfChild('pages', filePath, signal);
+  const extractedPages = pages ?? [];
+  if (extractedPages.length > MAX_PDF_PAGES) {
+    throw new PdfPageLimitError(extractedPages.length, MAX_PDF_PAGES);
+  }
   let scannedPages: number[] = [];
   const remainingMs = PDF_CHILD_TIMEOUT_MS - (Date.now() - startedAt);
   if (remainingMs <= 0) {
-    return { pages: pages ?? [], scannedPages };
+    return { pages: extractedPages, scannedPages };
   }
   try {
     const classification = await runPdfClassifierChild(
@@ -201,7 +207,7 @@ export async function extractPagesMarkdownIsolated(
     }
     /* Classification only decides whether OCR may improve a successful extraction. */
   }
-  return { pages: pages ?? [], scannedPages };
+  return { pages: extractedPages, scannedPages };
 }
 
 /**

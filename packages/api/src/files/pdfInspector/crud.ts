@@ -10,6 +10,7 @@ import {
 import { MAX_PARSER_OUTPUT_BYTES, isParserOutputLimit } from '../documents/nativeProcess';
 import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 import { ConcurrencyLimitError } from '~/utils/promise';
+import { MAX_PDF_PAGES } from './limits';
 
 type ParsedDocument = Pick<
   ParsedDocumentUploadResult,
@@ -20,17 +21,6 @@ type ParsedDocument = Pick<
 const DROPPED_PAGE_MAJORITY = 0.5;
 /** Cap on the per-page pdfjs recovery walk; see `extractPdf`. */
 const MAX_RECOVERED_PAGES = 250;
-/**
- * Most pages this parser will accept at all.
- *
- * Past the recovery cap, unprobed pages are reported as needing OCR, which is a request
- * to send the whole document to a configured provider. A page costs about 100 bytes to
- * declare, so without this a 1MB upload buys a ten-thousand-page OCR job on someone
- * else's bill. The cap sits at what OCR services accept anyway, so it refuses nothing
- * that would have succeeded downstream.
- */
-const MAX_PDF_PAGES = 1000;
-
 /**
  * pdf-inspector reads PDF and nothing else: every export and type in its typings is
  * shaped around a PDF page, and no other format exists in the library. The type is
