@@ -34,19 +34,22 @@ import type {
 import type { TranslationKeys } from '~/hooks';
 import type { Meridiem } from './cadence';
 import {
+  to12Hour,
+  to24Hour,
+  describeCadence,
+  formatRunInstant,
+  formatScheduleDay,
+  resolveLocalTimezone,
+  buildTimezoneOptions,
+  formatTimezoneOffset,
+} from './cadence';
+import {
   useProjectQuery,
   useListAgentsQuery,
   useSchedulesQuery,
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
-import {
-  to12Hour,
-  to24Hour,
-  describeCadence,
-  formatRunInstant,
-  formatScheduleDay,
-} from './cadence';
 import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
 import { useLocalize } from '~/hooks';
@@ -73,6 +76,7 @@ type ScheduleFormValues = {
   /** Only read when `frequency` is `cron`; held across a switch away and back so a
    *  user who tries a preset does not lose the expression they typed. */
   expression: string;
+  timezone: string;
 };
 
 const FREQUENCY_LABELS: Record<ScheduleFrequency, TranslationKeys> = {
@@ -98,6 +102,7 @@ const PREVIEW_RUN_COUNT = 3;
 const FORM_ID = 'schedule-form';
 
 const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
+  const localTimezone = resolveLocalTimezone();
   if (!schedule) {
     return {
       name: '',
@@ -110,6 +115,7 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       meridiem: 'AM',
       dayOfWeek: 1,
       expression: DEFAULT_CRON,
+      timezone: localTimezone,
     };
   }
   const identity = {
@@ -117,6 +123,9 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
     prompt: schedule.prompt,
     agent_id: schedule.agent_id,
     chatProjectId: schedule.chatProjectId ?? '',
+    // A stored row always has one; the fallback only covers a legacy row written
+    // before the field existed, which would otherwise render an empty picker.
+    timezone: schedule.timezone || localTimezone,
   };
   const cadence = schedule.cadence;
   if (isCronCadence(cadence)) {
@@ -204,6 +213,7 @@ export default function ScheduleDialog({
   const meridiem = watch('meridiem');
   const dayOfWeek = watch('dayOfWeek');
   const expression = watch('expression');
+  const timezone = watch('timezone');
 
   const { data: agents } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
@@ -302,10 +312,13 @@ export default function ScheduleDialog({
     [locale],
   );
 
-  const timezone = useMemo(
-    () => schedule?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-    [schedule],
-  );
+  const timezoneItems = useMemo(() => {
+    const zones = buildTimezoneOptions(resolveLocalTimezone(), schedule?.timezone);
+    return zones.map((zone) => {
+      const offset = formatTimezoneOffset(zone, locale);
+      return { value: zone, label: offset ? `${zone} (${offset})` : zone };
+    });
+  }, [schedule?.timezone, locale]);
 
   /** Idempotency key for the create being attempted. Held in a ref so every retry of
    *  the same intent reuses it, and rotated when the attempt SUCCEEDS or when the
@@ -360,8 +373,10 @@ export default function ScheduleDialog({
       : undefined;
 
   /** Whether this submit carries a cadence at all: a pure rename does not, and the
-   *  API only validates a cadence it actually receives. Read by the interval floor
-   *  below as well as by the PATCH payload. */
+   *  API only validates a cadence it actually receives. Only touched cadence
+   *  CONTROLS count: a zone-only edit must not ship a cadence rebuilt from this
+   *  form, which would overwrite stored fields it cannot represent (an
+   *  API-created hourly cadence's nonzero hour, for one). */
   const cadenceTouched =
     dirtyFields.frequency === true ||
     dirtyFields.hour12 === true ||
@@ -369,6 +384,11 @@ export default function ScheduleDialog({
     dirtyFields.meridiem === true ||
     dirtyFields.dayOfWeek === true ||
     dirtyFields.expression === true;
+  /** Whether this submit changes the schedule's TIMING. The zone alone re-times
+   *  every occurrence (the server recomputes the next run and re-measures the
+   *  interval floor against the effective cadence/zone pair), so the floor below
+   *  validates it even though no cadence travels with it. */
+  const timingTouched = cadenceTouched || dirtyFields.timezone === true;
 
   const onSubmit = (values: ScheduleFormValues) => {
     if (schedule) {
@@ -391,6 +411,7 @@ export default function ScheduleDialog({
           ? { chatProjectId: values.chatProjectId || null }
           : {}),
         ...(cadenceTouched ? { cadence } : {}),
+        ...(dirtyFields.timezone === true ? { timezone: values.timezone } : {}),
       };
       // Nothing touched: a field-less PATCH is refused server-side (it would rotate
       // the schedule's fencing for a request that changes nothing), so just close.
@@ -421,7 +442,7 @@ export default function ScheduleDialog({
         ? { chatProjectId: values.chatProjectId }
         : {}),
       cadence: buildCadence(values),
-      timezone,
+      timezone: values.timezone,
       target: 'new' as const,
       enabled: true,
     };
@@ -481,7 +502,7 @@ export default function ScheduleDialog({
    *  be submitted, and to any edit leaving the schedule enabled. Renaming a DISABLED
    *  schedule whose stored cadence predates a raised floor is a valid maintenance edit
    *  the API accepts, so the dialog must not hold it hostage to a timing change. */
-  const floorApplies = schedule == null || cadenceTouched || schedule.enabled;
+  const floorApplies = schedule == null || timingTouched || schedule.enabled;
 
   /** Checked against the SAME function the server enforces with, so the dialog never
    *  offers a submit the API would answer 400 to. Only meaningful once the expression
@@ -506,7 +527,50 @@ export default function ScheduleDialog({
       : null;
   const canSubmit = cronIsValid && !belowFloor && !isLoading;
 
-  const summary = `${describeCadence(previewCadence, localize, locale)} · ${timezone}`;
+  /** The offset disambiguates two similar names, which matters now that the zone is
+   *  something the user picks rather than the browser's own. Memoized because it
+   *  builds an Intl formatter and the dialog re-renders per keystroke. */
+  const timezoneOffset = useMemo(() => formatTimezoneOffset(timezone, locale), [timezone, locale]);
+  const summary = `${describeCadence(previewCadence, localize, locale)} · ${
+    timezoneOffset ? `${timezone} (${timezoneOffset})` : timezone
+  }`;
+
+  /** A CELL in the cadence grid rather than a row of its own, in both modes. The
+   *  template's height budget is a contract (see its className below): scrolling is
+   *  off at `md`, so a full-width timezone row would push the footer's submit button
+   *  out of a 720px-tall viewport where it can never be scrolled back. */
+  const timezoneField = (
+    <fieldset className="space-y-2">
+      <legend>
+        <Label id="schedule-timezone-label" className="text-sm font-medium text-text-primary">
+          {localize('com_ui_schedule_timezone')}
+        </Label>
+      </legend>
+      <Controller
+        name="timezone"
+        control={control}
+        render={({ field }) => (
+          <ControlCombobox
+            selectedValue={field.value}
+            displayValue={field.value}
+            selectPlaceholder={localize('com_ui_schedule_timezone')}
+            searchPlaceholder={localize('com_ui_schedule_timezone_search')}
+            setValue={field.onChange}
+            items={timezoneItems}
+            ariaLabel={localize('com_ui_schedule_timezone')}
+            selectId="schedule-timezone"
+            isCollapsed={false}
+            showCarat={true}
+            placement="bottom-start"
+            /* Same focus-trap constraint as the agent picker above. */
+            portal={false}
+            matchTriggerWidth={true}
+            variant="field"
+          />
+        )}
+      />
+    </fieldset>
+  );
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
@@ -730,40 +794,50 @@ export default function ScheduleDialog({
             </fieldset>
 
             {frequency === 'cron' ? (
-              <div className="space-y-2">
-                <Label htmlFor="schedule-cron" className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_schedule_cron_expression')}
-                </Label>
-                <Input
-                  id="schedule-cron"
-                  className="w-full font-mono"
-                  spellCheck={false}
-                  autoComplete="off"
-                  placeholder={DEFAULT_CRON}
-                  maxLength={SCHEDULE_CRON_MAX_LENGTH}
-                  aria-invalid={!cronIsValid || belowFloor}
-                  aria-describedby={
-                    // The floor message renders under the summary as
-                    // `schedule-cadence-message`; a floor-violating expression must
-                    // still mark THIS input invalid and point at that message, or a
-                    // screen reader finds a disabled Create with no stated reason.
-                    belowFloor
-                      ? 'schedule-cron-hint schedule-cron-message schedule-cadence-message'
-                      : 'schedule-cron-hint schedule-cron-message'
-                  }
-                  data-testid="schedule-cron-input"
-                  {...register('expression')}
-                />
-                <p id="schedule-cron-hint" className="text-xs text-text-secondary">
-                  {localize('com_ui_schedule_cron_hint')}
-                </p>
-                <FieldMessage
-                  id="schedule-cron-message"
-                  message={cronIsValid ? undefined : localize('com_ui_schedule_cron_invalid')}
-                />
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="schedule-cron" className="text-sm font-medium text-text-primary">
+                    {localize('com_ui_schedule_cron_expression')}
+                  </Label>
+                  <Input
+                    id="schedule-cron"
+                    className="w-full font-mono"
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder={DEFAULT_CRON}
+                    maxLength={SCHEDULE_CRON_MAX_LENGTH}
+                    aria-invalid={!cronIsValid || belowFloor}
+                    aria-describedby={
+                      // The floor message renders under the summary as
+                      // `schedule-cadence-message`; a floor-violating expression must
+                      // still mark THIS input invalid and point at that message, or a
+                      // screen reader finds a disabled Create with no stated reason.
+                      belowFloor
+                        ? 'schedule-cron-hint schedule-cron-message schedule-cadence-message'
+                        : 'schedule-cron-hint schedule-cron-message'
+                    }
+                    data-testid="schedule-cron-input"
+                    {...register('expression')}
+                  />
+                  <p id="schedule-cron-hint" className="text-xs text-text-secondary">
+                    {localize('com_ui_schedule_cron_hint')}
+                  </p>
+                  <FieldMessage
+                    id="schedule-cron-message"
+                    message={cronIsValid ? undefined : localize('com_ui_schedule_cron_invalid')}
+                  />
+                </div>
+                {timezoneField}
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div
+                className={cn(
+                  'grid gap-4',
+                  // Three cells in weekly (day, time, zone) must still be ONE row at
+                  // md for the same height-budget reason the zone is a cell at all.
+                  frequency === 'weekly' ? 'md:grid-cols-3' : 'md:grid-cols-2',
+                )}
+              >
                 {frequency === 'weekly' && (
                   <fieldset className="space-y-2">
                     <legend>
@@ -861,6 +935,7 @@ export default function ScheduleDialog({
                     )}
                   </div>
                 </fieldset>
+                {timezoneField}
               </div>
             )}
 

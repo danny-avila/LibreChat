@@ -1,5 +1,5 @@
 import type { TScheduleCadence } from 'librechat-data-provider';
-import { describeCadence, formatRunInstant } from '../cadence';
+import { describeCadence, formatRunInstant, buildTimezoneOptions } from '../cadence';
 
 const localize = (key: string, vars?: Record<string, unknown>) =>
   vars ? `${key} ${JSON.stringify(vars)}` : key;
@@ -31,5 +31,31 @@ describe('formatRunInstant', () => {
     expect(formatRunInstant(instant, 'UTC', 'en-US')).toMatch(/9:05\s*PM/i);
     // Five hours behind UTC in January, so the same instant is a different clock time.
     expect(formatRunInstant(instant, 'America/New_York', 'en-US')).toMatch(/4:05\s*PM/i);
+  });
+});
+
+describe('buildTimezoneOptions', () => {
+  it('pins the local zone and UTC first, then browsable zones with no duplicates', () => {
+    const zones = buildTimezoneOptions('America/New_York');
+    expect(zones[0]).toBe('America/New_York');
+    expect(zones[1]).toBe('UTC');
+    expect(new Set(zones).size).toBe(zones.length);
+  });
+
+  it('includes modern IANA names the enumeration omits, wherever the engine accepts them', () => {
+    // `supportedValuesOf` reports CLDR's legacy canonical forms (Asia/Calcutta,
+    // Europe/Kiev); the names people search for must still find an option.
+    const zones = new Set(buildTimezoneOptions('America/New_York'));
+    for (const zone of ['Asia/Kolkata', 'Europe/Kyiv', 'America/Argentina/Buenos_Aires']) {
+      let accepted = true;
+      try {
+        new Intl.DateTimeFormat(undefined, { timeZone: zone });
+      } catch {
+        accepted = false;
+      }
+      if (accepted) {
+        expect(zones).toContain(zone);
+      }
+    }
   });
 });

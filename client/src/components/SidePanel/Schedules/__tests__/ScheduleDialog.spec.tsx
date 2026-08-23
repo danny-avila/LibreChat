@@ -332,6 +332,79 @@ describe('ScheduleDialog', () => {
     });
   });
 
+  describe('timezone', () => {
+    it('defaults a new schedule to the browser zone and submits it', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+
+      // Queried directly rather than scoped to role="dialog": the picker popovers
+      // render as dialogs of their own, so that scope goes ambiguous mid-file.
+      expect(screen.getByRole('combobox', { name: 'com_ui_schedule_timezone' })).toHaveTextContent(
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].timezone).toBe(
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+      );
+    });
+
+    it('shows the stored zone rather than the browser one when editing', () => {
+      renderDialog(storedSchedule());
+
+      expect(screen.getByRole('combobox', { name: 'com_ui_schedule_timezone' })).toHaveTextContent(
+        'America/New_York',
+      );
+      expect(screen.getByTestId('schedule-summary')).toHaveTextContent('America/New_York');
+    });
+
+    it('sends a zone change on its own, without a cadence', async () => {
+      // The server recomputes the next run whenever the timezone changes, so a
+      // zone-only edit is a real timing edit and must reach it.
+      const user = userEvent.setup();
+      renderDialog(storedSchedule());
+
+      await user.click(screen.getByRole('combobox', { name: 'com_ui_schedule_timezone' }));
+      await user.type(screen.getByPlaceholderText('com_ui_schedule_timezone_search'), 'UTC');
+      await user.click(await screen.findByRole('option', { name: /^UTC/ }));
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].payload.timezone).toBe('UTC');
+      // And ONLY the zone: a cadence rebuilt from the form would overwrite stored
+      // fields the pickers cannot represent (an API-created hourly's nonzero hour).
+      expect(mockMutate.mock.calls[0][0].payload.cadence).toBeUndefined();
+    });
+
+    it('validates a cron expression against the selected zone, not the browser one', async () => {
+      // `0 0,12 * * *` is a 12-hour gap nominally and an 11-hour one in New York on
+      // the day it springs forward, so a floor between the two accepts it in one zone
+      // and refuses it in the other.
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 700, requireProject: false };
+      const user = userEvent.setup();
+      renderDialog(
+        storedSchedule({
+          cadence: { frequency: 'cron', expression: '0 0,12 * * *' },
+          timezone: 'UTC',
+        }),
+      );
+
+      expect(screen.queryByText(/com_ui_schedule_min_interval/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('combobox', { name: 'com_ui_schedule_timezone' }));
+      await user.type(
+        screen.getByPlaceholderText('com_ui_schedule_timezone_search'),
+        'America/New_York',
+      );
+      await user.click(await screen.findByRole('option', { name: /^America\/New_York/ }));
+
+      expect(screen.getByText(/com_ui_schedule_min_interval/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+    });
+  });
+
   describe('project scope', () => {
     it('submits the chosen project so its runs are filed there', async () => {
       const user = userEvent.setup();
