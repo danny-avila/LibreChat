@@ -457,6 +457,33 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe(getBrowserTabId());
   });
 
+  it('takes a text-only claim from another tab, whose text it is overwriting anyway', () => {
+    /** The shared text record has no per-tab copy: once this tab writes, its text is the only
+     * text there is, so a stamp left with the other tab would stop it restoring its own draft. */
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    localStorage.setItem(
+      `${LocalStorageKeys.FILES_DRAFT}${getNewConversationDraftId()}`,
+      JSON.stringify({ fileIds: [], tabId: 'other-tab' }),
+    );
+
+    setDraft({ id: getNewConversationDraftId(), value: 'text from this tab' });
+
+    expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe(getBrowserTabId());
+  });
+
+  it('leaves a claim backed by an attachment with the tab that still has it', () => {
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    setFilesDraft(getNewConversationDraftId(), {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    setDraft({ id: getNewConversationDraftId(), value: 'text from this tab' });
+
+    expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe('other-tab');
+  });
+
   it('does not claim a conversation key, which tabs are meant to share', () => {
     setDraft({ id: 'convo-1', value: 'shared conversation text' });
 

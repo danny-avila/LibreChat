@@ -52,6 +52,13 @@ const useFileDeletion = ({
        * A resolved request proves nothing on its own, since a failed storage delete is reported
        * as a 200 naming the file in `failedFileIds`. */
       const retainBatch = (files: t.BatchFile[]): void => {
+        /** Only a plain deletion belongs in the shared retry queue. An agent or assistant unlink
+         * carries context the retry does not replay, and without it the route would take the
+         * ordinary delete branch and destroy a record other references still point at. Nothing is
+         * orphaned by a failed unlink either: the file and its links are all still there. */
+        if (agent_id != null || assistant_id != null || tool_resource != null) {
+          return;
+        }
         for (const file of files) {
           retainFileDeletion({
             file_id: file.file_id,

@@ -60,6 +60,12 @@ jest.mock('~/utils', () => ({
   clearAllDrafts: (...args: unknown[]) => mockClearAllDrafts(...args),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
   getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
+  getComposerDraftId: (index = 0, conversationId?: string | null) => {
+    if (conversationId != null && conversationId !== '') {
+      return conversationId;
+    }
+    return index === 0 ? 'new' : `new:${index}`;
+  },
   getFilesDraft: (id: string) =>
     id === 'pending' || (typeof id === 'string' && id.startsWith('pending:'))
       ? mockState.pendingFilesDraft

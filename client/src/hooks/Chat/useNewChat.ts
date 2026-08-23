@@ -13,6 +13,7 @@ import {
   failedFileIdsFrom,
   getFilesDraft,
   getNewConversationDraftId,
+  getComposerDraftId,
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   loadPendingDiscardIds,
@@ -126,9 +127,28 @@ export default function useNewChat({
     }
     let cancelled = false;
     const attempt = async () => {
-      /** An id that came back, as a live chip or inside the fresh draft, is no longer the
-       * discarded draft's to delete. */
-      const reattached = new Set(getFilesDraft(getNewConversationDraftId(index)).fileIds);
+      /** An id that came back, as a live chip or inside a draft, is no longer the discarded
+       * draft's to delete. Every key this pane's composer can be holding it under counts, not
+       * just the idle new-chat one: after a reload the `files` map is empty until the autosave
+       * restore renders, so a file the user reattached to the conversation they are viewing, or
+       * to the key a run parks the composer in, would otherwise be deleted out from under them. */
+      const reattached = new Set<string>();
+      for (const draftId of [
+        getNewConversationDraftId(index),
+        getComposerDraftId(index, conversationId),
+        getPendingDraftId(index),
+      ]) {
+        const draft = getFilesDraft(draftId);
+        for (const fileId of draft.fileIds) {
+          reattached.add(fileId);
+        }
+        for (const pasteId of draft.pastedTextIds ?? []) {
+          reattached.add(pasteId);
+        }
+        for (const pendingId of Object.keys(draft.pendingPastes)) {
+          reattached.add(pendingId);
+        }
+      }
       files.forEach((file, key) => {
         reattached.add(key);
         if (file.file_id != null) {
@@ -175,6 +195,11 @@ export default function useNewChat({
               stillPending.push(record.file_id);
             }
           }
+          /** A reported failure leaves both stores exactly as they were, so this effect has no
+           * dependency left to move it: the next attempt has to be asked for, same as a rejection. */
+          if (failed.size > 0) {
+            scheduleRetainedFileDeletionRetry();
+          }
         } catch {
           /** The draft is already gone, so these ids are the only record of what to clean:
            * keep them for the next files-cache update rather than orphaning the uploads. Nothing
@@ -193,6 +218,7 @@ export default function useNewChat({
     };
   }, [
     pendingDiscardIds,
+    conversationId,
     fileList,
     files,
     index,

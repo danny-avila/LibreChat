@@ -135,14 +135,31 @@ describe('useFileDeletion', () => {
   it('retains a deletion the request never completed', async () => {
     /** The chip is gone by the time this runs, so nothing else remembers the upload exists. */
     mockMutateAsync.mockRejectedValueOnce(new Error('offline'));
-    render(<ConditionalPanel initial={[makeFile('lost-file')]} />);
+    const { result } = renderHook(() => useFileDeletion({ mutateAsync: mockMutateAsync }));
 
-    clickDelete('lost-file');
+    act(() => {
+      result.current.deleteFile({ file: makeFile('lost-file') });
+    });
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
     await act(async () => {});
 
     expect(takeRetainedFileDeletions()).toEqual([
       expect.objectContaining({ file_id: 'lost-file' }),
     ]);
+  });
+
+  it('does not queue a failed agent unlink for the generic delete retry', async () => {
+    /** The retry sends files alone, so replaying an unlink through it would hit the ordinary
+     * delete branch and destroy a record the agent and other references still point at. */
+    mockMutateAsync.mockRejectedValueOnce(new Error('offline'));
+    render(<ConditionalPanel initial={[makeFile('agent-file')]} />);
+
+    clickDelete('agent-file');
+    await act(async () => {});
+
+    expect(takeRetainedFileDeletions()).toEqual([]);
   });
 
   it('retains only the ids the server reported as failed', async () => {

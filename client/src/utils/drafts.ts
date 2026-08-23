@@ -700,18 +700,23 @@ export const claimComposerDraftTab = (id: string): void => {
   /** Reached from every debounced keystroke, so it reads through the cache rather than
    * re-parsing the record each time. */
   const existing = getFilesDraftCached(id);
-  if (existing.tabId != null && isTabLive(existing.tabId)) {
+  const hasAttachments =
+    existing.fileIds.length > 0 ||
+    Object.keys(existing.pendingPastes).length > 0 ||
+    (existing.pastedTextIds?.length ?? 0) > 0;
+  /** A claim with nothing behind it speaks only for text, and the caller is about to overwrite
+   * that text on a key every tab writes to: the stamp follows whoever's text is actually stored,
+   * or the tab that typed last could not restore what it typed. A claim backed by an attachment
+   * stays with its owner while that tab is open, because taking it would let this tab delete
+   * files the other one still has on screen. */
+  if (existing.tabId != null && hasAttachments && isTabLive(existing.tabId)) {
     return;
   }
   const tabId = getBrowserTabId();
   if (tabId === '' || existing.tabId === tabId) {
     return;
   }
-  if (
-    existing.fileIds.length > 0 ||
-    Object.keys(existing.pendingPastes).length > 0 ||
-    (existing.pastedTextIds?.length ?? 0) > 0
-  ) {
+  if (hasAttachments) {
     setFilesDraft(id, { ...existing, tabId });
     return;
   }
@@ -859,10 +864,12 @@ export const setDraft = ({
     ? value != null && value.length > 0
     : value && value.length > 1;
   if (shouldPersist) {
-    setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
+    /** Claim before writing: the shared text record has no per-tab copy, so by the time the write
+     * lands this tab's text is the only text there is, and the stamp has to agree. */
     if (isSharedComposerDraftId(id)) {
       claimComposerDraftTab(id);
     }
+    setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
