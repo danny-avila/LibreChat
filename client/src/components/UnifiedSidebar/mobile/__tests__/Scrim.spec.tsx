@@ -8,18 +8,18 @@ jest.mock('~/hooks', () => ({
 
 function setup({
   expanded,
-  isClosing = false,
+  isSliding = false,
   prefersReducedMotion = false,
 }: {
   expanded: boolean;
-  isClosing?: boolean;
+  isSliding?: boolean;
   prefersReducedMotion?: boolean;
 }) {
   const onClick = jest.fn();
   render(
     <Scrim
       expanded={expanded}
-      isClosing={isClosing}
+      isSliding={isSliding}
       prefersReducedMotion={prefersReducedMotion}
       onClick={onClick}
     />,
@@ -68,7 +68,7 @@ describe('mobile drawer Scrim', () => {
    * underneath.
    */
   it('stays the pointer target while the close is still animating', () => {
-    const { scrim } = setup({ expanded: false, isClosing: true });
+    const { scrim } = setup({ expanded: false, isSliding: true });
 
     expect(scrim).not.toHaveClass('pointer-events-none');
   });

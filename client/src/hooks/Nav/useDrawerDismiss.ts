@@ -23,14 +23,15 @@ export default function useDrawerDismiss({
   paneRef: RefObject<HTMLElement>;
   setOpen: (open: boolean) => void;
 }): {
-  isClosing: boolean;
+  isSliding: boolean;
   onScrimClick: (event: MouseEvent<HTMLElement>) => void;
 } {
-  /** The commit lands on the third frame but the drawer and pane keep moving
-   *  for the rest of the transition, so the scrim has to stay the pointer
-   *  target until then; otherwise a tap during the close reaches a control on
-   *  the pane sliding underneath. */
-  const [isClosing, setIsClosing] = useState(false);
+  /** Whether either surface is still travelling. Recoil's flip is deferred
+   *  past the first frames and the transition outlives it at the other end, so
+   *  the committed state brackets the wrong window; a tap outside it reaches a
+   *  control on the pane sliding underneath. The scrim holds the pointer and
+   *  the pane stays inert for exactly this. */
+  const [isSliding, setIsSliding] = useState(false);
   const wasExpandedRef = useRef(expanded);
   const wasSmallScreenRef = useRef(isSmallScreen);
   /** The guard puts `inert` back on the pane, and both the opener and the pane
@@ -44,15 +45,15 @@ export default function useDrawerDismiss({
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
 
-  const armGuard = useCallback((duration: number) => {
+  const armGuard = useCallback((duration: number, handoff: boolean) => {
     if (guardTimerRef.current != null) {
       clearTimeout(guardTimerRef.current);
     }
-    handoffPendingRef.current = true;
-    setIsClosing(true);
+    handoffPendingRef.current = handoffPendingRef.current || handoff;
+    setIsSliding(true);
     guardTimerRef.current = setTimeout(() => {
       guardTimerRef.current = null;
-      setIsClosing(false);
+      setIsSliding(false);
     }, duration);
   }, []);
 
@@ -61,7 +62,7 @@ export default function useDrawerDismiss({
       clearTimeout(guardTimerRef.current);
       guardTimerRef.current = null;
     }
-    setIsClosing(false);
+    setIsSliding(false);
   }, []);
 
   /** Layout rather than passive: the guard below has to be armed in the frame
@@ -103,24 +104,27 @@ export default function useDrawerDismiss({
     /** Timer rather than transitionend: the scrim unmounts when the viewport
      *  crosses to desktop, and a handler that never fires would strand the
      *  guard on. */
-    armGuard(remaining);
+    armGuard(remaining, true);
     return disarmGuard;
   }, [expanded, isSmallScreen, prefersReducedMotion, paneRef, armGuard, disarmGuard]);
 
-  /** A close whose open never committed moves the pane without `expanded` ever
-   *  changing, so the effect above has no transition to arm from and, on the
-   *  default configuration, nothing else covers the pane as it uncovers under
-   *  the finger. The slide reports itself; a committed close still arms above,
-   *  where the deadline is what is left of the motion rather than all of it. */
+  /** Every slide that starts while the committed state is closed: an open,
+   *  before its deferred flip lands, and a close whose open never committed at
+   *  all (a second toggle retargeting inside that window, or an open drag that
+   *  falls short). Neither reaches the effect above, and on the default
+   *  configuration nothing else covers the pane while the drawer travels over
+   *  it. A committed close still arms above, where the deadline is what is
+   *  left of the motion rather than all of it. */
   useEffect(() => {
     if (!isSmallScreen || prefersReducedMotion) {
       return;
     }
     setDrawerSlideListener((next) => {
-      if (next || expandedRef.current) {
+      if (expandedRef.current) {
         return;
       }
-      armGuard(TRANSITION_MS);
+      /** Only a close strands focus: an open hands it to the drawer's header. */
+      armGuard(TRANSITION_MS, !next);
     });
     return () => {
       setDrawerSlideListener(null);
@@ -132,12 +136,12 @@ export default function useDrawerDismiss({
    *  dependency change hands focus over too: its timer is gone, and the effect
    *  above has already recorded the close it will never rerun for. */
   useLayoutEffect(() => {
-    if (isClosing || !handoffPendingRef.current) {
+    if (isSliding || !handoffPendingRef.current) {
       return;
     }
     handoffPendingRef.current = false;
     restoreDrawerFocus(paneRef.current);
-  }, [isClosing, paneRef]);
+  }, [isSliding, paneRef]);
 
   const onScrimClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -154,7 +158,7 @@ export default function useDrawerDismiss({
     [expanded, setOpen],
   );
 
-  return { isClosing, onScrimClick };
+  return { isSliding, onScrimClick };
 }
 
 /**

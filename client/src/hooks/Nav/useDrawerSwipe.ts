@@ -43,7 +43,7 @@ const setScrimOpacity = (open: boolean) => {
   scrim.style.opacity = open ? '1' : '0';
   /** Recoil still has expanded=false during an open kick, so the class
    *  pointer-events-none would leave the fading-in scrim click-through. Every
-   *  close hands capture back to the expanded/isClosing classes, which hold it
+   *  close hands capture back to the expanded/isSliding classes, which hold it
    *  for exactly the slide; keeping the override would outlive them by the
    *  settle buffer and swallow taps on the strip. */
   scrim.style.pointerEvents = open ? 'auto' : '';

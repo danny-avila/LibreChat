@@ -80,15 +80,15 @@ describe('useDrawerDismiss', () => {
   describe('the pointer guard', () => {
     it('holds the scrim through the close transition', () => {
       const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
 
       act(() => {
         jest.advanceTimersByTime(TRANSITION_MS);
       });
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     /**
@@ -101,7 +101,7 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     /**
@@ -118,7 +118,7 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
     });
 
     it('does not arm when neither surface is transitioning', () => {
@@ -131,7 +131,7 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     /**
@@ -144,12 +144,12 @@ describe('useDrawerDismiss', () => {
       const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
 
       act(() => {
         jest.advanceTimersByTime(100);
       });
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     it('does not arm when the animation deadline has already passed', () => {
@@ -159,7 +159,7 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     /**
@@ -176,7 +176,7 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
     });
 
     it('does not arm under reduced motion, where both surfaces snap', () => {
@@ -188,17 +188,17 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: true });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     it('releases the guard when the viewport crosses to desktop mid-close', () => {
       const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
 
       rerender({ expanded: false, isSmallScreen: false, prefersReducedMotion: false });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
   });
 
@@ -226,14 +226,14 @@ describe('useDrawerDismiss', () => {
       const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
       expect(document.activeElement).toBe(document.body);
 
       act(() => {
         jest.advanceTimersByTime(TRANSITION_MS);
       });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
       expect(document.activeElement).toBe(opener);
     });
 
@@ -319,7 +319,7 @@ describe('useDrawerDismiss', () => {
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
       expect(document.activeElement).toBe(opener);
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     it('restores focus on a close that snaps under reduced motion', () => {
@@ -360,11 +360,11 @@ describe('useDrawerDismiss', () => {
       const opener = addOpener();
       const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: true });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
       expect(document.activeElement).toBe(opener);
     });
 
@@ -388,7 +388,7 @@ describe('useDrawerDismiss', () => {
     });
   });
 
-  describe('a close the committed state never reports', () => {
+  describe('a slide the committed state never reports', () => {
     /**
      * A second toggle inside the deferred flip retargets the slide without
      * `expanded` ever having flipped, and an open drag that falls short snaps
@@ -402,12 +402,12 @@ describe('useDrawerDismiss', () => {
         notifyDrawerSlide(false);
       });
 
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
 
       act(() => {
         jest.advanceTimersByTime(TRANSITION_MS);
       });
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
     it('hands focus over when that guard releases', () => {
@@ -423,7 +423,7 @@ describe('useDrawerDismiss', () => {
         jest.advanceTimersByTime(TRANSITION_MS);
       });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
       expect(document.activeElement).toBe(opener);
     });
 
@@ -435,17 +435,43 @@ describe('useDrawerDismiss', () => {
         notifyDrawerSlide(false);
       });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
 
-    it('ignores an opening slide', () => {
+    /**
+     * The deferred flip leaves the opening frames outside the committed state
+     * too, and without the strip nothing else covers the pane while the drawer
+     * travels over it.
+     */
+    it('arms for an opening slide the flip has not committed', () => {
       const { result } = setup({ expanded: false, isSmallScreen: true });
 
       act(() => {
         notifyDrawerSlide(true);
       });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(true);
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+      expect(result.current.isSliding).toBe(false);
+    });
+
+    /** Only a close strands focus; the drawer's header takes it on an open. */
+    it('does not reclaim focus when an opening slide releases', () => {
+      const opener = addOpener();
+      const { result } = setup({ expanded: false, isSmallScreen: true });
+
+      act(() => {
+        notifyDrawerSlide(true);
+      });
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+
+      expect(result.current.isSliding).toBe(false);
+      expect(document.activeElement).not.toBe(opener);
     });
 
     it('does not arm under reduced motion, where the slide snaps', () => {
@@ -459,7 +485,7 @@ describe('useDrawerDismiss', () => {
         notifyDrawerSlide(false);
       });
 
-      expect(result.current.isClosing).toBe(false);
+      expect(result.current.isSliding).toBe(false);
     });
   });
 
@@ -481,7 +507,7 @@ describe('useDrawerDismiss', () => {
     it('swallows a tap landing after the close has committed', () => {
       const { result, rerender, setOpen } = setup({ expanded: true, isSmallScreen: true });
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
-      expect(result.current.isClosing).toBe(true);
+      expect(result.current.isSliding).toBe(true);
       setOpen.mockClear();
 
       const scrim = clickScrim(result.current.onScrimClick);

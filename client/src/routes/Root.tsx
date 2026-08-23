@@ -71,7 +71,7 @@ export default function Root() {
   /** Keyed off the committed state rather than the scrim's own click, because
    *  the header button, Escape, conversation selection and the bottom bar all
    *  close the drawer too. */
-  const { isClosing, onScrimClick } = useDrawerDismiss({
+  const { isSliding, onScrimClick } = useDrawerDismiss({
     expanded: sidebarExpanded,
     isSmallScreen,
     prefersReducedMotion,
@@ -166,21 +166,25 @@ export default function Root() {
                       transform: isSmallScreen && sidebarExpanded ? MOBILE_PANE_SHIFT : 'none',
                       transition: prefersReducedMotion ? undefined : SIDEBAR_TRANSITION,
                     }}
-                    /** `isClosing` keeps the pane inert through a reveal close,
-                     *  where Recoil drops expanded before the drawer has
-                     *  finished sliding away. */
-                    inert={isSmallScreen && (sidebarExpanded || isClosing) ? '' : undefined}
+                    /** Recoil's flip is deferred past the opening frames and
+                     *  the closing transition outlives it at the other end, so
+                     *  `isSliding` covers the travel `sidebarExpanded` brackets
+                     *  too late and drops too early. */
+                    inert={isSmallScreen && (sidebarExpanded || isSliding) ? '' : undefined}
                   >
                     <Outlet />
                   </div>
-                  {/* `isClosing` keeps it through a close that began while the
-                      strip was still on: disabling it unmounts the scrim at
-                      once, but the drawer needs the whole transition to widen,
-                      so that close still slides the pane. */}
-                  {isSmallScreen && (drawerStrip || isClosing) && (
+                  {/* Without the strip the scrim exists only for the travel:
+                      through a close that began while the strip was still on
+                      (disabling it unmounts the scrim at once, but the drawer
+                      needs the whole transition to widen), and through an open
+                      the deferred flip has not committed yet. Once expanded
+                      lands, a full-width drawer covers it, so keeping it
+                      mounted would only expose a duplicate dismiss control. */}
+                  {isSmallScreen && (drawerStrip || (isSliding && !sidebarExpanded)) && (
                     <MobileDrawerScrim
                       expanded={sidebarExpanded}
-                      isClosing={isClosing}
+                      isSliding={isSliding}
                       prefersReducedMotion={prefersReducedMotion}
                       onClick={onScrimClick}
                     />
