@@ -1,5 +1,6 @@
 import { isCronCadence } from 'librechat-data-provider';
 import type { TScheduleCadence } from 'librechat-data-provider';
+import type { WeekStartDay } from '~/utils/clock';
 import type { LocalizeFunction } from '~/common';
 
 export type Meridiem = 'AM' | 'PM';
@@ -23,8 +24,13 @@ export const to12Hour = (hour: number): { hour12: number; meridiem: Meridiem } =
 export const to24Hour = (hour12: number, meridiem: Meridiem): number =>
   meridiem === 'PM' ? (hour12 % 12) + 12 : hour12 % 12;
 
-export const formatScheduleTime = (hour: number, minute: number, locale?: string): string =>
-  new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(
+export const formatScheduleTime = (
+  hour: number,
+  minute: number,
+  locale?: string,
+  hour12?: boolean,
+): string =>
+  new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', hour12 }).format(
     new Date(2000, 0, 1, hour, minute),
   );
 
@@ -46,6 +52,8 @@ export const describeCadence = (
   cadence: TScheduleCadence,
   localize: LocalizeFunction,
   locale?: string,
+  hour12?: boolean,
+  weekStartsOn: WeekStartDay = 0,
 ): string => {
   if (isCronCadence(cadence)) {
     // Shown verbatim rather than translated into prose. A five-field expression can
@@ -60,7 +68,7 @@ export const describeCadence = (
     });
   }
 
-  const time = formatScheduleTime(hour, minute, locale);
+  const time = formatScheduleTime(hour, minute, locale, hour12);
   if (frequency === 'weekdays') {
     return localize('com_ui_schedule_runs_weekdays', { time });
   }
@@ -69,14 +77,25 @@ export const describeCadence = (
     // default weekly day — so render it as weekly (not daily) using that same day.
     const effectiveDays =
       daysOfWeek != null && daysOfWeek.length > 0 ? daysOfWeek : [WEEKLY_DEFAULT_DAY];
-    const days = effectiveDays.map((day) => formatScheduleDay(day, locale)).join(', ');
+    // Reads in the user's own week order (e.g. "Fri, Sat, Sun" when the week starts
+    // Monday), not raw ascending Sunday-first, which would otherwise read a
+    // wrap-around selection like Sat+Sun+Mon as "Sun, Mon, Sat".
+    const sortedDays = [...effectiveDays].sort(
+      (a, b) => ((a - weekStartsOn + 7) % 7) - ((b - weekStartsOn + 7) % 7),
+    );
+    const days = sortedDays.map((day) => formatScheduleDay(day, locale)).join(', ');
     return localize('com_ui_schedule_runs_weekly', { days, time });
   }
   return localize('com_ui_schedule_runs_daily', { time });
 };
 
 /** One previewed occurrence, in the schedule's own zone. */
-export const formatRunInstant = (date: Date, timezone: string, locale?: string): string =>
+export const formatRunInstant = (
+  date: Date,
+  timezone: string,
+  locale?: string,
+  hour12?: boolean,
+): string =>
   new Intl.DateTimeFormat(locale, {
     timeZone: timezone,
     weekday: 'short',
@@ -84,6 +103,7 @@ export const formatRunInstant = (date: Date, timezone: string, locale?: string):
     month: 'short',
     hour: 'numeric',
     minute: '2-digit',
+    hour12,
   }).format(date);
 
 export const resolveLocalTimezone = (): string =>
