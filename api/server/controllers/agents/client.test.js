@@ -3838,6 +3838,50 @@ describe('AgentClient - titleConvo', () => {
 
       expect(mockAgent.additional_instructions).toContain('Direct primary context');
     });
+
+    it('hydrates a pure lazy subagent with its own File Context when selected', async () => {
+      const childContext = makeTextFile('child-context', 'child.txt', 'Pure child private context');
+      const resolvedChild = {
+        id: 'pure-child-agent',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        instructions: 'Pure child instructions',
+        model_parameters: { model: 'gpt-4' },
+        tools: [],
+        agentContextAttachments: [childContext],
+      };
+      const descriptor = {
+        id: resolvedChild.id,
+        resolve: jest.fn().mockResolvedValue(resolvedChild),
+      };
+      mockAgent.lazySubagentConfigs = [descriptor];
+      client.agentConfigs = new Map();
+
+      await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Answer from the child context.',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-1',
+        {},
+      );
+      const resolved = await descriptor.resolve({ signal: new AbortController().signal });
+
+      expect(resolved).toBe(resolvedChild);
+      expect(resolvedChild.additional_instructions).toContain('Pure child private context');
+      expect(mockAgent.additional_instructions ?? '').not.toContain('Pure child private context');
+      expect(mockBuildAgentScopedContext).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          agentIds: ['pure-child-agent'],
+          attachmentsByAgentId: new Map([['pure-child-agent', [childContext]]]),
+        }),
+      );
+    });
   });
 
   describe('provider-native YouTube file preflight', () => {

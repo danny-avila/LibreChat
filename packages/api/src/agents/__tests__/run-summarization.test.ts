@@ -1251,6 +1251,70 @@ describe('subagentConfigs', () => {
     expect(childInputs.name).toBe('Researcher');
   });
 
+  it.each([
+    ['foreground', undefined],
+    [
+      'detached',
+      {
+        store: new InMemorySubagentTaskStore(),
+        scopeId: 'file-context-task-scope',
+      } satisfies SubagentTaskConfig,
+    ],
+  ])("preserves a lazy child's prepared File Context in %s execution", async (_mode, tasks) => {
+    const fileContext = 'Attached document(s):\n```md\n# "child.txt"\nChild-only facts\n\n```';
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_child',
+        name: 'Researcher',
+        additional_instructions: fileContext,
+      }),
+    );
+    const agents = await callAndCapture({
+      subagentTasks: tasks,
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          lazySubagentConfigs: [
+            {
+              id: 'agent_child',
+              name: 'Researcher',
+              description: 'Uses private File Context',
+              configId: 'agent_child:3:fingerprint',
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = await (
+      config.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+
+    expect(childInputs.additional_instructions).toBe(fileContext);
+  });
+
+  it('preserves prepared File Context for an eager legacy subagent', async () => {
+    const fileContext = 'Attached document(s):\n```md\n# "child.txt"\nLegacy child facts\n\n```';
+    const child = makeAgent({
+      id: 'agent_child',
+      name: 'Researcher',
+      additional_instructions: fileContext,
+    });
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = config.agentInputs as Record<string, unknown>;
+
+    expect(childInputs.additional_instructions).toBe(fileContext);
+  });
+
   it('uses a fresh expansion budget for each lazy descriptor resolution', async () => {
     const nestedDescriptors = Array.from({ length: 99 }, (_, index) => ({
       id: `agent_nested_${index}`,
