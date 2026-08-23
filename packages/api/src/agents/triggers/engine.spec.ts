@@ -550,6 +550,59 @@ describe('createAgentTriggerDeliveryEngine', () => {
     }
   });
 
+  it('claims a scheduled retry when it becomes eligible instead of waiting out the idle backoff', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(START);
+    try {
+      let handedFirst = false;
+      let handedRetry = false;
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          if (!handedFirst) {
+            handedFirst = true;
+            return delivery();
+          }
+          if (!handedRetry && Date.now() >= START.getTime() + 20_000) {
+            handedRetry = true;
+            return delivery({ claimToken: 'claim-2', attempts: 1 });
+          }
+          return null;
+        }),
+      });
+      const retryable = new AgentTriggerExecutionError('busy', {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'RATE_LIMITED',
+        status: 429,
+        retryAfter: '20',
+      });
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(retryable)
+        .mockImplementation(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => new Date(), workerId: 'worker-1' },
+        { concurrency: 1, tickMs: 1_000, maxIdleTickMs: 60_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(store.retry).toHaveBeenCalledWith(
+        expect.objectContaining({ availableAt: new Date(START.getTime() + 20_000) }),
+      );
+
+      /** The idle backoff alone would next poll at +31s; the recorded eligibility
+       *  caps the sleep so the retry is claimed on time. */
+      await jest.advanceTimersByTimeAsync(21_000);
+      expect(dispatch).toHaveBeenCalledTimes(2);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping ticks into one claim pass', async () => {
     let releaseClaim: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {

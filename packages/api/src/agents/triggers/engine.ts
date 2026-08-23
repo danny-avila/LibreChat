@@ -146,6 +146,8 @@ interface ClaimPassResult {
 
 export interface AgentTriggerDeliveryEngine {
   start: () => void;
+  /** Registers a future eligibility time so the idle poll never sleeps past it. */
+  noteEligibleAt: (at: Date) => void;
   stop: () => Promise<void>;
   cancelUser: (userId: string) => Promise<void>;
   releaseUserCancellation: (userId: string) => void;
@@ -245,6 +247,10 @@ export function createAgentTriggerDeliveryEngine(
   const workerId = deps.workerId ?? `${process.pid}-${randomUUID()}`;
   const controllers = new Map<AbortController, string>();
   let idleStreak = 0;
+  /** Earliest known future eligibility among deliveries this process has seen; the idle
+   *  timer never sleeps past it, so a retry or defer is claimed when due, not when the
+   *  backoff happens to wake. Cross-replica delays remain bounded by `maxIdleTickMs`. */
+  let nextEligibleAtMs: number | null = null;
   const processing = new Set<Promise<void>>();
   const processingByUser = new Map<string, Set<Promise<void>>>();
   const cancelledUsers = new Set<string>();
@@ -271,6 +277,7 @@ export function createAgentTriggerDeliveryEngine(
       const recheckAt = now().getTime() + ORDERING_RECHECK_MS;
       const nextCheck =
         block.leaseUntil == null ? Math.max(recheckAt, block.availableAt.getTime()) : recheckAt;
+      noteEligibleAt(new Date(nextCheck));
       await deps.store.release({
         id: delivery.id,
         workerId,
@@ -355,6 +362,7 @@ export function createAgentTriggerDeliveryEngine(
           const delayMs =
             error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
           const availableAt = new Date(attemptedAt.getTime() + delayMs);
+          noteEligibleAt(availableAt);
           const deferred = await deps.store.defer({
             id: delivery.id,
             workerId,
@@ -398,6 +406,7 @@ export function createAgentTriggerDeliveryEngine(
           return;
         }
         const availableAt = retryAt(error, attempt, attemptedAt, retryBaseMs, retryCapMs, random);
+        noteEligibleAt(availableAt);
         const retrying = await deps.store.retry({
           id: delivery.id,
           workerId,
@@ -437,6 +446,7 @@ export function createAgentTriggerDeliveryEngine(
           attemptedAt: settledAt,
         };
         const availableAt = retryAt(error, attempt, settledAt, retryBaseMs, retryCapMs, random);
+        noteEligibleAt(availableAt);
         const retrying = await deps.store.retry({
           id: delivery.id,
           workerId,
@@ -569,6 +579,20 @@ export function createAgentTriggerDeliveryEngine(
     );
   };
 
+  function noteEligibleAt(at: Date): void {
+    const eligibleAtMs = at.getTime();
+    if (!Number.isFinite(eligibleAtMs) || stopped) {
+      return;
+    }
+    if (nextEligibleAtMs != null && eligibleAtMs >= nextEligibleAtMs) {
+      return;
+    }
+    nextEligibleAtMs = eligibleAtMs;
+    if (started) {
+      schedule();
+    }
+  }
+
   /** A wake is evidence of work — an enqueue or a finished delivery — so it snaps the
    *  idle backoff and the poll timer back to the base cadence before claiming. */
   function wake(): void {
@@ -589,10 +613,16 @@ export function createAgentTriggerDeliveryEngine(
     if (timer != null) {
       clearTimeout(timer);
     }
-    const delay = Math.min(tickMs * 2 ** idleStreak, maxIdleTickMs);
+    let delay = Math.min(tickMs * 2 ** idleStreak, maxIdleTickMs);
+    if (nextEligibleAtMs != null) {
+      delay = Math.max(0, Math.min(delay, nextEligibleAtMs - now().getTime()));
+    }
     timer = setTimeout(async () => {
       if (stopped) {
         return;
+      }
+      if (nextEligibleAtMs != null && now().getTime() >= nextEligibleAtMs) {
+        nextEligibleAtMs = null;
       }
       await claimAvailable().catch((error) =>
         logger.error('[agent-triggers] delivery claim pass failed:', error),
@@ -638,6 +668,7 @@ export function createAgentTriggerDeliveryEngine(
       cancelledUsers.delete(userId);
     },
     wake,
+    noteEligibleAt,
     runTick,
   };
 }

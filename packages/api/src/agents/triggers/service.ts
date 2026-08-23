@@ -396,7 +396,12 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         await drainUser(String(prepared.user));
         throw error;
       }
-      deliveryEngine?.wake();
+      const eligibleAt = queued.delivery.availableAt;
+      if (eligibleAt instanceof Date && eligibleAt.getTime() > Date.now()) {
+        deliveryEngine?.noteEligibleAt(eligibleAt);
+      } else {
+        deliveryEngine?.wake();
+      }
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
@@ -417,7 +422,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       runAsSystem(async () => {
         const revived = await requireMethods().requeueAgentTriggerDelivery(id, availableAt);
         if (revived != null) {
-          deliveryEngine?.wake();
+          if (availableAt.getTime() > Date.now()) {
+            deliveryEngine?.noteEligibleAt(availableAt);
+          } else {
+            deliveryEngine?.wake();
+          }
         }
         return revived;
       }),
