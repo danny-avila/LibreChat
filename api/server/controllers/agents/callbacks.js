@@ -397,6 +397,12 @@ function getDefaultHandlers({
     [GraphEvents.ON_MESSAGE_DELTA]: 'message_delta',
     [GraphEvents.ON_REASONING_DELTA]: 'reasoning_delta',
   };
+  /** Event tasks retain one logical task id across HITL resume, while each
+   * handler instance is a new generation invocation. Keep replay identity
+   * unique per invocation; the existing stream transport preserves order.
+   * Reusing a zero-based activitySequence here would make the client discard
+   * resumed frames as duplicates of the pre-pause generation. */
+  const eventActivityInvocationId = eventChildActivity == null ? null : nanoid();
   let eventActivitySequence = 0;
   let eventActivityPending = 0;
   let eventActivityCircuitOpen = false;
@@ -427,8 +433,7 @@ function getDefaultHandlers({
       data: eventData.data,
       label: summarizeEvent(eventData.event, eventData.data),
       timestamp: new Date().toISOString(),
-      activityEventId: `${eventChildActivity.subagentRunId}:${sequence}`,
-      activitySequence: sequence,
+      activityEventId: `${eventChildActivity.subagentRunId}:${eventActivityInvocationId}:${sequence}`,
     };
     eventActivityTail = eventActivityTail
       .then(() => eventChildActivity.publish(update))
