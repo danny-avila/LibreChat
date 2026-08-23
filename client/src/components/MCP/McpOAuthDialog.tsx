@@ -88,10 +88,13 @@ export default function McpOAuthDialog({
                   showQR ? 'opacity-100' : 'opacity-0',
                 )}
               >
-                <div className="rounded-2xl bg-white p-4 shadow-lg">
+                <div className="min-w-0 rounded-2xl bg-white p-4 shadow-lg">
+                  {/* size is only the no-CSS fallback; the rem width is what renders,
+                      so the code follows the dialog instead of staying at 180px. */}
                   <QRCodeSVG
                     value={oauthUrl}
                     size={180}
+                    className="h-auto w-[11.25rem] max-w-full"
                     marginSize={2}
                     title={localize('com_ui_mcp_oauth_qr_code_description')}
                   />
