@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { MouseEvent, RefObject } from 'react';
 import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -55,38 +56,18 @@ export default function useDrawerDismiss({
       return;
     }
 
-    /** Runs for a breakpoint crossing too: the expanded desktop sidebar is
-     *  replaced by the closed mobile drawer, so focus inside it is dropped
-     *  just as surely as by a deliberate close. */
-    restoreDrawerFocus(paneRef.current);
+    const remaining = closeGuardDuration({
+      wasSmallScreen,
+      prefersReducedMotion,
+      pane: paneRef.current,
+    });
 
-    /** Crossing the breakpoint derives the drawer closed with nothing to
-     *  animate, and both surfaces snap under reduced motion. In neither case
-     *  is anything still moving, and arming anyway would leave a transparent
-     *  full-screen scrim swallowing taps for the length of the guard. */
-    if (!wasSmallScreen || prefersReducedMotion) {
-      return;
-    }
-
-    /** The guard exists to cover anything still moving. The reveal close
-     *  repositions the pane instantly (`transition: none`) while the drawer
-     *  keeps sliding, and a swipe animates the pane at any width, so asking
-     *  only one surface misses a path. */
-    const paneTransition = paneRef.current?.style.transition ?? '';
-    const drawerTransition = document.getElementById(MOBILE_DRAWER_ID)?.style.transition ?? '';
-    const stillMoving = (transition: string) => transition !== '' && transition !== 'none';
-    if (!stillMoving(paneTransition) && !stillMoving(drawerTransition)) {
-      return;
-    }
-
-    /** The slide started at kick time. A delayed Recoil commit must not add a
-     *  fresh TRANSITION_MS after the compositor has already settled. */
-    const startedAt = getDrawerAnimationStartedAt();
-    const remaining =
-      startedAt == null
-        ? TRANSITION_MS
-        : Math.max(0, TRANSITION_MS - (performance.now() - startedAt));
-    if (remaining === 0) {
+    /** Nothing is still moving, so the pane never takes `inert` back and the
+     *  handoff can land in this frame. Runs for a breakpoint crossing too: the
+     *  expanded desktop sidebar is replaced by the closed mobile drawer, so
+     *  focus inside it is dropped just as surely as by a deliberate close. */
+    if (remaining == null) {
+      restoreDrawerFocus(paneRef.current);
       return;
     }
 
@@ -94,7 +75,14 @@ export default function useDrawerDismiss({
      *  crosses to desktop, and a handler that never fires would strand the
      *  guard on. */
     setIsClosing(true);
-    const id = setTimeout(() => setIsClosing(false), remaining);
+    const id = setTimeout(() => {
+      /** The guard puts `inert` back on the pane, and both the opener and the
+       *  pane itself sit inside it, so a handoff at the commit would only be
+       *  dropped to the body with nothing left to re-run it. Flush the release
+       *  first, so the attribute is off the DOM before focus moves. */
+      flushSync(() => setIsClosing(false));
+      restoreDrawerFocus(paneRef.current);
+    }, remaining);
     return () => {
       clearTimeout(id);
       setIsClosing(false);
@@ -117,6 +105,46 @@ export default function useDrawerDismiss({
   );
 
   return { isClosing, onScrimClick };
+}
+
+/**
+ * How much of the close is still moving, or null when nothing is. Crossing the
+ * breakpoint derives the drawer closed with nothing to animate, and both
+ * surfaces snap under reduced motion; arming anyway would leave a transparent
+ * full-screen scrim swallowing taps for the length of the guard.
+ */
+function closeGuardDuration({
+  wasSmallScreen,
+  prefersReducedMotion,
+  pane,
+}: {
+  wasSmallScreen: boolean;
+  prefersReducedMotion: boolean;
+  pane: HTMLElement | null;
+}): number | null {
+  if (!wasSmallScreen || prefersReducedMotion) {
+    return null;
+  }
+
+  /** The guard exists to cover anything still moving. The reveal close
+   *  repositions the pane instantly (`transition: none`) while the drawer keeps
+   *  sliding, and a swipe animates the pane at any width, so asking only one
+   *  surface misses a path. */
+  const paneTransition = pane?.style.transition ?? '';
+  const drawerTransition = document.getElementById(MOBILE_DRAWER_ID)?.style.transition ?? '';
+  const stillMoving = (transition: string) => transition !== '' && transition !== 'none';
+  if (!stillMoving(paneTransition) && !stillMoving(drawerTransition)) {
+    return null;
+  }
+
+  /** The slide started at kick time. A delayed Recoil commit must not add a
+   *  fresh TRANSITION_MS after the compositor has already settled. */
+  const startedAt = getDrawerAnimationStartedAt();
+  const remaining =
+    startedAt == null
+      ? TRANSITION_MS
+      : Math.max(0, TRANSITION_MS - (performance.now() - startedAt));
+  return remaining === 0 ? null : remaining;
 }
 
 /**

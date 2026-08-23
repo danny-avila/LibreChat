@@ -209,6 +209,31 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+
+      expect(document.activeElement).toBe(opener);
+    });
+
+    /**
+     * The guard puts `inert` back on the pane for its duration, and both the
+     * opener and the pane itself sit inside it, so a handoff made at the commit
+     * would be ejected to the body with nothing left to run it again.
+     */
+    it('waits for the close guard to release before handing focus over', () => {
+      const opener = addOpener();
+      const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+      expect(result.current.isClosing).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+
+      expect(result.current.isClosing).toBe(false);
       expect(document.activeElement).toBe(opener);
     });
 
@@ -236,6 +261,10 @@ describe('useDrawerDismiss', () => {
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+
       expect(document.activeElement).toBe(pane);
     });
 
@@ -247,6 +276,10 @@ describe('useDrawerDismiss', () => {
       composer.focus();
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
 
       expect(document.activeElement).toBe(composer);
     });
@@ -266,6 +299,10 @@ describe('useDrawerDismiss', () => {
       scrim.tabIndex = -1;
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
 
       expect(document.activeElement).toBe(opener);
     });
@@ -325,6 +362,10 @@ describe('useDrawerDismiss', () => {
       close.focus();
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
 
       expect(document.activeElement).toBe(opener);
     });
