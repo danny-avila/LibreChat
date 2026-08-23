@@ -187,9 +187,12 @@ async function abortMessage(req, res) {
      can return before its own save, making this direct write the only one that could reach
      the unseen-reply indicator. The assistants path stamps inside `syncMessages`; this one
      saves the message directly, so the stamp rides along here. Best-effort: the row is
-     already durable, and a missed stamp must not suppress the final event. */
+     already durable, and a missed stamp must not suppress the final event.
+     The temporary flag comes from the job: the client's abort request carries only the abort
+     key and endpoint, so the request body alone would stamp a stopped temporary chat. */
   const stampConversationId = jobData?.conversationId;
-  if (req?.body?.isTemporary !== true && stampConversationId) {
+  const isTemporaryJob = (jobData?.isTemporary ?? req?.body?.isTemporary) === true;
+  if (!isTemporaryJob && stampConversationId) {
     try {
       await db.stampConvoLastResponse(userId, stampConversationId);
     } catch (error) {
