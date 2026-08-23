@@ -15,8 +15,8 @@ import type {
   CallerCapabilityProjectionSnapshot,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { CodeEnvRef, PtcToolCallEvent } from 'librechat-data-provider';
 import type { ValidationIssue } from '@librechat/data-schemas';
-import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { TextContentFragment } from '~/protection';
@@ -72,6 +72,7 @@ import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
+import { instrumentPtcToolMap } from './ptc';
 import { markSandboxReady } from './prewarm';
 
 export interface ToolEndCallbackData {
@@ -136,6 +137,13 @@ export interface ToolExecuteOptions {
   }) => Promise<{ attachments?: unknown[] } | null>;
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
+  /**
+   * Emits an `on_ptc_tool_call` SSE event for one inner tool invocation made
+   * by a programmatic tool-calling program. Absent on transports that don't
+   * carry the LibreChat step stream (Open Responses), which simply skips the
+   * instrumentation.
+   */
+  emitPtcProgress?: (event: PtcToolCallEvent) => void;
   /**
    * Loads a skill by name with ACL constraint (returns full body for injection).
    *
@@ -740,6 +748,35 @@ function filteredToolArgumentsResult(
       errorResult(tc, error.body.message)
     );
   }
+}
+
+/**
+ * Inner tool names the `name` PII policy would block. `filteredToolArgumentsResult`
+ * inspects `tc.name` for direct calls, but inner calls bypass it entirely — and
+ * the trace event carries the name unconditionally, so without this the trace
+ * becomes the disclosure path the policy exists to close. The eligible map holds
+ * a handful of names, each inspected once per PTC call.
+ */
+function collectFilteredPtcToolNames(
+  names: Iterable<string>,
+  req: ServerRequest | undefined,
+): ReadonlySet<string> | undefined {
+  const filters = req?.config?.filters;
+  if (filters == null || !hasActivePiiFields(filters.toolArguments?.pii, ['name'])) {
+    return undefined;
+  }
+  const blocked = new Set<string>();
+  for (const name of names) {
+    try {
+      if (inspectContent(extractToolArgumentContent({ name }), { filters }) != null) {
+        blocked.add(name);
+      }
+    } catch {
+      /* An un-inspectable name is treated as blocked: fail closed. */
+      blocked.add(name);
+    }
+  }
+  return blocked.size > 0 ? blocked : undefined;
 }
 
 function filteredToolOutputResult(
@@ -4150,8 +4187,14 @@ function buildToolCallConfig(
 }
 
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
-  const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
-    options;
+  const {
+    loadTools,
+    toolEndCallback,
+    persistBackgroundCodeResult,
+    emitAttachment,
+    emitPtcProgress,
+    subagentTasks,
+  } = options;
 
   return {
     handle: async (_event: string, data: ToolExecuteBatchRequest) => {
@@ -5007,9 +5050,42 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         toolCallConfig.toolDefs = toolDefs;
                         toolCallConfig.disallowedToolDefs = disallowedToolDefs;
                         const eligibleNames = new Set(toolDefs.map((toolDef) => toolDef.name));
-                        toolCallConfig.toolMap = new Map(
+                        /* Instrument the ELIGIBLE map, never the raw one: the
+                         * caller-capability restriction decides what the sandbox
+                         * may reach, and tracing must not widen it. */
+                        const eligiblePtcToolMap = new Map(
                           [...(ptcToolMap ?? toolMap)].filter(([name]) => eligibleNames.has(name)),
                         );
+                        /* Inner calls produce no run step and no card of their
+                         * own, so the only record of what the program did is
+                         * this trace. `invoke` is the single seam every inner
+                         * call passes through.
+                         *
+                         * They also never reach `filteredToolArgumentsResult` —
+                         * the sandbox bridge invokes them directly — so when the
+                         * deployment filters tool arguments for PII, the trace
+                         * must not put their values on the wire. */
+                        const ptcReq = mergedConfigurable?.req as ServerRequest | undefined;
+                        const ptcArgumentPii = ptcReq?.config?.filters?.toolArguments?.pii;
+                        toolCallConfig.toolMap = emitPtcProgress
+                          ? instrumentPtcToolMap({
+                              toolMap: eligiblePtcToolMap,
+                              toolCallId: tc.id,
+                              runId: (metadata as Record<string, unknown>)?.run_id as
+                                | string
+                                | undefined,
+                              includePreviews: !hasActivePiiFields(ptcArgumentPii, [
+                                'name',
+                                'arguments',
+                                'output',
+                              ]),
+                              traceExclusions: collectFilteredPtcToolNames(
+                                eligiblePtcToolMap.keys(),
+                                ptcReq,
+                              ),
+                              emit: emitPtcProgress,
+                            })
+                          : eligiblePtcToolMap;
                       }
                     }
 
