@@ -35,22 +35,35 @@ const drawerCoversPane = (drawer: HTMLElement): boolean =>
 
 /** Same kick as the drawer/pane transforms: the scrim must not wait for the
  *  Recoil commit, which a large conversation can delay past the slide. */
-const setScrimOpacity = (open: boolean, guarded: boolean) => {
+const setScrimOpacity = (open: boolean) => {
   const scrim = document.getElementById(MOBILE_SCRIM_ID);
   if (scrim == null) {
     return;
   }
   scrim.style.opacity = open ? '1' : '0';
   /** Recoil still has expanded=false during an open kick, so the class
-   *  pointer-events-none would leave the fading-in scrim click-through. A
-   *  close off a committed open hands capture back to the expanded/isClosing
-   *  classes, which hold it for exactly the slide; keeping the override would
-   *  outlive them by the settle buffer and swallow taps on the strip. A close
-   *  that cancels an uncommitted open never reaches those classes at all,
-   *  because expanded stayed false and nothing arms isClosing, so there the
-   *  override is the only capture until the release. */
-  scrim.style.pointerEvents = guarded ? '' : 'auto';
+   *  pointer-events-none would leave the fading-in scrim click-through. Every
+   *  close hands capture back to the expanded/isClosing classes, which hold it
+   *  for exactly the slide; keeping the override would outlive them by the
+   *  settle buffer and swallow taps on the strip. */
+  scrim.style.pointerEvents = open ? 'auto' : '';
 };
+
+/**
+ * A close whose open never committed — a second toggle retargets the slide
+ * inside the deferred flip, or an open drag falls short and snaps back — moves
+ * the pane without `expanded` ever changing, so the dismiss guard has no state
+ * transition to arm from. The slide reports itself here instead.
+ */
+let slideListener: ((next: boolean) => void) | null = null;
+
+export function setDrawerSlideListener(listener: ((next: boolean) => void) | null): void {
+  slideListener = listener;
+}
+
+export function notifyDrawerSlide(next: boolean): void {
+  slideListener?.(next);
+}
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
@@ -369,7 +382,8 @@ export default function useDrawerSwipe({
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
       markDrawerAnimationStart();
-      setScrimOpacity(next, !next && open);
+      notifyDrawerSlide(next);
+      setScrimOpacity(next);
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
@@ -447,7 +461,8 @@ export default function useDrawerSwipe({
           : `${drawer.getBoundingClientRect().width || window.innerWidth}px`;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
         markDrawerAnimationStart();
-        setScrimOpacity(next, !next && open);
+        notifyDrawerSlide(next);
+        setScrimOpacity(next);
         if (next) {
           pane.style.transition = SIDEBAR_TRANSITION;
           pane.style.transform = MOBILE_PANE_SHIFT;
@@ -556,6 +571,12 @@ export default function useDrawerSwipe({
             gesture.pane.style.transition = 'none';
             gesture.drawer.style.willChange = 'transform';
             gesture.pane.style.willChange = 'transform';
+            /** Dropping the transition lands a width still easing toward the
+             *  strip target on that target in this frame, so the touchstart
+             *  snapshot is now stale — and the paired transforms below read it
+             *  for both surfaces, which would hold a gap open for the whole
+             *  drag. */
+            gesture.width = gesture.drawer.clientWidth || window.innerWidth;
           }
         } else if (Math.abs(dy) >= ACTIVATION_DISTANCE) {
           gesture.phase = 'dead';

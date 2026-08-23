@@ -1,8 +1,8 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, RefObject } from 'react';
 import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { getDrawerAnimationStartedAt, setDrawerSlideListener } from './useDrawerSwipe';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { getDrawerAnimationStartedAt } from './useDrawerSwipe';
 
 /**
  * Every path that closes the mobile drawer leaves the same two problems, so
@@ -39,6 +39,30 @@ export default function useDrawerDismiss({
    *  below pays it, whether the release comes from the timer or from a
    *  dependency change cancelling the guard. */
   const handoffPendingRef = useRef(false);
+  const guardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Read from the slide listener below, which fires outside React's render. */
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  const armGuard = useCallback((duration: number) => {
+    if (guardTimerRef.current != null) {
+      clearTimeout(guardTimerRef.current);
+    }
+    handoffPendingRef.current = true;
+    setIsClosing(true);
+    guardTimerRef.current = setTimeout(() => {
+      guardTimerRef.current = null;
+      setIsClosing(false);
+    }, duration);
+  }, []);
+
+  const disarmGuard = useCallback(() => {
+    if (guardTimerRef.current != null) {
+      clearTimeout(guardTimerRef.current);
+      guardTimerRef.current = null;
+    }
+    setIsClosing(false);
+  }, []);
 
   /** Layout rather than passive: the guard below has to be armed in the frame
    *  the close commits. A passive effect runs after paint, leaving one frame
@@ -79,14 +103,30 @@ export default function useDrawerDismiss({
     /** Timer rather than transitionend: the scrim unmounts when the viewport
      *  crosses to desktop, and a handler that never fires would strand the
      *  guard on. */
-    handoffPendingRef.current = true;
-    setIsClosing(true);
-    const id = setTimeout(() => setIsClosing(false), remaining);
+    armGuard(remaining);
+    return disarmGuard;
+  }, [expanded, isSmallScreen, prefersReducedMotion, paneRef, armGuard, disarmGuard]);
+
+  /** A close whose open never committed moves the pane without `expanded` ever
+   *  changing, so the effect above has no transition to arm from and, on the
+   *  default configuration, nothing else covers the pane as it uncovers under
+   *  the finger. The slide reports itself; a committed close still arms above,
+   *  where the deadline is what is left of the motion rather than all of it. */
+  useEffect(() => {
+    if (!isSmallScreen || prefersReducedMotion) {
+      return;
+    }
+    setDrawerSlideListener((next) => {
+      if (next || expandedRef.current) {
+        return;
+      }
+      armGuard(TRANSITION_MS);
+    });
     return () => {
-      clearTimeout(id);
-      setIsClosing(false);
+      setDrawerSlideListener(null);
+      disarmGuard();
     };
-  }, [expanded, isSmallScreen, prefersReducedMotion, paneRef]);
+  }, [isSmallScreen, prefersReducedMotion, armGuard, disarmGuard]);
 
   /** Keyed off the release rather than the close, so a guard cancelled by a
    *  dependency change hands focus over too: its timer is gone, and the effect

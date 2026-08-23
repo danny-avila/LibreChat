@@ -3,6 +3,7 @@ import useDrawerSwipe, {
   findHorizontalScrollBlocker,
   getPendingDrawerFlip,
   kickDrawerAnimation,
+  setDrawerSlideListener,
 } from '../useDrawerSwipe';
 import {
   MOBILE_DRAWER_ID,
@@ -899,14 +900,14 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
 
   /**
    * Two toggles inside the three-frame flip window leave expanded false
-   * throughout, so nothing arms isClosing and the closed pointer-events-none
-   * class would leave the pane live under the closing slide. The override is
-   * the only capture that close gets.
+   * throughout, so the dismiss guard sees no state transition to arm from. The
+   * slide has to report itself or nothing covers the pane as it uncovers.
    */
-  it('keeps the scrim armed when a second kick cancels an uncommitted open', () => {
+  it('reports a close slide that cancels an uncommitted open', () => {
     jest.useFakeTimers();
     const harness = setup(false, false, Math.round(DRAWER_WIDTH / 0.8));
-    const scrim = attachScrim('0');
+    const slides: boolean[] = [];
+    setDrawerSlideListener((next) => slides.push(next));
     const frames: FrameRequestCallback[] = [];
     (window.requestAnimationFrame as unknown as jest.Mock).mockImplementation(
       (callback: FrameRequestCallback) => {
@@ -918,7 +919,6 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
 
     kickDrawerAnimation(true, applyState);
     frames.shift()?.(0);
-    expect(scrim.style.pointerEvents).toBe('auto');
     /** The deferred flip never reaches its third frame: the second kick lands
      *  first, which is the whole point of this path. */
     frames.length = 0;
@@ -927,7 +927,8 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     frames.shift()?.(0);
 
     expect(applyState).not.toHaveBeenCalled();
-    expect(scrim.style.pointerEvents).toBe('auto');
+    expect(slides).toEqual([true, false]);
+    setDrawerSlideListener(null);
     jest.useRealTimers();
     harness.unmount();
   });
@@ -950,6 +951,26 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     expect(harness.drawer.style.width).not.toBe(`${viewportWidth}px`);
 
     jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /**
+   * Dropping the transition on claim lands a width still easing toward the
+   * strip target on that target in the same frame, so the touchstart snapshot
+   * is stale. Both surfaces read it, so the stale value holds a gap open
+   * between the drawer's edge and the pane for the rest of the drag.
+   */
+  it('remeasures the drawer width when a gesture claims mid width transition', () => {
+    const harness = setup(false);
+    Object.defineProperty(harness.drawer, 'clientWidth', { value: 340, configurable: true });
+    harness.pane.dispatchEvent(touchEvent('touchstart', [createTouch(0, 0)], 0));
+    Object.defineProperty(harness.drawer, 'clientWidth', { value: 300, configurable: true });
+
+    harness.pane.dispatchEvent(touchEvent('touchmove', [createTouch(20, 0)], 16));
+    harness.pane.dispatchEvent(touchEvent('touchmove', [createTouch(60, 0)], 32));
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-240px, 0, 0)');
+    expect(harness.pane.style.transform).toBe('translate3d(60px, 0, 0)');
     harness.unmount();
   });
 });

@@ -5,8 +5,8 @@ import {
   SIDEBAR_TRANSITION,
   TRANSITION_MS,
 } from '~/components/UnifiedSidebar/constants';
+import { markDrawerAnimationStart, notifyDrawerSlide } from '../useDrawerSwipe';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { markDrawerAnimationStart } from '../useDrawerSwipe';
 import useDrawerDismiss from '../useDrawerDismiss';
 
 type Props = {
@@ -385,6 +385,81 @@ describe('useDrawerDismiss', () => {
       });
 
       expect(document.activeElement).toBe(opener);
+    });
+  });
+
+  describe('a close the committed state never reports', () => {
+    /**
+     * A second toggle inside the deferred flip retargets the slide without
+     * `expanded` ever having flipped, and an open drag that falls short snaps
+     * both surfaces back the same way. The pane moves either way, so the guard
+     * has to cover it.
+     */
+    it('arms for a close slide that never committed an open', () => {
+      const { result } = setup({ expanded: false, isSmallScreen: true });
+
+      act(() => {
+        notifyDrawerSlide(false);
+      });
+
+      expect(result.current.isClosing).toBe(true);
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    it('hands focus over when that guard releases', () => {
+      const opener = addOpener();
+      const { result } = setup({ expanded: false, isSmallScreen: true });
+
+      act(() => {
+        notifyDrawerSlide(false);
+      });
+      expect(document.activeElement).toBe(document.body);
+
+      act(() => {
+        jest.advanceTimersByTime(TRANSITION_MS);
+      });
+
+      expect(result.current.isClosing).toBe(false);
+      expect(document.activeElement).toBe(opener);
+    });
+
+    /** The committed close arms above, for what is LEFT of the motion. */
+    it('leaves a committed close to the state transition', () => {
+      const { result } = setup({ expanded: true, isSmallScreen: true });
+
+      act(() => {
+        notifyDrawerSlide(false);
+      });
+
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    it('ignores an opening slide', () => {
+      const { result } = setup({ expanded: false, isSmallScreen: true });
+
+      act(() => {
+        notifyDrawerSlide(true);
+      });
+
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    it('does not arm under reduced motion, where the slide snaps', () => {
+      const { result } = setup({
+        expanded: false,
+        isSmallScreen: true,
+        prefersReducedMotion: true,
+      });
+
+      act(() => {
+        notifyDrawerSlide(false);
+      });
+
+      expect(result.current.isClosing).toBe(false);
     });
   });
 
