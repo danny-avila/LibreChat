@@ -263,7 +263,7 @@ export default function DataTable<TData, TValue>({
           ariaLabel="Select row"
         />
       ),
-      meta: { size: '50px' },
+      meta: { size: '3.125rem' },
     };
     return [selectColumn, ...columns];
   }, [columns, enableRowSelection, showCheckboxes]);
