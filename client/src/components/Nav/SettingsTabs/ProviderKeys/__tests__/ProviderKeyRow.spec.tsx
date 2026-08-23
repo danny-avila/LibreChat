@@ -6,6 +6,7 @@ import ProviderKeyRow from '../ProviderKeyRow';
 const mockExpiry = '2026-08-11T12:00:00.000Z';
 
 jest.mock('~/hooks', () => ({
+  useClockFormat: () => true,
   useLocalize: jest.requireActual('~/hooks/useLocalize').default,
   useUserKey: () => ({
     getExpiry: () => mockExpiry,
