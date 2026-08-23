@@ -324,6 +324,23 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     });
   });
 
+  it('still mints an id when the browser has no randomUUID', () => {
+    /** Insecure origins and older webviews have none, and an empty id would leave every draft
+     * unowned and every guard reading another tab's record as its own. */
+    const original = crypto.randomUUID;
+
+    (crypto as any).randomUUID = undefined;
+    try {
+      withNavigationType('navigate', () => {
+        const minted = getBrowserTabId();
+        expect(minted).not.toBe('');
+        expect(minted).toBe(sessionStorage.getItem('librechat-tab-session'));
+      });
+    } finally {
+      (crypto as any).randomUUID = original;
+    }
+  });
+
   it('mints a fresh id when storage was inherited by a cloned tab', () => {
     sessionStorage.setItem('librechat-tab-session', 'inherited-from-original');
     withNavigationType('navigate', () => {

@@ -429,6 +429,25 @@ let documentTabId: string | null = null;
  * the back-forward cache (Navigation Timing reports `back_forward`, not `reload`). Every other
  * entry into a document mints a fresh id, because an inherited one would attribute another
  * tab's live drafts to this composer. */
+/** `crypto.randomUUID` is missing on insecure origins and in older webviews, and letting that
+ * throw would leave the tab with no identity at all: every draft would be written unowned and
+ * every guard here would read another tab's record as its own. The id only has to tell tabs
+ * apart, never resist guessing, so any unique-enough value serves. */
+const mintTabId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // Fall through to the local mint.
+    }
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
 const resolveBrowserTabId = (): string => {
   try {
     const stored = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
@@ -447,7 +466,7 @@ const resolveBrowserTabId = (): string => {
       documentTabId = stored;
       return stored;
     }
-    documentTabId = crypto.randomUUID();
+    documentTabId = mintTabId();
     sessionStorage.setItem(TAB_SESSION_STORAGE_KEY, documentTabId);
     return documentTabId;
   } catch {
