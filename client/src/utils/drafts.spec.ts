@@ -484,6 +484,25 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe('other-tab');
   });
 
+  it('does not overwrite the text of a tab whose attachment claim it could not take', () => {
+    /** This tab could not restore what it wrote anyway, so writing would destroy the other
+     * tab's text for nothing. */
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    setFilesDraft(getNewConversationDraftId(), {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    localStorage.setItem(
+      `${LocalStorageKeys.TEXT_DRAFT}${getNewConversationDraftId()}`,
+      encodeBase64('text the other tab is still writing'),
+    );
+
+    setDraft({ id: getNewConversationDraftId(), value: 'text from this tab' });
+
+    expect(getDraft(getNewConversationDraftId())).toBe('text the other tab is still writing');
+  });
+
   it('does not claim a conversation key, which tabs are meant to share', () => {
     setDraft({ id: 'convo-1', value: 'shared conversation text' });
 

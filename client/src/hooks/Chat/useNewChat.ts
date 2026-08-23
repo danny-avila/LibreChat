@@ -111,8 +111,16 @@ export default function useNewChat({
     (updater: string[] | ((current: string[]) => string[])) => {
       setPendingDiscardIdsState((current) => {
         const next = typeof updater === 'function' ? updater(current) : updater;
-        storePendingDiscardIds(index, next);
-        return next;
+        /** The header, sidebar, mobile bar and shortcut hooks each mount this hook against one
+         * shared session store, so writing this instance's snapshot back would drop ids another
+         * instance recorded and never saw. Only the ids this instance actually knows about are
+         * resolved; anything else in the store is another instance's and is carried through. */
+        const known = new Set(current);
+        const merged = Array.from(
+          new Set([...next, ...loadPendingDiscardIds(index).filter((id) => !known.has(id))]),
+        );
+        storePendingDiscardIds(index, merged);
+        return merged;
       });
     },
     [index],
@@ -153,6 +161,12 @@ export default function useNewChat({
         reattached.add(key);
         if (file.file_id != null) {
           reattached.add(file.file_id);
+        }
+        /** A discard can be pending under the upload's temporary id, and `findFilesRecord`
+         * resolves that alias to the same record: without matching it here, reattaching the
+         * surviving file would not protect it from its own pending deletion. */
+        if (file.temp_file_id != null && file.temp_file_id !== '') {
+          reattached.add(file.temp_file_id);
         }
       });
       const deletable: DeletableRecord[] = [];

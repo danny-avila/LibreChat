@@ -696,7 +696,7 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
 /** Records which tab a shared composer key belongs to when text is all it holds. The files draft
  * doubles as the ownership record, but it is only written once there is an attachment, so a typed
  * but unattached draft read as unowned and another tab's New Chat cleared it. */
-export const claimComposerDraftTab = (id: string): void => {
+export const claimComposerDraftTab = (id: string): boolean => {
   /** Reached from every debounced keystroke, so it reads through the cache rather than
    * re-parsing the record each time. */
   const existing = getFilesDraftCached(id);
@@ -710,15 +710,15 @@ export const claimComposerDraftTab = (id: string): void => {
    * stays with its owner while that tab is open, because taking it would let this tab delete
    * files the other one still has on screen. */
   if (existing.tabId != null && hasAttachments && isTabLive(existing.tabId)) {
-    return;
+    return false;
   }
   const tabId = getBrowserTabId();
   if (tabId === '' || existing.tabId === tabId) {
-    return;
+    return true;
   }
   if (hasAttachments) {
     setFilesDraft(id, { ...existing, tabId });
-    return;
+    return true;
   }
   /** Nothing but the claim to store. `setFilesDraft` drops an empty record rather than leaving
    * a stub behind, which is right for attachments and wrong for this. */
@@ -727,6 +727,7 @@ export const claimComposerDraftTab = (id: string): void => {
     `${LocalStorageKeys.FILES_DRAFT}${id}`,
     JSON.stringify({ fileIds: [], tabId }),
   );
+  return true;
 };
 
 /** Drops a claim with nothing behind it. Once the text is cleared and nothing is attached, the
@@ -865,9 +866,12 @@ export const setDraft = ({
     : value && value.length > 1;
   if (shouldPersist) {
     /** Claim before writing: the shared text record has no per-tab copy, so by the time the write
-     * lands this tab's text is the only text there is, and the stamp has to agree. */
-    if (isSharedComposerDraftId(id)) {
-      claimComposerDraftTab(id);
+     * lands this tab's text is the only text there is, and the stamp has to agree. A refused
+     * claim means another open tab holds the key against an attachment it still has, and this
+     * tab could not restore what it wrote anyway; writing would only destroy that tab's text for
+     * nothing, so the write is dropped with the claim. */
+    if (isSharedComposerDraftId(id) && !claimComposerDraftTab(id)) {
+      return;
     }
     setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;

@@ -290,8 +290,15 @@ export default function usePastedTextEdit({
       const replacement = new File([text], nextPastedTextFilename(attachedFilenames), {
         type: 'text/plain',
       });
+      /** A paste restored from a draft has no `tool_resource`: the server record does not keep
+       * one. `embedded` does survive, and it is only ever set for a file that was vectorized,
+       * so it is what tells a file-search paste apart from a plain one. Falling straight through
+       * to `context` would upload the correction as a non-retrieval file and detach the vector
+       * backed original, quietly dropping the edited paste out of file search. */
+      const restoredToolResource = file.embedded === true ? EToolResources.file_search : undefined;
       const toolResource =
         (file.tool_resource as EToolResources | undefined) ??
+        restoredToolResource ??
         (isAssistantsEndpoint(conversation?.endpoint) ? undefined : EToolResources.context);
 
       setEditing(null);
