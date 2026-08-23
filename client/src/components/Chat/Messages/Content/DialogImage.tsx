@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { Button, TooltipAnchor } from '@librechat/client';
+import { Button, TooltipAnchor, useMediaQuery, useRemScale } from '@librechat/client';
 import { X, ArrowDownToLine, PanelLeftOpen, PanelLeftClose, RotateCcw } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 
@@ -238,16 +238,16 @@ export default function DialogImage({
     ? localize('com_ui_hide_image_details')
     : localize('com_ui_show_image_details');
 
-  // Calculate image max dimensions accounting for the side panel (w-80 = 20rem)
-  const getImageMaxWidth = () => {
-    if (isPromptOpen) {
-      // On mobile, panel overlays so use full width; on desktop, subtract panel width
-      return typeof window !== 'undefined' && window.innerWidth >= 640
-        ? 'calc(90vw - 20rem)'
-        : '90vw';
-    }
-    return '90vw';
-  };
+  /* The details panel is 20rem wide, so the viewport it has to fit beside has to be
+     measured in the same units: a fixed 640px breakpoint puts the panel beside the
+     image at scales where 20rem leaves almost nothing for the image and pushes the
+     action controls offscreen. Below it the panel overlays instead, as on mobile. */
+  const remScale = useRemScale();
+  const detailsFitBesideImage = useMediaQuery(`(min-width: ${640 * remScale}px)`);
+  const detailsBeside = isPromptOpen && detailsFitBesideImage;
+
+  // Reserve the side panel's width (w-80 = 20rem) only when it sits beside the image
+  const getImageMaxWidth = () => (detailsBeside ? 'calc(90vw - 20rem)' : '90vw');
 
   return (
     <DialogPrimitive.Root open={isOpen} onOpenChange={onOpenChange}>
@@ -287,9 +287,9 @@ export default function DialogImage({
             />
           </div>
 
-          {/* Action buttons - top right (336px = 320px panel + 16px gap) */}
+          {/* Action buttons - top right (21rem = 20rem panel + 1rem gap) */}
           <div
-            className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${isPromptOpen ? 'right-[21rem]' : 'right-4'}`}
+            className={`absolute top-4 z-20 flex items-center gap-2 transition-[right] duration-300 ${detailsBeside ? 'right-[21rem]' : 'right-4'}`}
           >
             {zoom > 1 && (
               <TooltipAnchor
@@ -340,7 +340,7 @@ export default function DialogImage({
 
           {/* Image container - centered */}
           <div
-            className={`transition-[margin] duration-300 ${isPromptOpen ? 'mr-80' : ''}`}
+            className={`transition-[margin] duration-300 ${detailsBeside ? 'mr-80' : ''}`}
             onClick={(e) => e.stopPropagation()}
           >
             <div
