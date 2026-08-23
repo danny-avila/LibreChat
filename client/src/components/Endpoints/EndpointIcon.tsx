@@ -9,6 +9,7 @@ import type {
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { getAgentAvatarUrl, getIconEndpoint } from '~/utils';
+import { useProviderIcon } from '~/hooks/Endpoint';
 import { isImageURL } from '~/utils/icons';
 
 const emptyEndpointsConfig = {} as TEndpointsConfig;
@@ -36,8 +37,8 @@ export default function EndpointIcon({
   let endpoint = originalEndpoint;
   endpoint = getIconEndpoint({ endpointsConfig, iconURL: convoIconURL, endpoint });
 
-  const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
+  const { provider } = useProviderIcon({ endpoint, endpointsConfig });
 
   const agent = isAgentsEndpoint(endpoint) ? agentsMap?.[conversation?.agent_id ?? ''] : null;
   const assistant = isAssistantsEndpoint(endpoint)
@@ -59,6 +60,7 @@ export default function EndpointIcon({
       <ConvoIconURL
         iconURL={iconURL}
         modelLabel={entityName || conversation?.chatGptLabel || conversation?.modelLabel || ''}
+        provider={provider}
         context={context}
         assistantAvatar={assistantAvatar}
         assistantName={assistantName ?? ''}
@@ -71,7 +73,6 @@ export default function EndpointIcon({
       <MinimalIcon
         iconURL={endpointIconURL}
         endpoint={endpoint}
-        endpointType={endpointType}
         model={conversation?.model}
         error={false}
         className={className}
