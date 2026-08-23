@@ -1172,7 +1172,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
-  /** Returns newest bounded task outcomes for every selected child in one query. */
+  /** Returns newest bounded task outcomes for every selected child in one query.
+   * The sort/group/slice shape intentionally avoids newer top-N accumulators so
+   * the read remains compatible with supported DocumentDB deployments. */
   async function listSubagentTasksForThreads(input: {
     user: string;
     conversationIds: string[];
@@ -1215,33 +1217,40 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         },
       },
       {
-        $group: {
-          _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
-          task: {
-            $top: {
-              sortBy: { _subagentIsAssistant: -1, createdAt: -1, _id: -1 },
-              output: {
-                messageId: '$messageId',
-                createdAt: '$createdAt',
-                status: '$subagentTask.status',
-              },
-            },
-          },
+        $sort: {
+          conversationId: 1,
+          _subagentTaskId: 1,
+          _subagentIsAssistant: -1,
+          createdAt: -1,
+          _id: -1,
         },
       },
       {
         $group: {
-          _id: '$_id.conversationId',
-          tasks: {
-            $topN: {
-              n: input.limitPerThread,
-              sortBy: { 'task.createdAt': -1, '_id.taskId': 1 },
-              output: '$task',
+          _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
+          task: {
+            $first: {
+              messageId: '$messageId',
+              createdAt: '$createdAt',
+              status: '$subagentTask.status',
             },
           },
         },
       },
-      { $project: { _id: 0, conversationId: '$_id', tasks: 1 } },
+      { $sort: { '_id.conversationId': 1, 'task.createdAt': -1, '_id.taskId': 1 } },
+      {
+        $group: {
+          _id: '$_id.conversationId',
+          tasks: { $push: '$task' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          conversationId: '$_id',
+          tasks: { $slice: ['$tasks', input.limitPerThread] },
+        },
+      },
       { $sort: { conversationId: 1 } },
     ]);
   }
