@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useMediaQuery } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import type t from 'librechat-data-provider';
@@ -7,6 +6,7 @@ import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import { SidePanelGroup } from '~/components/SidePanel';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
@@ -30,7 +30,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const { category } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
 
   // Get URL parameters
   const searchQuery = searchParams.get('q') || '';
