@@ -379,7 +379,9 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
-export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getTokenCount>[1]) {
+export function createTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): (message: BaseMessage) => number {
   const isClaude = encoding === 'claude';
   const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
   return markTokenCounterCacheCompatible(function (message: BaseMessage): number {
