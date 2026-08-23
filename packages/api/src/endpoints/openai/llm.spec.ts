@@ -44,7 +44,7 @@ describe('getOpenAILLMConfig', () => {
       expect(result.llmConfig).toHaveProperty('presencePenalty', 0.3);
     });
 
-    it('should map top_p to topP for LangChain', () => {
+    it('should map top_p to topP', () => {
       const result = getOpenAILLMConfig({
         apiKey: 'test-api-key',
         streaming: true,
