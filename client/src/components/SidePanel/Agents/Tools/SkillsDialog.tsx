@@ -196,7 +196,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
               </OGDialogTitle>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Wraps rather than clipping: the fixed controls alone can exceed the
+                dialog's inner width once the scale or the reader's font grows. */}
+            <div className="flex flex-wrap items-center gap-2">
               {hasCreateAccess && (
                 <Button
                   type="button"
