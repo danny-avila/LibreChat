@@ -351,6 +351,23 @@ describe('useDrawerDismiss', () => {
       expect(document.activeElement).toBe(pane);
     });
 
+    /**
+     * A dependency change cancels the guard and takes its timer, and with it
+     * the handoff, before the replacement run can see the close: its
+     * `wasExpanded` is already false. The debt has to survive that.
+     */
+    it('hands focus over when a motion-preference change cancels the guard', () => {
+      const opener = addOpener();
+      const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+      expect(result.current.isClosing).toBe(true);
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: true });
+
+      expect(result.current.isClosing).toBe(false);
+      expect(document.activeElement).toBe(opener);
+    });
+
     it('reclaims focus stranded inside the drawer once it goes inert', () => {
       const opener = addOpener();
       const drawer = document.createElement('div');

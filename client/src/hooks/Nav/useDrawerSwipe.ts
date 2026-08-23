@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   TRANSITION_MS,
   MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_WIDTH,
   MOBILE_DRAWER_TRANSITION,
   MOBILE_PANE_SHIFT,
   MOBILE_SCRIM_ID,
@@ -34,18 +35,21 @@ const drawerCoversPane = (drawer: HTMLElement): boolean =>
 
 /** Same kick as the drawer/pane transforms: the scrim must not wait for the
  *  Recoil commit, which a large conversation can delay past the slide. */
-const setScrimOpacity = (open: boolean) => {
+const setScrimOpacity = (open: boolean, guarded: boolean) => {
   const scrim = document.getElementById(MOBILE_SCRIM_ID);
   if (scrim == null) {
     return;
   }
   scrim.style.opacity = open ? '1' : '0';
   /** Recoil still has expanded=false during an open kick, so the class
-   *  pointer-events-none would leave the fading-in scrim click-through. The
-   *  close hands capture straight back to the classes, which hold it for
-   *  exactly the length of the guard; an override left over from the opening
-   *  slide would outlive that and swallow taps on the strip. */
-  scrim.style.pointerEvents = open ? 'auto' : '';
+   *  pointer-events-none would leave the fading-in scrim click-through. A
+   *  close off a committed open hands capture back to the expanded/isClosing
+   *  classes, which hold it for exactly the slide; keeping the override would
+   *  outlive them by the settle buffer and swallow taps on the strip. A close
+   *  that cancels an uncommitted open never reaches those classes at all,
+   *  because expanded stayed false and nothing arms isClosing, so there the
+   *  override is the only capture until the release. */
+  scrim.style.pointerEvents = guarded ? '' : 'auto';
 };
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
@@ -224,6 +228,10 @@ const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: b
   const settled = settledTransitions();
   drawer.style.transform = '';
   drawer.style.willChange = '';
+  /** The close pins a measured width, and clearing would drop the declarative
+   * value with it: React will not re-assert a style prop whose value it has
+   * not changed. */
+  drawer.style.width = MOBILE_DRAWER_WIDTH;
   drawer.style.transition = settled.drawer;
   pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
@@ -361,7 +369,7 @@ export default function useDrawerSwipe({
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
       markDrawerAnimationStart();
-      setScrimOpacity(next);
+      setScrimOpacity(next, !next && open);
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
@@ -429,9 +437,17 @@ export default function useDrawerSwipe({
           return;
         }
         drawer.style.transition = MOBILE_DRAWER_TRANSITION;
+        /** A width transition still in flight (the strip setting changing, or
+         * a rotation re-resolving the percentage) runs on its own clock, so
+         * the drawer's edge and the pane's would separate for the rest of it.
+         * Pinning the measured width settles the drawer onto this slide's
+         * clock; the opening kick hands the property back. */
+        drawer.style.width = next
+          ? MOBILE_DRAWER_WIDTH
+          : `${drawer.getBoundingClientRect().width || window.innerWidth}px`;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
         markDrawerAnimationStart();
-        setScrimOpacity(next);
+        setScrimOpacity(next, !next && open);
         if (next) {
           pane.style.transition = SIDEBAR_TRANSITION;
           pane.style.transform = MOBILE_PANE_SHIFT;

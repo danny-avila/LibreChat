@@ -1,5 +1,4 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import type { MouseEvent, RefObject } from 'react';
 import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -34,6 +33,12 @@ export default function useDrawerDismiss({
   const [isClosing, setIsClosing] = useState(false);
   const wasExpandedRef = useRef(expanded);
   const wasSmallScreenRef = useRef(isSmallScreen);
+  /** The guard puts `inert` back on the pane, and both the opener and the pane
+   *  itself sit inside it, so a handoff made while it is armed would only be
+   *  dropped to the body. An armed close records the debt here and the release
+   *  below pays it, whether the release comes from the timer or from a
+   *  dependency change cancelling the guard. */
+  const handoffPendingRef = useRef(false);
 
   /** Layout rather than passive: the guard below has to be armed in the frame
    *  the close commits. A passive effect runs after paint, leaving one frame
@@ -74,20 +79,25 @@ export default function useDrawerDismiss({
     /** Timer rather than transitionend: the scrim unmounts when the viewport
      *  crosses to desktop, and a handler that never fires would strand the
      *  guard on. */
+    handoffPendingRef.current = true;
     setIsClosing(true);
-    const id = setTimeout(() => {
-      /** The guard puts `inert` back on the pane, and both the opener and the
-       *  pane itself sit inside it, so a handoff at the commit would only be
-       *  dropped to the body with nothing left to re-run it. Flush the release
-       *  first, so the attribute is off the DOM before focus moves. */
-      flushSync(() => setIsClosing(false));
-      restoreDrawerFocus(paneRef.current);
-    }, remaining);
+    const id = setTimeout(() => setIsClosing(false), remaining);
     return () => {
       clearTimeout(id);
       setIsClosing(false);
     };
   }, [expanded, isSmallScreen, prefersReducedMotion, paneRef]);
+
+  /** Keyed off the release rather than the close, so a guard cancelled by a
+   *  dependency change hands focus over too: its timer is gone, and the effect
+   *  above has already recorded the close it will never rerun for. */
+  useLayoutEffect(() => {
+    if (isClosing || !handoffPendingRef.current) {
+      return;
+    }
+    handoffPendingRef.current = false;
+    restoreDrawerFocus(paneRef.current);
+  }, [isClosing, paneRef]);
 
   const onScrimClick = useCallback(
     (event: MouseEvent<HTMLElement>) => {

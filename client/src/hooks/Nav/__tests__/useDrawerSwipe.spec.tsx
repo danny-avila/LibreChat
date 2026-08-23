@@ -896,6 +896,62 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.useRealTimers();
     harness.unmount();
   });
+
+  /**
+   * Two toggles inside the three-frame flip window leave expanded false
+   * throughout, so nothing arms isClosing and the closed pointer-events-none
+   * class would leave the pane live under the closing slide. The override is
+   * the only capture that close gets.
+   */
+  it('keeps the scrim armed when a second kick cancels an uncommitted open', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('0');
+    const frames: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as unknown as jest.Mock).mockImplementation(
+      (callback: FrameRequestCallback) => {
+        frames.push(callback);
+        return 0;
+      },
+    );
+    const applyState = jest.fn();
+
+    kickDrawerAnimation(true, applyState);
+    frames.shift()?.(0);
+    expect(scrim.style.pointerEvents).toBe('auto');
+    /** The deferred flip never reaches its third frame: the second kick lands
+     *  first, which is the whole point of this path. */
+    frames.length = 0;
+
+    kickDrawerAnimation(false, applyState);
+    frames.shift()?.(0);
+
+    expect(applyState).not.toHaveBeenCalled();
+    expect(scrim.style.pointerEvents).toBe('auto');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /**
+   * The strip setting and a rotation both restart the drawer's width
+   * transition, which then runs on its own clock. Driving the drawer's edge
+   * from that clock and the pane's from the close would open a gap between
+   * the two surfaces for the rest of the slide.
+   */
+  it('pins the drawer width to the close slide and hands it back on open', () => {
+    jest.useFakeTimers();
+    const viewportWidth = Math.round(DRAWER_WIDTH / 0.8);
+    const harness = setup(true, false, viewportWidth);
+
+    kickDrawerAnimation(false, jest.fn());
+    expect(harness.drawer.style.width).toBe(`${viewportWidth}px`);
+
+    kickDrawerAnimation(true, jest.fn());
+    expect(harness.drawer.style.width).not.toBe(`${viewportWidth}px`);
+
+    jest.useRealTimers();
+    harness.unmount();
+  });
 });
 
 describe('findHorizontalScrollBlocker', () => {
