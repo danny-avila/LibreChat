@@ -5,6 +5,7 @@ const mockTaskStore = {
   destroyTaskControlTransport: jest.fn().mockResolvedValue(undefined),
   destroyActivityStream: jest.fn(),
 };
+const mockCompletionWakeupHandler = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/api', () => ({
   cacheConfig: { USE_REDIS: true, REDIS_KEY_PREFIX: 'test:' },
@@ -13,7 +14,7 @@ jest.mock('@librechat/api', () => ({
   registerShutdownTask: jest.fn(),
   duplicateIoRedisClient: jest.fn(),
   createSubagentThreadTaskStore: jest.fn(() => mockTaskStore),
-  createSubagentCompletionWakeupHandler: jest.fn(),
+  createSubagentCompletionWakeupHandler: jest.fn(() => mockCompletionWakeupHandler),
   RedisSubagentTaskControlTransport: jest.fn(),
   RedisEventTransport: jest.fn(),
   SubagentActivityStream: jest.fn(),
@@ -44,13 +45,35 @@ jest.mock('../../Agents/triggers', () => ({
   enqueueAgentTrigger: jest.fn(),
 }));
 
-const { ioredisClient, registerShutdownTask, duplicateIoRedisClient } = require('@librechat/api');
-const { configureSubagentTaskRouting } = require('./subagentThreadStore');
+const {
+  ioredisClient,
+  isEnabled,
+  registerShutdownTask,
+  duplicateIoRedisClient,
+  createSubagentThreadTaskStore,
+} = require('@librechat/api');
+const subagentThreadTaskStore = require('./subagentThreadStore');
+const { configureSubagentTaskRouting } = subagentThreadTaskStore;
+const taskStoreOptions = createSubagentThreadTaskStore.mock.calls[0][1];
 const activityPrepareRegistration = registerShutdownTask.mock.calls.find(
   ([name]) => name === 'subagent activity streams prepare',
 );
 
 describe('subagent thread Redis lifecycle', () => {
+  it('reads completion wakeup rollout state at task preparation time', async () => {
+    isEnabled.mockReturnValueOnce(false);
+
+    await taskStoreOptions.onTaskPrepared({ taskId: 'disabled' });
+    expect(mockCompletionWakeupHandler).not.toHaveBeenCalled();
+    isEnabled.mockReturnValueOnce(true);
+    await taskStoreOptions.onTaskPrepared({ taskId: 'enabled' });
+    expect(mockCompletionWakeupHandler).toHaveBeenCalledWith({ taskId: 'enabled' });
+    isEnabled.mockReturnValueOnce(true);
+    expect(subagentThreadTaskStore.completionWakeupsEnabled).toBe(true);
+    isEnabled.mockReturnValueOnce(false);
+    expect(subagentThreadTaskStore.completionWakeupsEnabled).toBe(false);
+  });
+
   it('closes activity SSE before drain and disconnects its subscriber after drain', async () => {
     const taskSubscriber = { disconnect: jest.fn() };
     const activitySubscriber = { disconnect: jest.fn() };

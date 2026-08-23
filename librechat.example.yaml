@@ -361,6 +361,10 @@ registration:
 #     - '127.0.0.1:8080'
 
 # rateLimits:
+#   # Authenticated agent-event admission has its own API-key-principal bucket.
+#   agentEvents:
+#     userMax: 40
+#     userWindowInMinutes: 1
 #   fileUploads:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
@@ -559,6 +563,14 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #   # (optional) Process-wide event-driven agent rollout controls. Deploy support to
+  #   # every API replica before enabling either producer during a subsequent rollout.
+  #   eventDriven:
+  #     childTurns: false
+  #     completionWakeups: false
+  #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
+  #     # uses its own bound listener; override only for an internal TLS/front-door route.
+  #     # selfUrl: 'https://librechat.internal'
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
