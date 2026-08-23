@@ -535,9 +535,15 @@ export type PendingFileDeletion = {
 };
 
 const retainedFileDeletions = new Map<string, PendingFileDeletion>();
+const retainedFileDeletionListeners = new Set<() => void>();
+
+const notifyRetainedFileDeletions = (): void => {
+  retainedFileDeletionListeners.forEach((listener) => listener());
+};
 
 export const retainFileDeletion = (record: PendingFileDeletion): void => {
   retainedFileDeletions.set(record.file_id, record);
+  notifyRetainedFileDeletions();
 };
 
 export const clearRetainedFileDeletion = (fileId: string): void => {
@@ -547,6 +553,60 @@ export const clearRetainedFileDeletion = (fileId: string): void => {
 /** The deletions waiting for a retry; ownership stays with the store until one succeeds. */
 export const takeRetainedFileDeletions = (): PendingFileDeletion[] =>
   Array.from(retainedFileDeletions.values());
+
+/** Subscribe to a retained deletion being recorded so a retry effect can run without waiting
+ * for an unrelated files-cache update. */
+export const subscribeRetainedFileDeletions = (listener: () => void): (() => void) => {
+  retainedFileDeletionListeners.add(listener);
+  return () => {
+    retainedFileDeletionListeners.delete(listener);
+  };
+};
+
+const PENDING_DISCARD_STORAGE_KEY = 'librechat-pending-file-discards';
+
+type PendingDiscardStore = Record<string, string[]>;
+
+const readPendingDiscardStore = (): PendingDiscardStore => {
+  try {
+    const raw = sessionStorage.getItem(PENDING_DISCARD_STORAGE_KEY);
+    if (raw == null || raw === '') {
+      return {};
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as PendingDiscardStore)
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+/** Draft uploads whose records were not yet resolvable when New Chat discarded them. Stored
+ * per composer index so a reload or remount can still delete them once the files cache
+ * exposes the record. */
+export const loadPendingDiscardIds = (index = 0): string[] => {
+  const stored = readPendingDiscardStore()[String(index)];
+  return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [];
+};
+
+export const storePendingDiscardIds = (index: number, ids: string[]): void => {
+  try {
+    const store = readPendingDiscardStore();
+    if (ids.length === 0) {
+      delete store[String(index)];
+    } else {
+      store[String(index)] = ids;
+    }
+    if (Object.keys(store).length === 0) {
+      sessionStorage.removeItem(PENDING_DISCARD_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(PENDING_DISCARD_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Privacy-blocked storage cannot persist deferred discards across reloads.
+  }
+};
 
 export type PasteAsFileContext = {
   /** The user's `pasteLongTextAsFile` preference. */

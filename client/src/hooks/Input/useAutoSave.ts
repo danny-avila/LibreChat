@@ -13,6 +13,7 @@ import {
   getNewConversationDraftId,
   getPendingDraftId,
   isAskAnswerDraftId,
+  isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
   migrateFilesDraft,
   migrateTextDraft,
@@ -71,7 +72,11 @@ export const useAutoSave = ({
        * the file-cache path runs on every `QueryKeys.files` write (an upload
        * landing, an SSE attachment during a run), where an empty draft means the
        * write has not caught up yet, not that the user has no attachments. */
-      if (filesDraft.fileIds.length === 0 || fileList == null) {
+      if (
+        !isFilesDraftOwnedByThisTab(filesDraft) ||
+        filesDraft.fileIds.length === 0 ||
+        fileList == null
+      ) {
         return [];
       }
 
@@ -137,9 +142,10 @@ export const useAutoSave = ({
         fileIdsToKeep.push(fileId);
       });
 
+      const keptIdentities = new Set([...fileIdsToKeep, ...Object.keys(pendingPastes)]);
       setFilesDraft(id, {
         fileIds: fileIdsToKeep,
-        pastedTextIds,
+        pastedTextIds: pastedTextIds.filter((pastedId) => keptIdentities.has(pastedId)),
         pendingPastes,
       });
       return pastesToRecover;
@@ -270,8 +276,10 @@ export const useAutoSave = ({
         saveText(currentConversationId);
       }
 
-      const pendingPastes = restoreFiles(filesDraftId);
-      restoreText(conversationId, pendingPastes);
+      if (isFilesDraftOwnedByThisTab(getFilesDraft(filesDraftId))) {
+        const pendingPastes = restoreFiles(filesDraftId);
+        restoreText(conversationId, pendingPastes);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -323,15 +331,28 @@ export const useAutoSave = ({
     }
 
     const existingDraft = getFilesDraft(conversationId);
+    if (!isFilesDraftOwnedByThisTab(existingDraft)) {
+      return;
+    }
     const pendingFileIds = Object.keys(existingDraft.pendingPastes);
     const draftFileIds = [
       ...fileIds,
       ...pendingFileIds.filter((fileId) => !fileIds.includes(fileId)),
     ];
+    const liveIds = new Set(draftFileIds);
+    files.forEach((file, key) => {
+      liveIds.add(key);
+      if (file.file_id != null) {
+        liveIds.add(file.file_id);
+      }
+      if (file.temp_file_id != null && file.temp_file_id !== '') {
+        liveIds.add(file.temp_file_id);
+      }
+    });
     setFilesDraft(conversationId, {
       fileIds: draftFileIds,
-      pastedTextIds: existingDraft.pastedTextIds,
+      pastedTextIds: (existingDraft.pastedTextIds ?? []).filter((id) => liveIds.has(id)),
       pendingPastes: existingDraft.pendingPastes,
     });
-  }, [conversationId, saveDrafts, currentConversationId, fileIds]);
+  }, [conversationId, saveDrafts, currentConversationId, fileIds, files]);
 };

@@ -757,6 +757,86 @@ describe('usePastedTextEdit', () => {
     expect(editor.result.current.editing?.text).toBe('recovered from storage');
   });
 
+  it('does not toast a stale failed resolve after a later chip opened', async () => {
+    const gates: Array<(error: Error) => void> = [];
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          gates.push((error: Error) => reject(error));
+        }),
+    );
+    const slow = pastedFile({ file_id: 'restored-file', file: undefined });
+    const fast = pastedFile({ file_id: 'pasted-file' });
+    const editor = renderEditor();
+    let slowOpen: Promise<void> = Promise.resolve();
+    await act(async () => {
+      slowOpen = editor.result.current.openEditor(slow);
+    });
+    await act(async () => {
+      await editor.result.current.openEditor(fast);
+    });
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
+
+    await act(async () => {
+      gates[0]?.(new Error('gone'));
+      await slowOpen;
+    });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(editor.result.current.editing?.file.file_id).toBe('pasted-file');
+  });
+
+  it('abandons a queued replacement after the original is sent', async () => {
+    let commitQueue: (accepted: boolean) => void = () => undefined;
+    mockRouteFiles.mockImplementation(
+      (_files: unknown, _toolResource: unknown, lifecycle: UploadLifecycleCallbacks) =>
+        new Promise<boolean>((resolve) => {
+          commitQueue = (accepted) => resolve(accepted && lifecycle.shouldCommit?.() !== false);
+        }),
+    );
+    const editor = await openEditor();
+    let save: Promise<void> = Promise.resolve();
+    await act(async () => {
+      save = editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      editor.rerender({ files: new Map<string, ExtendedFile>() });
+    });
+    await act(async () => {
+      commitQueue(true);
+      await save;
+    });
+
+    expect(await mockRouteFiles.mock.results[0].value).toBe(false);
+    expect(mockDeleteFile).not.toHaveBeenCalled();
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('serializes a second move back against the same attachment', async () => {
+    let release: (text: string) => void = () => undefined;
+    mockFileDownload.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = (text: string) => resolve({ data: new Blob([text], { type: 'text/plain' }) });
+        }),
+    );
+    const file = pastedFile({ file_id: 'restored-file', file: undefined });
+    const editor = renderEditor(new Map([['restored-file', file]]));
+    let firstMove: Promise<void> = Promise.resolve();
+
+    await act(async () => {
+      firstMove = editor.result.current.moveInline(file);
+      void editor.result.current.moveInline(file);
+    });
+    await act(async () => {
+      release('the paste');
+      await firstMove;
+    });
+
+    expect(mockFileDownload).toHaveBeenCalledTimes(1);
+    expect(mockSetValue).toHaveBeenCalledTimes(1);
+  });
+
   it('reports the text unavailable when every source comes back empty', async () => {
     mockFileDownload.mockRejectedValue(new Error('gone'));
     const restored = pastedFile({ file: undefined, file_id: 'restored-file' });

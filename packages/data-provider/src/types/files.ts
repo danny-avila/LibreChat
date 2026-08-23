@@ -254,7 +254,9 @@ export type TFilesUsageResponse = {
 
 export type DeleteFilesResponse = {
   message: string;
-  result: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  deletedFileIds?: string[];
+  failedFileIds?: string[];
 };
 
 export type BatchFile = {

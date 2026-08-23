@@ -5,14 +5,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { FileSources, TFile } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import type { ExtendedFile } from '~/common';
+import type { FilesDraft } from '~/utils';
 import {
   clearAllDrafts,
   clearMessagesCache,
   clearRetainedFileDeletion,
-  getBrowserTabId,
   getFilesDraft,
   getNewConversationDraftId,
   getPendingDraftId,
+  isFilesDraftOwnedByThisTab,
+  loadPendingDiscardIds,
+  storePendingDiscardIds,
+  subscribeRetainedFileDeletions,
   takeRetainedFileDeletions,
 } from '~/utils';
 import { useGetFiles, useDeleteFilesMutation } from '~/data-provider';
@@ -38,27 +42,25 @@ export type UseNewChatResult = {
 
 type DeletableRecord = {
   file_id: string;
-  embedded: false;
+  embedded: boolean;
   filepath: string;
   source: FileSources;
 };
 
 const toDeletableRecord = (record: TFile): DeletableRecord | null => {
-  if (
-    record.embedded === true ||
-    record.filepath == null ||
-    record.filepath === '' ||
-    !record.source
-  ) {
+  if (record.filepath == null || record.filepath === '' || !record.source) {
     return null;
   }
   return {
     file_id: record.file_id,
-    embedded: false,
+    embedded: record.embedded ?? false,
     filepath: record.filepath,
     source: record.source,
   };
 };
+
+const failedIdsFrom = (result: { failedFileIds?: string[] } | void): string[] =>
+  result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [];
 
 /** Every id the composer currently owns: map keys plus their resolved file ids. Pastes stay
  * owned even when restoration stamped them `attached`, because the draft says they are ours. */
@@ -100,7 +102,23 @@ export default function useNewChat({
   const { mutateAsync } = useDeleteFilesMutation();
   /** Draft uploads whose records were not resolvable when the draft was discarded: the files
    * cache was still loading, or the upload was still in flight and completed only after. */
-  const [pendingDiscardIds, setPendingDiscardIds] = useState<string[]>([]);
+  const [pendingDiscardIds, setPendingDiscardIdsState] = useState<string[]>(() =>
+    loadPendingDiscardIds(index),
+  );
+  const [retainedGeneration, setRetainedGeneration] = useState(0);
+
+  const setPendingDiscardIds = useCallback(
+    (updater: string[] | ((current: string[]) => string[])) => {
+      setPendingDiscardIdsState((current) => {
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        storePendingDiscardIds(index, next);
+        return next;
+      });
+    },
+    [index],
+  );
+
+  useEffect(() => subscribeRetainedFileDeletions(() => setRetainedGeneration((n) => n + 1)), []);
 
   useEffect(() => {
     const retained = takeRetainedFileDeletions();
@@ -135,18 +153,33 @@ export default function useNewChat({
         }
       }
       /** Deletions other flows retained after a failed request ride along: their payloads
-       * cannot be rebuilt, so they retry here until one succeeds. */
-      const batch = [...deletable, ...retained];
+       * cannot be rebuilt, so they retry here until one succeeds. A file the composer has
+       * since reattached is no longer ours to retry. */
+      const retainedToRetry = retained.filter((record) => !reattached.has(record.file_id));
+      for (const record of retained) {
+        if (reattached.has(record.file_id)) {
+          clearRetainedFileDeletion(record.file_id);
+        }
+      }
+      const batch = [...deletable, ...retainedToRetry];
       if (batch.length > 0) {
         try {
-          await mutateAsync({ files: batch });
+          const result = await mutateAsync({ files: batch });
+          const failed = new Set(failedIdsFrom(result));
+          for (const record of retainedToRetry) {
+            if (!failed.has(record.file_id)) {
+              clearRetainedFileDeletion(record.file_id);
+            }
+          }
+          for (const record of deletable) {
+            if (failed.has(record.file_id)) {
+              stillPending.push(record.file_id);
+            }
+          }
         } catch {
           /** The draft is already gone, so these ids are the only record of what to clean:
            * keep them for the next files-cache update rather than orphaning the uploads. */
           return;
-        }
-        for (const record of retained) {
-          clearRetainedFileDeletion(record.file_id);
         }
       }
       if (!cancelled && stillPending.length !== pendingDiscardIds.length) {
@@ -157,7 +190,15 @@ export default function useNewChat({
     return () => {
       cancelled = true;
     };
-  }, [pendingDiscardIds, fileList, files, index, mutateAsync]);
+  }, [
+    pendingDiscardIds,
+    fileList,
+    files,
+    index,
+    mutateAsync,
+    retainedGeneration,
+    setPendingDiscardIds,
+  ]);
 
   const startNewChat = useCallback(() => {
     clearMessagesCache(queryClient, conversationId);
@@ -176,52 +217,82 @@ export default function useNewChat({
      * share. Ids the composer no longer shows cannot be told apart from those, so they are left
      * to retention cleanup; ids still uploading are kept until their records arrive. */
     const draftId = getNewConversationDraftId(index);
+    const pendingId = getPendingDraftId(index);
+    const idleDraft = getFilesDraft(draftId);
+    const pendingDraft = getFilesDraft(pendingId);
+    const collectDiscardWork = (
+      draft: FilesDraft,
+    ): { deletable: DeletableRecord[]; deferred: string[] } => {
+      if (!isFilesDraftOwnedByThisTab(draft)) {
+        return { deletable: [], deferred: [] };
+      }
+      const pasteIds = new Set(draft.pastedTextIds ?? []);
+      const ownedIds = collectOwnedIds(files, pasteIds);
+      /** A draft's own paste provenance is ownership in itself: after a reload the composer
+       * map may not be rebuilt yet when New Chat is clicked, and the chips those ids are
+       * waiting to become would otherwise be skipped rather than discarded with the draft. */
+      for (const pasteId of pasteIds) {
+        ownedIds.add(pasteId);
+      }
+      const draftFileIds = new Set([...draft.fileIds, ...Object.keys(draft.pendingPastes)]);
+      const deletable: DeletableRecord[] = [];
+      const deferred: string[] = [];
+      for (const fileId of draftFileIds) {
+        if (!ownedIds.has(fileId)) {
+          continue;
+        }
+        const record = findFilesRecord(fileList, fileId);
+        const deletableRecord = record != null ? toDeletableRecord(record) : null;
+        if (deletableRecord != null) {
+          deletable.push(deletableRecord);
+        } else if (record == null) {
+          deferred.push(fileId);
+        }
+      }
+      return { deletable, deferred };
+    };
     if (saveDrafts) {
-      const filesDraft = getFilesDraft(draftId);
-      if (filesDraft.tabId == null || filesDraft.tabId === getBrowserTabId()) {
-        const pasteIds = new Set(filesDraft.pastedTextIds ?? []);
-        const ownedIds = collectOwnedIds(files, pasteIds);
-        /** A draft's own paste provenance is ownership in itself: after a reload the composer
-         * map may not be rebuilt yet when New Chat is clicked, and the chips those ids are
-         * waiting to become would otherwise be skipped rather than discarded with the draft. */
-        for (const pasteId of pasteIds) {
-          ownedIds.add(pasteId);
+      const idleWork = collectDiscardWork(idleDraft);
+      const pendingWork = collectDiscardWork(pendingDraft);
+      const seen = new Set<string>();
+      const deletable: DeletableRecord[] = [];
+      for (const record of [...idleWork.deletable, ...pendingWork.deletable]) {
+        if (seen.has(record.file_id)) {
+          continue;
         }
-        const draftFileIds = new Set([
-          ...filesDraft.fileIds,
-          ...Object.keys(filesDraft.pendingPastes),
-        ]);
-        const deletable: DeletableRecord[] = [];
-        const deferred: string[] = [];
-        for (const fileId of draftFileIds) {
-          if (!ownedIds.has(fileId)) {
-            continue;
-          }
-          const record = findFilesRecord(fileList, fileId);
-          const deletableRecord = record != null ? toDeletableRecord(record) : null;
-          if (deletableRecord != null) {
-            deletable.push(deletableRecord);
-          } else if (record == null) {
-            deferred.push(fileId);
-          }
-        }
-        if (deletable.length > 0) {
-          mutateAsync({ files: deletable }).catch(() => {
+        seen.add(record.file_id);
+        deletable.push(record);
+      }
+      const deferred = [...idleWork.deferred, ...pendingWork.deferred];
+      if (deletable.length > 0) {
+        mutateAsync({ files: deletable })
+          .then((result) => {
+            const failedIds = failedIdsFrom(result);
+            if (failedIds.length > 0) {
+              setPendingDiscardIds((current) => Array.from(new Set([...current, ...failedIds])));
+            }
+          })
+          .catch(() => {
             /** A failed deletion is retried on the next files-cache update, exactly like a
              * deferred one, instead of orphaning the uploads. */
             const failedIds = deletable.map((record) => record.file_id);
             setPendingDiscardIds((current) => Array.from(new Set([...current, ...failedIds])));
           });
-        }
-        /** Merged, not replaced: a second reset while an earlier upload is still in flight
-         * must not forget that earlier id, or its eventual record is orphaned. */
-        setPendingDiscardIds((current) => Array.from(new Set([...current, ...deferred])));
       }
+      /** Merged, not replaced: a second reset while an earlier upload is still in flight
+       * must not forget that earlier id, or its eventual record is orphaned. */
+      setPendingDiscardIds((current) => Array.from(new Set([...current, ...deferred])));
     }
     /** A running response parks this pane's composer under the pending key; the clean slate
-     * discards that too, or the queued text and attachments come back with the next run. */
-    clearAllDrafts(getPendingDraftId(index));
-    clearAllDrafts(draftId);
+     * discards that too, or the queued text and attachments come back with the next run.
+     * A record another tab still owns is left in place: clearing it would drop that tab's
+     * unsent text and attachment recovery if it reloads before the next autosave. */
+    if (isFilesDraftOwnedByThisTab(pendingDraft)) {
+      clearAllDrafts(pendingId);
+    }
+    if (isFilesDraftOwnedByThisTab(idleDraft)) {
+      clearAllDrafts(draftId);
+    }
     newConversation();
     onNewChat?.();
   }, [
@@ -234,6 +305,7 @@ export default function useNewChat({
     fileList,
     mutateAsync,
     files,
+    setPendingDiscardIds,
   ]);
 
   const handleNewChatClick = useCallback(

@@ -197,6 +197,12 @@ export const useDeleteFilesMutation = (
     onSuccess: (data, vars, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = vars;
+        /** Prefer the ids the API actually deleted. A 200 with `failedFileIds` still
+         * leaves those records on disk; dropping them from the cache would prevent retry. */
+        if (Array.isArray(data?.deletedFileIds) || Array.isArray(data?.failedFileIds)) {
+          const deleted = new Set(data.deletedFileIds ?? []);
+          return (cachefiles ?? []).filter((file) => !deleted.has(file.file_id));
+        }
 
         const fileMap = filesDeleted.reduce((acc, file) => {
           acc.set(file.file_id, file);

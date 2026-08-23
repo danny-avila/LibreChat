@@ -656,4 +656,51 @@ describe('useAutoSave — file cache updates', () => {
       progress: 1,
     });
   });
+
+  it('prunes paste provenance ids that left the composer', () => {
+    setFilesDraft('convo-1', {
+      fileIds: ['live-file', 'removed-file'],
+      pendingPastes: {},
+      pastedTextIds: ['live-file', 'removed-file'],
+    });
+    const files = new Map([['live-file', { file_id: 'live-file', progress: 1 }]]);
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['live-file']);
+  });
+
+  it('does not restore a files draft another tab owns', () => {
+    mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'other tab text' : ''));
+    setFilesDraft('convo-2', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    const setFiles = jest.fn();
+    const { rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) =>
+        useAutoSave({
+          conversationId,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles,
+        }),
+      { initialProps: { conversationId: 'convo-1' } },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'convo-2' });
+    });
+
+    expect(mockSetValue).not.toHaveBeenCalledWith('text', 'other tab text');
+    expect(getFilesDraft('convo-2').tabId).toBe('other-tab');
+  });
 });

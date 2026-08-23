@@ -19,10 +19,11 @@ export type FilesDraft = {
   /** Paste-generated attachment ids, kept after `pendingPastes` is consumed so provenance
    * survives reloads without holding the (much larger) paste text indefinitely. */
   pastedTextIds?: string[];
-  /** The browser tab that last wrote the draft. Every draft key is reachable from more than
+  /** The browser tab that first wrote the draft. Every draft key is reachable from more than
    * one tab (the unsaved-chat key by every default composer, a conversation key by every tab
    * viewing it), so destructive actions read this to leave other tabs' composers alone.
-   * Undefined on records older than the stamp. */
+   * Later rewrites, including another tab restoring the same record, keep this owner rather
+   * than restamping. Undefined on records older than the stamp. */
   tabId?: string;
 };
 
@@ -404,9 +405,11 @@ let documentTabId: string | null = null;
  * the record stays identifiable.
  *
  * One caveat decides the shape below: duplicated and opener-created tabs start with a COPY of
- * the original's `sessionStorage`, so a stored id on its own proves nothing. Only a reload of
- * the same document legitimately keeps it; every other entry into a document mints a fresh id,
- * because an inherited one would attribute another tab's live drafts to this composer. */
+ * the original's `sessionStorage`, so a stored id on its own proves nothing. Reload of the same
+ * document legitimately keeps it, and so does Back/Forward after the document was evicted from
+ * the back-forward cache (Navigation Timing reports `back_forward`, not `reload`). Every other
+ * entry into a document mints a fresh id, because an inherited one would attribute another
+ * tab's live drafts to this composer. */
 export const getBrowserTabId = (): string => {
   try {
     const stored = sessionStorage.getItem(TAB_SESSION_STORAGE_KEY);
@@ -417,7 +420,11 @@ export const getBrowserTabId = (): string => {
       typeof performance.getEntriesByType === 'function'
         ? performance.getEntriesByType('navigation')[0]?.type
         : undefined;
-    if (stored != null && stored !== '' && navigationType === 'reload') {
+    if (
+      stored != null &&
+      stored !== '' &&
+      (navigationType === 'reload' || navigationType === 'back_forward')
+    ) {
       documentTabId = stored;
       return stored;
     }
@@ -429,6 +436,11 @@ export const getBrowserTabId = (): string => {
     return '';
   }
 };
+
+/** Destructive readers skip a record another tab still owns. Untagged legacy drafts are treated
+ * as owned so pre-stamp recovery still deletes and clears. */
+export const isFilesDraftOwnedByThisTab = (draft: FilesDraft): boolean =>
+  draft.tabId == null || draft.tabId === getBrowserTabId();
 
 let filesDraftCache: { id: string; raw: string | null; draft: FilesDraft } | null = null;
 
@@ -459,11 +471,10 @@ export const addPastedTextDraftFile = ({ id, fileId }: { id: string; fileId: str
 export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
-  /** Every draft key is reachable from more than one tab: the unsaved-chat key by every
-   * default composer, a conversation key by every tab viewing that conversation. Stamping
-   * the writing tab lets a destructive reader tell its own record from another live
-   * composer's. */
-  const tabId = getBrowserTabId() || undefined;
+  /** Stamp only the first writer. A later restore or autosave from another tab must not
+   * steal ownership: that stamp is what keeps Edit / Move back / New Chat from deleting
+   * a file the original tab still has attached. */
+  const tabId = (draft.tabId ?? getFilesDraft(id).tabId ?? getBrowserTabId()) || undefined;
   filesDraftCache = null;
   if (
     draft.fileIds.length === 0 &&

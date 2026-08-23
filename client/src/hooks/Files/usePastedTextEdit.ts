@@ -84,6 +84,9 @@ export default function usePastedTextEdit({
   editingRef.current = editing;
   /** Sequence of editor-open requests, so a slow resolve cannot overwrite a later click. */
   const openRequestRef = useRef(0);
+  /** Synchronous lock for in-flight edit/move actions. React state lags a render behind, so two
+   * clicks in the same turn would both observe an empty set and double-insert the paste. */
+  const pendingActionIdsRef = useRef<Set<string>>(new Set());
 
   /** The dialog belongs to the composer it was opened in. Switching conversation or starting a
    * new chat retires it: saving from the new composer would detach that conversation's file and
@@ -156,11 +159,25 @@ export default function usePastedTextEdit({
     return false;
   }, []);
 
+  const isOpenStale = useCallback(
+    (
+      request: number,
+      conversationIdAtOpen: string | null,
+      draftTokenAtOpen: symbol,
+      file: ExtendedFile,
+    ) =>
+      openRequestRef.current !== request ||
+      conversationIdRef.current !== conversationIdAtOpen ||
+      getNewConversationDraftToken(index) !== draftTokenAtOpen ||
+      !isAttachedToComposer(file),
+    [index, isAttachedToComposer],
+  );
+
   const openEditor = useCallback(
     async (file: ExtendedFile) => {
       /** A replacement for this chip is already in flight; acting on it again would
        * double-replace the same original. */
-      if (pendingActionIds.has(file.file_id)) {
+      if (pendingActionIdsRef.current.has(file.file_id)) {
         return;
       }
       const conversationIdAtOpen = conversationIdRef.current;
@@ -169,19 +186,13 @@ export default function usePastedTextEdit({
        * overwritten by an earlier, slower resolution. */
       const request = ++openRequestRef.current;
       const text = await resolveText(file);
-      if (text == null) {
-        showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
+      /** Stale checks first: a failed resolve for an earlier click must not toast after a
+       * later chip opened, or after the original was sent / the conversation was left. */
+      if (isOpenStale(request, conversationIdAtOpen, draftTokenAtOpen, file)) {
         return;
       }
-      /** The resolve can span a send, which clears the composer without changing either
-       * identity. An editor for an attachment the message already took would save a replacement
-       * into the empty composer, so it never opens. */
-      if (
-        openRequestRef.current !== request ||
-        conversationIdRef.current !== conversationIdAtOpen ||
-        getNewConversationDraftToken(index) !== draftTokenAtOpen ||
-        !isAttachedToComposer(file)
-      ) {
+      if (text == null) {
+        showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
         return;
       }
       setEditing({
@@ -191,7 +202,7 @@ export default function usePastedTextEdit({
         draftToken: draftTokenAtOpen,
       });
     },
-    [resolveText, showToast, localize, index, isAttachedToComposer, pendingActionIds],
+    [resolveText, showToast, localize, index, isOpenStale],
   );
 
   const closeEditor = useCallback(() => setEditing(null), []);
@@ -277,16 +288,11 @@ export default function usePastedTextEdit({
       /** The original stays until the replacement is stored, but it stops accepting actions:
        * a second edit or a Move back against the same original would double-replace it. */
       const sourceId = file.file_id;
-      setPendingActionIds((current) => new Set(current).add(sourceId));
+      pendingActionIdsRef.current.add(sourceId);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       const settleAction = () => {
-        setPendingActionIds((current) => {
-          if (!current.has(sourceId)) {
-            return current;
-          }
-          const settled = new Set(current);
-          settled.delete(sourceId);
-          return settled;
-        });
+        pendingActionIdsRef.current.delete(sourceId);
+        setPendingActionIds(new Set(pendingActionIdsRef.current));
       };
       /** The original stays until the replacement is stored. `routeFiles` resolving only means
        * the upload was accepted into the queue, and detaching first would leave neither copy
@@ -323,7 +329,8 @@ export default function usePastedTextEdit({
       };
       const accepted = await routeFiles([replacement], toolResource, {
         fileId: uploadId,
-        shouldCommit: () => isOriginatingComposer(editConversationId, editDraftToken),
+        shouldCommit: () =>
+          isOriginatingComposer(editConversationId, editDraftToken) && isAttachedToComposer(file),
         onSuccess: () => {
           settleAction();
           /** `shouldCommit` only gates the queue, not the request: the composer can change
@@ -344,8 +351,15 @@ export default function usePastedTextEdit({
       });
       if (!accepted) {
         settleAction();
-        restoreEdits();
-        showToast({ message: localize('com_ui_pasted_text_save_error'), status: 'error' });
+        /** A send or navigation already took the original; reopening the editor or toasting a
+         * save error would put a replacement into the emptied composer. */
+        if (
+          isOriginatingComposer(editConversationId, editDraftToken) &&
+          isAttachedToComposer(file)
+        ) {
+          restoreEdits();
+          showToast({ message: localize('com_ui_pasted_text_save_error'), status: 'error' });
+        }
       }
     },
     [
@@ -376,29 +390,26 @@ export default function usePastedTextEdit({
   const moveInline = useCallback(
     async (file: ExtendedFile) => {
       /** Same lock as an edit: a replacement already in flight must not race a move, and a
-       * second action must not race this move's own resolve. */
-      if (pendingActionIds.has(file.file_id)) {
+       * second action must not race this move's own resolve. The ref is claimed before any
+       * await so two clicks in the same turn cannot both proceed. */
+      if (pendingActionIdsRef.current.has(file.file_id)) {
         return;
       }
-      setPendingActionIds((current) => new Set(current).add(file.file_id));
+      pendingActionIdsRef.current.add(file.file_id);
+      setPendingActionIds(new Set(pendingActionIdsRef.current));
       try {
         const conversationIdAtClick = conversationIdRef.current;
         const draftTokenAtClick = getNewConversationDraftToken(index);
         const text = await resolveText(file);
-        if (text == null) {
-          showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
-          return;
-        }
-        /** The await can span a conversation switch or a new chat (two unsaved chats share one
-         * conversation id, so the token is what distinguishes them), and the text would
-         * otherwise be written into the composer the user navigated to while the original was
-         * detached from this one. A send clears the map without changing either identity, so
-         * the chip must also still be attached here for the move to be honest. */
-        if (
+        const moveStale =
           conversationIdRef.current !== conversationIdAtClick ||
           getNewConversationDraftToken(index) !== draftTokenAtClick ||
-          !isAttachedToComposer(file)
-        ) {
+          !isAttachedToComposer(file);
+        if (moveStale) {
+          return;
+        }
+        if (text == null) {
+          showToast({ message: localize('com_ui_pasted_text_unavailable'), status: 'error' });
           return;
         }
 
@@ -418,24 +429,11 @@ export default function usePastedTextEdit({
         textArea.focus();
         textArea.setSelectionRange(next.length, next.length);
       } finally {
-        setPendingActionIds((current) => {
-          const settled = new Set(current);
-          settled.delete(file.file_id);
-          return settled;
-        });
+        pendingActionIdsRef.current.delete(file.file_id);
+        setPendingActionIds(new Set(pendingActionIdsRef.current));
       }
     },
-    [
-      resolveText,
-      showToast,
-      localize,
-      detach,
-      textAreaRef,
-      methods,
-      index,
-      isAttachedToComposer,
-      pendingActionIds,
-    ],
+    [resolveText, showToast, localize, detach, textAreaRef, methods, index, isAttachedToComposer],
   );
 
   /** Whether a replacement upload or inline move is in flight for a source attachment; the

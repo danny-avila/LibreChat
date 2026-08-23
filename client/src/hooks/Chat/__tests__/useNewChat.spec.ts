@@ -17,8 +17,11 @@ const mockState = {
   saveDrafts: false,
   tabId: 'this-tab',
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
+  pendingFilesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   files: new Map<string, LiveFile>(),
   retainedDeletions: [] as { file_id: string; filepath: string; source: string }[],
+  persistedPendingDiscardIds: [] as string[],
+  retainedListener: null as (() => void) | null,
   fileList: undefined as
     | {
         file_id: string;
@@ -56,8 +59,22 @@ jest.mock('~/utils', () => ({
   clearAllDrafts: (...args: unknown[]) => mockClearAllDrafts(...args),
   getNewConversationDraftId: (index = 0) => (index === 0 ? 'new' : `new:${index}`),
   getPendingDraftId: (index = 0) => (index === 0 ? 'pending' : `pending:${index}`),
-  getFilesDraft: () => mockState.filesDraft,
-  getBrowserTabId: () => mockState.tabId,
+  getFilesDraft: (id: string) =>
+    id === 'pending' || (typeof id === 'string' && id.startsWith('pending:'))
+      ? mockState.pendingFilesDraft
+      : mockState.filesDraft,
+  isFilesDraftOwnedByThisTab: (draft: { tabId?: string }) =>
+    draft.tabId == null || draft.tabId === mockState.tabId,
+  loadPendingDiscardIds: () => [...mockState.persistedPendingDiscardIds],
+  storePendingDiscardIds: (_index: number, ids: string[]) => {
+    mockState.persistedPendingDiscardIds = [...ids];
+  },
+  subscribeRetainedFileDeletions: (listener: () => void) => {
+    mockState.retainedListener = listener;
+    return () => {
+      mockState.retainedListener = null;
+    };
+  },
   takeRetainedFileDeletions: () => mockState.retainedDeletions,
   clearRetainedFileDeletion: (fileId: string) => {
     mockState.retainedDeletions = mockState.retainedDeletions.filter(
@@ -103,9 +120,12 @@ describe('useNewChat', () => {
     mockState.saveDrafts = false;
     mockState.tabId = 'this-tab';
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.pendingFilesDraft = { fileIds: [], pendingPastes: {} };
     mockState.files = new Map();
     mockState.fileList = undefined;
     mockState.retainedDeletions = [];
+    mockState.persistedPendingDiscardIds = [];
+    mockState.retainedListener = null;
   });
 
   it('clears the outgoing conversation before resetting', () => {
@@ -193,7 +213,7 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
-  it('skips draft ids without a deletable record rather than guessing at payloads', () => {
+  it('deletes embedded owned uploads with the discarded draft', () => {
     mockState.saveDrafts = true;
     mockState.filesDraft = {
       fileIds: ['known', 'embedded', 'missing'],
@@ -214,6 +234,12 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).toHaveBeenCalledWith({
       files: [
         { file_id: 'known', embedded: false, filepath: '/uploads/known.txt', source: 'local' },
+        {
+          file_id: 'embedded',
+          embedded: true,
+          filepath: '/uploads/embedded.txt',
+          source: 'local',
+        },
       ],
     });
   });
@@ -233,7 +259,8 @@ describe('useNewChat', () => {
     act(() => result.current.startNewChat());
 
     expect(mockDeleteFiles).not.toHaveBeenCalled();
-    expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
+    expect(mockClearAllDrafts).not.toHaveBeenCalledWith('new');
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('pending');
   });
 
   it('deletes a draft carrying this tab stamp', () => {
@@ -592,6 +619,135 @@ describe('useNewChat', () => {
 
     expect(mockClearAllDrafts).toHaveBeenCalledWith('pending');
     expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
+  });
+
+  it('deletes pending-draft uploads before clearing them', () => {
+    mockState.saveDrafts = true;
+    mockState.pendingFilesDraft = {
+      fileIds: ['queued-file'],
+      pendingPastes: {},
+    };
+    mockState.files = new Map([['queued-file', { file_id: 'queued-file', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'queued-file', filepath: '/uploads/queued.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        {
+          file_id: 'queued-file',
+          embedded: false,
+          filepath: '/uploads/queued.txt',
+          source: 'local',
+        },
+      ],
+    });
+    expect(mockDeleteFiles.mock.invocationCallOrder[0]).toBeLessThan(
+      mockClearAllDrafts.mock.invocationCallOrder[0],
+    );
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('pending');
+  });
+
+  it('spares a pending draft another browser tab still owns', () => {
+    mockState.saveDrafts = true;
+    mockState.pendingFilesDraft = {
+      fileIds: ['other-pending-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    };
+    mockState.fileList = [
+      { file_id: 'other-pending-file', filepath: '/uploads/other-pending.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(mockClearAllDrafts).not.toHaveBeenCalledWith('pending');
+    expect(mockClearAllDrafts).toHaveBeenCalledWith('new');
+  });
+
+  it('spares a reattached file from a retained deletion retry', async () => {
+    mockState.retainedDeletions = [
+      { file_id: 'reattached-file', filepath: '/uploads/reattached.txt', source: 'local' },
+    ];
+    mockState.files = new Map([['reattached-file', { file_id: 'reattached-file', progress: 1 }]]);
+    mockState.fileList = [
+      { file_id: 'reattached-file', filepath: '/uploads/reattached.txt', source: 'local' },
+    ];
+    const { result, rerender } = renderHook(() => useNewChat());
+
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
+    expect(mockState.retainedDeletions).toHaveLength(0);
+    expect(result.current).toBeDefined();
+  });
+
+  it('keeps retained deletions when the API reports a partial failure', async () => {
+    mockDeleteFiles.mockResolvedValueOnce({
+      message: 'Some files could not be deleted',
+      deletedFileIds: [],
+      failedFileIds: ['retained-file'],
+    });
+    mockState.retainedDeletions = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    mockState.fileList = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    const { rerender } = renderHook(() => useNewChat());
+
+    await act(async () => {
+      rerender();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+    expect(mockState.retainedDeletions).toHaveLength(1);
+  });
+
+  it('retries a retained deletion when the retain store notifies', async () => {
+    mockState.fileList = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    renderHook(() => useNewChat());
+
+    mockState.retainedDeletions = [
+      { file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' },
+    ];
+    await act(async () => {
+      mockState.retainedListener?.();
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [{ file_id: 'retained-file', filepath: '/uploads/retained.txt', source: 'local' }],
+    });
+  });
+
+  it('resumes deferred discards persisted from a previous mount', async () => {
+    mockState.persistedPendingDiscardIds = ['late-paste'];
+    mockState.fileList = [
+      { file_id: 'late-paste', filepath: '/uploads/late.txt', source: 'local' },
+    ];
+    renderHook(() => useNewChat());
+
+    await act(async () => undefined);
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [
+        {
+          file_id: 'late-paste',
+          embedded: false,
+          filepath: '/uploads/late.txt',
+          source: 'local',
+        },
+      ],
+    });
   });
 
   it('spares a deferred upload that came back attached to the fresh composer', async () => {

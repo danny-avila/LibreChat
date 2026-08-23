@@ -309,6 +309,13 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     });
   });
 
+  it('adopts the stored id on back-forward restoration', () => {
+    sessionStorage.setItem('librechat-tab-session', 'kept-through-history');
+    withNavigationType('back_forward', () => {
+      expect(getBrowserTabId()).toBe('kept-through-history');
+    });
+  });
+
   it('mints a fresh id when storage was inherited by a cloned tab', () => {
     sessionStorage.setItem('librechat-tab-session', 'inherited-from-original');
     withNavigationType('navigate', () => {
@@ -330,14 +337,14 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(getFilesDraft('convo-1').tabId).toBe(getBrowserTabId());
   });
 
-  it('restamps on every write, so a draft always names its current owner', () => {
+  it('keeps the original tab owner when another tab rewrites the same record', () => {
     setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
     const stamped = getFilesDraft(Constants.NEW_CONVO).tabId;
 
     sessionStorage.clear();
     setFilesDraft(Constants.NEW_CONVO, { fileIds: ['file-1'], pendingPastes: {} });
 
-    expect(getFilesDraft(Constants.NEW_CONVO).tabId).not.toBe(stamped);
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(stamped);
   });
 });
 
