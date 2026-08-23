@@ -9,24 +9,46 @@ import type { WeekStartPreference } from '~/store/weekStart';
  * Returns undefined when the runtime cannot say, which every caller below already
  * treats as "let Intl pick its own default": the same answer by a shorter route.
  */
+let cachedSystemLocale: string | undefined;
+let systemLocaleResolved = false;
+
 export const systemLocale = (): string | undefined => {
-  try {
-    return new Intl.DateTimeFormat().resolvedOptions().locale;
-  } catch {
-    return globalThis.navigator?.language;
+  // Resolved once: the runtime locale cannot change without a reload, and every
+  // message timestamp mounts a hook that asks, so an uncached answer builds a
+  // formatter per rendered message.
+  if (systemLocaleResolved) {
+    return cachedSystemLocale;
   }
+  systemLocaleResolved = true;
+  try {
+    cachedSystemLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
+  } catch {
+    cachedSystemLocale = globalThis.navigator?.language;
+  }
+  return cachedSystemLocale;
 };
 
 /** Whether a locale shows a meridiem, which is what "System" resolves to. Asked of
  *  `Intl` rather than kept as a region list, because that is the same question every
  *  date this app formats already answers for itself. Defaults to a 12-hour clock when
  *  the runtime cannot say, matching `Intl`'s own behaviour for an unknown locale. */
+const meridiemCache = new Map<string, boolean>();
+
 export const localeUsesMeridiem = (locale?: string): boolean => {
-  try {
-    return new Intl.DateTimeFormat(locale, { hour: 'numeric' }).resolvedOptions().hour12 === true;
-  } catch {
-    return true;
+  const cacheKey = locale ?? '';
+  const cached = meridiemCache.get(cacheKey);
+  if (cached != null) {
+    return cached;
   }
+  let usesMeridiem = true;
+  try {
+    usesMeridiem =
+      new Intl.DateTimeFormat(locale, { hour: 'numeric' }).resolvedOptions().hour12 === true;
+  } catch {
+    usesMeridiem = true;
+  }
+  meridiemCache.set(cacheKey, usesMeridiem);
+  return usesMeridiem;
 };
 
 /**
@@ -108,9 +130,16 @@ const localeTag = (locale?: string): string => locale ?? globalThis.navigator?.l
  *  `split('-')[1]` reads the script subtag of `zh-Hant-TW` as the region. */
 const regionOf = (tag: string): string | undefined => {
   try {
-    const region = new Intl.Locale(tag).region;
-    if (region != null) {
-      return region.toUpperCase();
+    const locale = new Intl.Locale(tag);
+    if (locale.region != null) {
+      return locale.region.toUpperCase();
+    }
+    // A bare language tag ('ar', 'fa') names no region, but its LIKELY one is
+    // exactly what a heuristic wants: without this, every language-only locale
+    // fell through to the Monday default, and `ar` alone reads Saturday-first.
+    const likelyRegion = locale.maximize().region;
+    if (likelyRegion != null) {
+      return likelyRegion.toUpperCase();
     }
   } catch {
     // fall through to the manual scan

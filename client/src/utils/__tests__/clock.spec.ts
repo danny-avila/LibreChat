@@ -110,6 +110,17 @@ describe('localeWeekStartsOn', () => {
       expect(localeWeekStartsOn('ar-AE')).toBe(1);
     });
   });
+
+  it('infers the likely region for a language-only tag instead of defaulting', () => {
+    // A runtime can report a bare language ('ar', 'en'); maximize() supplies the
+    // likely region, so those users are not all folded onto Monday.
+    withoutEngineWeekData(() => {
+      expect(localeWeekStartsOn('ar')).toBe(6);
+      expect(localeWeekStartsOn('fa')).toBe(6);
+      expect(localeWeekStartsOn('en')).toBe(0);
+      expect(localeWeekStartsOn('fr')).toBe(1);
+    });
+  });
 });
 
 describe('rotateWeekFrom', () => {
