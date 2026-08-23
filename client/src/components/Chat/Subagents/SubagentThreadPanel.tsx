@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
-import { useRecoilValue, useResetRecoilState } from 'recoil';
 import { Button, useMediaQuery, useToastContext } from '@librechat/client';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   subagentThreadHasTaskEvidence,
@@ -18,7 +18,10 @@ import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActi
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
+import { useParentSubagents } from './ParentSubagentsProvider';
+import { eventSubagentSelection } from './eventSelection';
 import SubagentActivity from './SubagentActivity';
+import { useAgentsMapContext } from '~/Providers';
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
@@ -27,6 +30,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const resetSelection = useResetRecoilState(activeSubagentPanel);
+  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const agentsMap = useAgentsMapContext();
+  const { byMessageId, byThreadId, refresh } = useParentSubagents();
   const progress = useRecoilValue(
     subagentProgressByToolCallId(
       subagentProgressKey(selection.parentMessageId, selection.toolCallId, selection.partIndex),
@@ -38,6 +44,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       : localize('com_ui_subagent_dialog_title', { 0: selection.subagentType });
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
+  const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
+  const eventSiblings = useMemo(
+    () => (selection.event == null ? [] : (byMessageId.get(selection.parentMessageId) ?? [])),
+    [byMessageId, selection.event, selection.parentMessageId],
+  );
   const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
     selection.parentConversationId,
     threadId,
@@ -49,7 +60,23 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       data?.status === 'failed' ||
       data?.status === 'interrupted' ||
       data?.status === 'cancelled');
+  const priorTerminalRef = useRef(false);
   useSubagentActivityStream(selection, !durableTerminal);
+
+  useEffect(() => {
+    if (selection.event == null) return;
+    void refresh();
+  }, [refresh, selection.event, threadId]);
+
+  useEffect(() => {
+    priorTerminalRef.current = false;
+  }, [taskId, threadId]);
+
+  useEffect(() => {
+    if (selection.event == null) return;
+    if (durableTerminal && !priorTerminalRef.current) void refresh();
+    priorTerminalRef.current = durableTerminal;
+  }, [durableTerminal, refresh, selection.event]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
@@ -148,6 +175,28 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       option: ForkOptions.DIRECT_PATH,
     });
   }, [canContinueAsChat, continueChat, selection.durable]);
+  const selectActor = useCallback(
+    (nextThreadId: string) => {
+      const next = eventSiblings.find((child) => child.threadId === nextThreadId);
+      if (next == null) return;
+      const nextSelection = eventSubagentSelection(selection.parentConversationId, next);
+      if (nextSelection != null) setSelection(nextSelection);
+    },
+    [eventSiblings, selection.parentConversationId, setSelection],
+  );
+  const selectTask = useCallback(
+    (nextTaskId: string) => {
+      if (selection.durable == null || selection.event == null) return;
+      const nextTask = eventSummary?.tasks.find((task) => task.taskId === nextTaskId);
+      setSelection({
+        ...selection,
+        durable: { ...selection.durable, taskId: nextTaskId },
+        initialProgress: nextTask?.status === 'completed' ? 1 : 0,
+        isSubmitting: nextTask?.status === 'running',
+      });
+    },
+    [eventSummary?.tasks, selection, setSelection],
+  );
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (
     selection.durable != null &&
@@ -201,6 +250,48 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <X size={17} aria-hidden="true" />
         </Button>
       </header>
+
+      {selection.event != null && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-light px-4 py-2">
+          <label className="min-w-0 flex-1 text-xs text-text-secondary">
+            <span className="sr-only">{localize('com_ui_subagent_actor')}</span>
+            <select
+              aria-label={localize('com_ui_subagent_actor')}
+              value={threadId}
+              onChange={(event) => selectActor(event.target.value)}
+              className="h-8 w-full rounded-md border border-border-medium bg-surface-secondary px-2 text-sm text-text-primary"
+            >
+              {eventSiblings.map((child) => (
+                <option key={child.threadId} value={child.threadId} disabled={!child.latestTaskId}>
+                  {child.agentId != null && agentsMap?.[child.agentId]?.name
+                    ? agentsMap[child.agentId]?.name
+                    : child.actorId || child.title}
+                  {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
+                    ? ` · ${child.actorId}`
+                    : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="w-32 text-xs text-text-secondary">
+            <span className="sr-only">{localize('com_ui_subagent_turn')}</span>
+            <select
+              aria-label={localize('com_ui_subagent_turn')}
+              value={taskId}
+              onChange={(event) => selectTask(event.target.value)}
+              className="h-8 w-full rounded-md border border-border-medium bg-surface-secondary px-2 text-sm text-text-primary"
+            >
+              {(eventSummary?.tasks ?? []).map((task, index) => (
+                <option key={task.taskId} value={task.taskId}>
+                  {index === 0
+                    ? localize('com_ui_subagent_latest_turn')
+                    : localize('com_ui_subagent_earlier_turn', { 0: String(index) })}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       {/* Keep the foreground panel's existing nested-tool approval controls
           coordinated within this invocation. Detached activity projections

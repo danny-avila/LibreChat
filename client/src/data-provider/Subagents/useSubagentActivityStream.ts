@@ -125,7 +125,11 @@ export default function useSubagentActivityStream(
         if (envelope.event !== StepEvents.ON_SUBAGENT_UPDATE || !isSubagentUpdate(event)) {
           return;
         }
-        if (event.parentToolCallId != null && event.parentToolCallId !== selection.toolCallId) {
+        if (
+          selection.event == null &&
+          event.parentToolCallId != null &&
+          event.parentToolCallId !== selection.toolCallId
+        ) {
           return;
         }
         retryAttempt = 0;
@@ -155,6 +159,7 @@ export default function useSubagentActivityStream(
     key,
     queryClient,
     selection.host,
+    selection.event,
     selection.parentConversationId,
     selection.parentMessageId,
     selection.partIndex,

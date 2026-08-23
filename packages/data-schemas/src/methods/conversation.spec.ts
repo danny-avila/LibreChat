@@ -3668,6 +3668,94 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('lists bounded child metadata while collapsing private event bindings to actor identity', async () => {
+      const parentConversationId = uuidv4();
+      const eventThreadId = uuidv4();
+      const toolThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: eventThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-event',
+          subagentThread: lineage('event-binding:private'),
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-live',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+          agentEventBinding: {
+            bindingId: `evtbind_${'b'.repeat(48)}`,
+            sourceKeyId: 'private-key',
+            actorId: 'actor-a',
+          },
+        },
+        {
+          conversationId: toolThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('tool-call-a'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-b',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-tenant'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'different-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-user'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            ...lineage('wrong-parent'),
+            parentConversationId: uuidv4(),
+          },
+        },
+      ]);
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'index-user',
+        tenantId: 'tenant-a',
+        parentConversationId,
+        limit: 10,
+      });
+
+      expect(records.map((record) => record.conversationId).sort()).toEqual(
+        [eventThreadId, toolThreadId].sort(),
+      );
+      expect(records.find((record) => record.conversationId === eventThreadId)).toEqual(
+        expect.objectContaining({
+          actorId: 'actor-a',
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-live' }),
+        }),
+      );
+      expect(records).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ agentEventBinding: expect.anything() })]),
+      );
+      expect(JSON.stringify(records)).not.toContain('private-key');
+      expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
+    });
+
     it('resolves an event binding only through its owner, tenant, and API key', async () => {
       const conversationId = uuidv4();
       const bindingId = `evtbind_${'a'.repeat(48)}`;

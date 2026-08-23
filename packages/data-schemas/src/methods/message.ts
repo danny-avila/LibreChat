@@ -256,6 +256,15 @@ export type SubagentThreadViewMessageRecord = Pick<
   subagentTranscriptProjectionTruncated?: boolean;
 };
 
+export type ParentSubagentTaskRecord = {
+  conversationId: string;
+  tasks: Array<
+    Pick<IMessage, 'messageId' | 'createdAt'> & {
+      status: NonNullable<IMessage['subagentTask']>['status'];
+    }
+  >;
+};
+
 export interface MessageMethods {
   saveMessage(
     ctx: {
@@ -326,6 +335,12 @@ export interface MessageMethods {
     textCodePointLimit: number;
     taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]>;
+  listSubagentTasksForThreads(input: {
+    user: string;
+    conversationIds: string[];
+    tenantId?: string;
+    limitPerThread: number;
+  }): Promise<ParentSubagentTaskRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -1157,6 +1172,80 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
+  /** Returns newest bounded task outcomes for every selected child in one query. */
+  async function listSubagentTasksForThreads(input: {
+    user: string;
+    conversationIds: string[];
+    tenantId?: string;
+    limitPerThread: number;
+  }): Promise<ParentSubagentTaskRecord[]> {
+    if (input.conversationIds.length === 0) {
+      return [];
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    return Message.aggregate<ParentSubagentTaskRecord>([
+      {
+        $match: {
+          user: input.user,
+          conversationId: { $in: input.conversationIds },
+          ...(input.tenantId == null
+            ? { tenantId: { $exists: false } }
+            : { tenantId: input.tenantId }),
+          messageId: { $regex: /:(user|assistant)$/ },
+          'subagentTask.status': { $exists: true },
+        },
+      },
+      {
+        $set: {
+          _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+          _subagentTaskId: {
+            $substrBytes: [
+              '$messageId',
+              0,
+              {
+                $subtract: [
+                  { $strLenBytes: '$messageId' },
+                  {
+                    $cond: [{ $regexMatch: { input: '$messageId', regex: /:assistant$/ } }, 10, 5],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
+          task: {
+            $top: {
+              sortBy: { _subagentIsAssistant: -1, createdAt: -1, _id: -1 },
+              output: {
+                messageId: '$messageId',
+                createdAt: '$createdAt',
+                status: '$subagentTask.status',
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$_id.conversationId',
+          tasks: {
+            $topN: {
+              n: input.limitPerThread,
+              sortBy: { 'task.createdAt': -1, '_id.taskId': 1 },
+              output: '$task',
+            },
+          },
+        },
+      },
+      { $project: { _id: 0, conversationId: '$_id', tasks: 1 } },
+      { $sort: { conversationId: 1 } },
+    ]);
+  }
+
   /**
    * Retrieves a single message from the database.
    */
@@ -1247,6 +1336,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     deleteMessagesSince,
     getMessages,
     getMessagesForSubagentThreadView,
+    listSubagentTasksForThreads,
     getMessage,
     getMessagesByCursor,
     searchMessages,

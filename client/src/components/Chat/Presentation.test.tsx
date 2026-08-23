@@ -56,6 +56,7 @@ jest.mock('~/hooks/Artifacts/useResetArtifactsOnConversationChange', () => ({
 
 jest.mock('~/data-provider', () => ({
   useDeleteFilesMutation: () => ({ mutateAsync: jest.fn() }),
+  useParentSubagentsQuery: () => ({ data: undefined, refetch: jest.fn() }),
 }));
 
 jest.mock('~/hooks', () => ({

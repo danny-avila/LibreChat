@@ -267,6 +267,9 @@ export type ActiveSubagentPanel = {
     threadId: string;
     taskId: string;
   };
+  event?: {
+    actorId: string;
+  };
 };
 
 export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({

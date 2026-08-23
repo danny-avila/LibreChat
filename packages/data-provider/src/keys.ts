@@ -93,6 +93,7 @@ export enum QueryKeys {
   /* Scheduled chats */
   schedules = 'schedules',
   schedule = 'schedule',
+  parentSubagents = 'parentSubagents',
   subagentThread = 'subagentThread',
 }
 

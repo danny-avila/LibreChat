@@ -28,6 +28,9 @@ let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let getMessagesForSubagentThreadView: ReturnType<
   typeof createMessageMethods
 >['getMessagesForSubagentThreadView'];
+let listSubagentTasksForThreads: ReturnType<
+  typeof createMessageMethods
+>['listSubagentTasksForThreads'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -52,6 +55,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
+  listSubagentTasksForThreads = methods.listSubagentTasksForThreads;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -1142,6 +1146,61 @@ describe('Message Operations', () => {
       expect(messages[0].text).toBe('The bounded public answer remains available.');
       expect(messages[0]).not.toHaveProperty('subagentTranscript');
       expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+  });
+
+  describe('listSubagentTasksForThreads', () => {
+    it('batches threads, deduplicates task rows, and bounds each newest task list', async () => {
+      const firstThread = uuidv4();
+      const secondThread = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:user',
+        conversationId: firstThread,
+        text: 'Start old task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'old', status: 'running' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:assistant',
+        conversationId: firstThread,
+        text: 'Finish old task',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'old', status: 'completed' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-new:user',
+        conversationId: firstThread,
+        text: 'Start new task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'new', status: 'running' },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-other:assistant',
+        conversationId: secondThread,
+        text: 'Other result',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'other', status: 'cancelled' },
+      });
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [firstThread, secondThread],
+        limitPerThread: 2,
+      });
+
+      const first = records.find((record) => record.conversationId === firstThread);
+      expect(first?.tasks).toHaveLength(2);
+      expect(first?.tasks[0]).toEqual(
+        expect.objectContaining({ messageId: 'task-new:user', status: 'running' }),
+      );
+      expect(first?.tasks[1]).toEqual(
+        expect.objectContaining({ messageId: 'task-old:assistant', status: 'completed' }),
+      );
+      expect(records.find((record) => record.conversationId === secondThread)?.tasks).toEqual([
+        expect.objectContaining({ messageId: 'task-other:assistant', status: 'cancelled' }),
+      ]);
     });
   });
 

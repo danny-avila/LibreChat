@@ -4,6 +4,7 @@ import {
   isSubagentReadinessPending,
   subagentThreadHasTaskEvidence,
   subagentThreadRefetchInterval,
+  useParentSubagentsQuery,
   useSubagentThreadQuery,
 } from './queries';
 
@@ -98,5 +99,21 @@ describe('subagent thread refresh policy', () => {
       'task-2',
     ]);
     expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it('discovers parent children once without an interval poll', () => {
+    mockUseQuery.mockReturnValue({ data: undefined, error: null, refetch: jest.fn() });
+
+    renderHook(() => useParentSubagentsQuery('parent-conversation'));
+
+    expect(mockUseQuery.mock.calls.at(-1)?.[0]).toEqual(['parentSubagents', 'parent-conversation']);
+    expect(mockUseQuery.mock.calls.at(-1)?.[2]).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        refetchOnWindowFocus: true,
+        staleTime: 5_000,
+      }),
+    );
+    expect(mockUseQuery.mock.calls.at(-1)?.[2]).not.toHaveProperty('refetchInterval');
   });
 });

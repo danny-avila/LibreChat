@@ -371,6 +371,30 @@ const notFound = (res: Response): void => {
 const writeSse = (res: Response, value: unknown): boolean =>
   !res.writableEnded && res.write(`data: ${JSON.stringify(value)}\n\n`);
 
+/** Event-bound children use a private binding id as their internal tool-call
+ * identity. Keep that delivery identity behind the parent-authorized API
+ * boundary while preserving a stable public identity for the activity UI. */
+const publicActivityEnvelope = (
+  event: SubagentActivityEnvelope,
+  threadId: string,
+  eventBound: boolean,
+): SubagentActivityEnvelope => {
+  if (!eventBound) return event;
+  const ancestry = event.data.ancestry.map((entry) => {
+    if (!entry.parentToolCallId?.startsWith('event-binding:')) return entry;
+    const { parentToolCallId: _privateDeliveryId, ...publicEntry } = entry;
+    return publicEntry;
+  });
+  return {
+    ...event,
+    data: {
+      ...event.data,
+      parentToolCallId: `event-thread:${boundedString(threadId, MAX_ID_BYTES - 13) ?? ''}`,
+      ancestry,
+    },
+  };
+};
+
 /** Streams one active child task after the same parent/tenant authorization as its durable view. */
 export function createSubagentActivityStreamHandler(
   deps: SubagentActivityStreamDependencies,
@@ -448,7 +472,16 @@ export function createSubagentActivityStreamHandler(
       try {
         subscription = stream.subscribe(threadId, taskId, {
           onEvent: (event) => {
-            if (!writeSse(res, event)) {
+            if (
+              !writeSse(
+                res,
+                publicActivityEnvelope(
+                  event,
+                  threadId,
+                  lineage?.parentToolCallId?.startsWith('event-binding:') === true,
+                ),
+              )
+            ) {
               close();
               res.end();
             }

@@ -3,6 +3,7 @@ import { useRecoilValue, useResetRecoilState } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
+import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
@@ -114,11 +115,13 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup panel={panelElement}>
-        <main className="flex h-full flex-col overflow-y-auto" role="main">
-          {children}
-        </main>
-      </SidePanelGroup>
+      <ParentSubagentsProvider conversationId={conversationId ?? ''}>
+        <SidePanelGroup panel={panelElement}>
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
+            {children}
+          </main>
+        </SidePanelGroup>
+      </ParentSubagentsProvider>
     </DragDropWrapper>
   );
 }

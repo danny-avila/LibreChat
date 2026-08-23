@@ -2,7 +2,11 @@ import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { ContentTypes, ForkOptions } from 'librechat-data-provider';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  ParentSubagentSummary,
+  SubagentThreadView,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   activeSubagentPanel,
@@ -20,6 +24,9 @@ const mockShowToast = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
+let mockParentChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
+let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
+const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/data-provider', () => ({
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
@@ -46,6 +53,21 @@ jest.mock('~/hooks', () => ({
   useFocusTrap: jest.fn(),
   useLocalize: () => (key: string) => key,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
+}));
+
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': { id: 'agent-1', name: 'Analyst One' },
+    'agent-2': { id: 'agent-2', name: 'Analyst Two' },
+  }),
+}));
+
+jest.mock('./ParentSubagentsProvider', () => ({
+  useParentSubagents: () => ({
+    byMessageId: mockParentChildrenByMessage,
+    byThreadId: mockParentChildrenByThread,
+    refresh: mockRefreshParentChildren,
+  }),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -151,6 +173,9 @@ describe('SubagentThreadPanel', () => {
     mockForkMutate.mockClear();
     mockNavigateToConvo.mockClear();
     mockShowToast.mockClear();
+    mockRefreshParentChildren.mockClear();
+    mockParentChildrenByMessage = new Map();
+    mockParentChildrenByThread = new Map();
   });
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
@@ -518,5 +543,80 @@ describe('SubagentThreadPanel', () => {
     );
 
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('navigates event actors and exact durable turns through the same panel', () => {
+    const first: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [
+        { taskId: 'task', status: 'completed' },
+        { taskId: 'task-earlier', status: 'completed' },
+      ],
+      tasksTruncated: false,
+    };
+    const second: ParentSubagentSummary = {
+      ...first,
+      threadId: 'child-thread-2',
+      subagentType: 'agent-2',
+      agentId: 'agent-2',
+      title: 'Second actor',
+      actorId: 'actor-2',
+      latestTaskId: 'task-2',
+      tasks: [{ taskId: 'task-2', status: 'running' }],
+      status: 'running',
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByThread = new Map([
+      [first.threadId, first],
+      [second.threadId, second],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1' },
+    };
+    let active: ActiveSubagentPanel | null = eventSelection;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'com_ui_subagent_turn' }), {
+      target: { value: 'task-earlier' },
+    });
+    expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'com_ui_subagent_actor' }), {
+      target: { value: 'child-thread-2' },
+    });
+    expect(active).toEqual(
+      expect.objectContaining({
+        subagentType: 'agent-2',
+        event: { actorId: 'actor-2' },
+        durable: { threadId: 'child-thread-2', taskId: 'task-2' },
+      }),
+    );
+    expect(mockRefreshParentChildren).toHaveBeenCalled();
   });
 });

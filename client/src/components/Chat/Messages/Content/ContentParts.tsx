@@ -8,6 +8,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
@@ -182,7 +183,7 @@ type ContentPartsProps = {
  * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
  * For multi-agent parallel execution, it uses ParallelContentRenderer to show columns.
  */
-const ContentParts = memo(function ContentParts({
+const ContentPartsBody = memo(function ContentPartsBody({
   edit,
   isLast,
   content,
@@ -507,7 +508,7 @@ const ContentParts = memo(function ContentParts({
       key: string,
     ) => {
       return (
-        <ContentParts
+        <ContentPartsBody
           key={key}
           content={segmentContent}
           messageId={messageId}
@@ -682,6 +683,22 @@ const ContentParts = memo(function ContentParts({
     return sequentialContent;
   }
   return <ApprovalProvider>{sequentialContent}</ApprovalProvider>;
+});
+
+const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
+  return (
+    <>
+      <ContentPartsBody {...props} />
+      {props.nestedActivityPhase !== true &&
+        props.isCreatedByUser !== true &&
+        props.edit !== true && (
+          <EventSubagentActivityGroup
+            conversationId={props.conversationId ?? ''}
+            parentMessageId={props.messageId}
+          />
+        )}
+    </>
+  );
 });
 
 export default ContentParts;
