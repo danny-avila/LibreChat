@@ -1,5 +1,6 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useRemScale } from '@librechat/client';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
@@ -260,7 +261,7 @@ const RIB_CURRENT: RibDims = { baseW: 21, baseH: 3, peakW: 39, peakH: 6 };
  *  pointing at the wrong message. */
 const RIB_ROW_HEIGHT = 6;
 
-/** Vertical falloff radius (content-space px) over which neighbouring ribs magnify. */
+/** Vertical falloff radius, in baseline px, over which neighbouring ribs magnify. */
 const MAG_INFLUENCE = 50;
 /** Delay before the shared preview first opens; subsequent moves reposition instantly. */
 const TOOLTIP_OPEN_DELAY = 60;
@@ -417,6 +418,11 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
   const pointerClientYRef = useRef<number | null>(null);
   const magRafRef = useRef<number | null>(null);
   const reducedMotionRef = useRef(false);
+  /** The resting ribs are sized in rem while magnification writes inline pixels, so
+   *  both the peak dimensions and the reach have to be read into the same units. */
+  const remScale = useRemScale();
+  const remScaleRef = useRef(remScale);
+  remScaleRef.current = remScale;
   const focusedIdRef = useRef<string | null>(null);
   const tipShownRef = useRef(false);
   const tipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -976,6 +982,8 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       return;
     }
     const reduce = reducedMotionRef.current;
+    const scale = remScaleRef.current;
+    const influence = MAG_INFLUENCE * scale;
     const colRect = col.getBoundingClientRect();
     const scrollTop = col.scrollTop;
     const py = clientY - colRect.top + scrollTop;
@@ -993,13 +1001,13 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       if (reduce) {
         continue;
       }
-      const t = magnifyFalloff(d, MAG_INFLUENCE);
+      const t = magnifyFalloff(d, influence);
       const dims = rib.dims;
       rib.line.style.transition = 'none';
-      rib.line.style.width = `${(dims.baseW + (dims.peakW - dims.baseW) * t).toFixed(2)}px`;
-      rib.line.style.height = `${(dims.baseH + (dims.peakH - dims.baseH) * t).toFixed(2)}px`;
+      rib.line.style.width = `${((dims.baseW + (dims.peakW - dims.baseW) * t) * scale).toFixed(2)}px`;
+      rib.line.style.height = `${((dims.baseH + (dims.peakH - dims.baseH) * t) * scale).toFixed(2)}px`;
     }
-    if (nearestId != null && nearestD <= MAG_INFLUENCE && !isDraggingRef.current) {
+    if (nearestId != null && nearestD <= influence && !isDraggingRef.current) {
       const top = colRect.top - scrollTop + nearestCenter;
       const right = window.innerWidth - colRect.left + 8;
       focusTooltip(nearestId, top, right);
