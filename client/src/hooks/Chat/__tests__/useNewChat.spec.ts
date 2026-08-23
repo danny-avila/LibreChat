@@ -23,6 +23,7 @@ type LiveFile = {
 /** Values the module-level mocks read, so each test can stage its own scenario. */
 const mockState = {
   saveDrafts: false,
+  isSubmitting: false,
   tabId: 'this-tab',
   filesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
   pendingFilesDraft: { fileIds: [], pendingPastes: {} } as FilesDraft,
@@ -53,6 +54,9 @@ jest.mock('recoil', () => ({
     }
     if (typeof key === 'string' && key.startsWith('files-by-index')) {
       return mockState.files;
+    }
+    if (typeof key === 'string' && key.startsWith('isSubmitting')) {
+      return mockState.isSubmitting;
     }
     return mockState.saveDrafts;
   },
@@ -128,6 +132,7 @@ jest.mock('~/store', () => ({
   default: {
     conversationIdByIndex: (index: number) => `conversationIdByIndex-${index}`,
     filesByIndex: (index: number) => `files-by-index-${index}`,
+    isSubmittingFamily: (index: number) => `isSubmitting-${index}`,
     saveDrafts: 'saveDrafts',
   },
 }));
@@ -153,6 +158,7 @@ describe('useNewChat', () => {
     jest.clearAllMocks();
     mockDeleteFiles.mockResolvedValue(undefined);
     mockState.saveDrafts = false;
+    mockState.isSubmitting = false;
     mockState.tabId = 'this-tab';
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };
     mockState.pendingFilesDraft = { fileIds: [], pendingPastes: {} };
@@ -275,6 +281,23 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).toHaveBeenCalledWith({
       files: [expect.objectContaining({ file_id: 'unrecorded-paste' })],
     });
+  });
+
+  it('spares a paste the in-flight submission already sent', () => {
+    /** Submitting empties the file map but leaves the draft's provenance until the final SSE
+     * event, so the empty composer must not look like it still owns what the message sent. */
+    mockState.saveDrafts = true;
+    mockState.isSubmitting = true;
+    mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: ['sent-paste'] };
+    mockState.files = new Map();
+    mockState.fileList = [
+      { file_id: 'sent-paste', filepath: '/uploads/sent.txt', source: 'local' },
+    ];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
   it('spares a marked paste that came back re-attached from the library', () => {

@@ -513,19 +513,6 @@ const recordTabPresence = (tabId: string, suspended = false): void => {
   }
 };
 
-const forgetTab = (tabId: string): void => {
-  const live = readLiveTabs();
-  if (!(tabId in live)) {
-    return;
-  }
-  delete live[tabId];
-  try {
-    localStorage.setItem(TAB_LIVENESS_STORAGE_KEY, JSON.stringify(live));
-  } catch {
-    // Nothing to do: the entry expires on its own once the window passes.
-  }
-};
-
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let heartbeatTabId: string | null = null;
 
@@ -544,20 +531,16 @@ const startTabHeartbeat = (tabId: string): void => {
     }
   };
   heartbeatTimer = setInterval(beat, TAB_HEARTBEAT_MS);
-  /** `pagehide` is the last event a closing tab is reliably given, so the claim is handed back at
-   * once instead of waiting out the window. `persisted` says the document is going into the
-   * back-forward cache instead of away: it can still come back with those attachments on screen,
-   * so it is parked as suspended, which holds the claim far longer than a frozen heartbeat could.
-   * `pageshow` beats normally again and clears the flag. */
+  /** `pagehide` cannot tell a close from a reload, and the id deliberately survives a reload, so
+   * releasing the claim here would hand this tab's own draft to another one while the document
+   * was still bootstrapping. A closed tab is left to the ordinary window instead, which is what
+   * the window is for. `persisted` is the one case worth marking: the document is going into the
+   * back-forward cache with a frozen heartbeat, so it is parked for the longer grace and beats
+   * normally again on `pageshow`. */
   window.addEventListener('pagehide', (event) => {
-    if (heartbeatTabId == null) {
-      return;
-    }
-    if (event.persisted) {
+    if (heartbeatTabId != null && event.persisted) {
       recordTabPresence(heartbeatTabId, true);
-      return;
     }
-    forgetTab(heartbeatTabId);
   });
   window.addEventListener('pageshow', beat);
 };
@@ -735,8 +718,10 @@ const isForeignAttachmentClaim = (draft: FilesDraft, tabId: string): boolean =>
   hasDraftAttachments(draft) &&
   isTabLive(draft.tabId);
 
-/** Whether this tab may write or clear the shared text record behind a composer key. */
-export const mayWriteSharedComposerText = (id: string): boolean => {
+/** Whether this tab may write or clear the text record behind a draft key. Conversation keys are
+ * reachable from every tab viewing that chat and are stamped just like the shared composer ones,
+ * so the guard is not limited to those. */
+export const mayWriteComposerText = (id: string): boolean => {
   const tabId = getBrowserTabId();
   return tabId === '' || !isForeignAttachmentClaim(getFilesDraftCached(id), tabId);
 };
@@ -910,20 +895,25 @@ export const setDraft = ({
     ? value != null && value.length > 0
     : value && value.length > 1;
   if (shouldPersist) {
-    /** Claim before writing: the shared text record has no per-tab copy, so by the time the write
-     * lands this tab's text is the only text there is, and the stamp has to agree. A refused
-     * claim means another open tab holds the key against an attachment it still has, and this
-     * tab could not restore what it wrote anyway; writing would only destroy that tab's text for
-     * nothing, so the write is dropped with the claim. */
-    if (isSharedComposerDraftId(id) && !claimComposerDraftTab(id)) {
+    /** A refused key belongs to another open tab holding it against attachments it still has.
+     * This tab could not restore what it wrote there anyway, so the write would only destroy that
+     * tab's text for nothing. */
+    if (!mayWriteComposerText(id)) {
       return;
+    }
+    /** Claim before writing, but only where ownership would not otherwise exist: the shared text
+     * record has no per-tab copy, so once the write lands this tab's text is the only text there
+     * is and the stamp has to agree. A conversation key is left unstamped unless something is
+     * actually attached to it, since tabs are meant to share those. */
+    if (isSharedComposerDraftId(id)) {
+      claimComposerDraftTab(id);
     }
     setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;
   }
   /** Same guard as the write path: an empty composer in this tab must not erase the text another
    * open tab is still holding behind its attachments. */
-  if (isSharedComposerDraftId(id) && !mayWriteSharedComposerText(id)) {
+  if (!mayWriteComposerText(id)) {
     return;
   }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);

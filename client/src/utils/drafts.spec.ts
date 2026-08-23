@@ -390,11 +390,22 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(isTabLive(tabId)).toBe(false);
   });
 
-  it('releases its claim when the page is really going away', () => {
+  it('stays live through an ordinary reload rather than releasing mid-bootstrap', () => {
+    /** `pagehide` cannot tell a reload from a close, and the id survives a reload on purpose, so
+     * releasing here would hand this tab's own draft away while the document was restarting. */
     const tabId = getBrowserTabId();
     window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
 
-    expect(JSON.parse(localStorage.getItem('librechat-live-tabs') ?? '{}')[tabId]).toBeUndefined();
+    expect(isTabLive(tabId)).toBe(true);
+  });
+
+  it('lets a closed tab expire through the ordinary window', () => {
+    localStorage.setItem(
+      'librechat-live-tabs',
+      JSON.stringify({ 'closed-tab': Date.now() - 600_000 }),
+    );
+
+    expect(isTabLive('closed-tab')).toBe(false);
   });
 
   it('reclaims a record whose owning tab stopped reporting long ago', () => {
@@ -511,6 +522,25 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     setDraft({ id: getNewConversationDraftId(), value: 'text from this tab' });
 
     expect(getDraft(getNewConversationDraftId())).toBe('text the other tab is still writing');
+  });
+
+  it('refuses to overwrite a conversation draft another tab holds with attachments', () => {
+    /** A conversation key is reachable from every tab viewing that chat and is stamped the same
+     * way, so the text guard cannot be limited to the shared composer keys. */
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    setFilesDraft('convo-1', {
+      fileIds: ['other-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    localStorage.setItem(
+      `${LocalStorageKeys.TEXT_DRAFT}convo-1`,
+      encodeBase64('text the other tab is still writing'),
+    );
+
+    setDraft({ id: 'convo-1', value: 'text from this tab' });
+
+    expect(getDraft('convo-1')).toBe('text the other tab is still writing');
   });
 
   it('does not claim a conversation key, which tabs are meant to share', () => {

@@ -112,6 +112,7 @@ export default function useNewChat({
   const conversationId = useRecoilValue(store.conversationIdByIndex(index));
   const files = useRecoilValue(store.filesByIndex(index));
   const saveDrafts = useRecoilValue(store.saveDrafts);
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { data: fileList } = useGetFiles<TFile[]>();
   const { mutateAsync } = useDeleteFilesMutation();
   /** Draft uploads whose records were not resolvable when the draft was discarded: the files
@@ -269,9 +270,16 @@ export default function useNewChat({
       const ownedIds = collectOwnedIds(files, pasteIds);
       /** A draft's own paste provenance is ownership in itself: after a reload the composer
        * map may not be rebuilt yet when New Chat is clicked, and the chips those ids are
-       * waiting to become would otherwise be skipped rather than discarded with the draft. */
-      for (const pasteId of pasteIds) {
-        ownedIds.add(pasteId);
+       * waiting to become would otherwise be skipped rather than discarded with the draft.
+       *
+       * Not while a run is in flight, though. Submitting empties the file map but leaves the
+       * draft's provenance until the final SSE event clears it, so an empty composer would look
+       * like it still owned pastes the message just sent, and this would delete files that
+       * message, and the model run reading them, still reference. */
+      if (!isSubmitting) {
+        for (const pasteId of pasteIds) {
+          ownedIds.add(pasteId);
+        }
       }
       const draftFileIds = new Set([...draft.fileIds, ...Object.keys(draft.pendingPastes)]);
       const deletable: DeletableRecord[] = [];
@@ -361,6 +369,7 @@ export default function useNewChat({
     onNewChat,
     index,
     saveDrafts,
+    isSubmitting,
     fileList,
     mutateAsync,
     files,
