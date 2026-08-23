@@ -1,4 +1,5 @@
 import { ContentTypes } from 'librechat-data-provider';
+import { Tokenizer as AiTokenizer } from 'ai-tokenizer';
 import { Providers, StandardGraph } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type { TMessage } from 'librechat-data-provider';
@@ -10,15 +11,12 @@ import {
   type FormattedMessageWithContent,
 } from './client';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
-import Tokenizer from '~/utils/tokenizer';
 
-describe('createTokenCounter', () => {
+describe('createCachedTokenCounter', () => {
   it('enables stable-message reuse in the agents runtime', async () => {
-    const initEncoding = jest.spyOn(Tokenizer, 'initEncoding');
-    const getTokenCount = jest.spyOn(Tokenizer, 'getTokenCount');
+    const getTokenCount = jest.spyOn(AiTokenizer.prototype, 'count');
     try {
       const tokenCounter = await createCachedTokenCounter('o200k_base');
-      expect(initEncoding).toHaveBeenCalledWith('o200k_base');
       const graph = new StandardGraph({
         runId: 'token-cache-integration',
         agents: [
@@ -42,7 +40,6 @@ describe('createTokenCounter', () => {
       expect(callsAfterFirstCount).toBeGreaterThan(0);
       expect(getTokenCount).toHaveBeenCalledTimes(callsAfterFirstCount);
     } finally {
-      initEncoding.mockRestore();
       getTokenCount.mockRestore();
     }
   });

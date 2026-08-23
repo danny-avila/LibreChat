@@ -382,8 +382,16 @@ export function countFormattedMessageTokens(
 export function createTokenCounter(
   encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
 ): TokenCounter {
+  return createMessageTokenCounter(encoding, (text: string) =>
+    Tokenizer.getTokenCount(text, encoding),
+  );
+}
+
+function createMessageTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+  countTokens: (text: string) => number,
+): TokenCounter {
   const isClaude = encoding === 'claude';
-  const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
   return function (message: BaseMessage): number {
     const count = getTokenCountForMessage(
       message,
@@ -397,8 +405,8 @@ export function createTokenCounter(
 export async function createCachedTokenCounter(
   encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
 ): Promise<TokenCounter> {
-  await Tokenizer.initEncoding(encoding ?? 'o200k_base');
-  return markTokenCounterCacheCompatible(createTokenCounter(encoding));
+  const countTokens = await Tokenizer.createExactTokenCounter(encoding ?? 'o200k_base');
+  return markTokenCounterCacheCompatible(createMessageTokenCounter(encoding, countTokens));
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
