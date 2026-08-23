@@ -96,6 +96,7 @@ jest.mock('~/utils', () => ({
   retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),
   nextPastedTextFilename: jest.requireActual('~/utils/files').nextPastedTextFilename,
+  failedFileIdsFrom: jest.requireActual('~/utils/files').failedFileIdsFrom,
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -433,6 +434,72 @@ describe('usePastedTextEdit', () => {
       filepath: '/uploads/user123/pasted-text.txt',
       source: FileSources.local,
     });
+  });
+
+  it('retains a restored-paste deletion the server reports as failed', async () => {
+    /** A storage delete that fails still answers 200, so the resolved payload is the only place
+     * the failure shows up. */
+    mockDeleteFiles.mockResolvedValueOnce({
+      message: 'Some files could not be deleted',
+      deletedFileIds: [],
+      failedFileIds: ['pasted-file'],
+    });
+    mockState.draftsById = {
+      'conversation-a:0:idle': { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] },
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockRetainFileDeletion).toHaveBeenCalledWith({
+      file_id: 'pasted-file',
+      embedded: false,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+  });
+
+  it('does not retain a restored-paste deletion the server accepted', async () => {
+    mockDeleteFiles.mockResolvedValueOnce({
+      message: 'Files deleted successfully',
+      deletedFileIds: ['pasted-file'],
+      failedFileIds: [],
+    });
+    mockState.draftsById = {
+      'conversation-a:0:idle': { fileIds: [], pendingPastes: {}, pastedTextIds: ['pasted-file'] },
+    };
+    const editor = renderEditor();
+    const restored = pastedFile({
+      attached: true,
+      filepath: '/uploads/user123/pasted-text.txt',
+      source: FileSources.local,
+    });
+
+    await act(async () => {
+      await editor.result.current.openEditor(restored);
+    });
+    await act(async () => {
+      await editor.result.current.saveEdit('corrected');
+    });
+    await act(async () => {
+      capturedLifecycle?.onSuccess?.('replacement-file');
+    });
+
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
+    expect(mockRetainFileDeletion).not.toHaveBeenCalled();
   });
 
   it('spares a sent paste re-attached from the library', async () => {

@@ -81,6 +81,8 @@ jest.mock('~/utils', () => ({
       (record) => record.file_id !== fileId,
     );
   },
+  failedFileIdsFrom: (result: { failedFileIds?: string[] } | void) =>
+    result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [],
 }));
 
 jest.mock('~/data-provider', () => ({

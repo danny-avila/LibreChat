@@ -12,6 +12,7 @@ import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   addPastedTextDraftFile,
+  failedFileIdsFrom,
   forceResize,
   getBrowserTabId,
   getComposerDraftId,
@@ -241,10 +242,19 @@ export default function usePastedTextEdit({
           source: file.source ?? FileSources.local,
         };
         /** The chip is already gone, so a failed request cannot be rebuilt from the composer;
-         * the payload is retained for the discard path's next retry. */
-        mutateAsync({ files: [deletion] }).catch(() => {
-          retainFileDeletion(deletion);
-        });
+         * the payload is retained for the discard path's next retry. A resolved request is not
+         * proof of deletion either: the route reports a failed storage delete as a 200 carrying
+         * the id in `failedFileIds`, and the draft provenance this deletion was derived from is
+         * pruned right after, so retention is the last reference to the orphaned upload. */
+        mutateAsync({ files: [deletion] })
+          .then((result) => {
+            if (failedFileIdsFrom(result).includes(deletion.file_id)) {
+              retainFileDeletion(deletion);
+            }
+          })
+          .catch(() => {
+            retainFileDeletion(deletion);
+          });
       }
     },
     [deleteFile, setFiles, mutateAsync, index, isSubmitting],

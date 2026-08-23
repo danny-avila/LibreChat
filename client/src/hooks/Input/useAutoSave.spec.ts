@@ -663,7 +663,7 @@ describe('useAutoSave — file cache updates', () => {
       pendingPastes: {},
       pastedTextIds: ['live-file', 'removed-file'],
     });
-    const files = new Map([['live-file', { file_id: 'live-file', progress: 1 }]]);
+    const files = new Map([['live-file', { file_id: 'live-file', progress: 1, size: 0 }]]);
 
     renderHook(() =>
       useAutoSave({

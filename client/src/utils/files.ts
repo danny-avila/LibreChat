@@ -23,6 +23,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   TFile,
+  DeleteFilesResponse,
   EndpointFileConfig,
   FileConfig,
   FileSources,
@@ -533,6 +534,12 @@ export type PendingFileDeletion = {
   filepath: string;
   source: FileSources;
 };
+
+/** A resolved delete request is not proof the records are gone: the route answers 200 with
+ * `failedFileIds` when a storage delete fails, so every caller that cleans up after itself has to
+ * read the result rather than only catching a rejection. */
+export const failedFileIdsFrom = (result: DeleteFilesResponse | void): string[] =>
+  result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [];
 
 const retainedFileDeletions = new Map<string, PendingFileDeletion>();
 const retainedFileDeletionListeners = new Set<() => void>();

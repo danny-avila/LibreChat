@@ -10,6 +10,7 @@ import {
   clearAllDrafts,
   clearMessagesCache,
   clearRetainedFileDeletion,
+  failedFileIdsFrom,
   getFilesDraft,
   getNewConversationDraftId,
   getPendingDraftId,
@@ -58,9 +59,6 @@ const toDeletableRecord = (record: TFile): DeletableRecord | null => {
     source: record.source,
   };
 };
-
-const failedIdsFrom = (result: { failedFileIds?: string[] } | void): string[] =>
-  result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [];
 
 /** Every id the composer currently owns: map keys plus their resolved file ids. Pastes stay
  * owned even when restoration stamped them `attached`, because the draft says they are ours. */
@@ -165,7 +163,7 @@ export default function useNewChat({
       if (batch.length > 0) {
         try {
           const result = await mutateAsync({ files: batch });
-          const failed = new Set(failedIdsFrom(result));
+          const failed = new Set(failedFileIdsFrom(result));
           for (const record of retainedToRetry) {
             if (!failed.has(record.file_id)) {
               clearRetainedFileDeletion(record.file_id);
@@ -267,7 +265,7 @@ export default function useNewChat({
       if (deletable.length > 0) {
         mutateAsync({ files: deletable })
           .then((result) => {
-            const failedIds = failedIdsFrom(result);
+            const failedIds = failedFileIdsFrom(result);
             if (failedIds.length > 0) {
               setPendingDiscardIds((current) => Array.from(new Set([...current, ...failedIds])));
             }
