@@ -266,6 +266,91 @@ describe('useReplyWatcher', () => {
     expect(cachedConvo()?.lastResponseAt).toBe(newer);
   });
 
+  it('drops a completion snapshot outrun while its messages refetched', async () => {
+    /* The freshness guard runs before a real network wait; the SSE final handler can stamp a
+       newer reply during it, and writing the older snapshot back would walk the read state
+       backwards after that reply's signal was already consumed. */
+    const newer = '2026-08-16T12:00:00.000Z';
+    mockActiveJobIds = [CONVO_ID];
+    const { rerender, queryClient, cachedConvo } = setup();
+
+    const realInvalidate = queryClient.invalidateQueries.bind(queryClient);
+    const invalidate = jest
+      .spyOn(queryClient, 'invalidateQueries')
+      .mockImplementation((filters?: unknown) => {
+        if (Array.isArray(filters) && filters[0] === QueryKeys.messages) {
+          act(() => {
+            queryClient.setQueryData<InfiniteData<ConversationCursorData>>(listKey, {
+              pages: [
+                {
+                  conversations: [
+                    {
+                      conversationId: CONVO_ID,
+                      title: 'Watched',
+                      endpoint: EModelEndpoint.openAI,
+                      createdAt: RESPONDED_AT,
+                      updatedAt: RESPONDED_AT,
+                      lastResponseAt: newer,
+                    },
+                  ],
+                  nextCursor: null,
+                },
+              ],
+              pageParams: [null],
+            });
+          });
+        }
+        return realInvalidate(filters as Parameters<typeof realInvalidate>[0]);
+      });
+
+    mockGetConversationById.mockResolvedValue({
+      conversationId: CONVO_ID,
+      lastResponseAt: RESPONDED_AT,
+    });
+    mockActiveJobIds = [];
+    rerender();
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cachedConvo()?.lastResponseAt).toBe(newer);
+  });
+
+  it('recovers a completion lost to a transient fetch failure through the list', async () => {
+    /* The failed fetch has consumed the only completion transition, and the away poll is gated
+       on the document being unfocused; without a fallback the reply would stay invisible for
+       as long as the user kept the app focused. */
+    jest.spyOn(document, 'hasFocus').mockReturnValue(true);
+    mockActiveJobIds = [CONVO_ID];
+    const { rerender, queryClient } = setup();
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    mockGetConversationById.mockRejectedValue(new Error('network down'));
+    mockActiveJobIds = [];
+    rerender();
+
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.messages, CONVO_ID]));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
+  });
+
+  it('lets a conversation deleted while it generated stay gone', async () => {
+    mockActiveJobIds = [CONVO_ID];
+    const { rerender, queryClient } = setup();
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+
+    mockGetConversationById.mockRejectedValue({ status: 404 });
+    mockActiveJobIds = [];
+    rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
   it('withholds the stamp when the open conversation failed to reload its messages', async () => {
     /* Invalidation settles rather than throwing, so the failure has to be read off the query.
        Exposing the stamp would credit a reply the tab never managed to load. */
