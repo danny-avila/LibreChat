@@ -1,12 +1,9 @@
-import { RecoilRoot } from 'recoil';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { TUser } from 'librechat-data-provider';
-import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import { useUpdatePinnedOrderMutation } from '../Favorites';
-import store from '~/store';
+import { setSessionUserId } from '~/utils/session';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -38,33 +35,18 @@ const deferred = <T,>() => {
   return { promise, resolve, reject };
 };
 
-/* Ownership comes from the Recoil user atom, the same one AuthContext fills
- * from the login response. */
-const wrapperFor = (queryClient: QueryClient, userId: string) =>
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <RecoilRoot
-        initializeState={({ set }: MutableSnapshot) => set(store.user, { id: userId } as TUser)}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </RecoilRoot>
-    );
-  };
-
-const setup = (userId = 'user-a') => {
+const setup = (userId: string | undefined = 'user-a') => {
+  /* Identity is published by the auth provider, which is mounted for the whole
+   * session, so a test only has to say who is signed in. */
+  setSessionUserId(userId);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const { result, unmount } = renderHook(() => useUpdatePinnedOrderMutation(), {
-    wrapper: wrapperFor(queryClient, userId),
-  });
-  /** Signing in as someone else: the tree re-renders and the hook observes the
-   *  new account, exactly as it would after a real session change. */
-  const signInAs = (nextUserId: string) =>
-    renderHook(() => useUpdatePinnedOrderMutation(), {
-      wrapper: wrapperFor(queryClient, nextUserId),
-    });
-  return { queryClient, result, signInAs, unmount };
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  const { result, unmount } = renderHook(() => useUpdatePinnedOrderMutation(), { wrapper });
+  return { queryClient, result, unmount, signInAs: setSessionUserId };
 };
 
 const cached = (queryClient: QueryClient) =>
@@ -288,5 +270,65 @@ describe('useUpdatePinnedOrderMutation', () => {
      * request itself; skipping it would leave an order cached that the server
      * never accepted, on a query that refetches on nothing. */
     await waitFor(() => expect(cached(queryClient)).toBeUndefined());
+  });
+
+  /* The exact sequence the identity has to survive: the section is unmounted by
+   * a search, then A signs out and B signs in before A's queued write starts.
+   * A tracker fed only by the unmounted hook would still read A here and post
+   * A's order on B's credentials. */
+  it('abandons a queued write across a sign-out while the section is unmounted', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { result, unmount, signInAs } = setup('user-a');
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    let queued!: Promise<unknown>;
+    await act(async () => {
+      queued = result.current.mutateAsync(['c', 'b', 'a']).catch(() => 'abandoned');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    unmount();
+    signInAs(undefined);
+    signInAs('user-b');
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+      await expect(queued).resolves.toBe('abandoned');
+    });
+
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('abandons a queued write after a plain sign-out', async () => {
+    const first = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(first.promise).mockResolvedValueOnce(['c', 'b', 'a']);
+
+    const { result, signInAs } = setup('user-a');
+
+    await act(async () => {
+      result.current.mutate(['b', 'a', 'c']);
+    });
+    let queued!: Promise<unknown>;
+    await act(async () => {
+      queued = result.current.mutateAsync(['c', 'b', 'a']).catch(() => 'abandoned');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    /* Signed out is foreign to every owner: nothing queued should ride out on
+     * whatever credentials arrive next. */
+    signInAs(undefined);
+
+    await act(async () => {
+      first.resolve(['b', 'a', 'c']);
+      await expect(queued).resolves.toBe('abandoned');
+    });
+
+    expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
   });
 });
