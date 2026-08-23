@@ -274,6 +274,7 @@ export const useAutoSave = ({
     /** The key the attachments live under once the pending draft has been moved. A move that
      * storage refuses leaves them behind, and recovery has to read them where they still are. */
     let filesDraftId = conversationId;
+    let textDraftId = conversationId;
 
     try {
       // Check for transition from PENDING_CONVO to a valid conversationId.
@@ -295,10 +296,14 @@ export const useAutoSave = ({
         /** The destination has to be writable too: another tab viewing this same conversation can
          * own its draft with attachments still on screen, and migrating over it would delete that
          * record and restamp the owner. */
-        if (
-          isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId)) &&
-          isFilesDraftOwnedByThisTab(getFilesDraft(conversationId))
-        ) {
+        const pendingOwned = isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId));
+        const destinationOwned = isFilesDraftOwnedByThisTab(getFilesDraft(conversationId));
+        if (pendingOwned && !destinationOwned) {
+          /** Ours to move but nowhere to move it to. Everything stays on the key this tab owns
+           * and is restored from there, rather than being dropped for want of a destination. */
+          filesDraftId = pendingDraftId;
+          textDraftId = pendingDraftId;
+        } else if (pendingOwned) {
           // Move the pending text draft to the new conversationId, falling back to the current
           // text area value when there was no pending draft to carry over
           if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
@@ -334,7 +339,7 @@ export const useAutoSave = ({
 
       if (isFilesDraftOwnedByThisTab(getFilesDraft(filesDraftId))) {
         const pendingPastes = restoreFiles(filesDraftId);
-        restoreText(conversationId, pendingPastes);
+        restoreText(textDraftId, pendingPastes);
       }
     } catch (e) {
       console.error(e);

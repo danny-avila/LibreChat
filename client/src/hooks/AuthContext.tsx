@@ -82,6 +82,13 @@ const AuthContextProvider = ({
         setIsAuthenticated(isAuthenticated);
         if (isAuthenticated) {
           setQueriesEnabled(true);
+        } else {
+          /** Cleanup still queued from a failed delete belongs to the account that uploaded
+           * those files, and losing the session passes through here every way it can happen: the
+           * explicit logout, a silent refresh that comes back empty, and a failed user query.
+           * Carrying the queue across would retry it under whoever signs in next, which the
+           * ownership check rejects forever instead of cleaning anything up. */
+          clearRetainedFileDeletions();
         }
 
         const searchParams = new URLSearchParams(window.location.search);
@@ -165,10 +172,6 @@ const AuthContextProvider = ({
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
-      /** Cleanup still queued from a failed delete belongs to the account that uploaded those
-       * files. Carrying it across a sign-out would retry them under whoever signs in next, which
-       * the ownership check rejects forever instead of cleaning anything up. */
-      clearRetainedFileDeletions();
       logoutUser.mutate(undefined);
     },
     [logoutUser],

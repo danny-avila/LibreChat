@@ -288,12 +288,22 @@ const removeLocalStorageItem = (key: string): void => {
 };
 
 export const clearDraft = debounce((id?: string | null) => {
-  removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+  const key = id ?? '';
+  if (!mayWriteComposerText(key)) {
+    return;
+  }
+  removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
 }, 2500);
 
-/** Synchronously removes both text and file drafts for a conversation (or NEW_CONVO fallback) */
+/** Synchronously removes both text and file drafts for a conversation (or NEW_CONVO fallback).
+ * A record another open tab owns behind attachments it still has is left alone: every key here is
+ * reachable from more than one tab, and clearing one would take that tab's unsent text and its
+ * attachment recovery with it. */
 export const clearAllDrafts = (conversationId?: string | null) => {
   const key = conversationId || Constants.NEW_CONVO;
+  if (!mayWriteComposerText(key)) {
+    return;
+  }
   removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
   removeLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
 };
@@ -578,6 +588,10 @@ const readLiveTabs = (): Map<string, TabPresence> => {
 /** Marks this tab as present. Only ever writes this tab's own key, so concurrent beats cannot
  * overwrite one another. */
 const recordTabPresence = (tabId: string, suspended = false): void => {
+  /** The beat is the only thing guaranteed to run, so it is where the sweep belongs. Hanging it
+   * off cleanup meant a profile that never had a failed deletion accumulated a record for every
+   * tab it had ever opened, until the origin quota ran out and draft writes began failing. */
+  readLiveTabs();
   const existing = readTabPresence(tabId);
   writeTabPresence(tabId, {
     seenAt: Date.now(),

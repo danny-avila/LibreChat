@@ -526,6 +526,21 @@ export const markPastedTextFile = (fileId: string): void => {
 export const isPastedTextFileMarked = (fileId?: string | null): boolean =>
   fileId != null && pastedTextFileIds.has(fileId);
 
+const submittedPasteFileIds = new Set<string>();
+
+/** Records that a paste left the composer on a message. Submitting empties the file map but the
+ * draft keeps its provenance, and the run ending (including by Stop or an error) is not evidence
+ * the paste is unsent: only this is. Without it, discarding afterwards would delete a file the
+ * sent turn already references. */
+export const markPasteSubmitted = (fileId?: string | null): void => {
+  if (fileId != null && fileId !== '') {
+    submittedPasteFileIds.add(fileId);
+  }
+};
+
+export const isPasteSubmitted = (fileId?: string | null): boolean =>
+  fileId != null && submittedPasteFileIds.has(fileId);
+
 /** A file deletion whose request failed, kept with everything needed to retry it: the chip it
  * came from is already gone, so the payload cannot be rebuilt from the composer. */
 export type PendingFileDeletion = {

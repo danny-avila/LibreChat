@@ -20,6 +20,7 @@ import {
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   isPastedTextFileMarked,
+  isPasteSubmitted,
   loadPendingDiscardIds,
   scheduleRetainedFileDeletionRetry,
   storePendingDiscardIds,
@@ -116,7 +117,6 @@ export default function useNewChat({
   const conversationId = useRecoilValue(store.conversationIdByIndex(index));
   const files = useRecoilValue(store.filesByIndex(index));
   const saveDrafts = useRecoilValue(store.saveDrafts);
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { data: fileList } = useGetFiles<TFile[]>();
   const { mutateAsync } = useDeleteFilesMutation();
   /** The cleanup pass runs on a timer nobody asked for, so it reports nothing: a storage failure
@@ -308,12 +308,12 @@ export default function useNewChat({
        * map may not be rebuilt yet when New Chat is clicked, and the chips those ids are
        * waiting to become would otherwise be skipped rather than discarded with the draft.
        *
-       * Not while a run is in flight, though. Submitting empties the file map but leaves the
-       * draft's provenance until the final SSE event clears it, so an empty composer would look
-       * like it still owned pastes the message just sent, and this would delete files that
-       * message, and the model run reading them, still reference. */
-      if (!isSubmitting) {
-        for (const pasteId of pasteIds) {
+       * Not for one a message already took, though. Submitting empties the file map but leaves
+       * the draft's provenance behind, and the run ending is no evidence either way: Stop and
+       * error paths clear the flag without clearing the draft. Only the submission itself knows,
+       * so ids it consumed are excluded by name rather than by whether a run is in flight. */
+      for (const pasteId of pasteIds) {
+        if (!isPasteSubmitted(pasteId)) {
           ownedIds.add(pasteId);
         }
       }
@@ -427,7 +427,6 @@ export default function useNewChat({
     onNewChat,
     index,
     saveDrafts,
-    isSubmitting,
     fileList,
     mutateAsync,
     files,

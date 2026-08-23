@@ -29,6 +29,7 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import {
   logger,
   requestChatFocus,
+  markPasteSubmitted,
   hasStreamStartFailed,
   isSubmittableMessage,
   createDualMessageContent,
@@ -565,6 +566,13 @@ export default function useChatFunctions({
         height: file.height,
         width: file.width,
       }));
+      /** The draft keeps a paste's provenance after the map is emptied, so discarding later has
+       * to be able to tell what this message already took with it. */
+      files.forEach((file, key) => {
+        markPasteSubmitted(key);
+        markPasteSubmitted(file.file_id);
+        markPasteSubmitted(file.temp_file_id);
+      });
       setFiles(new Map());
       setFilesToDelete({});
     }

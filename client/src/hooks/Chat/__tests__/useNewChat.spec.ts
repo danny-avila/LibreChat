@@ -30,6 +30,7 @@ const mockState = {
   files: new Map<string, LiveFile>(),
   retainedDeletions: [] as { file_id: string; filepath: string; source: string }[],
   markedPasteIds: [] as string[],
+  submittedPasteIds: [] as string[],
   liveAttachmentIds: [] as string[],
   retainedPassInFlight: false,
   persistedPendingDiscardIds: [] as string[],
@@ -114,6 +115,7 @@ jest.mock('~/utils', () => ({
     result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [],
   scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
   isPastedTextFileMarked: (fileId: string) => mockState.markedPasteIds.includes(fileId),
+  isPasteSubmitted: (fileId: string) => mockState.submittedPasteIds.includes(fileId),
   collectLiveAttachmentIds: () => new Set<string>(mockState.liveAttachmentIds),
   beginRetainedDeletionPass: () => {
     if (mockState.retainedPassInFlight) {
@@ -190,6 +192,7 @@ describe('useNewChat', () => {
     mockState.retainedListener = null;
     mockState.pendingDiscardListener = null;
     mockState.markedPasteIds = [];
+    mockState.submittedPasteIds = [];
     mockState.liveAttachmentIds = [];
     mockState.retainedPassInFlight = false;
     mockScheduleRetainedRetry.mockClear();
@@ -307,11 +310,11 @@ describe('useNewChat', () => {
     });
   });
 
-  it('spares a paste the in-flight submission already sent', () => {
-    /** Submitting empties the file map but leaves the draft's provenance until the final SSE
-     * event, so the empty composer must not look like it still owns what the message sent. */
+  it('spares a paste a message already took, even after the run ends', () => {
+    /** Submitting empties the file map but leaves the draft's provenance behind, and Stop and
+     * error paths clear the submitting flag without clearing the draft. */
     mockState.saveDrafts = true;
-    mockState.isSubmitting = true;
+    mockState.submittedPasteIds = ['sent-paste'];
     mockState.filesDraft = { fileIds: [], pendingPastes: {}, pastedTextIds: ['sent-paste'] };
     mockState.files = new Map();
     mockState.fileList = [
