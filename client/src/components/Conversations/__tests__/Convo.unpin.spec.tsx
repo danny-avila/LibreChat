@@ -174,9 +174,11 @@ describe('pinned conversation row unpin', () => {
     expect(document.activeElement).not.toBe(screen.getByLabelText('open Second'));
   });
 
-  it('leaves focus alone for a row outside the pinned section', () => {
+  it('keeps focus on the surviving row when it is outside the pinned section', () => {
     /* The same row renders inside an expanded project, where unpinning only
-     * clears the flag and the row stays put, so focus must stay with it. */
+     * clears the flag and the row stays put. The pin badge that had focus does
+     * not survive though, so focus moves to the row's own link rather than
+     * being left on a removed control or dropped to the document. */
     render(
       <DndProvider backend={HTML5Backend}>
         <div role="region" aria-label="chats">
@@ -201,7 +203,8 @@ describe('pinned conversation row unpin', () => {
       pinCalls[0].options?.onSuccess?.();
     });
 
-    expect(document.activeElement).toBe(button);
+    /* Its own row, not the neighbour: this row is not going anywhere. */
+    expect(document.activeElement).toBe(screen.getByLabelText('open Project Chat'));
   });
 
   it('reports the rename ending when the row is removed mid-rename', () => {

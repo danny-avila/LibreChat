@@ -56,6 +56,14 @@ export const resolveRowBeside = (row: HTMLElement | null): HTMLElement | null =>
   return findNewChatControl();
 };
 
+/**
+ * The row's own focusable element, for when the row itself survives but the
+ * control that had focus does not: unpinning from a project list only clears
+ * the flag, and the pin badge that was focused disappears with it.
+ */
+export const focusableInRow = (row: HTMLElement | null): HTMLElement | null =>
+  row ? focusableWithin(row) : null;
+
 /** Resolves and focuses in one step, for removals that happen synchronously. */
 export const focusRowBeside = (row: HTMLElement | null): boolean => {
   const target = resolveRowBeside(row);

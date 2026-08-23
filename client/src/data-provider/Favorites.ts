@@ -68,8 +68,12 @@ export const useGetPinnedOrderQuery = (
   config?: Omit<UseQueryOptions<string[], Error>, 'queryKey' | 'queryFn'>,
 ) => {
   return useQuery<string[], Error>([QueryKeys.pinnedOrder], () => dataService.getPinnedOrder(), {
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    /* Reconciled when the tab is returned to, and after a reconnect. This order
+     * is one shared per-user record, so a second tab that never refetched would
+     * both show a stale arrangement and, on its next reorder, post a full array
+     * that undoes whatever the other tab saved. */
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchOnMount: false,
     ...config,
   });
