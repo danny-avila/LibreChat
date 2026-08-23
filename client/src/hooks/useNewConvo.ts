@@ -34,6 +34,7 @@ import {
   buildDefaultConvo,
   requestChatFocus,
   renewNewConversationDraftToken,
+  isPastedTextFileMarked,
   scheduleRetainedFileDeletionRetry,
   retainFileDeletion,
   failedFileIdsFrom,
@@ -384,12 +385,17 @@ const useNewConvo = (index = 0) => {
             clearUploadRecovery(file.temp_file_id);
           }
 
+          /** A generated paste is this composer's own upload and goes with it, even when that
+           * upload was vectorized for file search: skipping every embedded record left an unsent
+           * embedded paste with its metadata, storage and vectors all still on the server.
+           * Anything else embedded is left alone, since those are shared. */
+          const ownedPaste = isPastedTextFileMarked(file.file_id) && file.attached !== true;
           if (
             file.filepath == null ||
             file.filepath === '' ||
             !file.source ||
-            (file.embedded ?? false) ||
-            !file.temp_file_id
+            ((file.embedded ?? false) && !ownedPaste) ||
+            (!file.temp_file_id && !ownedPaste)
           ) {
             return [];
           }
@@ -397,7 +403,7 @@ const useNewConvo = (index = 0) => {
           return [
             {
               file_id: file.file_id,
-              embedded: false,
+              embedded: ownedPaste ? (file.embedded ?? false) : false,
               filepath: file.filepath,
               source: file.source as FileSources,
             },

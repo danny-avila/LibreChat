@@ -14,6 +14,7 @@ import {
   getFilesDraft,
   getNewConversationDraftId,
   collectDraftedAttachmentIds,
+  collectLiveAttachmentIds,
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   isPastedTextFileMarked,
@@ -156,6 +157,12 @@ export default function useNewChat({
        * can have reattached the file to a conversation this pane has never opened. Drafts live in
        * `localStorage`, so that tab's record is readable from here. */
       const reattached = collectDraftedAttachmentIds();
+      /** Drafts are only written when draft saving is on, so live tabs also publish what their
+       * composers are holding: without that, a file reattached in another tab with the setting
+       * off would be invisible here and deleted underneath it. */
+      for (const liveId of collectLiveAttachmentIds()) {
+        reattached.add(liveId);
+      }
       files.forEach((file, key) => {
         reattached.add(key);
         if (file.file_id != null) {

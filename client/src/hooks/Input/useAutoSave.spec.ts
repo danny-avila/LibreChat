@@ -57,7 +57,9 @@ const makeTextAreaRef = (value = '') =>
 /** The registry `isTabLive` reads. A stamped tab keeps its claim only while it keeps reporting,
  * so a scenario about another tab has to say whether that tab is still open. */
 const markTabLive = (tabId: string): void =>
-  localStorage.setItem('librechat-live-tabs', JSON.stringify({ [tabId]: Date.now() }));
+  localStorage.setItem(`librechat-live-tab:${tabId}`, JSON.stringify({ seenAt: Date.now() }));
+
+const markTabGone = (tabId: string): void => localStorage.removeItem(`librechat-live-tab:${tabId}`);
 
 beforeEach(() => {
   localStorage.clear();
@@ -719,7 +721,7 @@ describe('useAutoSave — file cache updates', () => {
       pendingPastes: {},
       tabId: 'other-tab',
     });
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
+    markTabGone('other-tab');
     mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'closed tab text' : ''));
     (useGetFiles as jest.Mock).mockReturnValue({
       data: [{ ...persistedRecord, file_id: 'closed-tab-file' }],

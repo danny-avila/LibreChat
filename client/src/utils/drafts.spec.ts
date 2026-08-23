@@ -274,6 +274,10 @@ describe('pending paste encoding', () => {
   });
 });
 
+/** One presence record per tab, matching the store the liveness check reads. */
+const markTabLive = (tabId: string, seenAt = Date.now()): void =>
+  localStorage.setItem(`librechat-live-tab:${tabId}`, JSON.stringify({ seenAt }));
+
 describe('browser tab ownership of unsaved-chat drafts', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -340,7 +344,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   });
 
   it('treats a record owned by an open tab as another tab’s', () => {
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
 
     expect(isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'other-tab' })).toBe(
       false,
@@ -350,8 +354,6 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   it('reclaims a record whose owning tab has closed', () => {
     /** The tab that stamped it can never present that id again, so holding the claim open would
      * leave the draft unreachable to every tab, for good. */
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
-
     expect(
       isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'closed-tab' }),
     ).toBe(true);
@@ -371,10 +373,10 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
      * those attachments on screen. */
     const tabId = getBrowserTabId();
     window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
-    const parked = JSON.parse(localStorage.getItem('librechat-live-tabs') ?? '{}');
+    const parked = JSON.parse(localStorage.getItem(`librechat-live-tab:${tabId}`) ?? '{}');
     localStorage.setItem(
-      'librechat-live-tabs',
-      JSON.stringify({ [tabId]: { ...parked[tabId], seenAt: Date.now() - 600_000 } }),
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({ ...parked, seenAt: Date.now() - 600_000 }),
     );
 
     expect(isTabLive(tabId)).toBe(true);
@@ -383,8 +385,8 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   it('lets a bfcached claim go once even a restorable document would be gone', () => {
     const tabId = 'parked-tab';
     localStorage.setItem(
-      'librechat-live-tabs',
-      JSON.stringify({ [tabId]: { seenAt: Date.now() - 3_600_000, suspended: true } }),
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({ seenAt: Date.now() - 3_600_000, suspended: true }),
     );
 
     expect(isTabLive(tabId)).toBe(false);
@@ -400,19 +402,23 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   });
 
   it('lets a closed tab expire through the ordinary window', () => {
-    localStorage.setItem(
-      'librechat-live-tabs',
-      JSON.stringify({ 'closed-tab': Date.now() - 600_000 }),
-    );
+    markTabLive('closed-tab', Date.now() - 600_000);
 
     expect(isTabLive('closed-tab')).toBe(false);
   });
 
+  it('does not drop another tab when both record a heartbeat', () => {
+    /** One shared map meant two tabs could read the same snapshot and write back rival copies,
+     * and the loser vanished until its next beat: long enough to look abandoned. */
+    markTabLive('other-tab');
+    const ownId = getBrowserTabId();
+
+    expect(isTabLive('other-tab')).toBe(true);
+    expect(isTabLive(ownId)).toBe(true);
+  });
+
   it('reclaims a record whose owning tab stopped reporting long ago', () => {
-    localStorage.setItem(
-      'librechat-live-tabs',
-      JSON.stringify({ 'crashed-tab': Date.now() - 600_000 }),
-    );
+    markTabLive('crashed-tab', Date.now() - 600_000);
 
     expect(
       isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'crashed-tab' }),
@@ -420,7 +426,6 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   });
 
   it('restamps a written record when the tab that claimed it is gone', () => {
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
     setFilesDraft(Constants.NEW_CONVO, {
       fileIds: ['file-1'],
       pendingPastes: {},
@@ -431,7 +436,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   });
 
   it('leaves the claim alone when the tab that made it is still open', () => {
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
     setFilesDraft(Constants.NEW_CONVO, {
       fileIds: ['file-1'],
       pendingPastes: {},
@@ -481,7 +486,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   it('takes a text-only claim from another tab, whose text it is overwriting anyway', () => {
     /** The shared text record has no per-tab copy: once this tab writes, its text is the only
      * text there is, so a stamp left with the other tab would stop it restoring its own draft. */
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
     localStorage.setItem(
       `${LocalStorageKeys.FILES_DRAFT}${getNewConversationDraftId()}`,
       JSON.stringify({ fileIds: [], tabId: 'other-tab' }),
@@ -493,7 +498,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   });
 
   it('leaves a claim backed by an attachment with the tab that still has it', () => {
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
     setFilesDraft(getNewConversationDraftId(), {
       fileIds: ['other-tab-file'],
       pendingPastes: {},
@@ -508,7 +513,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   it('does not overwrite the text of a tab whose attachment claim it could not take', () => {
     /** This tab could not restore what it wrote anyway, so writing would destroy the other
      * tab's text for nothing. */
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
     setFilesDraft(getNewConversationDraftId(), {
       fileIds: ['other-tab-file'],
       pendingPastes: {},
@@ -527,7 +532,7 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
   it('refuses to overwrite a conversation draft another tab holds with attachments', () => {
     /** A conversation key is reachable from every tab viewing that chat and is stamped the same
      * way, so the text guard cannot be limited to the shared composer keys. */
-    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    markTabLive('other-tab');
     setFilesDraft('convo-1', {
       fileIds: ['other-tab-file'],
       pendingPastes: {},

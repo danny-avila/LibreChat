@@ -17,11 +17,12 @@ import {
   isNewConversationDraftId,
   migrateFilesDraft,
   migrateTextDraft,
+  publishTabAttachmentIds,
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { isPastedTextFileMarked, markPastedTextFile } from '~/utils/files';
 import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
-import { markPastedTextFile } from '~/utils/files';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
@@ -62,6 +63,13 @@ export const useAutoSave = ({
   const { data: fileList } = useGetFiles<TFile[]>();
   const filesRef = useRef(files);
   filesRef.current = files;
+
+  /** Publishes what this composer holds so cleanup running in another tab can see it. Not gated
+   * on `saveDrafts`: with draft saving off nothing is persisted at all, which is exactly when a
+   * reattached file would otherwise look like nobody's and be deleted by a retry elsewhere. */
+  useEffect(() => {
+    publishTabAttachmentIds(index, fileIds);
+  }, [index, fileIds]);
 
   const restoreFiles = useCallback(
     (id: string): PendingTextAttachmentDraft[] => {
@@ -289,7 +297,16 @@ export const useAutoSave = ({
            * just became and restored from there below. */
           const liveFileIds = Array.from(filesRef.current.keys());
           if (liveFileIds.length > 0) {
-            setFilesDraft(conversationId, { fileIds: liveFileIds, pendingPastes: {} });
+            /** Provenance travels with them, or the restored chips stop being recognised as
+             * pastes and lose both editing and New Chat cleanup. It is rebuilt from the session
+             * registry rather than the foreign record, which is not ours to read. The unsent
+             * paste text cannot come along: this tab was refused the pending key all run, so it
+             * was never written anywhere to carry. */
+            setFilesDraft(conversationId, {
+              fileIds: liveFileIds,
+              pendingPastes: {},
+              pastedTextIds: liveFileIds.filter((fileId) => isPastedTextFileMarked(fileId)),
+            });
           }
         }
       } else if (currentConversationId != null && currentConversationId) {

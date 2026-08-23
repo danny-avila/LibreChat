@@ -446,12 +446,20 @@ const resolveBrowserTabId = (): string => {
   }
 };
 
-/** `suspended` marks a document sitting in the back-forward cache: frozen rather than gone. */
-type TabPresence = { seenAt: number; suspended?: boolean };
-type LiveTabs = Record<string, TabPresence>;
-type StoredTabPresence = number | { seenAt?: number; suspended?: boolean };
+/** `suspended` marks a document sitting in the back-forward cache: frozen rather than gone.
+ * `attachments` is what that tab's composers currently hold, per pane, so cleanup running in one
+ * tab can see what another has on screen even when nothing was written to a draft. */
+type TabPresence = {
+  seenAt: number;
+  suspended?: boolean;
+  attachments?: Record<string, string[]>;
+};
+type StoredTabPresence = { seenAt?: number; suspended?: boolean; attachments?: unknown };
 
-const TAB_LIVENESS_STORAGE_KEY = 'librechat-live-tabs';
+/** One key per tab, never a shared map. Two tabs beating at the same time would otherwise read
+ * the same registry and write back rival snapshots, and the loser of that race disappears until
+ * its next beat, long enough for another tab to treat its live draft as abandoned. */
+const TAB_PRESENCE_KEY_PREFIX = 'librechat-live-tab:';
 const TAB_HEARTBEAT_MS = 10_000;
 /** A hidden tab has its timers throttled to roughly one tick a minute, so the gap between two
  * heartbeats of a perfectly healthy background composer is far wider than the interval asks for.
@@ -470,47 +478,120 @@ const isPresenceLive = (presence: TabPresence, now: number): boolean =>
   now - presence.seenAt <=
   (presence.suspended === true ? TAB_SUSPENDED_WINDOW_MS : TAB_LIVENESS_WINDOW_MS);
 
-const readLiveTabs = (): LiveTabs => {
+const toAttachments = (value: unknown): Record<string, string[]> | undefined => {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const attachments: Record<string, string[]> = {};
+  for (const [pane, ids] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(ids)) {
+      attachments[pane] = ids.filter((id): id is string => typeof id === 'string');
+    }
+  }
+  return attachments;
+};
+
+const readTabPresence = (tabId: string): TabPresence | null => {
   try {
-    const raw = localStorage.getItem(TAB_LIVENESS_STORAGE_KEY);
+    const raw = localStorage.getItem(`${TAB_PRESENCE_KEY_PREFIX}${tabId}`);
     if (raw == null || raw === '') {
-      return {};
+      return null;
     }
-    const parsed = JSON.parse(raw) as Record<string, StoredTabPresence> | null;
-    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
+    const parsed = JSON.parse(raw) as StoredTabPresence | null;
+    if (parsed == null || typeof parsed.seenAt !== 'number') {
+      return null;
     }
-    const tabs: LiveTabs = {};
-    for (const [id, stored] of Object.entries(parsed)) {
-      if (typeof stored === 'number') {
-        tabs[id] = { seenAt: stored };
-      } else if (stored != null && typeof stored.seenAt === 'number') {
-        tabs[id] = { seenAt: stored.seenAt, suspended: stored.suspended === true };
-      }
-    }
-    return tabs;
+    return {
+      seenAt: parsed.seenAt,
+      suspended: parsed.suspended === true,
+      attachments: toAttachments(parsed.attachments),
+    };
   } catch {
-    return {};
+    return null;
   }
 };
 
-/** Marks this tab as present and drops the tabs that stopped reporting, so the registry cannot
- * grow a permanent entry for every tab the browser has ever opened. */
-const recordTabPresence = (tabId: string, suspended = false): void => {
-  const now = Date.now();
-  const live: LiveTabs = {
-    [tabId]: suspended ? { seenAt: now, suspended: true } : { seenAt: now },
-  };
-  for (const [id, presence] of Object.entries(readLiveTabs())) {
-    if (id !== tabId && isPresenceLive(presence, now)) {
-      live[id] = presence;
-    }
-  }
+const writeTabPresence = (tabId: string, presence: TabPresence): void => {
   try {
-    localStorage.setItem(TAB_LIVENESS_STORAGE_KEY, JSON.stringify(live));
+    localStorage.setItem(`${TAB_PRESENCE_KEY_PREFIX}${tabId}`, JSON.stringify(presence));
   } catch {
     // A tab that cannot record a heartbeat reads as gone, which only ever releases its claims.
   }
+};
+
+/** Every tab still reporting, dropping the records of those that stopped so the store cannot grow
+ * an entry for every tab the browser has ever opened. */
+const readLiveTabs = (): Map<string, TabPresence> => {
+  const live = new Map<string, TabPresence>();
+  try {
+    const now = Date.now();
+    const expired: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key == null || !key.startsWith(TAB_PRESENCE_KEY_PREFIX)) {
+        continue;
+      }
+      const tabId = key.slice(TAB_PRESENCE_KEY_PREFIX.length);
+      const presence = readTabPresence(tabId);
+      if (presence == null || !isPresenceLive(presence, now)) {
+        expired.push(key);
+        continue;
+      }
+      live.set(tabId, presence);
+    }
+    for (const key of expired) {
+      localStorage.removeItem(key);
+    }
+  } catch {
+    // An unreadable store just means no other tab can be proven live.
+  }
+  return live;
+};
+
+/** Marks this tab as present. Only ever writes this tab's own key, so concurrent beats cannot
+ * overwrite one another. */
+const recordTabPresence = (tabId: string, suspended = false): void => {
+  const existing = readTabPresence(tabId);
+  writeTabPresence(tabId, {
+    seenAt: Date.now(),
+    ...(suspended ? { suspended: true } : {}),
+    ...(existing?.attachments != null ? { attachments: existing.attachments } : {}),
+  });
+};
+
+/** Publishes what a composer is holding right now, so cleanup in another tab can see attachments
+ * that never reached a draft: with draft saving off nothing is written at all, and a reattached
+ * file would otherwise look like nobody's. */
+export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
+  const tabId = getBrowserTabId();
+  if (tabId === '') {
+    return;
+  }
+  const existing = readTabPresence(tabId);
+  const attachments = { ...(existing?.attachments ?? {}) };
+  if (ids.length === 0) {
+    delete attachments[index];
+  } else {
+    attachments[index] = ids;
+  }
+  writeTabPresence(tabId, {
+    seenAt: existing?.seenAt ?? Date.now(),
+    ...(existing?.suspended === true ? { suspended: true } : {}),
+    ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+  });
+};
+
+/** Every attachment id any live tab's composers are currently showing. */
+export const collectLiveAttachmentIds = (): Set<string> => {
+  const ids = new Set<string>();
+  for (const presence of readLiveTabs().values()) {
+    for (const paneIds of Object.values(presence.attachments ?? {})) {
+      for (const id of paneIds) {
+        ids.add(id);
+      }
+    }
+  }
+  return ids;
 };
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -564,7 +645,7 @@ export const isTabLive = (tabId?: string | null): boolean => {
   if (tabId === documentTabId) {
     return true;
   }
-  const presence = readLiveTabs()[tabId];
+  const presence = readTabPresence(tabId);
   return presence != null && isPresenceLive(presence, Date.now());
 };
 
