@@ -10,6 +10,32 @@ import { useLocalize } from '~/hooks';
 
 export const CONVERSATION_DRAG_TYPE = 'conversation-item';
 
+/** Which kind of target the pointer was over most recently.
+ *
+ *  `monitor.didDrop()` alone cannot tell a reorder from a filing action that
+ *  was refused: dropping a chat on the project it already belongs to is
+ *  rejected, so no target handles it and the drop looks exactly like one that
+ *  landed inside the pinned list, even though the rows it crossed on the way
+ *  moved only incidentally. Tracking who was last under the pointer also allows
+ *  for a drag that strays over a project and comes back to reorder after all. */
+let lastHoverWasExternal = false;
+
+/** Called by the pinned rows, whose hover is what reorders the list. */
+export const markPinnedHover = (): void => {
+  lastHoverWasExternal = false;
+};
+
+/** Called by the project rows and the Chats section, accepted or refused. */
+export const markExternalHover = (): void => {
+  lastHoverWasExternal = true;
+};
+
+export const beginPinnedDrag = (): void => {
+  lastHoverWasExternal = false;
+};
+
+export const endedOverExternalTarget = (): boolean => lastHoverWasExternal;
+
 export type ConversationDragItem = {
   conversationId: string;
   chatProjectId: string | null;

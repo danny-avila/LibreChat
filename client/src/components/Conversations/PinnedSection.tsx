@@ -10,12 +10,19 @@ import type {
 import type { ConversationDragItem } from './dnd';
 import type { Favorite } from '~/store/favorites';
 import {
+  CONVERSATION_DRAG_TYPE,
+  beginPinnedDrag,
+  endedOverExternalTarget,
+  markPinnedHover,
+  mergeVisibleOrder,
+  shouldSwapOnHover,
+} from './dnd';
+import {
   useActiveJobs,
   useGetPinnedOrderQuery,
   usePinConversationMutation,
   useUpdatePinnedOrderMutation,
 } from '~/data-provider';
-import { CONVERSATION_DRAG_TYPE, mergeVisibleOrder, shouldSwapOnHover } from './dnd';
 import useFavoritesData from '~/components/Nav/Favorites/useFavoritesData';
 import FavoriteItem from '~/components/Nav/Favorites/FavoriteItem';
 import { useLocalize, useLocalStorage } from '~/hooks';
@@ -107,6 +114,7 @@ const DraggablePinnedRow = ({
       if (!clientOffset) {
         return;
       }
+      markPinnedHover();
       const rect = ref.current.getBoundingClientRect();
       const swap = shouldSwapOnHover({
         dragIndex: indexOfKey(item.key),
@@ -124,22 +132,23 @@ const DraggablePinnedRow = ({
 
   const [{ isDragging }, drag] = useDrag<PinnedRowDragItem, unknown, { isDragging: boolean }>({
     type: entry.kind === 'convo' ? CONVERSATION_DRAG_TYPE : FAVORITE_ROW_DRAG_TYPE,
-    item: (): PinnedRowDragItem =>
-      entry.kind === 'convo'
+    item: (): PinnedRowDragItem => {
+      beginPinnedDrag();
+      return entry.kind === 'convo'
         ? {
             key: entry.key,
             conversationId: entry.conversationId,
             chatProjectId: conversation?.chatProjectId ?? null,
             pinned: conversation?.pinned === true,
           }
-        : { key: entry.key, conversationId: '', chatProjectId: null, pinned: false },
+        : { key: entry.key, conversationId: '', chatProjectId: null, pinned: false };
+    },
     collect: (monitor) => ({ isDragging: monitor.isDragging() }),
-    /* A drop the pinned rows did not handle went to a project row or the Chats
-     * section instead. Rows carry no drop handler of their own, so `didDrop`
-     * distinguishes a reorder from a filing action that merely dragged past
-     * these rows on its way. */
+    /* Rows carry no drop handler of their own, so an unhandled drop usually
+     * means a reorder. A refused external target also reports none, though, so
+     * the last thing under the pointer settles it. */
     end: (_item, monitor) => {
-      onDrop(monitor.didDrop());
+      onDrop(monitor.didDrop() || endedOverExternalTarget());
     },
   });
 

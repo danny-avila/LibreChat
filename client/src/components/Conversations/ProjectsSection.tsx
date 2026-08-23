@@ -29,11 +29,16 @@ import type { MouseEvent } from 'react';
 import type { ConversationDragItem } from './dnd';
 import type { MenuItemProps } from '~/common';
 import {
+  CONVERSATION_DRAG_TYPE,
+  markExternalHover,
+  useAssignDroppedConversation,
+  useEffectiveProjectId,
+} from './dnd';
+import {
   useProjectsInfiniteQuery,
   useActiveJobs,
   useConversationsInfiniteQuery,
 } from '~/data-provider';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation, useEffectiveProjectId } from './dnd';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
@@ -184,6 +189,10 @@ const ProjectItem = memo(
     >({
       accept: CONVERSATION_DRAG_TYPE,
       canDrop: (item) => effectiveProjectId(item) !== project._id,
+      /* Reported even when the drop is refused: a pinned row dragged onto the
+       * project it already belongs to still left the pinned list, and the rows
+       * it crossed must not be saved in their shifted order. */
+      hover: () => markExternalHover(),
       drop: (item) => assignDropped(item, project._id),
       collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
     });

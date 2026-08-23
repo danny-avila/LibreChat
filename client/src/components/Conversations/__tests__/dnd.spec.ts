@@ -1,4 +1,11 @@
-import { mergeVisibleOrder, shouldSwapOnHover } from '../dnd';
+import {
+  beginPinnedDrag,
+  endedOverExternalTarget,
+  markExternalHover,
+  markPinnedHover,
+  mergeVisibleOrder,
+  shouldSwapOnHover,
+} from '../dnd';
 
 /** A 36px favorite row and a 48px chat row, the two heights the pinned list
  *  mixes below the `md` breakpoint. */
@@ -77,5 +84,39 @@ describe('mergeVisibleOrder', () => {
 
   it('keeps every hidden key when only one row is visible', () => {
     expect(mergeVisibleOrder(['a', 'b', 'c'], ['c'])).toEqual(['a', 'b', 'c']);
+  });
+});
+
+/* `didDrop()` is false both for a drop the pinned rows handled and for one an
+ * external target refused, so the last target under the pointer is what
+ * separates a deliberate reorder from a filing action that merely shifted the
+ * rows it crossed. */
+describe('drag target tracking', () => {
+  beforeEach(() => {
+    beginPinnedDrag();
+  });
+
+  it('treats a drag that never left the pinned rows as a reorder', () => {
+    markPinnedHover();
+    expect(endedOverExternalTarget()).toBe(false);
+  });
+
+  it('treats a drag ending on a project row as external, refused or not', () => {
+    markPinnedHover();
+    markExternalHover();
+    expect(endedOverExternalTarget()).toBe(true);
+  });
+
+  it('treats a drag that strayed out and came back as a reorder', () => {
+    markPinnedHover();
+    markExternalHover();
+    markPinnedHover();
+    expect(endedOverExternalTarget()).toBe(false);
+  });
+
+  it('starts each drag with no external hover carried over', () => {
+    markExternalHover();
+    beginPinnedDrag();
+    expect(endedOverExternalTarget()).toBe(false);
   });
 });
