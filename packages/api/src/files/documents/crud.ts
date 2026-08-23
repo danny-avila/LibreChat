@@ -70,6 +70,17 @@ function routeDocument(
 }
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
+
+export class ParserInputLimitError extends Error {
+  readonly code = 'PARSER_INPUT_LIMIT';
+  readonly userErrorStatusCode = 413;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ParserInputLimitError';
+  }
+}
+
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
  * turn the notice itself into hundreds of KB of text persisted on every turn. */
 const MAX_LISTED_MISSING_PAGES = 20;
@@ -121,7 +132,7 @@ export async function parseDocument({
   if (fileSize > DOCUMENT_PARSER_MAX_FILE_SIZE) {
     const limitMB = DOCUMENT_PARSER_MAX_FILE_SIZE / megabyte;
     const sizeMB = Math.ceil(fileSize / megabyte);
-    throw new Error(
+    throw new ParserInputLimitError(
       `File "${file.originalname}" exceeds the ${limitMB}MB document parser limit (${sizeMB}MB).`,
     );
   }

@@ -19,6 +19,7 @@ const USER_FACING_UPLOAD_ERROR_CODES: Readonly<Record<string, string>> = {
   ZIP_BOMB: 'Archive exceeds the safe extraction limit',
   ARCHIVE_INVALID: 'Archive could not be read safely',
   PDF_PAGE_LIMIT: 'PDF exceeds the supported page limit',
+  PARSER_INPUT_LIMIT: 'Document exceeds the supported file size limit',
   PARSER_OUTPUT_LIMIT: 'Extracted document text exceeds the supported size limit',
   CONCURRENCY_LIMIT: 'Too many document parsing requests are already waiting',
 };

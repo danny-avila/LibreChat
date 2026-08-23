@@ -613,6 +613,7 @@ describe('resolveUploadErrorMessage', () => {
    * one back into a generic failure.
    */
   test.each([
+    ['an oversized parser input', 'PARSER_INPUT_LIMIT', 'report.docx exceeds the 15MB limit'],
     ['an oversized extraction', 'PARSER_OUTPUT_LIMIT', 'anydoc extracted 22MB of text'],
     ['a refused archive', 'ARCHIVE_INVALID', 'report.docx: archive could not be read safely'],
     ['a zip bomb', 'ZIP_BOMB', 'evil.docx: entry count (9000) exceeds the 4096-entry cap'],
@@ -636,6 +637,20 @@ describe('resolveUploadErrorMessage', () => {
     );
 
     expect(result).toBe('Archive could not be read safely');
+    expect(result).not.toContain('PRIVATE-UPLOAD');
+  });
+
+  test('redacts an oversized parser input to its stable client message', () => {
+    const result = resolveUploadErrorMessage(
+      {
+        code: 'PARSER_INPUT_LIMIT',
+        message: 'PRIVATE-UPLOAD.docx exceeds the 15MB parser limit',
+      },
+      undefined,
+      true,
+    );
+
+    expect(result).toBe('Document exceeds the supported file size limit');
     expect(result).not.toContain('PRIVATE-UPLOAD');
   });
 

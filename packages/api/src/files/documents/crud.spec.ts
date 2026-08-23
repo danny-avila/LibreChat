@@ -206,9 +206,12 @@ describe('Document Parser', () => {
       size: 16 * 1024 * 1024,
     } as Express.Multer.File;
 
-    await expect(parseDocument({ file })).rejects.toThrow(
-      /exceeds the 15MB document parser limit \(16MB\)/,
-    );
+    await expect(parseDocument({ file })).rejects.toMatchObject({
+      name: 'ParserInputLimitError',
+      code: 'PARSER_INPUT_LIMIT',
+      userErrorStatusCode: 413,
+      message: expect.stringMatching(/exceeds the 15MB document parser limit \(16MB\)/),
+    });
   });
 
   test('allows files exactly at the shared local parser size limit', async () => {
