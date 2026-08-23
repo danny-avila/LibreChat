@@ -16,6 +16,8 @@ import {
   setPendingTextAttachmentDraft,
   removePendingTextAttachmentDraft,
   addPastedTextDraftFile,
+  isFilesDraftOwnedByThisTab,
+  getFilesDraft,
   setDraft,
   markPastedTextFile,
   getEntityName,
@@ -403,7 +405,11 @@ export default function useTextarea({
       const composerValue = textArea.value;
       const pendingFileId = v4();
       markPastedTextFile(pendingFileId);
-      if (saveDrafts) {
+      /** Another open tab can hold this shared key against files it still has attached, and
+       * `setFilesDraft` keeps that owner rather than rejecting the write: recording this paste
+       * there would hand it to a composer that never made it, which could then restore the
+       * upload and delete it through New Chat while this tab still shows the chip. */
+      if (saveDrafts && isFilesDraftOwnedByThisTab(getFilesDraft(draftId))) {
         addPastedTextDraftFile({ id: draftId, fileId: pendingFileId });
         try {
           setDraft({ id: draftId, value: composerValue, persistExact: true });
@@ -470,7 +476,11 @@ export default function useTextarea({
         shouldCommit: isOriginatingComposer,
         onStart: (fileId) => {
           markPastedTextFile(fileId);
-          if (!saveDrafts || fileId === pendingFileId) {
+          if (
+            !saveDrafts ||
+            fileId === pendingFileId ||
+            !isFilesDraftOwnedByThisTab(getFilesDraft(draftId))
+          ) {
             return;
           }
           try {

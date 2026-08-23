@@ -266,12 +266,21 @@ export const useAutoSave = ({
         !isNewConversationDraftId(conversationId) &&
         conversationId.length > 3
       ) {
-        // Move the pending text draft to the new conversationId, falling back to the current
-        // text area value when there was no pending draft to carry over
-        if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
+        /** Two tabs running at once share the default pending key, so the record here may be
+         * another tab's: migrating first and checking ownership afterwards moved that tab's text
+         * and attachments under this conversation and left it nothing to carry over when its own
+         * run finished. This composer's own text still belongs to the conversation it just
+         * became, so it is saved either way. */
+        if (isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId))) {
+          // Move the pending text draft to the new conversationId, falling back to the current
+          // text area value when there was no pending draft to carry over
+          if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
+            setDraft({ id: conversationId, value: textAreaRef.current.value });
+          }
+          filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
+        } else if (textAreaRef?.current?.value) {
           setDraft({ id: conversationId, value: textAreaRef.current.value });
         }
-        filesDraftId = migrateFilesDraft(pendingDraftId, conversationId);
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }

@@ -700,6 +700,13 @@ export const claimComposerDraftTab = (id: string): boolean => {
   /** Reached from every debounced keystroke, so it reads through the cache rather than
    * re-parsing the record each time. */
   const existing = getFilesDraftCached(id);
+  const tabId = getBrowserTabId();
+  /** Already ours, or storage cannot attribute a tab at all: there is nothing to claim and the
+   * write goes ahead. This has to come first, or the owner of an attachment-backed draft would
+   * be refused its own key and stop saving what it types. */
+  if (existing.tabId === tabId || tabId === '') {
+    return true;
+  }
   const hasAttachments =
     existing.fileIds.length > 0 ||
     Object.keys(existing.pendingPastes).length > 0 ||
@@ -711,10 +718,6 @@ export const claimComposerDraftTab = (id: string): boolean => {
    * files the other one still has on screen. */
   if (existing.tabId != null && hasAttachments && isTabLive(existing.tabId)) {
     return false;
-  }
-  const tabId = getBrowserTabId();
-  if (tabId === '' || existing.tabId === tabId) {
-    return true;
   }
   if (hasAttachments) {
     setFilesDraft(id, { ...existing, tabId });

@@ -448,6 +448,16 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(getFilesDraft(getNewConversationDraftId()).tabId).toBeUndefined();
   });
 
+  it('keeps saving the owner’s own text once its draft has an attachment', () => {
+    /** The refusal is about other tabs. Applying it to the owner would silently stop the
+     * composer saving anything typed after the first file was attached. */
+    setFilesDraft(getNewConversationDraftId(), { fileIds: ['my-file'], pendingPastes: {} });
+
+    setDraft({ id: getNewConversationDraftId(), value: 'typed after attaching' });
+
+    expect(getDraft(getNewConversationDraftId())).toBe('typed after attaching');
+  });
+
   it('keeps the claim when clearing the text leaves an attachment behind', () => {
     setFilesDraft(getNewConversationDraftId(), { fileIds: ['file-1'], pendingPastes: {} });
     setDraft({ id: getNewConversationDraftId(), value: 'queued follow-up' });
