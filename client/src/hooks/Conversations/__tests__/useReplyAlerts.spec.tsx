@@ -126,6 +126,7 @@ describe('useReplyAlerts', () => {
   let hasFocus: jest.SpyInstance;
 
   beforeEach(() => {
+    window.localStorage.clear();
     createdNotifications.length = 0;
     permissionRequest.mockReset();
     createOscillator.mockReset();
@@ -254,6 +255,35 @@ describe('useReplyAlerts', () => {
     });
 
     expect(createdNotifications).toHaveLength(1);
+  });
+
+  it('stays quiet for a reply another tab has already announced', () => {
+    /* Every open tab polls on its own timer; without the shared claim the same reply would
+       chime once per tab, seconds apart. */
+    window.localStorage.setItem(
+      'replyAlerts:announced',
+      JSON.stringify([['convo-b', '2026-08-16T10:05:00.000Z']]),
+    );
+    const { rerender } = setup({ notifications: true }, stateOf([row('convo-b', 'Beta')]));
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z')]));
+    });
+
+    expect(createdNotifications).toHaveLength(0);
+  });
+
+  it('records its own announcement where the other tabs will look', async () => {
+    const { rerender } = setup({ notifications: true }, stateOf([]));
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+
+    const raw = window.localStorage.getItem('replyAlerts:announced');
+    expect(raw).not.toBeNull();
+    expect(JSON.parse(raw as string)).toEqual([['convo-b', '2026-08-16T10:00:00.000Z']]);
   });
 
   it('degrades quietly where the Notification constructor is unsupported', () => {
