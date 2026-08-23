@@ -466,7 +466,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     it('owns the lease before consuming approval and preserves the inherited deadline', async () => {
       const expiredAt = configureEventActorResume();
       mockGenerationJobManager.getJob.mockResolvedValue(
-        makeToolApprovalJob({ metadata: { isTemporary: true } }),
+        makeToolApprovalJob({
+          metadata: {
+            isTemporary: true,
+            idempotencyClientRequestId: 'trigger_event_delivery',
+          },
+        }),
       );
 
       const res = await post(approveBody());
@@ -481,7 +486,10 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         mockGenerationJobManager.approvals.resolve.mock.invocationCallOrder[0],
       );
       expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
-        expect.objectContaining({ retentionExpiresAt: expiredAt }),
+        expect.objectContaining({
+          taskId: 'trigger_event_delivery',
+          retentionExpiresAt: expiredAt,
+        }),
       );
       expect(mockSaveMessage).toHaveBeenCalledWith(
         expect.objectContaining({ isTemporary: true, expiredAt }),

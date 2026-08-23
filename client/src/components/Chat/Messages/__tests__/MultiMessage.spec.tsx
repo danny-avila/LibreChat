@@ -32,6 +32,12 @@ jest.mock('~/components/Messages/MessageContent', () => ({
 }));
 jest.mock('../MessageParts', () => ({ __esModule: true, default: createRowStub() }));
 jest.mock('../Message', () => ({ __esModule: true, default: createRowStub() }));
+jest.mock('~/components/Chat/Subagents/EventSubagentActivityGroup', () => ({
+  __esModule: true,
+  default: ({ parentMessageId }: { parentMessageId: string }) => (
+    <div data-testid="event-subagent-activity" data-parent-message-id={parentMessageId} />
+  ),
+}));
 
 const msg = (messageId: string): TMessage =>
   ({
@@ -60,6 +66,41 @@ const treeElement = (ids: string[]) => (
 const displayed = () => screen.getAllByTestId('row')[0].textContent;
 
 describe('MultiMessage sibling selection', () => {
+  it('hosts event activity for structured and legacy message rows', () => {
+    const structured = msg('structured');
+    const legacy = { ...msg('legacy'), content: undefined } as TMessage;
+    const view = render(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[structured]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-id',
+      'structured',
+    );
+
+    view.rerender(
+      <RecoilRoot>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[legacy]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
+      'data-parent-message-id',
+      'legacy',
+    );
+  });
+
   it('shows the newest sibling by default and follows a newly appended one', () => {
     const view = render(treeElement(['a', 'b']));
     expect(displayed()).toBe('b');

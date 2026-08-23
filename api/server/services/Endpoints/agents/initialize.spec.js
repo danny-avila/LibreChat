@@ -257,6 +257,46 @@ describe('initializeClient — processAgent ACL gate', () => {
     );
   });
 
+  it('publishes event-root activity through the owning child task stream', async () => {
+    const subagentThreadTaskStore = require('./subagentThreadStore');
+    const publishTaskActivity = jest
+      .spyOn(subagentThreadTaskStore, 'publishTaskActivity')
+      .mockResolvedValueOnce(undefined);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+    const req = makeReq();
+    req._resumableStreamId = 'child-conversation';
+    req.body.conversationId = 'child-conversation';
+    req._agentEventTaskId = 'event-task';
+    req._agentEventBindingParentConversationId = 'parent-conversation';
+    req._agentEventBindingParentAgentId = 'parent-agent';
+
+    await initializeClient({
+      req,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(capturedDefaultHandlerOptions.eventChildActivity).toEqual(
+      expect.objectContaining({
+        runId: 'child-conversation',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'event-task',
+        subagentType: PRIMARY_ID,
+        subagentAgentId: PRIMARY_ID,
+        parentAgentId: 'parent-agent',
+      }),
+    );
+    await capturedDefaultHandlerOptions.eventChildActivity.publish({
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+    expect(publishTaskActivity).toHaveBeenCalledWith('child-conversation', 'event-task', {
+      phase: 'writing',
+      label: 'Drafting response',
+    });
+  });
+
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {
     const toolError = Object.assign(new Error('Expected MCP tools are unavailable'), {
       code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',

@@ -1009,13 +1009,28 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const overrideUserMessageId = rawOverrideUserMessageId
     ? rawOverrideUserMessageId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;
+  /** Event deliveries already carry a stable, retry-safe idempotency key. Reuse
+   * it as the public child-task identity so the lease, persisted turn, and
+   * parent activity index continue to agree after the live lease is released. */
+  const eventTaskId =
+    req._agentEventBindingParentConversationId != null
+      ? (clientRequestId ?? crypto.randomUUID())
+      : undefined;
+  if (eventTaskId != null) {
+    req._agentEventTaskId = eventTaskId;
+  }
   const preallocatedUserMessageId =
-    overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID();
+    eventTaskId == null
+      ? (overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID())
+      : `${eventTaskId}:user`;
   const overrideConversationId = rawOverrideConversationId
     ? rawOverrideConversationId.split(Constants.COMMON_DIVIDER)[0]
     : undefined;
   const effectiveConversationId = overrideConversationId ?? conversationId;
-  let preallocatedResponseMessageId = editedResponseMessageId ?? crypto.randomUUID();
+  let preallocatedResponseMessageId =
+    eventTaskId == null
+      ? (editedResponseMessageId ?? crypto.randomUUID())
+      : `${eventTaskId}:assistant`;
   if (
     (editedContent != null && !isContinued) ||
     (isRegenerate && preallocatedResponseMessageId.endsWith('_'))
@@ -1140,6 +1155,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         tenantId: req._agentEventBindingTenantId,
         conversationId,
         streamId,
+        taskId: eventTaskId,
         jobCreatedAt,
         retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
       });

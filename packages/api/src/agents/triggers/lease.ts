@@ -29,6 +29,8 @@ export interface EventChildGenerationLeaseInput {
   tenantId?: string;
   conversationId: string;
   streamId: string;
+  /** Stable logical delivery identity exposed through the parent activity view. */
+  taskId?: string;
   jobCreatedAt: number;
   retentionExpiresAt?: Date | string | number;
 }
@@ -45,6 +47,7 @@ export function createEventChildGenerationLeaseAcquirer({
     tenantId,
     conversationId,
     streamId,
+    taskId,
     jobCreatedAt,
     retentionExpiresAt,
   }: EventChildGenerationLeaseInput): Promise<ReleaseEventChildGenerationLease | null> {
@@ -75,7 +78,7 @@ export function createEventChildGenerationLeaseAcquirer({
     };
     const acquired = await methods.acquireSubagentThreadLease({
       ...leaseIdentity,
-      taskId: streamId,
+      taskId: taskId ?? streamId,
       now: new Date(initialTime),
       expiresAt: new Date(initialLeaseDeadline),
     });

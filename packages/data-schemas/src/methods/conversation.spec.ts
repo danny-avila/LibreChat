@@ -1613,6 +1613,17 @@ describe('Conversation Operations', () => {
       expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
     });
 
+    it('hides retention-expired conversations before TTL cleanup', async () => {
+      await Conversation.create({
+        conversationId: 'expired-owner',
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(methods.getConvoOwnership('user123', 'expired-owner')).resolves.toBeNull();
+    });
+
     it('includes child-thread identity without materializing conversation content', async () => {
       await Conversation.create({
         conversationId: 'child-conversation',
@@ -3666,6 +3677,189 @@ describe('Conversation Operations', () => {
       expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
         'subagentThreadLease',
       );
+    });
+
+    it('lists bounded child metadata while collapsing private event bindings to actor identity', async () => {
+      const parentConversationId = uuidv4();
+      const eventThreadId = uuidv4();
+      const toolThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: eventThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-event',
+          subagentThread: lineage('event-binding:private'),
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-live',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+          agentEventBinding: {
+            bindingId: `evtbind_${'b'.repeat(48)}`,
+            sourceKeyId: 'private-key',
+            actorId: 'actor-a',
+          },
+        },
+        {
+          conversationId: toolThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('tool-call-a'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-b',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-tenant'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'different-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-user'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            ...lineage('wrong-parent'),
+            parentConversationId: uuidv4(),
+          },
+        },
+      ]);
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'index-user',
+        tenantId: 'tenant-a',
+        parentConversationId,
+        limit: 10,
+      });
+
+      expect(records.map((record) => record.conversationId).sort()).toEqual(
+        [eventThreadId, toolThreadId].sort(),
+      );
+      expect(records.find((record) => record.conversationId === eventThreadId)).toEqual(
+        expect.objectContaining({
+          actorId: 'actor-a',
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-live' }),
+        }),
+      );
+      expect(records).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ agentEventBinding: expect.anything() })]),
+      );
+      expect(JSON.stringify(records)).not.toContain('private-key');
+      expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
+    });
+
+    it('hides retention-expired children before TTL cleanup', async () => {
+      const parentConversationId = uuidv4();
+      const expiredThreadId = uuidv4();
+      await Conversation.create({
+        conversationId: expiredThreadId,
+        user: 'expired-child-user',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+        subagentThread: {
+          rootConversationId: parentConversationId,
+          parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          conversationId: expiredThreadId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.listSubagentThreadsForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          limit: 10,
+        }),
+      ).resolves.toEqual([]);
+    });
+
+    it('keeps an older child with a live lease inside the bounded parent index', async () => {
+      const parentConversationId = uuidv4();
+      const activeThreadId = uuidv4();
+      const recentThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: activeThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('active-tool'),
+        },
+        {
+          conversationId: recentThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('recent-tool'),
+        },
+      ]);
+      await Conversation.updateOne(
+        { conversationId: activeThreadId },
+        { $set: { updatedAt: new Date('2026-08-20T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await Conversation.updateOne(
+        { conversationId: recentThreadId },
+        { $set: { updatedAt: new Date('2026-08-21T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await methods.acquireSubagentThreadLease({
+        user: 'active-index-user',
+        conversationId: activeThreadId,
+        token: 'private-token',
+        taskId: 'active-task',
+        now: new Date('2026-08-22T10:00:00.000Z'),
+        expiresAt: new Date('2026-08-22T10:00:30.000Z'),
+      });
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'active-index-user',
+        parentConversationId,
+        limit: 1,
+      });
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          conversationId: activeThreadId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'active-task' }),
+        }),
+      ]);
     });
 
     it('resolves an event binding only through its owner, tenant, and API key', async () => {

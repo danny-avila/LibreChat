@@ -28,6 +28,9 @@ let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let getMessagesForSubagentThreadView: ReturnType<
   typeof createMessageMethods
 >['getMessagesForSubagentThreadView'];
+let listSubagentTasksForThreads: ReturnType<
+  typeof createMessageMethods
+>['listSubagentTasksForThreads'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -52,6 +55,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
+  listSubagentTasksForThreads = methods.listSubagentTasksForThreads;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -1142,6 +1146,262 @@ describe('Message Operations', () => {
       expect(messages[0].text).toBe('The bounded public answer remains available.');
       expect(messages[0]).not.toHaveProperty('subagentTranscript');
       expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+  });
+
+  describe('listSubagentTasksForThreads', () => {
+    it('derives event task status from ordinary durable turn rows', async () => {
+      const conversationId = uuidv4();
+      await Message.create([
+        {
+          user: 'user123',
+          messageId: 'delivery-running:user',
+          conversationId,
+          isCreatedByUser: true,
+          createdAt: new Date('2026-08-21T10:00:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-complete:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          createdAt: new Date('2026-08-21T10:01:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-error:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          error: true,
+          createdAt: new Date('2026-08-21T10:02:00.000Z'),
+        },
+      ]);
+
+      const [record] = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [conversationId],
+        limitPerThread: 3,
+      });
+
+      expect(record.tasks).toEqual([
+        expect.objectContaining({
+          messageId: 'delivery-error:assistant',
+          status: 'error',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-complete:assistant',
+          status: 'completed',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-running:user',
+          status: 'running',
+          statusDerived: true,
+        }),
+      ]);
+    });
+
+    it('batches threads, deduplicates task rows, and bounds each newest task list', async () => {
+      const firstThread = uuidv4();
+      const secondThread = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:user',
+        conversationId: firstThread,
+        text: 'Start old task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'old', status: 'running' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:assistant',
+        conversationId: firstThread,
+        text: 'Finish old task',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'old', status: 'completed' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-new:user',
+        conversationId: firstThread,
+        text: 'Start new task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'new', status: 'running' },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-other:assistant',
+        conversationId: secondThread,
+        text: 'Other result',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'other', status: 'cancelled' },
+      });
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [firstThread, secondThread],
+        limitPerThread: 2,
+      });
+
+      const first = records.find((record) => record.conversationId === firstThread);
+      expect(first?.tasks).toHaveLength(2);
+      expect(first?.tasks[0]).toEqual(
+        expect.objectContaining({ messageId: 'task-new:user', status: 'running' }),
+      );
+      expect(first?.tasks[1]).toEqual(
+        expect.objectContaining({ messageId: 'task-old:assistant', status: 'completed' }),
+      );
+      expect(records.find((record) => record.conversationId === secondThread)?.tasks).toEqual([
+        expect.objectContaining({ messageId: 'task-other:assistant', status: 'cancelled' }),
+      ]);
+      expect(records.every((record) => record.sourceTruncated !== true)).toBe(true);
+    });
+
+    it('marks every selected child truncated when one busy child fills the shared source window', async () => {
+      const quietThread = uuidv4();
+      const busyThread = uuidv4();
+      await Message.create([
+        ...['quiet-old', 'quiet-new'].map((taskId, index) => ({
+          user: 'user123',
+          messageId: `${taskId}:assistant`,
+          conversationId: quietThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          updatedAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          subagentTask: { attemptKey: taskId, status: 'completed' },
+        })),
+        ...Array.from({ length: 9 }, (_, index) => ({
+          user: 'user123',
+          messageId: `busy-${index}:assistant`,
+          conversationId: busyThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          updatedAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          subagentTask: { attemptKey: `busy-${index}`, status: 'completed' },
+        })),
+      ]);
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [quietThread, busyThread],
+        limitPerThread: 2,
+      });
+
+      expect(records.find((record) => record.conversationId === quietThread)).toEqual(
+        expect.objectContaining({
+          sourceTruncated: true,
+          tasks: [expect.objectContaining({ messageId: 'quiet-new:assistant' })],
+        }),
+      );
+      expect(records.find((record) => record.conversationId === busyThread)?.sourceTruncated).toBe(
+        true,
+      );
+    });
+
+    it('preserves a newer recent task when the latest-per-thread snapshot is stale', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-old:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-new:user',
+                  createdAt: new Date('2026-08-21T11:00:00.000Z'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        await expect(
+          listSubagentTasksForThreads({
+            user: 'user123',
+            conversationIds: [conversationId],
+            limitPerThread: 2,
+          }),
+        ).resolves.toEqual([
+          {
+            conversationId,
+            tasks: [
+              expect.objectContaining({ messageId: 'task-new:user' }),
+              expect.objectContaining({ messageId: 'task-old:assistant' }),
+            ],
+          },
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
+
+    it('preserves Mongo occurrence ordering when task timestamps tie', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-b:user',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000002'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-a:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000001'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        const [record] = await listSubagentTasksForThreads({
+          user: 'user123',
+          conversationIds: [conversationId],
+          limitPerThread: 2,
+        });
+
+        expect(record.tasks.map((task) => task.messageId)).toEqual([
+          'task-b:user',
+          'task-a:assistant',
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
     });
   });
 

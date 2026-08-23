@@ -15,6 +15,7 @@ const {
   GraphNodeKeys,
   ToolEndHandler,
   createContentAggregator,
+  summarizeEvent,
 } = require('@librechat/agents');
 const {
   sendEvent,
@@ -381,13 +382,73 @@ function getDefaultHandlers({
   usageCost = null,
   contextUsageSink = null,
   usageEmitSink = null,
+  eventChildActivity = null,
 }) {
   if (!res || !aggregateContent) {
     throw new Error(
       `[getDefaultHandlers] Missing required options: res: ${!res}, aggregateContent: ${!aggregateContent}`,
     );
   }
-  const emitForJob = (eventData) => emitEvent(res, streamId, eventData, jobCreatedAt);
+  const eventActivityPhases = {
+    [GraphEvents.ON_RUN_STEP]: 'run_step',
+    [GraphEvents.ON_RUN_STEP_DELTA]: 'run_step_delta',
+    [GraphEvents.ON_RUN_STEP_COMPLETED]: 'run_step_completed',
+    [GraphEvents.ON_RUN_STEP_CLOSED]: 'run_step_closed',
+    [GraphEvents.ON_MESSAGE_DELTA]: 'message_delta',
+    [GraphEvents.ON_REASONING_DELTA]: 'reasoning_delta',
+  };
+  /** Event tasks retain one logical task id across HITL resume, while each
+   * handler instance is a new generation invocation. Keep replay identity
+   * unique per invocation; the existing stream transport preserves order.
+   * Reusing a zero-based activitySequence here would make the client discard
+   * resumed frames as duplicates of the pre-pause generation. */
+  const eventActivityInvocationId = eventChildActivity == null ? null : nanoid();
+  let eventActivitySequence = 0;
+  let eventActivityPending = 0;
+  let eventActivityCircuitOpen = false;
+  let eventActivityTail = Promise.resolve();
+  const publishEventChildActivity = (eventData) => {
+    const phase = eventActivityPhases[eventData?.event];
+    if (
+      eventChildActivity == null ||
+      phase == null ||
+      eventActivityCircuitOpen ||
+      eventActivityPending >= 128
+    ) {
+      return;
+    }
+    const sequence = eventActivitySequence++;
+    eventActivityPending += 1;
+    const update = {
+      runId: eventChildActivity.runId,
+      parentRunId: eventChildActivity.parentRunId,
+      subagentRunId: eventChildActivity.subagentRunId,
+      subagentType: eventChildActivity.subagentType,
+      subagentKind: 'agent',
+      subagentAgentId: eventChildActivity.subagentAgentId,
+      parentAgentId: eventChildActivity.parentAgentId,
+      depth: 1,
+      ancestry: [],
+      phase,
+      data: eventData.data,
+      label: summarizeEvent(eventData.event, eventData.data),
+      timestamp: new Date().toISOString(),
+      activityEventId: `${eventChildActivity.subagentRunId}:${eventActivityInvocationId}:${sequence}`,
+    };
+    eventActivityTail = eventActivityTail
+      .then(() => eventChildActivity.publish(update))
+      .catch((error) => {
+        eventActivityCircuitOpen = true;
+        logger.warn('[getDefaultHandlers] Failed to publish event child activity', error);
+      })
+      .finally(() => {
+        eventActivityPending = Math.max(0, eventActivityPending - 1);
+      });
+  };
+  const emitForJob = (eventData) => {
+    publishEventChildActivity(eventData);
+    return emitEvent(res, streamId, eventData, jobCreatedAt);
+  };
   /**
    * Emit a token-usage event, attaching the authoritative per-event USD cost
    * when cost display is enabled. The backend is the single source of truth

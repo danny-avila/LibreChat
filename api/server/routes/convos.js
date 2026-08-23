@@ -6,6 +6,7 @@ const {
   deleteAgentCheckpoints,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
+  createParentSubagentIndexHandler,
   createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
@@ -46,6 +47,11 @@ const subagentThreadViewHandler = createSubagentThreadViewHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
   getMessagesForSubagentThreadView: db.getMessagesForSubagentThreadView,
+});
+const parentSubagentIndexHandler = createParentSubagentIndexHandler({
+  getConvoOwnership: db.getConvoOwnership,
+  listSubagentThreadsForParent: db.listSubagentThreadsForParent,
+  listSubagentTasksForThreads: db.listSubagentTasksForThreads,
 });
 const filterConversationTitle = createContentFilter({
   getFilters: (req) => req.config?.filters,
@@ -111,6 +117,7 @@ router.get(
   '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
   subagentActivityStreamHandler,
 );
+router.get('/:parentConversationId/subagents', parentSubagentIndexHandler);
 router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);
 
 router.get('/:conversationId', async (req, res) => {

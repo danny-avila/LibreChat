@@ -124,6 +124,76 @@ describe('resumable event generation fencing', () => {
     );
   });
 
+  it('publishes root event-child progress through the child activity transport', async () => {
+    const { nanoid } = require('nanoid');
+    nanoid.mockReturnValueOnce('invocation-1').mockReturnValueOnce('invocation-2');
+    const { GraphEvents } = jest.requireActual('@librechat/agents');
+    const { getDefaultHandlers } = require('../callbacks');
+    const publish = jest.fn().mockResolvedValue(undefined);
+    const data = {
+      id: 'step-1',
+      index: 0,
+      stepDetails: { type: 'message_creation' },
+    };
+    const handlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish,
+      },
+    });
+
+    await handlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const firstUpdate = publish.mock.calls[0][0];
+    expect(firstUpdate).toEqual(
+      expect.objectContaining({
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        phase: 'run_step',
+        activityEventId: expect.stringMatching(/^delivery-1:.+:0$/),
+        data,
+      }),
+    );
+    expect(firstUpdate).not.toHaveProperty('activitySequence');
+
+    const resumedPublish = jest.fn().mockResolvedValue(undefined);
+    const resumedHandlers = getDefaultHandlers({
+      res: { write: jest.fn() },
+      aggregateContent: jest.fn(),
+      toolEndCallback: jest.fn(),
+      collectedUsage: [],
+      streamId: 'event-thread',
+      jobCreatedAt: 1234,
+      eventChildActivity: {
+        runId: 'event-thread',
+        parentRunId: 'parent-conversation',
+        subagentRunId: 'delivery-1',
+        subagentType: 'agent-1',
+        subagentAgentId: 'agent-1',
+        parentAgentId: 'director',
+        publish: resumedPublish,
+      },
+    });
+    await resumedHandlers[GraphEvents.ON_RUN_STEP].handle(GraphEvents.ON_RUN_STEP, data);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resumedPublish.mock.calls[0][0].activityEventId).not.toBe(firstUpdate.activityEventId);
+  });
+
   it('forwards the originating job epoch with deferred attachments', () => {
     const { GenerationJobManager } = require('@librechat/api');
     const { createAttachmentEmitter } = require('../callbacks');
