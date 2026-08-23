@@ -1,6 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
-import { SIDEBAR_TRANSITION, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import {
+  MOBILE_DRAWER_ID,
+  MOBILE_DRAWER_TRANSITION,
+  SIDEBAR_TRANSITION,
+  TRANSITION_MS,
+} from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { markDrawerAnimationStart } from '../useDrawerSwipe';
 import useDrawerDismiss from '../useDrawerDismiss';
 
 type Props = {
@@ -19,14 +25,19 @@ function setup({
   isSmallScreen,
   prefersReducedMotion = false,
   paneTransition = SIDEBAR_TRANSITION,
+  drawerTransition = MOBILE_DRAWER_TRANSITION,
 }: Omit<Props, 'prefersReducedMotion'> & {
   prefersReducedMotion?: boolean;
   paneTransition?: string;
+  drawerTransition?: string;
 }) {
   const pane = document.createElement('div');
   pane.tabIndex = -1;
   pane.style.transition = paneTransition;
-  document.body.appendChild(pane);
+  const drawer = document.createElement('div');
+  drawer.id = MOBILE_DRAWER_ID;
+  drawer.style.transition = drawerTransition;
+  document.body.append(pane, drawer);
   const paneRef: React.RefObject<HTMLElement> = { current: pane };
   const setOpen = jest.fn();
 
@@ -60,6 +71,8 @@ describe('useDrawerDismiss', () => {
   });
 
   afterEach(() => {
+    markDrawerAnimationStart(null);
+    jest.restoreAllMocks();
     jest.useRealTimers();
     document.body.innerHTML = '';
   });
@@ -92,16 +105,57 @@ describe('useDrawerDismiss', () => {
     });
 
     /**
-     * The reveal close repositions the pane instantly beneath a drawer that
-     * covers it, leaving `transition: none` behind. Holding the pointer there
-     * would only make the app feel unresponsive for the transition's length.
+     * The reveal close repositions the pane instantly, but the drawer is still
+     * sliding away. Dropping inert on the pane at the Recoil commit would let
+     * a second tap hit a conversation control as it uncovers.
      */
-    it('does not arm when the close is a reveal', () => {
+    it('arms through a reveal close while the drawer is still sliding', () => {
       const { result, rerender } = setup({
         expanded: true,
         isSmallScreen: true,
         paneTransition: 'none',
       });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(result.current.isClosing).toBe(true);
+    });
+
+    it('does not arm when neither surface is transitioning', () => {
+      const { result, rerender } = setup({
+        expanded: true,
+        isSmallScreen: true,
+        paneTransition: 'none',
+        drawerTransition: 'none',
+      });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    /**
+     * The slide started at kick time; a delayed Recoil commit must not add a
+     * fresh 300ms of pointer-blocking after the surfaces have already settled.
+     */
+    it('holds the guard only for the time left on the animation deadline', () => {
+      markDrawerAnimationStart(0);
+      jest.spyOn(performance, 'now').mockReturnValue(200);
+      const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
+
+      rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
+      expect(result.current.isClosing).toBe(true);
+
+      act(() => {
+        jest.advanceTimersByTime(100);
+      });
+      expect(result.current.isClosing).toBe(false);
+    });
+
+    it('does not arm when the animation deadline has already passed', () => {
+      markDrawerAnimationStart(0);
+      jest.spyOn(performance, 'now').mockReturnValue(TRANSITION_MS + 50);
+      const { result, rerender } = setup({ expanded: true, isSmallScreen: true });
 
       rerender({ expanded: false, isSmallScreen: true, prefersReducedMotion: false });
 

@@ -40,6 +40,11 @@ const setScrimOpacity = (open: boolean) => {
     return;
   }
   scrim.style.opacity = open ? '1' : '0';
+  /** Recoil still has expanded=false during an open kick, so the class
+   *  pointer-events-none would leave the fading-in scrim click-through. */
+  if (open) {
+    scrim.style.pointerEvents = 'auto';
+  }
 };
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
@@ -59,6 +64,18 @@ let pendingFlipTarget: boolean | null = null;
 
 export function getPendingDrawerFlip(): boolean | null {
   return pendingFlipTarget;
+}
+
+/** Compositor clock for the in-flight slide, so the close guard can expire
+ *  at the animation deadline rather than TRANSITION_MS after a delayed commit. */
+let animationStartedAt: number | null = null;
+
+export function markDrawerAnimationStart(at: number | null = performance.now()): void {
+  animationStartedAt = at;
+}
+
+export function getDrawerAnimationStartedAt(): number | null {
+  return animationStartedAt;
 }
 
 /**
@@ -210,6 +227,11 @@ const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: b
   pane.style.transform = paneOpen ? MOBILE_PANE_SHIFT : '';
   pane.style.willChange = '';
   pane.style.transition = settled.pane;
+  markDrawerAnimationStart(null);
+  const scrim = document.getElementById(MOBILE_SCRIM_ID);
+  if (scrim != null) {
+    scrim.style.pointerEvents = '';
+  }
 };
 
 const dragTransforms = (gesture: Gesture): { drawer: string; pane: string } => {
@@ -337,6 +359,7 @@ export default function useDrawerSwipe({
       paneEl.style.transition = SIDEBAR_TRANSITION;
       drawerEl.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
       paneEl.style.transform = next ? MOBILE_PANE_SHIFT : 'translate3d(0, 0, 0)';
+      markDrawerAnimationStart();
       setScrimOpacity(next);
       if (next !== open) {
         onOpenChangeRef.current(next);
@@ -406,6 +429,7 @@ export default function useDrawerSwipe({
         }
         drawer.style.transition = MOBILE_DRAWER_TRANSITION;
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+        markDrawerAnimationStart();
         setScrimOpacity(next);
         if (next) {
           pane.style.transition = SIDEBAR_TRANSITION;

@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent, RefObject } from 'react';
-import { TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
+import { MOBILE_DRAWER_ID, TRANSITION_MS } from '~/components/UnifiedSidebar/constants';
 import { OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { getDrawerAnimationStartedAt } from './useDrawerSwipe';
 
 /**
  * Every path that closes the mobile drawer leaves the same two problems, so
@@ -67,15 +68,25 @@ export default function useDrawerDismiss({
       return;
     }
 
-    /** The guard exists to cover a pane that is still sliding, so ask the pane
-     *  itself. The reveal close repositions it instantly and leaves
-     *  `transition: none` behind, while every animated path, gesture or
-     *  programmatic, leaves the shared transition on it before the state
-     *  commits. Reading the drawer's width instead missed the swipe close,
-     *  which animates the pane at any width. */
-    const pane = paneRef.current;
-    const paneTransition = pane?.style.transition ?? '';
-    if (paneTransition === '' || paneTransition === 'none') {
+    /** The guard exists to cover anything still moving. The reveal close
+     *  repositions the pane instantly (`transition: none`) while the drawer
+     *  keeps sliding, and a swipe animates the pane at any width, so asking
+     *  only one surface misses a path. */
+    const paneTransition = paneRef.current?.style.transition ?? '';
+    const drawerTransition = document.getElementById(MOBILE_DRAWER_ID)?.style.transition ?? '';
+    const stillMoving = (transition: string) => transition !== '' && transition !== 'none';
+    if (!stillMoving(paneTransition) && !stillMoving(drawerTransition)) {
+      return;
+    }
+
+    /** The slide started at kick time. A delayed Recoil commit must not add a
+     *  fresh TRANSITION_MS after the compositor has already settled. */
+    const startedAt = getDrawerAnimationStartedAt();
+    const remaining =
+      startedAt == null
+        ? TRANSITION_MS
+        : Math.max(0, TRANSITION_MS - (performance.now() - startedAt));
+    if (remaining === 0) {
       return;
     }
 
@@ -83,7 +94,7 @@ export default function useDrawerDismiss({
      *  crosses to desktop, and a handler that never fires would strand the
      *  guard on. */
     setIsClosing(true);
-    const id = setTimeout(() => setIsClosing(false), TRANSITION_MS);
+    const id = setTimeout(() => setIsClosing(false), remaining);
     return () => {
       clearTimeout(id);
       setIsClosing(false);

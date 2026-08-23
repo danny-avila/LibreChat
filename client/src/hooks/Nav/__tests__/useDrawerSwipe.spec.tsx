@@ -855,6 +855,26 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.useRealTimers();
     harness.unmount();
   });
+
+  /**
+   * Recoil still has expanded=false for those three frames, so the class
+   * pointer-events-none would leave the fading-in scrim click-through: a tap
+   * on the exposed strip would hit a conversation control instead of dismiss.
+   */
+  it('captures pointer events on the scrim as soon as the open slide starts', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('0');
+    scrim.style.pointerEvents = 'none';
+    const pointerAtApply: string[] = [];
+    kickDrawerAnimation(true, () => {
+      pointerAtApply.push(scrim.style.pointerEvents);
+    });
+
+    expect(pointerAtApply).toEqual(['auto']);
+    jest.useRealTimers();
+    harness.unmount();
+  });
 });
 
 describe('findHorizontalScrollBlocker', () => {

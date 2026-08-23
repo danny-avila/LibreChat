@@ -166,7 +166,10 @@ export default function Root() {
                       transform: isSmallScreen && sidebarExpanded ? MOBILE_PANE_SHIFT : 'none',
                       transition: prefersReducedMotion ? undefined : SIDEBAR_TRANSITION,
                     }}
-                    inert={isSmallScreen && sidebarExpanded ? '' : undefined}
+                    /** `isClosing` keeps the pane inert through a reveal close,
+                     *  where Recoil drops expanded before the drawer has
+                     *  finished sliding away. */
+                    inert={isSmallScreen && (sidebarExpanded || isClosing) ? '' : undefined}
                   >
                     <Outlet />
                   </div>
