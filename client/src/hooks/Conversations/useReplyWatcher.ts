@@ -39,15 +39,54 @@ const AWAY_POLL_LIMIT = 100;
  * `dataUpdatedAt`, keeping the query permanently inside its stale window and silently disabling
  * the sidebar's refetch on window focus.
  */
+const didListRefreshFail = (queryClient: QueryClient): boolean =>
+  queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.allConversations], { exact: false })
+    .some((query) => query.getObserversCount() > 0 && query.state.status === 'error');
+
 const mergeTimestamps = async (
   queryClient: QueryClient,
   convo: Partial<TConversation>,
+  aggregateRevealed: Map<string, string>,
+  /** The completion fetch exists only to deliver a stamp the cache lacks. Once the cache
+   *  carries that stamp, the rest of its snapshot is a read from before the open conversation
+   *  acknowledged here, and merging it would clear the newer catch-up with the attempt guard
+   *  suppressing the re-send. The away poll keeps full-snapshot semantics: an equal-stamp row
+   *  with a cleared catch-up is how a remote mark-as-unread reaches this tab, and that path's
+   *  own stale reads are fenced by its arrival focus check. */
+  stampDelivery = false,
 ): Promise<void> => {
   const { conversationId, lastResponseAt, lastSeenAt, updatedAt } = convo;
   if (!conversationId || !lastResponseAt) {
     return;
   }
-  const cached = findConvoInAllQueries(queryClient, conversationId);
+  let cached = findConvoInAllQueries(queryClient, conversationId);
+
+  /* A job completing on another device can belong to a conversation the chats list has never
+     loaded, and the writes below only reach rows that already exist. Hand-inserting one would
+     fight the list's own ordering and pagination, so the list is refetched instead, exactly as
+     the away poll does when it meets an id it does not know.
+     Keyed on the caches the unseen aggregate actually reads: a conversation opened by URL sits
+     in its own point query, which is enough for the lookup above but invisible to the badge and
+     the alerts, so it still needs the list. Checked before the unchanged-row return, because a
+     transiently failed refetch leaves the next snapshot looking identical: absence from the
+     aggregate caches re-arms the attempt, and marking a stamp done only on a refetch that
+     succeeded keeps a sidebar filter that legitimately hides the row from turning this into a
+     refetch loop. */
+  if (!isConvoInAggregateCaches(queryClient, conversationId)) {
+    if (aggregateRevealed.get(conversationId) !== lastResponseAt) {
+      await queryClient.invalidateQueries([QueryKeys.allConversations]);
+      if (!didListRefreshFail(queryClient)) {
+        aggregateRevealed.set(conversationId, lastResponseAt);
+      }
+      cached = findConvoInAllQueries(queryClient, conversationId);
+    }
+    if (!cached) {
+      return;
+    }
+  }
+
   if (
     cached &&
     cached.lastResponseAt === lastResponseAt &&
@@ -57,26 +96,15 @@ const mergeTimestamps = async (
     return;
   }
 
-  /* A job completing on another device can belong to a conversation the chats list has never
-     loaded, and the writes below only reach rows that already exist. Hand-inserting one would
-     fight the list's own ordering and pagination, so the list is refetched instead, exactly as
-     the away poll does when it meets an id it does not know.
-     Keyed on the caches the unseen aggregate actually reads: a conversation opened by URL sits
-     in its own point query, which is enough for the lookup above but invisible to the badge and
-     the alerts, so it still needs the list. */
-  if (!isConvoInAggregateCaches(queryClient, conversationId)) {
-    queryClient.invalidateQueries([QueryKeys.allConversations]);
-    if (!cached) {
-      return;
-    }
-  }
-
   /* Two fetches for the same conversation can resolve out of order: overlapping away polls, or
      completion fetches for concurrent jobs. Taking the older one would walk the read state
      backwards and either drop a dot or bring one back. A snapshot is accepted whole or not at
      all, since its two stamps come from one server read and `lastSeenAt` legitimately clears
      when another device marks the conversation unread. */
   if (cached?.lastResponseAt != null && lastResponseAt < cached.lastResponseAt) {
+    return;
+  }
+  if (stampDelivery && cached?.lastResponseAt === lastResponseAt) {
     return;
   }
 
@@ -107,6 +135,9 @@ const mergeTimestamps = async (
      an unchanged row is left alone for the same `dataUpdatedAt` reason as above. */
   const fresh = findConvoInAllQueries(queryClient, conversationId);
   if (fresh?.lastResponseAt != null && lastResponseAt < fresh.lastResponseAt) {
+    return;
+  }
+  if (stampDelivery && fresh?.lastResponseAt === lastResponseAt) {
     return;
   }
   if (
@@ -163,6 +194,8 @@ export default function useReplyWatcher() {
   const runningRef = useRef<Set<string> | null>(null);
   const observedStampRef = useRef<Map<string, string | undefined>>(new Map());
   const unknownIdsRef = useRef<Set<string>>(new Set());
+  /** Reply stamps whose aggregate-cache reveal has already succeeded; see `mergeTimestamps`. */
+  const aggregateRevealedRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     /* `useActiveJobs` does not retry: a failed poll reads as no information, not as
@@ -204,7 +237,7 @@ export default function useReplyWatcher() {
       }
       dataService
         .getConversationById(conversationId)
-        .then((convo) => mergeTimestamps(queryClient, convo))
+        .then((convo) => mergeTimestamps(queryClient, convo, aggregateRevealedRef.current, true))
         .catch((error: unknown) => {
           /* Deleted while it generated is the only terminal answer. Anything else has
              consumed the one completion transition this tab will see, and with the away poll
@@ -256,7 +289,7 @@ export default function useReplyWatcher() {
             continue;
           }
           if (findConvoInAllQueries(queryClient, conversationId)) {
-            await mergeTimestamps(queryClient, convo);
+            await mergeTimestamps(queryClient, convo, aggregateRevealedRef.current);
             continue;
           }
           /* A conversation started on another device has no row here to merge into, and hand-
@@ -280,11 +313,7 @@ export default function useReplyWatcher() {
            filter legitimately hides is committed on the successful refetch that still did not
            reveal it, which is what keeps the filtered list from being refetched every tick. */
         await queryClient.invalidateQueries([QueryKeys.allConversations]);
-        const refreshFailed = queryClient
-          .getQueryCache()
-          .findAll([QueryKeys.allConversations], { exact: false })
-          .some((query) => query.getObserversCount() > 0 && query.state.status === 'error');
-        if (!refreshFailed) {
+        if (!didListRefreshFail(queryClient)) {
           unknownIdsRef.current = unknownIds;
         }
       } catch {
