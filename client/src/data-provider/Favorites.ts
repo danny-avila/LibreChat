@@ -30,8 +30,14 @@ export const useGetFavoritesQuery = (
     [QueryKeys.favorites],
     () => dataService.getFavorites() as Promise<FavoritesState>,
     {
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      /* Reconciled on focus and reconnect, like the pinned order it is ordered
+       * alongside. Membership that never refreshed would let a second tab prune
+       * the saved position of a favorite the first tab had added, and the
+       * pruning gate can only wait for a fetch that actually happens. The
+       * update mutation cancels this query before writing, so an optimistic
+       * change is not overtaken by one. */
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       refetchOnMount: false,
       ...config,
     },
