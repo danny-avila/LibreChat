@@ -143,8 +143,11 @@ describe('pinned conversation row unpin', () => {
   });
 
   it('falls back to New Chat when no other row survives', () => {
+    /* The id has to be one a real control carries: the expanded panel's New
+     * Chat button. A made-up one would let this pass while focus fell to the
+     * document in the app. */
     const newChat = document.createElement('button');
-    newChat.setAttribute('data-testid', 'nav-new-chat-button');
+    newChat.setAttribute('data-testid', 'new-chat-button');
     document.body.appendChild(newChat);
 
     renderPinnedSection([pinned('c1', 'Only')]);
