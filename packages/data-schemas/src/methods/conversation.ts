@@ -115,7 +115,10 @@ async function refreshChatProjectStatsInBatches(
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
-  searchConversation(conversationId: string): Promise<IConversation | null>;
+  searchConversation(
+    conversationId: string,
+    fieldsToSelect?: string | null,
+  ): Promise<IConversation | null>;
   deleteNullOrEmptyConversations(): Promise<{
     conversations: { deletedCount?: number };
     messages: { deletedCount?: number };
@@ -259,13 +262,14 @@ export function createConversationMethods(
   /**
    * Searches for a conversation by conversationId and returns a lean document with only conversationId and user.
    */
-  async function searchConversation(conversationId: string) {
+  /** `fieldsToSelect: null` returns the full document so one read can serve the whole request. */
+  async function searchConversation(
+    conversationId: string,
+    fieldsToSelect: string | null = 'conversationId user',
+  ) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne(
-        { conversationId },
-        'conversationId user',
-      ).lean<IConversation>();
+      return await Conversation.findOne({ conversationId }, fieldsToSelect).lean<IConversation>();
     } catch (error) {
       logger.error('[searchConversation] Error searching conversation', error);
       throw new Error('Error searching conversation');

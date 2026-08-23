@@ -52,9 +52,10 @@ const validateConvoAccess = async (req, res, next) => {
       }
     }
 
-    /** Read the full document once: the subagent guard, agent initialization, and the
-     *  first save all consume `req.resolvedConversation` instead of re-reading it. */
-    const conversation = await searchConversation(conversationId, null);
+    /** One read serves the subagent guard, agent initialization, and the first save via
+     *  `req.resolvedConversation`. `messages` is the only unbounded field and no consumer
+     *  reads it, so it stays excluded — ownership is not yet known at this point. */
+    const conversation = await searchConversation(conversationId, '-messages');
 
     if (!conversation) {
       req.resolvedConversation = null;

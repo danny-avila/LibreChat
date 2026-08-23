@@ -43,6 +43,7 @@ describe('validateConvoAccess', () => {
       endpoint: 'agents',
       title: 'Owned conversation',
       files: ['file-1', 'file-2'],
+      messages: Array.from({ length: 50 }, () => new mongoose.Types.ObjectId()),
     });
   });
 
@@ -72,6 +73,7 @@ describe('validateConvoAccess', () => {
       title: 'Owned conversation',
       files: ['file-1', 'file-2'],
     });
+    expect(req.resolvedConversation).not.toHaveProperty('messages');
   });
 
   it('stashes null when the conversation does not exist so later readers skip their own lookup', async () => {
