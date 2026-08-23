@@ -55,11 +55,29 @@ export type WeekStartDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
  *
  * `Intl.Locale.prototype.getWeekInfo` (Baseline 2024) reports `firstDay` on a
  * 1-7 ISO scale where 7 = Sunday; `% 7` folds that back to this app's 0-6
- * scale. Engines without it (older Safari/Firefox) fall back to a short list
- * of common Sunday-first regions with Monday, the ISO 8601 default, otherwise
- * this is a display default the settings toggle can always override, so an
- * imperfect fallback is an acceptable degrade rather than a correctness bug.
+ * scale. Engines without it (older Safari/Firefox) fall back to short lists of
+ * CLDR's Saturday-first and common Sunday-first regions, with Monday, the ISO
+ * 8601 default, otherwise: this is a display default the settings toggle can
+ * always override, so an imperfect fallback is an acceptable degrade rather
+ * than a correctness bug.
  */
+const SATURDAY_FIRST_FALLBACK_REGIONS = new Set([
+  'AF',
+  'BH',
+  'DJ',
+  'DZ',
+  'EG',
+  'IQ',
+  'IR',
+  'JO',
+  'KW',
+  'LY',
+  'OM',
+  'QA',
+  'SD',
+  'SY',
+]);
+
 const SUNDAY_FIRST_FALLBACK_REGIONS = new Set([
   'US',
   'CA',
@@ -70,8 +88,6 @@ const SUNDAY_FIRST_FALLBACK_REGIONS = new Set([
   'PH',
   'IL',
   'SA',
-  'AE',
-  'EG',
   'ZA',
 ]);
 
@@ -120,7 +136,16 @@ export const localeWeekStartsOn = (locale?: string): WeekStartDay => {
     // fall through to the region heuristic below
   }
   const region = regionOf(tag);
-  return region != null && SUNDAY_FIRST_FALLBACK_REGIONS.has(region) ? 0 : 1;
+  if (region == null) {
+    return 1;
+  }
+  // Saturday first: the type above allows it, and without these entries a user
+  // in `ar-EG` or `fa-IR` on such an engine had no route back to their own week
+  // order, since the selector offers no explicit Saturday override.
+  if (SATURDAY_FIRST_FALLBACK_REGIONS.has(region)) {
+    return 6;
+  }
+  return SUNDAY_FIRST_FALLBACK_REGIONS.has(region) ? 0 : 1;
 };
 
 /** Resolves the "Week starts on" setting to a concrete day index (0 = Sunday, 1 = Monday). */

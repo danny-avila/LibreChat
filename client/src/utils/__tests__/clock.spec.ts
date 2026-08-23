@@ -50,8 +50,8 @@ describe('localeWeekStartsOn', () => {
   });
 
   it('reports Saturday for locales whose week starts there, not a folded 0 or 1', () => {
-    // Only meaningful where the engine ships week data; older engines fall back
-    // to the region heuristic, which has no Saturday entry.
+    // Only meaningful where the engine ships week data; without it the region
+    // heuristic below answers instead.
     const resolved = new Intl.Locale('ar-EG') as Intl.Locale & {
       getWeekInfo?: () => { firstDay: number };
       weekInfo?: { firstDay: number };
@@ -62,6 +62,53 @@ describe('localeWeekStartsOn', () => {
       return;
     }
     expect(localeWeekStartsOn('ar-EG')).toBe(6);
+  });
+
+  /** Deletes the engine's week data for the duration, so the region heuristic
+   *  is what answers, on every engine rather than only pre-Baseline-2024 ones. */
+  const withoutEngineWeekData = (run: () => void) => {
+    const proto = Intl.Locale.prototype as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const getWeekInfo = Object.getOwnPropertyDescriptor(proto, 'getWeekInfo');
+    const weekInfo = Object.getOwnPropertyDescriptor(proto, 'weekInfo');
+    if (getWeekInfo != null) {
+      delete proto.getWeekInfo;
+    }
+    if (weekInfo != null) {
+      delete proto.weekInfo;
+    }
+    try {
+      run();
+    } finally {
+      if (getWeekInfo != null) {
+        Object.defineProperty(proto, 'getWeekInfo', getWeekInfo);
+      }
+      if (weekInfo != null) {
+        Object.defineProperty(proto, 'weekInfo', weekInfo);
+      }
+    }
+  };
+
+  it('keeps Saturday-first regions on Saturday in the no-week-data fallback', () => {
+    withoutEngineWeekData(() => {
+      // CLDR: Egypt and Iran start the week on Saturday; folding them to Sunday
+      // or Monday left those users no route back, the selector having no
+      // explicit Saturday option.
+      expect(localeWeekStartsOn('ar-EG')).toBe(6);
+      expect(localeWeekStartsOn('fa-IR')).toBe(6);
+    });
+  });
+
+  it('keeps Sunday-first and Monday-first regions apart in the same fallback', () => {
+    withoutEngineWeekData(() => {
+      expect(localeWeekStartsOn('en-US')).toBe(0);
+      expect(localeWeekStartsOn('he-IL')).toBe(0);
+      expect(localeWeekStartsOn('fr-FR')).toBe(1);
+      // CLDR moved the UAE to Monday when its weekend moved to Sat-Sun.
+      expect(localeWeekStartsOn('ar-AE')).toBe(1);
+    });
   });
 });
 
