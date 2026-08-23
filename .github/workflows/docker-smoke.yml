@@ -29,8 +29,77 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Stage 2 of codegraph gating (stage 1 = backend jest in backend-review.yml). Two of the three
+  # smokes are graph-decidable: the client package build only matters when the change reaches the
+  # client build context, and the production-image boot only when it reaches the api image's build
+  # context (Dockerfile.multi's api-build stage never builds client). Monotone and fail-open: a
+  # smoke is dropped ONLY on an explicit `false`; unavailable/unconfigured/non-synchronize events
+  # run everything. Lock attribution rides along so a dependency bump keeps the image smoke.
+  # Kill switch: repo variable CODEGRAPH_GATING=off.
+  codegraph_select:
+    name: Codegraph select
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action == 'synchronize' &&
+      vars.CODEGRAPH_GATING != 'off'
+    outputs:
+      decided: ${{ steps.sel.outputs.decided }}
+      client_run: ${{ steps.sel.outputs.client_run }}
+      api_run: ${{ steps.sel.outputs.api_run }}
+    steps:
+      - name: Select smokes, fail open on any doubt
+        id: sel
+        env:
+          URL: ${{ secrets.CODEGRAPH_URL }}
+          TOKEN: ${{ secrets.CODEGRAPH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set +e
+          note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          note "### Codegraph select — GATING (docker smokes)"
+          if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_no codegraph config; running FULL_"; exit 0; fi
+          gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '.[] | {path: .filename, status, patch}' | jq -s . > files.json
+          if [ ! -s files.json ]; then note "_could not fetch changed files; running FULL_"; exit 0; fi
+          jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA" \
+            '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
+          RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select")
+          if [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.matrix["docker-smoke"]' >/dev/null 2>&1; then
+            note "_codegraph unavailable (${RESP:0:120}); running FULL_"
+            exit 0
+          fi
+          # A smoke is skipped only on a literal false; anything else (true, null, missing) runs.
+          note "| smoke | decision |"
+          note "|---|---|"
+          emit() {
+            key="$1"; hint="$2"; label="$3"
+            v=$(echo "$RESP" | jq -r --arg h "$hint" '.matrix["docker-smoke"][$h]')
+            if [ "$v" = "false" ]; then
+              echo "${key}_run=false" >> "$GITHUB_OUTPUT"
+              note "| $label | skip (no reach into its build context) |"
+            else
+              echo "${key}_run=true" >> "$GITHUB_OUTPUT"
+              note "| $label | run |"
+            fi
+          }
+          emit client client_package_target "client package build"
+          emit api api_runtime_smoke "api runtime smoke"
+          echo "decided=true" >> "$GITHUB_OUTPUT"
+          note ""
+          note "node image smoke keeps its own path filter · kill switch: repo variable \`CODEGRAPH_GATING=off\` · everything runs on PR open"
+          exit 0
+
   client-package-target:
     name: Build Docker client package target
+    needs: [codegraph_select]
+    if: ${{ !cancelled() && needs.codegraph_select.outputs.client_run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -88,6 +157,8 @@ jobs:
 
   api-runtime-smoke:
     name: API runtime smoke (production image boots)
+    needs: [codegraph_select]
+    if: ${{ !cancelled() && needs.codegraph_select.outputs.api_run != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
