@@ -185,6 +185,33 @@ describe('Conversation Operations', () => {
       );
     });
 
+    it('keeps lastResponseAt monotonic when an older save lands last', async () => {
+      /* Two responses persisting concurrently each capture their stamp before saveConvo's own
+         reads; the older save resuming last must not walk the stamp backwards, or the newer
+         reply reads as already seen. */
+      const newer = new Date('2026-08-16T10:05:00.000Z');
+      const older = new Date('2026-08-16T10:00:00.000Z');
+
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: newer });
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: older });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBe(newer.getTime());
+    });
+
+    it('stamps a first reply through the monotonic path', async () => {
+      const stamp = new Date('2026-08-16T10:00:00.000Z');
+
+      await saveConvo(mockCtx, { ...mockConversationData, lastResponseAt: stamp });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBe(stamp.getTime());
+    });
+
     it('should handle newConversationId when provided', async () => {
       const newConversationId = uuidv4();
       const result = await saveConvo(mockCtx, {

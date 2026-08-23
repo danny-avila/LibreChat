@@ -2218,6 +2218,16 @@ export function createConversationMethods(
         if (appendMessageIds != null && appendMessageIds.length > 0) {
           operation.$addToSet = { messages: { $each: appendMessageIds } };
         }
+        /* The reply stamp is computed before the caller's and this function's own awaited
+         * reads, so with two responses persisting concurrently an older save can resume after
+         * a newer one has landed and would walk the stamp backwards, reading the newer reply
+         * as already seen. `$max` keeps whichever stamp is later without a pipeline update,
+         * which the DocumentDB targets rule out. */
+        if (setFields.lastResponseAt instanceof Date) {
+          const { lastResponseAt, ...withoutReplyStamp } = setFields;
+          operation.$set = withoutReplyStamp;
+          operation.$max = { lastResponseAt };
+        }
         if (Object.keys(unsetFields).length > 0) {
           operation.$unset = unsetFields;
         }
@@ -3298,7 +3308,9 @@ export function createConversationMethods(
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const stamped = await Conversation.findOneAndUpdate(
         { conversationId, user },
-        { $set: { lastResponseAt: new Date() } },
+        /* `$max` for the same reason as `saveConvo`: concurrent direct-save paths must not
+         * walk the stamp backwards. */
+        { $max: { lastResponseAt: new Date() } },
         {
           new: true,
           projection: { conversationId: 1, chatProjectId: 1, createdAt: 1, updatedAt: 1 },

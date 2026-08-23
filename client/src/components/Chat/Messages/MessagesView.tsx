@@ -125,9 +125,26 @@ function MessagesViewContent({
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const autoScroll = useAtomValue(autoScrollAtom);
 
+  /** Direct measurement for the one trigger the observer cannot serve: after a messages
+   *  revalidation commits, the end marker may sit where no threshold was crossed, so no
+   *  report comes; the seen hook re-measures the committed tree instead. Mirrors the
+   *  observer's near-bottom meaning: the end marker inside the scrollable viewport. */
+  const measureNearBottom = useCallback(() => {
+    const end = messagesEndRef.current;
+    const scrollable = scrollableRef.current;
+    if (!end || !scrollable) {
+      return null;
+    }
+    return end.getBoundingClientRect().top <= scrollable.getBoundingClientRect().bottom + 1;
+  }, [messagesEndRef, scrollableRef]);
+
   /** Piggybacks the messages-end observer rather than adding a second one, and stays a plain
    *  callback so intersection flips keep re-rendering only `ScrollButton`. */
-  const reportNearBottom = useConversationSeen(conversationId ?? undefined, isSubmitting);
+  const reportNearBottom = useConversationSeen(
+    conversationId ?? undefined,
+    isSubmitting,
+    measureNearBottom,
+  );
   const handleNearBottom = useCallback(
     (isNearBottom: boolean) => {
       handleNearBottomChange(isNearBottom);
