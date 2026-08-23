@@ -315,6 +315,47 @@ describe('useNewChat', () => {
     expect(mockDeleteFiles).not.toHaveBeenCalled();
   });
 
+  it('discards a completed paste marked under its temporary upload id', () => {
+    /** The registry holds the client id; the finished entry carries the server one and keeps the
+     * original as temp_file_id. */
+    mockState.saveDrafts = true;
+    mockState.filesDraft = { fileIds: [], pendingPastes: {} };
+    mockState.markedPasteIds = ['client-upload-id'];
+    mockState.files = new Map([
+      [
+        'client-upload-id',
+        {
+          file_id: 'server-file-id',
+          temp_file_id: 'client-upload-id',
+          progress: 1,
+          filepath: '/uploads/paste.txt',
+          source: 'local',
+        },
+      ],
+    ]);
+    mockState.fileList = [];
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockDeleteFiles).toHaveBeenCalledWith({
+      files: [expect.objectContaining({ file_id: 'server-file-id' })],
+    });
+  });
+
+  it('defers an in-flight paste upload even with draft saving off', () => {
+    /** It has no filepath yet, so nothing can build a payload for it now; the id has to outlive
+     * the reset or the record it becomes is orphaned. */
+    mockState.saveDrafts = false;
+    mockState.markedPasteIds = ['in-flight-paste'];
+    mockState.files = new Map([['in-flight-paste', { file_id: 'in-flight-paste', progress: 0.3 }]]);
+    const { result } = renderHook(() => useNewChat());
+
+    act(() => result.current.startNewChat());
+
+    expect(mockState.persistedPendingDiscardIds).toContain('in-flight-paste');
+  });
+
   it('spares a marked paste that came back re-attached from the library', () => {
     mockState.saveDrafts = true;
     mockState.filesDraft = { fileIds: [], pendingPastes: {} };

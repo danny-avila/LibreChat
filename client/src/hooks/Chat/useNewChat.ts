@@ -330,11 +330,17 @@ export default function useNewChat({
        * composer is still showing is its own evidence, so it is collected directly. One that came
        * back `attached` is skipped for the usual reason: the registry also remembers pastes that
        * were already sent and re-attached, and those belong to the message that sent them. */
-      files.forEach((file) => {
+      files.forEach((file, key) => {
+        /** The registry is marked with the client upload id, while a completed entry carries the
+         * server one and keeps the original as `temp_file_id`, so the marker is matched through
+         * every identity or the finished paste reads as somebody else's file. */
+        const isMarkedPaste = [key, file.file_id, file.temp_file_id].some((id) =>
+          isPastedTextFileMarked(id),
+        );
         if (
           file.attached === true ||
           file.progress < 1 ||
-          !isPastedTextFileMarked(file.file_id) ||
+          !isMarkedPaste ||
           seen.has(file.file_id)
         ) {
           return;
@@ -364,6 +370,22 @@ export default function useNewChat({
       /** Merged, not replaced: a second reset while an earlier upload is still in flight
        * must not forget that earlier id, or its eventual record is orphaned. */
       setPendingDiscardIds((current) => Array.from(new Set([...current, ...deferred])));
+    }
+    /** An upload still in flight has no filepath or source yet, so no discard path can build a
+     * payload for it and the reset drops the chip regardless. Its id is deferred so the record is
+     * deleted once it finally arrives. With draft saving on the draft supplies these ids; with it
+     * off nothing else remembers them at all. */
+    const inFlightPasteIds: string[] = [];
+    files.forEach((file, key) => {
+      const isMarkedPaste = [key, file.file_id, file.temp_file_id].some((id) =>
+        isPastedTextFileMarked(id),
+      );
+      if (file.attached !== true && file.progress < 1 && isMarkedPaste) {
+        inFlightPasteIds.push(file.file_id);
+      }
+    });
+    if (inFlightPasteIds.length > 0) {
+      setPendingDiscardIds((current) => Array.from(new Set([...current, ...inFlightPasteIds])));
     }
     /** A running response parks this pane's composer under the pending key; the clean slate
      * discards that too, or the queued text and attachments come back with the next run.

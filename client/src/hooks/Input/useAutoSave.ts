@@ -68,8 +68,21 @@ export const useAutoSave = ({
    * on `saveDrafts`: with draft saving off nothing is persisted at all, which is exactly when a
    * reattached file would otherwise look like nobody's and be deleted by a retry elsewhere. */
   useEffect(() => {
-    publishTabAttachmentIds(index, fileIds);
-  }, [index, fileIds]);
+    /** Every identity, not just the map key: a restored upload is keyed by its temporary id while
+     * the value carries the server one, and a retained deletion in another tab names whichever of
+     * those it recorded. Publishing one alias would leave the chip unprotected under the other. */
+    const identities = new Set<string>();
+    files.forEach((file, key) => {
+      identities.add(key);
+      if (file.file_id != null && file.file_id !== '') {
+        identities.add(file.file_id);
+      }
+      if (file.temp_file_id != null && file.temp_file_id !== '') {
+        identities.add(file.temp_file_id);
+      }
+    });
+    publishTabAttachmentIds(index, Array.from(identities));
+  }, [index, files]);
 
   const restoreFiles = useCallback(
     (id: string): PendingTextAttachmentDraft[] => {
@@ -279,7 +292,13 @@ export const useAutoSave = ({
          * and attachments under this conversation and left it nothing to carry over when its own
          * run finished. This composer's own text still belongs to the conversation it just
          * became, so it is saved either way. */
-        if (isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId))) {
+        /** The destination has to be writable too: another tab viewing this same conversation can
+         * own its draft with attachments still on screen, and migrating over it would delete that
+         * record and restamp the owner. */
+        if (
+          isFilesDraftOwnedByThisTab(getFilesDraft(pendingDraftId)) &&
+          isFilesDraftOwnedByThisTab(getFilesDraft(conversationId))
+        ) {
           // Move the pending text draft to the new conversationId, falling back to the current
           // text area value when there was no pending draft to carry over
           if (!migrateTextDraft(pendingDraftId, conversationId) && textAreaRef?.current?.value) {
@@ -296,7 +315,7 @@ export const useAutoSave = ({
            * because another tab owned it, so they are written under the conversation this run
            * just became and restored from there below. */
           const liveFileIds = Array.from(filesRef.current.keys());
-          if (liveFileIds.length > 0) {
+          if (liveFileIds.length > 0 && isFilesDraftOwnedByThisTab(getFilesDraft(conversationId))) {
             /** Provenance travels with them, or the restored chips stop being recognised as
              * pastes and lose both editing and New Chat cleanup. It is rebuilt from the session
              * registry rather than the foreign record, which is not ours to read. The unsent

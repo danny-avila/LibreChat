@@ -292,10 +292,16 @@ export default function usePastedTextEdit({
       });
       /** A paste restored from a draft has no `tool_resource`: the server record does not keep
        * one. `embedded` does survive, and it is only ever set for a file that was vectorized,
-       * so it is what tells a file-search paste apart from a plain one. Falling straight through
-       * to `context` would upload the correction as a non-retrieval file and detach the vector
-       * backed original, quietly dropping the edited paste out of file search. */
-      const restoredToolResource = file.embedded === true ? EToolResources.file_search : undefined;
+       * so it is what tells a file-search paste apart from a plain one, and `metadata.codeEnvRef`
+       * does the same for one staged into the code sandbox. Falling straight through to `context`
+       * would upload the correction where the original was not and then detach the original,
+       * quietly dropping the edited paste out of file search or out of the sandbox. */
+      const restoredToolResource = ((): EToolResources | undefined => {
+        if (file.metadata?.codeEnvRef != null || file.metadata?.codeEnvRefs != null) {
+          return EToolResources.execute_code;
+        }
+        return file.embedded === true ? EToolResources.file_search : undefined;
+      })();
       const toolResource =
         (file.tool_resource as EToolResources | undefined) ??
         restoredToolResource ??
