@@ -76,7 +76,7 @@ export default function InvocationModePicker({ value, onChange }: InvocationMode
           </Ariakit.MenuButton>
         }
         items={menuItems}
-        className="w-[17.5rem]"
+        className="w-[min(17.5rem,90vw)]"
         portal={true}
       />
     </div>
