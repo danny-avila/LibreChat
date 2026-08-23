@@ -107,6 +107,8 @@ export enum MutationKeys {
   /** Whole-array favorites write, keyed so every hook instance's write is
    *  visible to the others through the query client. */
   updateFavorites = 'updateFavorites',
+  /** Pinned-section display order write, keyed for the same reason. */
+  updatePinnedOrder = 'updatePinnedOrder',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',

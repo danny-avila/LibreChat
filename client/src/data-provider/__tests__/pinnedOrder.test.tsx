@@ -3,7 +3,7 @@ import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useUpdatePinnedOrderMutation } from '../Favorites';
+import { useGetPinnedOrderQuery, useUpdatePinnedOrderMutation } from '../Favorites';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -375,5 +375,52 @@ describe('useUpdatePinnedOrderMutation', () => {
 
     expect(updatePinnedOrder).toHaveBeenCalledTimes(1);
     expect(cached(queryClient)).toEqual(['b', 'a', 'c']);
+  });
+
+  /* Focus and reconnect reconcile this order across tabs, but a refetch that
+   * starts after onMutate's one-time cancellation can read the pre-reorder
+   * value and land after the write, putting it back. */
+  it('does not start a focus refetch while a write is in flight', async () => {
+    const inFlight = deferred<string[]>();
+    updatePinnedOrder.mockReturnValueOnce(inFlight.promise);
+
+    signInAs('user-a');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const both = renderHook(
+      () => ({
+        query: useGetPinnedOrderQuery(),
+        write: useUpdatePinnedOrderMutation(),
+      }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+
+    await waitFor(() => expect(getPinnedOrder).toHaveBeenCalledTimes(1));
+
+    let write!: Promise<unknown>;
+    await act(async () => {
+      write = both.result.current.write.mutateAsync(['b', 'a', 'c']).catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    const beforeFocus = getPinnedOrder.mock.calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    /* No reconciling GET was allowed to start while the write was out. */
+    expect(getPinnedOrder.mock.calls.length).toBe(beforeFocus);
+
+    await act(async () => {
+      inFlight.resolve(['b', 'a', 'c']);
+      await write;
+    });
   });
 });
