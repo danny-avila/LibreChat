@@ -1,15 +1,10 @@
-#!/usr/bin/env node
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-nocheck
-const path = require('path');
+const connect = require('./connect');
 const mongoose = require('mongoose');
 const { CacheKeys } = require('librechat-data-provider');
 const { invalidateCachedAuthUserDoc } = require('@librechat/api');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
-require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const getLogStores = require('~/cache/getLogStores');
 const { askQuestion, silentExit } = require('./helpers');
-const connect = require('./connect');
 
 async function gracefulExit(code = 0) {
   try {
@@ -26,11 +21,6 @@ async function gracefulExit(code = 0) {
   console.purple('---------------');
   console.purple("Deleting a user's openidId field");
   console.purple('---------------');
-
-  // 1) Parse args:
-  //   --yes / -y     skip the confirmation prompt (non-interactive mode)
-  //   --id <userId>  target a user unambiguously by _id, bypassing email lookup
-  // Whatever remains is treated as the email (positional or interactive prompt).
   const rawArgs = process.argv.slice(2);
   const autoConfirm = rawArgs.some((arg) => arg === '--yes' || arg === '-y');
 
@@ -57,8 +47,6 @@ async function gracefulExit(code = 0) {
   let user;
 
   if (userId) {
-    // Unambiguous lookup — sidesteps the email-collision problem entirely.
-    // Use this when the same email exists across multiple tenants.
     user = await User.findById(userId);
     if (!user) {
       console.yellow(`No user found with id "${userId}"`);
@@ -70,11 +58,6 @@ async function gracefulExit(code = 0) {
       email = (await askQuestion('Email:')).trim();
     }
     email = email.toLowerCase();
-
-    // 2) Find ALL users matching the email, not just the first one. The
-    // schema's real uniqueness guarantee is the compound { email, tenantId }
-    // index, so the same email can legitimately belong to more than one
-    // user in a multi-tenant deployment. Never act on an unscoped match.
     const matches = await User.find({ email });
 
     if (matches.length === 0) {
@@ -103,8 +86,6 @@ async function gracefulExit(code = 0) {
     console.yellow(`User ${user.email} (${user._id}) has no openidId or idOnTheSource set.`);
     return gracefulExit(0);
   }
-
-  // 3) Confirm deletion (skip prompt if --yes/-y was passed)
   if (!autoConfirm) {
     const fieldsSummary = [
       user.openidId ? `openidId ("${user.openidId}")` : null,
@@ -121,23 +102,7 @@ async function gracefulExit(code = 0) {
       return gracefulExit(0);
     }
   }
-
-  // 4) Unset openidId AND idOnTheSource together. Leaving idOnTheSource in
-  // place would let findOpenIDUser (packages/api/src/auth/openid.ts) match
-  // the user again on the next login via the old provider's `oid` claim,
-  // and the OIDC login flow (api/strategies/openidStrategy.js) would then
-  // silently write openidId back onto the user — undoing this reset.
   await User.updateOne({ _id: user._id }, { $unset: { openidId: '', idOnTheSource: '' } });
-
-  // Per AGENTS.md: any user-document mutation must invalidate the auth-user-doc
-  // cache. openIdJwtStrategy.js (api/strategies/openIdJwtStrategy.js) keys this
-  // cache on { strategy, subject/sub, issuer, tenantId|openid_user_id-scope } —
-  // not on the Mongo _id — so this script can't reconstruct the exact cache key.
-  // invalidateCachedAuthUserDoc keeps a userId-keyed reverse index precisely for
-  // this: pass userId alone and it sweeps every cached entry for that user,
-  // regardless of which strategy/issuer/scope produced it. Without this,
-  // openIdJwtStrategy keeps building req.user from the stale cached document
-  // (with the old openidId/idOnTheSource) until the cache TTL expires.
   try {
     const authUserCacheStore = getLogStores(CacheKeys.AUTH_USER_DOC);
     if (authUserCacheStore) {
