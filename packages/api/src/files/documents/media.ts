@@ -1,5 +1,5 @@
 import yauzl from 'yauzl';
-import { isCompoundFileBinary, isZipArchive } from './zipSafety';
+import { isCompoundFileBinary, isRichTextFormat, isZipArchive } from './zipSafety';
 
 /**
  * Artwork, by extension rather than by location.
@@ -27,30 +27,53 @@ function isMediaEntry(name: string): boolean {
 }
 
 /** RTF is plain text, and every embedded picture opens with this control word. */
-const RTF_SIGNATURE = Buffer.from('{\\rt');
 const RTF_PICTURE = Buffer.from('\\pict');
 
-function zipContainsMedia(buffer: Buffer): Promise<boolean> {
-  return new Promise((resolve) => {
-    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
-      if (err || !zipfile) {
-        resolve(false);
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('Media inspection cancelled');
+}
+
+function zipContainsMedia(buffer: Buffer, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) {
+    return Promise.reject(abortReason(signal));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let zipfile: yauzl.ZipFile | undefined;
+    const finish = (found: boolean, error?: Error) => {
+      if (settled) {
         return;
       }
-
-      let settled = false;
-      const finish = (found: boolean) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        try {
-          zipfile.close();
-        } catch {
-          /* Best-effort: yauzl throws when closing mid-walk, and the answer is already out. */
-        }
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      try {
+        zipfile?.close();
+      } catch {
+        /* Best-effort: yauzl throws when closing mid-walk, and the answer is settled. */
+      }
+      if (error) {
+        reject(error);
+      } else {
         resolve(found);
-      };
+      }
+    };
+    const onAbort = () => finish(false, abortReason(signal as AbortSignal));
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, openedZipfile) => {
+      if (settled) {
+        try {
+          openedZipfile?.close();
+        } catch {
+          /* The aborted walk already settled. */
+        }
+        return;
+      }
+      if (err || !openedZipfile) {
+        finish(false);
+        return;
+      }
+      zipfile = openedZipfile;
 
       zipfile.on('entry', (entry: yauzl.Entry) => {
         if (isMediaEntry(entry.fileName)) {
@@ -88,15 +111,18 @@ function zipContainsMedia(buffer: Buffer): Promise<boolean> {
  *   a configured OCR service, which is what they did before local parsing existed.
  * - Everything else (CSV and other flat text): nothing to embed, so `false`.
  */
-export async function mayEmbedMedia(buffer: Buffer): Promise<boolean> {
+export async function mayEmbedMedia(buffer: Buffer, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) {
+    throw abortReason(signal);
+  }
   if (isCompoundFileBinary(buffer)) {
     return true;
   }
-  if (isZipArchive(buffer)) {
-    return zipContainsMedia(buffer);
-  }
-  if (buffer.subarray(0, RTF_SIGNATURE.length).equals(RTF_SIGNATURE)) {
+  if (isRichTextFormat(buffer)) {
     return buffer.includes(RTF_PICTURE);
+  }
+  if (isZipArchive(buffer)) {
+    return zipContainsMedia(buffer, signal);
   }
   return false;
 }

@@ -3138,6 +3138,55 @@ describe('Share Methods', () => {
       expect(byId.get(docId)).toEqual(expect.objectContaining({ hasTextPreview: true }));
     });
 
+    test('enriches a pinned parsed-text snapshot without replacing its pins', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: `/tmp/uploads/${userId}/live.bin`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Current parsed report',
+        bytes: 4096,
+        previewRevision: 'rev-live',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'parsed document',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+      const pinned = {
+        file_id: docId,
+        source: FileSources.text,
+        filepath: `/tmp/uploads/${userId}/pinned.bin`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        bytes: 512,
+        previewRevision: 'rev-pinned',
+        sourceDispatchedAt: 123,
+        tenantId: 'tenant-pinned',
+      };
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [pinned],
+      });
+
+      const shared = await shareMethods.getSharedMessages(shareId);
+      expect(shared?.messages[0].files?.[0]?.hasTextPreview).toBe(true);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+      expect(saved?.fileSnapshots?.[0]).toEqual({ ...pinned, hasTextPreview: true });
+    });
+
     /**
      * A configured RAG extraction stores the document's own MIME type and the temporary
      * upload path, which is gone by the time anyone opens the share. Keying only on the

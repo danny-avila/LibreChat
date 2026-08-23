@@ -113,6 +113,7 @@ const LEGACY_CFB_MIME_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const LEGACY_CFB_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'ppt', 'pps', 'pot', 'xls']);
+const RTF_MIME_TYPES: ReadonlySet<string> = new Set(['application/rtf', 'text/rtf']);
 
 /**
  * The anydoc format a declared MIME type names, if any.
@@ -150,6 +151,13 @@ function declaresLegacyCfbContainer(name: string, type: string): boolean {
   }
   const extension = extensionFromPath(name);
   return extension != null && LEGACY_CFB_EXTENSIONS.has(extension);
+}
+
+function declaresRtfContainer(name: string, type: string): boolean {
+  if (ANYDOC_MIME_FORMATS[type] != null) {
+    return RTF_MIME_TYPES.has(type);
+  }
+  return extensionFromPath(name) === 'rtf';
 }
 
 /**
@@ -231,15 +239,22 @@ export async function parseWithAnydoc(
   const format = resolveFormat(name, type);
   assertSupportedType(name, type, formatFromPath(name));
 
-  const buffer = await fs.promises.readFile(file.path);
+  const buffer = await fs.promises.readFile(file.path, { signal });
+  let knownOuterContainer: 'cfb' | 'rtf' | undefined;
+  if (declaresLegacyCfbContainer(name, type)) {
+    knownOuterContainer = 'cfb';
+  } else if (declaresRtfContainer(name, type)) {
+    knownOuterContainer = 'rtf';
+  }
   await assertSafeZipSizeIfArchive(buffer, {
     name,
-    ...(declaresLegacyCfbContainer(name, type) && { knownOuterContainer: 'cfb' as const }),
+    ...(knownOuterContainer && { knownOuterContainer }),
+    signal,
   });
   /* Read from the buffer already in hand, before extraction: anydoc converts artwork
    * to nothing at all, so this is the only record that the Markdown below may be
    * missing what an embedded scan holds. */
-  const embedsMedia = await mayEmbedMedia(buffer);
+  const embedsMedia = await mayEmbedMedia(buffer, signal);
 
   let markdown: string;
   try {

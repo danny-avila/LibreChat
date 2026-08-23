@@ -206,8 +206,17 @@ function mergeFileSnapshots(
   if (existing === undefined) {
     return rebuilt;
   }
-  const pinned = new Set(existing.map((snapshot) => snapshot.file_id));
-  return [...existing, ...rebuilt.filter((snapshot) => !pinned.has(snapshot.file_id))];
+  const enriched = existing.map((snapshot) => {
+    const isParsedTextSnapshot =
+      snapshot.source === FileSources.text &&
+      (documentParserSources.has(snapshot.filepath ?? '') ||
+        isParsedDocument(snapshot.type, snapshot.filename));
+    return isParsedTextSnapshot && snapshot.hasTextPreview !== true
+      ? { ...snapshot, hasTextPreview: true }
+      : snapshot;
+  });
+  const pinned = new Set(enriched.map((snapshot) => snapshot.file_id));
+  return [...enriched, ...rebuilt.filter((snapshot) => !pinned.has(snapshot.file_id))];
 }
 
 /** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */

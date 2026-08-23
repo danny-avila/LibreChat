@@ -1,6 +1,8 @@
 import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
+import yauzl from 'yauzl';
+import { EventEmitter } from 'node:events';
 import { mayEmbedMedia } from './media';
 
 const fixturesDir = __dirname;
@@ -134,5 +136,29 @@ describe('mayEmbedMedia', () => {
     const archive = await buildArchive(['word/media/image1.png']);
     archive.fill(0, archive.length - 128, archive.length - 22);
     await expect(mayEmbedMedia(archive)).resolves.toBe(false);
+  });
+
+  it('cancels an active archive walk and closes the archive', async () => {
+    const archive = await buildArchive(['word/document.xml']);
+    const controller = new AbortController();
+    const reason = new Error('artifact extraction timed out');
+    const close = jest.fn();
+    const zipfile = Object.assign(new EventEmitter(), {
+      close,
+      readEntry: jest.fn(),
+    }) as unknown as yauzl.ZipFile;
+    const fromBuffer = jest
+      .spyOn(yauzl, 'fromBuffer')
+      .mockImplementation((_buffer, _options, callback) => callback(null, zipfile));
+
+    try {
+      const pending = mayEmbedMedia(archive, controller.signal);
+      controller.abort(reason);
+
+      await expect(pending).rejects.toBe(reason);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      fromBuffer.mockRestore();
+    }
   });
 });

@@ -1,6 +1,9 @@
 import path from 'path';
 import * as fs from 'fs';
 import JSZip from 'jszip';
+import yauzl from 'yauzl';
+import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import { megabyte } from 'librechat-data-provider';
 import {
   ArchiveValidationError,
@@ -64,6 +67,46 @@ describe('assertSafeZipSize', () => {
   test('passes a benign small archive', async () => {
     const buffer = await buildBenignArchive();
     await expect(assertSafeZipSize(buffer)).resolves.toBeUndefined();
+  });
+
+  test('aborts an active entry stream and closes the archive', async () => {
+    const controller = new AbortController();
+    const readStream = new PassThrough();
+    const close = jest.fn();
+    const zipEvents = new EventEmitter();
+    const readEntry = jest.fn(() => {
+      queueMicrotask(() => zipEvents.emit('entry', { fileName: 'slow.bin' } as yauzl.Entry));
+    });
+    const openReadStream = jest.fn(
+      (
+        _entry: yauzl.Entry,
+        callback: (error: Error | null, stream?: NodeJS.ReadableStream) => void,
+      ) => callback(null, readStream),
+    );
+    const zipfile = Object.assign(zipEvents, {
+      entryCount: 1,
+      close,
+      readEntry,
+      openReadStream,
+    }) as unknown as yauzl.ZipFile;
+    const fromBuffer = jest
+      .spyOn(yauzl, 'fromBuffer')
+      .mockImplementation((_buffer, _options, callback) => callback(null, zipfile));
+    const reason = new Error('artifact extraction timed out');
+
+    try {
+      const pending = assertSafeZipSize(Buffer.from('stub'), { signal: controller.signal });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      controller.abort(reason);
+
+      await expect(pending).rejects.toBe(reason);
+      expect(openReadStream).toHaveBeenCalledTimes(1);
+      expect(readStream.destroyed).toBe(true);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      fromBuffer.mockRestore();
+      readStream.destroy();
+    }
   });
 
   test('passes an archive whose entries are all under both caps', async () => {
@@ -335,6 +378,35 @@ describe('assertSafeZipSizeIfArchive', () => {
         knownOuterContainer: 'cfb',
       }),
     ).resolves.toBeUndefined();
+  });
+
+  test('ignores a ZIP attachment nested inside a verified RTF container', async () => {
+    const attachment = await buildBenignArchive();
+    const combined = Buffer.concat([
+      Buffer.from(String.raw`{\rtf1\ansi{\object\objdata\bin${attachment.length} `),
+      attachment,
+      Buffer.from('}}'),
+    ]);
+
+    expect(isZipArchive(combined)).toBe(true);
+    await expect(
+      assertSafeZipSizeIfArchive(combined, {
+        name: 'notes.rtf',
+        knownOuterContainer: 'rtf',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('does not trust an RTF declaration without a valid RTF header', async () => {
+    const attachment = await buildBenignArchive();
+    const combined = Buffer.concat([Buffer.from(String.raw`{\rtf0\ansi `), attachment]);
+
+    await expect(
+      assertSafeZipSizeIfArchive(combined, {
+        name: 'fake.rtf',
+        knownOuterContainer: 'rtf',
+      }),
+    ).rejects.toBeInstanceOf(ArchiveValidationError);
   });
 
   test('does not trust a CFB declaration without a valid CFB header', async () => {

@@ -1,5 +1,6 @@
 import yauzl from 'yauzl';
 import { megabyte } from 'librechat-data-provider';
+import type { Readable } from 'node:stream';
 
 /**
  * Default per-archive total decompressed-size cap. Office documents in
@@ -40,6 +41,9 @@ const EOCD_RECORD_BYTES = 22;
 /** Compound File Binary header used by legacy Office documents. */
 const CFB_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 
+/** Rich Text Format header, including the required format-version control word. */
+const RTF_SIGNATURE = Buffer.from('{\\rtf1');
+
 /**
  * Checks the fixed CFB header fields, not only its easily forged leading signature.
  * Version 3 files use 512-byte sectors and version 4 files use 4096-byte sectors.
@@ -54,6 +58,11 @@ export function isCompoundFileBinary(buffer: Buffer): boolean {
     (sectorShift === 9 || sectorShift === 12) &&
     buffer.readUInt16LE(32) === 6
   );
+}
+
+/** A real RTF outer document, rather than a filename or MIME declaration alone. */
+export function isRichTextFormat(buffer: Buffer): boolean {
+  return buffer.subarray(0, RTF_SIGNATURE.length).equals(RTF_SIGNATURE);
 }
 
 /**
@@ -100,7 +109,24 @@ export interface ZipSafetyOptions {
   /** Filename for error messages — does not need to match disk. */
   name?: string;
   /** A verified outer container whose nested ZIP records are not the document itself. */
-  knownOuterContainer?: 'cfb';
+  knownOuterContainer?: 'cfb' | 'rtf';
+  /** Cancels archive walking when the caller stops waiting. */
+  signal?: AbortSignal;
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('Archive validation cancelled');
+}
+
+function closeZipFile(zipfile?: yauzl.ZipFile): void {
+  if (!zipfile) {
+    return;
+  }
+  try {
+    zipfile.close();
+  } catch {
+    /* Closing during a yauzl callback is best-effort; the outer operation is settled. */
+  }
 }
 
 /**
@@ -128,36 +154,49 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES;
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
   const label = options.name ?? 'archive';
+  const signal = options.signal;
+
+  if (signal?.aborted) {
+    return Promise.reject(abortReason(signal));
+  }
 
   return new Promise((resolve, reject) => {
-    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
-      if (err) {
-        return reject(err);
+    let settled = false;
+    let zipfile: yauzl.ZipFile | undefined;
+    let activeReadStream: Readable | undefined;
+    const finish = (error: Error | null) => {
+      if (settled) {
+        return;
       }
-      if (!zipfile) {
-        return reject(new Error('Failed to open zip buffer'));
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      if (activeReadStream && !activeReadStream.destroyed) {
+        activeReadStream.destroy();
       }
+      closeZipFile(zipfile);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+    const onAbort = () => finish(abortReason(signal as AbortSignal));
+    signal?.addEventListener('abort', onAbort, { once: true });
 
-      let settled = false;
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, openedZipfile) => {
+      if (settled) {
+        closeZipFile(openedZipfile ?? undefined);
+        return;
+      }
+      if (err) {
+        return finish(err);
+      }
+      if (!openedZipfile) {
+        return finish(new Error('Failed to open zip buffer'));
+      }
+      zipfile = openedZipfile;
+
       let totalDecompressed = 0;
-      const finish = (error: Error | null) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        try {
-          zipfile.close();
-        } catch {
-          /* zipfile.close() is best-effort — yauzl will throw if a
-           * stream is mid-flight. We've already settled the outer
-           * promise, so swallow this. */
-        }
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      };
 
       /* Refused before the first `readEntry`, so an over-long archive
        * costs nothing beyond opening it. Unlike `uncompressedSize`, the
@@ -172,9 +211,10 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
         );
       }
 
-      zipfile.readEntry();
-
       zipfile.on('entry', (entry: yauzl.Entry) => {
+        if (settled) {
+          return;
+        }
         /* Directory entries (trailing slash) are zero-byte and don't
          * need to be opened. Saves a stream allocation per directory
          * in archives like .docx that have nested subfolders. */
@@ -184,9 +224,14 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
         }
 
         zipfile.openReadStream(entry, (streamErr, readStream) => {
+          if (settled) {
+            readStream?.destroy();
+            return;
+          }
           if (streamErr || !readStream) {
             return finish(streamErr ?? new Error('Failed to open zip entry stream'));
           }
+          activeReadStream = readStream;
 
           let entryBytes = 0;
           let entryCapped = false;
@@ -224,6 +269,9 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
           });
 
           readStream.on('end', () => {
+            if (activeReadStream === readStream) {
+              activeReadStream = undefined;
+            }
             if (!settled) {
               zipfile.readEntry();
             }
@@ -238,6 +286,7 @@ export function assertSafeZipSize(buffer: Buffer, options: ZipSafetyOptions = {}
 
       zipfile.on('end', () => finish(null));
       zipfile.on('error', (zipErr: Error) => finish(zipErr));
+      zipfile.readEntry();
     });
   });
 }
@@ -338,7 +387,13 @@ export async function assertSafeZipSizeIfArchive(
   buffer: Buffer,
   options: ZipSafetyOptions = {},
 ): Promise<void> {
+  if (options.signal?.aborted) {
+    throw abortReason(options.signal);
+  }
   if (options.knownOuterContainer === 'cfb' && isCompoundFileBinary(buffer)) {
+    return;
+  }
+  if (options.knownOuterContainer === 'rtf' && isRichTextFormat(buffer)) {
     return;
   }
   if (!isZipArchive(buffer)) {
@@ -347,6 +402,9 @@ export async function assertSafeZipSizeIfArchive(
   try {
     await assertSafeZipSize(buffer, options);
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw abortReason(options.signal);
+    }
     if (error instanceof ZipBombError) {
       throw error;
     }

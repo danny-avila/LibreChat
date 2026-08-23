@@ -5,12 +5,12 @@ import { logger } from '@librechat/data-schemas';
 import { parseWithAnydoc } from './crud';
 
 type ParseResult = ReturnType<typeof parseWithAnydoc>;
+type ParseFile = (file: Partial<Express.Multer.File>, signal?: AbortSignal) => ParseResult;
 
 /** Fixtures are shared with the built-in parser suite and live alongside it. */
 const fixtures = path.join(__dirname, '..', 'documents');
 
-const parse = (file: Partial<Express.Multer.File>): ParseResult =>
-  parseWithAnydoc(file as Express.Multer.File);
+const parse: ParseFile = (file, signal) => parseWithAnydoc(file as Express.Multer.File, signal);
 
 const docxFile = (name: string): Partial<Express.Multer.File> => ({
   originalname: name,
@@ -32,13 +32,13 @@ const pdfFile = (name: string): Partial<Express.Multer.File> => ({
  */
 const withAnydocSpy = async (
   extractMarkdown: jest.Mock,
-  body: (run: typeof parse) => Promise<void>,
+  body: (run: ParseFile) => Promise<void>,
 ): Promise<void> => {
   try {
     await jest.isolateModulesAsync(async () => {
       jest.doMock('./native', () => ({ extractMarkdownIsolated: extractMarkdown }));
       const { parseWithAnydoc: parseWithSpy } = await import('./crud');
-      await body((file) => parseWithSpy(file as Express.Multer.File));
+      await body((file, signal) => parseWithSpy(file as Express.Multer.File, signal));
     });
   } finally {
     jest.dontMock('./native');
@@ -261,6 +261,73 @@ describe('parseWithAnydoc', () => {
         });
       } finally {
         await fs.promises.unlink(combinedPath);
+      }
+    });
+
+    test('hands an RTF document with a nested ZIP attachment to anydoc', async () => {
+      const attachment = new JSZip();
+      attachment.file('attachment.txt', 'nested');
+      const attachmentBuffer = await attachment.generateAsync({ type: 'nodebuffer' });
+      const combinedPath = path.join(fixtures, 'anydoc-rtf-with-attachment.rtf');
+      await fs.promises.writeFile(
+        combinedPath,
+        Buffer.concat([
+          Buffer.from(String.raw`{\rtf1\ansi{\object\objdata\bin${attachmentBuffer.length} `),
+          attachmentBuffer,
+          Buffer.from('}}'),
+        ]),
+      );
+
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# RTF document');
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          const result = await run({
+            originalname: 'notes.rtf',
+            path: combinedPath,
+            mimetype: 'application/rtf',
+          });
+
+          expect(toMarkdownBytes).toHaveBeenCalledWith(combinedPath, 'rtf', undefined);
+          expect(result.text).toBe('# RTF document');
+        });
+      } finally {
+        await fs.promises.unlink(combinedPath);
+      }
+    });
+
+    test('cancels before native extraction when the caller already stopped waiting', async () => {
+      const toMarkdownBytes = jest.fn();
+      const controller = new AbortController();
+      const reason = new Error('artifact extraction timed out');
+      controller.abort(reason);
+
+      await withAnydocSpy(toMarkdownBytes, async (run) => {
+        await expect(run(docxFile('structured.docx'), controller.signal)).rejects.toMatchObject({
+          name: 'AbortError',
+          code: 'ABORT_ERR',
+        });
+        expect(toMarkdownBytes).not.toHaveBeenCalled();
+      });
+    });
+
+    test('does not let an RTF extension override a declared OOXML container', async () => {
+      const disguisedPath = path.join(fixtures, 'anydoc-disguised-bomb.rtf');
+      await fs.promises.copyFile(path.join(fixtures, 'bomb.docx'), disguisedPath);
+
+      const toMarkdownBytes = jest.fn();
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          await expect(
+            run({
+              originalname: 'disguised.rtf',
+              path: disguisedPath,
+              mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }),
+          ).rejects.toMatchObject({ code: 'ZIP_BOMB' });
+          expect(toMarkdownBytes).not.toHaveBeenCalled();
+        });
+      } finally {
+        await fs.promises.unlink(disguisedPath);
       }
     });
 
