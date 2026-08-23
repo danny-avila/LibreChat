@@ -1,17 +1,10 @@
-import { memo, useCallback, useId, useMemo, useState } from 'react';
+import { memo, useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useDrop } from 'react-dnd';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import {
-  Button,
-  Spinner,
-  TooltipAnchor,
-  DropdownPopup,
-  NewChatIcon,
-  buttonVariants,
-} from '@librechat/client';
 import {
   ChevronDown,
   ChevronRight,
@@ -22,9 +15,25 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
+import {
+  Button,
+  Skeleton,
+  Spinner,
+  TooltipAnchor,
+  DropdownPopup,
+  NewChatIcon,
+  buttonVariants,
+} from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
+import type { ConversationDragItem } from './dnd';
 import type { MenuItemProps } from '~/common';
+import {
+  CONVERSATION_DRAG_TYPE,
+  markExternalHover,
+  useAssignDroppedConversation,
+  useEffectiveProjectId,
+} from './dnd';
 import {
   useProjectsInfiniteQuery,
   useActiveJobs,
@@ -55,6 +64,16 @@ type ProjectChatsInlineProps = {
   toggleNav: () => void;
   onShowAll: () => void;
 };
+
+/** Mirrors a Convo row (h-9, endpoint dot, title) so the swap from skeletons to
+ *  rows doesn't shift height, and an opening project reads as loading its chats
+ *  rather than as an empty strip with a lone spinner. */
+const ProjectChatSkeleton = () => (
+  <div className="flex h-9 w-full items-center gap-2 px-1.5" aria-hidden="true">
+    <Skeleton className="h-5 w-5 shrink-0 rounded-full" />
+    <Skeleton className="h-3.5 w-24" />
+  </div>
+);
 
 const ProjectChatsInline = memo(function ProjectChatsInline({
   projectId,
@@ -87,8 +106,11 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
 
   if (isLoading && conversations.length === 0) {
     return (
-      <div className="flex justify-start py-1.5 pl-2">
-        <Spinner className="h-4 w-4 text-text-secondary" />
+      <div data-testid={`project-chats-loading-${projectId}`} aria-busy="true">
+        <span className="sr-only">{localize('com_ui_loading')}</span>
+        {Array.from({ length: 3 }, (_, index) => (
+          <ProjectChatSkeleton key={index} />
+        ))}
       </div>
     );
   }
@@ -110,6 +132,7 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
           retainView={noop}
           toggleNav={toggleNav}
           isGenerating={activeJobIds.has(convo.conversationId ?? '')}
+          draggable
         />
       ))}
       {hasMore && (
@@ -151,6 +174,29 @@ const ProjectItem = memo(
     const [isRenameOpen, setIsRenameOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const projectChatPath = `/c/${Constants.NEW_CONVO}?projectId=${encodeURIComponent(project._id)}`;
+
+    /* The whole item, header plus its expanded chats, is the drop target for
+     * filing a dragged conversation into this project; the project's own chats
+     * read as already-filed and are rejected. The highlight lands on the header
+     * row so the affordance reads as the project, not the row under it. */
+    const assignDropped = useAssignDroppedConversation();
+    const effectiveProjectId = useEffectiveProjectId();
+    const projectRowRef = useRef<HTMLLIElement>(null);
+    const [{ isDropOver, canDrop }, dropRef] = useDrop<
+      ConversationDragItem,
+      unknown,
+      { isDropOver: boolean; canDrop: boolean }
+    >({
+      accept: CONVERSATION_DRAG_TYPE,
+      canDrop: (item) => effectiveProjectId(item) !== project._id,
+      /* Reported even when the drop is refused: a pinned row dragged onto the
+       * project it already belongs to still left the pinned list, and the rows
+       * it crossed must not be saved in their shifted order. */
+      hover: () => markExternalHover(),
+      drop: (item) => assignDropped(item, project._id),
+      collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
+    });
+    dropRef(projectRowRef);
 
     const openProject = useCallback(() => {
       navigate(`/projects/${project._id}`);
@@ -217,12 +263,13 @@ const ProjectItem = memo(
     );
 
     return (
-      <li className="list-none">
+      <li className="list-none" ref={projectRowRef}>
         <div
           className={cn(
             'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary hover:bg-surface-hover',
             isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
             !isActive && isMenuOpen && 'bg-surface-hover',
+            isDropOver && canDrop && 'bg-surface-active-alt ring-1 ring-inset ring-border-medium',
           )}
         >
           <button
@@ -421,7 +468,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
             setStoredExpanded(!isExpanded);
             setHasToggledSection(true);
           }}
-          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className={cn(buttonVariants({ variant: 'section-header' }), 'group min-w-0 flex-1')}
           aria-expanded={isExpanded}
         >
           <span className="select-none truncate">{localize('com_ui_projects')}</span>

@@ -232,6 +232,12 @@ export default function useFavorites() {
     reorderFavorites,
     /** Whether the favorites query is currently loading */
     isLoading: getFavoritesQuery.isLoading,
+    /** Whether the favorites list was actually retrieved. Not the inverse of
+     *  `isLoading`: an exhausted retry leaves loading false with no data. */
+    isSuccess: getFavoritesQuery.isSuccess,
+    /** True while the list is being refetched, including the refetch that
+     *  recovers from a failed write. */
+    isFetching: getFavoritesQuery.isFetching,
     /** Whether there was an error fetching favorites */
     isError: getFavoritesQuery.isError,
     /** Whether the update mutation is in progress */

@@ -94,6 +94,8 @@ export enum QueryKeys {
   schedules = 'schedules',
   schedule = 'schedule',
   subagentThread = 'subagentThread',
+  /* Combined Pinned-section display order (favorites + pinned chats) */
+  pinnedOrder = 'pinnedOrder',
 }
 
 // Dynamic query keys that require parameters
@@ -102,6 +104,11 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  /** Whole-array favorites write, keyed so every hook instance's write is
+   *  visible to the others through the query client. */
+  updateFavorites = 'updateFavorites',
+  /** Pinned-section display order write, keyed for the same reason. */
+  updatePinnedOrder = 'updatePinnedOrder',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',
