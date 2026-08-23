@@ -1,6 +1,6 @@
 import { memo } from 'react';
+import type { NamedExoticComponent, ReactNode } from 'react';
 import type { ProviderId } from 'librechat-data-provider';
-import type { NamedExoticComponent } from 'react';
 import type { JSX } from 'react/jsx-runtime';
 import { getProviderIconDef } from './registry';
 import { ProviderIcon } from './Icon';
@@ -11,6 +11,8 @@ export interface ProviderAvatarProps {
   model?: string | null;
   size?: number;
   className?: string;
+  /** Overlay content positioned against the tile, such as an error badge. */
+  children?: ReactNode;
 }
 
 const artScale = 5 / 9;
@@ -20,6 +22,7 @@ function ProviderAvatarComponent({
   model,
   size = 30,
   className,
+  children,
 }: ProviderAvatarProps): JSX.Element {
   const def = getProviderIconDef(provider, model);
   const hasBrand = typeof def.brandColor === 'string' && def.brandColor.length > 0;
@@ -35,6 +38,7 @@ function ProviderAvatarComponent({
       )}
     >
       <ProviderIcon provider={provider} model={model} size={size * artScale} />
+      {children}
     </span>
   );
 }
