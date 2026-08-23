@@ -8,7 +8,6 @@ import {
   MultiSelect,
   Spinner,
   TooltipAnchor,
-  useMediaQuery,
 } from '@librechat/client';
 import {
   INSIGHTS_MAX_RANGE_DAYS,
@@ -27,6 +26,7 @@ import { clearAgentFilters, shouldRecoverAgentFilters } from './agentFilters';
 import { useGetStartupConfig, useInsightsQuery } from '~/data-provider';
 import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import { LocalizedDateRangePicker } from '~/components/ui';
 import { getRollingDateRange } from './dateRange';
 import { cn } from '~/utils';
@@ -566,7 +566,7 @@ export default function InsightsView() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const dateRangeSelectionTimeout = useRef<number>();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const selectedAgentIds = useMemo(
     () => [...new Set(urlSearchParams.getAll('agentIds').filter(Boolean))].sort(),

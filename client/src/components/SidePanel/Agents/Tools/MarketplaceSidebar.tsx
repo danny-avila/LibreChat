@@ -93,7 +93,7 @@ export default function MarketplaceSidebar({
   }, [localize, onCreateNew, hasMcpCreateAccess, actionsEnabled]);
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-0.5 border-r border-border-light bg-surface-primary-alt p-3">
+    <aside className="flex w-[min(14rem,35%)] shrink-0 flex-col gap-0.5 border-r border-border-light bg-surface-primary-alt p-3">
       <h2 className="px-2.5 pb-1 pt-1 text-base font-bold text-text-primary">
         {localize('com_ui_tools_marketplace')}
       </h2>

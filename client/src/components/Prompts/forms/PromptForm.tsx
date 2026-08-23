@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Menu, Rocket, X } from 'lucide-react';
 import { useForm, FormProvider } from 'react-hook-form';
-import { Button, Skeleton, useToastContext, useMediaQuery } from '@librechat/client';
+import { Button, Skeleton, useToastContext } from '@librechat/client';
 import {
   Permissions,
   ResourceType,
@@ -21,6 +21,7 @@ import {
 } from '~/data-provider';
 import { useResourcePermissions, useHasAccess, useLocalize, useFocusTrap } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import CategorySelector from '../fields/CategorySelector';
 import PromptVariables from '../display/PromptVariables';
 import PromptVersions from '../display/PromptVersions';
@@ -188,7 +189,7 @@ const PromptForm = ({ promptId: promptIdProp }: { promptId?: string }) => {
   const promptId = promptIdProp || params.promptId || '';
 
   const editorMode = useRecoilValue(store.promptsEditorMode);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
   const [selectionIndex, setSelectionIndex] = useState<number>(0);
 
   const prevIsEditingRef = useRef(false);
