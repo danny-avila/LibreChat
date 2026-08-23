@@ -1,6 +1,6 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { suppressFocusAcknowledgement } from '../notificationNavigation';
 import useConversationSeen from '../useConversationSeen';
@@ -53,6 +53,7 @@ function seedUnseen(
 function setup(
   fixture: ConvoFixture | null,
   initialProps: SeenProps = { id: CONVO_ID, submitting: false },
+  measureNearBottom?: () => boolean | null,
 ) {
   const queryClient = createClient();
   if (fixture !== null) {
@@ -81,10 +82,13 @@ function setup(
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  const view = renderHook(({ id, submitting }: SeenProps) => useConversationSeen(id, submitting), {
-    initialProps,
-    wrapper,
-  });
+  const view = renderHook(
+    ({ id, submitting }: SeenProps) => useConversationSeen(id, submitting, measureNearBottom),
+    {
+      initialProps,
+      wrapper,
+    },
+  );
 
   return { ...view, queryClient };
 }
@@ -225,10 +229,45 @@ describe('useConversationSeen', () => {
       await fetching;
     });
 
-    expect(mockMarkSeen).toHaveBeenCalledWith({
-      conversationId: CONVO_ID,
-      lastResponseAt: RESPONDED_AT,
+    /* The re-check is deferred past the commit, so it lands a couple of frames later. */
+    await waitFor(() =>
+      expect(mockMarkSeen).toHaveBeenCalledWith({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      }),
+    );
+  });
+
+  it('re-measures the committed tree instead of trusting the old bottom report', async () => {
+    /* The revalidated reply can extend past the viewport, and the fetch settles before React
+       commits it: the stale near-bottom flag belongs to the old tree and must not acknowledge
+       a reply whose end the user has not reached. */
+    const measure = jest.fn<boolean | null, []>(() => false);
+    const { result, queryClient } = setup(
+      { lastResponseAt: RESPONDED_AT },
+      { id: CONVO_ID, submitting: false },
+      measure,
+    );
+    mockMarkSeen.mockClear();
+
+    let resolveFetch!: (messages: unknown[]) => void;
+    const fetching = queryClient.prefetchQuery(
+      [QueryKeys.messages, CONVO_ID],
+      () =>
+        new Promise<unknown[]>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    act(() => result.current(true));
+
+    await act(async () => {
+      resolveFetch([]);
+      await fetching;
     });
+
+    await waitFor(() => expect(measure).toHaveBeenCalled());
+    expect(mockMarkSeen).not.toHaveBeenCalled();
   });
 
   it('does not re-send the same acknowledgement when a failed write re-arms the cache', () => {
