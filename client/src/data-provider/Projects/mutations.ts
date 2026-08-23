@@ -11,6 +11,7 @@ import type {
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { getSessionPrincipal } from '~/utils/session';
 import { enqueue } from '~/utils';
 import store from '~/store';
 
@@ -90,14 +91,21 @@ const ASSIGN_CONVERSATION_QUEUE = 'assign-conversation:';
  *  destination after a menu action had moved the chat somewhere else. Each
  *  entry is identified by the write that made it, since comparing destinations
  *  alone cannot tell two moves to the same project apart. */
-type PendingAssignment = { token: number; projectId: string | null };
+type PendingAssignment = { token: number; projectId: string | null; owner?: string };
 
 const pendingAssignments = new Map<string, PendingAssignment>();
 let assignmentToken = 0;
 
 /** The destination of the newest write still outstanding, if there is one. */
-export const getPendingAssignment = (conversationId: string): PendingAssignment | undefined =>
-  pendingAssignments.get(conversationId);
+export const getPendingAssignment = (conversationId: string): PendingAssignment | undefined => {
+  const pending = pendingAssignments.get(conversationId);
+  /* An entry left by another account describes a conversation this session
+   * cannot see, so it must not answer for one of its own. */
+  return pending && !isForeignSession(pending.owner) ? pending : undefined;
+};
+
+const isForeignSession = (owner?: string): boolean =>
+  owner == null || getSessionPrincipal() !== owner;
 
 export const useAssignConversationToProjectMutation = (): UseMutationResult<
   TAssignConversationToProjectResponse,
@@ -128,11 +136,24 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
      * project regardless of which the user asked for first. */
     (payload: TAssignConversationToProjectRequest) => {
       const { conversationId, projectId } = payload;
+      const owner = getSessionPrincipal();
       const token = ++assignmentToken;
-      pendingAssignments.set(conversationId, { token, projectId: projectId ?? null });
-      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${conversationId}`, async () => {
+      pendingAssignments.set(conversationId, { token, projectId: projectId ?? null, owner });
+      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${owner ?? ''}:${conversationId}`, async () => {
+        /* A queued write travels with whatever credentials are current when it
+         * finally runs. Conversation ids are per-user, so sending one account's
+         * under another's would act on whatever that id names over there. */
+        if (isForeignSession(owner)) {
+          throw new Error('assignment abandoned: the signed-in user changed');
+        }
         try {
           const result = await dataService.assignConversationToProject(payload);
+          if (isForeignSession(owner)) {
+            /* The session turned over while the request was out. This cache is
+             * not scoped by user, so publishing the answer now would describe
+             * one account's conversation to the next. */
+            return result;
+          }
           /* The authoritative cache is written here, before the pending entry is
            * released, so a drag starting in between still sees the new project
            * from one of the two. Doing it in `onSuccess` left a gap while that

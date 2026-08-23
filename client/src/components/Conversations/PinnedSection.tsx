@@ -298,8 +298,16 @@ const PinnedSection = ({
   /* Gated on success, not on the fetch having been attempted: a failed GET
    * still reports as fetched while leaving the order undefined, and merging
    * against that `?? []` then cancelling the retry would post only the visible
-   * keys and discard saved positions for good. */
-  const { data: storedOrder, isSuccess: orderLoaded } = useGetPinnedOrderQuery();
+   * keys and discard saved positions for good. A reconciling refetch counts as
+   * not ready either: returning to this tab after another changed the order
+   * would otherwise let a reorder cancel that refetch and post the stale
+   * arrangement straight back over it. */
+  const {
+    data: storedOrder,
+    isSuccess: orderFetched,
+    isFetching: orderFetching,
+  } = useGetPinnedOrderQuery();
+  const orderLoaded = orderFetched && !orderFetching;
   const updatePinnedOrder = useUpdatePinnedOrderMutation();
   const pinMutation = usePinConversationMutation();
   const { showToast } = useToastContext();
