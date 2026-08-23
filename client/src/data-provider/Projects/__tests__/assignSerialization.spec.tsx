@@ -1,7 +1,7 @@
 import { RecoilRoot } from 'recoil';
-import { dataService, QueryKeys } from 'librechat-data-provider';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { dataService, QueryKeys, setTokenHeader } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useAssignConversationToProjectMutation } from '../mutations';
 
@@ -45,9 +45,21 @@ const wrapper = ({ children }: { children: ReactNode }) => {
   );
 };
 
+/** Assignments are attributed to the account whose credentials they will travel
+ *  with, so the tests need a session installed. */
+const signInAs = (userId: string) => {
+  const claims = btoa(JSON.stringify({ id: userId })).replace(/=+$/, '');
+  setTokenHeader(`header.${claims}.signature`);
+};
+
 describe('useAssignConversationToProjectMutation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    signInAs('user-a');
+  });
+
+  afterEach(() => {
+    setTokenHeader(undefined);
   });
 
   /* The drag targets, the row menu and the project dialog each hold their own
@@ -154,5 +166,37 @@ describe('useAssignConversationToProjectMutation', () => {
     expect(cancelQueries).toHaveBeenCalledWith([QueryKeys.conversation, 'c1']);
     expect(cachedDuringSettle).toBe('project-b');
     cancelQueries.mockRestore();
+  });
+
+  /* Conversation ids are per-user, so a queued assignment must not travel with
+   * the next account's credentials and act on whatever that id names there. */
+  it('abandons a queued assignment when the session turns over', async () => {
+    const first = deferred<never>();
+    assignConversationToProject
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(response('c1', 'project-a'));
+
+    const { result } = renderHook(() => useAssignConversationToProjectMutation(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate({ conversationId: 'c1', projectId: 'project-b' });
+    });
+    let queued!: Promise<unknown>;
+    await act(async () => {
+      queued = result.current
+        .mutateAsync({ conversationId: 'c1', projectId: 'project-a' })
+        .catch(() => 'abandoned');
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    setTokenHeader(undefined);
+
+    await act(async () => {
+      first.resolve(response('c1', 'project-b') as never);
+      await expect(queued).resolves.toBe('abandoned');
+    });
+
+    expect(assignConversationToProject).toHaveBeenCalledTimes(1);
   });
 });

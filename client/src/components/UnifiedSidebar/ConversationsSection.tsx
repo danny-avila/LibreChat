@@ -83,10 +83,20 @@ const ConversationsSection = memo(() => {
   /** Pins are fetched on their own so one older than the first page of the chats list
    * still shows on first paint, instead of appearing only once that list scrolls to it.
    * The bookmark filter still applies, matching the chats list beside it. */
-  const { data: pinnedData, isSuccess: isPinnedComplete } = usePinnedConversationsQuery(
+  const {
+    data: pinnedData,
+    isSuccess: isPinnedFetched,
+    isFetching: isPinnedFetching,
+    isStale: isPinnedStale,
+  } = usePinnedConversationsQuery(
     { tags: tags.length === 0 ? undefined : tags },
     { enabled: isAuthenticated },
   );
+  /* This query keeps its data fresh for five minutes, so returning to a tab
+   * whose order has already reconciled can leave its membership behind. Pruning
+   * against that would drop the position of a conversation another tab pinned,
+   * so a stale or in-flight membership merges instead. */
+  const isPinnedComplete = isPinnedFetched && !isPinnedFetching && !isPinnedStale;
 
   /* `groupConversationsByDate` strips pins from the chats groups. A failed
      refetch keeps the previous dedicated result, so merge in pins from the

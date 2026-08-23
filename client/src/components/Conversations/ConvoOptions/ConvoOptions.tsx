@@ -3,7 +3,6 @@ import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import { DropdownPopup, Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Ellipsis,
   Share2,
@@ -15,6 +14,13 @@ import {
   Pin,
   Trash,
 } from 'lucide-react';
+import {
+  DropdownPopup,
+  Spinner,
+  buttonVariants,
+  useToastContext,
+  useMediaQuery,
+} from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { MouseEvent } from 'react';
 import {
@@ -367,10 +373,10 @@ function ConvoOptions({
   );
 
   const buttonClassName = cn(
-    /** Matches the row-level unpin buttons (favorites and pinned chats): same
-     *  28px target, surface-active hover fill, inset text-primary focus ring
-     *  without an offset, which would cross neighbouring rows here. */
-    'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-text-secondary outline-none transition-colors duration-150 hover:bg-surface-active hover:text-text-primary focus-visible:bg-surface-active focus-visible:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:opacity-50',
+    /** The same shared row action the unpin badge beside it uses, rather than a
+     *  second copy of that recipe. */
+    buttonVariants({ variant: 'row-action', size: 'icon-xs' }),
+    'text-text-secondary',
     /** Touch has no hover, so a reveal-on-hover trigger is simply invisible there. */
     isActiveConvo === true || isPopoverActive || isSmallScreen
       ? 'opacity-100'
