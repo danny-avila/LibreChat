@@ -67,7 +67,8 @@ const row = (
   conversationId: string,
   title: string,
   lastResponseAt = '2026-08-16T10:00:00.000Z',
-): UnseenConversation => ({ conversationId, title, lastResponseAt });
+  flagged = false,
+): UnseenConversation => ({ conversationId, title, lastResponseAt, flagged });
 
 /** Mirrors the hook's real feed: every unseen row's stamp is in the baseline, and seen
  *  conversations contribute stamps without appearing in the unseen set. */
@@ -224,6 +225,18 @@ describe('useReplyAlerts', () => {
     });
     act(() => {
       rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    expect(createdNotifications).toHaveLength(0);
+  });
+
+  it('stays quiet when a never-replied conversation is flagged unread elsewhere', () => {
+    /* The manual flag manufactures a reply stamp the baseline has never seen; the dot and the
+       badge carry it, but "Reply ready" would name a reply that does not exist. */
+    const { rerender } = setup({ notifications: true }, stateOf([]));
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta', '2026-08-16T10:05:00.000Z', true)]));
     });
 
     expect(createdNotifications).toHaveLength(0);
