@@ -1039,6 +1039,17 @@ export const agentsEndpointSchema = baseEndpointSchema
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
         })
         .optional(),
+      /** Process-wide event-driven agent rollout controls. Configure these from the base
+       * deployment config only so every API replica exposes the same wire capabilities. */
+      eventDriven: z
+        .object({
+          childTurns: z.boolean().optional(),
+          completionWakeups: z.boolean().optional(),
+          /** Optional trusted origin for in-process trigger delivery. The bound
+           *  listener remains the default and is safer for most deployments. */
+          selfUrl: z.string().url().optional(),
+        })
+        .optional(),
       skills: z
         .object({
           maxCatalogSkills: z.number().int().min(1).max(100).optional(),
@@ -1394,6 +1405,12 @@ export enum RateLimitPrefix {
 }
 
 export const rateLimitSchema = z.object({
+  agentEvents: z
+    .object({
+      userMax: z.number().int().positive().optional(),
+      userWindowInMinutes: z.number().positive().optional(),
+    })
+    .optional(),
   fileUploads: z
     .object({
       ipMax: z.number().optional(),

@@ -114,9 +114,13 @@ Register a direct child agent once under the same Remote Agents API key that wil
 The parent must be an ordinary agent conversation, and the target must be enabled in that parent
 agent's direct `subagents.agent_ids` list (or be an allowed self-spawn). The reserved child
 conversation is hidden from conversation lists and remains read-only to human chat routes.
-`ENABLE_AGENT_EVENT_CHILD_TURNS` defaults to false; enable it only after every API replica runs a
-release that understands bound child continuations, otherwise an older worker could permanently
-reject a new envelope during a rolling deployment.
+`endpoints.agents.eventDriven.childTurns` defaults to false; enable it only after every API replica
+runs a release that understands bound child continuations, otherwise an older worker could
+permanently reject a new envelope during a rolling deployment. The legacy
+`ENABLE_AGENT_EVENT_CHILD_TURNS` environment variable remains a compatibility fallback.
+`AGENT_TRIGGERS_SELF_URL` likewise remains a compatibility fallback for
+`endpoints.agents.eventDriven.selfUrl`; most deployments should omit both and use the bound
+listener.
 
 ```http
 POST /api/agents/v1/events/bindings

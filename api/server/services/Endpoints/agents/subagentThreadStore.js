@@ -14,12 +14,10 @@ const {
 const db = require('~/models');
 const { enqueueAgentTrigger } = require('../../Agents/triggers');
 
-/** Keep producers off for the first rollout so older trigger workers cannot
- * permanently reject the new `continue` envelope. Enable only after every API
- * replica runs a release that understands completion wakeups. */
-const completionWakeupsEnabled = isEnabled(process.env.ENABLE_SUBAGENT_COMPLETION_WAKEUPS);
 const GENERATION_DRAIN_TIMEOUT_MS = 45_000;
 const GENERATION_DRAIN_POLL_MS = 100;
+const completionWakeupHandler = createSubagentCompletionWakeupHandler(enqueueAgentTrigger);
+const completionWakeupsEnabled = () => isEnabled(process.env.ENABLE_SUBAGENT_COMPLETION_WAKEUPS);
 
 async function cancelUnroutedGeneration({ userId, tenantId, taskId }) {
   let job = await GenerationJobManager.getJob(taskId);
@@ -78,9 +76,12 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
     cancelUnroutedTask: cancelUnroutedGeneration,
-    ...(completionWakeupsEnabled && {
-      onTaskPrepared: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
-    }),
+    onTaskPrepared: (registration) => {
+      if (!completionWakeupsEnabled()) {
+        return;
+      }
+      return completionWakeupHandler(registration);
+    },
   },
 );
 
@@ -138,5 +139,8 @@ async function configureSubagentTaskRouting() {
 }
 
 module.exports = subagentThreadTaskStore;
-module.exports.completionWakeupsEnabled = completionWakeupsEnabled;
+Object.defineProperty(module.exports, 'completionWakeupsEnabled', {
+  enumerable: true,
+  get: completionWakeupsEnabled,
+});
 module.exports.configureSubagentTaskRouting = configureSubagentTaskRouting;

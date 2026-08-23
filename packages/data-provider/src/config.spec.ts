@@ -61,6 +61,40 @@ describe('bedrockEndpointSchema', () => {
   });
 });
 
+describe('agent event runtime config', () => {
+  it('accepts rollout flags and agent-event admission limits', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          eventDriven: {
+            childTurns: true,
+            completionWakeups: false,
+            selfUrl: 'https://triggers.internal',
+          },
+        },
+      },
+      rateLimits: {
+        agentEvents: { userMax: 80, userWindowInMinutes: 2 },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(result.data.endpoints?.agents?.eventDriven).toEqual({
+      childTurns: true,
+      completionWakeups: false,
+      selfUrl: 'https://triggers.internal',
+    });
+    expect(result.data.rateLimits?.agentEvents).toEqual({
+      userMax: 80,
+      userWindowInMinutes: 2,
+    });
+  });
+});
+
 describe('speechTab schema', () => {
   it.each(['browser', 'external', 'openai', 'azureOpenAI'])(
     'accepts the speech-to-text engine "%s"',
