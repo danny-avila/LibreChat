@@ -504,6 +504,7 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
     };
     await db.saveConvo(reqCtx, conversationUpdate, {
       context: 'POST /api/messages/:conversationId',
+      ...(savedMessage._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
     res.status(201).json(savedMessage);
   } catch (error) {

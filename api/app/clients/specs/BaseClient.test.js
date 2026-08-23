@@ -1871,6 +1871,36 @@ describe('BaseClient', () => {
       );
     });
 
+    test('saveMessageToDatabase appends the saved message id instead of rebuilding the array', async () => {
+      const savedId = new (require('mongoose').Types.ObjectId)();
+      saveMessage.mockResolvedValueOnce({ _id: savedId, messageId: 'saved-1' });
+      saveConvo.mockResolvedValueOnce({ conversationId });
+
+      await TestClient.saveMessageToDatabase(
+        { messageId: 'saved-1', conversationId, text: 'hi' },
+        TestClient.getSaveOptions(),
+      );
+
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ appendMessageIds: [savedId] }),
+      );
+    });
+
+    test('saveMessageToDatabase rebuilds the array when the saved message has no _id', async () => {
+      saveMessage.mockResolvedValueOnce({ messageId: 'saved-2' });
+      saveConvo.mockResolvedValueOnce({ conversationId });
+
+      await TestClient.saveMessageToDatabase(
+        { messageId: 'saved-2', conversationId, text: 'hi' },
+        TestClient.getSaveOptions(),
+      );
+
+      const metadata = saveConvo.mock.calls[saveConvo.mock.calls.length - 1][2];
+      expect(metadata).not.toHaveProperty('appendMessageIds');
+    });
+
     test('saveMessageToDatabase returns early when this.options is null (client disposed)', async () => {
       const savedOptions = TestClient.options;
       TestClient.options = null;

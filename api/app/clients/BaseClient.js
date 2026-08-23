@@ -1315,6 +1315,7 @@ class BaseClient {
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
+      ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
     });
 
     return { message: savedMessage, conversation };
