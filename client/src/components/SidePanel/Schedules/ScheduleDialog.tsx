@@ -3,7 +3,6 @@ import { v4 } from 'uuid';
 import { Folder } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useForm, Controller } from 'react-hook-form';
-import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -17,6 +16,15 @@ import {
   OGDialogTemplate,
   useToastContext,
 } from '@librechat/client';
+import {
+  PermissionBits,
+  isCronCadence,
+  nextRunInstants,
+  scheduleFrequencies,
+  isValidCronExpression,
+  cadenceIntervalMinutes,
+  SCHEDULE_CRON_MAX_LENGTH,
+} from 'librechat-data-provider';
 import type {
   TSchedule,
   TCreateSchedule,
@@ -32,7 +40,13 @@ import {
   useCreateScheduleMutation,
   useUpdateScheduleMutation,
 } from '~/data-provider';
-import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
+import {
+  to12Hour,
+  to24Hour,
+  describeCadence,
+  formatRunInstant,
+  formatScheduleDay,
+} from './cadence';
 import { useChatProjectPicker } from './useScheduleProjects';
 import { VariableEditor } from '~/components/Variables';
 import { useLocalize } from '~/hooks';
@@ -56,6 +70,9 @@ type ScheduleFormValues = {
   minute: number;
   meridiem: Meridiem;
   dayOfWeek: number;
+  /** Only read when `frequency` is `cron`; held across a switch away and back so a
+   *  user who tries a preset does not lose the expression they typed. */
+  expression: string;
 };
 
 const FREQUENCY_LABELS: Record<ScheduleFrequency, TranslationKeys> = {
@@ -63,9 +80,20 @@ const FREQUENCY_LABELS: Record<ScheduleFrequency, TranslationKeys> = {
   daily: 'com_ui_schedule_daily',
   weekdays: 'com_ui_schedule_weekdays',
   weekly: 'com_ui_schedule_weekly',
+  cron: 'com_ui_schedule_cron',
 };
 
 const BASE_MINUTES = [0, 15, 30, 45];
+
+/** Every weekday at 09:00: a recognisable starting point to edit rather than an
+ *  empty field the user has to guess the field order from. */
+const DEFAULT_CRON = '0 9 * * 1-5';
+
+/** Enough previewed occurrences to show the SHAPE of a cadence (that `0 9,17 * * 1-5`
+ *  fires twice a day), which a single row cannot. Kept small deliberately: the dialog
+ *  turns scrolling off at `md` (see the template className below), so every preview
+ *  row spends the same fixed height budget a form row does. */
+const PREVIEW_RUN_COUNT = 3;
 
 const FORM_ID = 'schedule-form';
 
@@ -81,28 +109,51 @@ const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
       minute: 0,
       meridiem: 'AM',
       dayOfWeek: 1,
+      expression: DEFAULT_CRON,
     };
   }
-  const { hour12, meridiem } = to12Hour(schedule.cadence.hour);
-  return {
+  const identity = {
     name: schedule.name,
     prompt: schedule.prompt,
     agent_id: schedule.agent_id,
     chatProjectId: schedule.chatProjectId ?? '',
-    frequency: schedule.cadence.frequency,
+  };
+  const cadence = schedule.cadence;
+  if (isCronCadence(cadence)) {
+    // A cron row carries no hour or minute of its own, so the structured pickers keep
+    // their defaults: switching away from Custom then lands on a sensible time rather
+    // than on whatever the expression's first field happened to be.
+    return {
+      ...identity,
+      frequency: 'cron',
+      hour12: 9,
+      minute: 0,
+      meridiem: 'AM',
+      dayOfWeek: 1,
+      expression: cadence.expression,
+    };
+  }
+  const { hour12, meridiem } = to12Hour(cadence.hour);
+  return {
+    ...identity,
+    frequency: cadence.frequency,
     hour12,
-    minute: schedule.cadence.minute,
+    minute: cadence.minute,
     meridiem,
-    dayOfWeek: schedule.cadence.daysOfWeek?.[0] ?? 1,
+    dayOfWeek: cadence.daysOfWeek?.[0] ?? 1,
+    expression: DEFAULT_CRON,
   };
 };
 
 type CadenceFormValues = Pick<
   ScheduleFormValues,
-  'frequency' | 'hour12' | 'minute' | 'meridiem' | 'dayOfWeek'
+  'frequency' | 'hour12' | 'minute' | 'meridiem' | 'dayOfWeek' | 'expression'
 >;
 
 const buildCadence = (values: CadenceFormValues, overrideDays?: number[]): TScheduleCadence => {
+  if (values.frequency === 'cron') {
+    return { frequency: 'cron', expression: values.expression.trim() };
+  }
   if (values.frequency === 'hourly') {
     return { frequency: 'hourly', hour: 0, minute: values.minute };
   }
@@ -152,6 +203,7 @@ export default function ScheduleDialog({
   const minute = watch('minute');
   const meridiem = watch('meridiem');
   const dayOfWeek = watch('dayOfWeek');
+  const expression = watch('expression');
 
   const { data: agents } = useListAgentsQuery(
     { requiredPermission: PermissionBits.VIEW },
@@ -168,6 +220,7 @@ export default function ScheduleDialog({
    *  enforces rather than a second, client-side interpretation of the config. */
   const { data: schedulesData } = useSchedulesQuery();
   const pinnedProjectId = schedulesData?.limits.projectId;
+  const minIntervalMinutes = schedulesData?.limits.minIntervalMinutes;
   const requireProject = schedulesData?.limits.requireProject === true;
   const {
     items: loadedProjectItems,
@@ -224,7 +277,7 @@ export default function ScheduleDialog({
 
   const minuteOptions = useMemo(() => {
     const minutes = new Set(BASE_MINUTES);
-    if (schedule) {
+    if (schedule && !isCronCadence(schedule.cadence)) {
       minutes.add(schedule.cadence.minute);
     }
     return [...minutes]
@@ -306,16 +359,21 @@ export default function ScheduleDialog({
       ? schedule.cadence.daysOfWeek
       : undefined;
 
+  /** Whether this submit carries a cadence at all: a pure rename does not, and the
+   *  API only validates a cadence it actually receives. Read by the interval floor
+   *  below as well as by the PATCH payload. */
+  const cadenceTouched =
+    dirtyFields.frequency === true ||
+    dirtyFields.hour12 === true ||
+    dirtyFields.minute === true ||
+    dirtyFields.meridiem === true ||
+    dirtyFields.dayOfWeek === true ||
+    dirtyFields.expression === true;
+
   const onSubmit = (values: ScheduleFormValues) => {
     if (schedule) {
       // Preserve the stored cadence entirely on a pure rename (no cadence control
       // touched).
-      const cadenceTouched =
-        dirtyFields.frequency ||
-        dirtyFields.hour12 ||
-        dirtyFields.minute ||
-        dirtyFields.meridiem ||
-        dirtyFields.dayOfWeek;
       const cadence = buildCadence(values, resolvePreservedWeeklyDays(values.frequency));
       // PATCH only the fields the user actually touched, like the cadence handling
       // above: submitting the whole form snapshot silently overwrites fields another
@@ -386,11 +444,69 @@ export default function ScheduleDialog({
     createSchedule.mutate(payload);
   };
 
-  const summaryCadence = buildCadence(
-    { frequency, hour12, minute, meridiem, dayOfWeek },
-    resolvePreservedWeeklyDays(frequency),
+  /** The stored multi-day set an untouched weekly picker keeps, flattened to a string
+   *  so the memos below can depend on its VALUE: the array identity changes whenever
+   *  the schedules query polls, which would re-walk croner on every refresh. */
+  const preservedWeeklyDays = resolvePreservedWeeklyDays(frequency)?.join(',') ?? '';
+
+  /** Read by the summary, the preview and the interval floor, each of which walks
+   *  croner. Memoized so a name or prompt keystroke does not re-derive all three. */
+  const previewCadence = useMemo(
+    () =>
+      buildCadence(
+        { frequency, hour12, minute, meridiem, dayOfWeek, expression },
+        preservedWeeklyDays === '' ? undefined : preservedWeeklyDays.split(',').map(Number),
+      ),
+    [frequency, hour12, minute, meridiem, dayOfWeek, expression, preservedWeeklyDays],
   );
-  const summary = `${describeCadence(summaryCadence, localize, locale)} · ${timezone}`;
+
+  /** Validated in the schedule's own timezone, the same argument the server passes, so
+   *  a zone-sensitive expression cannot pass here and be refused there. */
+  /** Memoized like every derivation around it: `watch()` re-renders the dialog on
+   *  each keystroke in ANY field, and this walks croner. */
+  const cronIsValid = useMemo(
+    () => frequency !== 'cron' || isValidCronExpression(expression.trim(), timezone),
+    [frequency, expression, timezone],
+  );
+
+  const previewRuns = useMemo(
+    () =>
+      frequency === 'cron' && cronIsValid
+        ? nextRunInstants(previewCadence, timezone, PREVIEW_RUN_COUNT)
+        : [],
+    [frequency, cronIsValid, previewCadence, timezone],
+  );
+
+  /** The floor binds exactly where the API binds it: to a cadence that will actually
+   *  be submitted, and to any edit leaving the schedule enabled. Renaming a DISABLED
+   *  schedule whose stored cadence predates a raised floor is a valid maintenance edit
+   *  the API accepts, so the dialog must not hold it hostage to a timing change. */
+  const floorApplies = schedule == null || cadenceTouched || schedule.enabled;
+
+  /** Checked against the SAME function the server enforces with, so the dialog never
+   *  offers a submit the API would answer 400 to. Only meaningful once the expression
+   *  parses: an unfireable one reports a zero-minute gap, which would otherwise
+   *  surface as "too frequent" instead of "never runs". Memoized because the cron
+   *  branch walks 32 occurrences to find its tightest gap. */
+  const belowFloor = useMemo(
+    () =>
+      floorApplies &&
+      cronIsValid &&
+      minIntervalMinutes != null &&
+      // The zone is load-bearing, not decoration: without it this measures the nominal
+      // gap while the API measures the DST-compressed one, and the dialog offers a
+      // Create the API then rejects.
+      cadenceIntervalMinutes(previewCadence, timezone) < minIntervalMinutes,
+    [floorApplies, cronIsValid, minIntervalMinutes, previewCadence, timezone],
+  );
+
+  const cadenceError =
+    belowFloor && minIntervalMinutes != null
+      ? localize('com_ui_schedule_min_interval', { minutes: minIntervalMinutes })
+      : null;
+  const canSubmit = cronIsValid && !belowFloor && !isLoading;
+
+  const summary = `${describeCadence(previewCadence, localize, locale)} · ${timezone}`;
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
@@ -604,115 +720,171 @@ export default function ScheduleDialog({
                     value={field.value}
                     onChange={(value) => field.onChange(value as ScheduleFrequency)}
                     fullWidth
+                    // Five segments no longer fit one row in a phone-width dialog, and
+                    // a translated label can push even a desktop one over.
+                    wrap
                     aria-labelledby="schedule-frequency-label"
                   />
                 )}
               />
             </fieldset>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {frequency === 'weekly' && (
-                <fieldset className="space-y-2">
-                  <legend>
-                    <Label
-                      id="schedule-day-label"
-                      className="text-sm font-medium text-text-primary"
-                    >
-                      {localize('com_ui_schedule_day')}
-                    </Label>
-                  </legend>
-                  <Controller
-                    name="dayOfWeek"
-                    control={control}
-                    render={({ field }) => (
-                      <Dropdown
-                        value={String(field.value)}
-                        onChange={(value) => field.onChange(Number(value))}
-                        options={dayOptions}
-                        variant="field"
-                        portal={false}
-                        aria-labelledby="schedule-day-label"
-                        testId="schedule-day-select"
-                      />
-                    )}
-                  />
-                </fieldset>
-              )}
-              <fieldset className="space-y-2">
-                <legend>
-                  <Label id="schedule-time-label" className="text-sm font-medium text-text-primary">
-                    {localize(
-                      frequency === 'hourly'
-                        ? 'com_ui_schedule_minutes_past_hour'
-                        : 'com_ui_schedule_time',
-                    )}
-                  </Label>
-                </legend>
-                <div
-                  className={cn(
-                    'grid gap-2',
-                    frequency === 'hourly' ? 'max-w-[8rem] grid-cols-1' : 'grid-cols-3',
-                  )}
-                >
-                  {frequency !== 'hourly' && (
+            {frequency === 'cron' ? (
+              <div className="space-y-2">
+                <Label htmlFor="schedule-cron" className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_schedule_cron_expression')}
+                </Label>
+                <Input
+                  id="schedule-cron"
+                  className="w-full font-mono"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder={DEFAULT_CRON}
+                  maxLength={SCHEDULE_CRON_MAX_LENGTH}
+                  aria-invalid={!cronIsValid || belowFloor}
+                  aria-describedby={
+                    // The floor message renders under the summary as
+                    // `schedule-cadence-message`; a floor-violating expression must
+                    // still mark THIS input invalid and point at that message, or a
+                    // screen reader finds a disabled Create with no stated reason.
+                    belowFloor
+                      ? 'schedule-cron-hint schedule-cron-message schedule-cadence-message'
+                      : 'schedule-cron-hint schedule-cron-message'
+                  }
+                  data-testid="schedule-cron-input"
+                  {...register('expression')}
+                />
+                <p id="schedule-cron-hint" className="text-xs text-text-secondary">
+                  {localize('com_ui_schedule_cron_hint')}
+                </p>
+                <FieldMessage
+                  id="schedule-cron-message"
+                  message={cronIsValid ? undefined : localize('com_ui_schedule_cron_invalid')}
+                />
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {frequency === 'weekly' && (
+                  <fieldset className="space-y-2">
+                    <legend>
+                      <Label
+                        id="schedule-day-label"
+                        className="text-sm font-medium text-text-primary"
+                      >
+                        {localize('com_ui_schedule_day')}
+                      </Label>
+                    </legend>
                     <Controller
-                      name="hour12"
+                      name="dayOfWeek"
                       control={control}
                       render={({ field }) => (
                         <Dropdown
                           value={String(field.value)}
                           onChange={(value) => field.onChange(Number(value))}
-                          options={hourOptions}
+                          options={dayOptions}
                           variant="field"
                           portal={false}
-                          ariaLabel={localize('com_ui_schedule_hour')}
-                          testId="schedule-hour-select"
+                          aria-labelledby="schedule-day-label"
+                          testId="schedule-day-select"
                         />
                       )}
                     />
-                  )}
-                  <Controller
-                    name="minute"
-                    control={control}
-                    render={({ field }) => (
-                      <Dropdown
-                        value={String(field.value)}
-                        onChange={(value) => field.onChange(Number(value))}
-                        options={minuteOptions}
-                        variant="field"
-                        portal={false}
-                        ariaLabel={localize('com_ui_schedule_minute')}
-                        testId="schedule-minute-select"
+                  </fieldset>
+                )}
+                <fieldset className="space-y-2">
+                  <legend>
+                    <Label
+                      id="schedule-time-label"
+                      className="text-sm font-medium text-text-primary"
+                    >
+                      {localize(
+                        frequency === 'hourly'
+                          ? 'com_ui_schedule_minutes_past_hour'
+                          : 'com_ui_schedule_time',
+                      )}
+                    </Label>
+                  </legend>
+                  <div
+                    className={cn(
+                      'grid gap-2',
+                      frequency === 'hourly' ? 'max-w-[8rem] grid-cols-1' : 'grid-cols-3',
+                    )}
+                  >
+                    {frequency !== 'hourly' && (
+                      <Controller
+                        name="hour12"
+                        control={control}
+                        render={({ field }) => (
+                          <Dropdown
+                            value={String(field.value)}
+                            onChange={(value) => field.onChange(Number(value))}
+                            options={hourOptions}
+                            variant="field"
+                            portal={false}
+                            ariaLabel={localize('com_ui_schedule_hour')}
+                            testId="schedule-hour-select"
+                          />
+                        )}
                       />
                     )}
-                  />
-                  {frequency !== 'hourly' && (
                     <Controller
-                      name="meridiem"
+                      name="minute"
                       control={control}
                       render={({ field }) => (
                         <Dropdown
-                          value={field.value}
-                          onChange={field.onChange}
-                          options={meridiemOptions}
+                          value={String(field.value)}
+                          onChange={(value) => field.onChange(Number(value))}
+                          options={minuteOptions}
                           variant="field"
                           portal={false}
-                          ariaLabel={localize('com_ui_schedule_meridiem')}
-                          testId="schedule-meridiem-select"
+                          ariaLabel={localize('com_ui_schedule_minute')}
+                          testId="schedule-minute-select"
                         />
                       )}
                     />
-                  )}
-                </div>
-              </fieldset>
-            </div>
+                    {frequency !== 'hourly' && (
+                      <Controller
+                        name="meridiem"
+                        control={control}
+                        render={({ field }) => (
+                          <Dropdown
+                            value={field.value}
+                            onChange={field.onChange}
+                            options={meridiemOptions}
+                            variant="field"
+                            portal={false}
+                            ariaLabel={localize('com_ui_schedule_meridiem')}
+                            testId="schedule-meridiem-select"
+                          />
+                        )}
+                      />
+                    )}
+                  </div>
+                </fieldset>
+              </div>
+            )}
 
-            <p
-              className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
-              data-testid="schedule-summary"
-            >
-              {summary}
-            </p>
+            <div className="space-y-2">
+              <p
+                className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
+                data-testid="schedule-summary"
+              >
+                {summary}
+              </p>
+              <FieldMessage id="schedule-cadence-message" message={cadenceError ?? undefined} />
+              {previewRuns.length > 0 && (
+                <div className="space-y-1" data-testid="schedule-preview">
+                  <p className="text-xs font-medium text-text-primary">
+                    {localize('com_ui_schedule_next_runs')}
+                  </p>
+                  <ul className="space-y-0.5 text-xs text-text-secondary">
+                    {previewRuns.map((run) => (
+                      <li key={run.getTime()}>{formatRunInstant(run, timezone, locale)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </form>
         }
         buttons={
@@ -720,7 +892,7 @@ export default function ScheduleDialog({
             type="submit"
             form={FORM_ID}
             variant="submit"
-            disabled={isLoading}
+            disabled={!canSubmit}
             aria-label={localize(schedule ? 'com_ui_save' : 'com_ui_create')}
           >
             {isLoading ? (

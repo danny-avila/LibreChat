@@ -21,8 +21,14 @@ const mockMutate = jest.fn();
 
 /** Server-resolved schedule policy for the render under test. The dialog reads it from
  *  the schedules list query, the same cache entry the panel populates. */
-let mockLimits: { maxPerUser: number; requireProject: boolean; projectId?: string } = {
+let mockLimits: {
+  maxPerUser: number;
+  minIntervalMinutes: number;
+  requireProject: boolean;
+  projectId?: string;
+} = {
   maxPerUser: 10,
+  minIntervalMinutes: 0,
   requireProject: false,
 };
 
@@ -109,7 +115,7 @@ const fillRequiredFields = async (user: ReturnType<typeof userEvent.setup>) => {
 describe('ScheduleDialog', () => {
   afterEach(() => {
     jest.clearAllMocks();
-    mockLimits = { maxPerUser: 10, requireProject: false };
+    mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: false };
     mockFetchedProject = undefined;
   });
 
@@ -215,6 +221,117 @@ describe('ScheduleDialog', () => {
     );
   });
 
+  describe('custom cron cadence', () => {
+    it('swaps the structured time controls for an expression field', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+
+      expect(screen.getByTestId('schedule-hour-select')).toBeInTheDocument();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
+
+      expect(screen.queryByTestId('schedule-hour-select')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('schedule-minute-select')).not.toBeInTheDocument();
+      expect(screen.getByTestId('schedule-cron-input')).toBeInTheDocument();
+    });
+
+    it('blocks submit on an expression that never runs', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
+
+      const field = screen.getByTestId('schedule-cron-input');
+      await user.clear(field);
+      // Syntactically valid, but February never has a 30th: nothing would ever fire.
+      await user.type(field, '0 9 30 2 *');
+
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(screen.getByText('com_ui_schedule_cron_invalid')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'com_ui_create' })).toBeDisabled();
+    });
+
+    it('refuses the seconds and year forms the engine cannot honour', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
+
+      const field = screen.getByTestId('schedule-cron-input');
+      await user.clear(field);
+      // A seconds field promises a precision a thirty-second tick with jitter cannot
+      // keep, and a pinned year makes a cadence that runs out.
+      await user.type(field, '0 0 9 * * 1-5');
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+
+      await user.clear(field);
+      await user.type(field, '0 9 * * 1-5');
+      expect(field).toHaveAttribute('aria-invalid', 'false');
+    });
+
+    it('previews the next runs in the schedule timezone', async () => {
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ cadence: { frequency: 'cron', expression: '0 9 * * *' } }));
+
+      expect(screen.getByTestId('schedule-cron-input')).toHaveValue('0 9 * * *');
+      const preview = await screen.findByTestId('schedule-preview');
+      // Three occurrences, each rendered at 9 AM in America/New_York rather than at
+      // whatever that instant reads as in the browser's own zone.
+      expect(within(preview).getAllByRole('listitem')).toHaveLength(3);
+      for (const item of within(preview).getAllByRole('listitem')) {
+        expect(item).toHaveTextContent(/9:00\s*AM/i);
+      }
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_daily' }));
+      expect(screen.queryByTestId('schedule-preview')).not.toBeInTheDocument();
+    });
+
+    it('submits the expression as a cron cadence', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await fillRequiredFields(user);
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
+      const field = screen.getByTestId('schedule-cron-input');
+      await user.clear(field);
+      await user.type(field, '0 9,17 * * 1-5');
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_create' }));
+
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].cadence).toEqual({
+        frequency: 'cron',
+        expression: '0 9,17 * * 1-5',
+      });
+    });
+
+    it('refuses a cadence the interval floor would reject', async () => {
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 60, requireProject: false };
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
+      const field = screen.getByTestId('schedule-cron-input');
+      await user.clear(field);
+      await user.type(field, '*/15 * * * *');
+
+      expect(screen.getByText(/com_ui_schedule_min_interval/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'com_ui_create' })).toBeDisabled();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field.getAttribute('aria-describedby')).toContain('schedule-cadence-message');
+    });
+
+    it('still lets a disabled schedule below the floor be renamed', async () => {
+      // The API accepts a rename that changes no timing, so the dialog must not hold
+      // a schedule hostage to a floor raised after it was created.
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 100_000, requireProject: false };
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ enabled: false }));
+
+      await user.type(screen.getByPlaceholderText('com_ui_schedule_name_placeholder'), ' v2');
+      const save = screen.getByRole('button', { name: 'com_ui_save' });
+      expect(save).toBeEnabled();
+
+      await user.click(save);
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].payload.cadence).toBeUndefined();
+    });
+  });
+
   describe('project scope', () => {
     it('submits the chosen project so its runs are filed there', async () => {
       const user = userEvent.setup();
@@ -250,7 +367,7 @@ describe('ScheduleDialog', () => {
     /** The server refuses an unscoped create under this policy; blocking it here keeps
      *  the user from losing a filled-in form to a 400. */
     it('blocks submission when the deployment requires a project', async () => {
-      mockLimits = { maxPerUser: 10, requireProject: true };
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: true };
       const user = userEvent.setup();
       renderDialog();
       await fillRequiredFields(user);
@@ -282,7 +399,7 @@ describe('ScheduleDialog', () => {
 
     /** There is no "no project" to offer when one is mandatory. */
     it('offers no clearing option when a project is required', async () => {
-      mockLimits = { maxPerUser: 10, requireProject: true };
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: true };
       const user = userEvent.setup();
       renderDialog(storedSchedule({ chatProjectId: 'proj-1' }));
 
@@ -318,7 +435,7 @@ describe('ScheduleDialog', () => {
      *  project in the form made that unreachable — and an owner with no projects at all
      *  could not edit the stopped schedule. */
     it('lets a disabled unscoped schedule be edited while a project is required', async () => {
-      mockLimits = { maxPerUser: 10, requireProject: true };
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: true };
       const user = userEvent.setup();
       renderDialog(storedSchedule({ enabled: false, chatProjectId: undefined }));
 
@@ -333,7 +450,7 @@ describe('ScheduleDialog', () => {
 
     /** An ENABLED schedule still has to satisfy the requirement. */
     it('still requires a project when the edit leaves the schedule enabled', async () => {
-      mockLimits = { maxPerUser: 10, requireProject: true };
+      mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: true };
       const user = userEvent.setup();
       renderDialog(storedSchedule({ enabled: true, chatProjectId: undefined }));
 
@@ -350,7 +467,12 @@ describe('ScheduleDialog', () => {
      *  sends nothing, leaving the pin authoritative even if it moved since the dialog
      *  opened. */
     it('shows a pinned project as read-only and never sends it', async () => {
-      mockLimits = { maxPerUser: 10, requireProject: true, projectId: 'proj-2' };
+      mockLimits = {
+        maxPerUser: 10,
+        minIntervalMinutes: 0,
+        requireProject: true,
+        projectId: 'proj-2',
+      };
       const user = userEvent.setup();
       renderDialog();
       await fillRequiredFields(user);
