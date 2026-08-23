@@ -4,7 +4,7 @@ import { Link2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
+import { Spinner, useToastContext } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ConversationDragItem } from './dnd';
 import {
@@ -15,6 +15,7 @@ import {
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { focusableInRow, resolveRowBeside } from './focus';
+import useDrawerViewport from '~/hooks/Nav/useDrawerViewport';
 import { areConversationRenderPropsEqual } from './utils';
 import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
@@ -58,7 +59,7 @@ function Conversation({
   const updateConvoMutation = useUpdateConversationMutation(currentConvoId ?? '');
   const unpinMutation = usePinConversationMutation();
   const activeConvos = useRecoilValue(store.allConversationsSelector);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  const isSmallScreen = useDrawerViewport();
   /* A deployment with shared links off leaves existing links in the database but stops
      serving them, so the row must not advertise one that no longer resolves. */
   const { data: startupConfig } = useGetStartupConfig();
