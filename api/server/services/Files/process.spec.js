@@ -84,10 +84,13 @@ jest.mock('@librechat/api', () => {
       if (ocrConfigured && checkType(mimeType, fileConfig.ocr?.supportedMimeTypes ?? [])) {
         return UPLOAD_EXTRACTED_TEXT_PLANS.configuredOCR;
       }
-      const isDocumentParserEligible = actualDataProvider.documentParserMimeTypes.some((pattern) =>
+      const parserMimeTypes =
+        fileConfig.documentParser?.supportedMimeTypes ?? actualDataProvider.documentParserMimeTypes;
+      const isKnownDocumentType = actualDataProvider.documentParserMimeTypes.some((pattern) =>
         pattern.test(mimeType),
       );
-      if (!isDocumentParserEligible) {
+      const isDocumentParserEligible = checkType(mimeType, parserMimeTypes);
+      if (!isKnownDocumentType && !isDocumentParserEligible) {
         return null;
       }
       if (
@@ -97,7 +100,7 @@ jest.mock('@librechat/api', () => {
       ) {
         return UPLOAD_EXTRACTED_TEXT_PLANS.configuredRAG;
       }
-      return UPLOAD_EXTRACTED_TEXT_PLANS.documentParser;
+      return isDocumentParserEligible ? UPLOAD_EXTRACTED_TEXT_PLANS.documentParser : null;
     },
   );
   return {
