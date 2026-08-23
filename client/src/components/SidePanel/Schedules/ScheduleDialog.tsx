@@ -39,7 +39,7 @@ import {
   describeCadence,
   formatRunInstant,
   formatScheduleDay,
-  formatScheduleDayShort,
+  formatScheduleDayNarrow,
   resolveLocalTimezone,
   buildTimezoneOptions,
   formatTimezoneOffset,
@@ -530,6 +530,18 @@ export default function ScheduleDialog({
     timezoneOffset ? `${timezone} (${timezoneOffset})` : timezone
   }`;
 
+  /** Both labels for every pill, built once per locale: inline they cost fourteen
+   *  `Intl.DateTimeFormat` constructions on every keystroke this form re-renders on. */
+  const weekdayOptions = useMemo(
+    () =>
+      WEEKDAY_INDEXES.map((day) => ({
+        day,
+        label: formatScheduleDay(day, locale),
+        narrow: formatScheduleDayNarrow(day, locale),
+      })),
+    [locale],
+  );
+
   /** A CELL in the cadence grid rather than a row of its own, in both modes. The
    *  template's height budget is a contract (see its className below): scrolling is
    *  off at `md`, so a full-width timezone row would push the footer's submit button
@@ -852,15 +864,19 @@ export default function ScheduleDialog({
                       name="daysOfWeek"
                       control={control}
                       render={({ field }) => (
-                        <div className="flex flex-wrap gap-1.5">
-                          {WEEKDAY_INDEXES.map((day) => {
+                        // No wrap, and every pill shares the row's width equally: at
+                        // `md` this cell is a third of the dialog, and a second pill
+                        // line would spend height the budget above does not have.
+                        <div className="flex gap-1">
+                          {weekdayOptions.map(({ day, label, narrow }) => {
                             const selected = field.value.includes(day);
                             return (
-                              <button
+                              <Button
                                 key={day}
-                                type="button"
+                                variant="outline"
+                                size="sm"
                                 aria-pressed={selected}
-                                aria-label={formatScheduleDay(day, locale)}
+                                aria-label={label}
                                 data-testid={`schedule-day-${day}`}
                                 onClick={() =>
                                   field.onChange(
@@ -870,14 +886,14 @@ export default function ScheduleDialog({
                                   )
                                 }
                                 className={cn(
-                                  'h-9 min-w-[3rem] rounded-lg border px-2 text-sm transition-colors',
+                                  'min-w-0 flex-1 px-0 font-normal',
                                   selected
-                                    ? 'border-border-medium bg-surface-active text-text-primary'
-                                    : 'border-border-light text-text-secondary hover:bg-surface-hover',
+                                    ? 'border-border-medium bg-surface-active text-text-primary hover:bg-surface-active'
+                                    : 'text-text-secondary',
                                 )}
                               >
-                                {formatScheduleDayShort(day, locale)}
-                              </button>
+                                {narrow}
+                              </Button>
                             );
                           })}
                         </div>
@@ -960,12 +976,17 @@ export default function ScheduleDialog({
             )}
 
             <div className="space-y-2">
-              <p
-                className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
-                data-testid="schedule-summary"
-              >
-                {summary}
-              </p>
+              {/* With no day selected, `buildCadence` substitutes Monday so the maths
+                  downstream stays defined — but describing that substitution would
+                  contradict the "pick at least one day" message right below it. */}
+              {daysAreValid && (
+                <p
+                  className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
+                  data-testid="schedule-summary"
+                >
+                  {summary}
+                </p>
+              )}
               <FieldMessage id="schedule-cadence-message" message={cadenceError ?? undefined} />
               {previewRuns.length > 0 && (
                 <div className="space-y-1" data-testid="schedule-preview">

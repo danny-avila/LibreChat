@@ -33,10 +33,12 @@ export const formatScheduleDay = (day: number, locale?: string): string =>
     new Date(SUNDAY_UTC + day * DAY_MS),
   );
 
-/** The pill label. The long name is still the accessible one: "Mon" reads fine at a
- *  glance but poorly aloud, and seven of them would not fit a phone-width row. */
-export const formatScheduleDayShort = (day: number, locale?: string): string =>
-  new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(
+/** The pill label, the locale's narrowest weekday form ("M", "T"). The long name is
+ *  the accessible one: narrow forms repeat within a week and read poorly aloud. Narrow
+ *  rather than "Mon": seven pills share one third of the dialog at `md` (the height
+ *  budget keeps them to a single line there), which three-letter labels overflow. */
+export const formatScheduleDayNarrow = (day: number, locale?: string): string =>
+  new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(
     new Date(SUNDAY_UTC + day * DAY_MS),
   );
 

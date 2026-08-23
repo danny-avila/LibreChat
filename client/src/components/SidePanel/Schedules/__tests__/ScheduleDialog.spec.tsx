@@ -406,6 +406,9 @@ describe('ScheduleDialog', () => {
 
       expect(screen.getByText('com_ui_schedule_days_required')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'com_ui_create' })).toBeDisabled();
+      // The summary must not contradict that message by describing the Monday
+      // fallback `buildCadence` substitutes for the empty set.
+      expect(screen.queryByTestId('schedule-summary')).not.toBeInTheDocument();
     });
   });
 
