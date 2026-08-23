@@ -1,6 +1,12 @@
 /** Viewport width, in baseline pixels, below which navigation becomes the drawer. */
 export const DRAWER_MAX_WIDTH = 768;
 
+/** Below this the side panel host stacks instead of splitting. */
+export const SIDE_PANEL_MAX_WIDTH = 767;
+
+/** Below this artifacts render as a full-width sheet rather than a panel. */
+export const ARTIFACTS_SHEET_MAX_WIDTH = 868;
+
 const BASE_FONT_SIZE = 16;
 
 /**
@@ -18,14 +24,17 @@ const readRemScale = (): number => {
 };
 
 /**
- * The sidebar is laid out in rem, so the drawer breakpoint has to compare the viewport
- * in the same units. Every consumer builds its query from here: the hook that owns the
- * open state and the route controls that reveal the reopen affordance have to agree, or
- * a viewport between the fixed and scaled breakpoints opens the drawer with no visible
- * way back out of it.
+ * Layouts here are sized in rem, so a breakpoint has to compare the viewport in the same
+ * units. Every consumer of a given breakpoint builds its query from here: a hook that
+ * owns a layout's state and the controls that reveal its affordances have to agree, or a
+ * viewport between the fixed and scaled breakpoints picks the wide layout while its
+ * rem-sized contents no longer fit the space that layout gives them.
  */
+export const scaledMaxWidthQuery = (baselinePx: number, remScale: number): string =>
+  `(max-width: ${baselinePx * remScale}px)`;
+
 export const drawerMediaQuery = (remScale: number): string =>
-  `(max-width: ${DRAWER_MAX_WIDTH * remScale}px)`;
+  scaledMaxWidthQuery(DRAWER_MAX_WIDTH, remScale);
 
 /** Read synchronously where a hook cannot run: `useMediaQuery` only resolves after paint. */
 export const isDrawerViewport = (): boolean =>

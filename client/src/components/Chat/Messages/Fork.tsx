@@ -111,7 +111,7 @@ const PopoverButton: React.FC<PopoverButtonProps> = ({
             gutter={16}
             shift={40}
             flip={false}
-            className="z-[999] w-80 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
+            className="z-[999] w-[min(20rem,90vw)] rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
             portal={true}
             unmountOnHide={true}
           >
@@ -187,7 +187,7 @@ const CheckboxOption: React.FC<CheckboxOptionProps> = ({
         gutter={14}
         shift={40}
         flip={false}
-        className="z-[999] w-80 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
+        className="z-[999] w-[min(20rem,90vw)] rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
         portal={true}
         unmountOnHide={true}
       >
@@ -353,7 +353,7 @@ export default function Fork({
       <Ariakit.Popover
         store={popoverStore}
         gutter={10}
-        className={`popover-animate ${isActive ? 'open' : ''} flex w-60 flex-col gap-3 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-2 px-4 shadow-lg`}
+        className={`popover-animate ${isActive ? 'open' : ''} flex w-[min(15rem,90vw)] flex-col gap-3 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-2 px-4 shadow-lg`}
         style={{
           outline: 'none',
           pointerEvents: 'auto',
@@ -385,7 +385,7 @@ export default function Fork({
               gutter={19}
               shift={40}
               flip={false}
-              className="z-[999] w-80 rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
+              className="z-[999] w-[min(20rem,90vw)] rounded-2xl border border-border-medium bg-surface-secondary p-4 text-text-primary shadow-md"
               portal={true}
               unmountOnHide={true}
             >
