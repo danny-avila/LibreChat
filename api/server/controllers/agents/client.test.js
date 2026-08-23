@@ -47,7 +47,7 @@ jest.mock('@librechat/api', () => ({
   createRun: (...args) => mockCreateRun(...args),
   countFormattedMessageTokens: jest.fn(() => 42),
   countTokens: jest.fn((text) => Math.ceil(String(text ?? '').length / 4)),
-  createTokenCounter: jest.fn(() => jest.fn(() => 0)),
+  createCachedTokenCounter: jest.fn(async () => jest.fn(() => 0)),
   createDetachedSubagentUsageRecorder: (...args) =>
     mockCreateDetachedSubagentUsageRecorder(...args),
   captureAgentCheckpointGeneration: (...args) => mockCaptureAgentCheckpointGeneration(...args),

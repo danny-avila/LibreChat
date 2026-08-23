@@ -3,7 +3,7 @@ import { Providers, StandardGraph } from '@librechat/agents';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type { TMessage } from 'librechat-data-provider';
 import {
-  createTokenCounter,
+  createCachedTokenCounter,
   prependQuotes,
   prependFileContext,
   applyAttachmentOnlyText,
@@ -14,10 +14,11 @@ import Tokenizer from '~/utils/tokenizer';
 
 describe('createTokenCounter', () => {
   it('enables stable-message reuse in the agents runtime', async () => {
-    await Tokenizer.initEncoding('o200k_base');
+    const initEncoding = jest.spyOn(Tokenizer, 'initEncoding');
     const getTokenCount = jest.spyOn(Tokenizer, 'getTokenCount');
     try {
-      const tokenCounter = createTokenCounter('o200k_base');
+      const tokenCounter = await createCachedTokenCounter('o200k_base');
+      expect(initEncoding).toHaveBeenCalledWith('o200k_base');
       const graph = new StandardGraph({
         runId: 'token-cache-integration',
         agents: [
@@ -41,6 +42,7 @@ describe('createTokenCounter', () => {
       expect(callsAfterFirstCount).toBeGreaterThan(0);
       expect(getTokenCount).toHaveBeenCalledTimes(callsAfterFirstCount);
     } finally {
+      initEncoding.mockRestore();
       getTokenCount.mockRestore();
     }
   });
