@@ -1236,6 +1236,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (leftValue === rightValue) return 0;
       return leftValue > rightValue ? 1 : -1;
     };
+    const taskTimestamp = (value: Date | undefined): number =>
+      value == null ? Number.NEGATIVE_INFINITY : value.getTime();
     const [latestRecords, recentRecords] = await Promise.all([
       Message.aggregate<ParentSubagentTaskRecord>([
         { $match: match },
@@ -1339,9 +1341,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       for (const candidate of candidates) {
         const taskId = candidate.messageId.replace(/:(user|assistant)$/, '');
         const existing = tasksById.get(taskId);
-        const candidateTime = new Date(candidate.createdAt).getTime();
-        const existingTime =
-          existing == null ? Number.NEGATIVE_INFINITY : new Date(existing.createdAt).getTime();
+        const candidateTime = taskTimestamp(candidate.createdAt);
+        const existingTime = taskTimestamp(existing?.createdAt);
         const candidateIsAssistant = candidate.messageId.endsWith(':assistant');
         const existingIsAssistant = existing?.messageId.endsWith(':assistant') === true;
         const occurrenceDifference = compareOccurrenceIds(
@@ -1362,8 +1363,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       }
       current.tasks = [...tasksById.values()]
         .sort((left, right) => {
-          const timeDifference =
-            new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+          const timeDifference = taskTimestamp(right.createdAt) - taskTimestamp(left.createdAt);
           if (timeDifference !== 0) return timeDifference;
           const occurrenceDifference = compareOccurrenceIds(right.occurrenceId, left.occurrenceId);
           if (occurrenceDifference !== 0) return occurrenceDifference;
