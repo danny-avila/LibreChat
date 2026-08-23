@@ -86,28 +86,70 @@ export const resolveLocalTimezone = (): string =>
  * doubles as the fallback list: a user who cannot browse zones can still keep the
  * one their schedule already uses.
  */
+/** Modern IANA names the runtime accepts but `supportedValuesOf` leaves out: that
+ *  enumeration reports CLDR's legacy canonical forms (`Asia/Calcutta`,
+ *  `Europe/Kiev`), so the name a user actually searches for would find nothing.
+ *  Each entry is probed before inclusion, so an engine that rejects one drops it. */
+const MODERN_ZONE_NAMES = [
+  'Asia/Kolkata',
+  'Europe/Kyiv',
+  'Asia/Ho_Chi_Minh',
+  'Asia/Yangon',
+  'America/Nuuk',
+];
+
+const zoneIsAccepted = (zone: string): boolean => {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const buildTimezoneOptions = (localTimezone: string, storedTimezone?: string): string[] => {
   const pinned = [localTimezone, UTC_TIMEZONE];
   if (storedTimezone != null && storedTimezone.length > 0) {
     pinned.push(storedTimezone);
   }
   const seen = new Set(pinned);
-  const rest =
-    typeof Intl.supportedValuesOf === 'function'
-      ? Intl.supportedValuesOf('timeZone').filter((zone) => !seen.has(zone))
-      : [];
+  const listed =
+    typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+  const rest = Array.from(
+    new Set([
+      ...listed,
+      // Only when the engine could enumerate at all: the fallback list is the pinned
+      // pair by design, and five extra browsable names would not change that.
+      ...(listed.length > 0 ? MODERN_ZONE_NAMES.filter(zoneIsAccepted) : []),
+    ]),
+  )
+    .filter((zone) => !seen.has(zone))
+    .sort();
   return [...seen, ...rest];
 };
 
+/** Keyed by locale and zone. The offsets exist to tell two similar NAMES apart, so
+ *  serving one computed earlier in the session is fine even across a DST change,
+ *  and it saves rebuilding ~400 `Intl.DateTimeFormat`s on every dialog open. */
+const offsetCache = new Map<string, string>();
+
 /** The zone's current offset, e.g. `GMT+2`, so two similar names are tellable apart. */
 export const formatTimezoneOffset = (timezone: string, locale?: string): string => {
+  const cacheKey = `${locale ?? ''}|${timezone}`;
+  const cached = offsetCache.get(cacheKey);
+  if (cached != null) {
+    return cached;
+  }
+  let offset = '';
   try {
     const parts = new Intl.DateTimeFormat(locale, {
       timeZone: timezone,
       timeZoneName: 'shortOffset',
     }).formatToParts(new Date());
-    return parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+    offset = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
   } catch {
-    return '';
+    offset = '';
   }
+  offsetCache.set(cacheKey, offset);
+  return offset;
 };

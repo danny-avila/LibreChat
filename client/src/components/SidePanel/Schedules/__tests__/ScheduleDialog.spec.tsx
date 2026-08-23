@@ -373,6 +373,9 @@ describe('ScheduleDialog', () => {
       await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
       await waitFor(() => expect(mockMutate).toHaveBeenCalled());
       expect(mockMutate.mock.calls[0][0].payload.timezone).toBe('UTC');
+      // And ONLY the zone: a cadence rebuilt from the form would overwrite stored
+      // fields the pickers cannot represent (an API-created hourly's nonzero hour).
+      expect(mockMutate.mock.calls[0][0].payload.cadence).toBeUndefined();
     });
 
     it('validates a cron expression against the selected zone, not the browser one', async () => {

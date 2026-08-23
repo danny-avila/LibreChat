@@ -373,19 +373,22 @@ export default function ScheduleDialog({
       : undefined;
 
   /** Whether this submit carries a cadence at all: a pure rename does not, and the
-   *  API only validates a cadence it actually receives. Read by the interval floor
-   *  below as well as by the PATCH payload. */
+   *  API only validates a cadence it actually receives. Only touched cadence
+   *  CONTROLS count: a zone-only edit must not ship a cadence rebuilt from this
+   *  form, which would overwrite stored fields it cannot represent (an
+   *  API-created hourly cadence's nonzero hour, for one). */
   const cadenceTouched =
     dirtyFields.frequency === true ||
-    // The same expression is a different schedule in another zone, and the server
-    // recomputes the next run whenever the timezone changes, so this is a timing
-    // edit even when the cadence controls were never touched.
-    dirtyFields.timezone === true ||
     dirtyFields.hour12 === true ||
     dirtyFields.minute === true ||
     dirtyFields.meridiem === true ||
     dirtyFields.dayOfWeek === true ||
     dirtyFields.expression === true;
+  /** Whether this submit changes the schedule's TIMING. The zone alone re-times
+   *  every occurrence (the server recomputes the next run and re-measures the
+   *  interval floor against the effective cadence/zone pair), so the floor below
+   *  validates it even though no cadence travels with it. */
+  const timingTouched = cadenceTouched || dirtyFields.timezone === true;
 
   const onSubmit = (values: ScheduleFormValues) => {
     if (schedule) {
@@ -499,7 +502,7 @@ export default function ScheduleDialog({
    *  be submitted, and to any edit leaving the schedule enabled. Renaming a DISABLED
    *  schedule whose stored cadence predates a raised floor is a valid maintenance edit
    *  the API accepts, so the dialog must not hold it hostage to a timing change. */
-  const floorApplies = schedule == null || cadenceTouched || schedule.enabled;
+  const floorApplies = schedule == null || timingTouched || schedule.enabled;
 
   /** Checked against the SAME function the server enforces with, so the dialog never
    *  offers a submit the API would answer 400 to. Only meaningful once the expression
