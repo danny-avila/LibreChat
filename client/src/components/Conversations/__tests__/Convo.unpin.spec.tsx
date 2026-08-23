@@ -13,6 +13,18 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: jest.fn() }),
   Spinner: () => <div data-testid="spinner" />,
   TooltipAnchor: ({ render: trigger }: { render: React.ReactNode }) => trigger,
+  /* Stands in for the shared primitive: the row's actions compose through it,
+   * so it has to pass its props to a real button for these assertions. */
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
 }));
 
 jest.mock('~/hooks', () => ({
