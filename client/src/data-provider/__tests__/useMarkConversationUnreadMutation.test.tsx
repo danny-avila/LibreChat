@@ -84,6 +84,30 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(cached()?.lastSeenAt).toBeUndefined();
   });
 
+  it('preserves an acknowledgement that landed while the unread request was open', async () => {
+    /* The user flags the conversation, then opens and reads the reply before the request
+       settles. Clearing that newer catch-up would show a dot the server no longer backs,
+       with the seen trigger's attempt guard suppressing the re-send. */
+    const request = deferred();
+    mockMarkUnread.mockReturnValue(request.promise);
+    const { result, cached, queryClient } = setup(RESPONDED_AT, SEEN_AT);
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({ conversationId: CONVO_ID });
+      /* After the optimistic clear: the seen mutation acknowledges the observed reply. */
+      await flush();
+      updateConvoInAllQueries(queryClient, CONVO_ID, (convo) => ({
+        ...convo,
+        lastSeenAt: RESPONDED_AT,
+      }));
+      request.resolve({ modified: true, lastResponseAt: RESPONDED_AT });
+      await pending;
+    });
+
+    expect(cached()?.lastSeenAt).toBe(RESPONDED_AT);
+    expect(isConversationUnseen(cached())).toBe(false);
+  });
+
   it('keeps a newer reply that arrived while the unread request was open', async () => {
     /* The server read the marker on the way in; a reply landing after that is newer than what
        it can return, and overwriting it would strand the dot behind a spent completion. */
