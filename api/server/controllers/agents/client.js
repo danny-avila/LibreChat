@@ -17,7 +17,7 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
-  createTokenCounter,
+  createCachedTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
@@ -3249,7 +3249,7 @@ class AgentClient extends BaseClient {
       };
 
       const toolSet = buildToolSet(this.options.agent);
-      const tokenCounter = createTokenCounter(this.getEncoding());
+      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       const skillPrimeResult = this.options.primeInvokedSkills
@@ -3889,7 +3889,7 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...seedContent);
       }
 
-      const tokenCounter = createTokenCounter(this.getEncoding());
+      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
       const agents = collectReachableAgents([
         this.options.agent,
         ...(this.agentConfigs?.size > 0 ? this.agentConfigs.values() : []),

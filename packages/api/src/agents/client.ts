@@ -6,9 +6,10 @@ import {
   getTokenCountForMessage,
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
+  markTokenCounterCacheCompatible,
 } from '@librechat/agents';
+import type { MessageContentComplex, TokenCounter } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
-import type { MessageContentComplex } from '@librechat/agents';
 import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { getSafeErrorMetadata, mergeQuotedText, formatQuotesAsMarkdown } from '~/utils';
@@ -378,9 +379,19 @@ export function countFormattedMessageTokens(
   return isClaude ? Math.ceil(numTokens * CLAUDE_TOKEN_CORRECTION) : numTokens;
 }
 
-export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getTokenCount>[1]) {
+export function createTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): TokenCounter {
+  return createMessageTokenCounter(encoding, (text: string) =>
+    Tokenizer.getTokenCount(text, encoding),
+  );
+}
+
+function createMessageTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+  countTokens: (text: string) => number,
+): TokenCounter {
   const isClaude = encoding === 'claude';
-  const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
   return function (message: BaseMessage): number {
     const count = getTokenCountForMessage(
       message,
@@ -389,6 +400,13 @@ export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getToke
     );
     return isClaude ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
   };
+}
+
+export async function createCachedTokenCounter(
+  encoding: Parameters<typeof Tokenizer.getTokenCount>[1],
+): Promise<TokenCounter> {
+  const countTokens = await Tokenizer.createExactTokenCounter(encoding ?? 'o200k_base');
+  return markTokenCounterCacheCompatible(createMessageTokenCounter(encoding, countTokens));
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {
