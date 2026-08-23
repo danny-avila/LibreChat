@@ -2410,5 +2410,7 @@
   "com_insights_start_date": "Start date",
   "com_insights_end_date": "End date",
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
-  "com_insights_sparkline_accessibility": "{{label}} over time"
+  "com_insights_sparkline_accessibility": "{{label}} over time",
+  "com_nav_mobile_drawer_strip": "Show chat beside the sidebar on mobile",
+  "com_nav_mobile_drawer_strip_info": "The sidebar stops short of the edge so a strip of the conversation stays visible. Tapping it closes the sidebar."
 }

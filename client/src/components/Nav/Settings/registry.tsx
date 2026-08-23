@@ -122,6 +122,19 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
+    id: 'mobileDrawerStrip',
+    tab: GENERAL,
+    section: 'layout',
+    labelKey: 'com_nav_mobile_drawer_strip',
+    keywords: ['mobile', 'sidebar', 'drawer', 'swipe'],
+    Component: toggleControl({
+      stateAtom: store.mobileDrawerStrip,
+      localizationKey: 'com_nav_mobile_drawer_strip',
+      hoverCardText: 'com_nav_mobile_drawer_strip_info',
+      switchId: 'mobileDrawerStrip',
+    }),
+  },
+  {
     id: 'chatTitleInTab',
     tab: GENERAL,
     section: 'layout',
