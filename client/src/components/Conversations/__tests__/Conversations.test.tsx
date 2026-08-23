@@ -66,6 +66,8 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  /* The section headers compose through the shared variant recipe. */
+  buttonVariants: () => '',
   Spinner: () => <div data-testid="spinner" />,
   useMediaQuery: () => false,
   useToastContext: () => ({ showToast: jest.fn() }),

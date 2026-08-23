@@ -17,6 +17,7 @@ type ButtonVariantOptions =
         | 'secondary'
         | 'ghost'
         | 'row-action'
+        | 'section-header'
         | 'section-action'
         | 'header-action'
         | null
@@ -59,6 +60,14 @@ const buttonVariantRecipe = cva(
          * the thing being read, and its ring sits inside the control because
          * these sit close enough that an offset one would cross a neighbour.
          */
+        /**
+         * The toggle that heads a collapsible sidebar section, such as Chats,
+         * Projects and Pinned. It reads as a quiet label rather than a control
+         * until focused, and keeps its ring inset because these sit flush
+         * against the section body.
+         */
+        'section-header':
+          'justify-start gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary focus-visible:ring-inset focus-visible:ring-offset-0',
         'section-action':
           'rounded-md text-text-secondary hover:bg-surface-active-alt hover:text-text-primary focus-visible:ring-inset focus-visible:ring-offset-0',
         /**

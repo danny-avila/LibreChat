@@ -44,6 +44,8 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  /* The section headers compose through the shared variant recipe. */
+  buttonVariants: () => '',
   Skeleton: () => <div data-testid="favorite-skeleton" />,
   useMediaQuery: () => true,
   useToastContext: () => ({ showToast: jest.fn() }),

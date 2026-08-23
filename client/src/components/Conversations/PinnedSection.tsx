@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useDrag, useDragLayer, useDrop } from 'react-dnd';
-import { Skeleton, useMediaQuery, useToastContext } from '@librechat/client';
+import { Skeleton, useMediaQuery, useToastContext, buttonVariants } from '@librechat/client';
 import type { TConversation, TEndpointsConfig } from 'librechat-data-provider';
 import type {
   SelectEndpointHandler,
@@ -647,7 +647,7 @@ const PinnedSection = ({
       >
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className={cn(buttonVariants({ variant: 'section-header' }), 'group min-w-0 flex-1')}
           type="button"
           aria-expanded={isExpanded}
         >
