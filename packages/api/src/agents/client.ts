@@ -6,6 +6,7 @@ import {
   getTokenCountForMessage,
   estimateOpenAIImageTokens,
   estimateAnthropicImageTokens,
+  markTokenCounterCacheCompatible,
 } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { MessageContentComplex } from '@librechat/agents';
@@ -381,14 +382,14 @@ export function countFormattedMessageTokens(
 export function createTokenCounter(encoding: Parameters<typeof Tokenizer.getTokenCount>[1]) {
   const isClaude = encoding === 'claude';
   const countTokens = (text: string) => Tokenizer.getTokenCount(text, encoding);
-  return function (message: BaseMessage): number {
+  return markTokenCounterCacheCompatible(function (message: BaseMessage): number {
     const count = getTokenCountForMessage(
       message,
       countTokens,
       encoding as 'claude' | 'o200k_base',
     );
     return isClaude ? Math.ceil(count * CLAUDE_TOKEN_CORRECTION) : count;
-  };
+  });
 }
 
 export function logToolError(_graph: unknown, error: unknown, toolId: string): void {

@@ -1,12 +1,50 @@
 import { ContentTypes } from 'librechat-data-provider';
+import { Providers, StandardGraph } from '@librechat/agents';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type { TMessage } from 'librechat-data-provider';
 import {
+  createTokenCounter,
   prependQuotes,
   prependFileContext,
   applyAttachmentOnlyText,
   type FormattedMessageWithContent,
 } from './client';
 import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
+import Tokenizer from '~/utils/tokenizer';
+
+describe('createTokenCounter', () => {
+  it('enables stable-message reuse in the agents runtime', async () => {
+    await Tokenizer.initEncoding('o200k_base');
+    const getTokenCount = jest.spyOn(Tokenizer, 'getTokenCount');
+    try {
+      const tokenCounter = createTokenCounter('o200k_base');
+      const graph = new StandardGraph({
+        runId: 'token-cache-integration',
+        agents: [
+          {
+            agentId: 'primary',
+            provider: Providers.OPENAI,
+            instructions: 'Test instructions',
+          },
+        ],
+        tokenCounter,
+      });
+      const agentContext = graph.agentContexts.get('primary');
+      await agentContext?.tokenCalculationPromise;
+      getTokenCount.mockClear();
+      const message = new HumanMessage('Stable retained context');
+
+      agentContext?.contextPressureTokenCounts?.count(message);
+      const callsAfterFirstCount = getTokenCount.mock.calls.length;
+      agentContext?.contextPressureTokenCounts?.count(message);
+
+      expect(callsAfterFirstCount).toBeGreaterThan(0);
+      expect(getTokenCount).toHaveBeenCalledTimes(callsAfterFirstCount);
+    } finally {
+      getTokenCount.mockRestore();
+    }
+  });
+});
 
 describe('prependFileContext', () => {
   it('prepends file context to string content', () => {
