@@ -30,6 +30,8 @@ export interface SubagentThreadWriteTarget {
   userId: string;
   conversationId: string;
   tenantId?: string;
+  /** Conversation already read earlier in the request (`null` = looked up, absent). */
+  conversation?: IConversation | null;
 }
 
 interface SubagentThreadWriteResolution {
@@ -112,18 +114,23 @@ async function isBoundEventContinuation(
 
 async function resolveSubagentThreadWrite(
   { getConvo, store }: SubagentThreadWriteGuardDeps,
-  { userId, conversationId, tenantId }: SubagentThreadWriteTarget,
+  target: SubagentThreadWriteTarget,
 ): Promise<SubagentThreadWriteResolution> {
+  const { userId, conversationId, tenantId } = target;
+  const readConversation = (): Promise<IConversation | null> =>
+    target.conversation !== undefined
+      ? Promise.resolve(target.conversation)
+      : getConvo(userId, conversationId);
   /** New child IDs are returned synchronously by the SDK before Mongo creation can
    * finish. Their reserved UUID namespace closes that brief window on every replica. */
   if (isReservedSubagentThreadId(conversationId)) {
-    const conversation = await getConvo(userId, conversationId);
+    const conversation = await readConversation();
     return { blocked: true, conversation };
   }
   if (store.isThreadActiveForOwner(userId, conversationId, tenantId)) {
     return { blocked: true };
   }
-  const conversation = await getConvo(userId, conversationId);
+  const conversation = await readConversation();
   return { blocked: conversation?.subagentThread != null, conversation };
 }
 
@@ -159,10 +166,14 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
       typeof user?.tenantId === 'string' && user.tenantId !== '' ? user.tenantId : undefined;
 
     try {
+      const resolvedRequest = request as ResolvedConversationRequest;
       const resolved = await resolveSubagentThreadWrite(deps, {
         userId,
         conversationId: candidateConversationId,
         ...(tenantId == null ? {} : { tenantId }),
+        ...(Object.prototype.hasOwnProperty.call(request, 'resolvedConversation')
+          ? { conversation: resolvedRequest.resolvedConversation }
+          : {}),
       });
       if (resolved.conversation !== undefined) {
         (request as ResolvedConversationRequest).resolvedConversation = resolved.conversation;
@@ -171,7 +182,6 @@ export function createSubagentThreadTurnGuard(deps: SubagentThreadWriteGuardDeps
         next();
         return;
       }
-      const resolvedRequest = request as ResolvedConversationRequest;
       const resolvedConversation = resolved.conversation;
       const lineage = resolvedConversation?.subagentThread;
       const humanResume = deps.isHumanResumeAllowed;

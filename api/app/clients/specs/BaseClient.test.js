@@ -1,4 +1,5 @@
 const { Constants, ContentTypes } = require('librechat-data-provider');
+const BaseClientClass = require('../BaseClient');
 const { ContentFilterError } = require('@librechat/api');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
@@ -224,6 +225,39 @@ describe('BaseClient', () => {
     expect(result.messagesToRefine.length - 1).toEqual(expectedIndex);
     expect(result.remainingContextTokens).toBe(expectedRemainingContextTokens);
     expect(result.messagesToRefine).toEqual(expectedMessagesToRefine);
+  });
+
+  describe('loadHistory', () => {
+    const receiver = Object.assign(Object.create(BaseClientClass.prototype), {
+      user: 'user-1',
+      getMessageMapMethod: null,
+      shouldSummarize: false,
+      addPreviousAttachments: async (messages) => messages,
+    });
+    const loadHistory = (parentMessageId) => receiver.loadHistory('convo-1', parentMessageId);
+
+    beforeEach(() => {
+      getMessages.mockClear();
+    });
+
+    test('skips the database when the parent is the root sentinel: no message can match it', async () => {
+      const result = await loadHistory(Constants.NO_PARENT);
+
+      expect(result).toEqual([]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    test('still loads and walks the chain for a real parent', async () => {
+      getMessages.mockResolvedValueOnce([
+        { messageId: 'root', parentMessageId: Constants.NO_PARENT, text: 'a' },
+        { messageId: 'reply', parentMessageId: 'root', text: 'b' },
+      ]);
+
+      const result = await loadHistory('reply');
+
+      expect(getMessages).toHaveBeenCalledTimes(1);
+      expect(result.map((m) => m.messageId)).toEqual(['root', 'reply']);
+    });
   });
 
   describe('getMessagesForConversation', () => {

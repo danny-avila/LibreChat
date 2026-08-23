@@ -52,6 +52,7 @@ function createApp(
   store: SubagentThreadTaskStore,
   getEventBinding?: AllMethods['getAgentEventBinding'],
   isHumanResumeAllowed?: () => Promise<boolean>,
+  preResolved?: { conversation: IConversation | null },
 ) {
   const app = express();
   app.use(express.json());
@@ -59,6 +60,10 @@ function createApp(
     req.user = { id: 'user-1', tenantId: 'tenant-1' };
     (req as typeof req & { _isAgentTrigger?: boolean })._isAgentTrigger =
       req.get('x-test-trigger') === '1';
+    if (preResolved) {
+      (req as typeof req & { resolvedConversation?: IConversation | null }).resolvedConversation =
+        preResolved.conversation;
+    }
     next();
   });
   const guard = createSubagentThreadTurnGuard({
@@ -108,6 +113,39 @@ describe('subagent child-thread write policy', () => {
     });
     expect(fresh.status).toBe(200);
     expect(getConvo).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses a conversation an earlier middleware already read instead of re-reading it', async () => {
+    const getConvo = jest.fn();
+    const store = makeStore();
+
+    const ordinary = await request(
+      createApp(getConvo, store, undefined, undefined, {
+        conversation: {
+          conversationId: 'ordinary-conversation',
+          endpoint: 'agents',
+        } as IConversation,
+      }),
+    )
+      .post('/chat')
+      .send({ conversationId: 'ordinary-conversation' });
+    const child = await request(
+      createApp(getConvo, store, undefined, undefined, { conversation: childConversation() }),
+    )
+      .post('/chat')
+      .send({ conversationId: 'child-conversation', agent_id: 'child-agent' });
+    const absent = await request(
+      createApp(getConvo, store, undefined, undefined, { conversation: null }),
+    )
+      .post('/chat')
+      .send({ conversationId: 'missing-conversation' });
+
+    expect(ordinary.status).toBe(200);
+    expect(ordinary.body).toEqual({ ok: true, resolvedConversationId: 'ordinary-conversation' });
+    expect(child.status).toBe(409);
+    expect(child.body).toEqual({ error: CHILD_THREAD_READ_ONLY_ERROR });
+    expect(absent.status).toBe(200);
+    expect(getConvo).not.toHaveBeenCalled();
   });
 
   it('rejects every model-bound human turn against a durable child conversation', async () => {

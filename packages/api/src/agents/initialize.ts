@@ -188,6 +188,32 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
     .join('\n\n');
 }
 
+/**
+ * The request middleware already read this conversation once (`null` = looked up, absent).
+ * Only a resolved document that actually carries `files` can stand in for the database:
+ * bound agent-event continuations stash a partial document built from lineage alone.
+ */
+export function readResolvedConversationFiles(
+  req: Pick<ServerRequest, 'resolvedConversation'>,
+  conversationId: string,
+): string[] | undefined {
+  if (!Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')) {
+    return undefined;
+  }
+  const resolved = req.resolvedConversation;
+  if (resolved === null) {
+    return [];
+  }
+  if (
+    resolved == null ||
+    resolved.conversationId !== conversationId ||
+    !Object.prototype.hasOwnProperty.call(resolved, 'files')
+  ) {
+    return undefined;
+  }
+  return resolved.files ?? [];
+}
+
 function getMaxCatalogSkills(req: ServerRequest): number | undefined {
   const endpoints = req.config?.endpoints as
     | Record<string, { skills?: { maxCatalogSkills?: number } } | undefined>
@@ -987,7 +1013,7 @@ export async function initializeAgent(
      * every code-output ref.
      */
     const [convoFileIds, threadMessages] = await Promise.all([
-      db.getConvoFiles(conversationId),
+      readResolvedConversationFiles(req, conversationId) ?? db.getConvoFiles(conversationId),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
