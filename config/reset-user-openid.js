@@ -3,8 +3,11 @@
 // @ts-nocheck
 const path = require('path');
 const mongoose = require('mongoose');
+const { CacheKeys } = require('librechat-data-provider');
+const { invalidateCachedAuthUserDoc } = require('@librechat/api');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const getLogStores = require('~/cache/getLogStores');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -125,6 +128,29 @@ async function gracefulExit(code = 0) {
   // and the OIDC login flow (api/strategies/openidStrategy.js) would then
   // silently write openidId back onto the user — undoing this reset.
   await User.updateOne({ _id: user._id }, { $unset: { openidId: '', idOnTheSource: '' } });
+
+  // Per AGENTS.md: any user-document mutation must invalidate the auth-user-doc
+  // cache. openIdJwtStrategy.js (api/strategies/openIdJwtStrategy.js) keys this
+  // cache on { strategy, subject/sub, issuer, tenantId|openid_user_id-scope } —
+  // not on the Mongo _id — so this script can't reconstruct the exact cache key.
+  // invalidateCachedAuthUserDoc keeps a userId-keyed reverse index precisely for
+  // this: pass userId alone and it sweeps every cached entry for that user,
+  // regardless of which strategy/issuer/scope produced it. Without this,
+  // openIdJwtStrategy keeps building req.user from the stale cached document
+  // (with the old openidId/idOnTheSource) until the cache TTL expires.
+  try {
+    const authUserCacheStore = getLogStores(CacheKeys.AUTH_USER_DOC);
+    if (authUserCacheStore) {
+      await invalidateCachedAuthUserDoc(authUserCacheStore, { userId: user._id.toString() });
+    }
+  } catch (err) {
+    console.error('Warning: failed to invalidate auth-user-doc cache:', err);
+    console.yellow(
+      'The MongoDB fields were cleared, but a cached auth-user document may still be ' +
+        'serving the old openidId/idOnTheSource until it expires. If AUTH_USER_CACHE_MODE=on, ' +
+        'run `npm run flush-cache` or restart the backend to force re-authentication.',
+    );
+  }
 
   console.green(
     `✔ Successfully cleared openidId and idOnTheSource for user ${user.email} (${user._id}).`,
