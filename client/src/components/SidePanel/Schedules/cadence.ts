@@ -3,8 +3,6 @@ import type { TScheduleCadence } from 'librechat-data-provider';
 import type { WeekStartDay } from '~/utils/clock';
 import type { LocalizeFunction } from '~/common';
 
-export type Meridiem = 'AM' | 'PM';
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Mirrors the server's default weekly day (Monday) when a weekly cadence omits
@@ -15,14 +13,6 @@ const WEEKLY_DEFAULT_DAY = 1;
 const SUNDAY_UTC = Date.UTC(2021, 7, 1);
 
 export const UTC_TIMEZONE = 'UTC';
-
-export const to12Hour = (hour: number): { hour12: number; meridiem: Meridiem } => ({
-  hour12: hour % 12 === 0 ? 12 : hour % 12,
-  meridiem: hour >= 12 ? 'PM' : 'AM',
-});
-
-export const to24Hour = (hour12: number, meridiem: Meridiem): number =>
-  meridiem === 'PM' ? (hour12 % 12) + 12 : hour12 % 12;
 
 export const formatScheduleTime = (
   hour: number,
