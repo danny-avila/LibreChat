@@ -311,6 +311,8 @@ describe('ScheduleDialog', () => {
 
       expect(screen.getByText(/com_ui_schedule_min_interval/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'com_ui_create' })).toBeDisabled();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field.getAttribute('aria-describedby')).toContain('schedule-cadence-message');
     });
 
     it('still lets a disabled schedule below the floor be renamed', async () => {

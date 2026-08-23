@@ -741,8 +741,16 @@ export default function ScheduleDialog({
                   autoComplete="off"
                   placeholder={DEFAULT_CRON}
                   maxLength={SCHEDULE_CRON_MAX_LENGTH}
-                  aria-invalid={!cronIsValid}
-                  aria-describedby="schedule-cron-hint schedule-cron-message"
+                  aria-invalid={!cronIsValid || belowFloor}
+                  aria-describedby={
+                    // The floor message renders under the summary as
+                    // `schedule-cadence-message`; a floor-violating expression must
+                    // still mark THIS input invalid and point at that message, or a
+                    // screen reader finds a disabled Create with no stated reason.
+                    belowFloor
+                      ? 'schedule-cron-hint schedule-cron-message schedule-cadence-message'
+                      : 'schedule-cron-hint schedule-cron-message'
+                  }
                   data-testid="schedule-cron-input"
                   {...register('expression')}
                 />
