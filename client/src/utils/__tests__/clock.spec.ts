@@ -101,6 +101,14 @@ describe('localeWeekStartsOn', () => {
     });
   });
 
+  it('keeps the Maldives on Friday in the same fallback', () => {
+    withoutEngineWeekData(() => {
+      // CLDR's lone Friday-first territory, reachable as dv-MV or bare dv.
+      expect(localeWeekStartsOn('dv-MV')).toBe(5);
+      expect(localeWeekStartsOn('dv')).toBe(5);
+    });
+  });
+
   it('keeps Sunday-first and Monday-first regions apart in the same fallback', () => {
     withoutEngineWeekData(() => {
       expect(localeWeekStartsOn('en-US')).toBe(0);

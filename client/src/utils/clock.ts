@@ -83,7 +83,7 @@ export type WeekStartDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
  * always override, so an imperfect fallback is an acceptable degrade rather
  * than a correctness bug.
  */
-const SATURDAY_FIRST_FALLBACK_REGIONS = new Set([
+const SATURDAY_FIRST_FALLBACK_REGIONS = [
   'AF',
   'BH',
   'DJ',
@@ -98,19 +98,16 @@ const SATURDAY_FIRST_FALLBACK_REGIONS = new Set([
   'QA',
   'SD',
   'SY',
-]);
+];
 
-const SUNDAY_FIRST_FALLBACK_REGIONS = new Set([
-  'US',
-  'CA',
-  'MX',
-  'BR',
-  'JP',
-  'KR',
-  'PH',
-  'IL',
-  'SA',
-  'ZA',
+const SUNDAY_FIRST_FALLBACK_REGIONS = ['US', 'CA', 'MX', 'BR', 'JP', 'KR', 'PH', 'IL', 'SA', 'ZA'];
+
+const FALLBACK_REGION_WEEK_START = new Map<string, WeekStartDay>([
+  ...SATURDAY_FIRST_FALLBACK_REGIONS.map((region): [string, WeekStartDay] => [region, 6]),
+  ...SUNDAY_FIRST_FALLBACK_REGIONS.map((region): [string, WeekStartDay] => [region, 0]),
+  // The Maldives is CLDR's lone Friday-first territory, and the selector offers
+  // no Friday override for an affected user to recover with.
+  ['MV', 5],
 ]);
 
 /** `Intl.Locale.prototype.getWeekInfo`/`.weekInfo` (Baseline 2024) predate this
@@ -168,13 +165,10 @@ export const localeWeekStartsOn = (locale?: string): WeekStartDay => {
   if (region == null) {
     return 1;
   }
-  // Saturday first: the type above allows it, and without these entries a user
-  // in `ar-EG` or `fa-IR` on such an engine had no route back to their own week
-  // order, since the selector offers no explicit Saturday override.
-  if (SATURDAY_FIRST_FALLBACK_REGIONS.has(region)) {
-    return 6;
-  }
-  return SUNDAY_FIRST_FALLBACK_REGIONS.has(region) ? 0 : 1;
+  // The mapped days matter doubly here: the type above allows them, but the
+  // selector offers no Saturday or Friday override, so a user in `ar-EG` or
+  // `dv-MV` on such an engine has no other route back to their own week order.
+  return FALLBACK_REGION_WEEK_START.get(region) ?? 1;
 };
 
 /** Resolves the "Week starts on" setting to a concrete day index (0 = Sunday, 1 = Monday). */
