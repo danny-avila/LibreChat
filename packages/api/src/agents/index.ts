@@ -11,6 +11,7 @@ export * from './conversation';
 export * from './discovery';
 export * from './edges';
 export * from './errors';
+export * from './eventRetention';
 export * from './envelope';
 export * from './execution';
 export * from './handlers';

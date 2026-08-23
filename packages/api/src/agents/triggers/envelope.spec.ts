@@ -125,6 +125,34 @@ describe('createAgentTriggerEnvelope', () => {
     expect(parseAgentTriggerEnvelope(JSON.parse(JSON.stringify(envelope)))).toEqual(envelope);
   });
 
+  it('preserves only complete authenticated binding metadata on continuations', () => {
+    const envelope = createAgentTriggerEnvelope({
+      ...createFireInput(),
+      mode: 'continue',
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+    });
+
+    expect(parseAgentTriggerEnvelope(JSON.parse(JSON.stringify(envelope)))).toEqual(envelope);
+    expect(() =>
+      createAgentTriggerEnvelope({
+        ...createFireInput(),
+        mode: 'continue',
+        target: {
+          agentId: 'agent-1',
+          conversationId: 'conversation-1',
+          parentMessageId: 'response-1',
+          bindingId: `evtbind_${'a'.repeat(48)}`,
+        },
+      }),
+    ).toThrow('target.bindingId and target.sourceKeyId must be provided together');
+  });
+
   it('builds a stable generation-compatible idempotency key per delivery target', () => {
     const first = createAgentTriggerEnvelope(createFireInput());
     const retry = createAgentTriggerEnvelope({

@@ -19,7 +19,12 @@
  *   }
  */
 const express = require('express');
-const { createAgentTriggerIngressHandlers, createMessageFilterPii } = require('@librechat/api');
+const {
+  createAgentEventBindingHandlers,
+  createAgentTriggerIngressHandlers,
+  createMessageFilterPii,
+  isEnabled,
+} = require('@librechat/api');
 const {
   OpenAIChatCompletionController,
   ListModelsController,
@@ -37,17 +42,39 @@ const {
   requireRemoteAgentAuth,
   checkRemoteAgentsFeature,
 } = require('./middleware');
+const db = require('~/models');
 
 const router = express.Router();
 const eventHandlers = createAgentTriggerIngressHandlers({
   enqueue: enqueueAgentTrigger,
   getDeliveryStatus: getAgentTriggerDeliveryStatus,
 });
+const eventBindingHandlers = createAgentEventBindingHandlers({
+  getAgent: db.getAgent,
+  getConvo: db.getConvo,
+  getBinding: db.getAgentEventBinding,
+  getMessage: db.getMessage,
+  deleteConvos: db.deleteConvos,
+  reserveThread: db.reserveSubagentThread,
+  enabled: () => isEnabled(process.env.ENABLE_AGENT_EVENT_CHILD_TURNS),
+});
 
 router.use(preAuthTenantMiddleware);
 router.use(requireRemoteAgentAuth);
 router.use(configMiddleware);
 router.use(checkRemoteAgentsFeature);
+
+/**
+ * @route POST /v1/events/bindings
+ * @desc Bind one authenticated source key to a durable child actor thread
+ * @access Private (API key auth required)
+ */
+router.post(
+  '/events/bindings',
+  agentEventUserLimiter,
+  checkAgentTriggerPermission,
+  eventBindingHandlers.register,
+);
 
 /**
  * @route POST /v1/events
@@ -58,6 +85,7 @@ router.post(
   '/events',
   agentEventUserLimiter,
   createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  eventBindingHandlers.resolve,
   checkAgentTriggerPermission,
   eventHandlers.enqueueEvent,
 );

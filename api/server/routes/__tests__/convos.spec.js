@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
-const { archiveAllHandler, subagentActivityHandlerInputs } = require(MOCKS);
+const { archiveAllHandler, generationJobManager, subagentActivityHandlerInputs } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () =>
@@ -33,7 +33,13 @@ jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () =>
 describe('Convos Routes', () => {
   let app;
   let convosRouter;
-  const { deleteToolCalls, deleteConvos, getConvo, saveConvo } = require('~/models');
+  const {
+    deleteToolCalls,
+    deleteConvos,
+    deleteMessages,
+    getConvo,
+    saveConvo,
+  } = require('~/models');
   const {
     deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
@@ -73,6 +79,8 @@ describe('Convos Routes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    generationJobManager.getJob.mockResolvedValue(null);
+    generationJobManager.abortJob.mockResolvedValue({ success: true });
   });
 
   it('binds the activity subscription adapter to the subagent task store', () => {
@@ -303,6 +311,31 @@ describe('Convos Routes', () => {
       expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
     });
 
+    it('drains a paused event actor after owner-wide deletion removes its conversation', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'paused-event-child'
+          ? {
+              metadata: { userId: 'test-user-123' },
+              status: 'requires_action',
+              createdAt,
+            }
+          : null,
+      );
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('paused-event-child', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
       const mockDbResponse = {
         deletedCount: 5,
@@ -322,7 +355,11 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockDbResponse);
 
       /** Verify deleteConvos was called with correct userId */
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        {},
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
       expect(deleteConvos).toHaveBeenCalledTimes(1);
 
       /** Verify deleteToolCalls was called with correct userId */
@@ -501,7 +538,54 @@ describe('Convos Routes', () => {
       expect(subagentThreadStore.withOwnerDeletionFence).toHaveBeenCalledTimes(1);
       expect(subagentThreadStore.withOwnerDeletionFence.mock.calls[0][0]).toBe('test-user-123');
       expect(subagentThreadStore.cancelAndDrainForOwner).not.toHaveBeenCalled();
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {});
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        {},
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
+    });
+
+    it('drains a paused event actor after an empty-filter deletion removes it', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'paused-event-child'
+          ? {
+              metadata: { userId: 'test-user-123' },
+              status: 'requires_action',
+              createdAt,
+            }
+          : null,
+      );
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('paused-event-child', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+    });
+
+    it('fails closed before checkpoint pruning when generation lookup stays unavailable', async () => {
+      deleteConvos.mockResolvedValue({
+        deletedCount: 1,
+        conversationIds: ['paused-event-child'],
+      });
+      generationJobManager.getJob.mockRejectedValue(new Error('generation store unavailable'));
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { thread_id: 'thread-abc' } });
+
+      expect(response.status).toBe(500);
+      expect(generationJobManager.getJob).toHaveBeenCalledTimes(3);
+      expect(deleteAgentCheckpoints).not.toHaveBeenCalled();
     });
 
     it('cancels root and descendant leases and cleans every cascaded conversation', async () => {
@@ -545,6 +629,117 @@ describe('Convos Routes', () => {
       ]);
     });
 
+    it('drains an active child generation and removes persistence that races deletion', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'child-conversation'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('child-conversation', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(deleteConvos).toHaveBeenNthCalledWith(2, 'test-user-123', {
+        conversationId: { $in: ['parent-conversation', 'child-conversation'] },
+      });
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'test-user-123',
+        conversationId: { $in: ['parent-conversation', 'child-conversation'] },
+      });
+    });
+
+    it('does not prune generation persistence when provider stop is unconfirmed', async () => {
+      const createdAt = Date.now();
+      let deletionCommitted = false;
+      deleteConvos.mockImplementation(async (_userId, _filter, options) => {
+        await options.beforeDelete(['child-conversation']);
+        deletionCommitted = true;
+        return {
+          deletedCount: 2,
+          conversationIds: ['parent-conversation', 'child-conversation'],
+        };
+      });
+      generationJobManager.getJob.mockImplementation(async (conversationId) =>
+        conversationId === 'child-conversation'
+          ? { metadata: { userId: 'test-user-123' }, status: 'running', createdAt }
+          : null,
+      );
+      generationJobManager.abortJob.mockResolvedValue({
+        success: false,
+        failureReason: 'job_still_active',
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(500);
+      expect(deleteConvos).toHaveBeenCalledTimes(1);
+      expect(deletionCommitted).toBe(false);
+      expect(deleteMessages).not.toHaveBeenCalled();
+    });
+
+    it('drains terminal persistence only for leases removed by this deletion', async () => {
+      const createdAt = Date.now();
+      deleteConvos.mockResolvedValue({
+        deletedCount: 2,
+        conversationIds: ['parent-conversation', 'child-conversation'],
+      });
+      subagentThreadStore.planCancellationForConversations.mockResolvedValueOnce({
+        userId: 'test-user-123',
+        conversationIds: ['parent-conversation'],
+        scopes: [],
+        leases: [
+          {
+            taskId: 'related-generation',
+            parentConversationId: 'parent-conversation',
+            conversationId: 'child-conversation',
+          },
+          {
+            taskId: 'unrelated-generation',
+            parentConversationId: 'other-parent',
+            conversationId: 'other-child',
+          },
+        ],
+      });
+      let relatedReads = 0;
+      generationJobManager.getJob.mockImplementation(async (conversationId) => {
+        if (conversationId !== 'related-generation') return null;
+        relatedReads += 1;
+        return {
+          status: 'complete',
+          createdAt,
+          metadata: {
+            userId: 'test-user-123',
+            terminalPersistencePending: relatedReads === 1,
+          },
+        };
+      });
+
+      const response = await request(app)
+        .delete('/api/convos')
+        .send({ arg: { conversationId: 'parent-conversation' } });
+
+      expect(response.status).toBe(201);
+      expect(generationJobManager.abortJob).toHaveBeenCalledWith('related-generation', {
+        expectedCreatedAt: createdAt,
+        awaitProviderDrain: true,
+      });
+      expect(generationJobManager.getJob).not.toHaveBeenCalledWith('unrelated-generation');
+      expect(deleteConvos).toHaveBeenCalledTimes(2);
+    });
+
     it('should delete a single conversation, tool calls, and associated shared links', async () => {
       const mockConversationId = 'conv-123';
       const mockDbResponse = {
@@ -571,9 +766,11 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockDbResponse);
 
       /** Verify deleteConvos was called with correct parameters */
-      expect(deleteConvos).toHaveBeenCalledWith('test-user-123', {
-        conversationId: mockConversationId,
-      });
+      expect(deleteConvos).toHaveBeenCalledWith(
+        'test-user-123',
+        { conversationId: mockConversationId },
+        expect.objectContaining({ beforeDelete: expect.any(Function) }),
+      );
 
       /** Verify deleteToolCalls was called */
       expect(deleteToolCalls).toHaveBeenCalledWith('test-user-123', mockConversationId);

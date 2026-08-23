@@ -6,6 +6,7 @@ const {
   duplicateIoRedisClient,
   createSubagentThreadTaskStore,
   createSubagentCompletionWakeupHandler,
+  GenerationJobManager,
   RedisSubagentTaskControlTransport,
   RedisEventTransport,
   SubagentActivityStream,
@@ -17,6 +18,40 @@ const { enqueueAgentTrigger } = require('../../Agents/triggers');
  * permanently reject the new `continue` envelope. Enable only after every API
  * replica runs a release that understands completion wakeups. */
 const completionWakeupsEnabled = isEnabled(process.env.ENABLE_SUBAGENT_COMPLETION_WAKEUPS);
+const GENERATION_DRAIN_TIMEOUT_MS = 45_000;
+const GENERATION_DRAIN_POLL_MS = 100;
+
+async function cancelUnroutedGeneration({ userId, tenantId, taskId }) {
+  let job = await GenerationJobManager.getJob(taskId);
+  if (
+    job == null ||
+    job.metadata?.userId !== userId ||
+    (job.metadata?.tenantId ?? undefined) !== tenantId
+  ) {
+    return false;
+  }
+  await GenerationJobManager.abortJob(taskId, {
+    expectedCreatedAt: job.createdAt,
+    awaitProviderDrain: true,
+  });
+  const deadline = Date.now() + GENERATION_DRAIN_TIMEOUT_MS;
+  while (true) {
+    job = await GenerationJobManager.getJob(taskId);
+    if (job == null || job.metadata?.terminalPersistencePending !== true) {
+      return (
+        job == null ||
+        (job.metadata?.userId === userId &&
+          (job.metadata?.tenantId ?? undefined) === tenantId &&
+          job.status !== 'running' &&
+          job.status !== 'requires_action')
+      );
+    }
+    if (Date.now() >= deadline) {
+      return false;
+    }
+    await new Promise((resolve) => setTimeout(resolve, GENERATION_DRAIN_POLL_MS));
+  }
+}
 
 /** Durable logical threads use normal LibreChat conversations/messages. Mongo
  * fences continuation; optional Redis routing reaches the live owning process. */
@@ -42,6 +77,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     fenceOwnerAdmission: db.fenceSubagentAdmission,
     renewOwnerAdmission: db.renewSubagentAdmission,
     releaseOwnerAdmission: db.releaseSubagentAdmission,
+    cancelUnroutedTask: cancelUnroutedGeneration,
     ...(completionWakeupsEnabled && {
       onTaskPrepared: createSubagentCompletionWakeupHandler(enqueueAgentTrigger),
     }),

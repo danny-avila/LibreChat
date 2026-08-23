@@ -62,6 +62,7 @@ function createApp(
     role: 'USER',
     tenantId: 'tenant-1',
   },
+  bindingResolved = false,
 ): Application {
   const app = express();
   const handlers = createAgentTriggerIngressHandlers(deps);
@@ -71,6 +72,7 @@ function createApp(
       user: user ?? undefined,
       apiKeyId: API_KEY_ID,
       requestId: 'request-from-context',
+      _agentEventBindingResolved: bindingResolved,
     });
     next();
   });
@@ -165,6 +167,40 @@ describe('agent trigger event ingress', () => {
           preempt: true,
         },
       }),
+      {},
+    );
+  });
+
+  it('admits continue only after a source binding resolved its trusted target', async () => {
+    const event = {
+      mode: 'continue',
+      event: fireEvent().event,
+      target: {
+        agentId: 'agent-player',
+        conversationId: 'child-thread',
+        parentMessageId: 'placeholder',
+        bindingId: `evtbind_${'a'.repeat(48)}`,
+        sourceKeyId: 'source-key',
+      },
+      input: 'Make the next move.',
+    };
+    const rejected = dependencies();
+    const accepted = dependencies();
+
+    const directResponse = await request(createApp(rejected))
+      .post('/api/agents/v1/events')
+      .set('Idempotency-Key', 'continue-direct')
+      .send(event);
+    const boundResponse = await request(createApp(accepted, undefined, true))
+      .post('/api/agents/v1/events')
+      .set('Idempotency-Key', 'continue-bound')
+      .send(event);
+
+    expect(directResponse.status).toBe(400);
+    expect(rejected.enqueue).not.toHaveBeenCalled();
+    expect(boundResponse.status).toBe(202);
+    expect(accepted.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'continue', target: event.target }),
       {},
     );
   });

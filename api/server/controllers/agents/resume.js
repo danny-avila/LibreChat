@@ -38,6 +38,7 @@ const {
   toPendingSteer,
   createMCPRuntimeRequestBody,
   getSafeErrorMetadata,
+  isAgentEventRetentionActive,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -55,7 +56,11 @@ const {
   getActions,
   getUserMemories,
   getRoleByName,
+  isSubagentOwnerAdmissible,
 } = require('~/models');
+const {
+  acquireEventChildGenerationLease,
+} = require('~/server/services/Endpoints/agents/eventChildLease');
 const {
   recordScheduleOutcome,
   claimScheduleResume,
@@ -240,6 +245,7 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
     {
       userId,
       isTemporary: meta.isTemporary ?? req.body?.isTemporary,
+      expiredAt: req._agentEventBindingRetention?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     },
     {
@@ -454,7 +460,12 @@ async function finalizeResumedTurn({
   let terminalPublicationStarted = false;
   try {
     const savedResponseMessage = await saveMessage(
-      { userId, isTemporary, interfaceConfig: req?.config?.interfaceConfig },
+      {
+        userId,
+        isTemporary,
+        expiredAt: req._agentEventBindingRetention?.expiredAt,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
       responseMessage,
       { context: 'api/server/controllers/agents/resume.js - resumed response end' },
     );
@@ -1091,121 +1102,228 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
   };
 
-  // Atomically claim the resume. The single winner drives the run; a racing second
-  // submit (double-click, two tabs) gets false and must not re-drive — that would
-  // re-execute tools and double-bill.
-  //
-  // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
-  // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
-  // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
-  // the user when they retry the still-paused approval. Release the slot on that path too.
-  let claimed;
+  let releaseEventChildLease;
+  let eventLeaseTransferredToRun = false;
   const providerExecutionId = randomUUID();
   try {
-    /** The CAS that reopens steering must also publish THIS owner's seal
-     *  capability. A separate write after status=`running` leaves a window in
-     *  which steer/arm requests read the previous replica's capability. */
-    claimed = await GenerationJobManager.approvals.resolve(
-      streamId,
-      pendingAction.actionId,
-      {
-        preemptCapable: isSteerPreemptSupported(),
-        providerExecutionId,
-        providerDrained: true,
-        ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),
-      },
-      job.createdAt,
-    );
-  } catch (err) {
-    const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
-    await rollbackUnconsumedScheduleClaim(currentJob);
-    await releaseScheduleFence();
-    await decrementPendingRequest(userId);
-    logger.error('[ResumeAgentController] Failed to claim resume', getSafeErrorMetadata(err));
-    return sendGenerationJson(res, 500, { error: 'Failed to resume' }, generationProtocolVersion);
-  }
-  if (!claimed) {
-    await decrementPendingRequest(userId);
-    const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
-    await rollbackUnconsumedScheduleClaim(currentJob);
-    await releaseScheduleFence();
-    if (currentJob != null && currentJob.createdAt !== job.createdAt) {
-      return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
-    }
-    return sendGenerationJson(
-      res,
-      409,
-      { error: 'This action was already resolved or has expired' },
-      generationProtocolVersion,
-    );
-  }
-
-  // Linearize the consumed approval against the schedule's live config. The schedule
-  // document fence was acquired only after all async policy reads, and this atomic
-  // consume checks its token/revision/enabled state immediately after the approval CAS.
-  // An edit/disable that won first makes this fail; one that lands afterward is ordered
-  // after the continuation has started. Never begin provider execution on a stale claim.
-  if (scheduleId) {
-    let scheduleClaimCurrent = false;
-    try {
-      scheduleClaimCurrent = await finalizeScheduleResumeClaim(
-        scheduleId,
-        scheduleResumeClaimToken,
-        scheduleResumeLeaseBy,
-        scheduleResumeOptions,
-      );
-    } catch (error) {
-      logger.error('[ResumeAgentController] Failed to finalize scheduled resume fence', error);
-      await releaseScheduleFence();
-    }
-    if (!scheduleClaimCurrent) {
-      await decrementPendingRequest(userId);
-      let stopped = false;
+    if (req._agentEventBindingParentConversationId != null) {
       try {
-        const abortResult = await GenerationJobManager.abortJob(streamId, {
-          expectedCreatedAt: job.createdAt,
-          awaitProviderDrain: true,
+        releaseEventChildLease = await acquireEventChildGenerationLease({
+          userId,
+          tenantId: req._agentEventBindingTenantId,
+          conversationId,
+          streamId,
+          jobCreatedAt: job.createdAt,
+          retentionExpiresAt: req._agentEventBindingRetention?.expiredAt,
         });
-        // Same authoritative gate as the inactive-schedule path above: only a landed
-        // abort (or an already-terminal, drained generation) may settle this occurrence.
-        stopped = isStopConfirmed(abortResult);
       } catch (error) {
-        logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
-      }
-      if (!stopped) {
+        logger.warn('[ResumeAgentController] Event actor resume lease is unavailable', error);
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
         res.set('Retry-After', '1');
         return sendGenerationJson(
           res,
           503,
           {
-            code: 'SCHEDULE_STOP_UNCONFIRMED',
-            error: 'The stale scheduled resume could not be confirmed stopped.',
+            code: 'EVENT_ACTOR_LEASE_UNAVAILABLE',
+            error: 'The event actor lease is temporarily unavailable',
           },
           generationProtocolVersion,
         );
       }
-      await recordScheduleOutcome({
-        scheduleId,
-        scheduledFor,
+      if (releaseEventChildLease == null) {
+        const bindingActive = isAgentEventRetentionActive(
+          req._agentEventBindingRetention?.expiredAt,
+        );
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
+        if (bindingActive) {
+          res.set('Retry-After', '1');
+        }
+        return sendGenerationJson(
+          res,
+          409,
+          {
+            code: bindingActive ? 'EVENT_ACTOR_NOT_READY' : 'EVENT_BINDING_PARENT_ENDED',
+            error: bindingActive
+              ? 'The event actor is still finishing its previous segment'
+              : 'The event binding parent is no longer available',
+          },
+          generationProtocolVersion,
+        );
+      }
+
+      /** Validate the durable parent/owner fence before consuming the HITL action.
+       * Once `approvals.resolve` wins its CAS, the action is irreversibly spent; a
+       * retryable fence rejection after that point could never replay the user's
+       * decision. A deletion that starts after this check observes the generation
+       * job plus the event-child lease and owns the corresponding abort. */
+      let eventActorRejection;
+      try {
+        const [eventParent, ownerAdmissible] = await Promise.all([
+          getConvo(userId, req._agentEventBindingParentConversationId),
+          isSubagentOwnerAdmissible(userId),
+        ]);
+        if (!ownerAdmissible) {
+          eventActorRejection = {
+            code: 'EVENT_ACTOR_NOT_READY',
+            error: 'The event actor owner is temporarily unavailable',
+          };
+        } else if (
+          eventParent == null ||
+          eventParent.subagentThread != null ||
+          eventParent.agent_id !== req._agentEventBindingParentAgentId ||
+          (eventParent.tenantId ?? undefined) !== req._agentEventBindingTenantId ||
+          !isAgentEventRetentionActive(req._agentEventBindingRetention?.expiredAt) ||
+          !isAgentEventRetentionActive(eventParent.expiredAt)
+        ) {
+          eventActorRejection = {
+            code: 'EVENT_BINDING_PARENT_ENDED',
+            error: 'The event binding parent is no longer available',
+          };
+        }
+      } catch (error) {
+        logger.warn('[ResumeAgentController] Event actor fence recheck failed', error);
+        eventActorRejection = {
+          code: 'EVENT_ACTOR_NOT_READY',
+          error: 'The event actor owner is temporarily unavailable',
+        };
+      }
+      if (eventActorRejection != null) {
+        const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+        await rollbackUnconsumedScheduleClaim(currentJob);
+        await releaseScheduleFence();
+        await decrementPendingRequest(userId);
+        return sendGenerationJson(res, 409, eventActorRejection, generationProtocolVersion);
+      }
+    }
+
+    // Atomically claim the resume. The single winner drives the run; a racing second
+    // submit (double-click, two tabs) gets false and must not re-drive — that would
+    // re-execute tools and double-bill.
+    //
+    // The claim runs AFTER the slot increment above but BEFORE the run's own try/finally
+    // that releases it, so a store/Redis error here (unlike the clean `!claimed` branch)
+    // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
+    // the user when they retry the still-paused approval. Release the slot on that path too.
+    let claimed;
+    try {
+      /** The CAS that reopens steering must also publish THIS owner's seal
+       *  capability. A separate write after status=`running` leaves a window in
+       *  which steer/arm requests read the previous replica's capability. */
+      claimed = await GenerationJobManager.approvals.resolve(
         streamId,
-        jobCreatedAt: job.createdAt,
-        status: 'interrupted',
-        conversationId,
-        error: 'Schedule was disabled, changed, or deleted before approval',
-      });
-      if (checkpointNamespace !== '') {
-        await deleteAgentCheckpoint(conversationId, checkpointerCfg, undefined, {
-          checkpointNamespace,
-        }).catch((error) => {
-          logger.warn('[ResumeAgentController] Failed to prune stale schedule checkpoint', error);
-        });
+        pendingAction.actionId,
+        {
+          preemptCapable: isSteerPreemptSupported(),
+          providerExecutionId,
+          providerDrained: true,
+          ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),
+        },
+        job.createdAt,
+      );
+    } catch (err) {
+      const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      await rollbackUnconsumedScheduleClaim(currentJob);
+      await releaseScheduleFence();
+      await decrementPendingRequest(userId);
+      logger.error('[ResumeAgentController] Failed to claim resume', getSafeErrorMetadata(err));
+      return sendGenerationJson(res, 500, { error: 'Failed to resume' }, generationProtocolVersion);
+    }
+    if (!claimed) {
+      await decrementPendingRequest(userId);
+      const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+      await rollbackUnconsumedScheduleClaim(currentJob);
+      await releaseScheduleFence();
+      if (currentJob != null && currentJob.createdAt !== job.createdAt) {
+        return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
       }
       return sendGenerationJson(
         res,
         409,
-        { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
+        { error: 'This action was already resolved or has expired' },
         generationProtocolVersion,
       );
+    }
+
+    // Linearize the consumed approval against the schedule's live config. The schedule
+    // document fence was acquired only after all async policy reads, and this atomic
+    // consume checks its token/revision/enabled state immediately after the approval CAS.
+    // An edit/disable that won first makes this fail; one that lands afterward is ordered
+    // after the continuation has started. Never begin provider execution on a stale claim.
+    if (scheduleId) {
+      let scheduleClaimCurrent = false;
+      try {
+        scheduleClaimCurrent = await finalizeScheduleResumeClaim(
+          scheduleId,
+          scheduleResumeClaimToken,
+          scheduleResumeLeaseBy,
+          scheduleResumeOptions,
+        );
+      } catch (error) {
+        logger.error('[ResumeAgentController] Failed to finalize scheduled resume fence', error);
+        await releaseScheduleFence();
+      }
+      if (!scheduleClaimCurrent) {
+        await decrementPendingRequest(userId);
+        let stopped = false;
+        try {
+          const abortResult = await GenerationJobManager.abortJob(streamId, {
+            expectedCreatedAt: job.createdAt,
+            awaitProviderDrain: true,
+          });
+          // Same authoritative gate as the inactive-schedule path above: only a landed
+          // abort (or an already-terminal, drained generation) may settle this occurrence.
+          stopped = isStopConfirmed(abortResult);
+        } catch (error) {
+          logger.warn('[ResumeAgentController] Failed to stop stale scheduled resume', error);
+        }
+        if (!stopped) {
+          res.set('Retry-After', '1');
+          return sendGenerationJson(
+            res,
+            503,
+            {
+              code: 'SCHEDULE_STOP_UNCONFIRMED',
+              error: 'The stale scheduled resume could not be confirmed stopped.',
+            },
+            generationProtocolVersion,
+          );
+        }
+        await recordScheduleOutcome({
+          scheduleId,
+          scheduledFor,
+          streamId,
+          jobCreatedAt: job.createdAt,
+          status: 'interrupted',
+          conversationId,
+          error: 'Schedule was disabled, changed, or deleted before approval',
+        });
+        if (checkpointNamespace !== '') {
+          await deleteAgentCheckpoint(conversationId, checkpointerCfg, undefined, {
+            checkpointNamespace,
+          }).catch((error) => {
+            logger.warn('[ResumeAgentController] Failed to prune stale schedule checkpoint', error);
+          });
+        }
+        return sendGenerationJson(
+          res,
+          409,
+          { code: 'SCHEDULE_NO_LONGER_ACTIVE', error: 'This schedule can no longer be resumed' },
+          generationProtocolVersion,
+        );
+      }
+    }
+
+    eventLeaseTransferredToRun = true;
+  } finally {
+    if (!eventLeaseTransferredToRun) {
+      await releaseEventChildLease?.();
+      releaseEventChildLease = undefined;
     }
   }
 
@@ -1581,6 +1699,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       ).catch((drainError) => {
         logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
       });
+      await releaseEventChildLease?.();
     }
   }
 };

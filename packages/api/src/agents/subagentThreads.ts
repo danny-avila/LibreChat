@@ -192,6 +192,14 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
   fenceOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<void>;
   renewOwnerAdmission?: (userId: string, token: string, fencedUntil: Date) => Promise<boolean>;
   releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  /** Host-owned work may share the durable child lease protocol without living in
+   * this in-memory task store. Return true only after that work is stopped. */
+  cancelUnroutedTask?: (target: {
+    userId: string;
+    parentConversationId: string;
+    taskId: string;
+    tenantId?: string;
+  }) => Promise<boolean>;
   onTaskPrepared?: (registration: SubagentTaskWakeupRegistration) => Promise<void> | void;
 }
 
@@ -473,6 +481,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   ) => Promise<boolean>;
 
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
+  private readonly cancelUnroutedTask?: SubagentThreadTaskStoreOptions['cancelUnroutedTask'];
   private readonly onTaskPrepared?: SubagentThreadTaskStoreOptions['onTaskPrepared'];
   private taskControlTransport?: SubagentTaskControlTransport;
   private activityStream = new SubagentActivityStream(new InMemoryEventTransport());
@@ -506,6 +515,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.fenceOwnerAdmission = options.fenceOwnerAdmission;
     this.renewOwnerAdmission = options.renewOwnerAdmission;
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
+    this.cancelUnroutedTask = options.cancelUnroutedTask;
     this.onTaskPrepared = options.onTaskPrepared;
   }
 
@@ -1513,6 +1523,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
        * an unconfirmed delivery, retried once the owner republishes itself. */
       if (result.status === 'cancelled' || result.status === 'not_running') {
         answered.add(key);
+      } else if (result.status === 'not_found' && this.cancelUnroutedTask != null) {
+        const stopped = await this.cancelUnroutedTask(target);
+        if (stopped) {
+          answered.add(key);
+        }
       }
     } catch (error) {
       logger.warn('[subagentThreads] Retrying an unconfirmed child cancellation', error);

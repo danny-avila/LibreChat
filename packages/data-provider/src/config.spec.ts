@@ -21,9 +21,12 @@ const endpointsConfig: TEndpointsConfig = {
 };
 
 describe('excludedKeys', () => {
-  it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {
-    expect(excludedKeys.has(field)).toBe(true);
-  });
+  it.each(['_id', 'user', 'conversationId', 'agentEventBinding', '__v'])(
+    'excludes system field "%s"',
+    (field) => {
+      expect(excludedKeys.has(field)).toBe(true);
+    },
+  );
 
   it('does not exclude tenantId (plugin-level guard owns this)', () => {
     expect(excludedKeys.has('tenantId')).toBe(false);
