@@ -75,6 +75,7 @@ jest.mock('~/hooks', () => ({
 jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
   useMediaQuery: () => false,
+  useRemScale: () => 1,
 }));
 
 jest.mock('~/data-provider', () => ({

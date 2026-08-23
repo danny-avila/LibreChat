@@ -2,7 +2,7 @@ import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
-import { Spinner, useMediaQuery } from '@librechat/client';
+import { Spinner, useMediaQuery, useRemScale } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -165,6 +165,7 @@ const Conversations: FC<ConversationsProps> = ({
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
+  const remScale = useRemScale();
   const showAgentMarketplace = useShowMarketplace();
   const {
     ref: listContainerRef,
@@ -293,6 +294,9 @@ const Conversations: FC<ConversationsProps> = ({
     return () => cancelAnimationFrame(frameId);
   }, [favorites.length, isFavoritesLoading, showAgentMarketplace, clearFavoritesCache]);
 
+  /** Rows are sized in rem, so a UI scale change resizes them without changing the
+   *  sidebar's physical width (it can stay pinned at its cap) — the width effect below
+   *  would never fire, leaving every cached height stale. */
   useEffect(() => {
     const frameId = requestAnimationFrame(() => {
       cache.clearAll();
@@ -301,7 +305,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     });
     return () => cancelAnimationFrame(frameId);
-  }, [search.query, cache, containerRef]);
+  }, [search.query, remScale, cache, containerRef]);
 
   /** Grid only re-derives row offsets when the row count changes; reorders that
    *  keep the count (e.g. a convo bumped across date groups) need an explicit recompute. */
