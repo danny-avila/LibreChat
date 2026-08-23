@@ -87,16 +87,12 @@ const ConversationsSection = memo(() => {
     data: pinnedData,
     isSuccess: isPinnedFetched,
     isFetching: isPinnedFetching,
-    isStale: isPinnedStale,
+    dataUpdatedAt: pinnedUpdatedAt,
   } = usePinnedConversationsQuery(
     { tags: tags.length === 0 ? undefined : tags },
     { enabled: isAuthenticated },
   );
-  /* This query keeps its data fresh for five minutes, so returning to a tab
-   * whose order has already reconciled can leave its membership behind. Pruning
-   * against that would drop the position of a conversation another tab pinned,
-   * so a stale or in-flight membership merges instead. */
-  const isPinnedComplete = isPinnedFetched && !isPinnedFetching && !isPinnedStale;
+  const isPinnedComplete = isPinnedFetched && !isPinnedFetching;
 
   /* `groupConversationsByDate` strips pins from the chats groups. A failed
      refetch keeps the previous dedicated result, so merge in pins from the
@@ -174,6 +170,9 @@ const ConversationsSection = memo(() => {
           /* Only a successful drain proves the list is whole: a failed later
              page still publishes partial data and stops fetching. */
           membershipComplete={tags.length === 0 && isPinnedComplete}
+          /* When that drain last ran, which decides whether it is current
+             enough to prune the stored order against. */
+          membershipUpdatedAt={pinnedUpdatedAt}
         />
       )}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">

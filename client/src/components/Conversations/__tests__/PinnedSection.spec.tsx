@@ -10,6 +10,11 @@ const mockSetExpanded = jest.fn();
 let mockIsExpanded = true;
 let mockPinnedOrder: string[] | undefined;
 let mockOrderFetched = true;
+/** When each side of the pruning decision was fetched. Membership later than
+ *  the order is the ordinary case: the order is one small record while the
+ *  pinned list drains page by page. */
+let mockOrderUpdatedAt = 1000;
+const MEMBERSHIP_FETCHED_AT = 2000;
 const mockReorderFavorites = jest.fn();
 const mockUpdatePinnedOrder = jest.fn();
 
@@ -38,7 +43,11 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/data-provider', () => ({
   useActiveJobs: () => ({ data: undefined }),
-  useGetPinnedOrderQuery: () => ({ data: mockPinnedOrder, isSuccess: mockOrderFetched }),
+  useGetPinnedOrderQuery: () => ({
+    data: mockPinnedOrder,
+    isSuccess: mockOrderFetched,
+    dataUpdatedAt: mockOrderUpdatedAt,
+  }),
   useUpdatePinnedOrderMutation: () => ({ mutate: mockUpdatePinnedOrder }),
   usePinConversationMutation: () => ({ mutate: jest.fn() }),
 }));
@@ -134,6 +143,7 @@ describe('PinnedSection unified list', () => {
     mockIsExpanded = true;
     mockPinnedOrder = undefined;
     mockOrderFetched = true;
+    mockOrderUpdatedAt = 1000;
     mockSetExpanded.mockReset();
     mockReorderFavorites.mockReset();
     mockUpdatePinnedOrder.mockReset();
@@ -277,6 +287,7 @@ describe('PinnedSection unified list', () => {
             conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
             toggleNav={jest.fn()}
             membershipComplete
+            membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
           />
         </DndProvider>,
       );
@@ -298,6 +309,7 @@ describe('PinnedSection unified list', () => {
             conversations={[pinnedConvo('c1', 'Pinned Chat')]}
             toggleNav={jest.fn()}
             membershipComplete
+            membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
           />
         </DndProvider>,
       );
@@ -468,6 +480,32 @@ describe('PinnedSection unified list', () => {
     expect(screen.getByTestId('favorite-item')).not.toHaveAttribute('aria-keyshortcuts');
   });
 
+  /* The pinned query holds its data for five minutes while the order has none,
+   * so focusing a tab reconciles the order on its own. Pruning the newer order
+   * against the membership beside it would drop the key of a conversation
+   * another tab pinned in between, which no later fetch can bring back. */
+  it('keeps merging when the order reconciled more recently than membership', () => {
+    mockPinnedOrder = ['convo:unseen', 'convo:c1'];
+    mockOrderUpdatedAt = MEMBERSHIP_FETCHED_AT + 1;
+    render(
+      <DndProvider backend={HTML5Backend}>
+        <PinnedSection
+          conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
+          toggleNav={jest.fn()}
+          membershipComplete
+          membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
+        />
+      </DndProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByText('Pinned Chat'), { key: 'ArrowDown', altKey: true });
+
+    expect(mockUpdatePinnedOrder).toHaveBeenCalledWith(
+      ['convo:unseen', 'convo:c2', 'convo:c1'],
+      expect.anything(),
+    );
+  });
+
   /* An optimistic favorite removal leaves the earlier GET's success standing,
    * so pruning then would drop the ordering key of a write that has not landed
    * and cannot be recovered if it fails. */
@@ -480,6 +518,7 @@ describe('PinnedSection unified list', () => {
           conversations={[pinnedConvo('c1', 'Pinned Chat'), pinnedConvo('c2', 'Second')]}
           toggleNav={jest.fn()}
           membershipComplete
+          membershipUpdatedAt={MEMBERSHIP_FETCHED_AT}
         />
       </DndProvider>,
     );

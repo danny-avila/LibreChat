@@ -140,13 +140,17 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
       const token = ++assignmentToken;
       pendingAssignments.set(conversationId, { token, projectId: projectId ?? null, owner });
       return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${owner ?? ''}:${conversationId}`, async () => {
-        /* A queued write travels with whatever credentials are current when it
-         * finally runs. Conversation ids are per-user, so sending one account's
-         * under another's would act on whatever that id names over there. */
-        if (isForeignSession(owner)) {
-          throw new Error('assignment abandoned: the signed-in user changed');
-        }
+        /* Inside the `try`, so that abandoning the write still releases its
+         * pending entry: left behind, it would answer for this conversation
+         * again the next time the account signed in, and report a destination
+         * that was never sent. */
         try {
+          /* A queued write travels with whatever credentials are current when it
+           * finally runs. Conversation ids are per-user, so sending one account's
+           * under another's would act on whatever that id names over there. */
+          if (isForeignSession(owner)) {
+            throw new Error('assignment abandoned: the signed-in user changed');
+          }
           const result = await dataService.assignConversationToProject(payload);
           if (isForeignSession(owner)) {
             /* The session turned over while the request was out. Rejecting
@@ -162,6 +166,13 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
            * callback awaited the cancellation, and would not run at all once
            * the component that owns the mutation had unmounted. */
           await queryClient.cancelQueries([QueryKeys.conversation, conversationId]);
+          /* Cancelling waits on whatever fetch was already running, so the
+           * session can turn over between the check above and the write below.
+           * Asked again on this side of the await, where the answer is the one
+           * the write is about to act on. */
+          if (isForeignSession(owner)) {
+            throw new Error('assignment abandoned: the signed-in user changed');
+          }
           queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
           return result;
         } finally {
