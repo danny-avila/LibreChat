@@ -261,8 +261,9 @@ export default function Search() {
   );
 
   const getRowHeight = useCallback(
-    ({ index }: Index) => (index >= messages.length ? FOOTER_HEIGHT : cache.getHeight(index, 0)),
-    [cache, messages.length],
+    ({ index }: Index) =>
+      index >= messages.length ? FOOTER_HEIGHT * remScale : cache.getHeight(index, 0),
+    [cache, messages.length, remScale],
   );
 
   useEffect(() => {

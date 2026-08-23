@@ -2,8 +2,8 @@ import { atom } from 'recoil';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 import { CHAT_TITLE_IN_TAB_KEY } from '~/utils/documentTitle';
+import { isDrawerViewport } from '~/utils/breakpoints';
 import { atomWithLocalStorage } from '~/store/utils';
-import { isDrawerViewport } from '~/utils/drawer';
 import { STTEndpoints } from '~/common';
 
 const VALID_SPEECH_ENGINES = new Set<string>(Object.values(STTEndpoints));
