@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import { ContentTypes } from 'librechat-data-provider';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ContentTypes, ForkOptions } from 'librechat-data-provider';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
@@ -14,6 +14,9 @@ import SubagentThreadPanel from './SubagentThreadPanel';
 
 const mockUseSubagentThreadQuery = jest.fn();
 const mockUseSubagentActivityStream = jest.fn();
+const mockForkMutate = jest.fn();
+const mockNavigateToConvo = jest.fn();
+const mockShowToast = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
@@ -25,6 +28,13 @@ jest.mock('~/data-provider', () => ({
       (message) =>
         message.messageId === `${taskId}:user` || message.messageId === `${taskId}:assistant`,
     ) === true,
+  useForkConvoMutation: (options: {
+    onSuccess: (result: unknown) => void;
+    onError: () => void;
+  }) => ({
+    mutate: (payload: unknown) => mockForkMutate(payload, options),
+    isLoading: false,
+  }),
 }));
 
 jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
@@ -35,6 +45,7 @@ jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
 jest.mock('~/hooks', () => ({
   useFocusTrap: jest.fn(),
   useLocalize: () => (key: string) => key,
+  useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -77,6 +88,7 @@ jest.mock('@librechat/client', () => ({
     <button {...props}>{children}</button>
   ),
   useMediaQuery: () => mockIsMobile,
+  useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
 jest.mock('lucide-react', () => ({
@@ -84,6 +96,7 @@ jest.mock('lucide-react', () => ({
   Bot: () => null,
   CheckCircle2: () => null,
   Clock3: () => null,
+  MessagesSquare: () => null,
   X: () => null,
   XCircle: () => null,
 }));
@@ -107,6 +120,7 @@ const completedView: SubagentThreadView = {
   parentToolCallId: 'tool-call',
   subagentType: 'researcher',
   subagentKind: 'agent',
+  agentId: 'agent-1',
   title: 'Research child',
   status: 'completed',
   activity: [{ type: 'writing', text: 'The release is ready.' }],
@@ -134,6 +148,9 @@ describe('SubagentThreadPanel', () => {
     mockIsMobile = false;
     mockApprovalProviderMounted.mockClear();
     mockApprovalProviderUnmounted.mockClear();
+    mockForkMutate.mockClear();
+    mockNavigateToConvo.mockClear();
+    mockShowToast.mockClear();
   });
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
@@ -215,6 +232,81 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('Review this change.')).toBeInTheDocument();
     expect(screen.getByText('Review complete.')).toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-state', 'ready');
+    expect(screen.queryByRole('button', { name: 'com_ui_continue_chat' })).not.toBeInTheDocument();
+  });
+
+  it('continues a completed durable agent task as an ordinary conversation snapshot', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_continue_chat' }));
+    expect(mockForkMutate).toHaveBeenCalledWith(
+      {
+        conversationId: 'child-thread',
+        messageId: 'task:assistant',
+        option: ForkOptions.DIRECT_PATH,
+      },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+
+    const mutationOptions = mockForkMutate.mock.calls[0][1];
+    const conversation = { conversationId: 'continued-chat', agent_id: 'agent-1' };
+    act(() => mutationOptions.onSuccess({ conversation, messages: [] }));
+    expect(mockNavigateToConvo).toHaveBeenCalledWith(conversation);
+  });
+
+  it.each([
+    ['a running task', { ...completedView, status: 'running' as const }],
+    ['a graph child', { ...completedView, subagentKind: 'graph' as const, agentId: undefined }],
+    ['a child without an agent identity', { ...completedView, agentId: undefined }],
+  ])('does not offer human continuation for %s', (_label, view) => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: view,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'com_ui_continue_chat' })).not.toBeInTheDocument();
+  });
+
+  it('reports continuation failures without closing the child panel', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_continue_chat' }));
+    mockForkMutate.mock.calls[0][1].onError();
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_ui_continue_chat_error',
+      status: 'error',
+    });
+    expect(screen.getByRole('region')).toBeInTheDocument();
   });
 
   it('renders newer detached progress instead of a dispatch-time parent snapshot', () => {
