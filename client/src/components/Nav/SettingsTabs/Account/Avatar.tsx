@@ -15,7 +15,6 @@ import {
   OGDialogTitle,
   OGDialogTrigger,
   useToastContext,
-  useRemScale,
 } from '@librechat/client';
 import type { TUser } from 'librechat-data-provider';
 import { useUploadAvatarMutation, useGetFileConfig } from '~/data-provider';
@@ -57,7 +56,6 @@ interface Position {
 
 function Avatar() {
   const setUser = useSetRecoilState(store.user);
-  const remScale = useRemScale();
 
   const [scale, setScale] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
@@ -220,16 +218,17 @@ function Avatar() {
                 <AvatarEditor
                   ref={editorRef}
                   image={image}
-                  width={Math.round(280 * remScale)}
-                  height={Math.round(280 * remScale)}
+                  width={280}
+                  height={280}
                   border={0}
-                  borderRadius={Math.round(140 * remScale)}
+                  borderRadius={140}
                   color={[255, 255, 255, 0.6]}
                   scale={scale}
                   rotate={rotation}
                   position={position}
                   onPositionChange={handlePositionChange}
                   className="cursor-move"
+                  style={{ width: '17.5rem', height: '17.5rem' }}
                 />
                 {!isDragging && (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">

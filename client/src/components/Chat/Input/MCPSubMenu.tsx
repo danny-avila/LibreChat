@@ -91,7 +91,7 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
             unmountOnHide={true}
             aria-label={localize('com_ui_mcp_servers')}
             className={cn(
-              'animate-popover-left z-40 ml-3 flex min-w-[16.25rem] max-w-[20rem] flex-col rounded-xl',
+              'animate-popover-left z-40 ml-3 flex min-w-[min(16.25rem,90vw)] max-w-[min(20rem,90vw)] flex-col rounded-xl',
               'border border-border-light bg-presentation p-1.5 shadow-lg',
             )}
           >
