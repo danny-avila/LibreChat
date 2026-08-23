@@ -27,10 +27,15 @@ import { useMarkConversationSeenMutation } from '~/data-provider';
 export default function useConversationSeen(
   conversationId: string | undefined,
   isSubmitting: boolean,
+  measureNearBottom?: () => boolean | null,
 ) {
   const queryClient = useQueryClient();
   const { mutate: markSeen } = useMarkConversationSeenMutation();
   const isNearBottomRef = useRef(false);
+  /** Read from the deferred revalidation check, which outlives the render that created it. */
+  const measureRef = useRef(measureNearBottom);
+  measureRef.current = measureNearBottom;
+  const pendingFrameRef = useRef<number | null>(null);
   /** The last reply each conversation was acknowledged for. A failed write rolls the cache
    *  back to unseen, which is itself a cache event this hook listens to, so without this the
    *  rejection would immediately re-arm the trigger and spin requests for as long as the
@@ -131,7 +136,26 @@ export default function useConversationSeen(
         if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) {
           return;
         }
-        markSeenIfCaughtUp();
+        /* Deferred past the commit, because this event fires while the refreshed tree is
+           still uncommitted: the near-bottom flag describes the old tree, and the end
+           observer only reports on threshold crossings, so a taller reply would be
+           acknowledged from a position it has already scrolled away and an unchanged one
+           would never re-report at all. Two frames on, the paint has happened and the
+           position is re-measured against the tree the user actually sees; without a
+           measurer the flag is the best answer left. */
+        if (pendingFrameRef.current != null) {
+          window.cancelAnimationFrame(pendingFrameRef.current);
+        }
+        pendingFrameRef.current = window.requestAnimationFrame(() => {
+          pendingFrameRef.current = window.requestAnimationFrame(() => {
+            pendingFrameRef.current = null;
+            const measured = measureRef.current?.() ?? null;
+            if (measured != null) {
+              isNearBottomRef.current = measured;
+            }
+            markSeenIfCaughtUp();
+          });
+        });
         return;
       }
       if (
@@ -143,7 +167,13 @@ export default function useConversationSeen(
       }
       markSeenIfCaughtUp();
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (pendingFrameRef.current != null) {
+        window.cancelAnimationFrame(pendingFrameRef.current);
+        pendingFrameRef.current = null;
+      }
+    };
   }, [queryClient, markSeenIfCaughtUp]);
 
   return reportNearBottom;
