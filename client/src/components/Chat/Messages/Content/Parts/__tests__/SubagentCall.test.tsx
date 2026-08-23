@@ -477,5 +477,4 @@ describe('SubagentCall', () => {
     expect(rendered.getSelection()?.durable).toBeUndefined();
     expect(rendered.getSelection()?.legacyOutput).toBe(output);
   });
-
 });

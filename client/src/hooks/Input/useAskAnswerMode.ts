@@ -18,7 +18,7 @@ import store from '~/store';
  * Action ids the user moved into the chat: the popover is hidden AND the
  * composer is released (answer mode off), so the chat card is the question's
  * only surface until the card's chevron moves it back. One state for one
- * user-visible concept — a hidden popover whose composer stayed armed was
+ * user-visible concept. A hidden popover whose composer stayed armed was
  * indistinguishable from one whose composer did not.
  */
 const collapsedAskActionsAtom = atom<string[]>({
@@ -136,7 +136,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const collapsed = answerable && collapsedIds.includes(liveAsk.actionId);
   /**
    * Answer mode: the popover is up AND the composer is the free-form answer
-   * box. The two are deliberately the same condition — the composer's answer
+   * box. The two are deliberately the same condition because the composer's answer
    * role is only discoverable while the popover explains it.
    */
   const active = answerable && !collapsed;
@@ -157,7 +157,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   const answerText = answerDraft.actionId === liveAsk?.actionId ? answerDraft.text : '';
   const setAnswerText = useCallback(
     (text: string) => {
-      if (liveAsk) {
+      if (liveAsk && !batchMode) {
         setAnswerDraft({ actionId: liveAsk.actionId, text });
         /** While the card owns the answer, `useAutoSave` is tracking the
          *  conversation draft instead. Keep the dormant ask draft current so
@@ -167,7 +167,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
         }
       }
     },
-    [liveAsk, saveDrafts, setAnswerDraft],
+    [batchMode, liveAsk, saveDrafts, setAnswerDraft],
   );
 
   /** Selection state is per-question: a new pause must never inherit a stale
@@ -184,31 +184,33 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    *  which morphTransition's synchronous flush requires. */
   const collapse = useCallback(() => {
     if (liveAsk) {
-      const composerAnswer = formContext?.getValues('text') ?? answerText;
+      const composerAnswer = !batchMode ? (formContext?.getValues('text') ?? answerText) : '';
       morphTransition(() => {
-        setAnswerDraft({ actionId: liveAsk.actionId, text: composerAnswer });
-        if (!saveDrafts) {
-          formContext?.reset();
+        if (!batchMode) {
+          setAnswerDraft({ actionId: liveAsk.actionId, text: composerAnswer });
+          if (!saveDrafts) {
+            formContext?.reset();
+          }
         }
         setCollapsedIds((prev) =>
           prev.includes(liveAsk.actionId) ? prev : [...prev, liveAsk.actionId],
         );
       });
     }
-  }, [liveAsk, formContext, answerText, saveDrafts, setAnswerDraft, setCollapsedIds]);
+  }, [liveAsk, batchMode, formContext, answerText, saveDrafts, setAnswerDraft, setCollapsedIds]);
 
   const expand = useCallback(() => {
     if (liveAsk) {
       morphTransition(() => {
         /** Autosave restores the ask-specific draft after the key switch. If
          *  drafts are disabled, perform that handoff directly. */
-        if (!saveDrafts) {
+        if (!batchMode && !saveDrafts) {
           formContext?.setValue('text', answerText);
         }
         setCollapsedIds((prev) => prev.filter((id) => id !== liveAsk.actionId));
       });
     }
-  }, [liveAsk, saveDrafts, formContext, answerText, setCollapsedIds]);
+  }, [liveAsk, batchMode, saveDrafts, formContext, answerText, setCollapsedIds]);
 
   /** Pure check toggle: the keyboard highlight is steered only by the
    *  composer's digit/arrow shortcuts, so a mouse toggle never leaves a

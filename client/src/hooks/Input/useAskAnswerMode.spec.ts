@@ -61,6 +61,14 @@ const liveAsk = {
   question: { question: 'Pick one', options: [], multiSelect: false },
 } as unknown as ReturnType<typeof findLiveAskUserQuestion>;
 
+const batchAsk = {
+  ...liveAsk,
+  questions: [
+    { id: 'environment', question: 'Which environment?' },
+    { id: 'window', question: 'Which window?' },
+  ],
+} as typeof liveAsk;
+
 describe('useAskAnswerMode', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -95,15 +103,7 @@ describe('useAskAnswerMode', () => {
   });
 
   it('locks the composer for a batch, and hands it back the moment it collapses', () => {
-    mockUseGetMessages.mockReturnValue({
-      data: {
-        ...liveAsk,
-        questions: [
-          { id: 'environment', question: 'Which environment?' },
-          { id: 'window', question: 'Which window?' },
-        ],
-      },
-    });
+    mockUseGetMessages.mockReturnValue({ data: batchAsk });
 
     const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
 
@@ -118,6 +118,27 @@ describe('useAskAnswerMode', () => {
      *  when the pause began. */
     expect(result.current.submitText('must stay out of the normal send path')).toBe(false);
     expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+  });
+
+  it('does not move the normal composer draft into a collapsed batch answer', () => {
+    mockUseGetMessages.mockReturnValue({ data: batchAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.collapse());
+
+    expect(mockSetAnswerDraft).not.toHaveBeenCalled();
+    expect(mockResetComposer).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite normal composer text when expanding a batch', () => {
+    mockCollapsedIds = ['a1'];
+    mockAnswerDraft = { actionId: 'a1', text: 'stale batch handoff' };
+    mockUseGetMessages.mockReturnValue({ data: batchAsk });
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    act(() => result.current.expand());
+
+    expect(mockSetComposerText).not.toHaveBeenCalled();
   });
 
   it('disables the query and forces liveAsk null for a new (unsaved) conversation', () => {

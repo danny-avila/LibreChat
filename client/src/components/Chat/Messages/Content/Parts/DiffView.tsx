@@ -19,7 +19,7 @@ export interface ParsedDiff {
 /**
  * Parses unified-diff text into typed lines with old/new line numbers when the
  * hunk headers carry them. Also understands the argless `@@` separators and
- * `--- old_text` / `+++ new_text` markers the streaming args preview emits —
+ * `--- old_text` / `+++ new_text` markers the streaming args preview emits.
  * file headers and `\ No newline` markers are dropped (the window header
  * already names the file).
  */
@@ -30,13 +30,18 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
   let hasLineNumbers = false;
   let oldLine: number | undefined;
   let newLine: number | undefined;
+  let inHunk = false;
 
   for (const raw of diff.replace(/\n$/, '').split('\n')) {
-    if (raw.startsWith('--- ') || raw.startsWith('+++ ') || raw.startsWith('\\')) {
+    if (!inHunk && (raw.startsWith('--- ') || raw.startsWith('+++ '))) {
+      continue;
+    }
+    if (raw.startsWith('\\')) {
       continue;
     }
     const hunk = HUNK_HEADER.exec(raw);
     if (hunk) {
+      inHunk = true;
       oldLine = Number(hunk[1]);
       newLine = Number(hunk[2]);
       hasLineNumbers = true;
@@ -44,6 +49,7 @@ export function parseUnifiedDiff(diff: string): ParsedDiff {
       continue;
     }
     if (raw === '@@') {
+      inHunk = true;
       oldLine = undefined;
       newLine = undefined;
       lines.push({ type: 'hunk', text: '' });
