@@ -388,7 +388,7 @@ const SetKeyDialog = ({
             value={expiresAtLabel}
             onChange={handleExpirationChange}
             options={expirationOptions.map((option) => option.label)}
-            sizeClasses="w-[11.5625rem]"
+            sizeClasses="w-[min(11.5625rem,90vw)]"
             portal={false}
           />
           <FormProvider {...methods}>
