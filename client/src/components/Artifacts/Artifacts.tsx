@@ -432,11 +432,10 @@ export default function Artifacts() {
                   aria-label={localize('com_ui_refresh')}
                 >
                   {isRefreshing ? (
-                    <Spinner size={16} />
+                    <Spinner className="m-auto size-4" />
                   ) : (
                     <RefreshCw
-                      size={16}
-                      className="transition-transform duration-200 motion-reduce:transition-none"
+                      className="size-4 transition-transform duration-200 motion-reduce:transition-none"
                       aria-hidden="true"
                     />
                   )}
@@ -453,14 +452,14 @@ export default function Artifacts() {
                   )}
                 >
                   {isFullscreen ? (
-                    <Minimize2 size={16} aria-hidden="true" />
+                    <Minimize2 className="size-4" aria-hidden="true" />
                   ) : (
-                    <Maximize2 size={16} aria-hidden="true" />
+                    <Maximize2 className="size-4" aria-hidden="true" />
                   )}
                 </Button>
               )}
               {displayedTab !== 'preview' && isMutating && (
-                <RefreshCw size={16} className="animate-spin text-text-secondary" />
+                <RefreshCw className="size-4 animate-spin text-text-secondary" />
               )}
               {orderedArtifactIds.length > 1 && (
                 <ArtifactVersion
@@ -496,7 +495,7 @@ export default function Artifacts() {
                 onClick={closeArtifacts}
                 aria-label={localize('com_ui_close')}
               >
-                <X size={16} aria-hidden="true" />
+                <X className="size-4" aria-hidden="true" />
               </Button>
             </div>
           </div>
@@ -525,7 +524,7 @@ export default function Artifacts() {
                   isRefreshing ? 'scale-100' : 'scale-95',
                 )}
               >
-                <Spinner size={24} />
+                <Spinner className="m-auto size-6" />
               </div>
             </div>
           </div>
