@@ -130,28 +130,30 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
       const { conversationId, projectId } = payload;
       const token = ++assignmentToken;
       pendingAssignments.set(conversationId, { token, projectId: projectId ?? null });
-      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${conversationId}`, () =>
-        dataService.assignConversationToProject(payload),
-      ).finally(() => {
-        /* Only the newest write clears the entry. Once nothing is outstanding
-         * the conversation cache below carries the truth, written synchronously
-         * in `onSuccess`, so no list refresh has to be waited on. */
-        if (pendingAssignments.get(conversationId)?.token === token) {
-          pendingAssignments.delete(conversationId);
+      return enqueue(`${ASSIGN_CONVERSATION_QUEUE}${conversationId}`, async () => {
+        try {
+          const result = await dataService.assignConversationToProject(payload);
+          /* The authoritative cache is written here, before the pending entry is
+           * released, so a drag starting in between still sees the new project
+           * from one of the two. Doing it in `onSuccess` left a gap while that
+           * callback awaited the cancellation, and would not run at all once
+           * the component that owns the mutation had unmounted. */
+          await queryClient.cancelQueries([QueryKeys.conversation, conversationId]);
+          queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
+          return result;
+        } finally {
+          /* Only the newest write clears the entry; by now the conversation
+           * cache carries the truth, so no list refresh has to be waited on. */
+          if (pendingAssignments.get(conversationId)?.token === token) {
+            pendingAssignments.delete(conversationId);
+          }
         }
       });
     },
     {
-      onSuccess: async (result) => {
-        const { conversationId } = result.conversation;
-        /* A refetch of this exact conversation may already be in flight, for
-         * instance one navigation kicked off, and it would have read the old
-         * project. Cancelling first stops it landing after this write and
-         * quietly reverting the assignment in the cache everything else now
-         * reads the conversation's project from. */
-        await queryClient.cancelQueries([QueryKeys.conversation, conversationId]);
+      onSuccess: (result) => {
+        /* The conversation cache is written in the request itself, above. */
         updateActiveConversation(result.conversation);
-        queryClient.setQueryData([QueryKeys.conversation, conversationId], result.conversation);
         [result.previousProjectId, result.projectId].forEach((projectId) => {
           if (projectId) {
             queryClient.invalidateQueries([QueryKeys.project, projectId]);

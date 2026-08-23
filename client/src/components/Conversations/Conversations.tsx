@@ -217,6 +217,18 @@ const Conversations: FC<ConversationsProps> = ({
      conversations input actually changes; a failed fetchNextPage leaves
      the same array and must not loop. */
   const paginatedFromRef = useRef<Array<TConversation | null> | null>(null);
+
+  /* A drain that exhausted its retries leaves that array unchanged, so the
+     guard above would bar every later attempt and the remaining chats would
+     stay unreachable for the rest of the session. Collapsing the section is a
+     deliberate act, so reopening it is allowed to try once more, which is a
+     retry path rather than a loop. */
+  useEffect(() => {
+    if (!isChatsExpanded) {
+      paginatedFromRef.current = null;
+    }
+  }, [isChatsExpanded]);
+
   useEffect(() => {
     if (!isChatsExpanded || isLoading || isSearchLoading || groupedConversations.length > 0) {
       return;
