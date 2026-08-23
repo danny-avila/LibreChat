@@ -12,13 +12,21 @@ import MarkdownLite from '../MarkdownLite';
 import { useLocalize } from '~/hooks';
 import Markdown from '../Markdown';
 
+let mockCurrentTestMessages: any[] = [];
+
 // Mocks for hooks used by MCPUIResource when rendered inside Markdown.
 // Keep Provider components intact while mocking only the hooks we use.
 jest.mock('~/Providers', () => ({
   ...jest.requireActual('~/Providers'),
-  useMessageContext: jest.fn(),
-  useOptionalMessagesConversation: jest.fn(),
-  useOptionalMessagesOperations: jest.fn(),
+  useMessageContext: jest.fn(() => ({ messageId: 'msg-weather', isSubmitting: false })),
+  useOptionalMessagesConversation: jest.fn(() => ({
+    conversation: { conversationId: 'conv1' },
+    conversationId: 'conv1',
+  })),
+  useOptionalMessagesOperations: jest.fn(() => ({
+    ask: jest.fn(),
+    getMessages: () => mockCurrentTestMessages,
+  })),
 }));
 jest.mock('~/data-provider');
 jest.mock('~/hooks');
@@ -43,11 +51,9 @@ const mockUseGetMessagesByConvoId = useGetMessagesByConvoId as jest.MockedFuncti
 const mockUseLocalize = useLocalize as jest.MockedFunction<typeof useLocalize>;
 
 describe('Markdown with MCP UI markers (resource IDs)', () => {
-  let currentTestMessages: any[] = [];
-
   beforeEach(() => {
     jest.clearAllMocks();
-    currentTestMessages = [];
+    mockCurrentTestMessages = [];
 
     mockUseMessageContext.mockReturnValue({ messageId: 'msg-weather' } as any);
     mockUseMessagesConversation.mockReturnValue({
@@ -56,7 +62,7 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
     } as any);
     mockUseMessagesOperations.mockReturnValue({
       ask: jest.fn(),
-      getMessages: () => currentTestMessages,
+      getMessages: () => mockCurrentTestMessages,
     } as any);
     mockUseLocalize.mockReturnValue(((key: string) => key) as any);
   });
@@ -76,7 +82,7 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       text: '<div>NYC Weather</div>',
     };
 
-    currentTestMessages = [
+    mockCurrentTestMessages = [
       {
         messageId: 'msg-weather',
         attachments: [
@@ -86,7 +92,7 @@ describe('Markdown with MCP UI markers (resource IDs)', () => {
       },
     ];
 
-    mockUseGetMessagesByConvoId.mockReturnValue({ data: currentTestMessages } as any);
+    mockUseGetMessagesByConvoId.mockReturnValue({ data: mockCurrentTestMessages } as any);
 
     const content = [
       'Here are the current weather conditions for both Paris and New York:',
@@ -116,6 +122,13 @@ describe('Markdown table rendering', () => {
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
     '| one | two | three | four | five | six | seven | eight |',
   ].join('\n');
+
+  beforeEach(() => {
+    mockUseMessageContext.mockReturnValue({
+      messageId: 'msg-table',
+      isSubmitting: false,
+    } as ReturnType<typeof useMessageContext>);
+  });
 
   it('wraps GFM tables in a horizontally scrollable container', () => {
     render(
