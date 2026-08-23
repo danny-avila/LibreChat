@@ -3429,16 +3429,18 @@ describe('Share Methods', () => {
       expect(saved?.fileSnapshots?.[0]).toMatchObject({
         file_id: textId,
         source: 'text',
-        filepath: 'mistral_ocr',
+        hasTextPreview: true,
       });
       expect(saved?.fileSnapshots?.[0]).not.toHaveProperty('text');
+      expect(saved?.fileSnapshots?.[0]).not.toHaveProperty('filepath');
 
       const shared = await shareMethods.getSharedMessages(result.shareId);
       expect(shared?.messages[0].files?.[0]).toMatchObject({
         file_id: textId,
-        source: 'text',
-        filepath: `/api/share/${result.shareId}/files/${textId}`,
+        hasTextPreview: true,
       });
+      expect(shared?.messages[0].files?.[0].source).toBeUndefined();
+      expect(shared?.messages[0].files?.[0].filepath).toBeUndefined();
     });
 
     test('updateSharedLink clears snapshots when snapshotFiles is disabled', async () => {

@@ -5,6 +5,7 @@ import { validateFiles, validateFileSizes } from '../files';
 
 const supportedMimeTypes = defaultFileConfig.endpoints.default.supportedMimeTypes;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const VENDOR_SCAN = 'application/x-vendor-scan';
 
 function makeEndpointConfig(overrides: Partial<EndpointFileConfig> = {}): EndpointFileConfig {
   return {
@@ -272,6 +273,29 @@ describe('validateFiles', () => {
     });
 
     expect(result).toBe(true);
+  });
+
+  it('rejects a non-document OCR type when the provider is disabled', () => {
+    const contextFileConfig = {
+      text: { supportedMimeTypes: [] },
+      ocr: { supportedMimeTypes: [new RegExp(`^${VENDOR_SCAN}$`)], enabled: false },
+      documentParser: { supportedMimeTypes: [/^application\/pdf$/] },
+      stt: { supportedMimeTypes: [] },
+    } as unknown as FileConfig;
+    const fileList = [makeFile('page.scan', VENDOR_SCAN, 1024)];
+
+    const result = validateFiles({
+      files,
+      fileList,
+      setError,
+      endpointFileConfig,
+      fileConfig: contextFileConfig,
+      toolResource: EToolResources.context,
+      ocrEnabled: true,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`Unsupported file type: ${VENDOR_SCAN}`);
   });
 
   it('rejects a locally excluded document when no RAG service is configured', () => {

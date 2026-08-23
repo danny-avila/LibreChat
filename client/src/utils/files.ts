@@ -469,11 +469,15 @@ const isContextType = (
     return configuredOcrEnabled || configuredTextEnabled;
   }
 
-  return checkType(type, [
-    ...(fileConfig?.text?.supportedMimeTypes || []),
-    ...(fileConfig?.ocr?.supportedMimeTypes || []),
-    ...(fileConfig?.stt?.supportedMimeTypes || []),
-  ]);
+  const configuredOcrEnabled =
+    allowConfiguredOcr &&
+    fileConfig?.ocr?.enabled === true &&
+    checkType(type, fileConfig.ocr.supportedMimeTypes || []);
+  return (
+    checkType(type, fileConfig?.text?.supportedMimeTypes || []) ||
+    configuredOcrEnabled ||
+    checkType(type, fileConfig?.stt?.supportedMimeTypes || [])
+  );
 };
 
 /**

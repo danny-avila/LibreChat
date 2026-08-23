@@ -234,6 +234,64 @@ describe('parseWithAnydoc', () => {
         expect(result.filepath).toBe('anydoc');
       });
     });
+
+    test('hands a CFB document with a nested ZIP attachment to anydoc', async () => {
+      const attachment = new JSZip();
+      attachment.file('attachment.txt', 'nested');
+      const combinedPath = path.join(fixtures, 'anydoc-cfb-with-attachment.xls');
+      await fs.promises.writeFile(
+        combinedPath,
+        Buffer.concat([
+          await fs.promises.readFile(path.join(fixtures, 'sample.xls')),
+          await attachment.generateAsync({ type: 'nodebuffer' }),
+        ]),
+      );
+
+      const toMarkdownBytes = jest.fn().mockResolvedValue('# Legacy workbook');
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          const result = await run({
+            originalname: 'workbook.xls',
+            path: combinedPath,
+            mimetype: 'application/vnd.ms-excel',
+          });
+
+          expect(toMarkdownBytes).toHaveBeenCalledTimes(1);
+          expect(result.mayOmitContent).toBe(true);
+        });
+      } finally {
+        await fs.promises.unlink(combinedPath);
+      }
+    });
+
+    test('does not let a legacy extension override a declared OOXML container', async () => {
+      const combinedPath = path.join(fixtures, 'anydoc-cfb-prefixed-bomb.xls');
+      await fs.promises.writeFile(
+        combinedPath,
+        Buffer.concat([
+          await fs.promises.readFile(path.join(fixtures, 'sample.xls')),
+          await fs.promises.readFile(path.join(fixtures, 'bomb.docx')),
+        ]),
+      );
+
+      const toMarkdownBytes = jest.fn();
+      try {
+        await withAnydocSpy(toMarkdownBytes, async (run) => {
+          await expect(
+            run({
+              originalname: 'disguised.xls',
+              path: combinedPath,
+              mimetype: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            }),
+          ).rejects.toMatchObject({
+            code: expect.stringMatching(/^(?:ZIP_BOMB|ARCHIVE_INVALID)$/),
+          });
+          expect(toMarkdownBytes).not.toHaveBeenCalled();
+        });
+      } finally {
+        await fs.promises.unlink(combinedPath);
+      }
+    });
   });
 
   describe('declared format support', () => {

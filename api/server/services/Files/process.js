@@ -1076,6 +1076,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         return await createDocumentTextFile(documentResult);
       }
 
+      assertExtractedTextInspectable({
+        filters: appConfig?.filters,
+        text: documentResult?.text,
+      });
+
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
       );

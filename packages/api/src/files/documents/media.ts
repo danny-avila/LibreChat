@@ -1,5 +1,5 @@
 import yauzl from 'yauzl';
-import { isZipArchive } from './zipSafety';
+import { isCompoundFileBinary, isZipArchive } from './zipSafety';
 
 /**
  * Artwork, by extension rather than by location.
@@ -26,17 +26,9 @@ function isMediaEntry(name: string): boolean {
   return IMAGE_ENTRY.test(name) && !PREVIEW_ENTRY.test(name);
 }
 
-/** Compound File Binary header, the container behind `.doc`, `.xls` and `.ppt`. */
-const CFB_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-
 /** RTF is plain text, and every embedded picture opens with this control word. */
 const RTF_SIGNATURE = Buffer.from('{\\rt');
 const RTF_PICTURE = Buffer.from('\\pict');
-
-/** Legacy Office documents store pictures in Escher records with no addressable name. */
-function isLegacyOfficeContainer(buffer: Buffer): boolean {
-  return buffer.subarray(0, CFB_SIGNATURE.length).equals(CFB_SIGNATURE);
-}
 
 function zipContainsMedia(buffer: Buffer): Promise<boolean> {
   return new Promise((resolve) => {
@@ -97,11 +89,11 @@ function zipContainsMedia(buffer: Buffer): Promise<boolean> {
  * - Everything else (CSV and other flat text): nothing to embed, so `false`.
  */
 export async function mayEmbedMedia(buffer: Buffer): Promise<boolean> {
+  if (isCompoundFileBinary(buffer)) {
+    return true;
+  }
   if (isZipArchive(buffer)) {
     return zipContainsMedia(buffer);
-  }
-  if (isLegacyOfficeContainer(buffer)) {
-    return true;
   }
   if (buffer.subarray(0, RTF_SIGNATURE.length).equals(RTF_SIGNATURE)) {
     return buffer.includes(RTF_PICTURE);

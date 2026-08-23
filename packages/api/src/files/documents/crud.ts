@@ -26,7 +26,7 @@ export interface DocumentExtractor {
 
 /**
  * Registry order matters in one respect only: the last entry is the general-purpose
- * engine, which answers for any type no other engine claims — including types nothing
+ * engine, which answers for any type no other engine claims, including types nothing
  * supports, whose named refusal is then its own rather than a message this dispatcher
  * would have to keep in sync with it.
  */

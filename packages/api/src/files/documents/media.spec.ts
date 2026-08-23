@@ -106,6 +106,13 @@ describe('mayEmbedMedia', () => {
     expect(await mayEmbedMedia(readFixture('sample.xls'))).toBe(true);
   });
 
+  it('recognizes a CFB document before a nested ZIP attachment', async () => {
+    const attachment = await buildArchive(['attachment.txt']);
+    const combined = Buffer.concat([readFixture('sample.xls'), attachment]);
+
+    expect(await mayEmbedMedia(combined)).toBe(true);
+  });
+
   it('reports no media for a format that embeds none', async () => {
     expect(await mayEmbedMedia(Buffer.from('name,value\na,1\n'))).toBe(false);
   });

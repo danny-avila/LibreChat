@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
+import { extractPagesMarkdownIsolated, extractTextIsolated } from './native';
 import { withParserAdmission } from '../documents/nativeProcess';
-import { extractTextIsolated } from './native';
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 
@@ -51,6 +51,29 @@ describe('pdfInspector child isolation', () => {
 
     expect(await failure).toEqual(new Error('pdf-inspector text timed out after 30000ms'));
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  test('keeps extracted pages when optional classification times out', async () => {
+    jest.useFakeTimers();
+    const extractionChild = new TestChild();
+    const classifierChild = new TestChild();
+    mockSpawn.mockReturnValueOnce(extractionChild).mockReturnValueOnce(classifierChild);
+
+    const extraction = extractPagesMarkdownIsolated('/tmp/slow-classifier.pdf');
+    extractionChild.emit('message', {
+      ok: true,
+      result: { pages: [{ markdown: '# Kept extraction' }] },
+    });
+    await Promise.resolve();
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(15_000);
+
+    await expect(extraction).resolves.toEqual({
+      pages: [{ markdown: '# Kept extraction' }],
+      scannedPages: [],
+    });
+    expect(classifierChild.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
   /**

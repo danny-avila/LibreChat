@@ -911,7 +911,7 @@ describe('OCRStrategy / FileSources coupling', () => {
    * from them, and a caller that asked `getStrategyFunctions` for one would receive a
    * storage adapter that cannot answer. Keeping them out of `FileSources` is what lets an
    * engine be replaced without migrating the enum every stored record is validated
-   * against — `document_parser`, which is a real strategy, stays in both.
+   * against. `document_parser`, which is a real strategy, stays in both.
    */
   it('keeps engine provenance out of the strategy enum', () => {
     expect(fileSourceValues.has(DocumentParser.pdf_inspector)).toBe(false);

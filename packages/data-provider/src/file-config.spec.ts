@@ -17,7 +17,6 @@ import {
   defaultSTTMimeTypes,
   defaultOCRMimeTypes,
   supportedMimeTypes,
-  fileConfigSchema,
   mergeFileConfig,
   inferMimeType,
   resolveEffectiveMimeType,

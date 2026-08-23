@@ -37,6 +37,25 @@ const EOCD_SIGNATURE = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
 /** Fixed size of the EOCD record, before its variable-length comment. */
 const EOCD_RECORD_BYTES = 22;
 
+/** Compound File Binary header used by legacy Office documents. */
+const CFB_SIGNATURE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+
+/**
+ * Checks the fixed CFB header fields, not only its easily forged leading signature.
+ * Version 3 files use 512-byte sectors and version 4 files use 4096-byte sectors.
+ */
+export function isCompoundFileBinary(buffer: Buffer): boolean {
+  if (buffer.length < 512 || !buffer.subarray(0, CFB_SIGNATURE.length).equals(CFB_SIGNATURE)) {
+    return false;
+  }
+  const sectorShift = buffer.readUInt16LE(30);
+  return (
+    buffer.readUInt16LE(28) === 0xfffe &&
+    (sectorShift === 9 || sectorShift === 12) &&
+    buffer.readUInt16LE(32) === 6
+  );
+}
+
 /**
  * Tag-distinct error so callers (e.g. the office HTML producers and the
  * RAG document parser) can distinguish a refused zip-bomb from generic
@@ -80,6 +99,8 @@ export interface ZipSafetyOptions {
   maxEntries?: number;
   /** Filename for error messages — does not need to match disk. */
   name?: string;
+  /** A verified outer container whose nested ZIP records are not the document itself. */
+  knownOuterContainer?: 'cfb';
 }
 
 /**
@@ -317,6 +338,9 @@ export async function assertSafeZipSizeIfArchive(
   buffer: Buffer,
   options: ZipSafetyOptions = {},
 ): Promise<void> {
+  if (options.knownOuterContainer === 'cfb' && isCompoundFileBinary(buffer)) {
+    return;
+  }
   if (!isZipArchive(buffer)) {
     return;
   }

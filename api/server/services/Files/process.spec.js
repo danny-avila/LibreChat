@@ -244,7 +244,6 @@ const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { uploadVectors } = require('./VectorDB/crud');
-const { logger } = require('@librechat/data-schemas');
 const db = require('~/models');
 const {
   filterFile,

@@ -320,6 +320,33 @@ describe('assertSafeZipSizeIfArchive', () => {
     await expect(assertSafeZipSizeIfArchive(readFixture('sample.xls'))).resolves.toBeUndefined();
   });
 
+  test('ignores a ZIP attachment nested inside a declared CFB container', async () => {
+    const attachment = new JSZip();
+    attachment.file('attachment.txt', 'nested');
+    const combined = Buffer.concat([
+      readFixture('sample.xls'),
+      await attachment.generateAsync({ type: 'nodebuffer' }),
+    ]);
+
+    expect(isZipArchive(combined)).toBe(true);
+    await expect(
+      assertSafeZipSizeIfArchive(combined, {
+        name: 'sample.xls',
+        knownOuterContainer: 'cfb',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('does not trust a CFB declaration without a valid CFB header', async () => {
+    const bomb = await buildBombArchive([
+      { name: 'document.xml', decompressedBytes: 40 * megabyte },
+    ]);
+
+    await expect(
+      assertSafeZipSizeIfArchive(bomb, { name: 'bomb.xls', knownOuterContainer: 'cfb' }),
+    ).rejects.toBeInstanceOf(ZipBombError);
+  });
+
   /**
    * Past detection there are only two honest answers, validated or refused. An ordinary
    * Error is neither: callers treat it as "this reader could not manage it" and hand the

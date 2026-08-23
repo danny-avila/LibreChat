@@ -24,13 +24,8 @@ import {
 /** Bounds a parse that never returns; the main thread is free to fire this timer. */
 const PDF_CHILD_TIMEOUT_MS = 30_000;
 
-/**
- * Share of the child's budget the extraction may spend before the optional
- * classification pass is skipped. Measured at roughly half the extraction's cost, so
- * this leaves room for it without letting the added pass push an otherwise valid
- * document past the timeout.
- */
-const CLASSIFY_BUDGET_SHARE = 0.5;
+/** Optional scan classification receives its own killable deadline. */
+const PDF_CLASSIFIER_TIMEOUT_MS = 15_000;
 
 /**
  * Child body, kept as a string so the bundler emits no second entry point and the
@@ -48,31 +43,8 @@ process.once('message', (request) => {
     if (request.op === 'text') {
       result = { text: native.extractText(data) };
     } else {
-      const startedAt = Date.now();
       const extraction = native.extractPagesMarkdown(data);
-      /* Classification is a second, cheaper pass in this same child. Its per-page
-       * reasons are the only place a scan is named: the extraction's own needsOcr flag
-       * reports unreliable text, which is a different question and one that fires on
-       * dot leaders.
-       *
-       * It is also optional. The extraction is what the upload needs; this only tells
-       * the caller whether to consult OCR as well. When the first pass has already spent
-       * the budget, the document that would otherwise time out ships without the hint
-       * rather than failing outright. */
-      let scannedPages = [];
-      if (Date.now() - startedAt < request.classifyBudgetMs) {
-        try {
-          const detection = native.detectPdf(data);
-          scannedPages = (detection.ocrReasonsByPage || [])
-            .filter((entry) => (entry.reasons || []).some((r) => request.scanReasons.includes(r)))
-            .map((entry) => entry.page);
-        } catch (classifyError) {
-          /* Optional means optional: a classifier that cannot read this document must not
-           * discard the extraction that already succeeded, which the parent would answer
-           * by falling back to a weaker engine or refusing the upload outright. */
-        }
-      }
-      result = { pages: extraction.pages, scannedPages };
+      result = { pages: extraction.pages };
     }
     /* Bounded here so no oversized extraction crosses IPC into the API process. The
      * page count is its own limit: pages that converted to nothing weigh nothing, so
@@ -112,6 +84,27 @@ process.once('message', (request) => {
       return;
     }
     process.send({ ok: true, result });
+  } catch (error) {
+    process.send({ ok: false, message: error && error.message ? error.message : String(error) });
+  }
+});
+`;
+
+/**
+ * The optional classifier runs separately from extraction so its synchronous native
+ * call can be killed without discarding pages that were already extracted successfully.
+ */
+const CLASSIFIER_CHILD_SOURCE = `
+process.once('message', (request) => {
+  const fs = require('fs');
+  try {
+    const native = require(request.modulePath);
+    const data = fs.readFileSync(request.path);
+    const detection = native.detectPdf(data);
+    const scannedPages = (detection.ocrReasonsByPage || [])
+      .filter((entry) => (entry.reasons || []).some((reason) => request.scanReasons.includes(reason)))
+      .map((entry) => entry.page);
+    process.send({ ok: true, result: { scannedPages } });
   } catch (error) {
     process.send({ ok: false, message: error && error.message ? error.message : String(error) });
   }
@@ -158,10 +151,27 @@ function runPdfChild(
       maxOutputBytes: MAX_PARSER_OUTPUT_BYTES,
       maxPages: MAX_PARSER_PAGES,
       pageOverheadBytes: PARSER_PAGE_OVERHEAD_BYTES,
-      scanReasons: SCAN_OCR_REASONS,
-      classifyBudgetMs: PDF_CHILD_TIMEOUT_MS * CLASSIFY_BUDGET_SHARE,
     },
     timeoutMs: PDF_CHILD_TIMEOUT_MS,
+    signal,
+  });
+}
+
+function runPdfClassifierChild(
+  filePath: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<PdfChildResult> {
+  const modulePath = require.resolve('@firecrawl/pdf-inspector');
+  return runNativeParserChild<PdfChildResult>({
+    childSource: CLASSIFIER_CHILD_SOURCE,
+    parserName: 'pdf-inspector classifier',
+    request: {
+      path: filePath,
+      modulePath,
+      scanReasons: SCAN_OCR_REASONS,
+    },
+    timeoutMs,
     signal,
   });
 }
@@ -171,8 +181,27 @@ export async function extractPagesMarkdownIsolated(
   filePath: string,
   signal?: AbortSignal,
 ): Promise<PdfPageExtraction> {
-  const { pages, scannedPages } = await runPdfChild('pages', filePath, signal);
-  return { pages: pages ?? [], scannedPages: scannedPages ?? [] };
+  const startedAt = Date.now();
+  const { pages } = await runPdfChild('pages', filePath, signal);
+  let scannedPages: number[] = [];
+  const remainingMs = PDF_CHILD_TIMEOUT_MS - (Date.now() - startedAt);
+  if (remainingMs <= 0) {
+    return { pages: pages ?? [], scannedPages };
+  }
+  try {
+    const classification = await runPdfClassifierChild(
+      filePath,
+      Math.min(PDF_CLASSIFIER_TIMEOUT_MS, remainingMs),
+      signal,
+    );
+    scannedPages = classification.scannedPages ?? [];
+  } catch (error) {
+    if (signal?.aborted) {
+      throw error;
+    }
+    /* Classification only decides whether OCR may improve a successful extraction. */
+  }
+  return { pages: pages ?? [], scannedPages };
 }
 
 /**

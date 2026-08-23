@@ -99,6 +99,21 @@ const ANYDOC_EXTENSION_FORMATS: Readonly<Record<string, string>> = {
   pdf: 'pdf',
 };
 
+const LEGACY_CFB_MIME_TYPES: ReadonlySet<string> = new Set([
+  'application/msword',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.ms-excel',
+  'application/msexcel',
+  'application/x-msexcel',
+  'application/x-ms-excel',
+  'application/x-excel',
+  'application/x-dos_ms_excel',
+  'application/xls',
+  'application/x-xls',
+]);
+
+const LEGACY_CFB_EXTENSIONS: ReadonlySet<string> = new Set(['doc', 'ppt', 'pps', 'pot', 'xls']);
+
 /**
  * The anydoc format a declared MIME type names, if any.
  *
@@ -120,9 +135,21 @@ function toMessage(error: unknown): string {
 }
 
 /** Pure extension mapping, so loading AnyDoc's native binding stays inside the child. */
+function extensionFromPath(name: string): string | undefined {
+  return name.split(/[\\/]/).pop()?.split('.').pop()?.toLowerCase();
+}
+
 function formatFromPath(name: string): string | null {
-  const extension = name.split(/[\\/]/).pop()?.split('.').pop()?.toLowerCase();
+  const extension = extensionFromPath(name);
   return extension ? (ANYDOC_EXTENSION_FORMATS[extension] ?? null) : null;
+}
+
+function declaresLegacyCfbContainer(name: string, type: string): boolean {
+  if (ANYDOC_MIME_FORMATS[type] != null) {
+    return LEGACY_CFB_MIME_TYPES.has(type);
+  }
+  const extension = extensionFromPath(name);
+  return extension != null && LEGACY_CFB_EXTENSIONS.has(extension);
 }
 
 /**
@@ -205,7 +232,10 @@ export async function parseWithAnydoc(
   assertSupportedType(name, type, formatFromPath(name));
 
   const buffer = await fs.promises.readFile(file.path);
-  await assertSafeZipSizeIfArchive(buffer, { name });
+  await assertSafeZipSizeIfArchive(buffer, {
+    name,
+    ...(declaresLegacyCfbContainer(name, type) && { knownOuterContainer: 'cfb' as const }),
+  });
   /* Read from the buffer already in hand, before extraction: anydoc converts artwork
    * to nothing at all, so this is the only record that the Markdown below may be
    * missing what an embedded scan holds. */
