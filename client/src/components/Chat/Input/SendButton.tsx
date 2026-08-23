@@ -31,7 +31,7 @@ const SubmitButton = React.memo(
             type="submit"
           >
             <span className="" data-state="closed">
-              <SendIcon size={24} />
+              <SendIcon className="size-6" />
             </span>
           </button>
         }
