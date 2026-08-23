@@ -149,10 +149,12 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
         try {
           const result = await dataService.assignConversationToProject(payload);
           if (isForeignSession(owner)) {
-            /* The session turned over while the request was out. This cache is
-             * not scoped by user, so publishing the answer now would describe
-             * one account's conversation to the next. */
-            return result;
+            /* The session turned over while the request was out. Rejecting
+             * rather than returning, so none of the success path runs: the
+             * caches are not scoped by user and conversation ids repeat across
+             * accounts, so this answer would otherwise describe one account's
+             * conversation to the next, and report success for it. */
+            throw new Error('assignment abandoned: the signed-in user changed');
           }
           /* The authoritative cache is written here, before the pending entry is
            * released, so a drag starting in between still sees the new project
