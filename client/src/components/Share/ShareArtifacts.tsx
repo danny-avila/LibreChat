@@ -1,14 +1,11 @@
 import { lazy, Suspense, useState, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import {
-  useMediaQuery,
-  ResizablePanel,
-  ResizableHandleAlt,
-  ResizablePanelGroup,
-} from '@librechat/client';
+import { ResizablePanel, ResizableHandleAlt, ResizablePanelGroup } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { ArtifactsContextValue } from '~/Providers';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
+import { SHARE_ARTIFACTS_MAX_WIDTH } from '~/utils/breakpoints';
+import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
 import store from '~/store';
@@ -58,7 +55,7 @@ export function ShareArtifactsContainer({
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
-  const isSmallScreen = useMediaQuery('(max-width: 1023px)');
+  const isSmallScreen = useScaledMaxWidth(SHARE_ARTIFACTS_MAX_WIDTH);
   const [artifactPanelSize, setArtifactPanelSize] = useState(getInitialArtifactPanelSize);
 
   const artifactsContextValue = useMemo<ArtifactsContextValue | null>(() => {
