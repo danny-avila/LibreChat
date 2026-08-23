@@ -197,19 +197,19 @@ export const useDeleteFilesMutation = (
     onSuccess: (data, vars, context) => {
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (cachefiles) => {
         const { files: filesDeleted } = vars;
-        /** Prefer the ids the API actually deleted. A 200 with `failedFileIds` still
-         * leaves those records on disk; dropping them from the cache would prevent retry. */
-        if (Array.isArray(data?.deletedFileIds) || Array.isArray(data?.failedFileIds)) {
-          const deleted = new Set(data.deletedFileIds ?? []);
-          return (cachefiles ?? []).filter((file) => !deleted.has(file.file_id));
-        }
-
-        const fileMap = filesDeleted.reduce((acc, file) => {
-          acc.set(file.file_id, file);
+        /** Only a reported failure leaves a record on disk, so everything else the request named
+         * is gone. Reading it the other way around would strand a row the server never had: a
+         * file another tab already deleted matches no record, and the route answers that with
+         * both id lists empty. Failed ids stay cached so the retry can still find them. */
+        const failed = new Set(data?.failedFileIds ?? []);
+        const requested = filesDeleted.reduce((acc, file) => {
+          acc.add(file.file_id);
           return acc;
-        }, new Map<string, t.BatchFile>());
+        }, new Set<string>());
 
-        return (cachefiles ?? []).filter((file) => !fileMap.has(file.file_id));
+        return (cachefiles ?? []).filter(
+          (file) => !requested.has(file.file_id) || failed.has(file.file_id),
+        );
       });
 
       showToast({

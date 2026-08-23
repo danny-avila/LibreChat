@@ -541,20 +541,93 @@ export type PendingFileDeletion = {
 export const failedFileIdsFrom = (result: DeleteFilesResponse | void): string[] =>
   result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [];
 
-const retainedFileDeletions = new Map<string, PendingFileDeletion>();
+const RETAINED_DELETION_STORAGE_KEY = 'librechat-retained-file-deletions';
+const RETAINED_RETRY_BASE_DELAY_MS = 5_000;
+const RETAINED_RETRY_MAX_DELAY_MS = 60_000;
+
+const readStoredRetainedDeletions = (): PendingFileDeletion[] => {
+  try {
+    const raw = sessionStorage.getItem(RETAINED_DELETION_STORAGE_KEY);
+    if (raw == null || raw === '') {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as PendingFileDeletion[] | null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+/** Survives a reload: the chip these came from is gone, so once the tab forgets the payload the
+ * upload on the server has no reference left at all. */
+const retainedFileDeletions = new Map<string, PendingFileDeletion>(
+  readStoredRetainedDeletions().map((record) => [record.file_id, record]),
+);
 const retainedFileDeletionListeners = new Set<() => void>();
+
+const persistRetainedFileDeletions = (): void => {
+  try {
+    if (retainedFileDeletions.size === 0) {
+      sessionStorage.removeItem(RETAINED_DELETION_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      RETAINED_DELETION_STORAGE_KEY,
+      JSON.stringify(Array.from(retainedFileDeletions.values())),
+    );
+  } catch {
+    // The in-memory copy still drives this session's retries.
+  }
+};
 
 const notifyRetainedFileDeletions = (): void => {
   retainedFileDeletionListeners.forEach((listener) => listener());
 };
 
+let retainedRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
+let onlineRetryBound = false;
+
+const bindOnlineRetainedRetry = (): void => {
+  if (onlineRetryBound || typeof window === 'undefined') {
+    return;
+  }
+  onlineRetryBound = true;
+  window.addEventListener('online', () => {
+    retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
+    notifyRetainedFileDeletions();
+  });
+};
+
+/** A retry that fails again changes nothing the cleanup effect depends on, and the files query
+ * does not refetch on reconnect, so without an explicit wake-up the payload would sit untouched
+ * until some unrelated cache update happened to arrive. Backs off to a slow poll rather than
+ * giving up, because giving up is what orphans the upload. */
+export const scheduleRetainedFileDeletionRetry = (): void => {
+  if (retainedRetryTimer != null) {
+    return;
+  }
+  bindOnlineRetainedRetry();
+  retainedRetryTimer = setTimeout(() => {
+    retainedRetryTimer = null;
+    retainedRetryDelayMs = Math.min(retainedRetryDelayMs * 2, RETAINED_RETRY_MAX_DELAY_MS);
+    notifyRetainedFileDeletions();
+  }, retainedRetryDelayMs);
+};
+
 export const retainFileDeletion = (record: PendingFileDeletion): void => {
   retainedFileDeletions.set(record.file_id, record);
+  persistRetainedFileDeletions();
+  retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
   notifyRetainedFileDeletions();
 };
 
 export const clearRetainedFileDeletion = (fileId: string): void => {
-  retainedFileDeletions.delete(fileId);
+  if (!retainedFileDeletions.delete(fileId)) {
+    return;
+  }
+  persistRetainedFileDeletions();
+  retainedRetryDelayMs = RETAINED_RETRY_BASE_DELAY_MS;
 };
 
 /** The deletions waiting for a retry; ownership stays with the store until one succeeds. */

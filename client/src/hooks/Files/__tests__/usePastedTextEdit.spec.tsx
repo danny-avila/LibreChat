@@ -92,6 +92,9 @@ jest.mock('~/utils', () => ({
   getFilesDraftCached: (id: string) =>
     mockState.draftsById[id] ?? { fileIds: [], pendingPastes: {}, pastedTextIds: [] },
   getBrowserTabId: () => mockState.tabId,
+  /** The other tab in these scenarios is open, so a stamp that is not ours is a live claim. */
+  isFilesDraftOwnedByThisTab: (draft: { tabId?: string }) =>
+    draft.tabId == null || draft.tabId === mockState.tabId,
   markPastedTextFile: (...args: unknown[]) => mockMarkPastedTextFile(...args),
   retainFileDeletion: (...args: unknown[]) => mockRetainFileDeletion(...args),
   addPastedTextDraftFile: (...args: unknown[]) => mockAddPastedTextDraftFile(...args),

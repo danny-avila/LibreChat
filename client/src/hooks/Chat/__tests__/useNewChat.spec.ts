@@ -8,6 +8,7 @@ const mockClearMessagesCache = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockClearAllDrafts = jest.fn();
 const mockDeleteFiles = jest.fn();
+const mockScheduleRetainedRetry = jest.fn();
 
 /** A live composer entry: what the ownership check reads off the file map. */
 type LiveFile = { file_id: string; attached?: boolean; progress?: number };
@@ -83,6 +84,7 @@ jest.mock('~/utils', () => ({
   },
   failedFileIdsFrom: (result: { failedFileIds?: string[] } | void) =>
     result != null && Array.isArray(result.failedFileIds) ? result.failedFileIds : [],
+  scheduleRetainedFileDeletionRetry: () => mockScheduleRetainedRetry(),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -128,6 +130,7 @@ describe('useNewChat', () => {
     mockState.retainedDeletions = [];
     mockState.persistedPendingDiscardIds = [];
     mockState.retainedListener = null;
+    mockScheduleRetainedRetry.mockClear();
   });
 
   it('clears the outgoing conversation before resetting', () => {
@@ -416,6 +419,9 @@ describe('useNewChat', () => {
 
     expect(mockDeleteFiles).toHaveBeenCalledTimes(1);
     expect(mockState.retainedDeletions).toHaveLength(1);
+    /** A second failure moves nothing this effect watches, so the payload only gets another
+     * attempt if one is scheduled. */
+    expect(mockScheduleRetainedRetry).toHaveBeenCalled();
   });
 
   it('retries a deferred deletion whose request failed', async () => {

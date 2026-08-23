@@ -54,6 +54,11 @@ const makeTextAreaRef = (value = '') =>
     current: { value, addEventListener: jest.fn(), removeEventListener: jest.fn() },
   }) as unknown as React.RefObject<HTMLTextAreaElement>;
 
+/** The registry `isTabLive` reads. A stamped tab keeps its claim only while it keeps reporting,
+ * so a scenario about another tab has to say whether that tab is still open. */
+const markTabLive = (tabId: string): void =>
+  localStorage.setItem('librechat-live-tabs', JSON.stringify({ [tabId]: Date.now() }));
+
 beforeEach(() => {
   localStorage.clear();
   (useRecoilValue as jest.Mock).mockImplementation((atom) => {
@@ -677,7 +682,8 @@ describe('useAutoSave — file cache updates', () => {
     expect(getFilesDraft('convo-1').pastedTextIds).toEqual(['live-file']);
   });
 
-  it('does not restore a files draft another tab owns', () => {
+  it('does not restore a files draft another open tab owns', () => {
+    markTabLive('other-tab');
     mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'other tab text' : ''));
     setFilesDraft('convo-2', {
       fileIds: ['other-tab-file'],
@@ -702,5 +708,38 @@ describe('useAutoSave — file cache updates', () => {
 
     expect(mockSetValue).not.toHaveBeenCalledWith('text', 'other tab text');
     expect(getFilesDraft('convo-2').tabId).toBe('other-tab');
+  });
+
+  it('restores a files draft whose owning tab has closed', () => {
+    /** A closed tab's id can never be presented again, so without reclaiming it the draft and
+     * the text saved beside it would stay unreachable for the rest of the profile's life. */
+    markTabLive('other-tab');
+    setFilesDraft('convo-2', {
+      fileIds: ['closed-tab-file'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
+    mockGetDraft.mockImplementation((id: string) => (id === 'convo-2' ? 'closed tab text' : ''));
+    (useGetFiles as jest.Mock).mockReturnValue({
+      data: [{ ...persistedRecord, file_id: 'closed-tab-file' }],
+    });
+
+    const { rerender } = renderHook(
+      ({ conversationId }: { conversationId: string }) =>
+        useAutoSave({
+          conversationId,
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { conversationId: 'convo-1' } },
+    );
+
+    act(() => {
+      rerender({ conversationId: 'convo-2' });
+    });
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'closed tab text');
   });
 });

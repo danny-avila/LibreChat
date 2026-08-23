@@ -14,7 +14,7 @@ import {
   addPastedTextDraftFile,
   failedFileIdsFrom,
   forceResize,
-  getBrowserTabId,
+  isFilesDraftOwnedByThisTab,
   getComposerDraftId,
   getFilesDraftCached,
   markPastedTextFile,
@@ -226,7 +226,7 @@ export default function usePastedTextEdit({
         const draft = getFilesDraftCached(
           getComposerDraftId(index, conversationIdRef.current, submitting),
         );
-        if (draft.tabId != null && draft.tabId !== getBrowserTabId()) {
+        if (!isFilesDraftOwnedByThisTab(draft)) {
           return false;
         }
         const claimed = draft.pastedTextIds ?? [];

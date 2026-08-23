@@ -16,6 +16,7 @@ import {
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   loadPendingDiscardIds,
+  scheduleRetainedFileDeletionRetry,
   storePendingDiscardIds,
   subscribeRetainedFileDeletions,
   takeRetainedFileDeletions,
@@ -176,7 +177,9 @@ export default function useNewChat({
           }
         } catch {
           /** The draft is already gone, so these ids are the only record of what to clean:
-           * keep them for the next files-cache update rather than orphaning the uploads. */
+           * keep them for the next files-cache update rather than orphaning the uploads. Nothing
+           * here moves an effect dependency, so the next attempt has to be asked for. */
+          scheduleRetainedFileDeletionRetry();
           return;
         }
       }

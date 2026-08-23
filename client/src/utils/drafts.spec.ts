@@ -13,6 +13,7 @@ import {
   getNewConversationDraftId,
   getNewConversationDraftToken,
   getPendingDraftId,
+  isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
   migrateFilesDraft,
   migrateTextDraft,
@@ -335,6 +336,71 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     setFilesDraft('convo-1', { fileIds: ['file-1'], pendingPastes: {} });
 
     expect(getFilesDraft('convo-1').tabId).toBe(getBrowserTabId());
+  });
+
+  it('treats a record owned by an open tab as another tab’s', () => {
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+
+    expect(isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'other-tab' })).toBe(
+      false,
+    );
+  });
+
+  it('reclaims a record whose owning tab has closed', () => {
+    /** The tab that stamped it can never present that id again, so holding the claim open would
+     * leave the draft unreachable to every tab, for good. */
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
+
+    expect(
+      isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'closed-tab' }),
+    ).toBe(true);
+  });
+
+  it('reclaims a record whose owning tab stopped reporting long ago', () => {
+    localStorage.setItem(
+      'librechat-live-tabs',
+      JSON.stringify({ 'crashed-tab': Date.now() - 600_000 }),
+    );
+
+    expect(
+      isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'crashed-tab' }),
+    ).toBe(true);
+  });
+
+  it('restamps a written record when the tab that claimed it is gone', () => {
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({}));
+    setFilesDraft(Constants.NEW_CONVO, {
+      fileIds: ['file-1'],
+      pendingPastes: {},
+      tabId: 'closed-tab',
+    });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe(getBrowserTabId());
+  });
+
+  it('leaves the claim alone when the tab that made it is still open', () => {
+    localStorage.setItem('librechat-live-tabs', JSON.stringify({ 'other-tab': Date.now() }));
+    setFilesDraft(Constants.NEW_CONVO, {
+      fileIds: ['file-1'],
+      pendingPastes: {},
+      tabId: 'other-tab',
+    });
+
+    expect(getFilesDraft(Constants.NEW_CONVO).tabId).toBe('other-tab');
+  });
+
+  it('claims a shared composer key from a text draft with no attachment', () => {
+    /** Ownership rides on the files record, which is only written once something is attached, so
+     * a typed-but-unattached draft used to read as nobody's and be cleared by another tab. */
+    setDraft({ id: getNewConversationDraftId(), value: 'queued follow-up' });
+
+    expect(getFilesDraft(getNewConversationDraftId()).tabId).toBe(getBrowserTabId());
+  });
+
+  it('does not claim a conversation key, which tabs are meant to share', () => {
+    setDraft({ id: 'convo-1', value: 'shared conversation text' });
+
+    expect(getFilesDraft('convo-1').tabId).toBeUndefined();
   });
 
   it('keeps the original tab owner when another tab rewrites the same record', () => {
