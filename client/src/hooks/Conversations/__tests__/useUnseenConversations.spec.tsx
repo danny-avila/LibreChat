@@ -44,8 +44,35 @@ describe('useUnseenConversations', () => {
       );
     });
 
-    expect(result.current).toEqual([
+    expect(result.current?.unseen).toEqual([
       { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT },
+    ]);
+  });
+
+  it('records the reply stamps of seen conversations as the alerts baseline', () => {
+    /* A seen conversation marked unread from another device re-enters the unseen set with the
+       stamp it always had; only this record lets the alerts tell that from a new reply. */
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AT },
+          {
+            conversationId: 'seen-a',
+            title: 'S',
+            lastResponseAt: RESPONDED_AT,
+            lastSeenAt: SEEN_AFTER,
+          },
+          { conversationId: 'never-replied', title: 'N' },
+        ]),
+      );
+    });
+
+    expect(result.current?.stamps).toEqual([
+      ['seen-a', RESPONDED_AT],
+      ['unseen-a', RESPONDED_AT],
     ]);
   });
 
@@ -58,9 +85,10 @@ describe('useUnseenConversations', () => {
       queryClient.setQueryData(listKeyArchived, page([convo]));
     });
 
-    expect(result.current).toEqual([
-      { conversationId: 'dup', title: 'D', lastResponseAt: RESPONDED_AT },
-    ]);
+    expect(result.current).toEqual({
+      unseen: [{ conversationId: 'dup', title: 'D', lastResponseAt: RESPONDED_AT }],
+      stamps: [['dup', RESPONDED_AT]],
+    });
   });
 
   it('ignores cache events outside the conversation lists', () => {
@@ -74,7 +102,7 @@ describe('useUnseenConversations', () => {
       );
     });
 
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual({ unseen: [], stamps: [] });
   });
 
   it('counts a pin that lives only in the pinned cache', () => {
@@ -92,7 +120,7 @@ describe('useUnseenConversations', () => {
       });
     });
 
-    expect(result.current).toEqual([
+    expect(result.current?.unseen).toEqual([
       { conversationId: 'old-pin', title: 'Pinned', lastResponseAt: RESPONDED_AT },
     ]);
   });
@@ -106,7 +134,8 @@ describe('useUnseenConversations', () => {
       queryClient.setQueryData(pinnedKey, { conversations: [convo], nextCursor: null });
     });
 
-    expect(result.current).toHaveLength(1);
+    expect(result.current?.unseen).toHaveLength(1);
+    expect(result.current?.stamps).toHaveLength(1);
   });
 
   it('reports null until a conversation list has actually resolved', () => {
@@ -120,7 +149,7 @@ describe('useUnseenConversations', () => {
       queryClient.setQueryData(listKeyActive, page([]));
     });
 
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual({ unseen: [], stamps: [] });
   });
 
   it('reports a fresh reply to an already-unseen conversation', () => {
@@ -142,12 +171,50 @@ describe('useUnseenConversations', () => {
     });
 
     expect(result.current).not.toBe(before);
-    expect(result.current).toEqual([
+    expect(result.current?.unseen).toEqual([
       { conversationId: 'unseen-a', title: 'A', lastResponseAt: RESPONDED_AGAIN_AT },
     ]);
   });
 
-  it('keeps the array identity when the unseen set is unchanged', () => {
+  it('reports a fresh reply that was caught up the moment it landed', () => {
+    /* The row never turns unseen, but the alerts baseline still has to move with it, or a
+       later mark-as-unread from another device would announce this reply as a new one. */
+    const { result, queryClient } = setup();
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          {
+            conversationId: 'seen-a',
+            title: 'S',
+            lastResponseAt: RESPONDED_AT,
+            lastSeenAt: SEEN_AFTER,
+          },
+        ]),
+      );
+    });
+    const before = result.current;
+
+    act(() => {
+      queryClient.setQueryData(
+        listKeyActive,
+        page([
+          {
+            conversationId: 'seen-a',
+            title: 'S',
+            lastResponseAt: RESPONDED_AGAIN_AT,
+            lastSeenAt: RESPONDED_AGAIN_AT,
+          },
+        ]),
+      );
+    });
+
+    expect(result.current).not.toBe(before);
+    expect(result.current?.stamps).toEqual([['seen-a', RESPONDED_AGAIN_AT]]);
+  });
+
+  it('keeps the state identity when nothing relevant changed', () => {
     const { result, queryClient } = setup();
 
     act(() => {

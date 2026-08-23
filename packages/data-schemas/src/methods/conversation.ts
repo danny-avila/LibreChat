@@ -3227,7 +3227,12 @@ export function createConversationMethods(
         { $set: { lastSeenAt } },
         { timestamps: false },
       );
-      return { modified: result.modifiedCount > 0 };
+      /* Matched, not modified: a retry of an acknowledgement that already landed writes the
+       * same value back, which MongoDB reports as zero documents modified. The client reads
+       * `modified: false` as a rejected stale acknowledgement and rolls its cache back to
+       * unseen, so success has to mean "the observed reply is still the newest", which is
+       * exactly what the filter matching does. */
+      return { modified: result.matchedCount > 0 };
     } catch (error) {
       logger.error('[markConvoSeen] Error marking conversation seen', error);
       throw new Error('Error marking conversation seen');

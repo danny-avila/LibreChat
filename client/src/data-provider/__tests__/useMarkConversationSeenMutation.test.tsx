@@ -152,6 +152,55 @@ describe('useMarkConversationSeenMutation', () => {
     expect(cancel).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
   });
 
+  it('cancels a point-query fetch already reading the old catch-up', async () => {
+    /* A conversation opened by URL resolves into its own point query, which the read and
+       write helpers both consult. A refetch delivering after settlement would land the stale
+       row as the freshest copy and read as unseen again. */
+    const request = deferred();
+    mockMarkSeen.mockReturnValue(request.promise);
+    const { result, queryClient } = setup(SEEN_AT);
+    queryClient.setQueryData([QueryKeys.conversation, CONVO_ID], {
+      conversationId: CONVO_ID,
+      title: 'Marked',
+      lastResponseAt: RESPONDED_AT,
+      lastSeenAt: SEEN_AT,
+    });
+    const cancel = jest.spyOn(queryClient, 'cancelQueries');
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+      await flush();
+      request.resolve({ modified: true });
+      await pending;
+    });
+
+    expect(cancel).toHaveBeenCalledWith([QueryKeys.conversation, CONVO_ID]);
+  });
+
+  it('leaves an unloaded point query alone so its initial load can deliver', async () => {
+    /* Cancelling ChatRoute's first conversation fetch would revert it to empty with its
+       refetches disabled, leaving the route waiting on data nothing restarts. */
+    const request = deferred();
+    mockMarkSeen.mockReturnValue(request.promise);
+    const { result, queryClient } = setup(SEEN_AT);
+    const cancel = jest.spyOn(queryClient, 'cancelQueries');
+
+    await act(async () => {
+      const pending = result.current.mutateAsync({
+        conversationId: CONVO_ID,
+        lastResponseAt: RESPONDED_AT,
+      });
+      await flush();
+      request.resolve({ modified: true });
+      await pending;
+    });
+
+    expect(cancel).not.toHaveBeenCalledWith([QueryKeys.conversation, CONVO_ID]);
+  });
+
   it('restores the real state when the server declines the observed reply', async () => {
     /* A newer reply landed mid-flight, so the acknowledgement did not apply and the row is
        genuinely still unseen. */

@@ -242,18 +242,33 @@ export const usePinConversationMutation = (
 };
 
 /**
- * Stops list fetches that are already reading the old read state.
+ * Stops fetches that are already reading the old read state.
  *
  * One of them can have read the row before the write lands and deliver afterwards, putting the
  * stale catch-up back over a settled acknowledgement. Cancelling is the cheap half of React
  * Query's optimistic recipe: no request is issued, and whatever triggered the fetch (a focus,
  * a mount) triggers it again once the mutation has settled.
+ *
+ * The point query is covered too, because the read and write helpers both resolve it: left
+ * running, its stale payload would land after settlement as the freshest copy and read as
+ * unseen again, with the caller's attempt guard suppressing the re-acknowledgement. Only once
+ * it holds data, though: cancelling ChatRoute's initial load would revert it to empty, and
+ * with its refetches disabled nothing would ever restart that fetch.
  */
-const cancelConvoListFetches = (queryClient: QueryClient): Promise<void[]> =>
-  Promise.all([
+const cancelConvoReadFetches = (
+  queryClient: QueryClient,
+  conversationId: string,
+): Promise<void[]> => {
+  const cancellations = [
     queryClient.cancelQueries([QueryKeys.allConversations]),
     queryClient.cancelQueries([QueryKeys.pinnedConversations]),
-  ]);
+  ];
+  const pointKey = [QueryKeys.conversation, conversationId];
+  if (queryClient.getQueryData(pointKey) !== undefined) {
+    cancellations.push(queryClient.cancelQueries(pointKey));
+  }
+  return Promise.all(cancellations);
+};
 
 /**
  * Writes a settled catch-up back, but only when it is safe to.
@@ -305,7 +320,7 @@ export const useMarkConversationSeenMutation = (): UseMutationResult<
     (payload: t.TMarkConversationSeenRequest) => dataService.markConversationSeen(payload),
     {
       onMutate: async (vars) => {
-        await cancelConvoListFetches(queryClient);
+        await cancelConvoReadFetches(queryClient, vars.conversationId);
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Acknowledging exactly the observed reply, rather than the browser's idea of "now":
            a clock running behind the server would leave the row still unseen, and the cache
@@ -359,7 +374,7 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
     (payload: t.TMarkConversationUnreadRequest) => dataService.markConversationUnread(payload),
     {
       onMutate: async (vars) => {
-        await cancelConvoListFetches(queryClient);
+        await cancelConvoReadFetches(queryClient, vars.conversationId);
         const previous = findConvoInAllQueries(queryClient, vars.conversationId);
         /* The marker the optimistic pass writes, remembered so a rollback can tell its own
            state apart from a newer reply that arrived while the request was open. */

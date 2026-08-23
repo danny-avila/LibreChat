@@ -1814,6 +1814,30 @@ describe('Conversation Operations', () => {
       expect(convo?.lastSeenAt).toBeInstanceOf(Date);
     });
 
+    it('reports success when a retried acknowledgement changes nothing', async () => {
+      /* A future-dated observed reply is stored verbatim, so a retry after a lost response
+         writes the identical value: zero documents modified, but the database is already
+         caught up. Reporting failure would make the client roll back to unseen. */
+      const observed = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const first = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(first.modified).toBe(true);
+
+      const retry = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(retry.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt?.getTime()).toBe(observed.getTime());
+    });
+
     it('leaves updatedAt alone so reading a conversation does not reorder the sidebar', async () => {
       await Conversation.create({
         conversationId: mockConversationData.conversationId,
