@@ -55,23 +55,21 @@ const createDynamicMeiliModel = (modelName: string): DynamicMeiliModel => {
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const waitForMock = async (mock: jest.Mock, timeoutMs = 2000): Promise<void> => {
+const waitForCondition = async (
+  condition: () => boolean | Promise<boolean>,
+  timeoutMs = 2000,
+): Promise<void> => {
   const start = Date.now();
-  while (mock.mock.calls.length === 0 && Date.now() - start <= timeoutMs) {
+  while (!(await condition()) && Date.now() - start <= timeoutMs) {
     await wait(10);
   }
 };
 
-const waitForMockCalls = async (
-  mock: jest.Mock,
-  callCount: number,
-  timeoutMs = 2000,
-): Promise<void> => {
-  const start = Date.now();
-  while (mock.mock.calls.length < callCount && Date.now() - start <= timeoutMs) {
-    await wait(10);
-  }
-};
+const waitForMock = (mock: jest.Mock, timeoutMs = 2000): Promise<void> =>
+  waitForCondition(() => mock.mock.calls.length > 0, timeoutMs);
+
+const waitForMockCalls = (mock: jest.Mock, callCount: number, timeoutMs = 2000): Promise<void> =>
+  waitForCondition(() => mock.mock.calls.length >= callCount, timeoutMs);
 
 const mockAddDocuments = jest.fn();
 const mockAddDocumentsInBatches = jest.fn();
@@ -644,10 +642,16 @@ describe('Meilisearch Mongoose plugin', () => {
       subagentKind: 'agent',
       depth: 1,
     };
-    mockWaitForTask.mockResolvedValueOnce({ status: 'failed' });
+    mockWaitForTask.mockResolvedValueOnce({ status: 'failed' }).mockImplementationOnce(async () => {
+      await wait(50);
+      return { status: 'succeeded' };
+    });
     await conversation!.save();
     await waitForMockCalls(mockWaitForTask, 2);
-    await wait(25);
+    await waitForCondition(async () => {
+      const storedDoc = await conversationModel.collection.findOne({ conversationId });
+      return storedDoc?._meiliIndex === undefined && storedDoc?._meiliIndexAttempted === undefined;
+    });
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
 
     expect(mockDeleteDocument).toHaveBeenCalledTimes(2);
