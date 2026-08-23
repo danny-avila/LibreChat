@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { Link2, PinOff } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
+import { Button, Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import type { ConversationDragItem } from './dnd';
 import {
@@ -357,18 +357,19 @@ function Conversation({
           description={localize('com_ui_unpin')}
           side="top"
           render={
-            <button
-              type="button"
+            <Button
+              variant="row-action"
+              size="icon-xs"
               aria-label={localize('com_ui_unpin')}
               data-testid="convo-unpin-button"
               onClick={(e) => {
                 e.stopPropagation();
                 unpinConvo();
               }}
-              className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md p-0 text-text-primary outline-none transition-colors hover:bg-surface-active focus-visible:bg-surface-active focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+              className="mr-1 shrink-0 text-text-primary"
             >
               <PinOff className="size-4" aria-hidden="true" />
-            </button>
+            </Button>
           }
         />
       )}
