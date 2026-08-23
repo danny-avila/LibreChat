@@ -423,6 +423,15 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
            is the whole point of returning one. Anything else in the cache came from a reply
            that landed while the request was open, which is newer than the server read on the
            way in and has to survive. */
+        /* A catch-up in the cache that is not the one this mutation cleared is a newer
+           acknowledgement: the user opened the conversation and read the reply while the
+           request was open, and the server accepted that read after the unread write.
+           Clearing it would show a dot the server no longer backs, with the seen trigger's
+           attempt guard suppressing the re-send. Only the pre-mutation value is the stale
+           list refetch this settlement exists to defeat. */
+        if (cached?.lastSeenAt !== undefined && cached.lastSeenAt !== context?.lastSeenAt) {
+          return;
+        }
         const cachedResponseAt = cached?.lastResponseAt;
         const serverResponseAt = data.lastResponseAt;
         const holdsOwnWrite =
