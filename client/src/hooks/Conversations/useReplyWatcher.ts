@@ -4,7 +4,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
-import { findConvoInAllQueries, updateConvoInAllQueries, isConvoInAggregateCaches } from '~/utils';
+import {
+  isNotFoundError,
+  findConvoInAllQueries,
+  updateConvoInAllQueries,
+  isConvoInAggregateCaches,
+} from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import store from '~/store';
 
@@ -95,6 +100,24 @@ const mergeTimestamps = async (
     return;
   }
 
+  /* The await above is a real network wait while the conversation is open, and a newer stamp
+     can land during it: the SSE final handler, or a fresher overlapping fetch. Writing this
+     snapshot over that would walk the read state backwards after the newer reply's signal was
+     already consumed, so the ordering guard runs again against what the cache holds now, and
+     an unchanged row is left alone for the same `dataUpdatedAt` reason as above. */
+  const fresh = findConvoInAllQueries(queryClient, conversationId);
+  if (fresh?.lastResponseAt != null && lastResponseAt < fresh.lastResponseAt) {
+    return;
+  }
+  if (
+    fresh &&
+    fresh.lastResponseAt === lastResponseAt &&
+    fresh.lastSeenAt === (lastSeenAt ?? undefined) &&
+    (updatedAt === undefined || fresh.updatedAt === updatedAt)
+  ) {
+    return;
+  }
+
   updateConvoInAllQueries(
     queryClient,
     conversationId,
@@ -106,7 +129,7 @@ const mergeTimestamps = async (
     }),
     /* Reordering only when the server says the conversation moved; a bare read-state merge
        must not jump the row. */
-    updatedAt !== undefined && cached?.updatedAt !== updatedAt,
+    updatedAt !== undefined && fresh?.updatedAt !== updatedAt,
   );
 };
 
@@ -182,8 +205,18 @@ export default function useReplyWatcher() {
       dataService
         .getConversationById(conversationId)
         .then((convo) => mergeTimestamps(queryClient, convo))
-        .catch(() => {
-          /* The conversation may have been deleted while it generated. */
+        .catch((error: unknown) => {
+          /* Deleted while it generated is the only terminal answer. Anything else has
+             consumed the one completion transition this tab will see, and with the away poll
+             gated on the document being unfocused, nothing would deliver the reply's stamp
+             while the user stays here; the list refetch is the same recovery the poll uses
+             for an unknown id. The messages go stale first so an open conversation refetches
+             the reply and the seen trigger holds until it has rendered. */
+          if (isNotFoundError(error)) {
+            return;
+          }
+          queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
+          queryClient.invalidateQueries([QueryKeys.allConversations]);
         });
     }
   }, [activeJobIds, queryClient]);
