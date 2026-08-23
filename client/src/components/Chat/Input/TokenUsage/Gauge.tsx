@@ -33,7 +33,9 @@ export default function Gauge({ percent, indeterminate }: GaugeProps) {
       width={SIZE}
       height={SIZE}
       viewBox={`0 0 ${SIZE} ${SIZE}`}
-      className="-rotate-90"
+      /** size-7 is SIZE in rem: the CSS dimensions win over the attributes above,
+       *  so the gauge follows its scaled button instead of staying at 28px. */
+      className="size-7 -rotate-90"
       aria-hidden="true"
       focusable="false"
     >

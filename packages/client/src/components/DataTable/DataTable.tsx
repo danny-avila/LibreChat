@@ -411,6 +411,18 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     }
   }, [debouncedTerm, filterValue, onFilterChange, setOptimizedRowSelection]);
 
+  /** TanStack Virtual memoizes its measurements on the item-size cache, not on
+   *  estimateSize, so a new estimate on its own leaves the previous scale's row
+   *  offsets in place. measure() drops that cache and forces a recompute. */
+  const measuredScaleRef = useRef(remScale);
+  useEffect(() => {
+    if (!virtualizationActive || measuredScaleRef.current === remScale) {
+      return;
+    }
+    measuredScaleRef.current = remScale;
+    rowVirtualizer.measure();
+  }, [remScale, virtualizationActive, rowVirtualizer]);
+
   // Recalculate virtual range when data or state changes
   useEffect(() => {
     if (!virtualizationActive) return;

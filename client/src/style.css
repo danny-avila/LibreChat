@@ -672,7 +672,7 @@ pre {
   max-width: 65ch;
   font-size: var(--markdown-font-size, var(--font-size-base));
   line-height: calc(
-    22px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base)
+    1.375rem * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base)
   );
 }
 
@@ -1384,7 +1384,7 @@ html {
   max-width: none;
   font-size: var(--markdown-font-size, var(--font-size-base));
   line-height: calc(
-    22px * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base)
+    1.375rem * var(--markdown-font-size, var(--font-size-base)) / var(--font-size-base)
   );
 }
 
