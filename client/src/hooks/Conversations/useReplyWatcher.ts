@@ -236,6 +236,17 @@ export default function useReplyWatcher() {
         const { conversations } = await dataService.listConversations({
           limit: AWAY_POLL_LIMIT,
         });
+        /* Re-checked at arrival, not only at issue: the user can return while the request is
+           in flight, and this fetch bypasses React Query, so the seen mutation's cancellation
+           cannot reach it. A snapshot read before their focus-triggered acknowledgement
+           settled carries the same reply stamp with the older catch-up, which the merge
+           cannot tell from a remote mark-as-unread and would write back with the attempt
+           guard suppressing the re-send. The poll serves the away features only; once the
+           tab is focused the ordinary focus refetches own the cache, and the next unfocused
+           tick re-reads anything a discarded snapshot carried. */
+        if (document.hasFocus()) {
+          return;
+        }
         const unknownIds = new Set<string>();
         let hasNewlyUnknownConversation = false;
 
