@@ -494,6 +494,10 @@ export function createConversationMethods(
             taskId: input.taskId,
             expiresAt: input.expiresAt,
           },
+          /** Child threads are hidden from normal recents. Stamp the task start
+           * explicitly so bounded parent discovery promotes real new activity;
+           * automatic timestamps stay disabled for lease heartbeats/releases. */
+          updatedAt: input.now,
         },
       },
       { timestamps: false },

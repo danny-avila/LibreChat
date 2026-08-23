@@ -57,7 +57,17 @@ function EventSubagentRows({
         const fresh = index?.children.find((candidate) => candidate.threadId === child.threadId);
         if (fresh == null || fresh.latestTaskId === child.latestTaskId) return;
         const freshSelection = eventSubagentSelection(conversationId, fresh);
-        if (freshSelection != null) setSelected(freshSelection);
+        if (freshSelection != null) {
+          setSelected((current) => {
+            if (
+              current?.durable?.threadId !== selection.durable?.threadId ||
+              current?.durable?.taskId !== selection.durable?.taskId
+            ) {
+              return current;
+            }
+            return freshSelection;
+          });
+        }
       });
     },
     [conversationId, refresh, resetCurrentArtifactId, setArtifactsVisible, setSelected],

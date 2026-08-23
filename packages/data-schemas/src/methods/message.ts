@@ -1093,7 +1093,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? []
           : [
               {
-                $set: {
+                $addFields: {
                   _subagentTranscriptSourceBytes: transcriptJsonBytes,
                   _subagentTranscriptSourceIsString: transcriptIsString,
                 },
@@ -1222,7 +1222,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         { $sort: { createdAt: -1, _id: -1 } },
         { $limit: sourceLimit + 1 },
         {
-          $set: {
+          $addFields: {
             _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
             _subagentTaskId: {
               $substrBytes: [
@@ -1300,15 +1300,36 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         });
         continue;
       }
-      const latestTask = latest.tasks[0];
-      const latestTaskId = latestTask?.messageId.replace(/:(user|assistant)$/, '');
-      const withoutLatest = current.tasks.filter(
-        (task) => task.messageId.replace(/:(user|assistant)$/, '') !== latestTaskId,
-      );
-      current.tasks =
-        latestTask == null
-          ? withoutLatest
-          : [latestTask, ...withoutLatest].slice(0, input.limitPerThread);
+      const candidates = [...current.tasks, ...latest.tasks];
+      const tasksById = new Map<string, (typeof candidates)[number]>();
+      for (const candidate of candidates) {
+        const taskId = candidate.messageId.replace(/:(user|assistant)$/, '');
+        const existing = tasksById.get(taskId);
+        const candidateTime = new Date(candidate.createdAt).getTime();
+        const existingTime =
+          existing == null ? Number.NEGATIVE_INFINITY : new Date(existing.createdAt).getTime();
+        const candidateIsAssistant = candidate.messageId.endsWith(':assistant');
+        const existingIsAssistant = existing?.messageId.endsWith(':assistant') === true;
+        if (
+          existing == null ||
+          candidateTime > existingTime ||
+          (candidateTime === existingTime && candidateIsAssistant && !existingIsAssistant)
+        ) {
+          tasksById.set(taskId, candidate);
+        }
+      }
+      current.tasks = [...tasksById.values()]
+        .sort((left, right) => {
+          const timeDifference =
+            new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+          if (timeDifference !== 0) return timeDifference;
+          const assistantDifference =
+            Number(right.messageId.endsWith(':assistant')) -
+            Number(left.messageId.endsWith(':assistant'));
+          if (assistantDifference !== 0) return assistantDifference;
+          return left.messageId.localeCompare(right.messageId);
+        })
+        .slice(0, input.limitPerThread);
     }
     return [...records.values()].sort((left, right) =>
       left.conversationId.localeCompare(right.conversationId),

@@ -1,6 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import EventSubagentActivityGroup from './EventSubagentActivityGroup';
@@ -55,6 +55,10 @@ jest.mock('lucide-react', () => ({
 }));
 
 describe('EventSubagentActivityGroup', () => {
+  beforeEach(() => {
+    mockRefresh.mockReset().mockResolvedValue(undefined);
+  });
+
   it('opens the durable event child under its owning parent message', () => {
     let selection: ActiveSubagentPanel | null = null;
     const Observer = () => {
@@ -87,5 +91,54 @@ describe('EventSubagentActivityGroup', () => {
         },
       }),
     );
+  });
+
+  it('does not reopen a child after the user closes it while refresh is pending', async () => {
+    let selection: ActiveSubagentPanel | null = null;
+    let resolveRefresh!: (value: unknown) => void;
+    mockRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    const Observer = () => {
+      selection = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+    const ClosePanel = () => {
+      const setSelection = useSetRecoilState(activeSubagentPanel);
+      return <button type="button" data-testid="close-panel" onClick={() => setSelection(null)} />;
+    };
+    render(
+      <RecoilRoot>
+        <Observer />
+        <ClosePanel />
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageId="parent-message"
+        />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Visible Agent/ }));
+    expect(selection).toEqual(
+      expect.objectContaining({ durable: expect.objectContaining({ taskId: 'task-1' }) }),
+    );
+    fireEvent.click(screen.getByTestId('close-panel'));
+    expect(selection).toBeNull();
+
+    await act(async () => {
+      resolveRefresh({
+        children: [
+          {
+            ...mockChild,
+            latestTaskId: 'task-2',
+            tasks: [{ taskId: 'task-2', status: 'completed' }],
+          },
+        ],
+      });
+    });
+
+    await waitFor(() => expect(selection).toBeNull());
   });
 });

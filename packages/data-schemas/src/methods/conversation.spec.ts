@@ -3756,6 +3756,66 @@ describe('Conversation Operations', () => {
       expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
     });
 
+    it('keeps an older child with a live lease inside the bounded parent index', async () => {
+      const parentConversationId = uuidv4();
+      const activeThreadId = uuidv4();
+      const recentThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: activeThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('active-tool'),
+        },
+        {
+          conversationId: recentThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('recent-tool'),
+        },
+      ]);
+      await Conversation.updateOne(
+        { conversationId: activeThreadId },
+        { $set: { updatedAt: new Date('2026-08-20T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await Conversation.updateOne(
+        { conversationId: recentThreadId },
+        { $set: { updatedAt: new Date('2026-08-21T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await methods.acquireSubagentThreadLease({
+        user: 'active-index-user',
+        conversationId: activeThreadId,
+        token: 'private-token',
+        taskId: 'active-task',
+        now: new Date('2026-08-22T10:00:00.000Z'),
+        expiresAt: new Date('2026-08-22T10:00:30.000Z'),
+      });
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'active-index-user',
+        parentConversationId,
+        limit: 1,
+      });
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          conversationId: activeThreadId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'active-task' }),
+        }),
+      ]);
+    });
+
     it('resolves an event binding only through its owner, tenant, and API key', async () => {
       const conversationId = uuidv4();
       const bindingId = `evtbind_${'a'.repeat(48)}`;

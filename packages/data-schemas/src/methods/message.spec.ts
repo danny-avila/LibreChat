@@ -1244,6 +1244,61 @@ describe('Message Operations', () => {
         true,
       );
     });
+
+    it('preserves a newer recent task when the latest-per-thread snapshot is stale', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-old:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-new:user',
+                  createdAt: new Date('2026-08-21T11:00:00.000Z'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        await expect(
+          listSubagentTasksForThreads({
+            user: 'user123',
+            conversationIds: [conversationId],
+            limitPerThread: 2,
+          }),
+        ).resolves.toEqual([
+          {
+            conversationId,
+            tasks: [
+              expect.objectContaining({ messageId: 'task-new:user' }),
+              expect.objectContaining({ messageId: 'task-old:assistant' }),
+            ],
+          },
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
   });
 
   describe('deleteMessages', () => {
