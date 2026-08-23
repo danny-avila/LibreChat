@@ -32,7 +32,8 @@ export type SelectSpecHandler = (spec: TModelSpec) => void;
 export type FavoritesData = {
   favorites: Favorite[];
   isLoading: boolean;
-  /** Whether the favorites membership is known to be complete. */
+  /** Whether the favorites membership is settled: retrieved, with no write in
+   *  flight and no recovery refetch outstanding. */
   isLoaded: boolean;
   isAgentsLoading: boolean;
   agentsMap: Record<string, Agent>;
@@ -52,7 +53,19 @@ export type FavoritesData = {
  */
 export default function useFavoritesData(): FavoritesData {
   const getConversation = useGetConversation(0);
-  const { favorites, reorderFavorites, isLoading, isSuccess: isLoaded } = useFavorites();
+  const {
+    favorites,
+    reorderFavorites,
+    isLoading,
+    isSuccess,
+    isFetching: isFavoritesFetching,
+    isUpdating,
+  } = useFavorites();
+  /* An optimistic removal keeps `isSuccess` true from the earlier GET, so
+   * pruning against it would drop the ordering key of a favorite whose write
+   * has not landed. If that write then fails, the recovery refetch brings the
+   * favorite back with its saved position already gone. */
+  const isLoaded = isSuccess && !isUpdating && !isFavoritesFetching;
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();

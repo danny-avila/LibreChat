@@ -9,6 +9,9 @@ interface ConvoLinkProps {
   onRename: () => void;
   isSmallScreen: boolean;
   localize: (key: any, options?: any) => string;
+  /** Shortcuts the row responds to, declared on the element that takes focus so
+   *  assistive tech announces them when the user arrives here. */
+  keyShortcuts?: string;
   children: React.ReactNode;
 }
 
@@ -20,6 +23,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   onRename,
   isSmallScreen,
   localize,
+  keyShortcuts,
   children,
 }) => {
   return (
@@ -31,6 +35,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       )}
       title={title ?? undefined}
       aria-current={isActiveConvo ? 'page' : undefined}
+      aria-keyshortcuts={keyShortcuts}
       aria-label={
         isSharedBadgeVisible
           ? localize('com_ui_conversation_label_shared', {

@@ -125,6 +125,16 @@ describe('drag target tracking', () => {
     expect(endedOverExternalTarget()).toBe(false);
   });
 
+  /* The header and the padding around the rows belong to the list too, so
+   * coming to rest on one of them is a return, not a departure. */
+  it('counts a return anywhere inside the section as being back inside', () => {
+    markPinnedHover();
+    markExternalHover();
+    /* The section's own hover fires where no row does. */
+    markPinnedHover();
+    expect(endedOverExternalTarget()).toBe(false);
+  });
+
   it('starts each drag with no external hover carried over', () => {
     markExternalHover();
     beginPinnedDrag();

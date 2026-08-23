@@ -33,6 +33,11 @@ import { focusFirstRow } from './focus';
 import Convo from './Convo';
 
 const FAVORITE_ROW_DRAG_TYPE = 'favorite-item';
+
+/** Declared on each row's focus target: a screen-reader user tabbing straight
+ *  to a row would otherwise never meet the section's written hint, leaving the
+ *  only non-pointer way to reorder undiscoverable. */
+const REORDER_SHORTCUTS = 'Alt+ArrowUp Alt+ArrowDown';
 /** A pinned row accepts both: favorites reorder here only, while a dragged
  *  conversation reorders here but can also be dropped on a project row or the
  *  Chats section to be filed or unfiled. */
@@ -200,6 +205,7 @@ interface FavoriteRowProps {
   onSelectEndpoint: SelectEndpointHandler;
   onSelectSpec: SelectSpecHandler;
   onRemoveFocus: () => void;
+  keyShortcuts?: string;
 }
 
 /** One favorite rendered for the unified list; skeleton while its agent is
@@ -214,6 +220,7 @@ const FavoriteRow = ({
   onSelectEndpoint,
   onSelectSpec,
   onRemoveFocus,
+  keyShortcuts,
 }: FavoriteRowProps) => {
   if (favorite.agentId) {
     const agent = agentsMap[favorite.agentId];
@@ -229,6 +236,7 @@ const FavoriteRow = ({
         type="agent"
         onSelectEndpoint={onSelectEndpoint}
         onRemoveFocus={onRemoveFocus}
+        keyShortcuts={keyShortcuts}
       />
     );
   }
@@ -245,6 +253,7 @@ const FavoriteRow = ({
         endpointsConfig={endpointsConfig}
         agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
         onRemoveFocus={onRemoveFocus}
+        keyShortcuts={keyShortcuts}
       />
     );
   }
@@ -255,6 +264,7 @@ const FavoriteRow = ({
         type="model"
         onSelectEndpoint={onSelectEndpoint}
         onRemoveFocus={onRemoveFocus}
+        keyShortcuts={keyShortcuts}
       />
     );
   }
@@ -308,9 +318,17 @@ const PinnedSection = ({
     unknown,
     { isPinOver: boolean; canPin: boolean }
   >({
-    accept: CONVERSATION_DRAG_TYPE,
-    canDrop: (item) => item.pinned !== true,
-    drop: (item) => {
+    accept: PINNED_ROW_ACCEPTS,
+    canDrop: (item, monitor) =>
+      monitor.getItemType() === CONVERSATION_DRAG_TYPE && item.pinned !== true,
+    /* The header and the padding around the rows are part of this list too, so
+     * a drag that wandered onto a project and came back to rest on one of them
+     * is still a reorder even though no row hover ran. */
+    hover: () => markPinnedHover(),
+    drop: (item, monitor) => {
+      if (monitor.getItemType() !== CONVERSATION_DRAG_TYPE) {
+        return;
+      }
       if (!item.conversationId) {
         return;
       }
@@ -686,6 +704,7 @@ const PinnedSection = ({
                         retainView={noop}
                         toggleNav={toggleNav}
                         isGenerating={activeJobIds.has(convo.conversationId ?? '')}
+                        keyShortcuts={orderLoaded ? REORDER_SHORTCUTS : undefined}
                         onRenamingChange={(renaming) => setRowRenaming(entry.key, renaming)}
                       />
                     </DraggablePinnedRow>
@@ -711,6 +730,7 @@ const PinnedSection = ({
                       onSelectEndpoint={handleSelectEndpoint}
                       onSelectSpec={handleSelectSpec}
                       onRemoveFocus={handleRemoveFocus}
+                      keyShortcuts={orderLoaded ? REORDER_SHORTCUTS : undefined}
                     />
                   </DraggablePinnedRow>
                 </li>

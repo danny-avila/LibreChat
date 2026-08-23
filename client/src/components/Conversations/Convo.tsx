@@ -35,6 +35,9 @@ interface ConversationProps {
   /** Lets a wrapper that owns its own drag source release it while the title is
    *  being edited, the way this row releases its own. */
   onRenamingChange?: (renaming: boolean) => void;
+  /** Shortcuts an owning list handles for this row, declared on its focusable
+   *  element so they are announced rather than left to be discovered. */
+  keyShortcuts?: string;
 }
 
 function Conversation({
@@ -44,6 +47,7 @@ function Conversation({
   isGenerating = false,
   draggable = false,
   onRenamingChange,
+  keyShortcuts,
 }: ConversationProps) {
   const params = useParams();
   const localize = useLocalize();
@@ -334,6 +338,7 @@ function Conversation({
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
           localize={localize}
+          keyShortcuts={keyShortcuts}
         >
           <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
         </ConvoLink>
