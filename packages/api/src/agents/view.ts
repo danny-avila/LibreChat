@@ -215,6 +215,7 @@ const publicTaskSummaries = (
   return {
     tasks: tasks.slice(0, MAX_PARENT_TASKS_PER_CHILD),
     truncated:
+      record?.sourceTruncated === true ||
       source.length > MAX_PARENT_TASKS_PER_CHILD ||
       (activeTaskId != null &&
         !source.some((task) => taskIdFromMessageId(task.messageId) === activeTaskId) &&

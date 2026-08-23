@@ -627,6 +627,33 @@ describe('parent child-thread index', () => {
     expect(publicJson).not.toContain('sourceKeyId');
   });
 
+  it('propagates a filled shared task window as truncated child history', async () => {
+    const handler = createParentSubagentIndexHandler({
+      getConvoOwnership: jest.fn().mockResolvedValue(parent),
+      listSubagentThreadsForParent: jest.fn().mockResolvedValue([eventChild]),
+      listSubagentTasksForThreads: jest.fn().mockResolvedValue([
+        {
+          conversationId: 'event-thread',
+          sourceTruncated: true,
+          tasks: [
+            {
+              messageId: 'task-1:assistant',
+              status: 'completed',
+              createdAt: new Date('2026-08-21T11:01:00.000Z'),
+            },
+          ],
+        },
+      ]),
+    });
+    const { response, json } = createResponse();
+
+    await handler(createRequest(), response);
+
+    expect(json.mock.calls[0][0].children[0]).toEqual(
+      expect.objectContaining({ tasksTruncated: true }),
+    );
+  });
+
   it('redacts event delivery identity from the detailed child view', async () => {
     const handler = createSubagentThreadViewHandler({
       getConvoOwnership: jest.fn().mockResolvedValue(parent),

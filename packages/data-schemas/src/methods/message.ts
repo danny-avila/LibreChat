@@ -258,6 +258,8 @@ export type SubagentThreadViewMessageRecord = Pick<
 
 export type ParentSubagentTaskRecord = {
   conversationId: string;
+  /** The shared bounded source window filled, so this child's history may be incomplete. */
+  sourceTruncated?: boolean;
   tasks: Array<
     Pick<IMessage, 'messageId' | 'createdAt'> & {
       status: NonNullable<IMessage['subagentTask']>['status'];
@@ -1206,6 +1208,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         input.conversationIds.length * input.limitPerThread * 2,
       ),
     );
+    type AggregateRecord = ParentSubagentTaskRecord & { sourceRows?: number };
     const [latestRecords, recentRecords] = await Promise.all([
       Message.aggregate<ParentSubagentTaskRecord>([
         { $match: match },
@@ -1214,10 +1217,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         { $project: { _id: 0, conversationId: '$_id', tasks: ['$task'] } },
         { $sort: { conversationId: 1 } },
       ]),
-      Message.aggregate<ParentSubagentTaskRecord>([
+      Message.aggregate<AggregateRecord>([
         { $match: match },
         { $sort: { createdAt: -1, _id: -1 } },
-        { $limit: sourceLimit },
+        { $limit: sourceLimit + 1 },
         {
           $set: {
             _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
@@ -1254,25 +1257,47 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           $group: {
             _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
             task: { $first: taskProjection },
+            sourceRows: { $sum: 1 },
           },
         },
         { $sort: { '_id.conversationId': 1, 'task.createdAt': -1, '_id.taskId': 1 } },
-        { $group: { _id: '$_id.conversationId', tasks: { $push: '$task' } } },
+        {
+          $group: {
+            _id: '$_id.conversationId',
+            tasks: { $push: '$task' },
+            sourceRows: { $sum: '$sourceRows' },
+          },
+        },
         {
           $project: {
             _id: 0,
             conversationId: '$_id',
             tasks: { $slice: ['$tasks', input.limitPerThread] },
+            sourceRows: 1,
           },
         },
         { $sort: { conversationId: 1 } },
       ]),
     ]);
-    const records = new Map(recentRecords.map((record) => [record.conversationId, record]));
+    const sourceTruncated =
+      recentRecords.reduce((total, record) => total + (record.sourceRows ?? 0), 0) > sourceLimit;
+    const records = new Map<string, ParentSubagentTaskRecord>(
+      recentRecords.map((record) => [
+        record.conversationId,
+        {
+          conversationId: record.conversationId,
+          tasks: record.tasks,
+          ...(sourceTruncated ? { sourceTruncated: true } : {}),
+        },
+      ]),
+    );
     for (const latest of latestRecords) {
       const current = records.get(latest.conversationId);
       if (current == null) {
-        records.set(latest.conversationId, latest);
+        records.set(latest.conversationId, {
+          ...latest,
+          ...(sourceTruncated ? { sourceTruncated: true } : {}),
+        });
         continue;
       }
       const latestTask = latest.tasks[0];

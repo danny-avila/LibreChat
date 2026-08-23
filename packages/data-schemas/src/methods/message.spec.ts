@@ -1201,6 +1201,48 @@ describe('Message Operations', () => {
       expect(records.find((record) => record.conversationId === secondThread)?.tasks).toEqual([
         expect.objectContaining({ messageId: 'task-other:assistant', status: 'cancelled' }),
       ]);
+      expect(records.every((record) => record.sourceTruncated !== true)).toBe(true);
+    });
+
+    it('marks every selected child truncated when one busy child fills the shared source window', async () => {
+      const quietThread = uuidv4();
+      const busyThread = uuidv4();
+      await Message.create([
+        ...['quiet-old', 'quiet-new'].map((taskId, index) => ({
+          user: 'user123',
+          messageId: `${taskId}:assistant`,
+          conversationId: quietThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          updatedAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          subagentTask: { attemptKey: taskId, status: 'completed' },
+        })),
+        ...Array.from({ length: 9 }, (_, index) => ({
+          user: 'user123',
+          messageId: `busy-${index}:assistant`,
+          conversationId: busyThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          updatedAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          subagentTask: { attemptKey: `busy-${index}`, status: 'completed' },
+        })),
+      ]);
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [quietThread, busyThread],
+        limitPerThread: 2,
+      });
+
+      expect(records.find((record) => record.conversationId === quietThread)).toEqual(
+        expect.objectContaining({
+          sourceTruncated: true,
+          tasks: [expect.objectContaining({ messageId: 'quiet-new:assistant' })],
+        }),
+      );
+      expect(records.find((record) => record.conversationId === busyThread)?.sourceTruncated).toBe(
+        true,
+      );
     });
   });
 
