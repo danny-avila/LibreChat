@@ -178,6 +178,68 @@ describe('forkConversation', () => {
     });
 
     expect(bulkSaveConvos.mock.calls[0][0][0]).not.toHaveProperty('subagentThread');
+    expect(
+      bulkSaveMessages.mock.calls[0][0].every(
+        (message) => message.subagentTask == null && message.subagentTranscript == null,
+      ),
+    ).toBe(true);
+  });
+
+  test('drops child execution metadata while retaining its visible transcript', async () => {
+    getConvo.mockResolvedValue({
+      ...mockConversation,
+      agent_id: 'agent-1',
+      subagentThread: {
+        rootConversationId: 'root-conversation',
+        parentConversationId: 'parent-conversation',
+        parentToolCallId: 'parent-tool-call',
+        subagentType: 'researcher',
+        subagentKind: 'agent',
+        depth: 1,
+      },
+    });
+    getMessages.mockResolvedValue([
+      {
+        messageId: 'task-1:user',
+        parentMessageId: Constants.NO_PARENT,
+        isCreatedByUser: true,
+        text: 'Investigate this.',
+        subagentTask: { attemptKey: 'attempt-1', status: 'running' },
+      },
+      {
+        messageId: 'task-1:assistant',
+        parentMessageId: 'task-1:user',
+        isCreatedByUser: false,
+        text: 'The investigation is complete.',
+        subagentTask: { attemptKey: 'attempt-1', status: 'completed' },
+        subagentTranscript: {
+          taskId: 'task-1',
+          mode: 'replace',
+          messagesJson: '[{"role":"assistant","content":"private"}]',
+        },
+      },
+    ]);
+
+    await forkConversation({
+      originalConvoId: 'abc123',
+      targetMessageId: 'task-1:assistant',
+      requestUserId: 'user1',
+      option: ForkOptions.DIRECT_PATH,
+    });
+
+    const savedConversation = bulkSaveConvos.mock.calls[0][0][0];
+    const savedMessages = bulkSaveMessages.mock.calls[0][0];
+    expect(savedConversation).toEqual(expect.objectContaining({ agent_id: 'agent-1' }));
+    expect(savedConversation).not.toHaveProperty('subagentThread');
+    expect(savedMessages.map((message) => message.text)).toEqual([
+      'Investigate this.',
+      'The investigation is complete.',
+    ]);
+    expect(
+      savedMessages.every(
+        (message) => message.subagentTask == null && message.subagentTranscript == null,
+      ),
+    ).toBe(true);
   });
 
   test('should fork conversation with branches', async () => {

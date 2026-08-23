@@ -11,9 +11,15 @@ const BaseClient = require('~/app/clients/BaseClient');
  * Helper function to clone messages with proper parent-child relationships and timestamps
  * @param {TMessage[]} messagesToClone - Original messages to clone
  * @param {ImportBatchBuilder} importBatchBuilder - Instance of ImportBatchBuilder
+ * @param {object} [options] - Clone behavior for the source conversation.
+ * @param {boolean} [options.detachSubagentRuntime=false] - Remove durable child execution metadata.
  * @returns {Map<string, string>} Map of original messageIds to new messageIds
  */
-function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
+function cloneMessagesWithTimestamps(
+  messagesToClone,
+  importBatchBuilder,
+  { detachSubagentRuntime = false } = {},
+) {
   const idMapping = new Map();
 
   // First pass: create ID mapping and sort messages by parentMessageId
@@ -63,6 +69,10 @@ function cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder) {
       parentMessageId: parentId,
       createdAt,
     };
+    if (detachSubagentRuntime) {
+      delete clonedMessage.subagentTask;
+      delete clonedMessage.subagentTranscript;
+    }
 
     importBatchBuilder.saveMessage(clonedMessage);
   }
@@ -136,7 +146,12 @@ async function forkConversation({
       messagesToClone = getMessagesUpToTargetLevel(originalMessages, targetMessageId);
     }
 
-    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder);
+    cloneMessagesWithTimestamps(messagesToClone, importBatchBuilder, {
+      /** A human continuation is an ordinary conversation snapshot, not another
+       * durable child executor. Preserve visible history while dropping the
+       * task protocol and private serialized model transcript. */
+      detachSubagentRuntime: originalConvo.subagentThread != null,
+    });
 
     const result = importBatchBuilder.finishConversation(
       newTitle || originalConvo.title,
