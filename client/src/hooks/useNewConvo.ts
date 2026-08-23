@@ -389,7 +389,9 @@ const useNewConvo = (index = 0) => {
            * upload was vectorized for file search: skipping every embedded record left an unsent
            * embedded paste with its metadata, storage and vectors all still on the server.
            * Anything else embedded is left alone, since those are shared. */
-          const ownedPaste = isPastedTextFileMarked(file.file_id) && file.attached !== true;
+          const ownedPaste =
+            [fileId, file.file_id, file.temp_file_id].some((id) => isPastedTextFileMarked(id)) &&
+            file.attached !== true;
           if (
             file.filepath == null ||
             file.filepath === '' ||

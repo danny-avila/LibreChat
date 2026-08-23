@@ -23,6 +23,7 @@ import {
   loadPendingDiscardIds,
   scheduleRetainedFileDeletionRetry,
   storePendingDiscardIds,
+  subscribePendingDiscardIds,
   subscribeRetainedFileDeletions,
   takeRetainedFileDeletions,
 } from '~/utils';
@@ -118,6 +119,10 @@ export default function useNewChat({
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const { data: fileList } = useGetFiles<TFile[]>();
   const { mutateAsync } = useDeleteFilesMutation();
+  /** The cleanup pass runs on a timer nobody asked for, so it reports nothing: a storage failure
+   * that keeps failing would otherwise toast on every retry, and success would arrive minutes
+   * after the action that caused it. */
+  const { mutateAsync: mutateAsyncSilently } = useDeleteFilesMutation({ silent: true });
   /** Draft uploads whose records were not resolvable when the draft was discarded: the files
    * cache was still loading, or the upload was still in flight and completed only after. */
   const [pendingDiscardIds, setPendingDiscardIdsState] = useState<string[]>(() =>
@@ -145,6 +150,22 @@ export default function useNewChat({
   );
 
   useEffect(() => subscribeRetainedFileDeletions(() => setRetainedGeneration((n) => n + 1)), []);
+
+  /** Another instance may have deferred work and then unmounted, so the store is re-read on every
+   * write rather than only at mount. Only a real change is applied, or the write this instance
+   * just made would set state straight back and loop. */
+  useEffect(
+    () =>
+      subscribePendingDiscardIds(() =>
+        setPendingDiscardIdsState((current) => {
+          const stored = loadPendingDiscardIds(index);
+          const changed =
+            stored.length !== current.length || stored.some((id, at) => id !== current[at]);
+          return changed ? stored : current;
+        }),
+      ),
+    [index],
+  );
 
   useEffect(() => {
     const retained = takeRetainedFileDeletions();
@@ -211,7 +232,7 @@ export default function useNewChat({
       const batch = [...deletable, ...retainedToRetry];
       if (batch.length > 0) {
         try {
-          const result = await mutateAsync({ files: batch });
+          const result = await mutateAsyncSilently({ files: batch });
           const failed = new Set(failedFileIdsFrom(result));
           for (const record of retainedToRetry) {
             if (!failed.has(record.file_id)) {
@@ -250,7 +271,7 @@ export default function useNewChat({
     fileList,
     files,
     index,
-    mutateAsync,
+    mutateAsyncSilently,
     retainedGeneration,
     setPendingDiscardIds,
   ]);

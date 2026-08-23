@@ -700,6 +700,18 @@ export const loadPendingDiscardIds = (index = 0): string[] => {
   return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [];
 };
 
+const pendingDiscardListeners = new Set<() => void>();
+
+/** Several hooks mount this state against one session store, and an instance that unmounts takes
+ * its snapshot with it. Without a notification the remaining ones keep stale lists and the work
+ * it deferred is never picked up again. */
+export const subscribePendingDiscardIds = (listener: () => void): (() => void) => {
+  pendingDiscardListeners.add(listener);
+  return () => {
+    pendingDiscardListeners.delete(listener);
+  };
+};
+
 export const storePendingDiscardIds = (index: number, ids: string[]): void => {
   try {
     const store = readPendingDiscardStore();
@@ -710,9 +722,11 @@ export const storePendingDiscardIds = (index: number, ids: string[]): void => {
     }
     if (Object.keys(store).length === 0) {
       sessionStorage.removeItem(PENDING_DISCARD_STORAGE_KEY);
+      pendingDiscardListeners.forEach((listener) => listener());
       return;
     }
     sessionStorage.setItem(PENDING_DISCARD_STORAGE_KEY, JSON.stringify(store));
+    pendingDiscardListeners.forEach((listener) => listener());
   } catch {
     // Privacy-blocked storage cannot persist deferred discards across reloads.
   }

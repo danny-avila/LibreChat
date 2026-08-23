@@ -453,8 +453,21 @@ type TabPresence = {
   seenAt: number;
   suspended?: boolean;
   attachments?: Record<string, string[]>;
+  /** Ids this tab held recently, kept for a while after they leave the composer. Sending a
+   * message empties the map and clears the draft, so without this a file reattached here and
+   * then sent would go unprotected between another tab's retries and be deleted out of the
+   * message that now references it. A retry that sees one cancels its record for good, so the
+   * window only has to outlast that tab's backoff. */
+  recent?: Record<string, number>;
 };
-type StoredTabPresence = { seenAt?: number; suspended?: boolean; attachments?: unknown };
+type StoredTabPresence = {
+  seenAt?: number;
+  suspended?: boolean;
+  attachments?: unknown;
+  recent?: unknown;
+};
+
+const RECENT_ATTACHMENT_WINDOW_MS = 600_000;
 
 /** One key per tab, never a shared map. Two tabs beating at the same time would otherwise read
  * the same registry and write back rival snapshots, and the loser of that race disappears until
@@ -491,6 +504,19 @@ const toAttachments = (value: unknown): Record<string, string[]> | undefined => 
   return attachments;
 };
 
+const toRecent = (value: unknown): Record<string, number> | undefined => {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const recent: Record<string, number> = {};
+  for (const [id, seenAt] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof seenAt === 'number') {
+      recent[id] = seenAt;
+    }
+  }
+  return recent;
+};
+
 const readTabPresence = (tabId: string): TabPresence | null => {
   try {
     const raw = localStorage.getItem(`${TAB_PRESENCE_KEY_PREFIX}${tabId}`);
@@ -505,6 +531,7 @@ const readTabPresence = (tabId: string): TabPresence | null => {
       seenAt: parsed.seenAt,
       suspended: parsed.suspended === true,
       attachments: toAttachments(parsed.attachments),
+      recent: toRecent(parsed.recent),
     };
   } catch {
     return null;
@@ -556,6 +583,7 @@ const recordTabPresence = (tabId: string, suspended = false): void => {
     seenAt: Date.now(),
     ...(suspended ? { suspended: true } : {}),
     ...(existing?.attachments != null ? { attachments: existing.attachments } : {}),
+    ...(existing?.recent != null ? { recent: existing.recent } : {}),
   });
 };
 
@@ -567,6 +595,7 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   if (tabId === '') {
     return;
   }
+  const now = Date.now();
   const existing = readTabPresence(tabId);
   const attachments = { ...(existing?.attachments ?? {}) };
   if (ids.length === 0) {
@@ -574,19 +603,35 @@ export const publishTabAttachmentIds = (index: number, ids: string[]): void => {
   } else {
     attachments[index] = ids;
   }
+  const recent: Record<string, number> = {};
+  for (const [id, seenAt] of Object.entries(existing?.recent ?? {})) {
+    if (now - seenAt <= RECENT_ATTACHMENT_WINDOW_MS) {
+      recent[id] = seenAt;
+    }
+  }
+  for (const id of ids) {
+    recent[id] = now;
+  }
   writeTabPresence(tabId, {
-    seenAt: existing?.seenAt ?? Date.now(),
+    seenAt: existing?.seenAt ?? now,
     ...(existing?.suspended === true ? { suspended: true } : {}),
     ...(Object.keys(attachments).length > 0 ? { attachments } : {}),
+    ...(Object.keys(recent).length > 0 ? { recent } : {}),
   });
 };
 
 /** Every attachment id any live tab's composers are currently showing. */
 export const collectLiveAttachmentIds = (): Set<string> => {
   const ids = new Set<string>();
+  const now = Date.now();
   for (const presence of readLiveTabs().values()) {
     for (const paneIds of Object.values(presence.attachments ?? {})) {
       for (const id of paneIds) {
+        ids.add(id);
+      }
+    }
+    for (const [id, seenAt] of Object.entries(presence.recent ?? {})) {
+      if (now - seenAt <= RECENT_ATTACHMENT_WINDOW_MS) {
         ids.add(id);
       }
     }

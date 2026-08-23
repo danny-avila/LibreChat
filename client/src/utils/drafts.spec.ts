@@ -16,6 +16,8 @@ import {
   isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
   isTabLive,
+  publishTabAttachmentIds,
+  collectLiveAttachmentIds,
   migrateFilesDraft,
   migrateTextDraft,
   renewNewConversationDraftToken,
@@ -405,6 +407,31 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     markTabLive('closed-tab', Date.now() - 600_000);
 
     expect(isTabLive('closed-tab')).toBe(false);
+  });
+
+  it('keeps protecting an id after the composer that held it was emptied', () => {
+    /** Sending clears the map and the draft, so without a memory of what this tab just held,
+     * another tab's backed-off retry would delete a file the sent message now references. */
+    publishTabAttachmentIds(0, ['sent-file']);
+    publishTabAttachmentIds(0, []);
+
+    expect(collectLiveAttachmentIds().has('sent-file')).toBe(true);
+  });
+
+  it('forgets a held id once the window has passed', () => {
+    const tabId = getBrowserTabId();
+    publishTabAttachmentIds(0, ['old-file']);
+    const presence = JSON.parse(localStorage.getItem(`librechat-live-tab:${tabId}`) ?? '{}');
+    localStorage.setItem(
+      `librechat-live-tab:${tabId}`,
+      JSON.stringify({
+        ...presence,
+        attachments: {},
+        recent: { 'old-file': Date.now() - 900_000 },
+      }),
+    );
+
+    expect(collectLiveAttachmentIds().has('old-file')).toBe(false);
   });
 
   it('does not drop another tab when both record a heartbeat', () => {

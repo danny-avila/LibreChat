@@ -178,12 +178,12 @@ export const useDeleteFilesMutation = (
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const localize = useLocalize();
-  const { onSuccess, onError, ...options } = _options || {};
+  const { onSuccess, onError, silent = false, ...options } = _options || {};
   return useMutation([MutationKeys.fileDelete], {
     mutationFn: (body: t.DeleteFilesBody) => dataService.deleteFiles(body),
     ...options,
     onError: (error, vars, context) => {
-      if (error && typeof error === 'object' && 'response' in error) {
+      if (!silent && error && typeof error === 'object' && 'response' in error) {
         const errorWithResponse = error as { response?: { status?: number } };
         if (errorWithResponse.response?.status === 403) {
           showToast({
@@ -214,11 +214,13 @@ export const useDeleteFilesMutation = (
 
       /** A storage failure still answers 200, so reporting success off the status alone would
        * tell the user a file is gone while it is sitting on disk and back in their list. */
-      showToast(
-        failed.size > 0
-          ? { message: localize('com_ui_delete_partial_failure'), status: 'error' }
-          : { message: localize('com_ui_delete_success'), status: 'success' },
-      );
+      if (!silent) {
+        showToast(
+          failed.size > 0
+            ? { message: localize('com_ui_delete_partial_failure'), status: 'error' }
+            : { message: localize('com_ui_delete_success'), status: 'success' },
+        );
+      }
 
       onSuccess?.(data, vars, context);
       if (vars.agent_id != null && vars.agent_id) {

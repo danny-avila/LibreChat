@@ -34,6 +34,7 @@ const mockState = {
   retainedPassInFlight: false,
   persistedPendingDiscardIds: [] as string[],
   retainedListener: null as (() => void) | null,
+  pendingDiscardListener: null as (() => void) | null,
   fileList: undefined as
     | {
         file_id: string;
@@ -90,10 +91,17 @@ jest.mock('~/utils', () => ({
   storePendingDiscardIds: (_index: number, ids: string[]) => {
     mockState.persistedPendingDiscardIds = [...ids];
   },
+  subscribePendingDiscardIds: (listener: () => void) => {
+    mockState.pendingDiscardListener = listener;
+    return () => {
+      mockState.pendingDiscardListener = null;
+    };
+  },
   subscribeRetainedFileDeletions: (listener: () => void) => {
     mockState.retainedListener = listener;
     return () => {
       mockState.retainedListener = null;
+      mockState.pendingDiscardListener = null;
     };
   },
   takeRetainedFileDeletions: () => mockState.retainedDeletions,
@@ -180,6 +188,7 @@ describe('useNewChat', () => {
     mockState.retainedDeletions = [];
     mockState.persistedPendingDiscardIds = [];
     mockState.retainedListener = null;
+    mockState.pendingDiscardListener = null;
     mockState.markedPasteIds = [];
     mockState.liveAttachmentIds = [];
     mockState.retainedPassInFlight = false;
