@@ -3211,6 +3211,52 @@ describe('AgentClient - titleConvo', () => {
       ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
     });
 
+    it('preserves persisted assistant attribution at the final agent provider boundary', async () => {
+      const marker = 'E2E-PERSISTED-UNATTRIBUTED-ASSISTANT';
+      mockReq.config.filters = {
+        messages: {
+          pii: {
+            fields: ['text'],
+            starterPatterns: [],
+            customPatterns: [
+              {
+                id: 'persisted-unattributed-assistant',
+                label: 'persisted unattributed assistant content',
+                regex: `^${marker}$`,
+              },
+            ],
+          },
+          unattributedAssistantContent: 'inspect',
+        },
+      };
+      const storedMessage = {
+        messageId: 'legacy-assistant',
+        parentMessageId: null,
+        sender: 'Assistant',
+        text: marker,
+        isCreatedByUser: false,
+      };
+      client.setModelBoundStoredMessages([storedMessage]);
+
+      const result = await client.buildMessages([storedMessage], 'legacy-assistant', {}, {});
+      const { messages: providerMessages } = jest
+        .requireActual('@librechat/agents')
+        .formatAgentMessages(result.prompt);
+
+      expect(() =>
+        client
+          .createModelBoundChatModelCallback()
+          .handleChatModelStart(undefined, [providerMessages]),
+      ).toThrow(expect.objectContaining({ code: 'content_filter_block' }));
+
+      client.setModelBoundStoredMessages([{ ...storedMessage, isUserSubmitted: false }]);
+      expect(() =>
+        client
+          .createModelBoundChatModelCallback()
+          .handleChatModelStart(undefined, [providerMessages]),
+      ).not.toThrow();
+    });
+
     it('ignores historical file refs when this agent does not replay files', async () => {
       mockReq.config.filters = {
         files: {

@@ -1986,7 +1986,9 @@ function projectStoredMessageForProvider(
     role: message.role,
     isCreatedByUser: message.isCreatedByUser,
     isUserSubmitted: message.isUserSubmitted,
-    ...(selectedContentPartIndices == null && messageContentCandidate == null && storedText != null
+    ...(messageContentCandidate == null &&
+    storedText != null &&
+    (selectedContentPartIndices == null || selectedContentPartIndices.has(0))
       ? { text: storedText }
       : {}),
     ...(attribution === 'user' && {
