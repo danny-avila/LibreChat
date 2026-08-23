@@ -477,6 +477,45 @@ describe('useReplyWatcher', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith([QueryKeys.allConversations]));
   });
 
+  it('retries the list refresh while an unknown conversation is still unrevealed', async () => {
+    /* Recording the id before the refetch succeeds would mute the conversation for good: every
+       later poll would read it as already known and never invalidate again, even after the
+       network recovered. */
+    mockListConversations.mockResolvedValue({
+      conversations: [{ conversationId: 'elsewhere', lastResponseAt: RESPONDED_AT }],
+      nextCursor: null,
+    });
+
+    const { queryClient } = setup({ notifications: true });
+    const realInvalidate = queryClient.invalidateQueries.bind(queryClient);
+    const invalidate = jest
+      .spyOn(queryClient, 'invalidateQueries')
+      .mockImplementation((filters?: unknown) => {
+        if (Array.isArray(filters) && filters[0] === QueryKeys.allConversations) {
+          const query = queryClient.getQueryCache().find(listKey);
+          query?.setState({ status: 'error', error: new Error('offline') } as never);
+          jest.spyOn(query!, 'getObserversCount').mockReturnValue(1);
+          return Promise.resolve();
+        }
+        return realInvalidate(filters as never);
+      });
+    const listInvalidations = () =>
+      invalidate.mock.calls.filter(
+        ([key]) => Array.isArray(key) && key[0] === QueryKeys.allConversations,
+      ).length;
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    await waitFor(() => expect(listInvalidations()).toBe(1));
+
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+
+    await waitFor(() => expect(listInvalidations()).toBe(2));
+  });
+
   it('does not invalidate again while the same unknown conversation stays unknown', async () => {
     /* With a sidebar filter cached, a conversation can never enter the cache; the poll
        must not refetch the filtered list every tick because of it. */
