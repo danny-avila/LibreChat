@@ -8,7 +8,12 @@ import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ConversationDragItem } from './dnd';
-import { CONVERSATION_DRAG_TYPE, useAssignDroppedConversation, useEffectiveProjectId } from './dnd';
+import {
+  CONVERSATION_DRAG_TYPE,
+  markExternalHover,
+  useAssignDroppedConversation,
+  useEffectiveProjectId,
+} from './dnd';
 import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
 import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
@@ -175,6 +180,9 @@ const Conversations: FC<ConversationsProps> = ({
   >({
     accept: CONVERSATION_DRAG_TYPE,
     canDrop: (item) => effectiveProjectId(item) != null,
+    /* Reported even when refused, so a root chat dropped back on Chats does not
+     * save the shift its pointer caused on the way out of the pinned list. */
+    hover: () => markExternalHover(),
     drop: (item) => assignDropped(item, null),
     collect: (monitor) => ({ isDropOver: monitor.isOver(), canDrop: monitor.canDrop() }),
   });
