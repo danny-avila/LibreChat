@@ -281,9 +281,8 @@ export default function SubagentCall({
    *  the name isn't resolvable (agent map miss). */
   const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
-  const canOpenDetails = useMemo(
-    () =>
-      isSharedConvo !== true ||
+  const canOpenDetails = useMemo(() => {
+    const hasRenderableFallback =
       adaptLivePersistedActivity({
         title: '',
         progress: null,
@@ -293,9 +292,24 @@ export default function SubagentCall({
         isSubmitting: false,
         runStepStatus,
         approvalVisibility: 'hidden',
-      }).items.length > 0,
-    [backgroundHandle, initialProgress, isSharedConvo, output, persistedContent, runStepStatus],
-  );
+      }).items.length > 0;
+    const canOpenLiveForeground =
+      isSharedConvo !== true &&
+      backgroundHandle == null &&
+      parentConversationId !== '' &&
+      parentMessageId !== '';
+    return canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback;
+  }, [
+    backgroundHandle,
+    canOpenDurablePanel,
+    initialProgress,
+    isSharedConvo,
+    output,
+    parentConversationId,
+    parentMessageId,
+    persistedContent,
+    runStepStatus,
+  ]);
 
   const panelSelection = useMemo(
     () => ({

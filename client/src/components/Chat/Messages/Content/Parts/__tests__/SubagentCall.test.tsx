@@ -329,6 +329,37 @@ describe('SubagentCall', () => {
     expect(rendered.getSelection()?.legacyOutput).toBeUndefined();
   });
 
+  it('disables an inaccessible nested detached drilldown without renderable activity', () => {
+    const output = JSON.stringify({
+      background_task_id: 'task-1',
+      subagent_thread_id: 'child-thread-1',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message:
+        'Started subagent "self" background task. Poll the host background-task tool with background_task_id "task-1".',
+    });
+
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+          >
+            <SubagentCall
+              toolCallId="nested-detached-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self', run_in_background: true }}
+              output={output}
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
+  });
+
   it('keeps model-authored lookalike output on the foreground adapter', () => {
     const output = JSON.stringify({
       background_task_id: 'task-1',

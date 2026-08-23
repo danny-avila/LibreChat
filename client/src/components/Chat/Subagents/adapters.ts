@@ -88,8 +88,7 @@ const contentPartsToActivity = (
         TMessageContentParts,
         { type: ContentTypes.ACTIVITY_LABEL }
       >;
-      const label = labelPart[ContentTypes.ACTIVITY_LABEL]?.trim();
-      if (!label) return [];
+      const label = labelPart[ContentTypes.ACTIVITY_LABEL]?.trim() ?? '';
       return [
         {
           type: 'activity_label',

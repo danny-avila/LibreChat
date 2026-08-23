@@ -85,6 +85,46 @@ describe('child activity adapters', () => {
     ]);
   });
 
+  it('preserves blank activity labels as regular-chat grouping boundaries', () => {
+    const activity = adaptLivePersistedActivity({
+      title: 'researcher',
+      progress: null,
+      persistedContent: [
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { id: 'tool-1', name: 'search', args: '{}', output: 'first', progress: 1 },
+        },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: '   ',
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: 'tool-2',
+            name: 'calculator',
+            args: '{}',
+            output: 'second',
+            progress: 1,
+          },
+        },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: 'Calculated the answer',
+        },
+      ] as TMessageContentParts[],
+      initialProgress: 1,
+      isSubmitting: false,
+    });
+
+    expect(activity.items).toEqual([
+      expect.objectContaining({ type: 'tool', toolCallId: 'tool-1' }),
+      { type: 'activity_label', label: '' },
+      expect.objectContaining({ type: 'tool', toolCallId: 'tool-2' }),
+      { type: 'activity_label', label: 'Calculated the answer' },
+    ]);
+  });
+
   it('merges a forward-only detached suffix with the partial parent snapshot', () => {
     const activity = adaptLivePersistedActivity({
       title: 'researcher',

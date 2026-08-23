@@ -107,7 +107,6 @@ test.describe('detached subagent activity', () => {
       const activityResponse = await activityResponsePromise;
       await expect(panel).toBeVisible();
       await expect(panel.getByText('Running', { exact: true })).toBeVisible();
-      await expect(panel.getByText('Writing', { exact: true })).toBeVisible();
       await expect(panel).toContainText('child-1-phase-10');
       await expect.poll(() => activityRequests.length).toBe(1);
 

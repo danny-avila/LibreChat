@@ -16,8 +16,8 @@ import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
-import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
 
