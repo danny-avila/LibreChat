@@ -130,4 +130,20 @@ describe('SharedSubagentActivityDialog', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mockUseSubagentThreadQuery).not.toHaveBeenCalled();
   });
+
+  it('keeps a shared detached card with only invisible reservations noninteractive', () => {
+    renderSharedCall({
+      output: detachedOutput,
+      detached: true,
+      persistedContent: [
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: '',
+        } as TMessageContentParts,
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });

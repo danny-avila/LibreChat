@@ -42,7 +42,11 @@ const toContentPart = (
   reasoningMarkerLabel: string,
 ): TMessageContentParts => {
   if (item.type === 'writing') {
-    return { type: ContentTypes.TEXT, text: item.text } as TMessageContentParts;
+    return {
+      type: ContentTypes.TEXT,
+      text: item.text,
+      ...(item.phase == null ? {} : { phase: item.phase }),
+    } as TMessageContentParts;
   }
   if (item.type === 'reasoning') {
     if (item.text == null || item.text === '') {
@@ -138,9 +142,11 @@ function SubagentPrompt({ prompt }: { prompt: string }) {
 
 export default function SubagentActivity({
   activity,
+  activityId,
   state = 'ready',
 }: {
   activity: ChildActivity;
+  activityId?: string;
   state?: 'ready' | 'loading' | 'error';
 }) {
   const localize = useLocalize();
@@ -207,7 +213,7 @@ export default function SubagentActivity({
     body = (
       <ContentParts
         content={parts}
-        messageId="subagent-activity-panel"
+        messageId={activityId ?? 'subagent-activity-panel'}
         conversationId={null}
         isCreatedByUser={false}
         isLast

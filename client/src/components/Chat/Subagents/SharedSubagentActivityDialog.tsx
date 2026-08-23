@@ -67,7 +67,14 @@ export default function SharedSubagentActivityDialog({ shareId }: { shareId?: st
             {activity.title}
           </OGDialogTitle>
         </OGDialogHeader>
-        <SubagentActivity activity={activity} />
+        <SubagentActivity
+          activityId={
+            selection == null
+              ? undefined
+              : `${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`
+          }
+          activity={activity}
+        />
       </OGDialogContent>
     </OGDialog>
   );

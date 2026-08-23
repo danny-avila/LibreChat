@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
-import type { Agents } from 'librechat-data-provider';
+import type { Agents, PartMetadata } from 'librechat-data-provider';
 import {
   getSubmittedAskAnswer,
   parseAskUserQuestionArgs,
@@ -32,6 +32,7 @@ export default function AskUserQuestionCall({
   output,
   toolCallId,
   isSubmitting = false,
+  runStepStatus,
   failed = false,
   showCursor = false,
   onExpand,
@@ -40,6 +41,7 @@ export default function AskUserQuestionCall({
   output: string;
   toolCallId?: string;
   isSubmitting?: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
   failed?: boolean;
   showCursor?: boolean;
   onExpand?: () => void;
@@ -87,8 +89,9 @@ export default function AskUserQuestionCall({
       return null;
     }
   })();
+  const terminalFailure = failed || runStepStatus === 'failed';
   const answered =
-    !failed &&
+    !terminalFailure &&
     (batch != null
       ? batch.questions.every((item) => typeof batchAnswers?.[item.id] === 'string')
       : effectiveOutput.length > 0);
@@ -103,7 +106,7 @@ export default function AskUserQuestionCall({
    * immediately; an abandoned pause only shows its "no answer" state after
    * the turn is no longer submitting.
    */
-  if (!answered && !failed && isSubmitting) {
+  if (!answered && !terminalFailure && runStepStatus == null && isSubmitting) {
     return <AskUserQuestionProgress args={args} toolCallId={toolCallId} />;
   }
 
@@ -131,7 +134,7 @@ export default function AskUserQuestionCall({
    * question header on `!isSubmitting`.
    */
   const statusLabel = (() => {
-    if (failed) {
+    if (terminalFailure) {
       return localize('com_ui_question_failed');
     }
     return count > 1
@@ -155,7 +158,7 @@ export default function AskUserQuestionCall({
           finishedText={statusLabel}
           subtitle={summary}
           icon={
-            failed ? (
+            terminalFailure ? (
               <TriangleAlert className="size-4 shrink-0 text-text-warning" aria-hidden="true" />
             ) : (
               <MessageCircleQuestion
@@ -171,7 +174,7 @@ export default function AskUserQuestionCall({
           cannot see coming. The explanation lives in the panel, which starts
           closed and is `inert` while it is — so the announcement has to sit
           outside the disclosure to reach the accessibility tree at all. */}
-      {failed && (
+      {terminalFailure && (
         <span className="sr-only" role="status">
           {`${statusLabel}. ${localize('com_ui_question_failed_description')}`}
         </span>
@@ -194,7 +197,7 @@ export default function AskUserQuestionCall({
                     answer={batchAnswers?.[item.id]}
                     options={item.options}
                     multiSelect={item.multiSelect}
-                    failed={failed}
+                    failed={terminalFailure}
                   />
                 </div>
               ))
@@ -205,10 +208,10 @@ export default function AskUserQuestionCall({
                 answer={answered ? effectiveOutput : undefined}
                 options={question?.options}
                 multiSelect={question?.multiSelect}
-                failed={failed}
+                failed={terminalFailure}
               />
             )}
-            {failed && (
+            {terminalFailure && (
               <p className="text-sm leading-relaxed text-text-secondary">
                 {localize('com_ui_question_failed_description')}
               </p>

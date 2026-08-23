@@ -360,6 +360,27 @@ describe('SubagentCall', () => {
     expect(screen.getByRole('button', { name: 'Agent activity' })).toBeDisabled();
   });
 
+  it('disables a nested fallback that cannot remain attached to the conversation host', () => {
+    render(
+      <MemoryRouter>
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{ messageId: 'nested-message', conversationId: null, isExpanded: true }}
+          >
+            <SubagentCall
+              toolCallId="nested-foreground-call"
+              initialProgress={1}
+              args={{ subagent_type: 'self' }}
+              output="Nested result"
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Ran agent' })).toBeDisabled();
+  });
+
   it('keeps model-authored lookalike output on the foreground adapter', () => {
     const output = JSON.stringify({
       background_task_id: 'task-1',

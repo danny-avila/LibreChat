@@ -55,7 +55,7 @@ describe('child activity adapters', () => {
           think: 'Visible reasoning.',
           reasoning_label: 'Checked constraints',
         },
-        { type: ContentTypes.TEXT, text: 'Prepared the answer.' },
+        { type: ContentTypes.TEXT, text: 'Prepared the answer.', phase: 'commentary' },
         {
           type: ContentTypes.ACTIVITY_LABEL,
           activity_label: 'Prepared the release',
@@ -72,7 +72,7 @@ describe('child activity adapters', () => {
 
     expect(activity.items).toEqual([
       { type: 'reasoning', text: 'Visible reasoning.', label: 'Checked constraints' },
-      { type: 'writing', text: 'Prepared the answer.' },
+      { type: 'writing', text: 'Prepared the answer.', phase: 'commentary' },
       {
         type: 'activity_label',
         label: 'Prepared the release',

@@ -282,23 +282,27 @@ export default function SubagentCall({
   const subagentNameLabel = !isSelfSpawn && subagentAgent?.name ? subagentAgent.name : '';
 
   const canOpenDetails = useMemo(() => {
-    const hasRenderableFallback =
-      adaptLivePersistedActivity({
-        title: '',
-        progress: null,
-        persistedContent,
-        legacyOutput: backgroundHandle == null ? output : undefined,
-        initialProgress,
-        isSubmitting: false,
-        runStepStatus,
-        approvalVisibility: 'hidden',
-      }).items.length > 0;
+    const fallbackActivity = adaptLivePersistedActivity({
+      title: '',
+      progress: null,
+      persistedContent,
+      legacyOutput: backgroundHandle == null ? output : undefined,
+      initialProgress,
+      isSubmitting: false,
+      runStepStatus,
+      approvalVisibility: 'hidden',
+    });
+    const hasRenderableFallback = fallbackActivity.items.some(
+      (item) =>
+        (item.type !== 'writing' || item.text.length > 0) &&
+        (item.type !== 'activity_label' || item.label.length > 0),
+    );
+    const hasParentContext = parentConversationId !== '' && parentMessageId !== '';
     const canOpenLiveForeground =
-      isSharedConvo !== true &&
-      backgroundHandle == null &&
-      parentConversationId !== '' &&
-      parentMessageId !== '';
-    return canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback;
+      isSharedConvo !== true && backgroundHandle == null && hasParentContext;
+    return (
+      hasParentContext && (canOpenDurablePanel || canOpenLiveForeground || hasRenderableFallback)
+    );
   }, [
     backgroundHandle,
     canOpenDurablePanel,

@@ -210,6 +210,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       >
         <SubagentActivity
           key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
           activity={activity}
           state={panelState}
         />

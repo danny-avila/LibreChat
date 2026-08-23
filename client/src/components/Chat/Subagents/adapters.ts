@@ -13,6 +13,7 @@ export type ChildActivityItem =
   | {
       type: 'writing';
       text: string;
+      phase?: 'commentary' | 'final_answer';
       textTruncated?: boolean;
     }
   | {
@@ -69,7 +70,17 @@ const contentPartsToActivity = (
 ): ChildActivityItem[] =>
   parts.flatMap((part, index): ChildActivityItem[] => {
     if (part.type === ContentTypes.TEXT) {
-      return [{ type: 'writing', text: (part as { text: string }).text }];
+      const textPart = part as {
+        text: string;
+        phase?: 'commentary' | 'final_answer';
+      };
+      return [
+        {
+          type: 'writing',
+          text: textPart.text,
+          ...(textPart.phase == null ? {} : { phase: textPart.phase }),
+        },
+      ];
     }
     if (part.type === ContentTypes.THINK) {
       return [

@@ -21,10 +21,12 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
   __esModule: true,
   default: function MockContentParts({
     content,
+    messageId,
   }: {
     content: Array<{
       type: string;
       text?: string;
+      phase?: string;
       think?: string;
       reasoning_label?: string;
       activity_label?: string;
@@ -37,14 +39,21 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
         runStepStatus?: string;
       };
     }>;
+    messageId: string;
   }) {
     const { useState } = jest.requireActual<typeof import('react')>('react');
     const [expandedTool, setExpandedTool] = useState<string | null>(null);
     const tools = content.filter((part) => part.type === 'tool_call');
     return (
-      <div data-testid="regular-content-parts">
+      <div data-testid="regular-content-parts" data-message-id={messageId}>
         {content.map((part, index) => {
-          if (part.type === 'text') return <div key={index}>{part.text}</div>;
+          if (part.type === 'text') {
+            return (
+              <div key={index} data-phase={part.phase}>
+                {part.text}
+              </div>
+            );
+          }
           if (part.type === 'think') {
             return <div key={index}>{part.reasoning_label ?? part.think}</div>;
           }
@@ -271,7 +280,7 @@ describe('SubagentActivity', () => {
           ...base,
           items: [
             { type: 'reasoning', text: 'Reasoned.', label: 'Checked constraints' },
-            { type: 'writing', text: 'Draft.' },
+            { type: 'writing', text: 'Draft.', phase: 'commentary' },
             {
               type: 'activity_label',
               label: 'Prepared the release',
@@ -286,7 +295,17 @@ describe('SubagentActivity', () => {
 
     expect(screen.getByTestId('regular-content-parts')).toBeInTheDocument();
     expect(screen.getByText('Checked constraints')).toBeInTheDocument();
+    expect(screen.getByText('Draft.')).toHaveAttribute('data-phase', 'commentary');
     expect(screen.getByText('Prepared the release')).toBeInTheDocument();
+  });
+
+  it('scopes regular-chat renderer state to the selected child activity', () => {
+    render(<SubagentActivity activity={base} activityId="parent:tool:child" />);
+
+    expect(screen.getByTestId('regular-content-parts')).toHaveAttribute(
+      'data-message-id',
+      'parent:tool:child',
+    );
   });
 
   it('renders a sanitized reasoning marker through regular ContentParts', () => {
