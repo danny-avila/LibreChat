@@ -1,9 +1,9 @@
+import { setTokenHeader } from 'librechat-data-provider';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useUpdatePinnedOrderMutation } from '../Favorites';
-import { setSessionUserId } from '~/utils/session';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -35,10 +35,18 @@ const deferred = <T,>() => {
   return { promise, resolve, reject };
 };
 
+/** A token shaped like the real one: the `id` claim is what attributes a write. */
+const signInAs = (userId: string | undefined) => {
+  if (userId == null) {
+    setTokenHeader(undefined);
+    return;
+  }
+  const claims = btoa(JSON.stringify({ id: userId })).replace(/=+$/, '');
+  setTokenHeader(`header.${claims}.signature`);
+};
+
 const setup = (userId: string | undefined = 'user-a') => {
-  /* Identity is published by the auth provider, which is mounted for the whole
-   * session, so a test only has to say who is signed in. */
-  setSessionUserId(userId);
+  signInAs(userId);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -46,7 +54,7 @@ const setup = (userId: string | undefined = 'user-a') => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
   const { result, unmount } = renderHook(() => useUpdatePinnedOrderMutation(), { wrapper });
-  return { queryClient, result, unmount, signInAs: setSessionUserId };
+  return { queryClient, result, unmount, signInAs };
 };
 
 const cached = (queryClient: QueryClient) =>
