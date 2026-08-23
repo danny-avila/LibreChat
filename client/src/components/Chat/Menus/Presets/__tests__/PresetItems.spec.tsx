@@ -14,10 +14,6 @@ jest.mock('~/data-provider', () => ({
   useGetEndpointsQuery: () => ({ data: {} }),
 }));
 
-jest.mock('~/hooks/Endpoint/Icons', () => ({
-  icons: {},
-}));
-
 const preset = {
   presetId: 'preset-1',
   title: 'A preset',

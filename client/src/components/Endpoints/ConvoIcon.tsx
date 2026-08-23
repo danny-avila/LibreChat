@@ -56,7 +56,6 @@ export default function ConvoIcon({
         <ConvoIconURL
           iconURL={iconURL}
           modelLabel={conversation?.chatGptLabel ?? conversation?.modelLabel ?? ''}
-          endpointIconURL={endpointIconURL}
           assistantAvatar={avatar}
           assistantName={name}
           agentAvatar={avatar}

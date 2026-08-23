@@ -13,8 +13,6 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-jest.mock('~/hooks/Endpoint/Icons', () => ({ icons: {} }));
-jest.mock('~/utils', () => ({ getIconKey: () => '' }));
 jest.mock('~/components/Input/SetKeyDialog', () => ({ SetKeyDialog: () => null }));
 
 describe('ProviderKeyRow', () => {

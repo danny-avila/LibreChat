@@ -1,12 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import { Button } from '@librechat/client';
+import { useMemo, useState } from 'react';
+import { Button, ProviderIcon } from '@librechat/client';
 import { alternateName, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import { formatKeyExpiryLabel } from '~/components/Input/SetKeyDialog/utils';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
+import { useProviderIcon } from '~/hooks/Endpoint';
 import { useUserKey, useLocalize } from '~/hooks';
-import { icons } from '~/hooks/Endpoint/Icons';
-import { getIconKey } from '~/utils';
 
 interface ProviderKeyRowProps {
   endpoint: string;
@@ -19,9 +18,7 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
   const { getExpiry, checkExpiry } = useUserKey(endpoint);
 
   const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
-  const iconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
-  const iconKey = getIconKey({ endpoint, endpointsConfig, endpointType });
-  const Icon = icons[iconKey];
+  const { provider } = useProviderIcon({ endpoint, endpointsConfig });
 
   const label = useMemo(() => alternateName[endpoint] || endpoint, [endpoint]);
   const expiry = getExpiry();
@@ -40,16 +37,9 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
     <>
       <div className="flex items-center justify-between gap-3 py-2">
         <div className="flex min-w-0 items-center gap-3">
-          {Icon && (
-            <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
-              {React.createElement(Icon, {
-                size: 20,
-                className: 'text-text-primary shrink-0 icon-md',
-                iconURL,
-                endpoint,
-              })}
-            </div>
-          )}
+          <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
+            <ProviderIcon provider={provider} size={20} className="icon-md shrink-0" />
+          </div>
           <div className="min-w-0">
             <div className="truncate font-medium text-text-primary">{label}</div>
             <div className="truncate text-xs text-text-secondary">{expiryLabel}</div>

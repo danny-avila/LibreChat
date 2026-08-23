@@ -60,7 +60,6 @@ export default function EndpointIcon({
         iconURL={iconURL}
         modelLabel={entityName || conversation?.chatGptLabel || conversation?.modelLabel || ''}
         context={context}
-        endpointIconURL={endpointIconURL}
         assistantAvatar={assistantAvatar}
         assistantName={assistantName ?? ''}
         agentAvatar={agentAvatar}

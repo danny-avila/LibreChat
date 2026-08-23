@@ -1,31 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import GroupIcon from '../GroupIcon';
 
-jest.mock('~/hooks/Endpoint/Icons', () => {
-  const React = jest.requireActual<typeof import('react')>('react');
-  const createIcon =
-    (iconKey: string) =>
-    ({ className, endpoint }: { className?: string; endpoint?: string | null }) =>
-      React.createElement('span', {
-        className,
-        'data-testid': 'endpoint-icon',
-        'data-icon-key': iconKey,
-        'data-endpoint': endpoint ?? '',
-      });
-
-  return {
-    icons: {
-      openAI: createIcon('openAI'),
-      unknown: createIcon('unknown'),
-    },
-  };
-});
-
 describe('GroupIcon', () => {
   it('renders built-in endpoint icon keys', () => {
     render(<GroupIcon iconURL="openAI" groupName="OpenAI" />);
 
-    expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-icon-key', 'openAI');
+    expect(screen.getByRole('img', { name: 'OpenAI' })).toBeInTheDocument();
   });
 
   it('resolves known endpoint asset aliases case-insensitively', () => {
@@ -49,8 +29,7 @@ describe('GroupIcon', () => {
   it('renders known endpoint aliases backed by components', () => {
     render(<GroupIcon iconURL="Moonshot" groupName="Moonshot" />);
 
-    expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-icon-key', 'unknown');
-    expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-endpoint', 'Moonshot');
+    expect(screen.getByRole('img', { name: 'Moonshot' })).toBeInTheDocument();
   });
 
   it('renders configured image URLs directly', () => {
