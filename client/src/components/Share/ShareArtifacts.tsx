@@ -4,7 +4,7 @@ import { ResizablePanel, ResizableHandleAlt, ResizablePanelGroup } from '@librec
 import type { TMessage } from 'librechat-data-provider';
 import type { ArtifactsContextValue } from '~/Providers';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
-import { SHARE_ARTIFACTS_MAX_WIDTH } from '~/utils/breakpoints';
+import { ARTIFACTS_SHEET_MAX_WIDTH } from '~/utils/breakpoints';
 import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
@@ -55,7 +55,7 @@ export function ShareArtifactsContainer({
   const artifacts = useRecoilValue(store.artifactsState);
   const artifactsVisibility = useRecoilValue(store.artifactsVisibility);
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
-  const isSmallScreen = useScaledMaxWidth(SHARE_ARTIFACTS_MAX_WIDTH);
+  const isSmallScreen = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
   const [artifactPanelSize, setArtifactPanelSize] = useState(getInitialArtifactPanelSize);
 
   const artifactsContextValue = useMemo<ArtifactsContextValue | null>(() => {
