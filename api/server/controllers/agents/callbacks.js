@@ -1436,23 +1436,24 @@ function markSummarizationUsage(usage, metadata) {
  */
 function contextualizeModelUsage(usage, metadata, agentContext = {}) {
   const taggedUsage = { ...usage };
+  const context = agentContext ?? {};
   const invokedProvider = metadata?.__invoked_provider;
   const invokedModel = metadata?.__invoked_model;
   const modelName =
     metadata?.ls_model_name ||
     (typeof invokedModel === 'string' && invokedModel !== '' ? invokedModel : undefined) ||
-    agentContext.clientOptions?.model;
+    context.clientOptions?.model;
   const provider =
     (typeof invokedProvider === 'string' && invokedProvider !== '' ? invokedProvider : undefined) ||
-    agentContext.provider;
+    context.provider;
   if (modelName) {
     taggedUsage.model = modelName;
   }
   if (provider) {
     taggedUsage.provider = provider;
   }
-  if (agentContext.agentId) {
-    taggedUsage.agentId = agentContext.agentId;
+  if (context.agentId) {
+    taggedUsage.agentId = context.agentId;
   }
   return markSummarizationUsage(taggedUsage, metadata);
 }

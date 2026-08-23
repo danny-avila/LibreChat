@@ -32,6 +32,7 @@ describe('ModelEndHandler — Vertex thoughtSignature capture (issue #13006 foll
     const usage = { input_tokens: 10, output_tokens: 5 };
 
     expect(contextualizeModelUsage(usage, undefined, undefined)).toEqual(usage);
+    expect(contextualizeModelUsage(usage, undefined, null)).toEqual(usage);
   });
 
   it('prefers the actually invoked fallback provider and model', () => {
