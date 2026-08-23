@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useQueries } from '@tanstack/react-query';
-import { QueryKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
+import { useIsMutating, useQueries } from '@tanstack/react-query';
+import { QueryKeys, MutationKeys, EModelEndpoint, dataService } from 'librechat-data-provider';
 import type { Agent, TEndpointsConfig, TModelSpec } from 'librechat-data-provider';
 import type { Favorite } from '~/store/favorites';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
@@ -59,13 +59,15 @@ export default function useFavoritesData(): FavoritesData {
     isLoading,
     isSuccess,
     isFetching: isFavoritesFetching,
-    isUpdating,
   } = useFavorites();
-  /* An optimistic removal keeps `isSuccess` true from the earlier GET, so
-   * pruning against it would drop the ordering key of a favorite whose write
-   * has not landed. If that write then fails, the recovery refetch brings the
-   * favorite back with its saved position already gone. */
-  const isLoaded = isSuccess && !isUpdating && !isFavoritesFetching;
+  /* Counted across the whole query client, not from this hook's own observer:
+   * a favorite row runs its own `useFavorites`, so a removal started there is
+   * invisible here. An optimistic removal also keeps `isSuccess` true from the
+   * earlier GET, so pruning against it would drop the ordering key of a write
+   * that has not landed, and a failed one comes back with its saved position
+   * already gone. */
+  const favoritesWritesInFlight = useIsMutating([MutationKeys.updateFavorites]);
+  const isLoaded = isSuccess && favoritesWritesInFlight === 0 && !isFavoritesFetching;
 
   const { newConversation } = useNewConvo();
   const assistantsMap = useAssistantsMapContext();

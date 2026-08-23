@@ -1,7 +1,7 @@
 import { getTokenHeader } from 'librechat-data-provider';
 
 /**
- * The account whose credentials requests are currently going out with.
+ * Who the requests going out right now belong to.
  *
  * Read from the Authorization header rather than from React state, because the
  * two do not change together: `setUserContext` installs the new header in one
@@ -9,20 +9,39 @@ import { getTokenHeader } from 'librechat-data-provider';
  * Work queued by one account and sent during that gap would be attributed to
  * the previous user while travelling as the new one.
  *
- * The claim, not the token, is what is compared: a silent refresh rotates the
- * token for the same account, and treating that as a different session would
- * throw away work the user is still entitled to.
+ * Not always a LibreChat user id. With OpenID token reuse the bearer is the
+ * provider's own `id_token`, which identifies its subject as `sub` under an
+ * issuer and carries no `id`. What matters is only that one account is never
+ * mistaken for another, so any stable identifier the credential offers will do.
  */
-export const getSessionUserId = (): string | undefined => {
+export const getSessionPrincipal = (): string | undefined => {
   const header = getTokenHeader();
   if (header == null) {
     return undefined;
   }
-  const claims = decodeClaims(header.replace(/^Bearer /, ''));
-  return typeof claims?.id === 'string' ? claims.id : undefined;
+
+  const token = header.replace(/^Bearer /, '');
+  const claims = decodeClaims(token);
+
+  if (typeof claims?.id === 'string') {
+    return `user:${claims.id}`;
+  }
+  if (typeof claims?.sub === 'string') {
+    /* Scoped by issuer, since subjects are only unique within one. */
+    const issuer = typeof claims.iss === 'string' ? claims.iss : '';
+    return `oidc:${issuer}:${claims.sub}`;
+  }
+
+  /* An opaque token names no one, and two unnamed sessions must not read as the
+   * same person. The credential itself is what distinguishes them; the cost is
+   * that a refresh looks like a new session and abandons whatever it had
+   * queued, which is the safe direction to fail in. */
+  return `token:${token}`;
 };
 
-const decodeClaims = (token: string): { id?: unknown } | undefined => {
+const decodeClaims = (
+  token: string,
+): { id?: unknown; sub?: unknown; iss?: unknown } | undefined => {
   const payload = token.split('.')[1];
   if (payload == null) {
     return undefined;
@@ -33,8 +52,6 @@ const decodeClaims = (token: string): { id?: unknown } | undefined => {
     const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
     return JSON.parse(atob(padded));
   } catch {
-    /* An opaque or malformed token attributes to no one, which is refused
-     * rather than assumed to match. */
     return undefined;
   }
 };
