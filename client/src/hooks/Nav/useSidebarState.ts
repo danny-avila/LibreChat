@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilState } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
+import { useMediaQuery, useRemScale } from '@librechat/client';
 
 import type { SetterOrUpdater } from 'recoil';
 
@@ -27,7 +27,11 @@ export type SidebarState = {
  * here so they can never disagree about that frame.
  */
 export default function useSidebarState(): SidebarState {
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  /** The sidebar is laid out in rem, so the drawer/desktop switch has to compare the
+   *  viewport in the same units: a fixed 768px breakpoint keeps the desktop panel at
+   *  scales where its scaled minimum no longer fits the 40% cap. */
+  const remScale = useRemScale();
+  const isSmallScreen = useMediaQuery(`(max-width: ${768 * remScale}px)`);
   const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
   const wasSmallScreen = useRef(isSmallScreen);
 

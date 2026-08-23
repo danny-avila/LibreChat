@@ -114,7 +114,7 @@ function MultiSelectDropDown({
                           <div
                             key={i}
                             className="relative"
-                            style={{ width: '16px', height: '16px' }}
+                            style={{ width: '1rem', height: '1rem' }}
                           >
                             {v.icon ? (
                               <img
