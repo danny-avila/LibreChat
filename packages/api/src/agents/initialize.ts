@@ -94,6 +94,7 @@ import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
+import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -190,8 +191,8 @@ function appendAdditionalInstructions(agent: Agent, text?: string | null): void 
 
 /**
  * The request middleware already read this conversation once (`null` = looked up, absent).
- * Only a resolved document that actually carries `files` can stand in for the database:
- * bound agent-event continuations stash a partial document built from lineage alone.
+ * A stored document without `files` genuinely has none; only the branded lineage-only
+ * partial from a bound agent-event continuation cannot speak for the database.
  */
 export function readResolvedConversationFiles(
   req: Pick<ServerRequest, 'resolvedConversation'>,
@@ -207,7 +208,7 @@ export function readResolvedConversationFiles(
   if (
     resolved == null ||
     resolved.conversationId !== conversationId ||
-    !Object.prototype.hasOwnProperty.call(resolved, 'files')
+    (resolved as Record<symbol, unknown>)[PARTIAL_RESOLVED_CONVERSATION] === true
   ) {
     return undefined;
   }
