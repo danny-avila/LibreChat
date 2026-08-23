@@ -91,7 +91,7 @@ const DragDropModal = () => {
     <OGDialog open={isVisible} onOpenChange={(open) => !open && closeModal()}>
       <OGDialogTemplate
         title={localize('com_ui_upload_type')}
-        className="w-11/12 sm:w-[27.5rem] md:w-[25rem] lg:w-[22.5rem]"
+        className="w-11/12 sm:w-[min(27.5rem,90vw)] md:w-[min(25rem,90vw)] lg:w-[min(22.5rem,90vw)]"
         main={
           <div className="flex flex-col gap-2">
             {options.map((value) => {

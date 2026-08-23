@@ -70,7 +70,7 @@ function SelectDropDownPop({
               className={cn(
                 'pointer-cursor relative flex flex-col rounded-lg border border-border-light bg-surface-secondary py-2 pl-3 pr-10 text-left focus:ring-0 focus:ring-offset-0 sm:text-sm',
                 'hover:bg-surface-hover radix-state-open:bg-surface-hover',
-                'min-w-[12.5rem] max-w-[13.4375rem] sm:min-w-full sm:max-w-full',
+                'min-w-[min(12.5rem,90vw)] max-w-[min(13.4375rem,90vw)] sm:min-w-full sm:max-w-full',
               )}
               aria-label={localize('com_ui_select_var', { 0: title })}
               aria-haspopup="false"

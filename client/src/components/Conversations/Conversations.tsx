@@ -253,7 +253,7 @@ const Conversations: FC<ConversationsProps> = ({
     () =>
       new CellMeasurerCache({
         fixedWidth: true,
-        defaultHeight: convoHeight,
+        defaultHeight: Math.round(convoHeight * remScale),
         keyMapper: (index) => {
           const item = flattenedItemsRef.current[index];
           if (!item) {
@@ -275,7 +275,7 @@ const Conversations: FC<ConversationsProps> = ({
           return `unknown-${index}`;
         },
       }),
-    [convoHeight],
+    [convoHeight, remScale],
   );
 
   const clearFavoritesCache = useCallback(() => {
