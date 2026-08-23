@@ -47,6 +47,7 @@ jest.mock('@librechat/client', () => ({
     asChild ? children : <div>{children}</div>,
   HoverCardPortal: ({ children }: { children: ReactNode }) => <>{children}</>,
   HoverCardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  useRemScale: () => 1,
 }));
 
 if (typeof window.matchMedia !== 'function') {
