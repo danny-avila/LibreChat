@@ -257,10 +257,24 @@ export default function useReplyWatcher() {
           }
           unknownIds.add(conversationId);
         }
-        unknownIdsRef.current = unknownIds;
 
-        if (hasNewlyUnknownConversation) {
-          queryClient.invalidateQueries([QueryKeys.allConversations]);
+        if (!hasNewlyUnknownConversation) {
+          unknownIdsRef.current = unknownIds;
+          return;
+        }
+        /* Ids are committed as known-unknown only once the refetch meant to reveal them has
+           succeeded. Recording them first would let a transient list failure mute those
+           conversations for good: every later poll would read them as already known and never
+           invalidate again, even after the network recovered. A conversation a cached sidebar
+           filter legitimately hides is committed on the successful refetch that still did not
+           reveal it, which is what keeps the filtered list from being refetched every tick. */
+        await queryClient.invalidateQueries([QueryKeys.allConversations]);
+        const refreshFailed = queryClient
+          .getQueryCache()
+          .findAll([QueryKeys.allConversations], { exact: false })
+          .some((query) => query.getObserversCount() > 0 && query.state.status === 'error');
+        if (!refreshFailed) {
+          unknownIdsRef.current = unknownIds;
         }
       } catch {
         /* Offline or a dropped connection; the next tick retries. */
