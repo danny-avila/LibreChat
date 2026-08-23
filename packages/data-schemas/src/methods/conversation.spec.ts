@@ -961,6 +961,85 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('saveConvo appendMessageIds', () => {
+    const ctx = { userId: 'append-user' };
+    const conversationId = 'append-conversation';
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({ user: ctx.userId });
+      getMessages.mockClear();
+    });
+
+    it('appends the provided ids without reading the messages collection', async () => {
+      const seeded = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(seeded.map((_id) => ({ _id })));
+      await saveConvo(ctx, { conversationId, title: 'seeded' });
+      expect(getMessages).toHaveBeenCalledTimes(1);
+
+      const appended = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'appended' },
+        { appendMessageIds: [appended] },
+      );
+
+      expect(getMessages).toHaveBeenCalledTimes(1);
+      expect(result?.title).toBe('appended');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([...seeded, appended].map(String));
+    });
+
+    it('does not duplicate an id that is already recorded', async () => {
+      const id = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('creates the conversation with the appended id when it does not exist yet', async () => {
+      const id = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'first turn' },
+        { appendMessageIds: [id] },
+      );
+
+      expect(result?.conversationId).toBe(conversationId);
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('ignores a caller-supplied messages field so $set cannot conflict with the append', async () => {
+      const kept = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [kept] });
+
+      const appended = new mongoose.Types.ObjectId();
+      await saveConvo(
+        ctx,
+        { conversationId, messages: [new mongoose.Types.ObjectId()] },
+        { appendMessageIds: [appended] },
+      );
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([kept, appended].map(String));
+    });
+
+    it('still rebuilds the array from the database when the option is absent', async () => {
+      const rebuilt = [new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(rebuilt.map((_id) => ({ _id })));
+
+      await saveConvo(ctx, { conversationId, title: 'rebuild' });
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
+    });
+  });
+
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
       mockCtx.interfaceConfig = { temporaryChatRetention: 24 };

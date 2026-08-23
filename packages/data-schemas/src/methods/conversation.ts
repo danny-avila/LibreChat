@@ -137,6 +137,10 @@ export interface ConversationMethods {
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      /** `_id`s of messages this save just wrote. When present, they are appended with
+       *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
+       *  every save without this option still rebuilds the array from the database. */
+      appendMessageIds?: Types.ObjectId[];
     },
   ): Promise<IConversation | { message: string } | null>;
   setConvoPinned(
@@ -649,6 +653,7 @@ export function createConversationMethods(
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
+      appendMessageIds?: Types.ObjectId[];
     },
   ) {
     try {
@@ -659,8 +664,13 @@ export function createConversationMethods(
         logger.debug(`[saveConvo] ${metadata.context}`);
       }
 
-      const messages = await getMessages({ conversationId, user: userId }, '_id');
-      const update: Record<string, unknown> = { ...convo, messages, user: userId };
+      const appendMessageIds = metadata?.appendMessageIds;
+      const update: Record<string, unknown> = { ...convo, user: userId };
+      if (appendMessageIds == null) {
+        update.messages = await getMessages({ conversationId, user: userId }, '_id');
+      } else {
+        delete update.messages;
+      }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
@@ -750,6 +760,9 @@ export function createConversationMethods(
 
       const buildOperation = (setFields: Record<string, unknown>) => {
         const operation: Record<string, unknown> = { $set: setFields };
+        if (appendMessageIds != null && appendMessageIds.length > 0) {
+          operation.$addToSet = { messages: { $each: appendMessageIds } };
+        }
         if (Object.keys(unsetFields).length > 0) {
           operation.$unset = unsetFields;
         }

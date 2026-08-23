@@ -1,4 +1,6 @@
+import type { IConversation } from '@librechat/data-schemas';
 import { readResolvedConversationFiles } from './initialize';
+import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 
 describe('readResolvedConversationFiles', () => {
   const conversationId = 'conversation-1';
@@ -28,12 +30,23 @@ describe('readResolvedConversationFiles', () => {
     ).toEqual([]);
   });
 
-  it('falls back to the database when the resolved document omits files or is another conversation', () => {
+  it('treats a stored document without files as having none', () => {
     expect(
       readResolvedConversationFiles(
-        { resolvedConversation: { conversationId, agent_id: 'child-agent' } },
+        { resolvedConversation: { conversationId, title: 'no uploads yet' } },
         conversationId,
       ),
+    ).toEqual([]);
+  });
+
+  it('falls back to the database for a branded lineage-only partial or another conversation', () => {
+    const lineageOnly = {
+      [PARTIAL_RESOLVED_CONVERSATION]: true,
+      conversationId,
+      agent_id: 'child-agent',
+    } as unknown as IConversation;
+    expect(
+      readResolvedConversationFiles({ resolvedConversation: lineageOnly }, conversationId),
     ).toBeUndefined();
     expect(
       readResolvedConversationFiles(

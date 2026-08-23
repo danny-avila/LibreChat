@@ -443,7 +443,10 @@ describe('message route conversation ownership filters', () => {
         model: savedMessage.model,
         iconURL: savedMessage.iconURL,
       },
-      { context: 'POST /api/messages/:conversationId' },
+      {
+        context: 'POST /api/messages/:conversationId',
+        appendMessageIds: [savedMessage._id],
+      },
     );
   });
 
