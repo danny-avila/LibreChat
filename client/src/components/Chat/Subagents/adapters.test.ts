@@ -193,6 +193,7 @@ describe('child activity adapters', () => {
         phase: 'run_step',
         timestamp: '2026-08-23T00:00:00Z',
         data: {
+          id: 'final-step',
           stepDetails: {
             type: 'message_creation',
             message_creation: { phase: 'final_answer' },
@@ -206,7 +207,10 @@ describe('child activity adapters', () => {
         subagentAgentId: 'child',
         phase: 'message_delta',
         timestamp: '2026-08-23T00:00:01Z',
-        data: { delta: { content: [{ type: ContentTypes.TEXT, text: 'Final answer.' }] } },
+        data: {
+          id: 'final-step',
+          delta: { content: [{ type: ContentTypes.TEXT, text: 'Final answer.' }] },
+        },
       },
     ] satisfies SubagentUpdateEvent[]);
     const activity = adaptLivePersistedActivity({

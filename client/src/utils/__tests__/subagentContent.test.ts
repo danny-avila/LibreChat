@@ -41,6 +41,7 @@ describe('aggregateSubagentContent', () => {
       makeEvent({
         phase: 'run_step',
         data: {
+          id: 'commentary-step',
           stepDetails: {
             type: 'message_creation',
             message_creation: { phase: 'commentary' },
@@ -48,12 +49,9 @@ describe('aggregateSubagentContent', () => {
         },
       }),
       makeEvent({
-        phase: 'message_delta',
-        data: { delta: { content: [{ type: 'text', text: 'Commentary.' }] } },
-      }),
-      makeEvent({
         phase: 'run_step',
         data: {
+          id: 'final-step',
           stepDetails: {
             type: 'message_creation',
             message_creation: { phase: 'final_answer' },
@@ -62,7 +60,17 @@ describe('aggregateSubagentContent', () => {
       }),
       makeEvent({
         phase: 'message_delta',
-        data: { delta: { content: [{ type: 'text', text: 'Final answer.' }] } },
+        data: {
+          id: 'commentary-step',
+          delta: { content: [{ type: 'text', text: 'Commentary.' }] },
+        },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: {
+          id: 'final-step',
+          delta: { content: [{ type: 'text', text: 'Final answer.' }] },
+        },
       }),
     ]);
 

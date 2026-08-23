@@ -48,6 +48,7 @@ type RunStepCompletedData = {
 };
 
 type MessageDeltaData = {
+  id?: string;
   delta?: {
     content?: Array<{
       type?: string;
@@ -83,6 +84,8 @@ type ToolCallPart = {
  *  matches the subset of `TMessageContentParts` a subagent run emits. */
 export type SubagentContentPart = TextPart | ThinkPart | ToolCallPart;
 
+const MAX_TRACKED_MESSAGE_PHASES = 100;
+
 const extractTextChunk = (
   data: MessageDeltaData | undefined,
 ): { text: string; phase?: AssistantTextPhase } => {
@@ -114,6 +117,16 @@ const extractThinkChunk = (data: ReasoningDeltaData | undefined): string => {
 const stringifyArgs = (args: unknown): string =>
   typeof args === 'string' ? args : JSON.stringify(args ?? {});
 
+const updateMessagePhase = (
+  phases: Record<string, AssistantTextPhase>,
+  stepId: string,
+  phase: AssistantTextPhase | undefined,
+): Record<string, AssistantTextPhase> => {
+  const entries = Object.entries(phases).filter(([id]) => id !== stepId);
+  if (phase != null) entries.push([stepId, phase]);
+  return Object.fromEntries(entries.slice(-MAX_TRACKED_MESSAGE_PHASES));
+};
+
 /**
  * Cursor carried across `foldSubagentEvent` calls so the aggregator can
  * extend an in-flight TEXT/THINK run without re-scanning earlier parts
@@ -125,8 +138,10 @@ export interface SubagentAggregatorState {
   openTextIdx: number | null;
   /** Index of the currently-open THINK part, or `null` when none. */
   openThinkIdx: number | null;
-  /** Phase declared by the latest message-creation step. */
-  activeTextPhase?: AssistantTextPhase;
+  /** Message-step ID to its declared text phase; graph members can overlap. */
+  messagePhaseByStepId: Record<string, AssistantTextPhase>;
+  /** Compatibility phase for legacy message events that omit their step ID. */
+  idlessTextPhase?: AssistantTextPhase;
   /** `tool_call.id` → its index in `contentParts` for O(1) updates. */
   toolCallIndexById: Record<string, number>;
 }
@@ -136,6 +151,7 @@ export function initSubagentAggregatorState(): SubagentAggregatorState {
   return {
     openTextIdx: null,
     openThinkIdx: null,
+    messagePhaseByStepId: {},
     toolCallIndexById: {},
   };
 }
@@ -162,10 +178,16 @@ export function foldSubagentEvent(
   event: SubagentUpdateEvent,
 ): { parts: SubagentContentPart[]; state: SubagentAggregatorState } {
   if (event.phase === 'message_delta') {
-    const extracted = extractTextChunk(event.data as MessageDeltaData | undefined);
+    const data = event.data as MessageDeltaData | undefined;
+    const extracted = extractTextChunk(data);
     const chunk = extracted.text;
     if (!chunk) return { parts, state };
-    const phase = extracted.phase ?? state.activeTextPhase;
+    const stepId = data?.id;
+    const phase =
+      extracted.phase ??
+      (typeof stepId === 'string' && stepId !== ''
+        ? state.messagePhaseByStepId[stepId]
+        : state.idlessTextPhase);
     /** Reasoning→text transition: close the open THINK so the THINK part
      *  lands BEFORE the TEXT part in chronological order. */
     const afterThinkClose = state.openThinkIdx != null ? { ...state, openThinkIdx: null } : state;
@@ -210,15 +232,21 @@ export function foldSubagentEvent(
     const details = data?.stepDetails;
     if (details?.type === 'message_creation') {
       const phase = details.message_creation?.phase;
-      const activeTextPhase =
-        phase === 'commentary' || phase === 'final_answer' ? phase : undefined;
-      const phaseChanged = (state.activeTextPhase ?? null) !== (activeTextPhase ?? null);
+      const textPhase = phase === 'commentary' || phase === 'final_answer' ? phase : undefined;
+      const stepId = data?.id;
+      if (typeof stepId === 'string' && stepId !== '') {
+        const messagePhaseByStepId = updateMessagePhase(
+          state.messagePhaseByStepId,
+          stepId,
+          textPhase,
+        );
+        return { parts, state: { ...state, messagePhaseByStepId } };
+      }
       return {
         parts,
         state: {
           ...state,
-          activeTextPhase,
-          ...(phaseChanged ? { openTextIdx: null } : {}),
+          idlessTextPhase: textPhase,
         },
       };
     }
@@ -247,9 +275,10 @@ export function foldSubagentEvent(
     return {
       parts: next,
       state: {
+        ...state,
         openTextIdx: null,
         openThinkIdx: null,
-        activeTextPhase: undefined,
+        idlessTextPhase: undefined,
         toolCallIndexById,
       },
     };
@@ -296,9 +325,10 @@ export function foldSubagentEvent(
     return {
       parts: next,
       state: {
+        ...state,
         openTextIdx: null,
         openThinkIdx: null,
-        activeTextPhase: undefined,
+        idlessTextPhase: undefined,
         toolCallIndexById: { ...state.toolCallIndexById, [tc.id]: newIdx },
       },
     };
