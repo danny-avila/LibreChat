@@ -14,11 +14,11 @@ import {
 } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
+import { focusableInRow, resolveRowBeside } from './focus';
 import { areConversationRenderPropsEqual } from './utils';
 import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import { CONVERSATION_DRAG_TYPE } from './dnd';
-import { resolveRowBeside } from './focus';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import ConvoLink from './ConvoLink';
@@ -181,7 +181,13 @@ function Conversation({
       return;
     }
     const row = containerRef.current;
-    const successor = row?.contains(document.activeElement) === true ? resolveRowBeside(row) : null;
+    /* Outside the pinned list there is no successor, because the row stays put.
+     * The pin badge that had focus does not, though, so focus moves to the
+     * row's own link rather than falling to the document. */
+    const successor =
+      row?.contains(document.activeElement) === true
+        ? (resolveRowBeside(row) ?? focusableInRow(row))
+        : null;
     unpinMutation.mutate(
       { conversationId, pinned: false },
       {
