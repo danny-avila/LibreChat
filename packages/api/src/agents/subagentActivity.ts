@@ -391,7 +391,7 @@ const publicActivityEnvelope = (
   eventBound: boolean,
 ): SubagentActivityEnvelope => {
   if (!eventBound) return event;
-  const ancestry = event.data.ancestry.map((entry) => {
+  const ancestry = (event.data.ancestry ?? []).map((entry) => {
     if (!entry.parentToolCallId?.startsWith('event-binding:')) return entry;
     const { parentToolCallId: _privateDeliveryId, ...publicEntry } = entry;
     return publicEntry;

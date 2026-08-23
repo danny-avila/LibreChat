@@ -4,6 +4,7 @@ import { isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactElement } from 'react';
 import type { TMessageProps } from '~/common';
+import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import MessageContent from '~/components/Messages/MessageContent';
 import { useRowMountWindow } from '~/hooks/Messages';
 import MessageParts from './MessageParts';
@@ -195,6 +196,16 @@ function MultiMessage({
   return (
     <>
       {row}
+      {rowMounted && currentEditId !== message.messageId ? (
+        <div className="w-full border-0 bg-transparent">
+          <div className="m-auto justify-center px-4 sm:px-0">
+            <EventSubagentActivityGroup
+              conversationId={message.conversationId ?? ''}
+              parentMessageId={message.messageId}
+            />
+          </div>
+        </div>
+      ) : null}
       <MemoizedMultiMessage
         messageId={message.messageId}
         messagesTree={message.children ?? []}

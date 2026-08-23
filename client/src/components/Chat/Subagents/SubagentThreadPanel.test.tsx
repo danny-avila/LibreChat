@@ -29,6 +29,7 @@ let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
 const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/data-provider', () => ({
+  ACTIVE_THREAD_REFRESH_MS: 2000,
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
   subagentThreadHasTaskEvidence: (view: SubagentThreadView | undefined, taskId: string): boolean =>
     view?.messages.some(
@@ -240,6 +241,7 @@ describe('SubagentThreadPanel', () => {
       'parent-conversation',
       'child-thread',
       'task',
+      undefined,
     );
     expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
@@ -501,6 +503,54 @@ describe('SubagentThreadPanel', () => {
     );
 
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
+  });
+
+  it('revalidates a cached terminal event task when its lease resumes', async () => {
+    const refetch = jest.fn().mockResolvedValue({ data: { ...completedView, status: 'running' } });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+    mockParentChildrenByThread = new Map([
+      [
+        'child-thread',
+        {
+          threadId: 'child-thread',
+          parentMessageId: 'parent-message',
+          subagentType: 'agent-1',
+          subagentKind: 'agent',
+          title: 'Event child',
+          origin: 'event',
+          actorId: 'actor-1',
+          status: 'running',
+          latestTaskId: 'task',
+          tasks: [{ taskId: 'task', status: 'running' }],
+          tasksTruncated: false,
+        },
+      ],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+      refetch,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'task',
+      { refetchInterval: 2000 },
+    );
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(eventSelection, true);
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
   });
 
   it('surfaces a durable read failure after the readiness window', () => {

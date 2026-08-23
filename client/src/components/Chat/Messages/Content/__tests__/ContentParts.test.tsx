@@ -4,16 +4,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { groupSequentialToolCalls } from '~/utils';
 
-let mockRenderEventSubagents = false;
-
-jest.mock('~/components/Chat/Subagents/EventSubagentActivityGroup', () => ({
-  __esModule: true,
-  default: ({ parentMessageId }: { parentMessageId: string }) =>
-    mockRenderEventSubagents ? (
-      <div data-testid="event-subagent-activity" data-parent-message-id={parentMessageId} />
-    ) : null,
-}));
-
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   mapAttachments: () => ({}),
@@ -160,23 +150,9 @@ const baseProps = {
 };
 
 beforeEach(() => {
-  mockRenderEventSubagents = false;
   jest
     .mocked(groupSequentialToolCalls)
     .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
-});
-
-describe('ContentParts — event child anchors', () => {
-  it('hosts event activity beneath a valid user-message anchor', () => {
-    mockRenderEventSubagents = true;
-
-    render(<ContentParts {...baseProps} isCreatedByUser />);
-
-    expect(screen.getByTestId('event-subagent-activity')).toHaveAttribute(
-      'data-parent-message-id',
-      'msg-1',
-    );
-  });
 });
 
 describe('ContentParts — interim skill cards', () => {

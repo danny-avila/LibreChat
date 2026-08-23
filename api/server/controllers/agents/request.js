@@ -1016,6 +1016,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req._agentEventBindingParentConversationId != null
       ? (clientRequestId ?? crypto.randomUUID())
       : undefined;
+  if (eventTaskId != null) {
+    req._agentEventTaskId = eventTaskId;
+  }
   const preallocatedUserMessageId =
     eventTaskId == null
       ? (overrideUserMessageId ?? overrideParentMessageId ?? crypto.randomUUID())

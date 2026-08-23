@@ -1107,6 +1107,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   const providerExecutionId = randomUUID();
   try {
     if (req._agentEventBindingParentConversationId != null) {
+      req._agentEventTaskId = job.metadata.idempotencyClientRequestId;
       try {
         releaseEventChildLease = await acquireEventChildGenerationLease({
           userId,

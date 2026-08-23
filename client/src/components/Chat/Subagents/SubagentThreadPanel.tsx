@@ -14,6 +14,7 @@ import {
 } from '@librechat/client';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
+  ACTIVE_THREAD_REFRESH_MS,
   subagentThreadHasTaskEvidence,
   useForkConvoMutation,
   useSubagentThreadQuery,
@@ -58,14 +59,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
+  const eventTaskRunning =
+    eventSummary?.tasks.find((task) => task.taskId === taskId)?.status === 'running';
   const eventSiblings = useMemo(
     () => (selection.event == null ? [] : (byMessageId.get(selection.parentMessageId) ?? [])),
     [byMessageId, selection.event, selection.parentMessageId],
   );
-  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
+  const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
     selection.parentConversationId,
     threadId,
     taskId,
+    eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
   );
   const durableTerminal =
     subagentThreadHasTaskEvidence(data, taskId) &&
@@ -74,7 +78,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       data?.status === 'interrupted' ||
       data?.status === 'cancelled');
   const priorTerminalRef = useRef(false);
-  useSubagentActivityStream(selection, !durableTerminal);
+  useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
 
   useEffect(() => {
     if (selection.event == null) return;
@@ -90,6 +94,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (durableTerminal && !priorTerminalRef.current) void refresh();
     priorTerminalRef.current = durableTerminal;
   }, [durableTerminal, refresh, selection.event]);
+
+  useEffect(() => {
+    if (selection.event == null || !eventTaskRunning || !durableTerminal) return;
+    void refetch();
+  }, [durableTerminal, eventTaskRunning, refetch, selection.event]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&

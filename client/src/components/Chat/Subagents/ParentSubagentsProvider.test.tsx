@@ -53,12 +53,14 @@ describe('ParentSubagentsProvider', () => {
     };
 
     render(
-      <ParentSubagentsProvider conversationId="parent-conversation">
+      <ParentSubagentsProvider conversationId="parent-conversation" enabled>
         <Probe />
       </ParentSubagentsProvider>,
     );
 
-    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith('parent-conversation');
+    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith('parent-conversation', {
+      enabled: true,
+    });
     expect(context?.byMessageId.get('parent-message')).toEqual([eventChild]);
     expect(context?.byThreadId.get('tool-thread')).toEqual(toolChild);
     let result: ParentSubagentIndex | undefined;

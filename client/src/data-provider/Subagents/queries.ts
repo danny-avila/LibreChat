@@ -4,7 +4,7 @@ import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 
-const ACTIVE_THREAD_REFRESH_MS = 2_000;
+export const ACTIVE_THREAD_REFRESH_MS = 2_000;
 const IDLE_PARENT_REFRESH_MS = 10_000;
 const CHILD_READY_POLL_WINDOW_MS = 60_000;
 

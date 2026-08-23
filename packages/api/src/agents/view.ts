@@ -194,6 +194,7 @@ const publicTaskStatus = (
     case 'cancelled':
       return 'cancelled';
   }
+  return 'interrupted';
 };
 
 const publicTaskSummaries = (
@@ -217,11 +218,17 @@ const publicTaskSummaries = (
       ...(isoDate(task.createdAt) == null ? {} : { createdAt: isoDate(task.createdAt) }),
     });
   }
-  if (activeTaskId != null && !tasks.some((task) => task.taskId === activeTaskId)) {
-    tasks.unshift({
-      taskId: truncateUtf8(activeTaskId, MAX_PUBLIC_ID_BYTES).text,
-      status: 'running',
-    });
+  if (activeTaskId != null) {
+    const activeIndex = tasks.findIndex((task) => task.taskId === activeTaskId);
+    if (activeIndex >= 0) {
+      const [activeTask] = tasks.splice(activeIndex, 1);
+      if (activeTask != null) tasks.unshift(activeTask);
+    } else {
+      tasks.unshift({
+        taskId: truncateUtf8(activeTaskId, MAX_PUBLIC_ID_BYTES).text,
+        status: 'running',
+      });
+    }
   }
   return {
     tasks: tasks.slice(0, MAX_PARENT_TASKS_PER_CHILD),

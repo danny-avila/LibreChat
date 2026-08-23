@@ -8,7 +8,6 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
-import EventSubagentActivityGroup from '~/components/Chat/Subagents/EventSubagentActivityGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
@@ -686,17 +685,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
-  return (
-    <>
-      <ContentPartsBody {...props} />
-      {props.nestedActivityPhase !== true && props.edit !== true && (
-        <EventSubagentActivityGroup
-          conversationId={props.conversationId ?? ''}
-          parentMessageId={props.messageId}
-        />
-      )}
-    </>
-  );
+  return <ContentPartsBody {...props} />;
 });
 
 export default ContentParts;

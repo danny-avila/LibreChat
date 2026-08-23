@@ -563,6 +563,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     return this.activityStream.subscribe(threadId, taskId, subscriber);
   }
 
+  /** Publishes activity produced by a host-owned event child. Event children
+   * use the same bounded, demand-aware transport as detached tool children,
+   * but their generation lease is owned by the trigger controller instead of
+   * this task store. */
+  publishTaskActivity(threadId: string, taskId: string, event: SubagentUpdateEvent): Promise<void> {
+    return this.activityStream.publish(threadId, taskId, boundSubagentActivityUpdate(event));
+  }
+
   private publishActivity(
     lease: TaskThreadLease,
     threadId: string,
