@@ -10,7 +10,9 @@ import { TOOL_ARTIFACT_TYPES, isCodeOnlyArtifact, isPreviewOnlyArtifact } from '
 import { displayFilename } from '~/components/Chat/Messages/Content/Parts/attachmentTypes';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useShareContext, useMutationState } from '~/Providers';
+import { ARTIFACTS_SHEET_MAX_WIDTH } from '~/utils/breakpoints';
 import useArtifacts from '~/hooks/Artifacts/useArtifacts';
+import useScaledMaxWidth from '~/hooks/useScaledMaxWidth';
 import { useFocusTrap, useLocalize } from '~/hooks';
 import DownloadArtifact from './DownloadArtifact';
 import ArtifactVersion from './ArtifactVersion';
@@ -26,7 +28,7 @@ export default function Artifacts() {
   const localize = useLocalize();
   const { isMutating } = useMutationState();
   const { isSharedConvo } = useShareContext();
-  const isMobile = useMediaQuery('(max-width: 868px)');
+  const isMobile = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const previewRef = useRef<SandpackPreviewRef>();
   const artifactContainerRef = useRef<HTMLDivElement>(null);

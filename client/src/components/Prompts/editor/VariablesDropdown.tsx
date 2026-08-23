@@ -139,7 +139,7 @@ export default function VariablesDropdown({
         }
         items={items}
         menuId={menuId}
-        className="z-50 w-64"
+        className="z-50 w-[min(16rem,90vw)]"
         itemClassName="px-2 py-1"
       />
     </div>
