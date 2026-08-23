@@ -78,6 +78,9 @@ jobs:
             exit 0
           fi
           # A lane is skipped only on a literal false; anything else (true, null, missing) runs.
+          if [ "$(echo "$RESP" | jq -r '.e2e.fail_open // false')" = "true" ]; then
+            note "_fail-open decision (root/workflow/lockfile change or stale graph): everything runs_"
+          fi
           REDIS=$(echo "$RESP" | jq -r '.matrix["playwright-mock"].redis_transport')
           MCP=$(echo "$RESP" | jq -r '.matrix["playwright-mock"].mcp_tool_list_changed')
           note "| lane | decision |"
