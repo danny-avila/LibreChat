@@ -342,6 +342,9 @@ describe('ScheduleDialog', () => {
       // aloud.
       const monday = screen.getByRole('button', { name: 'Monday' });
       expect(monday).toHaveAttribute('aria-pressed', 'true');
+      // And on hover: the narrow visible labels repeat within a week, so the
+      // title spells the day out for a sighted user too.
+      expect(monday).toHaveAttribute('title', 'Monday');
       expect(screen.getByRole('button', { name: 'Saturday' })).toHaveAttribute(
         'aria-pressed',
         'false',

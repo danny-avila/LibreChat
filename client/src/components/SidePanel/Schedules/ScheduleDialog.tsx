@@ -877,6 +877,10 @@ export default function ScheduleDialog({
                                 size="sm"
                                 aria-pressed={selected}
                                 aria-label={label}
+                                // The narrow labels repeat within a week ("T", "T");
+                                // position disambiguates at a glance and the title
+                                // names the day outright on hover.
+                                title={label}
                                 data-testid={`schedule-day-${day}`}
                                 onClick={() =>
                                   field.onChange(
