@@ -41,10 +41,11 @@ const setScrimOpacity = (open: boolean) => {
   }
   scrim.style.opacity = open ? '1' : '0';
   /** Recoil still has expanded=false during an open kick, so the class
-   *  pointer-events-none would leave the fading-in scrim click-through. */
-  if (open) {
-    scrim.style.pointerEvents = 'auto';
-  }
+   *  pointer-events-none would leave the fading-in scrim click-through. The
+   *  close hands capture straight back to the classes, which hold it for
+   *  exactly the length of the guard; an override left over from the opening
+   *  slide would outlive that and swallow taps on the strip. */
+  scrim.style.pointerEvents = open ? 'auto' : '';
 };
 
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */

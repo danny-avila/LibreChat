@@ -875,6 +875,27 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.useRealTimers();
     harness.unmount();
   });
+
+  /**
+   * A dismiss inside the opening settle window leaves that slide's override in
+   * place, and inline styles beat the closed pointer-events-none class. The
+   * guard expires at the animation deadline but the release runs a buffer
+   * later, so the invisible scrim would keep swallowing taps in between.
+   */
+  it('releases the pointer override when the close slide starts', () => {
+    jest.useFakeTimers();
+    const harness = setup(true, false, Math.round(DRAWER_WIDTH / 0.8));
+    const scrim = attachScrim('1');
+    scrim.style.pointerEvents = 'auto';
+    const pointerAtApply: string[] = [];
+    kickDrawerAnimation(false, () => {
+      pointerAtApply.push(scrim.style.pointerEvents);
+    });
+
+    expect(pointerAtApply).toEqual(['']);
+    jest.useRealTimers();
+    harness.unmount();
+  });
 });
 
 describe('findHorizontalScrollBlocker', () => {
