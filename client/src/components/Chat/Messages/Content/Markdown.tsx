@@ -15,7 +15,7 @@ type TContentProps = {
 };
 
 const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
-  const { isSubmitting = false } = useMessageContext();
+  const { isSubmitting = false } = useMessageContext() ?? {};
   const smoothStreaming = useSmoothStreaming();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
