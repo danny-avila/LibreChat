@@ -7,6 +7,9 @@ export const SIDE_PANEL_MAX_WIDTH = 767;
 /** Below this artifacts render as a full-width sheet rather than a panel. */
 export const ARTIFACTS_SHEET_MAX_WIDTH = 868;
 
+/** Below this the shared-conversation route stops reserving an artifacts panel. */
+export const SHARE_ARTIFACTS_MAX_WIDTH = 1023;
+
 const BASE_FONT_SIZE = 16;
 
 /**
