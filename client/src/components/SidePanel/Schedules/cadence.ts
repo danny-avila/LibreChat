@@ -80,22 +80,34 @@ export const formatRunInstant = (date: Date, timezone: string, locale?: string):
 export const resolveLocalTimezone = (): string =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || UTC_TIMEZONE;
 
-/**
- * Every IANA zone the runtime knows, with the user's own zone and UTC pinned first.
- * `Intl.supportedValuesOf` is unavailable on older engines, so the pinned pair
- * doubles as the fallback list: a user who cannot browse zones can still keep the
- * one their schedule already uses.
- */
-/** Modern IANA names the runtime accepts but `supportedValuesOf` leaves out: that
- *  enumeration reports CLDR's legacy canonical forms (`Asia/Calcutta`,
+/** The modern IANA names the runtime accepts but `supportedValuesOf` leaves out:
+ *  that enumeration reports CLDR's legacy canonical forms (`Asia/Calcutta`,
  *  `Europe/Kiev`), so the name a user actually searches for would find nothing.
- *  Each entry is probed before inclusion, so an engine that rejects one drops it. */
+ *  This is tzdb's rename set, not every alias the runtime tolerates: deprecated
+ *  links (`US/Eastern`, `Etc/GMT+5`) point at zones already listed under their
+ *  canonical names, and offering them would duplicate each zone under a stale or
+ *  sign-inverted spelling. Each entry is probed before inclusion, so an engine
+ *  that rejects or already lists one simply drops it. */
 const MODERN_ZONE_NAMES = [
   'Asia/Kolkata',
   'Europe/Kyiv',
   'Asia/Ho_Chi_Minh',
   'Asia/Yangon',
+  'Asia/Kathmandu',
   'America/Nuuk',
+  'Africa/Asmara',
+  'Atlantic/Faroe',
+  'Pacific/Chuuk',
+  'Pacific/Pohnpei',
+  'Pacific/Kanton',
+  'America/Atikokan',
+  'America/Argentina/Buenos_Aires',
+  'America/Argentina/Catamarca',
+  'America/Argentina/Cordoba',
+  'America/Argentina/Jujuy',
+  'America/Argentina/Mendoza',
+  'America/Indiana/Indianapolis',
+  'America/Kentucky/Louisville',
 ];
 
 const zoneIsAccepted = (zone: string): boolean => {
@@ -107,6 +119,12 @@ const zoneIsAccepted = (zone: string): boolean => {
   }
 };
 
+/**
+ * Every IANA zone the runtime knows, with the user's own zone and UTC pinned first.
+ * `Intl.supportedValuesOf` is unavailable on older engines, so the pinned pair
+ * doubles as the fallback list: a user who cannot browse zones can still keep the
+ * one their schedule already uses.
+ */
 export const buildTimezoneOptions = (localTimezone: string, storedTimezone?: string): string[] => {
   const pinned = [localTimezone, UTC_TIMEZONE];
   if (storedTimezone != null && storedTimezone.length > 0) {
@@ -119,7 +137,7 @@ export const buildTimezoneOptions = (localTimezone: string, storedTimezone?: str
     new Set([
       ...listed,
       // Only when the engine could enumerate at all: the fallback list is the pinned
-      // pair by design, and five extra browsable names would not change that.
+      // pair by design, and extra browsable names would not change that.
       ...(listed.length > 0 ? MODERN_ZONE_NAMES.filter(zoneIsAccepted) : []),
     ]),
   )

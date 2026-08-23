@@ -46,7 +46,7 @@ describe('buildTimezoneOptions', () => {
     // `supportedValuesOf` reports CLDR's legacy canonical forms (Asia/Calcutta,
     // Europe/Kiev); the names people search for must still find an option.
     const zones = new Set(buildTimezoneOptions('America/New_York'));
-    for (const zone of ['Asia/Kolkata', 'Europe/Kyiv']) {
+    for (const zone of ['Asia/Kolkata', 'Europe/Kyiv', 'America/Argentina/Buenos_Aires']) {
       let accepted = true;
       try {
         new Intl.DateTimeFormat(undefined, { timeZone: zone });
