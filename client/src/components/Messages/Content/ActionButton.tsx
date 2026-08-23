@@ -53,16 +53,14 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(
           aria-hidden="true"
         >
           <Icon
-            size={18}
             className={cn(
-              'absolute transition-all duration-300 ease-out',
+              'absolute size-[1.125rem] transition-all duration-300 ease-out',
               isActive ? 'rotate-[-90deg] scale-0 opacity-0' : 'rotate-0 scale-100 opacity-100',
             )}
           />
           <Check
-            size={18}
             className={cn(
-              'transition-all duration-300 ease-out',
+              'size-[1.125rem] transition-all duration-300 ease-out',
               isActive ? 'rotate-0 scale-100 opacity-100' : 'rotate-90 scale-0 opacity-0',
             )}
           />

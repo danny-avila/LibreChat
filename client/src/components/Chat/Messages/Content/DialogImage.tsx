@@ -238,12 +238,12 @@ export default function DialogImage({
     ? localize('com_ui_hide_image_details')
     : localize('com_ui_show_image_details');
 
-  // Calculate image max dimensions accounting for side panel (w-80 = 320px)
+  // Calculate image max dimensions accounting for the side panel (w-80 = 20rem)
   const getImageMaxWidth = () => {
     if (isPromptOpen) {
       // On mobile, panel overlays so use full width; on desktop, subtract panel width
       return typeof window !== 'undefined' && window.innerWidth >= 640
-        ? 'calc(90vw - 320px)'
+        ? 'calc(90vw - 20rem)'
         : '90vw';
     }
     return '90vw';

@@ -84,9 +84,9 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
       <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
         <OGDialogContent
           showCloseButton={false}
-          className="h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden border-border-light bg-surface-dialog p-0"
+          className="flex h-[85vh] max-h-[85vh] w-[90vw] max-w-[90vw] flex-col gap-0 overflow-hidden border-border-light bg-surface-dialog p-0"
         >
-          <OGDialogTitle className="flex h-10 items-center justify-between border-b border-border-light bg-surface-secondary px-4 font-sans text-xs text-text-secondary">
+          <OGDialogTitle className="flex h-10 shrink-0 items-center justify-between border-b border-border-light bg-surface-secondary px-4 font-sans text-xs text-text-secondary">
             <span>{localize('com_ui_mermaid')}</span>
             <div className="flex gap-1 sm:gap-2">
               <MermaidExport
@@ -134,18 +134,19 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
             </div>
           </OGDialogTitle>
           {showCode && (
-            <div className="border-b border-border-light bg-surface-secondary p-4">
-              <pre className="max-h-[9.375rem] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+            <div className="shrink-0 border-b border-border-light bg-surface-secondary p-4">
+              {/* Capped against the viewport as well as in rem, so a scaled-up code
+                  block cannot claim the height the diagram below it needs. */}
+              <pre className="max-h-[min(9.375rem,25vh)] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
                 {codeContent}
               </pre>
             </div>
           )}
           <div
             className={cn(
-              'relative flex-1 overflow-hidden bg-surface-primary-alt p-4',
+              'relative min-h-0 flex-1 overflow-hidden bg-surface-primary-alt p-4',
               isPanning ? 'cursor-grabbing' : 'cursor-grab',
             )}
-            style={{ height: showCode ? 'calc(85vh - 200px)' : 'calc(85vh - 50px)' }}
             onWheel={handleWheel}
             onMouseDown={handleMouseDown}
           >

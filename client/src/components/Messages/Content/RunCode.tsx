@@ -102,7 +102,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
 
     const iconClass = (active: boolean) =>
       cn(
-        'absolute transition-all duration-300 ease-out',
+        'absolute size-[1.125rem] transition-all duration-300 ease-out',
         active ? 'rotate-0 scale-100 opacity-100' : 'scale-0 opacity-0 rotate-90',
       );
 
@@ -128,17 +128,17 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           className="relative flex size-[1.125rem] items-center justify-center"
           aria-hidden="true"
         >
-          <TerminalSquareIcon size={18} className={iconClass(isIdle)} />
+          <TerminalSquareIcon className={iconClass(isIdle)} />
           <span
             className={cn(
               'absolute transition-opacity duration-300',
               isLoading ? 'opacity-100' : 'opacity-0',
             )}
           >
-            <Spinner className="animate-spin" size={18} />
+            <Spinner className="size-[1.125rem] animate-spin" />
           </span>
-          <Check size={18} className={iconClass(isSuccess)} />
-          <X size={18} className={iconClass(isError)} />
+          <Check className={iconClass(isSuccess)} />
+          <X className={iconClass(isError)} />
         </span>
         {!iconOnly && (
           <span className="relative hidden overflow-hidden md:block">
