@@ -204,8 +204,14 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
       return;
     }
 
-    /* After the focus guard, so a focused tab never claims a reply it would not announce and
-       the unfocused tab that would is not silenced by it. */
+    /* Only a tab that will actually announce may claim. The toggles are per-tab snapshots
+       (`atomWithLocalStorage` writes storage without subscribing to it), so a tab holding
+       stale "off" values still runs this hook for the badge; letting it claim would consume
+       the reply while producing neither chime nor notification. The focus guard stays first,
+       so a focused tab never claims a reply it would not announce either. */
+    if (!soundEnabled && !(notificationsEnabled && canNotify())) {
+      return;
+    }
     const announced = arrivals.filter((conversation) =>
       claimReplyAnnouncement(conversation.conversationId, conversation.lastResponseAt),
     );

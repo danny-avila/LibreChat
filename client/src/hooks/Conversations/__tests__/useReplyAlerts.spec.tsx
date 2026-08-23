@@ -270,6 +270,18 @@ describe('useReplyAlerts', () => {
     expect(createdNotifications).toHaveLength(1);
   });
 
+  it('does not claim a reply it has no enabled channel to announce', () => {
+    /* Settings are per-tab snapshots; a badge-only tab claiming here would consume the reply
+       while the tab that would chime or notify reads the claim and stays silent. */
+    const { rerender } = setup({}, stateOf([]));
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    expect(window.localStorage.getItem('replyAlerts:announced')).toBeNull();
+  });
+
   it('stays quiet for a reply another tab has already announced', () => {
     /* Every open tab polls on its own timer; without the shared claim the same reply would
        chime once per tab, seconds apart. */
