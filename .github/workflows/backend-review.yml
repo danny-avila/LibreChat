@@ -159,17 +159,32 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CHANGED: ${{ github.event.pull_request.changed_files }}
         run: |
           set +e
           note() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
           note "### Codegraph select — GATING (backend jest)"
           if [ -z "$URL" ] || [ -z "$TOKEN" ]; then note "_no codegraph config; running FULL_"; exit 0; fi
-          gh api "repos/$REPO/pulls/$PR/files" --paginate             --jq '.[] | {path: .filename, status, patch}' | jq -s . > files.json
-          if [ ! -s files.json ]; then note "_could not fetch changed files; running FULL_"; exit 0; fi
+          # A failed or truncated page must not become a shorter file list: the pipeline would hide
+          # gh's exit status behind jq, and a partial list can turn a required lane off. Check the
+          # fetch status AND the count against the PR's own changed_files (Codex P1, #15136).
+          if ! gh api "repos/$REPO/pulls/$PR/files" --paginate \
+              --jq '.[] | {path: .filename, status, patch}' > files.ndjson; then
+            note "_could not fetch changed files; running FULL_"; exit 0
+          fi
+          jq -s . files.ndjson > files.json
+          N=$(jq 'length' files.json)
+          if [ "$N" -eq 0 ] || { [ -n "$CHANGED" ] && [ "$N" -ne "$CHANGED" ]; }; then
+            note "_changed-file list incomplete ($N of ${CHANGED:-?}); running FULL_"; exit 0
+          fi
           jq -c --arg b "$BASE_SHA" --arg h "$HEAD_SHA"             '{files: ., mode: "safe", lockBaseSha: $b, lockHeadSha: $h}' files.json > body.json
-          RESP=$(curl -sS -m 45 -H "Authorization: Bearer $TOKEN"             -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select")
-          if [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.selected.api.mode' >/dev/null 2>&1; then
-            note "_codegraph unavailable (${RESP:0:120}); running FULL_"
+          # curl's status is checked explicitly: a transfer that times out or truncates after a
+          # parseable body must fail open, not be honoured (Codex P1, #15136). --fail-with-body
+          # also turns HTTP errors into a failure while keeping the error text for the summary.
+          RESP=$(curl -sS --fail-with-body -m 45 -H "Authorization: Bearer $TOKEN" \
+            -H 'content-type: application/json' --data-binary @body.json "$URL/v1/select"); RC=$?
+          if [ "$RC" -ne 0 ] || [ -z "$RESP" ] || ! echo "$RESP" | jq -e '.selected.api.mode' >/dev/null 2>&1; then
+            note "_codegraph unavailable (curl exit $RC: ${RESP:0:120}); running FULL_"
             exit 0
           fi
           # Emit per-workspace run flag + workspace-relative file list. A workspace emits
