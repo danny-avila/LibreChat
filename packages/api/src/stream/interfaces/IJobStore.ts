@@ -616,6 +616,8 @@ export interface UsageMetadata {
   output_token_details?: {
     /** Reasoning/thinking tokens generated as chain-of-thought (o1, Gemini thinking, etc.) */
     reasoning?: number;
+    /** Alternate provider/runtime alias for reasoning tokens. */
+    reasoning_tokens?: number;
     audio?: number;
   };
 }
