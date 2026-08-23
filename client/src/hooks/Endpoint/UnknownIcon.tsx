@@ -24,6 +24,7 @@ const knownEndpointAssets: Record<string, string> = {
   [KnownEndpoints.shuttleai]: 'assets/shuttleai.png',
   [KnownEndpoints['together.ai']]: 'assets/together.png',
   [KnownEndpoints.unify]: 'assets/unify.webp',
+  [KnownEndpoints.vercel]: 'assets/vercel.svg',
 };
 
 const knownEndpointComponents = new Set<string>([KnownEndpoints.moonshot, KnownEndpoints.xai]);
