@@ -149,6 +149,21 @@ describe('useSteerConvert', () => {
     ]);
   });
 
+  it('keeps a local v2 failure ordinary when no server receipt exists', () => {
+    const { result } = setup();
+    act(() => {
+      result.current.convert(
+        CONVO_ID,
+        [{ steerId: 'local-failure', text: 'queue locally', createdAt: 1 }],
+        { generationProtocolVersion: 2, bindRecoverySource: false },
+      );
+    });
+
+    expect(result.current.queue).toEqual([
+      { id: 'local-failure', text: 'queue locally', createdAt: 1 },
+    ]);
+  });
+
   it('correlates a terminal leftover that arrives before the 202 ACK', () => {
     const original = {
       id: 'queue-before-ack',

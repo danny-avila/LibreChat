@@ -3,7 +3,6 @@ import { useRecoilState } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
 import SpeechRecognitionImport, { useSpeechRecognition } from 'react-speech-recognition';
-import useGetAudioSettings from './useGetAudioSettings';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -32,11 +31,10 @@ const SpeechRecognition = hasSpeechRecognitionController(speechRecognitionModule
 const useSpeechToTextBrowser = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
+  onTranscriptionSettled: () => void,
 ) => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { speechToTextEndpoint } = useGetAudioSettings();
-  const isBrowserSTTEnabled = speechToTextEndpoint === 'browser';
   const { data: speechConfig } = useGetCustomConfigSpeechQuery({ enabled: true });
   const sttExternal = Boolean(speechConfig?.sttExternal);
 
@@ -45,7 +43,6 @@ const useSpeechToTextBrowser = (
   const timeoutRef = useRef<NodeJS.Timeout | null>();
   const [autoSendText] = useRecoilState(store.autoSendText);
   const [languageSTT] = useRecoilState<string>(store.languageSTT);
-  const [speechToText] = useRecoilState<boolean>(store.speechToText);
   const [autoTranscribeAudio] = useRecoilState<boolean>(store.autoTranscribeAudio);
 
   const {
@@ -96,7 +93,7 @@ const useSpeechToTextBrowser = (
     };
   }, [setText, onTranscriptionComplete, resetTranscript, finalTranscript, autoSendText]);
 
-  const toggleListening = useCallback(() => {
+  const startRecording = useCallback(() => {
     if (!browserSupportsSpeechRecognition) {
       showToast({
         message: sttExternal
@@ -125,24 +122,29 @@ const useSpeechToTextBrowser = (
       return;
     }
 
-    if (isListening === true) {
-      SpeechRecognition.stopListening();
-    } else {
-      SpeechRecognition.startListening({
-        language: languageSTT,
-        continuous: autoTranscribeAudio,
-      });
-    }
+    SpeechRecognition.startListening({
+      language: languageSTT,
+      continuous: autoTranscribeAudio,
+    });
   }, [
     autoTranscribeAudio,
     browserSupportsSpeechRecognition,
-    isListening,
     isMicrophoneAvailable,
     languageSTT,
     localize,
     showToast,
     sttExternal,
   ]);
+
+  const stopRecording = useCallback(async () => {
+    try {
+      if (hasSpeechRecognitionController(SpeechRecognition)) {
+        await SpeechRecognition.stopListening();
+      }
+    } finally {
+      onTranscriptionSettled();
+    }
+  }, [onTranscriptionSettled]);
 
   /**
    * Drops the take without emitting a transcript. `abortListening` discards the
@@ -166,26 +168,11 @@ const useSpeechToTextBrowser = (
     resetTranscript();
   }, [resetTranscript]);
 
-  useEffect(() => {
-    /* Gated on the browser engine actually being selected and on the Speech to
-       Text setting: the inverted check armed this alongside the external hook's
-       own shortcut, and with the setting off it could still start a capture no
-       control in the UI would show. */
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.altKey && e.code === 'KeyL' && isBrowserSTTEnabled && speechToText) {
-        toggleListening();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isBrowserSTTEnabled, speechToText, toggleListening]);
-
   return {
     isListening,
     isLoading: false,
-    startRecording: toggleListening,
-    stopRecording: toggleListening,
+    startRecording,
+    stopRecording,
     abortRecording: abortListening,
   };
 };

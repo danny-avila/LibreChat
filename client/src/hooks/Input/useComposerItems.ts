@@ -58,7 +58,7 @@ export default function useComposerItems(
       const repeat = seen.get(text) ?? 0;
       seen.set(text, repeat + 1);
       items.push({
-        id: repeat === 0 ? `quote:${text}` : `quote:${text}#${repeat}`,
+        id: `quote:${JSON.stringify([text, repeat])}`,
         kind: 'quote',
         label: text,
         title: text,

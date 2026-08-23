@@ -281,13 +281,21 @@ function Palette({
   /* The popup stays "mounted" through its leave transition, so a composer
      unmounted inside that window never reaches the reset below and leaves the
      landing screen holding a lift with no popup under it. */
-  useEffect(() => () => setLift(0), [setLift]);
+  const appliedLiftRef = useRef(0);
+  const applyLift = useCallback(
+    (nextLift: number) => {
+      appliedLiftRef.current = nextLift;
+      setLift(nextLift);
+    },
+    [setLift],
+  );
+  useEffect(() => () => applyLift(0), [applyLift]);
 
   const baselineRef = useRef<number | null>(null);
   const updateLift = useCallback(() => {
     if (!mounted) {
       baselineRef.current = null;
-      setLift(0);
+      applyLift(0);
       return;
     }
     if (baselineRef.current == null) {
@@ -304,9 +312,9 @@ function Palette({
     const viewport = window.visualViewport;
     const viewportBottom =
       viewport != null ? viewport.offsetTop + viewport.height : window.innerHeight;
-    setLift(Math.max(0, Math.ceil(needed - (viewportBottom - baselineRef.current))));
+    applyLift(Math.max(0, Math.ceil(needed - (viewportBottom - baselineRef.current))));
     follow();
-  }, [mounted, popupHeight, setLift, anchorRef, follow]);
+  }, [mounted, popupHeight, applyLift, anchorRef, follow]);
 
   useLayoutEffect(updateLift, [updateLift]);
 
@@ -315,19 +323,37 @@ function Palette({
       return;
     }
     const viewport = window.visualViewport;
-    window.addEventListener('resize', updateLift);
+    const handleLayoutResize = () => {
+      const anchor = anchorRef.current;
+      if (anchor != null) {
+        baselineRef.current = anchor.getBoundingClientRect().bottom + appliedLiftRef.current;
+      }
+      updateLift();
+    };
+    window.addEventListener('resize', handleLayoutResize);
     viewport?.addEventListener('resize', updateLift);
     viewport?.addEventListener('scroll', updateLift);
     return () => {
-      window.removeEventListener('resize', updateLift);
+      window.removeEventListener('resize', handleLayoutResize);
       viewport?.removeEventListener('resize', updateLift);
       viewport?.removeEventListener('scroll', updateLift);
     };
-  }, [mounted, updateLift]);
+  }, [mounted, updateLift, anchorRef]);
 
   const favorites = useToolFavorites();
   const query = search.trim().toLowerCase();
-  const recent = useRecentFiles(mounted && canAttach, { files, setFiles, conversation }, search);
+  const recent = useRecentFiles(
+    mounted && canAttach,
+    {
+      files,
+      setFiles,
+      conversation,
+      endpoint,
+      endpointType,
+      endpointFileConfig,
+    },
+    search,
+  );
   const attach = useAttachItems({
     agentId,
     endpoint,
@@ -358,7 +384,7 @@ function Palette({
       if (query !== '' && scoreEntry(entry.label, entry.description, query) < 0) {
         continue;
       }
-      if (favorites.keys.has(entry.key)) {
+      if (entry.favoritable !== false && favorites.keys.has(entry.key)) {
         favoriteMatches.push(entry);
         continue;
       }
@@ -680,7 +706,7 @@ function Palette({
   const toggleFavoriteAt = useCallback(
     (index: number) => {
       const row = rows[index];
-      if (!row || row.type !== 'entry') {
+      if (!row || row.type !== 'entry' || row.entry.favoritable === false) {
         return;
       }
       favorites.toggleFavorite(row.entry.itemType, row.entry.itemId);
@@ -866,6 +892,7 @@ function Palette({
       const description = isEntry ? row.entry.description : undefined;
       const checked = isEntry ? row.entry.active : false;
       const favorited = isEntry && row.isFavorite;
+      const canFavorite = isEntry && row.entry.favoritable !== false;
       const modes = isEntry ? row.entry.modes : undefined;
 
       return (
@@ -962,7 +989,7 @@ function Palette({
               )}
             </div>
           )}
-          {isEntry && (
+          {canFavorite && (
             <div role="gridcell" className="flex shrink-0 items-center pr-1">
               <IconButton
                 size="xs"
@@ -1067,7 +1094,8 @@ function Palette({
           <Ariakit.Popover
             portal
             portalElement={getMainLandmark}
-            preserveTabOrder={false}
+            data-chat-pane-portal={index}
+            preserveTabOrder
             fixed
             gutter={POPOVER_GUTTER}
             ref={popoverRef}

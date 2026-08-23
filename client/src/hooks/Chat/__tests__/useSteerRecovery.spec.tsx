@@ -114,6 +114,35 @@ describe('useSteerRecovery', () => {
       ]);
     });
 
+    it('clears delivery uncertainty after an idempotent retry succeeds', async () => {
+      mockMutateAsync.mockResolvedValue({
+        steerId: 'srv-safe',
+        status: 'queued',
+        position: 1,
+        conversationId: CONVO_ID,
+      });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-safe',
+            text: 'retry safely',
+            status: 'failed',
+            deliveryUncertain: true,
+            generationProtocolVersion: 2,
+            createdAt: 5,
+          },
+        ]);
+      });
+
+      act(() => result.current.recovery.retry('local-safe'));
+      await flush();
+
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'srv-safe', status: 'pending' }),
+      ]);
+      expect(result.current.chips[0].deliveryUncertain).toBeUndefined();
+    });
+
     it('routes to the queue on NO_ACTIVE_RUN instead of marking it failed again', async () => {
       mockMutateAsync.mockRejectedValue({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
       const { result } = setup(({ set }) => {
@@ -150,7 +179,7 @@ describe('useSteerRecovery', () => {
       }
     });
 
-    it('marks it failed again on an unrecognized error', async () => {
+    it('marks delivery uncertain after an ambiguous retry error', async () => {
       mockMutateAsync.mockRejectedValue(new Error('network'));
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [
@@ -162,9 +191,37 @@ describe('useSteerRecovery', () => {
       });
       await flush();
       expect(result.current.chips).toEqual([
-        expect.objectContaining({ steerId: 'local-3', status: 'failed' }),
+        expect.objectContaining({
+          steerId: 'local-3',
+          status: 'failed',
+          deliveryUncertain: true,
+        }),
       ]);
       expect(result.current.queue).toEqual([]);
+    });
+
+    it('keeps a definite retry rejection ordinary', async () => {
+      mockMutateAsync.mockRejectedValue({ response: { status: 400 } });
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'local-rejected',
+            text: 'rejected',
+            status: 'failed',
+            deliveryUncertain: true,
+            generationProtocolVersion: 2,
+            createdAt: 1,
+          },
+        ]);
+      });
+
+      act(() => result.current.recovery.retry('local-rejected'));
+      await flush();
+
+      expect(result.current.chips[0]).toEqual(
+        expect.objectContaining({ steerId: 'local-rejected', status: 'failed' }),
+      );
+      expect(result.current.chips[0].deliveryUncertain).toBeUndefined();
     });
 
     /* A retry's ack tends to land right as the run ends, which is also when
@@ -591,6 +648,26 @@ describe('useSteerRecovery', () => {
       });
 
       act(() => result.current.recovery.sendAsNew('legacy-uncertain'));
+
+      expect(result.current.chips).toHaveLength(1);
+      expect(result.current.queue).toEqual([]);
+    });
+
+    it('does not reroute an uncertain protocol-v2 delivery as a new turn', () => {
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'modern-uncertain',
+            text: 'retry only under the same id',
+            status: 'failed',
+            deliveryUncertain: true,
+            generationProtocolVersion: 2,
+            createdAt: 0,
+          },
+        ]);
+      });
+
+      act(() => result.current.recovery.sendAsNew('modern-uncertain'));
 
       expect(result.current.chips).toHaveLength(1);
       expect(result.current.queue).toEqual([]);

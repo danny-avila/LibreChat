@@ -11,10 +11,6 @@ import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 
-/** How long to hold the recording layout after a stop before giving up on a
- *  transcription request ever being reported. */
-const SETTLE_MS = 500;
-
 /** How the in-flight transcription should be spent once recording ends. */
 type StopMode = 'compose' | 'send' | 'cancel';
 
@@ -65,6 +61,7 @@ export default function useDictation({
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
   const autoSendText = useRecoilValue(store.autoSendText);
+  const speechToText = useRecoilValue(store.speechToText);
   /** The Auto Send Text setting, which submits a plain recording once its
    *  transcript settles. A stop that was never asked to send still honours it. */
   const autoSendEnabled = autoSendText > -1;
@@ -174,9 +171,12 @@ export default function useDictation({
     [setValue],
   );
 
+  const [settling, setSettling] = useState(false);
+  const onTranscriptionSettled = useCallback(() => setSettling(false), []);
   const { isListening, isLoading, startRecording, stopRecording, abortRecording } = useSpeechToText(
     setText,
     onTranscriptionComplete,
+    onTranscriptionSettled,
   );
 
   const active = isListening === true;
@@ -186,22 +186,6 @@ export default function useDictation({
      `stop` event, which is what begins the transcription request, arrives a
      tick later. Without this the composer reads as idle for that tick and every
      control it had put away flashes back in and out again. */
-  const [settling, setSettling] = useState(false);
-  useEffect(() => {
-    if (!settling) {
-      return;
-    }
-    if (isLoading === true) {
-      setSettling(false);
-      return;
-    }
-    /* Backstop for the engines that never report a request at all: the browser
-       recogniser hands its transcript straight over, so nothing else would ever
-       clear this. */
-    const timer = setTimeout(() => setSettling(false), SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [settling, isLoading]);
-
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!active) {
@@ -237,7 +221,7 @@ export default function useDictation({
   const [discarded, setDiscarded] = useState(false);
 
   const start = useCallback(() => {
-    if (isLoading === true) {
+    if (isLoading === true || settling) {
       /* Do not re-arm the canceled take before its late callback arrives. */
       return;
     }
@@ -248,7 +232,7 @@ export default function useDictation({
     setPendingSend(false);
     existingTextRef.current = getValues('text') || '';
     startRecording();
-  }, [getValues, isLoading, startRecording]);
+  }, [getValues, isLoading, settling, startRecording]);
 
   /* Only a running take can be stopped. The bar disables these controls once a
      transcription is in flight, and this is the same rule stated where the mode
@@ -288,13 +272,36 @@ export default function useDictation({
   const stopToComposer = useCallback(() => stopWith('compose'), [stopWith]);
   const stopAndSend = useCallback(() => stopWith('send'), [stopWith]);
 
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (
+        speechToText !== true ||
+        event.code !== 'KeyL' ||
+        !event.shiftKey ||
+        !event.altKey ||
+        event.ctrlKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (activeRef.current) {
+        stopToComposer();
+      } else {
+        start();
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [speechToText, start, stopToComposer]);
+
   /* Memoized so `memo(Bar)` has something that can compare equal: a fresh
      object here re-rendered the whole bar on every keystroke in the composer. */
   return useMemo(
     () => ({
       active,
       transcribing: !discarded && (isLoading === true || settling),
-      startDisabled: isLoading === true,
+      startDisabled: isLoading === true || settling,
       elapsed,
       start,
       cancel,

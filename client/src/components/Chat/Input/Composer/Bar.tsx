@@ -147,7 +147,7 @@ interface ChipModesProps {
   menuLabel?: string;
 }
 
-function ChipModes({ modes, menuLabel }: ChipModesProps) {
+export function ChipModes({ modes, menuLabel }: ChipModesProps) {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
   const active = modes.find((mode) => mode.active);
@@ -176,6 +176,7 @@ function ChipModes({ modes, menuLabel }: ChipModesProps) {
         portal
         gutter={6}
         unmountOnHide
+        onClick={(event) => event.stopPropagation()}
         className="animate-composer-popover z-50 min-w-[10rem] rounded-xl border border-border-light bg-presentation p-1 shadow-lg outline-none"
       >
         {modes.map((mode) => (
@@ -263,7 +264,8 @@ function Bar({
   const allEntries = usePaletteEntries({
     conversationId,
     agentId,
-    enabled: showTools,
+    enabled: showTools || agentId != null,
+    toolsEnabled: showTools,
     catalogEnabled: catalogWanted,
   });
 
@@ -382,9 +384,11 @@ function Bar({
             </span>
           ) : undefined
         }
-        onRemove={pinnedInactive ? undefined : entry.onSelect}
+        onRemove={pinnedInactive ? entry.onUnpin : entry.onSelect}
         removeLabel={
-          isPinnedMcp ? localize('com_ui_unpin') : localize('com_ui_remove_var', { 0: entry.label })
+          isPinnedMcp || pinnedInactive
+            ? localize('com_ui_unpin')
+            : localize('com_ui_remove_var', { 0: entry.label })
         }
         data-testid={`composer-active-${entry.itemType}`}
       />

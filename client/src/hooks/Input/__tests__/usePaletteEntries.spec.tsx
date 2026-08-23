@@ -55,6 +55,7 @@ const toggle = (state: unknown, isPinned = false): ToggleFixture => ({
   toggleState: state,
   isPinned,
   debouncedChange: jest.fn(),
+  setIsPinned: jest.fn(),
 });
 
 interface ServerFixture {
@@ -66,6 +67,7 @@ interface ToggleFixture {
   toggleState: unknown;
   isPinned: boolean;
   debouncedChange: jest.Mock;
+  setIsPinned: jest.Mock;
 }
 
 interface ContextFixture {
@@ -78,6 +80,7 @@ interface ContextFixture {
     toggleServerSelection: jest.Mock;
     connectionStatus?: Record<string, { connectionState: string }>;
     initializeServer?: jest.Mock;
+    getServerStatusIconProps?: jest.Mock;
   };
   [key: string]: unknown;
 }
@@ -158,11 +161,13 @@ describe('usePaletteEntries', () => {
   });
 
   it('exposes an inactive built-in tool that is pinned to the prompt bar', () => {
-    mockContext = { ...fullContext(), codeInterpreter: toggle(false, true) };
+    const codeInterpreter = toggle(false, true);
+    mockContext = { ...fullContext(), codeInterpreter };
 
-    expect(entries().result.current.find((item) => item.key === 'builtin:execute_code')).toEqual(
-      expect.objectContaining({ active: false, pinned: true }),
-    );
+    const row = entries().result.current.find((item) => item.key === 'builtin:execute_code');
+    expect(row).toEqual(expect.objectContaining({ active: false, pinned: true }));
+    act(() => row?.onUnpin?.());
+    expect(codeInterpreter.setIsPinned).toHaveBeenCalledWith(false);
   });
 
   describe('the two gates on every tool', () => {
@@ -343,6 +348,28 @@ describe('usePaletteEntries', () => {
       mockCapabilities = { ...allCapabilities, skillsEnabled: false };
       expect(keysOf(entries().result).filter((key) => key.startsWith('skill:'))).toEqual([]);
     });
+
+    it('marks a staged placeholder as non-favoritable before its record loads', () => {
+      mockSkills = [];
+      const { result } = renderHook(
+        () => usePaletteEntries({ conversationId: 'convo-1', agentId: null }),
+        {
+          wrapper: ({ children }: { children: React.ReactNode }) => (
+            <RecoilRoot
+              initializeState={({ set }) =>
+                set(store.pendingManualSkillsByConvoId('convo-1'), ['writer'])
+              }
+            >
+              {children}
+            </RecoilRoot>
+          ),
+        },
+      );
+
+      expect(result.current.find((item) => item.key === 'skill:staged:writer')).toEqual(
+        expect.objectContaining({ favoritable: false }),
+      );
+    });
   });
 
   /* A third gate, and the one that fails closed: a persisted agent sees only
@@ -376,6 +403,22 @@ describe('usePaletteEntries', () => {
       mockAgentsMap = { agent_1: { skills_enabled: true, skills: ['s2'] } };
       expect(skillKeys('agent_1')).toEqual(['skill:s2']);
     });
+
+    it('lists agent skills even when endpoint tools are hidden', () => {
+      mockAgentsMap = { agent_1: { skills_enabled: true, skills: ['s2'] } };
+      const { result } = renderHook(
+        () =>
+          usePaletteEntries({
+            conversationId: 'convo-1',
+            agentId: 'agent_1',
+            enabled: true,
+            toolsEnabled: false,
+          }),
+        { wrapper },
+      );
+
+      expect(keysOf(result)).toEqual(['skill:s2']);
+    });
   });
 
   describe('servers', () => {
@@ -404,6 +447,24 @@ describe('usePaletteEntries', () => {
       act(() => row?.onSelect());
       expect(context.mcpServerManager.initializeServer).toHaveBeenCalledWith('github');
       expect(context.mcpServerManager.toggleServerSelection).not.toHaveBeenCalled();
+    });
+
+    it('offers cancellation while an OAuth initialization is cancellable', () => {
+      const context = fullContext();
+      const onCancel = jest.fn();
+      context.mcpServerManager.getServerStatusIconProps = jest.fn(() => ({
+        isInitializing: true,
+        canCancel: true,
+        onCancel,
+      }));
+      mockContext = context;
+      const cancel = entries()
+        .result.current.find((item) => item.key === 'mcp:github')
+        ?.modes?.find((mode) => mode.id === 'cancel');
+
+      act(() => cancel?.onSelect());
+
+      expect(onCancel).toHaveBeenCalledTimes(1);
     });
 
     it('lists none while the manager has no selectable servers', () => {

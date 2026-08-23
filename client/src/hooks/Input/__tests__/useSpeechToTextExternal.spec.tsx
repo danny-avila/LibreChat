@@ -27,13 +27,6 @@ jest.mock('~/data-provider', () => ({
   },
 }));
 
-let mockEndpoint: 'external' | 'browser' = 'external';
-
-jest.mock('../useGetAudioSettings', () => ({
-  __esModule: true,
-  default: () => ({ speechToTextEndpoint: mockEndpoint }),
-}));
-
 jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
@@ -123,6 +116,7 @@ let frameId = 0;
 function setup({ autoSendText = -1 }: { autoSendText?: number } = {}) {
   const setText = jest.fn();
   const onTranscriptionComplete = jest.fn();
+  const onTranscriptionSettled = jest.fn();
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <RecoilRoot
       initializeState={({ set }) => {
@@ -134,10 +128,11 @@ function setup({ autoSendText = -1 }: { autoSendText?: number } = {}) {
       {children}
     </RecoilRoot>
   );
-  const rendered = renderHook(() => useSpeechToTextExternal(setText, onTranscriptionComplete), {
-    wrapper,
-  });
-  return { ...rendered, setText, onTranscriptionComplete };
+  const rendered = renderHook(
+    () => useSpeechToTextExternal(setText, onTranscriptionComplete, onTranscriptionSettled),
+    { wrapper },
+  );
+  return { ...rendered, setText, onTranscriptionComplete, onTranscriptionSettled };
 }
 
 const start = async (begin: () => void) => {
@@ -149,7 +144,6 @@ const start = async (begin: () => void) => {
 describe('useSpeechToTextExternal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockEndpoint = 'external';
     mockMutationOptions = undefined;
     FakeMediaRecorder.instances = [];
     FakeMediaRecorder.supportedType = 'audio/webm';
@@ -264,37 +258,33 @@ describe('useSpeechToTextExternal', () => {
     expect(onTranscriptionComplete).not.toHaveBeenCalled();
   });
 
-  /* The shortcut has no button behind it, so a take it arms by mistake is one
-     nothing on screen accounts for. */
-  describe('the Shift+Alt+L shortcut', () => {
-    const press = async () => {
-      await act(async () => {
-        window.dispatchEvent(
-          new KeyboardEvent('keydown', { code: 'KeyL', shiftKey: true, altKey: true }),
-        );
-        /* The handler asks for the microphone before it starts the take. */
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-    };
+  it('settles after a transcription is written', async () => {
+    const { result, setText, onTranscriptionSettled } = setup();
+    await start(result.current.externalStartRecording);
 
-    it('starts a take while the external engine is the selected one', async () => {
-      setup();
-      await press();
+    act(() => mockMutationOptions?.onSuccess?.({ text: 'settled words' }));
 
-      expect(FakeMediaRecorder.instances).toHaveLength(1);
-    });
+    expect(setText).toHaveBeenCalledWith('settled words');
+    expect(onTranscriptionSettled).toHaveBeenCalledTimes(1);
+  });
 
-    it('stops arming takes once another engine is selected', async () => {
-      const { rerender } = setup();
-      mockEndpoint = 'browser';
-      act(() => rerender());
+  it('settles a take that is too short to upload', async () => {
+    const { result, onTranscriptionSettled } = setup();
+    await start(result.current.externalStartRecording);
 
-      await press();
+    act(() => result.current.externalStopRecording());
 
-      expect(mockGetUserMedia).not.toHaveBeenCalled();
-      expect(FakeMediaRecorder.instances).toHaveLength(0);
-    });
+    expect(mockProcessAudio).not.toHaveBeenCalled();
+    expect(onTranscriptionSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not settle a discarded take', async () => {
+    const { result, onTranscriptionSettled } = setup();
+    await start(result.current.externalStartRecording);
+
+    act(() => result.current.externalAbortRecording());
+
+    expect(onTranscriptionSettled).not.toHaveBeenCalled();
   });
 
   /* The request outlives the composer, so its callback still arrives. */

@@ -2,7 +2,11 @@ import { useCallback } from 'react';
 import { useRecoilCallback } from 'recoil';
 import type { Snapshot } from 'recoil';
 import type { PendingSteer } from '~/store/families';
-import { getSteerErrorCode, resolveAcknowledgedSteer } from '~/hooks/Chat/useSteering';
+import {
+  getSteerErrorCode,
+  isDefiniteSteerRejection,
+  resolveAcknowledgedSteer,
+} from '~/hooks/Chat/useSteering';
 import { carriedSteerContext, isLegacyDeliveryUncertain } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSteerMessageMutation } from '~/data-provider';
@@ -50,6 +54,26 @@ export default function useSteerRecovery(conversationId: string) {
     [conversationId],
   );
 
+  const markFailure = useRecoilCallback(
+    ({ set }) =>
+      (steerId: string, deliveryUncertain: boolean) => {
+        set(store.pendingSteersByConvoId(conversationId), (prev) =>
+          prev.map((steer) => {
+            if (steer.steerId !== steerId) {
+              return steer;
+            }
+            const { deliveryUncertain: _deliveryUncertain, ...rest } = steer;
+            return {
+              ...rest,
+              status: 'failed',
+              ...(deliveryUncertain && { deliveryUncertain: true }),
+            };
+          }),
+        );
+      },
+    [conversationId],
+  );
+
   /**
    * The retry's 202 ACK, resolved by the SHARED implementation the composer
    * uses so the two cannot drift on epoch replacement, already-accepted client
@@ -78,7 +102,7 @@ export default function useSteerRecovery(conversationId: string) {
    *  every other steer-to-queue conversion, instead of a blind append that a
    *  late ACK could still re-mint a chip for. */
   const queueSteer = useCallback(
-    (steer: PendingSteer) => {
+    (steer: PendingSteer, bindRecoverySource: boolean) => {
       convertSteersToQueued(
         conversationId,
         [
@@ -97,6 +121,7 @@ export default function useSteerRecovery(conversationId: string) {
            * time a late ACK lands, and reading the protocol off that one would
            * bind (or strip) the wrong recovery identity. */
           generationProtocolVersion: steer.generationProtocolVersion,
+          bindRecoverySource,
         },
       );
     },
@@ -141,8 +166,9 @@ export default function useSteerRecovery(conversationId: string) {
           ...(steer.preempt === true && { preempt: true }),
         })
           .then((response) => {
+            const { deliveryUncertain: _deliveryUncertain, ...resolvedSteer } = steer;
             const acknowledged: PendingSteer = {
-              ...steer,
+              ...resolvedSteer,
               steerId: response.steerId,
               clientSteerId,
               status: 'pending',
@@ -156,7 +182,7 @@ export default function useSteerRecovery(conversationId: string) {
                left to settle a `pending` chip, so the words go to the queue
                instead of being stranded. */
             if (acknowledgeRetry(steerId, acknowledged)) {
-              queueSteer(acknowledged);
+              queueSteer(acknowledged, true);
             }
           })
           .catch((error: unknown) => {
@@ -177,13 +203,13 @@ export default function useSteerRecovery(conversationId: string) {
               code === 'STEER_UNSUPPORTED' ||
               code === 'STEER_QUEUE_FULL'
             ) {
-              queueSteer(steer);
+              queueSteer(steer, false);
               return;
             }
-            markStatus(steerId, 'failed');
+            markFailure(steerId, !isDefiniteSteerRejection(error));
           });
       },
-    [conversationId, steerMessage, markStatus, acknowledgeRetry, queueSteer],
+    [conversationId, steerMessage, markStatus, markFailure, acknowledgeRetry, queueSteer],
   );
 
   /** Move a failed steer into the queue: it sends when the reply finishes. */
@@ -194,10 +220,10 @@ export default function useSteerRecovery(conversationId: string) {
           .getLoadable(store.pendingSteersByConvoId(conversationId))
           .getValue()
           .find((item) => item.steerId === steerId);
-        if (!steer || isLegacyDeliveryUncertain(steer)) {
+        if (!steer || steer.deliveryUncertain === true) {
           return;
         }
-        queueSteer(steer);
+        queueSteer(steer, false);
       },
     [conversationId, queueSteer],
   );

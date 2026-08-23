@@ -229,10 +229,10 @@ function QueueRow({
   /** Any submission-owned non-steerable state (approval pause, answer mode,
    *  Assistants still generating): `sendQueuedNow` has no immediate route and
    *  would no-op. Prefer the flag the hook already exposes over re-deriving it. */
-  const sendDisabled = !steering.canSendQueuedNow;
   /* A recovered item is consumed atomically only when it starts a normal
      generation. Escalating it would leave or duplicate the parked source. */
   const isRecovered = message.recoverySteerId != null;
+  const sendDisabled = !steering.canSendQueuedNow || (isRecovered && steering.duringRunActive);
   /** Shown for the whole run, disabled whenever steering cannot reach it:
    *  an approval pause, or the window before the start POST installs the
    *  generation epoch. Both are states the control must sit out, and hiding it

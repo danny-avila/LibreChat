@@ -71,6 +71,8 @@ let mockFavoriteKeys: string[] = [];
 let mockRecentFiles: Array<Record<string, unknown>> = [];
 let mockAttachEntries: AttachEntry[] = [];
 let mockPopupHeight = 0;
+const defaultInnerHeight = window.innerHeight;
+let portalMain: HTMLElement;
 
 const attachEntry = (id: string, label: string, primary = false): AttachEntry => ({
   id,
@@ -113,14 +115,17 @@ function renderPalette(
     onContainerClick?: () => void;
     dictating?: boolean;
     onCancel?: () => void;
-    anchorBottom?: number;
+    anchorBottom?: number | (() => number);
   } = {},
 ) {
   const anchorRef = { current: document.createElement('div') };
   if (over.anchorBottom != null) {
-    jest.spyOn(anchorRef.current, 'getBoundingClientRect').mockReturnValue({
-      bottom: over.anchorBottom,
-    } as DOMRect);
+    jest.spyOn(anchorRef.current, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({
+          bottom: typeof over.anchorBottom === 'function' ? over.anchorBottom() : over.anchorBottom,
+        }) as DOMRect,
+    );
   }
   const view = render(
     <RecoilRoot>
@@ -190,7 +195,16 @@ describe('Palette', () => {
       configurable: true,
       value: undefined,
     });
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: defaultInnerHeight,
+    });
+    portalMain = document.createElement('main');
+    document.body.append(portalMain);
   });
+
+  afterEach(() => portalMain.remove());
 
   it('recalculates the landing lift when the visual viewport changes', async () => {
     mockPopupHeight = 100;
@@ -213,6 +227,23 @@ describe('Palette', () => {
     await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('170'));
   });
 
+  it('rebases the lift when the window layout moves the composer', async () => {
+    mockPopupHeight = 100;
+    let anchorBottom = 650;
+    Object.defineProperty(window, 'innerHeight', {
+      configurable: true,
+      writable: true,
+      value: 700,
+    });
+    renderPalette({ anchorBottom: () => anchorBottom });
+    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('70'));
+
+    anchorBottom = 600;
+    act(() => window.dispatchEvent(new Event('resize')));
+
+    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('90'));
+  });
+
   it('does not advertise its cancel state as the upload shortcut target', () => {
     const onCancel = jest.fn();
     renderPalette({ dictating: true, onCancel });
@@ -222,6 +253,16 @@ describe('Palette', () => {
       'false',
     );
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks its portal with the owning chat pane', async () => {
+    renderPalette();
+    await waitFor(() =>
+      expect(document.querySelector('[data-chat-pane-portal]')).toHaveAttribute(
+        'data-chat-pane-portal',
+        '0',
+      ),
+    );
   });
 
   describe('section order', () => {
@@ -508,6 +549,18 @@ describe('Palette', () => {
       const input = screen.getByTestId('composer-palette-search');
       fireEvent.keyDown(input, { key: 'd', metaKey: true });
       expect(mockToggleFavorite).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not favorite a temporary catalog placeholder', () => {
+      renderPalette({
+        canAttach: false,
+        entries: [entry({ key: 'temporary', label: 'Temporary', favoritable: false })],
+      });
+      const input = screen.getByTestId('composer-palette-search');
+      fireEvent.keyDown(input, { key: 'd', metaKey: true });
+
+      expect(mockToggleFavorite).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: 'com_ui_favorite' })).not.toBeInTheDocument();
     });
 
     it('exposes named keyboard controls for secondary row actions', async () => {
