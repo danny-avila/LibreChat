@@ -77,11 +77,11 @@ export type WeekStartDay = 0 | 1 | 2 | 3 | 4 | 5 | 6;
  *
  * `Intl.Locale.prototype.getWeekInfo` (Baseline 2024) reports `firstDay` on a
  * 1-7 ISO scale where 7 = Sunday; `% 7` folds that back to this app's 0-6
- * scale. Engines without it (older Safari/Firefox) fall back to short lists of
- * CLDR's Saturday-first and common Sunday-first regions, with Monday, the ISO
- * 8601 default, otherwise: this is a display default the settings toggle can
- * always override, so an imperfect fallback is an acceptable degrade rather
- * than a correctness bug.
+ * scale. Engines without it (older Safari/Firefox) fall back to region lists
+ * generated from CLDR's own weekData (every territory whose `und-XX` week does
+ * not start Monday, deprecated codes included), with Monday, the ISO 8601
+ * default, otherwise. Regenerate by asking `getWeekInfo()` for each region on a
+ * current engine if CLDR moves a territory again.
  */
 const SATURDAY_FIRST_FALLBACK_REGIONS = [
   'AF',
@@ -100,7 +100,73 @@ const SATURDAY_FIRST_FALLBACK_REGIONS = [
   'SY',
 ];
 
-const SUNDAY_FIRST_FALLBACK_REGIONS = ['US', 'CA', 'MX', 'BR', 'JP', 'KR', 'PH', 'IL', 'SA', 'ZA'];
+const SUNDAY_FIRST_FALLBACK_REGIONS = [
+  'AG',
+  'AS',
+  'BD',
+  'BR',
+  'BS',
+  'BT',
+  'BU',
+  'BW',
+  'BZ',
+  'CA',
+  'CO',
+  'DM',
+  'DO',
+  'ET',
+  'GT',
+  'GU',
+  'HK',
+  'HN',
+  'ID',
+  'IL',
+  'IN',
+  'IS',
+  'JM',
+  'JP',
+  'JT',
+  'KE',
+  'KH',
+  'KR',
+  'LA',
+  'MH',
+  'MI',
+  'MM',
+  'MO',
+  'MT',
+  'MX',
+  'MZ',
+  'NI',
+  'NP',
+  'NT',
+  'PA',
+  'PE',
+  'PH',
+  'PK',
+  'PR',
+  'PT',
+  'PU',
+  'PY',
+  'PZ',
+  'RH',
+  'SA',
+  'SG',
+  'SV',
+  'TH',
+  'TT',
+  'TW',
+  'UM',
+  'US',
+  'VE',
+  'VI',
+  'WK',
+  'WS',
+  'YD',
+  'YE',
+  'ZA',
+  'ZW',
+];
 
 const FALLBACK_REGION_WEEK_START = new Map<string, WeekStartDay>([
   ...SATURDAY_FIRST_FALLBACK_REGIONS.map((region): [string, WeekStartDay] => [region, 6]),

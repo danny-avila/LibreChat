@@ -113,6 +113,9 @@ describe('localeWeekStartsOn', () => {
     withoutEngineWeekData(() => {
       expect(localeWeekStartsOn('en-US')).toBe(0);
       expect(localeWeekStartsOn('he-IL')).toBe(0);
+      // From the long tail the original hand-picked list missed.
+      expect(localeWeekStartsOn('en-IN')).toBe(0);
+      expect(localeWeekStartsOn('th-TH')).toBe(0);
       expect(localeWeekStartsOn('fr-FR')).toBe(1);
       // CLDR moved the UAE to Monday when its weekend moved to Sat-Sun.
       expect(localeWeekStartsOn('ar-AE')).toBe(1);
