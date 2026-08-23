@@ -155,10 +155,13 @@ export default function ShareButton({
 
             {showQR && shareId && (
               <div className="flex min-h-56 items-center justify-center py-1">
-                <div className="rounded-2xl bg-surface-qr p-3 shadow-sm">
+                <div className="min-w-0 rounded-2xl bg-surface-qr p-3 shadow-sm">
+                  {/* size is only the no-CSS fallback; the rem width is what renders,
+                      so the code follows the dialog instead of staying at 200px. */}
                   <QRCodeSVG
                     value={sharedLink}
                     size={200}
+                    className="h-auto w-[12.5rem] max-w-full"
                     marginSize={1}
                     title={localize('com_ui_share_qr_code_description')}
                   />

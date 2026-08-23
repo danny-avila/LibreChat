@@ -30,7 +30,7 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
           animate={{ scale: 1, opacity: 1 }}
           className="rounded-2xl bg-surface-fixed p-4 shadow-lg"
         >
-          <QRCodeSVG value={otpauthUrl} className="h-auto w-60 max-w-full" />
+          <QRCodeSVG value={otpauthUrl} size={240} className="h-auto w-60 max-w-full" />
         </motion.div>
         <div className="w-full space-y-3">
           <Label className="text-sm font-medium text-text-secondary">
