@@ -298,6 +298,18 @@ export default function DataTable<TData, TValue>({
     overscan: 10,
   });
 
+  /** TanStack Virtual memoizes its measurements on the item-size cache, not on
+   *  estimateSize, so a new estimate on its own leaves the previous scale's row
+   *  offsets in place. measure() drops that cache and forces a recompute. */
+  const measuredScaleRef = useRef(remScale);
+  useEffect(() => {
+    if (measuredScaleRef.current === remScale) {
+      return;
+    }
+    measuredScaleRef.current = remScale;
+    rowVirtualizer.measure();
+  }, [remScale, rowVirtualizer]);
+
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
