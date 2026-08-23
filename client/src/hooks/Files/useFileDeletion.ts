@@ -4,9 +4,14 @@ import { FileSources, EToolResources, removeNullishValues } from 'librechat-data
 import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import type { ExtendedFile, GenericSetter } from '~/common';
+import {
+  deletePreview,
+  failedFileIdsFrom,
+  retainFileDeletion,
+  scheduleRetainedFileDeletionRetry,
+} from '~/utils';
 import useSetFilesToDelete from './useSetFilesToDelete';
 import { clearUploadRecovery } from './useFileHandling';
-import { deletePreview } from '~/utils';
 
 type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
 
@@ -42,7 +47,30 @@ const useFileDeletion = ({
         tool_resource,
       });
       console.log('Deleting files:', filesToDelete, payload);
-      mutateAsync({ files: filesToDelete, ...payload });
+      /** The chips are already gone by the time this runs, so a lost request leaves nothing that
+       * could rebuild the payload: whatever the server did not delete is kept for the retry pass.
+       * A resolved request proves nothing on its own, since a failed storage delete is reported
+       * as a 200 naming the file in `failedFileIds`. */
+      const retainBatch = (files: t.BatchFile[]): void => {
+        for (const file of files) {
+          retainFileDeletion({
+            file_id: file.file_id,
+            embedded: file.embedded ?? false,
+            filepath: file.filepath ?? '',
+            source: file.source ?? FileSources.local,
+          });
+        }
+        scheduleRetainedFileDeletionRetry();
+      };
+      mutateAsync({ files: filesToDelete, ...payload })
+        .then((result) => {
+          const failed = new Set(failedFileIdsFrom(result));
+          if (failed.size === 0) {
+            return;
+          }
+          retainBatch(filesToDelete.filter((file) => failed.has(file.file_id)));
+        })
+        .catch(() => retainBatch(filesToDelete));
       setFileDeleteBatch([]);
     },
     [mutateAsync],

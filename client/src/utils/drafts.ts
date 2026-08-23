@@ -522,10 +522,12 @@ const startTabHeartbeat = (tabId: string): void => {
   };
   heartbeatTimer = setInterval(beat, TAB_HEARTBEAT_MS);
   /** `pagehide` is the last event a closing tab is reliably given, so the claim is handed back
-   * at once instead of waiting out the window. A tab restored from the back-forward cache fires
-   * `pageshow` and takes it straight back. */
-  window.addEventListener('pagehide', () => {
-    if (heartbeatTabId != null) {
+   * at once instead of waiting out the window. `persisted` says the document is going into the
+   * back-forward cache instead of away: it can still come back with those attachments on screen,
+   * and releasing the claim now would let another tab delete the files underneath it. Its frozen
+   * heartbeat lets the window expire the claim on its own if it is never restored. */
+  window.addEventListener('pagehide', (event) => {
+    if (heartbeatTabId != null && !event.persisted) {
       forgetTab(heartbeatTabId);
     }
   });

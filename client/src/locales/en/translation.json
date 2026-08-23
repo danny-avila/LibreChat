@@ -1158,6 +1158,7 @@
   "com_ui_delete_selected_items": "Delete selected items",
   "com_ui_delete_shared_link": "Delete shared link?",
   "com_ui_delete_shared_link_heading": "Delete Shared Link",
+  "com_ui_delete_partial_failure": "Some files could not be deleted",
   "com_ui_delete_success": "Successfully deleted",
   "com_ui_delete_tool": "Delete Tool",
   "com_ui_delete_tool_confirm": "Are you sure you want to delete this tool?",

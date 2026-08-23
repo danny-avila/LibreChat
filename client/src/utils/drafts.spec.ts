@@ -15,6 +15,7 @@ import {
   getPendingDraftId,
   isFilesDraftOwnedByThisTab,
   isNewConversationDraftId,
+  isTabLive,
   migrateFilesDraft,
   migrateTextDraft,
   renewNewConversationDraftToken,
@@ -354,6 +355,22 @@ describe('browser tab ownership of unsaved-chat drafts', () => {
     expect(
       isFilesDraftOwnedByThisTab({ fileIds: [], pendingPastes: {}, tabId: 'closed-tab' }),
     ).toBe(true);
+  });
+
+  it('keeps its claim when the page only enters the back-forward cache', () => {
+    /** A bfcached document can come back with those attachments still on screen, so handing the
+     * claim over now would let another tab delete the files out from under it. */
+    const tabId = getBrowserTabId();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+
+    expect(isTabLive(tabId)).toBe(true);
+  });
+
+  it('releases its claim when the page is really going away', () => {
+    const tabId = getBrowserTabId();
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+
+    expect(JSON.parse(localStorage.getItem('librechat-live-tabs') ?? '{}')[tabId]).toBeUndefined();
   });
 
   it('reclaims a record whose owning tab stopped reporting long ago', () => {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileSources, EToolResources } from 'librechat-data-provider';
 import { render, screen, act, renderHook } from '@testing-library/react';
 import type { ExtendedFile } from '~/common';
+import { clearRetainedFileDeletion, takeRetainedFileDeletions } from '~/utils';
 import FileRow from '~/components/Chat/Input/Files/FileRow';
 import useFileDeletion from '../useFileDeletion';
 
@@ -88,7 +89,13 @@ describe('useFileDeletion', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockMutateAsync.mockClear();
+    /** react-query's `mutateAsync` always hands back a promise, and the hook reads the response
+     * to find out what the server could not delete. */
+    mockMutateAsync.mockResolvedValue({ message: 'ok', deletedFileIds: [], failedFileIds: [] });
     mockClearUploadRecovery.mockClear();
+    for (const retained of takeRetainedFileDeletions()) {
+      clearRetainedFileDeletion(retained.file_id);
+    }
   });
   afterEach(() => jest.useRealTimers());
 
@@ -123,6 +130,38 @@ describe('useFileDeletion', () => {
     expect(mockMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({ agent_id: 'agent-123', tool_resource: EToolResources.context }),
     );
+  });
+
+  it('retains a deletion the request never completed', async () => {
+    /** The chip is gone by the time this runs, so nothing else remembers the upload exists. */
+    mockMutateAsync.mockRejectedValueOnce(new Error('offline'));
+    render(<ConditionalPanel initial={[makeFile('lost-file')]} />);
+
+    clickDelete('lost-file');
+    await act(async () => {});
+
+    expect(takeRetainedFileDeletions()).toEqual([
+      expect.objectContaining({ file_id: 'lost-file' }),
+    ]);
+  });
+
+  it('retains only the ids the server reported as failed', async () => {
+    mockMutateAsync.mockResolvedValue({
+      message: 'Some files could not be deleted',
+      deletedFileIds: ['file-a'],
+      failedFileIds: ['file-b'],
+    });
+    const { result } = renderHook(() => useFileDeletion({ mutateAsync: mockMutateAsync }));
+
+    act(() => {
+      result.current.deleteFiles({ files: [makeFile('file-a'), makeFile('file-b')] });
+    });
+    act(() => {
+      jest.advanceTimersByTime(3000);
+    });
+    await act(async () => {});
+
+    expect(takeRetainedFileDeletions()).toEqual([expect.objectContaining({ file_id: 'file-b' })]);
   });
 
   it('does not delete a file that was attached from existing storage', () => {

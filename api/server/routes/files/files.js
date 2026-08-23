@@ -6,6 +6,7 @@ const {
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  buildDeleteFilesResponse,
   shouldUseUploadSse,
   startUploadSseStream,
   resolveUploadErrorMessage,
@@ -169,15 +170,8 @@ router.post('/usage', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   try {
-    const sendDeleteResult = (result, successMessage) => {
-      const deletedFileIds = result?.deletedFileIds ?? [];
-      const failedFileIds = result?.failedFileIds ?? [];
-      res.status(200).json({
-        message: failedFileIds.length > 0 ? 'Some files could not be deleted' : successMessage,
-        deletedFileIds,
-        failedFileIds,
-      });
-    };
+    const sendDeleteResult = (result, successMessage) =>
+      res.status(200).json(buildDeleteFilesResponse(result, successMessage));
 
     const { files: _files } = req.body;
 
