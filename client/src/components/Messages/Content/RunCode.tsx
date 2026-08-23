@@ -146,8 +146,9 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
               isLoading ? 'opacity-100' : 'opacity-0',
             )}
           >
-            {isLoading && <Spinner size={18} />}
+            {isLoading && <Spinner className="m-auto size-[1.125rem]" />}
           </span>
+
         </span>
         {!iconOnly && (
           <span className="relative hidden overflow-hidden md:block">
