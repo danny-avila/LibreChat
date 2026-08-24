@@ -209,9 +209,13 @@ jobs:
               # nothing is different and legitimately NONE: those files are exactly what this
               # workspace's own jest run excludes, so full CI would not run them either.
               raw_n=$(echo "$RESP" | jq -r --arg w "$ws" '.selected[$w].files // [] | length')
-              if [ "$raw_n" = "0" ]; then
+              # Every selected path must live under the workspace: a wrong-prefixed path would
+              # survive ltrimstr, match nothing in the workspace cwd, and --passWithNoTests would
+              # turn "ran nothing" into green — a silent fail-closed (Codex P1 on #15145).
+              misplaced=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" '[.selected[$w].files // [] | .[] | select(startswith($p) | not)] | length')
+              if [ "$raw_n" = "0" ] || [ "$misplaced" != "0" ]; then
                 mode="FULL"
-                note "| $ws | malformed FILES decision (empty list); running FULL |"
+                note "| $ws | malformed FILES decision ($raw_n files, $misplaced outside $ws/); running FULL |"
               else
                 files=$(echo "$RESP" | jq -r --arg w "$ws" --arg p "$ws/" --arg ig "$ignore"                 '.selected[$w].files // [] | map(select((test(" ") | not) and (($ig == "") or (test($ig) | not)))) | map(ltrimstr($p)) | join(" ")')
                 spaced=$(echo "$RESP" | jq -r --arg w "$ws" '[.selected[$w].files // [] | .[] | select(test(" "))] | length')
