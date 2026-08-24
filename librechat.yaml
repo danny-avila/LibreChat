@@ -520,6 +520,18 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # JetCode Platform bridge: each READY platform project appears as a model;
+    # messages run through Claude Code in the project's tmux workspace.
+    - name: 'JetCode'
+      apiKey: '${JETCODE_BRIDGE_KEY}'
+      baseURL: 'http://jetcodem-app:8080/v1'
+      models:
+        default: ['jetcode']
+        fetch: true
+      titleConvo: true
+      titleModel: 'current_model'
+      modelDisplayLabel: 'JetCode'
+
     # Anthropic-compatible Example (native `/v1/messages` API)
     # Set `provider: anthropic` to use the native Anthropic client instead of the
     # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible
