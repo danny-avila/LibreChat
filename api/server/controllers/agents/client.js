@@ -1693,12 +1693,15 @@ class AgentClient extends BaseClient {
     let hasFileContext = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
-    const formattedMessages = orderedMessages.map((message, i) => {
-      const formattedMessage = formatMessage({
-        message,
-        userName: this.options?.name,
-        assistantName: this.options?.modelLabel,
-      });
+    /**
+     * Rebuilds the memory-side copy of one source row: the same formatting and
+     * per-message merges as the prompt copy, minus the fileContext prepend.
+     * Only materialized when something actually consumes it — the canonical
+     * recount of a fileContext row, or the memory payload once any row proves
+     * to carry fileContext — instead of unconditionally formatting every row
+     * twice per turn.
+     */
+    const buildMemoryFormattedMessage = (message) => {
       const memoryFormattedMessage = formatMessage({
         message,
         userName: this.options?.name,
@@ -1706,8 +1709,27 @@ class AgentClient extends BaseClient {
       });
       const sourceMessageId = message.messageId ?? message.id;
       if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
-        formattedMessage.messageId = sourceMessageId;
         memoryFormattedMessage.messageId = sourceMessageId;
+      }
+      if (Array.isArray(message.quotes) && message.quotes.length > 0) {
+        prependQuotes(memoryFormattedMessage, message.quotes);
+      }
+      const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
+      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
+      return memoryFormattedMessage;
+    };
+    /** Memory copies built for canonical recounts, reused by the memory payload pass. */
+    const memoryFormattedMessages = [];
+
+    const formattedMessages = orderedMessages.map((message, i) => {
+      const formattedMessage = formatMessage({
+        message,
+        userName: this.options?.name,
+        assistantName: this.options?.modelLabel,
+      });
+      const sourceMessageId = message.messageId ?? message.id;
+      if (typeof sourceMessageId === 'string' && sourceMessageId.length > 0) {
+        formattedMessage.messageId = sourceMessageId;
       }
 
       /**
@@ -1732,7 +1754,6 @@ class AgentClient extends BaseClient {
        */
       if (Array.isArray(message.quotes) && message.quotes.length > 0) {
         prependQuotes(formattedMessage, message.quotes);
-        prependQuotes(memoryFormattedMessage, message.quotes);
       }
 
       /**
@@ -1746,9 +1767,6 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
-      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
-
-      memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
@@ -1766,7 +1784,15 @@ class AgentClient extends BaseClient {
 
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
-        canonicalTokenCount = countFormattedMessageTokens(memoryFormattedMessage, encoding);
+        /** Without fileContext the memory copy is content-identical to the
+         *  prompt copy, so the prompt copy is the counting surface; with it,
+         *  the canonical count must exclude the prepended context. */
+        let countSurface = formattedMessage;
+        if (message.fileContext) {
+          memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
+          countSurface = memoryFormattedMessages[i];
+        }
+        canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
       const promptMessageTokenCount = message.fileContext
@@ -1915,6 +1941,13 @@ class AgentClient extends BaseClient {
           indexTokenCountMap[index] = (indexTokenCountMap[index] ?? 0) + mediaTokens;
           promptTokenTotal += mediaTokens;
         }
+      }
+    }
+    if (hasFileContext) {
+      for (let i = 0; i < orderedMessages.length; i++) {
+        memoryPayload.push(
+          memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
+        );
       }
     }
     this.memoryPayload = hasFileContext ? memoryPayload : null;
@@ -3288,13 +3321,15 @@ class AgentClient extends BaseClient {
         manualSkillPrimes,
         alwaysApplySkillPrimes,
       });
+      const useLegacyContent = this.options.agent?.useLegacyContent === true;
       const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent
           ? {
               ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
               ...(freshSkillPrimeNames.size > 0
                 ? { skipSkillBodyNames: freshSkillPrimeNames }
                 : {}),
+              ...(useLegacyContent ? { legacyContent: true } : {}),
             }
           : undefined;
       let {

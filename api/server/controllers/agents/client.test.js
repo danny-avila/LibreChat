@@ -3783,6 +3783,44 @@ describe('AgentClient - titleConvo', () => {
       expect(client.memoryPayload[0].content).toBe('What is written here?');
     });
 
+    it('recounts a quote-bearing history row from quote-merged content and keeps the memory payload unbuilt without file context', async () => {
+      const { countFormattedMessageTokens } = require('@librechat/api');
+      countFormattedMessageTokens.mockImplementation(({ content }) => {
+        const text = Array.isArray(content)
+          ? content.map((part) => part.text ?? part[ContentTypes.TEXT] ?? '').join('\n')
+          : String(content ?? '');
+        return text.includes('quoted excerpt') ? 77 : 11;
+      });
+
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-1',
+            parentMessageId: null,
+            sender: 'User',
+            text: 'Discuss this.',
+            isCreatedByUser: true,
+            tokenCount: 5,
+            quotes: ['quoted excerpt'],
+          },
+          {
+            messageId: 'msg-2',
+            parentMessageId: 'msg-1',
+            sender: 'Assistant',
+            text: 'Sure.',
+            isCreatedByUser: false,
+            tokenCount: 3,
+          },
+        ],
+        'msg-2',
+        {},
+      );
+
+      expect(result.tokenCountMap['msg-1']).toBe(77);
+      expect(result.tokenCountMap['msg-2']).toBe(3);
+      expect(client.memoryPayload).toBeNull();
+    });
+
     it('does not duplicate a file that is both request context and scoped context', async () => {
       const sharedFile = makeTextFile('shared-file', 'shared.txt', 'Shared duplicate context');
 
