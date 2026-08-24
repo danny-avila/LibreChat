@@ -130,10 +130,13 @@ async function deployRole(definition, service) {
 async function main() {
   require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
   const mongoose = require('mongoose');
+  const { createModels } = require('@librechat/data-schemas');
   const { createRoleAdminService } = require('@librechat/api');
   const { invalidateConfigCaches } = require('~/server/services/Config');
   const db = require('~/models');
   const connect = require('./connect');
+
+  createModels(mongoose);
 
   let exitCode = 0;
   try {
