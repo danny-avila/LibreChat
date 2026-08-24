@@ -26,12 +26,12 @@ import {
   subagentProgressKey,
 } from '~/store/subagents';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
-import SubagentActivity from './SubagentActivity';
 import { useAgentsMapContext } from '~/Providers';
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
@@ -348,9 +348,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
       >
         {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
-          <div className="min-h-0 flex-1 overflow-y-auto" data-subagent-thread-timeline>
-            {[...(eventSummary?.tasks ?? [])].reverse().map(renderEventTask)}
-          </div>
+          <SubagentActivityScrollSurface padded={false}>
+            <div data-subagent-thread-timeline>
+              {[...(eventSummary?.tasks ?? [])].reverse().map(renderEventTask)}
+            </div>
+          </SubagentActivityScrollSurface>
         ) : (
           <SubagentActivity
             key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}

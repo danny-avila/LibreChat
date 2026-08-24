@@ -90,6 +90,9 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 jest.mock('./SubagentActivity', () => ({
   __esModule: true,
+  SubagentActivityScrollSurface: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shared-scroll-surface">{children}</div>
+  ),
   default: ({
     activity,
     activityId,

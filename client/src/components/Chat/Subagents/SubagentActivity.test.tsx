@@ -1,8 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
-import SubagentActivity from './SubagentActivity';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -341,6 +341,36 @@ describe('SubagentActivity', () => {
     expect(container.querySelector('[data-subagent-thread-turn]')).toBeInTheDocument();
     expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
     expect(screen.getByText('Final answer.')).toBeInTheDocument();
+  });
+
+  it('keeps the shared scroll surface pinned when activity grows at the bottom', () => {
+    let resize!: ResizeObserverCallback;
+    const resizeObserver = window.ResizeObserver as unknown as jest.Mock;
+    const originalImplementation = resizeObserver.getMockImplementation();
+    resizeObserver.mockImplementation((callback: ResizeObserverCallback) => {
+      resize = callback;
+      return { observe: jest.fn(), disconnect: jest.fn(), unobserve: jest.fn() };
+    });
+
+    const { container, unmount } = render(
+      <SubagentActivityScrollSurface padded={false}>
+        {/* eslint-disable-next-line i18next/no-literal-string */}
+        <div>Growing timeline</div>
+      </SubagentActivityScrollSurface>,
+    );
+    const surface = container.querySelector<HTMLElement>('[data-subagent-activity-scroll-surface]');
+    expect(surface).not.toBeNull();
+    Object.defineProperty(surface, 'scrollHeight', { configurable: true, value: 640 });
+
+    act(() => resize([], {} as ResizeObserver));
+    expect(surface?.scrollTop).toBe(640);
+
+    unmount();
+    if (originalImplementation == null) {
+      resizeObserver.mockReset();
+    } else {
+      resizeObserver.mockImplementation(originalImplementation);
+    }
   });
 
   it('renders a sanitized reasoning marker through regular ContentParts', () => {

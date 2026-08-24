@@ -14,6 +14,65 @@ import { cn } from '~/utils';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
 
+export function SubagentActivityScrollSurface({
+  children,
+  padded = true,
+}: {
+  children: React.ReactNode;
+  padded?: boolean;
+}) {
+  const localize = useLocalize();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    const content = contentRef.current;
+    if (scroll == null || content == null || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (isAtBottom) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [isAtBottom]);
+
+  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    setIsAtBottom(
+      element.scrollHeight - element.scrollTop - element.clientHeight <= AT_BOTTOM_THRESHOLD_PX,
+    );
+  }, []);
+
+  return (
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className={cn('relative min-h-0 flex-1 overflow-y-auto', padded && 'px-4 py-4')}
+      data-subagent-activity-scroll-surface
+    >
+      {!isAtBottom && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            scrollRef.current?.scrollTo({
+              top: scrollRef.current.scrollHeight,
+              behavior: 'smooth',
+            });
+            setIsAtBottom(true);
+          }}
+          aria-label={localize('com_ui_subagent_scroll_to_bottom')}
+          className="sticky top-[calc(100%-2.75rem)] z-10 ml-auto h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md"
+        >
+          <ArrowDown size={16} aria-hidden />
+        </Button>
+      )}
+      <div ref={contentRef}>{children}</div>
+    </div>
+  );
+}
+
 const toContentPart = (
   item: ChildActivityItem,
   reasoningMarkerLabel: string,
@@ -130,9 +189,6 @@ export default function SubagentActivity({
   embedded?: boolean;
 }) {
   const localize = useLocalize();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
   const StatusIcon = subagentStatusIcon(activity.status);
   const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
@@ -147,24 +203,6 @@ export default function SubagentActivity({
         (item.type === 'writing' && item.textTruncated === true) ||
         (item.type === 'tool' && (item.inputTruncated === true || item.outputTruncated === true)),
     );
-
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    const content = contentRef.current;
-    if (scroll == null || content == null || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
-      if (isAtBottom) scroll.scrollTop = scroll.scrollHeight;
-    });
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, [isAtBottom]);
-
-  const handleScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
-    const element = event.currentTarget;
-    setIsAtBottom(
-      element.scrollHeight - element.scrollTop - element.clientHeight <= AT_BOTTOM_THRESHOLD_PX,
-    );
-  }, []);
 
   let body: React.ReactNode;
   if (state === 'loading') {
@@ -216,7 +254,7 @@ export default function SubagentActivity({
     </div>
   );
   const content = (
-    <div ref={contentRef} className="flex max-w-full flex-col gap-0">
+    <div className="flex max-w-full flex-col gap-0">
       {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
       {activityTruncated && (
         <div className="mb-3 text-xs italic text-text-secondary">
@@ -239,30 +277,7 @@ export default function SubagentActivity({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {statusHeader}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="relative min-h-0 flex-1 overflow-y-auto px-4 py-4"
-      >
-        {!isAtBottom && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              scrollRef.current?.scrollTo({
-                top: scrollRef.current.scrollHeight,
-                behavior: 'smooth',
-              });
-              setIsAtBottom(true);
-            }}
-            aria-label={localize('com_ui_subagent_scroll_to_bottom')}
-            className="sticky top-[calc(100%-2.75rem)] z-10 ml-auto h-8 w-8 rounded-full border border-border-light bg-surface-secondary text-text-secondary shadow-md"
-          >
-            <ArrowDown size={16} aria-hidden />
-          </Button>
-        )}
-        {content}
-      </div>
+      <SubagentActivityScrollSurface>{content}</SubagentActivityScrollSurface>
     </div>
   );
 }

@@ -2200,8 +2200,6 @@
   "com_ui_subagent_dialog_title_self": "Agent",
   "com_ui_subagent_empty_result": "No text returned.",
   "com_ui_subagent_errored": "Agent errored",
-  "com_ui_subagent_latest_activity": "Latest activity",
-  "com_ui_subagent_previous_activity": "Previous activity {{0}}",
   "com_ui_subagent_no_result_yet": "Still running — no final result yet.",
   "com_ui_subagent_thread_history_truncated": "Earlier activity is not shown.",
   "com_ui_subagent_thread_load_error": "The agent activity could not be loaded.",
