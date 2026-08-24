@@ -2,7 +2,11 @@ import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { ContentTypes, ForkOptions } from 'librechat-data-provider';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { SubagentThreadView, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  ParentSubagentSummary,
+  SubagentThreadView,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   activeSubagentPanel,
@@ -20,8 +24,12 @@ const mockShowToast = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
 const mockApprovalProviderUnmounted = jest.fn();
 let mockIsMobile = false;
+let mockParentChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
+let mockParentChildrenByThread = new Map<string, ParentSubagentSummary>();
+const mockRefreshParentChildren = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/data-provider', () => ({
+  ACTIVE_THREAD_REFRESH_MS: 2000,
   useSubagentThreadQuery: (...args: unknown[]) => mockUseSubagentThreadQuery(...args),
   subagentThreadHasTaskEvidence: (view: SubagentThreadView | undefined, taskId: string): boolean =>
     view?.messages.some(
@@ -46,6 +54,21 @@ jest.mock('~/hooks', () => ({
   useFocusTrap: jest.fn(),
   useLocalize: () => (key: string) => key,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
+}));
+
+jest.mock('~/Providers', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': { id: 'agent-1', name: 'Analyst One' },
+    'agent-2': { id: 'agent-2', name: 'Analyst Two' },
+  }),
+}));
+
+jest.mock('./ParentSubagentsProvider', () => ({
+  useParentSubagents: () => ({
+    byMessageId: mockParentChildrenByMessage,
+    byThreadId: mockParentChildrenByThread,
+    refresh: mockRefreshParentChildren,
+  }),
 }));
 
 jest.mock('~/components/Chat/Messages/Content/ApprovalContext', () => ({
@@ -83,13 +106,45 @@ jest.mock('./SubagentActivity', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
-    <button {...props}>{children}</button>
-  ),
-  useMediaQuery: () => mockIsMobile,
-  useToastContext: () => ({ showToast: mockShowToast }),
-}));
+jest.mock('@librechat/client', () => {
+  const mockReact = jest.requireActual<typeof import('react')>('react');
+  const MockSelectContext = mockReact.createContext((_value: string): void => {});
+  return {
+    Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+      <button {...props}>{children}</button>
+    ),
+    Select: ({
+      children,
+      onValueChange,
+    }: {
+      children: React.ReactNode;
+      onValueChange: (value: string) => void;
+    }) => <MockSelectContext.Provider value={onValueChange}>{children}</MockSelectContext.Provider>,
+    SelectTrigger: ({ children, ...props }: React.ComponentProps<'button'>) => (
+      <button role="combobox" aria-controls="mock-select-options" aria-expanded="true" {...props}>
+        {children}
+      </button>
+    ),
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children: React.ReactNode }) => (
+      <div id="mock-select-options">{children}</div>
+    ),
+    SelectItem: ({
+      value,
+      children,
+      ...props
+    }: React.ComponentProps<'button'> & { value: string }) => {
+      const onValueChange = mockReact.useContext(MockSelectContext);
+      return (
+        <button role="option" aria-selected="false" onClick={() => onValueChange(value)} {...props}>
+          {children}
+        </button>
+      );
+    },
+    useMediaQuery: () => mockIsMobile,
+    useToastContext: () => ({ showToast: mockShowToast }),
+  };
+});
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
@@ -151,6 +206,9 @@ describe('SubagentThreadPanel', () => {
     mockForkMutate.mockClear();
     mockNavigateToConvo.mockClear();
     mockShowToast.mockClear();
+    mockRefreshParentChildren.mockClear();
+    mockParentChildrenByMessage = new Map();
+    mockParentChildrenByThread = new Map();
   });
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
@@ -183,6 +241,7 @@ describe('SubagentThreadPanel', () => {
       'parent-conversation',
       'child-thread',
       'task',
+      undefined,
     );
     expect(mockUseSubagentActivityStream).toHaveBeenCalledWith(selection, false);
     expect(screen.getByText('Research child')).toBeInTheDocument();
@@ -446,6 +505,54 @@ describe('SubagentThreadPanel', () => {
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(selection, true);
   });
 
+  it('revalidates a cached terminal event task when its lease resumes', async () => {
+    const refetch = jest.fn().mockResolvedValue({ data: { ...completedView, status: 'running' } });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+    mockParentChildrenByThread = new Map([
+      [
+        'child-thread',
+        {
+          threadId: 'child-thread',
+          parentMessageId: 'parent-message',
+          subagentType: 'agent-1',
+          subagentKind: 'agent',
+          title: 'Event child',
+          origin: 'event',
+          actorId: 'actor-1',
+          status: 'running',
+          latestTaskId: 'task',
+          tasks: [{ taskId: 'task', status: 'running' }],
+          tasksTruncated: false,
+        },
+      ],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+      refetch,
+    });
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'task',
+      { refetchInterval: 2000 },
+    );
+    expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(eventSelection, true);
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+  });
+
   it('surfaces a durable read failure after the readiness window', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: undefined,
@@ -518,5 +625,80 @@ describe('SubagentThreadPanel', () => {
     );
 
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('navigates event actors and exact durable turns through the same panel', () => {
+    const first: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'First actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [
+        { taskId: 'task', status: 'completed' },
+        { taskId: 'task-earlier', status: 'completed' },
+      ],
+      tasksTruncated: false,
+    };
+    const second: ParentSubagentSummary = {
+      ...first,
+      threadId: 'child-thread-2',
+      subagentType: 'agent-2',
+      agentId: 'agent-2',
+      title: 'Second actor',
+      actorId: 'actor-2',
+      latestTaskId: 'task-2',
+      tasks: [{ taskId: 'task-2', status: 'running' }],
+      status: 'running',
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByThread = new Map([
+      [first.threadId, first],
+      [second.threadId, second],
+    ]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+    let active: ActiveSubagentPanel | null = eventSelection;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, eventSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_earlier_turn' }));
+    expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
+    expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
+
+    fireEvent.click(screen.getByRole('option', { name: /Analyst Two/ }));
+    expect(active).toEqual(
+      expect.objectContaining({
+        subagentType: 'agent-2',
+        event: {
+          actorId: 'actor-2',
+          progressKey: 'event-task:child-thread-2:task-2',
+        },
+        durable: { threadId: 'child-thread-2', taskId: 'task-2' },
+      }),
+    );
+    expect(mockRefreshParentChildren).toHaveBeenCalled();
   });
 });

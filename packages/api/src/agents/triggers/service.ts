@@ -396,7 +396,12 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         await drainUser(String(prepared.user));
         throw error;
       }
-      deliveryEngine?.wake();
+      const eligibleAt = queued.delivery.availableAt;
+      if (eligibleAt instanceof Date && eligibleAt.getTime() > Date.now()) {
+        deliveryEngine?.noteEligibleAt(eligibleAt);
+      } else {
+        deliveryEngine?.wake();
+      }
       return {
         id: queued.delivery.id,
         deliveryKey: queued.delivery.deliveryKey,
@@ -414,7 +419,17 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     getDeadLetters: (limit) =>
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>
-      runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
+      runAsSystem(async () => {
+        const revived = await requireMethods().requeueAgentTriggerDelivery(id, availableAt);
+        if (revived != null) {
+          if (availableAt.getTime() > Date.now()) {
+            deliveryEngine?.noteEligibleAt(availableAt);
+          } else {
+            deliveryEngine?.wake();
+          }
+        }
+        return revived;
+      }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>

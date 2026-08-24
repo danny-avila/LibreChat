@@ -40,6 +40,9 @@ module.exports = {
       return archiveAllHandler;
     }),
     createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
+    createParentSubagentIndexHandler: jest.fn(
+      () => (_req, res) => res.status(200).json({ threads: [] }),
+    ),
     GenerationJobManager: generationJobManager,
     isStopConfirmed: jest.fn(
       (result) => result?.success === true || result?.failureReason === 'already_settled',

@@ -1,41 +1,18 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import {
-  AlertCircle,
-  ArrowDown,
-  CheckCircle2,
-  Clock3,
-  Maximize2,
-  Minimize2,
-  XCircle,
-} from 'lucide-react';
+import { ArrowDown, Maximize2, Minimize2 } from 'lucide-react';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ChildActivity, ChildActivityItem } from './adapters';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
+import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import Container from '~/components/Chat/Messages/Content/Container';
 import { EmptyText } from '~/components/Chat/Messages/Content/Parts';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const AT_BOTTOM_THRESHOLD_PX = 120;
-
-const statusIcon = (status: ChildActivity['status']) => {
-  if (status === 'completed') return CheckCircle2;
-  if (status === 'failed' || status === 'interrupted') return AlertCircle;
-  if (status === 'cancelled') return XCircle;
-  return Clock3;
-};
-
-const statusLabels = {
-  dispatched: 'com_ui_subagent_thread_status_dispatched',
-  running: 'com_ui_subagent_thread_status_running',
-  completed: 'com_ui_subagent_thread_status_completed',
-  failed: 'com_ui_subagent_thread_status_failed',
-  interrupted: 'com_ui_subagent_thread_status_interrupted',
-  cancelled: 'com_ui_subagent_thread_status_cancelled',
-} as const;
 
 const toContentPart = (
   item: ChildActivityItem,
@@ -155,7 +132,7 @@ export default function SubagentActivity({
   const contentRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const isSubmitting = activity.status === 'running' || activity.status === 'dispatched';
-  const StatusIcon = statusIcon(activity.status);
+  const StatusIcon = subagentStatusIcon(activity.status);
   const reasoningMarkerLabel = localize('com_ui_subagent_ticker_reasoning');
   const parts = useMemo(
     () => activity.items.map((item) => toContentPart(item, reasoningMarkerLabel)),
@@ -237,7 +214,7 @@ export default function SubagentActivity({
           aria-live="polite"
         >
           <StatusIcon size={13} aria-hidden />
-          <span>{localize(statusLabels[activity.status])}</span>
+          <span>{localize(subagentStatusLabelKey(activity.status))}</span>
         </div>
       </div>
       <div

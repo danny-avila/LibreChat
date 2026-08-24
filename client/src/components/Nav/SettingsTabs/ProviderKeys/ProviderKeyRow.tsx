@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { Button } from '@librechat/client';
 import { alternateName, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
-import { formatKeyExpiryLabel } from '~/components/Input/SetKeyDialog/utils';
 import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
+import { formatKeyExpiryLabel } from '~/components/Input/SetKeyDialog/utils';
+import { useUserKey, useLocalize, useClockFormat } from '~/hooks';
 import { SetKeyDialog } from '~/components/Input/SetKeyDialog';
 import { useProviderIcon } from '~/hooks/Endpoint';
-import { useUserKey, useLocalize } from '~/hooks';
 
 interface ProviderKeyRowProps {
   endpoint: string;
@@ -24,6 +24,7 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
   const label = useMemo(() => alternateName[endpoint] || endpoint, [endpoint]);
   const expiry = getExpiry();
   const hasKey = !!expiry && checkExpiry();
+  const hour12 = useClockFormat();
   const expiryLabel = useMemo(() => {
     if (!expiry) {
       return localize('com_ui_provider_api_keys_not_set');
@@ -31,8 +32,8 @@ export default function ProviderKeyRow({ endpoint, endpointsConfig }: ProviderKe
     if (expiry === 'never') {
       return localize('com_endpoint_config_key_never_expires');
     }
-    return formatKeyExpiryLabel(localize, expiry);
-  }, [expiry, localize]);
+    return formatKeyExpiryLabel(localize, expiry, hour12);
+  }, [expiry, localize, hour12]);
 
   return (
     <>

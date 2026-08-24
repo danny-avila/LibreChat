@@ -49,10 +49,15 @@ import {
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   type MessageMethods,
+  type ParentSubagentTaskRecord,
   type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
 } from './message';
-import { createConversationMethods, type ConversationMethods } from './conversation';
+import {
+  createConversationMethods,
+  type ConversationMethods,
+  type ParentSubagentThreadRecord,
+} from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
   AssignConversationToProjectResult,
@@ -378,6 +383,8 @@ export type {
   PresetMethods,
   ConversationTagMethods,
   MessageMethods,
+  ParentSubagentTaskRecord,
+  ParentSubagentThreadRecord,
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
   ConversationMethods,

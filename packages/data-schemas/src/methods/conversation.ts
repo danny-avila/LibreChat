@@ -48,12 +48,31 @@ export type SubagentThreadReadRecord = Pick<
   | 'updatedAt'
   | 'subagentThread'
   | 'subagentThreadLease'
->;
+> & {
+  actorId?: string;
+};
+
+export type ParentSubagentThreadRecord = SubagentThreadReadRecord;
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
 const PROJECT_STATS_REFRESH_MAX_PASSES = 2;
 const PROJECT_DISCOVERY_MAX_ATTEMPTS = 3;
+
+const subagentThreadReadRecord = (conversation: IConversation): SubagentThreadReadRecord => ({
+  conversationId: conversation.conversationId,
+  ...(conversation.tenantId == null ? {} : { tenantId: conversation.tenantId }),
+  ...(conversation.title == null ? {} : { title: conversation.title }),
+  ...(conversation.agent_id == null ? {} : { agent_id: conversation.agent_id }),
+  ...(conversation.updatedAt == null ? {} : { updatedAt: conversation.updatedAt }),
+  ...(conversation.subagentThread == null ? {} : { subagentThread: conversation.subagentThread }),
+  ...(conversation.subagentThreadLease == null
+    ? {}
+    : { subagentThreadLease: conversation.subagentThreadLease }),
+  ...(conversation.agentEventBinding?.actorId == null
+    ? {}
+    : { actorId: conversation.agentEventBinding.actorId }),
+});
 
 async function discoverProjectIds(
   Conversation: Model<IConversation>,
@@ -180,6 +199,12 @@ export interface ConversationMethods {
     conversationId: string;
     tenantId?: string;
   }): Promise<SubagentThreadReadRecord | null>;
+  listSubagentThreadsForParent(input: {
+    user: string;
+    parentConversationId: string;
+    tenantId?: string;
+    limit: number;
+  }): Promise<ParentSubagentThreadRecord[]>;
   getAgentEventBinding(input: {
     user: string;
     bindingId: string;
@@ -302,19 +327,53 @@ export function createConversationMethods(
   }): Promise<SubagentThreadReadRecord | null> {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
-      return await Conversation.findOne({
+      const conversation = await Conversation.findOne({
         user: input.user,
         conversationId: input.conversationId,
         'subagentThread.parentConversationId': input.parentConversationId,
         ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
       })
         .select(
-          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease',
+          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease +agentEventBinding',
         )
-        .lean<SubagentThreadReadRecord>();
+        .lean<IConversation>();
+      if (conversation == null) return null;
+      return subagentThreadReadRecord(conversation);
     } catch (error) {
       logger.error('[getSubagentThreadForParent] Error getting child conversation', error);
       throw new Error('Error getting child conversation');
+    }
+  }
+
+  /**
+   * Lists bounded child metadata through immutable parent lineage. Private
+   * event-delivery records are collapsed to actor identity inside this Module.
+   */
+  async function listSubagentThreadsForParent(input: {
+    user: string;
+    parentConversationId: string;
+    tenantId?: string;
+    limit: number;
+  }): Promise<ParentSubagentThreadRecord[]> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const conversations = await Conversation.find({
+        user: input.user,
+        'subagentThread.parentConversationId': input.parentConversationId,
+        ...subagentLeaseTenantFilter(input.tenantId),
+        ...activeExpirationFilter<IConversation>(),
+      })
+        .select(
+          'conversationId tenantId title agent_id updatedAt subagentThread +subagentThreadLease +agentEventBinding',
+        )
+        .sort({ updatedAt: -1, conversationId: 1, _id: 1 })
+        .limit(input.limit)
+        .lean<IConversation[]>();
+      return conversations.map(subagentThreadReadRecord);
+    } catch (error) {
+      logger.error('[listSubagentThreadsForParent] Error listing child conversations', error);
+      throw new Error('Error listing child conversations');
     }
   }
 
@@ -437,6 +496,10 @@ export function createConversationMethods(
             taskId: input.taskId,
             expiresAt: input.expiresAt,
           },
+          /** Child threads are hidden from normal recents. Stamp the task start
+           * explicitly so bounded parent discovery promotes real new activity;
+           * automatic timestamps stay disabled for lease heartbeats/releases. */
+          updatedAt: input.now,
         },
       },
       { timestamps: false },
@@ -549,6 +612,7 @@ export function createConversationMethods(
           user,
           conversationId,
           ...tenantFilter,
+          ...activeExpirationFilter<IConversation>(),
         },
         'user tenantId subagentThread',
       ).lean<Pick<IConversation, 'user' | 'tenantId' | 'subagentThread'>>();
@@ -1720,6 +1784,7 @@ export function createConversationMethods(
     getConvosQueried,
     getConvo,
     getSubagentThreadForParent,
+    listSubagentThreadsForParent,
     getAgentEventBinding,
     reserveSubagentThread,
     acquireSubagentThreadLease,

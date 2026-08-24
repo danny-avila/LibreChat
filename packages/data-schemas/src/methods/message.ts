@@ -1,6 +1,6 @@
 import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
-import type { DeleteResult, FilterQuery, Model } from 'mongoose';
+import type { DeleteResult, FilterQuery, Model, Types } from 'mongoose';
 import type { AppConfig, IMessage } from '~/types';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { createFallbackRetentionDate } from '~/utils/retention';
@@ -249,11 +249,27 @@ export type SubagentThreadViewMessageRecord = Pick<
   | 'text'
   | 'createdAt'
   | 'error'
+  | 'unfinished'
   | 'subagentTranscript'
   | 'subagentTask'
 > & {
   textProjectionTruncated?: boolean;
   subagentTranscriptProjectionTruncated?: boolean;
+};
+
+export type ParentSubagentTaskRecord = {
+  conversationId: string;
+  /** The shared bounded source window filled, so this child's history may be incomplete. */
+  sourceTruncated?: boolean;
+  tasks: Array<
+    Pick<IMessage, 'messageId' | 'createdAt'> & {
+      status: NonNullable<IMessage['subagentTask']>['status'];
+      /** True when status was inferred from an ordinary event-turn row. */
+      statusDerived?: boolean;
+      /** Private ordering token used only while merging bounded storage reads. */
+      occurrenceId?: Types.ObjectId;
+    }
+  >;
 };
 
 export interface MessageMethods {
@@ -326,6 +342,12 @@ export interface MessageMethods {
     textCodePointLimit: number;
     taskId?: string;
   }): Promise<SubagentThreadViewMessageRecord[]>;
+  listSubagentTasksForThreads(input: {
+    user: string;
+    conversationIds: string[];
+    tenantId?: string;
+    limitPerThread: number;
+  }): Promise<ParentSubagentTaskRecord[]>;
   getMessage(params: { user: string; messageId: string }): Promise<IMessage | null>;
   getMessagesByCursor(
     filter: FilterQuery<IMessage>,
@@ -1076,7 +1098,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? []
           : [
               {
-                $set: {
+                $addFields: {
                   _subagentTranscriptSourceBytes: transcriptJsonBytes,
                   _subagentTranscriptSourceIsString: transcriptIsString,
                 },
@@ -1096,6 +1118,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             },
             createdAt: 1,
             error: 1,
+            unfinished: 1,
             ...(input.taskId == null
               ? {}
               : {
@@ -1155,6 +1178,211 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       logger.error('Error getting bounded subagent thread messages:', err);
       throw err;
     }
+  }
+
+  /** Returns newest bounded task outcomes for every selected child in two
+   * constant-size batch reads. The first read guarantees one latest task per
+   * child; the second caps recent source rows before any grouping accumulator.
+   * This avoids both N+1 reads and newer top-N accumulators that DocumentDB 5
+   * does not support. */
+  async function listSubagentTasksForThreads(input: {
+    user: string;
+    conversationIds: string[];
+    tenantId?: string;
+    limitPerThread: number;
+  }): Promise<ParentSubagentTaskRecord[]> {
+    if (input.conversationIds.length === 0) {
+      return [];
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const match = {
+      user: input.user,
+      conversationId: { $in: input.conversationIds },
+      ...(input.tenantId == null ? { tenantId: { $exists: false } } : { tenantId: input.tenantId }),
+      messageId: { $regex: /:(user|assistant)$/ },
+    };
+    const taskProjection = {
+      messageId: '$messageId',
+      createdAt: '$createdAt',
+      occurrenceId: '$_id',
+      statusDerived: {
+        $eq: [{ $ifNull: ['$subagentTask.status', null] }, null],
+      },
+      status: {
+        $ifNull: [
+          '$subagentTask.status',
+          {
+            $cond: [
+              { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+              {
+                $cond: [
+                  { $eq: ['$error', true] },
+                  'error',
+                  { $cond: [{ $eq: ['$unfinished', true] }, 'cancelled', 'completed'] },
+                ],
+              },
+              'running',
+            ],
+          },
+        ],
+      },
+    };
+    const sourceLimit = Math.min(
+      4096,
+      Math.max(
+        input.conversationIds.length,
+        input.conversationIds.length * input.limitPerThread * 2,
+      ),
+    );
+    type AggregateRecord = ParentSubagentTaskRecord & { sourceRows?: number };
+    const compareOccurrenceIds = (left?: Types.ObjectId, right?: Types.ObjectId): number => {
+      const leftValue = left?.toHexString() ?? '';
+      const rightValue = right?.toHexString() ?? '';
+      if (leftValue === rightValue) return 0;
+      return leftValue > rightValue ? 1 : -1;
+    };
+    const taskTimestamp = (value: Date | undefined): number =>
+      value == null ? Number.NEGATIVE_INFINITY : value.getTime();
+    const [latestRecords, recentRecords] = await Promise.all([
+      Message.aggregate<ParentSubagentTaskRecord>([
+        { $match: match },
+        { $sort: { conversationId: 1, createdAt: -1, _id: -1 } },
+        { $group: { _id: '$conversationId', task: { $first: taskProjection } } },
+        { $project: { _id: 0, conversationId: '$_id', tasks: ['$task'] } },
+        { $sort: { conversationId: 1 } },
+      ]),
+      Message.aggregate<AggregateRecord>([
+        { $match: match },
+        { $sort: { createdAt: -1, _id: -1 } },
+        { $limit: sourceLimit + 1 },
+        {
+          $addFields: {
+            _subagentIsAssistant: { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+            _subagentTaskId: {
+              $substrBytes: [
+                '$messageId',
+                0,
+                {
+                  $subtract: [
+                    { $strLenBytes: '$messageId' },
+                    {
+                      $cond: [
+                        { $regexMatch: { input: '$messageId', regex: /:assistant$/ } },
+                        10,
+                        5,
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $sort: {
+            conversationId: 1,
+            _subagentTaskId: 1,
+            _subagentIsAssistant: -1,
+            createdAt: -1,
+            _id: -1,
+          },
+        },
+        {
+          $group: {
+            _id: { conversationId: '$conversationId', taskId: '$_subagentTaskId' },
+            task: { $first: taskProjection },
+            sourceRows: { $sum: 1 },
+          },
+        },
+        {
+          $sort: {
+            '_id.conversationId': 1,
+            'task.createdAt': -1,
+            'task.occurrenceId': -1,
+            '_id.taskId': 1,
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.conversationId',
+            tasks: { $push: '$task' },
+            sourceRows: { $sum: '$sourceRows' },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            conversationId: '$_id',
+            tasks: { $slice: ['$tasks', input.limitPerThread] },
+            sourceRows: 1,
+          },
+        },
+        { $sort: { conversationId: 1 } },
+      ]),
+    ]);
+    const sourceTruncated =
+      recentRecords.reduce((total, record) => total + (record.sourceRows ?? 0), 0) > sourceLimit;
+    const records = new Map<string, ParentSubagentTaskRecord>(
+      recentRecords.map((record) => [
+        record.conversationId,
+        {
+          conversationId: record.conversationId,
+          tasks: record.tasks,
+          ...(sourceTruncated ? { sourceTruncated: true } : {}),
+        },
+      ]),
+    );
+    for (const latest of latestRecords) {
+      const current = records.get(latest.conversationId);
+      if (current == null) {
+        records.set(latest.conversationId, {
+          ...latest,
+          ...(sourceTruncated ? { sourceTruncated: true } : {}),
+        });
+        continue;
+      }
+      const candidates = [...current.tasks, ...latest.tasks];
+      const tasksById = new Map<string, (typeof candidates)[number]>();
+      for (const candidate of candidates) {
+        const taskId = candidate.messageId.replace(/:(user|assistant)$/, '');
+        const existing = tasksById.get(taskId);
+        const candidateTime = taskTimestamp(candidate.createdAt);
+        const existingTime = taskTimestamp(existing?.createdAt);
+        const candidateIsAssistant = candidate.messageId.endsWith(':assistant');
+        const existingIsAssistant = existing?.messageId.endsWith(':assistant') === true;
+        const occurrenceDifference = compareOccurrenceIds(
+          candidate.occurrenceId,
+          existing?.occurrenceId,
+        );
+        if (
+          existing == null ||
+          candidateTime > existingTime ||
+          (candidateTime === existingTime && occurrenceDifference > 0) ||
+          (candidateTime === existingTime &&
+            occurrenceDifference === 0 &&
+            candidateIsAssistant &&
+            !existingIsAssistant)
+        ) {
+          tasksById.set(taskId, candidate);
+        }
+      }
+      current.tasks = [...tasksById.values()]
+        .sort((left, right) => {
+          const timeDifference = taskTimestamp(right.createdAt) - taskTimestamp(left.createdAt);
+          if (timeDifference !== 0) return timeDifference;
+          const occurrenceDifference = compareOccurrenceIds(right.occurrenceId, left.occurrenceId);
+          if (occurrenceDifference !== 0) return occurrenceDifference;
+          const assistantDifference =
+            Number(right.messageId.endsWith(':assistant')) -
+            Number(left.messageId.endsWith(':assistant'));
+          if (assistantDifference !== 0) return assistantDifference;
+          return left.messageId.localeCompare(right.messageId);
+        })
+        .slice(0, input.limitPerThread);
+    }
+    return [...records.values()].sort((left, right) =>
+      left.conversationId.localeCompare(right.conversationId),
+    );
   }
 
   /**
@@ -1247,6 +1475,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     deleteMessagesSince,
     getMessages,
     getMessagesForSubagentThreadView,
+    listSubagentTasksForThreads,
     getMessage,
     getMessagesByCursor,
     searchMessages,

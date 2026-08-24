@@ -274,6 +274,16 @@ messageSchema.index({
  */
 messageSchema.index({ conversationId: 1, user: 1, createdAt: 1, _id: 1 });
 
+/**
+ * Serves the batched newest-task read for child threads. `user` is an equality
+ * prefix and `conversationId` is the partition key, so Mongo/DocumentDB can
+ * stream each partition newest-first without materializing an unbounded sort.
+ */
+messageSchema.index(
+  { user: 1, conversationId: 1, createdAt: -1, _id: -1 },
+  { name: 'subagent_thread_latest_message' },
+);
+
 /** Bounds parent-run completion snapshots without scanning a user's message history. */
 messageSchema.index(
   { user: 1, 'subagentTask.parentRunId': 1, 'subagentTask.status': 1, updatedAt: -1, _id: -1 },
