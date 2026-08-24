@@ -1,8 +1,8 @@
 /**
  * @jest-environment jsdom
  */
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Controller, useForm } from 'react-hook-form';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { UseFormReturn } from 'react-hook-form';
 import type { ReactNode } from 'react';
 import type { AgentForm } from '~/common';
