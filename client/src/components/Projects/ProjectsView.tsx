@@ -308,7 +308,7 @@ export default function ProjectsView() {
         <ProjectCreateDialog
           open={isCreating}
           onOpenChange={handleCreateDialogChange}
-          onCreated={(project) => navigate(`/projects/${project._id}`)}
+          onCreated={(project) => navigate(`/c/new?projectId=${project._id}`)}
         />
 
         <div className="mt-4 flex flex-1 flex-col">

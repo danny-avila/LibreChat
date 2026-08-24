@@ -458,7 +458,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
         open={isCreateOpen}
         onOpenChange={setIsCreateOpen}
         onCreated={(project) => {
-          navigate(`/projects/${project._id}`);
+          navigate(`/c/new?projectId=${project._id}`);
           toggleNav();
         }}
       />
