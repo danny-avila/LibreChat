@@ -15,6 +15,17 @@ type TLoginFormProps = {
   setError: Pick<TAuthContext, 'setError'>['setError'];
 };
 
+/** BKL: AD 계정만 입력하면 사내 도메인을 자동으로 붙인다 (guest14 → guest14@bkl.co.kr) */
+const BKL_EMAIL_DOMAIN = 'bkl.co.kr';
+
+const normalizeBklEmail = (value: string): string => {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed || trimmed.includes('@')) {
+    return trimmed;
+  }
+  return `${trimmed}@${BKL_EMAIL_DOMAIN}`;
+};
+
 const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, setError }) => {
   const localize = useLocalize();
   const { theme } = useContext(ThemeContext);
@@ -67,7 +78,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   };
 
   const handleResendEmail = () => {
-    const email = getValues('email');
+    const email = normalizeBklEmail(getValues('email'));
     if (!email) {
       return setShowResendLink(false);
     }
@@ -93,7 +104,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         className="mt-6"
         aria-label="Login form"
         method="POST"
-        onSubmit={handleSubmit((data) => onSubmit(data))}
+        onSubmit={handleSubmit((data) => onSubmit({ ...data, email: normalizeBklEmail(data.email) }))}
       >
         <div className="mb-4">
           <div className="relative">
@@ -108,7 +119,8 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
                 maxLength: { value: 120, message: localize('com_auth_email_max_length') },
                 validate: useUsernameLogin
                   ? undefined
-                  : (value) => validateEmail(value, localize('com_auth_email_pattern')),
+                  : // BKL: AD 계정(도메인 생략)도 허용 — 정규화 후 이메일 형식 검증
+                    (value) => validateEmail(normalizeBklEmail(value), localize('com_auth_email_pattern')),
               })}
               aria-invalid={!!errors.email}
               className="webkit-dark-styles transition-color peer w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 focus:border-gray-700 focus:outline-none dark:focus:border-gray-300"
