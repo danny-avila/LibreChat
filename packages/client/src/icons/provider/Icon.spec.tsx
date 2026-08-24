@@ -11,7 +11,9 @@ describe('ProviderIcon', () => {
 
   it('renders asset art as an image from the packaged module', () => {
     render(<ProviderIcon provider={ProviderId.ollama} />);
-    expect(screen.getByRole('img', { name: 'Ollama' })).toHaveAttribute('src', 'assets/ollama.png');
+    expect(
+      screen.getByRole('img', { name: 'Ollama' }).getAttribute('src')?.startsWith('data:'),
+    ).toBe(true);
   });
 
   it('gives monochrome art a theme token so it follows light and dark', () => {

@@ -11,6 +11,13 @@ describe('ProviderAvatar', () => {
     expect(tile).toHaveClass('text-white');
   });
 
+  it('keeps monochrome art white on a branded tile', () => {
+    const { container } = render(<ProviderAvatar provider={ProviderId.anthropic} />);
+    const icon = container.querySelector('[role="img"]');
+    expect(icon).toHaveClass('text-white');
+    expect(icon).not.toHaveClass('text-text-primary');
+  });
+
   it('uses a theme token when the provider has no brand background', () => {
     const { container } = render(<ProviderAvatar provider={ProviderId.google} />);
     expect(container.firstChild).toHaveClass('text-text-primary');

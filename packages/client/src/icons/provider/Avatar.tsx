@@ -37,7 +37,12 @@ function ProviderAvatarComponent({
         className,
       )}
     >
-      <ProviderIcon provider={provider} model={model} size={size * artScale} />
+      <ProviderIcon
+        provider={provider}
+        model={model}
+        size={size * artScale}
+        className={hasBrand ? 'text-white' : undefined}
+      />
       {children}
     </span>
   );

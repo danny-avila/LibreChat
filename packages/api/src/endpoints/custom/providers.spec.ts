@@ -49,6 +49,15 @@ describe('resolveEndpointProviderId', () => {
     ).toBe(ProviderId.helicone);
   });
 
+  it('recognizes the supported Cohere API host', () => {
+    expect(
+      resolveEndpointProviderId({
+        name: 'My Cohere',
+        baseURL: 'https://api.cohere.ai/v1',
+      }),
+    ).toBe(ProviderId.cohere);
+  });
+
   it('falls back to the endpoint name', () => {
     expect(resolveEndpointProviderId({ name: 'Mistral' })).toBe(ProviderId.mistral);
   });

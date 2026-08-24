@@ -7,6 +7,7 @@ export default {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '^~/(.*)$': '<rootDir>/src/$1',
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
+    '\\.(png|webp|jpg|jpeg|gif|svg)$': '<rootDir>/src/icons/provider/__mocks__/fileMock.js',
   },
   // coverageThreshold: {
   //   global: {

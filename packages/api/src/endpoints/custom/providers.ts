@@ -13,6 +13,7 @@ const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['api.moonshot.cn', ProviderId.moonshot],
   ['api.moonshot.ai', ProviderId.moonshot],
   ['api.cohere.com', ProviderId.cohere],
+  ['api.cohere.ai', ProviderId.cohere],
   ['api.fireworks.ai', ProviderId.fireworks],
   ['api-inference.huggingface.co', ProviderId.huggingface],
   ['api.endpoints.anyscale.com', ProviderId.anyscale],
