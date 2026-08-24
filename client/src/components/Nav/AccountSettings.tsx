@@ -1,4 +1,4 @@
-import { useState, memo, useRef } from 'react';
+import { useState, useEffect, memo, useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -14,7 +14,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { useGetStartupConfig } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
@@ -95,9 +95,20 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const localize = useLocalize();
   const { user, isAuthenticated, logout } = useAuthContext();
   const { data: startupConfig } = useGetStartupConfig();
-  const balanceQuery = useGetUserBalance({
-    enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
-  });
+  const [subscription, setSubscription] = useState<{
+    tariff: string | null;
+    expiresAt: string | null;
+    active: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    fetch('/billing/api/subscription', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setSubscription)
+      .catch(() => setSubscription(null));
+  }, [isAuthenticated]);
   const [showSettings, setShowSettings] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
@@ -143,26 +154,25 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
-        {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
-          <>
-            <Menu.MenuItem
-              onClick={() => (window.location.href = '/billing')}
-              className="select-item text-sm"
-              data-testid="nav-balance"
-            >
-              {localize('com_nav_balance')}:{' '}
-              {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
-            </Menu.MenuItem>
-            <Menu.MenuItem
-              onClick={() => (window.location.href = '/billing')}
-              className="select-item text-sm"
-            >
-              <CreditCard className="icon-md" aria-hidden="true" />
-              Тарифы и оплата
-            </Menu.MenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
+        <Menu.MenuItem
+          onClick={() => (window.location.href = '/billing')}
+          className="select-item text-sm"
+          data-testid="nav-tariff"
+        >
+          {subscription?.tariff != null && subscription.expiresAt != null
+            ? `Тариф «${subscription.tariff}» ${subscription.active ? 'до' : '— истёк'} ${new Date(
+                subscription.expiresAt,
+              ).toLocaleDateString('ru-RU')}`
+            : 'Тариф не подключён'}
+        </Menu.MenuItem>
+        <Menu.MenuItem
+          onClick={() => (window.location.href = '/billing')}
+          className="select-item text-sm"
+        >
+          <CreditCard className="icon-md" aria-hidden="true" />
+          Тарифы и оплата
+        </Menu.MenuItem>
+        <DropdownMenuSeparator />
         <HelpSubmenu
           helpAndFaqURL={startupConfig?.helpAndFaqURL}
           termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}

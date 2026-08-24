@@ -1,25 +1,38 @@
 import { Router } from 'express';
 import { Balance, Order, Tariff } from '../db.js';
-import { requireUser, sameOrigin } from '../auth.js';
+import { requireUser, requireUserApi, sameOrigin } from '../auth.js';
 import { alfapay } from '../alfapay.js';
 import { config } from '../config.js';
 import { newOrderNumber, syncOrder } from '../orders.js';
+import { getSubscription } from '../subscriptions.js';
 
 export const userRoutes = Router();
 
 userRoutes.get('/', requireUser, async (req, res) => {
-  const [tariffs, balance, orders] = await Promise.all([
+  const [tariffs, balance, orders, subscription] = await Promise.all([
     Tariff.find({ active: true }).sort({ sort: 1, priceKopecks: 1 }).lean(),
     Balance.findOne({ user: req.user._id }).lean(),
     Order.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(50).lean(),
+    getSubscription(req.user._id),
   ]);
   res.render('index', {
     user: req.user,
     tariffs,
     balance: balance?.tokenCredits ?? 0,
     orders,
+    subscription,
     paid: req.query.paid,
   });
+});
+
+// Current tariff for the chat client (account menu). Cookie-authenticated.
+userRoutes.get('/api/subscription', requireUserApi, async (req, res) => {
+  const sub = await getSubscription(req.user._id);
+  res.json(
+    sub
+      ? { tariff: sub.tariff?.title ?? null, expiresAt: sub.expiresAt, active: sub.active }
+      : { tariff: null, expiresAt: null, active: false },
+  );
 });
 
 userRoutes.post('/buy', requireUser, sameOrigin, async (req, res) => {

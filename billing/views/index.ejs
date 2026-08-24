@@ -2,6 +2,18 @@
 
 <section class="balance-strip">
   <div>
+    <div class="muted">Ваш тариф</div>
+    <div class="balance-value">
+      <% if (subscription && subscription.active) { %>
+        <%= subscription.tariff?.title || '—' %> <span class="muted small">оплачен до <%= fmtDate(subscription.expiresAt) %></span>
+      <% } else if (subscription) { %>
+        <%= subscription.tariff?.title || '—' %> <span class="muted small">истёк <%= fmtDate(subscription.expiresAt) %></span>
+      <% } else { %>
+        <span class="muted">не подключён</span>
+      <% } %>
+    </div>
+  </div>
+  <div>
     <div class="muted">Ваш баланс</div>
     <div class="balance-value"><%= fmtCredits(balance) %> <span class="muted small">кредитов</span></div>
   </div>

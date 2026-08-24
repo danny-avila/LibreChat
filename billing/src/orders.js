@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { Balance, Order, Transaction } from './db.js';
+import { Balance, Order, Tariff, Transaction } from './db.js';
+import { grantSubscription } from './subscriptions.js';
 import { alfapay } from './alfapay.js';
 import { config } from './config.js';
 
@@ -29,6 +30,8 @@ export async function creditOrder(order) {
     tokenValue: order.tariff.credits,
     model: null,
   });
+  const tariffDoc = await Tariff.findById(order.tariff.id).lean();
+  await grantSubscription(order.user, order.tariff, tariffDoc?.durationDays ?? 30, 'payment');
   console.log(`[billing] credited order ${order.orderNumber}: +${order.tariff.credits} to ${order.userEmail}`);
   return true;
 }
