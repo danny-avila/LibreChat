@@ -43,9 +43,11 @@ const STATUS_COUNT_LABEL_KEYS = {
 export default function EventSubagentActivityGroup({
   conversationId,
   parentMessageIds,
+  hasParallelContent = false,
 }: {
   conversationId: string;
   parentMessageIds: string[];
+  hasParallelContent?: boolean;
 }) {
   const { byMessageId } = useParentSubagents();
   const children = useMemo(() => {
@@ -68,7 +70,7 @@ export default function EventSubagentActivityGroup({
     <div
       className={cn(
         'mx-auto min-w-0 flex-1 px-4 transition-[max-width] duration-theme-normal motion-reduce:transition-none sm:px-0',
-        getMessageRowWidthClass({ fullWidth }),
+        getMessageRowWidthClass({ fullWidth, hasParallelContent }),
       )}
     >
       <EventSubagentRows

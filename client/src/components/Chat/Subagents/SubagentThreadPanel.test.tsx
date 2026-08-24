@@ -50,10 +50,15 @@ jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
   default: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
 }));
 
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ i18n: { language: 'fr' } }),
+}));
+
 jest.mock('~/hooks', () => ({
   useClockFormat: () => false,
   useFocusTrap: jest.fn(),
-  useLocalize: () => (key: string) => key,
+  useLocalize: () => (key: string, values?: Record<number, string>) =>
+    values?.[0] == null ? key : `${key} ${values[0]}`,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
 
@@ -695,7 +700,7 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_previous_activity' }));
+    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_previous_activity 1' }));
     expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
     expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
 
@@ -733,6 +738,7 @@ describe('SubagentThreadPanel', () => {
       tasks: [
         { taskId: 'task', status: 'completed' },
         { taskId: 'task-earlier', status: 'completed', createdAt: '2026-08-23T23:05:00Z' },
+        { taskId: 'task-oldest', status: 'completed', createdAt: '2026-08-23T23:05:00Z' },
       ],
       tasksTruncated: false,
     };
@@ -755,11 +761,13 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    expect(screen.getByRole('option', { name: '23:05' })).toBeInTheDocument();
-    expect(dateTimeFormat).toHaveBeenCalledWith(
-      undefined,
-      expect.objectContaining({ hour12: false }),
-    );
+    expect(
+      screen.getByRole('option', { name: '23:05 · com_ui_subagent_previous_activity 1' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: '23:05 · com_ui_subagent_previous_activity 2' }),
+    ).toBeInTheDocument();
+    expect(dateTimeFormat).toHaveBeenCalledWith('fr', expect.objectContaining({ hour12: false }));
     dateTimeFormat.mockRestore();
   });
 });

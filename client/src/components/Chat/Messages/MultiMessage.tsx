@@ -197,6 +197,10 @@ function MultiMessage({
       (id): id is string => typeof id === 'string' && id.length > 0,
     );
   }
+  const isEditingActivityAnchor =
+    currentEditId != null && activityParentMessageIds.includes(currentEditId);
+  const hasParallelContent =
+    !message.isCreatedByUser && message.content?.some((part) => part.groupId != null) === true;
 
   /**
    * The child recursion is a sibling of the row (not rendered inside it), so a
@@ -208,11 +212,12 @@ function MultiMessage({
   return (
     <>
       {row}
-      {rowMounted && currentEditId !== message.messageId && activityParentMessageIds.length > 0 ? (
+      {rowMounted && !isEditingActivityAnchor && activityParentMessageIds.length > 0 ? (
         <div className="w-full border-0 bg-transparent">
           <EventSubagentActivityGroup
             conversationId={message.conversationId ?? ''}
             parentMessageIds={activityParentMessageIds}
+            hasParallelContent={hasParallelContent}
           />
         </div>
       ) : null}

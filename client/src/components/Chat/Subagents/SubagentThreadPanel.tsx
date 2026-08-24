@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -35,6 +36,7 @@ import { useAgentsMapContext } from '~/Providers';
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const hour12 = useClockFormat();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
@@ -250,15 +252,16 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       if (Number.isNaN(createdAt.getTime())) {
         return localize('com_ui_subagent_previous_activity', { 0: String(index) });
       }
-      return new Intl.DateTimeFormat(undefined, {
+      const timestamp = new Intl.DateTimeFormat(i18n.language, {
         month: 'short',
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
         hour12,
       }).format(createdAt);
+      return `${timestamp} · ${localize('com_ui_subagent_previous_activity', { 0: String(index) })}`;
     },
-    [hour12, localize],
+    [hour12, i18n.language, localize],
   );
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (

@@ -118,6 +118,22 @@ describe('EventSubagentActivityGroup', () => {
     );
   });
 
+  it('matches the width of a parallel assistant response', () => {
+    render(
+      <RecoilRoot>
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageIds={['parent-message']}
+          hasParallelContent
+        />
+      </RecoilRoot>,
+    );
+
+    expect(
+      screen.getByRole('region', { name: 'com_ui_subagent_activity' }).parentElement,
+    ).toHaveClass('md:max-w-[58rem]', 'xl:max-w-[70rem]');
+  });
+
   it('retains a merged anchor that has no children yet', () => {
     let selection: ActiveSubagentPanel | null = null;
     const Observer = () => {
