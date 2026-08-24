@@ -35,4 +35,21 @@ describe('ProviderIcon', () => {
     render(<ProviderIcon provider={null} />);
     expect(screen.getByRole('img', { name: 'Custom' })).toBeInTheDocument();
   });
+  it('lets the sized span, not a caller size class, govern nested component art', () => {
+    const { container } = render(
+      <ProviderIcon provider={ProviderId.openai} size={27} className="h-2/3 w-2/3" />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toHaveClass('h-full', 'w-full');
+    expect(svg).not.toHaveClass('h-2/3', 'w-2/3');
+  });
+
+  it('still forwards a caller color onto nested component art', () => {
+    const { container } = render(
+      <ProviderIcon provider={ProviderId.anthropic} className="[color:inherit]" />,
+    );
+
+    expect(container.querySelector('svg')).toHaveClass('[color:inherit]');
+  });
 });

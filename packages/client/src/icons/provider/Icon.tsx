@@ -34,7 +34,7 @@ function ProviderIconComponent({
         style={{ width: size, height: size }}
         className={cn('inline-flex items-center justify-center', classes)}
       >
-        <Component size={size} className={cn('h-full w-full', classes)} />
+        <Component size={size} className={cn(classes, 'h-full w-full')} />
       </span>
     );
   }
