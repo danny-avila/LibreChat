@@ -616,16 +616,25 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
   /** Receives payload-free authoritative transitions from the SDK task store. */
   protected onControlReceipt(scopeId: string, taskId: string, receipt: SdkControlReceipt): void {
+    const persistence = this.queueAuthoritativeControlReceipt(scopeId, taskId, receipt);
+    void persistence?.catch((error) => {
+      logger.warn('[subagentThreads] Failed to persist a child control transition', error);
+    });
+  }
+
+  private queueAuthoritativeControlReceipt(
+    scopeId: string,
+    taskId: string,
+    receipt: SdkControlReceipt,
+  ): Promise<void> | undefined {
     const invocation = this.controlInvocationByReceipt.get(
       controlReceiptKey(scopeId, taskId, receipt.controlId),
     );
     const threadId = this.get(scopeId, taskId)?.threadId;
-    if (invocation == null || threadId == null) return;
+    if (invocation == null || threadId == null) return undefined;
     const durable = this.durableReceipt(invocation, receipt);
     invocation.receipt = durable;
-    void this.queueControlReceipt(scopeId, taskId, threadId, durable).catch((error) => {
-      logger.warn('[subagentThreads] Failed to persist a child control transition', error);
-    });
+    return this.queueControlReceipt(scopeId, taskId, threadId, durable);
   }
 
   private durableReceipt(
@@ -912,14 +921,30 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
      * before the first await. The SDK emits all pending-control transitions while
      * cancelling, so no receipt producer can race the final persistence snapshot. */
     this.controlCommandAdmissionClosed = true;
+    const cancellationFlushes: Promise<void>[] = [];
     for (const lease of this.activeThreads.values()) {
       if (lease.taskId !== '' && this.get(lease.scopeId, lease.taskId)?.status === 'running') {
-        super.control(lease.scopeId, lease.taskId, { action: 'cancel' });
+        const cancellation = super.control(lease.scopeId, lease.taskId, { action: 'cancel' });
+        if (cancellation.status === 'cancelled') {
+          /** The SDK hook above is synchronous, but retain direct promises for the
+           * authoritative terminal snapshot as well. This makes shutdown await the
+           * transition even when its first storage attempt fails under load. */
+          const snapshot = cancellation.task as SnapshotWithControlReceipts;
+          for (const receipt of snapshot.controlReceipts ?? []) {
+            const persistence = this.queueAuthoritativeControlReceipt(
+              lease.scopeId,
+              lease.taskId,
+              receipt,
+            );
+            if (persistence != null) cancellationFlushes.push(persistence);
+          }
+        }
       }
     }
     this.controlPersistenceStopping = true;
     for (const timer of this.controlPersistenceRetryTimers.values()) clearTimeout(timer);
     this.controlPersistenceRetryTimers.clear();
+    await Promise.allSettled(cancellationFlushes);
     /** Cancellation can enqueue its terminal transition behind an already-failing
      * acceptance write. Re-snapshot both maps after each round so work admitted
      * synchronously before shutdown cannot appear just after the final snapshot. */

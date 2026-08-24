@@ -2168,6 +2168,20 @@ describe('SubagentThreadTaskStore', () => {
     ).resolves.toMatchObject({ status: 'accepted' });
     finish({ content: 'Done.' });
     await waitForSettled(ownerStore, config.scopeId, started);
+    await waitUntil(async () => {
+      const [input] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      return (
+        input?.subagentTask?.controlReceipts?.some(
+          (receipt) =>
+            receipt.invocationId === 'durable-invocation' &&
+            receipt.status === 'rejected' &&
+            receipt.reason === 'task_completed',
+        ) === true
+      );
+    }, 'the terminal control receipt to become durable');
     await ownerStore.destroyTaskControlTransport();
 
     const restartedStore = new SubagentThreadTaskStore(methods);
