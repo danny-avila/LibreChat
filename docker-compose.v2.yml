@@ -1,0 +1,136 @@
+# Second (staging) LibreChat instance — librechat-v2.aidstlab.top
+#
+# Deliberately NOT named docker-compose.override.yml: the tracked override in
+# this repo belongs to the live production stack at librechat.aidstlab.top and
+# must stay untouched. Use this file explicitly:
+#
+#   docker compose -p librechat-v2 -f docker-compose.yml -f docker-compose.v2.yml ...
+#
+# Isolation from production, service by service:
+#   * every container_name gets a -v2 suffix (the base file pins names that
+#     would otherwise collide with the running production containers);
+#   * every published host port is reset — ingress is Traefik on the shared
+#     "edge" network, nothing is exposed directly;
+#   * every Traefik router/service name gets a -v2 suffix, so the production
+#     routers keep their rules;
+#   * named volumes and the default network are namespaced by the compose
+#     project name (librechat-v2) automatically.
+#
+# Bind mount sources must be HOST-absolute (${LC_V2_ROOT}) rather than "./":
+# the compose CLI runs inside a container while the Docker daemon is the
+# host's, so a relative path would be resolved against a directory that does
+# not exist on the host.
+services:
+  api:
+    container_name: LibreChat-v2
+    image: librechat-dstlab:v2
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    volumes: !override
+      - type: bind
+        source: ${LC_V2_ROOT}/.env
+        target: /app/.env
+      - type: bind
+        source: ${LC_V2_ROOT}/librechat.yaml
+        target: /app/librechat.yaml
+      - type: bind
+        source: ${LC_V2_ROOT}/images
+        target: /app/client/public/images
+      - type: bind
+        source: ${LC_V2_ROOT}/uploads
+        target: /app/uploads
+      - type: bind
+        source: ${LC_V2_ROOT}/logs
+        target: /app/logs
+      - type: bind
+        source: ${LC_V2_ROOT}/skill
+        target: /app/skill
+      - librechat-data:/app/data
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      traefik.http.routers.librechat-v2.rule: "Host(`librechat-v2.aidstlab.top`)"
+      traefik.http.routers.librechat-v2.entrypoints: "websecure"
+      traefik.http.routers.librechat-v2.tls: "true"
+      traefik.http.routers.librechat-v2.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat-v2.loadbalancer.server.port: "3080"
+
+  admin-panel:
+    container_name: admin-panel-v2
+    # Reuse the image the production stack already built; its source repo
+    # (../libre-admin-panel) is not part of this clone.
+    image: libre-admin-panel-dstlab:latest
+    pull_policy: never
+    ports: !reset []
+    networks:
+      - default
+      - edge
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      traefik.http.routers.librechat-v2-admin.rule: "Host(`librechat-v2-admin.aidstlab.top`)"
+      traefik.http.routers.librechat-v2-admin.entrypoints: "websecure"
+      traefik.http.routers.librechat-v2-admin.tls: "true"
+      traefik.http.routers.librechat-v2-admin.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat-v2-admin.loadbalancer.server.port: "3000"
+
+  billing:
+    container_name: librechat-v2-billing
+    image: librechat-billing:v2
+    build:
+      context: ./billing
+    restart: always
+    depends_on:
+      - mongodb
+    environment:
+      - PORT=3000
+      - PUBLIC_URL=${DOMAIN_CLIENT:-https://librechat-v2.aidstlab.top}
+      - MONGO_URI=mongodb://mongodb:27017/LibreChat
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      # Staging stays on the mock payment driver; no live AlfaPay credentials.
+      - ALFAPAY_DRIVER=${ALFAPAY_DRIVER:-mock}
+      - ALFAPAY_BASE_URL=${ALFAPAY_BASE_URL:-}
+      - ALFAPAY_API_KEY=${ALFAPAY_API_KEY:-}
+      - ALFAPAY_PROJECT_ID=${ALFAPAY_PROJECT_ID:-}
+    networks:
+      - default
+      - edge
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "edge"
+      # Priority 100 wins over the chat router for the /billing prefix on the same host.
+      traefik.http.routers.librechat-v2-billing.rule: "Host(`librechat-v2.aidstlab.top`) && PathPrefix(`/billing`)"
+      traefik.http.routers.librechat-v2-billing.priority: "100"
+      traefik.http.routers.librechat-v2-billing.entrypoints: "websecure"
+      traefik.http.routers.librechat-v2-billing.tls: "true"
+      traefik.http.routers.librechat-v2-billing.tls.certresolver: "letsencrypt"
+      traefik.http.services.librechat-v2-billing.loadbalancer.server.port: "3000"
+
+  mongodb:
+    container_name: chat-mongodb-v2
+    volumes: !override
+      - type: bind
+        source: ${LC_V2_ROOT}/data-node
+        target: /data/db
+
+  meilisearch:
+    container_name: chat-meilisearch-v2
+    volumes: !override
+      - type: bind
+        source: ${LC_V2_ROOT}/meili_data_v1.35.1
+        target: /meili_data
+
+  vectordb:
+    container_name: vectordb-v2
+
+  rag_api:
+    container_name: rag_api-v2
+
+networks:
+  edge:
+    external: true
