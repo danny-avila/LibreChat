@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -12,6 +12,8 @@ import {
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
+import type { ParentSubagentTaskSummary } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   ACTIVE_THREAD_REFRESH_MS,
@@ -25,13 +27,15 @@ import {
   subagentProgressKey,
 } from '~/store/subagents';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
-import { eventSubagentSelection, eventTaskProgressKey } from './eventSelection';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
-import SubagentActivity from './SubagentActivity';
+import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
+
+const EVENT_TASK_PAGE_SIZE = 3;
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
@@ -59,12 +63,47 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
+  const eventTaskCount = eventSummary?.tasks.length ?? 0;
+  const [eventTaskWindow, setEventTaskWindow] = useState(() => ({
+    threadId,
+    count: EVENT_TASK_PAGE_SIZE,
+    taskCount: eventSummary == null ? null : eventTaskCount,
+  }));
+  useEffect(() => {
+    setEventTaskWindow((current) => {
+      if (current.threadId !== threadId || current.taskCount == null) {
+        return { threadId, count: EVENT_TASK_PAGE_SIZE, taskCount: eventTaskCount };
+      }
+      const appended = Math.max(0, eventTaskCount - current.taskCount);
+      return {
+        threadId,
+        count: Math.min(eventTaskCount, current.count + appended),
+        taskCount: eventTaskCount,
+      };
+    });
+  }, [eventTaskCount, threadId]);
+  const visibleEventTaskCount = Math.min(
+    eventTaskCount,
+    eventTaskWindow.threadId === threadId ? eventTaskWindow.count : EVENT_TASK_PAGE_SIZE,
+  );
+  const visibleEventTasks = useMemo(
+    () => (eventSummary?.tasks ?? []).slice(0, visibleEventTaskCount).reverse(),
+    [eventSummary?.tasks, visibleEventTaskCount],
+  );
+  const hasEarlierRetainedTasks = visibleEventTaskCount < eventTaskCount;
   const eventTaskRunning =
     eventSummary?.tasks.find((task) => task.taskId === taskId)?.status === 'running';
-  const eventSiblings = useMemo(
-    () => (selection.event == null ? [] : (byMessageId.get(selection.parentMessageId) ?? [])),
-    [byMessageId, selection.event, selection.parentMessageId],
-  );
+  const eventSiblings = useMemo(() => {
+    if (selection.event == null) return [];
+    const seen = new Set<string>();
+    return (selection.event.siblingParentMessageIds ?? [selection.parentMessageId])
+      .flatMap((parentMessageId) => byMessageId.get(parentMessageId) ?? [])
+      .filter((child) => {
+        if (seen.has(child.threadId)) return false;
+        seen.add(child.threadId);
+        return true;
+      });
+  }, [byMessageId, selection.event, selection.parentMessageId]);
   const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
     selection.parentConversationId,
     threadId,
@@ -99,6 +138,21 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (selection.event == null || !eventTaskRunning || !durableTerminal) return;
     void refetch();
   }, [durableTerminal, eventTaskRunning, refetch, selection.event]);
+  useEffect(() => {
+    if (
+      selection.event == null ||
+      eventSummary?.latestTaskId == null ||
+      eventSummary.latestTaskId === taskId
+    ) {
+      return;
+    }
+    const nextSelection = eventSubagentSelection(
+      selection.parentConversationId,
+      eventSummary,
+      selection.event.siblingParentMessageIds,
+    );
+    if (nextSelection != null) setSelection(nextSelection);
+  }, [eventSummary, selection, setSelection, taskId]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
@@ -201,27 +255,19 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     (nextThreadId: string) => {
       const next = eventSiblings.find((child) => child.threadId === nextThreadId);
       if (next == null) return;
-      const nextSelection = eventSubagentSelection(selection.parentConversationId, next);
+      const nextSelection = eventSubagentSelection(
+        selection.parentConversationId,
+        next,
+        selection.event?.siblingParentMessageIds,
+      );
       if (nextSelection != null) setSelection(nextSelection);
     },
-    [eventSiblings, selection.parentConversationId, setSelection],
-  );
-  const selectTask = useCallback(
-    (nextTaskId: string) => {
-      if (selection.durable == null || selection.event == null) return;
-      const nextTask = eventSummary?.tasks.find((task) => task.taskId === nextTaskId);
-      setSelection({
-        ...selection,
-        durable: { ...selection.durable, taskId: nextTaskId },
-        event: {
-          ...selection.event,
-          progressKey: eventTaskProgressKey(selection.durable.threadId, nextTaskId),
-        },
-        initialProgress: nextTask?.status === 'completed' ? 1 : 0,
-        isSubmitting: nextTask?.status === 'running',
-      });
-    },
-    [eventSummary?.tasks, selection, setSelection],
+    [
+      eventSiblings,
+      selection.event?.siblingParentMessageIds,
+      selection.parentConversationId,
+      setSelection,
+    ],
   );
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (
@@ -232,6 +278,53 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     panelState = 'loading';
   } else if (selection.durable != null && liveActivity.items.length === 0 && isError) {
     panelState = 'error';
+  }
+  const renderEventTask = (task: ParentSubagentTaskSummary) => {
+    if (task.taskId === taskId) {
+      return (
+        <SubagentActivity
+          key={task.taskId}
+          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+          activity={activity}
+          state={panelState}
+          embedded
+        />
+      );
+    }
+    return (
+      <HistoricalEventTaskActivity
+        key={task.taskId}
+        selection={selection}
+        task={task}
+        title={activity.title}
+      />
+    );
+  };
+  const loadEarlierEventTasks = () => {
+    setEventTaskWindow({
+      threadId,
+      count: Math.min(eventTaskCount, visibleEventTaskCount + EVENT_TASK_PAGE_SIZE),
+      taskCount: eventTaskCount,
+    });
+  };
+  let timelinePrefix: ReactNode = null;
+  if (hasEarlierRetainedTasks) {
+    timelinePrefix = (
+      <div className="flex justify-center border-b border-border-light px-4 py-2">
+        <Button type="button" variant="ghost" size="sm" onClick={loadEarlierEventTasks}>
+          {localize('com_ui_load_more')}
+        </Button>
+      </div>
+    );
+  } else if (eventSummary?.tasksTruncated) {
+    timelinePrefix = (
+      <div
+        role="note"
+        className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+      >
+        {localize('com_ui_subagent_thread_history_truncated')}
+      </div>
+    );
   }
 
   return (
@@ -302,22 +395,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               </SelectContent>
             </Select>
           </div>
-          <div className="w-32">
-            <Select value={taskId} onValueChange={selectTask}>
-              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_turn')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(eventSummary?.tasks ?? []).map((task, index) => (
-                  <SelectItem key={task.taskId} value={task.taskId}>
-                    {index === 0
-                      ? localize('com_ui_subagent_latest_turn')
-                      : localize('com_ui_subagent_earlier_turn', { 0: String(index) })}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </div>
       )}
 
@@ -327,13 +404,61 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       <ApprovalProvider
         key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
       >
-        <SubagentActivity
-          key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-          activity={activity}
-          state={panelState}
-        />
+        {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
+          <SubagentActivityScrollSurface padded={false}>
+            <div data-subagent-thread-timeline>
+              {timelinePrefix}
+              {visibleEventTasks.map(renderEventTask)}
+            </div>
+          </SubagentActivityScrollSurface>
+        ) : (
+          <SubagentActivity
+            key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activity={activity}
+            state={panelState}
+          />
+        )}
       </ApprovalProvider>
     </aside>
+  );
+}
+
+function HistoricalEventTaskActivity({
+  selection,
+  task,
+  title,
+}: {
+  selection: ActiveSubagentPanel;
+  task: ParentSubagentTaskSummary;
+  title: string;
+}) {
+  const threadId = selection.durable?.threadId ?? '';
+  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
+    selection.parentConversationId,
+    threadId,
+    task.taskId,
+  );
+  const activity = useMemo(
+    () =>
+      data == null
+        ? { title, status: task.status, items: [] }
+        : adaptDurableThreadActivity(data, task.taskId),
+    [data, task.status, task.taskId, title],
+  );
+  let state: 'ready' | 'loading' | 'error' = 'ready';
+  if (isError) {
+    state = 'error';
+  } else if (isLoading || isReadinessPending) {
+    state = 'loading';
+  }
+
+  return (
+    <SubagentActivity
+      activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+      activity={activity}
+      state={state}
+      embedded
+    />
   );
 }
