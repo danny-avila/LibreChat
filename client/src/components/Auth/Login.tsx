@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ErrorTypes, registerPage } from 'librechat-data-provider';
+import { ErrorTypes } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
@@ -109,18 +109,14 @@ function Login() {
           setError={setError}
         />
       )}
-      {startupConfig?.registrationEnabled === true && (
-        <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
-          {' '}
-          {localize('com_auth_no_account')}{' '}
-          <a
-            href={registerPage()}
-            className="inline-flex p-1 text-sm font-medium text-gray-800 underline decoration-transparent transition-all duration-200 hover:text-black hover:decoration-black focus:text-black focus:decoration-black dark:text-gray-200 dark:hover:text-white dark:hover:decoration-white dark:focus:text-white dark:focus:decoration-white"
-          >
-            {localize('com_auth_sign_up')}
-          </a>
-        </p>
-      )}
+      {/* BKL: 가입 링크 대신 AD 계정 안내 — @bkl.co.kr 는 자동으로 붙는다 (LoginForm) */}
+      <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
+        이메일 주소에는 AD 계정만 입력하셔도 됩니다.
+        <br />
+        <span className="text-gray-500 dark:text-gray-400">
+          예: guest14@bkl.co.kr → <span className="font-medium">guest14</span>
+        </span>
+      </p>
     </>
   );
 }
