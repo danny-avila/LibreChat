@@ -51,6 +51,9 @@ services:
         source: ${LC_V2_ROOT}/skill
         target: /app/skill
       - librechat-data:/app/data
+    environment:
+      # JetCode platform: New Project in the UI provisions a platform project.
+      - PLATFORM_URL=http://jetcodem-app:8080
     labels:
       traefik.enable: "true"
       traefik.docker.network: "edge"
