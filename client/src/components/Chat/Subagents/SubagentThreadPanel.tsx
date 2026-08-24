@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { ForkOptions } from 'librechat-data-provider';
-import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
 import {
   Button,
@@ -32,6 +32,8 @@ import {
 } from '~/data-provider';
 import {
   activeSubagentPanel,
+  subagentControlStateByTask,
+  subagentControlStateKey,
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/store/subagents';
@@ -70,6 +72,21 @@ const responseStatus = (error: unknown): number | undefined =>
     ? error.response.status
     : undefined;
 
+const failedControlReason = (
+  inaccessible: boolean,
+  retryable: boolean,
+): 'task_inaccessible' | 'owner_unavailable' | 'invalid_command' => {
+  if (inaccessible) return 'task_inaccessible';
+  if (retryable) return 'owner_unavailable';
+  return 'invalid_command';
+};
+
+const failedControlLocaleKey = (reason?: string) => {
+  if (reason === 'task_inaccessible') return 'com_ui_subagent_control_reason_task_inaccessible';
+  if (reason === 'owner_unavailable') return 'com_ui_subagent_control_reason_owner_unavailable';
+  return 'com_ui_subagent_control_reason_invalid_command';
+};
+
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
@@ -95,6 +112,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       : localize('com_ui_subagent_dialog_title', { 0: selection.subagentType });
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
+  const controlIdentity = subagentControlStateKey(selection.parentConversationId, threadId, taskId);
+  const [controlState, setControlState] = useRecoilState(
+    subagentControlStateByTask(controlIdentity),
+  );
+  const transientControl = controlState?.receipt ?? null;
+  const retryControl = controlState?.retry ?? null;
   const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
   const eventTaskCount = eventSummary?.tasks.length ?? 0;
   const [eventTaskWindow, setEventTaskWindow] = useState(() => ({
@@ -203,26 +226,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   });
   const controlTask = useSubagentControlMutation();
   const [controlMessage, setControlMessage] = useState('');
-  const [transientControl, setTransientControl] = useState<
-    | (Omit<SubagentControlReceipt, 'status'> & {
-        status: SubagentControlReceipt['status'] | 'submitted';
-      })
-    | null
-  >(null);
-  const [retryControl, setRetryControl] = useState<SubagentControlRequest | null>(null);
   const [controlInaccessible, setControlInaccessible] = useState(false);
   const [controlsClosed, setControlsClosed] = useState(false);
   const controlInFlightRef = useRef(false);
-  const controlSelectionRef = useRef(`${threadId}\u0000${taskId}`);
+  const controlSelectionRef = useRef(controlIdentity);
   useEffect(() => {
-    controlSelectionRef.current = `${threadId}\u0000${taskId}`;
+    controlSelectionRef.current = controlIdentity;
     setControlMessage('');
-    setTransientControl(null);
-    setRetryControl(null);
     setControlInaccessible(false);
     setControlsClosed(false);
     controlInFlightRef.current = false;
-  }, [taskId, threadId]);
+  }, [controlIdentity]);
 
   useEffect(() => {
     if (transientControl == null) return;
@@ -242,9 +256,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       setControlMessage((current) => (current === retryControl.message ? '' : current));
     }
     if (closesTaskControls(durableReceipt)) setControlsClosed(true);
-    setTransientControl(null);
-    setRetryControl(null);
-  }, [data?.controlReceipts, retryControl, transientControl]);
+    setControlState(null);
+  }, [data?.controlReceipts, retryControl, setControlState, transientControl]);
 
   useEffect(() => {
     if (data?.controlReceipts?.some(closesTaskControls)) {
@@ -294,18 +307,24 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         return;
       }
       const now = new Date().toISOString();
-      setTransientControl({
-        invocationId: command.invocationId,
-        ...(command.controlId == null ? {} : { controlId: command.controlId }),
-        action: command.action,
-        status: 'submitted',
-        createdAt: now,
-        updatedAt: now,
-        ...(command.message == null ? {} : { message: command.message }),
+      setControlState({
+        receipt: {
+          invocationId: command.invocationId,
+          ...(command.controlId == null ? {} : { controlId: command.controlId }),
+          action: command.action,
+          status: 'submitted',
+          createdAt: now,
+          updatedAt: now,
+          ...(command.message == null ? {} : { message: command.message }),
+        },
+        retry: command,
       });
-      setRetryControl(command);
       controlInFlightRef.current = true;
-      const submittedSelection = `${selection.durable.threadId}\u0000${selection.durable.taskId}`;
+      const submittedSelection = subagentControlStateKey(
+        selection.parentConversationId,
+        selection.durable.threadId,
+        selection.durable.taskId,
+      );
       controlTask.mutate(
         {
           parentConversationId: selection.parentConversationId,
@@ -314,11 +333,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         },
         {
           onSuccess: ({ receipt }) => {
+            setControlState({ receipt });
             if (controlSelectionRef.current !== submittedSelection) return;
             controlInFlightRef.current = false;
-            setTransientControl(receipt);
             if (closesTaskControls(receipt)) setControlsClosed(true);
-            if (receipt.status !== 'failed') setRetryControl(null);
             if (
               command.action !== 'cancel_message' &&
               (receipt.status === 'accepted' || receipt.status === 'applied')
@@ -327,29 +345,41 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             }
           },
           onError: (error) => {
+            const status = responseStatus(error);
+            const inaccessible = status === 404;
+            const retryable = status == null || status >= 500;
+            const failedReceipt = {
+              invocationId: command.invocationId,
+              ...(command.controlId == null ? {} : { controlId: command.controlId }),
+              action: command.action,
+              status: 'failed' as const,
+              createdAt: now,
+              updatedAt: new Date().toISOString(),
+              ...(command.message == null ? {} : { message: command.message }),
+              reason: failedControlReason(inaccessible, retryable),
+            };
+            setControlState({
+              receipt: failedReceipt,
+              ...(retryable ? { retry: command } : {}),
+            });
             if (controlSelectionRef.current !== submittedSelection) return;
             controlInFlightRef.current = false;
-            const inaccessible = responseStatus(error) === 404;
             if (inaccessible) {
               setControlInaccessible(true);
               setControlsClosed(true);
-              setRetryControl(null);
             }
-            setTransientControl((current) =>
-              current == null
-                ? null
-                : {
-                    ...current,
-                    status: 'failed',
-                    updatedAt: new Date().toISOString(),
-                    reason: inaccessible ? 'task_inaccessible' : 'owner_unavailable',
-                  },
-            );
           },
         },
       );
     },
-    [controlMessage, controlTask, retryControl, selection.durable, selection.parentConversationId],
+    [
+      controlMessage,
+      controlTask,
+      retryControl,
+      selection.durable,
+      selection.parentConversationId,
+      setControlState,
+    ],
   );
 
   const close = useCallback(() => {
@@ -425,11 +455,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     }
     return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
   }, [data, liveActivity, progress, selection.durable, transientControl]);
+  const taskInaccessible = controlInaccessible || transientControl?.reason === 'task_inaccessible';
   const controlAvailable =
-    selection.durable != null &&
-    data?.status === 'running' &&
-    !controlInaccessible &&
-    !controlsClosed;
+    selection.durable != null && data?.status === 'running' && !taskInaccessible && !controlsClosed;
   const controlPending =
     controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
   const showControlFooter =
@@ -635,11 +663,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">
-                {localize(
-                  transientControl.reason === 'task_inaccessible'
-                    ? 'com_ui_subagent_control_reason_task_inaccessible'
-                    : 'com_ui_subagent_control_reason_owner_unavailable',
-                )}
+                {localize(failedControlLocaleKey(transientControl.reason))}
               </span>
               {retryControl != null && (
                 <Button

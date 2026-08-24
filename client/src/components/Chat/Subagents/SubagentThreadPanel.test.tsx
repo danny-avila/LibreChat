@@ -1,5 +1,5 @@
 import React from 'react';
-import { RecoilRoot, useRecoilValue } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { ContentTypes, ForkOptions } from 'librechat-data-provider';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type {
@@ -388,6 +388,73 @@ describe('SubagentThreadPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
 
     expect(mockControlMutate).toHaveBeenCalledTimes(2);
+    expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('releases the composer after a definitive policy rejection', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Blocked guidance.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_steer' }));
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 400 } });
+    });
+
+    expect(screen.getByText('com_ui_subagent_control_reason_invalid_command')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_retry' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeEnabled();
+  });
+
+  it('retains an ambiguous invocation across closing and reopening the panel', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: { ...completedView, status: 'running', controlReceipts: [] },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const PanelHost = () => {
+      const current = useRecoilValue(activeSubagentPanel);
+      const setCurrent = useSetRecoilState(activeSubagentPanel);
+      return current == null ? (
+        <button type="button" onClick={() => setCurrent(selection)}>
+          {selection.subagentType}
+        </button>
+      ) : (
+        <SubagentThreadPanel selection={current} />
+      );
+    };
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <PanelHost />
+      </RecoilRoot>,
+    );
+
+    fireEvent.change(screen.getByLabelText('com_ui_subagent_control_message'), {
+      target: { value: 'Use the primary source.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_queue' }));
+    const firstCommand = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+    fireEvent.click(screen.getByRole('button', { name: selection.subagentType }));
+
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
     expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
   });
 

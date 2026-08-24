@@ -7,6 +7,8 @@ const {
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
   createSubagentControlHandler,
+  isValidSubagentControlRequest,
+  exemptAgentTriggerFromIpLimiter,
   createParentSubagentIndexHandler,
   createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
@@ -29,6 +31,8 @@ const {
   validateConvoAccess,
   createForkLimiters,
   configMiddleware,
+  messageIpLimiter,
+  messageUserLimiter,
   moderateText,
 } = require('~/server/middleware');
 const { forkConversation, duplicateConversation } = require('~/server/utils/import/fork');
@@ -63,13 +67,36 @@ const filterConversationTitle = createContentFilter({
 const filterSubagentControlMessage = createContentFilter({
   getFilters: (req) => req.config?.filters,
   getLegacyPii: (req) => req.config?.messageFilter?.pii,
-  extract: (req) => extractStoredMessageContent({ text: req.body?.message }),
+  extract: (req) =>
+    ['steer', 'queue', 'interrupt'].includes(req.body?.action)
+      ? extractStoredMessageContent({ text: req.body?.message })
+      : [],
 });
+const unless = (isExempt, middleware) => (req, res, next) =>
+  isExempt(req) ? next() : middleware(req, res, next);
+const subagentControlLimiters = [];
+if (isEnabled(process.env.LIMIT_MESSAGE_IP)) {
+  subagentControlLimiters.push(unless(exemptAgentTriggerFromIpLimiter, messageIpLimiter));
+}
+if (isEnabled(process.env.LIMIT_MESSAGE_USER)) {
+  subagentControlLimiters.push(messageUserLimiter);
+}
+
+function validateSubagentControlRequest(req, res, next) {
+  if (!isValidSubagentControlRequest(req.body)) {
+    return res.status(400).json({ error: 'Invalid subagent control request' });
+  }
+  next();
+}
 
 /** Present guidance to the existing moderation middleware as ordinary user text.
  * The controller continues to consume `message`; `text` is restored before it runs. */
 async function moderateSubagentControlMessage(req, res, next) {
   const body = (req.body ??= {});
+  if (!['steer', 'queue', 'interrupt'].includes(body.action)) {
+    next();
+    return;
+  }
   const hadText = Object.prototype.hasOwnProperty.call(body, 'text');
   const originalText = body.text;
   if (typeof body.message === 'string') {
@@ -161,6 +188,8 @@ router.get(
 router.post(
   '/:parentConversationId/subagents/:threadId/control',
   configMiddleware,
+  ...subagentControlLimiters,
+  validateSubagentControlRequest,
   filterSubagentControlMessage,
   moderateSubagentControlMessage,
   subagentControlHandler,

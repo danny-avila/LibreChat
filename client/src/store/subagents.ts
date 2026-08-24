@@ -2,6 +2,8 @@ import { atom, atomFamily } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   PartMetadata,
+  SubagentControlReceipt,
+  SubagentControlRequest,
   SubagentUpdatePhase,
   TMessageContentParts,
   SubagentUpdateEvent,
@@ -278,6 +280,30 @@ export type ActiveSubagentPanel = {
 
 export const activeSubagentPanel = atom<ActiveSubagentPanel | null>({
   key: 'activeSubagentPanel',
+  default: null,
+});
+
+export type SubagentControlUiReceipt = Omit<SubagentControlReceipt, 'status'> & {
+  status: SubagentControlReceipt['status'] | 'submitted';
+};
+
+export type SubagentControlUiState = {
+  receipt: SubagentControlUiReceipt;
+  /** Present only while the same invocation must be retried to resolve an
+   * ambiguous delivery. It is never replaced with a fresh invocation id. */
+  retry?: SubagentControlRequest;
+};
+
+export const subagentControlStateKey = (
+  parentConversationId: string,
+  threadId: string,
+  taskId: string,
+): string => `${parentConversationId}\u0000${threadId}\u0000${taskId}`;
+
+/** Parent-owned control state survives closing the activity panel or selecting
+ * another child. Durable receipts clear it after authoritative reconciliation. */
+export const subagentControlStateByTask = atomFamily<SubagentControlUiState | null, string>({
+  key: 'subagentControlStateByTask',
   default: null,
 });
 

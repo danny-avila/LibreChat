@@ -130,6 +130,39 @@ describe('subagent control handler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('reads a tenantless task seed only from tenantless rows', async () => {
+    const controlTask = jest.fn().mockResolvedValue({
+      status: 'accepted',
+      controlId: 'control-1',
+      task: { taskId, threadId, status: 'running' },
+    });
+    const deps = dependencies(controlTask);
+    deps.getConvoOwnership.mockResolvedValue({ ...parent, tenantId: undefined });
+    deps.getSubagentThreadForParent.mockResolvedValue({ ...child, tenantId: undefined });
+    const req = request({
+      taskId,
+      invocationId: 'invocation-1',
+      action: 'queue',
+      message: 'Check the primary source.',
+    });
+    req.user = { id: 'user-1' } as ServerRequest['user'];
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(req, res.value);
+
+    expect(deps.getMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: 'user-1',
+        conversationId: threadId,
+        messageId: `${taskId}:user`,
+        tenantId: { $exists: false },
+      }),
+      '+subagentTask',
+    );
+    expect(controlTask).toHaveBeenCalledTimes(1);
+  });
+
   it('returns an authoritative rejection when the selected task is no longer live', async () => {
     const deps = dependencies(
       jest.fn().mockResolvedValue({

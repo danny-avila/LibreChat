@@ -69,6 +69,18 @@ const commandFromRequest = (
   return { action: body.action, message: body.message };
 };
 
+/** Cheap structural admission shared by the Express route and authoritative
+ * handler. It must run before filters, moderation, or owner routing. */
+export const isValidSubagentControlRequest = (value: unknown): value is SubagentControlRequest => {
+  if (value == null || typeof value !== 'object') return false;
+  const body = value as Partial<SubagentControlRequest>;
+  return (
+    validId(body.taskId, MAX_TASK_ID_BYTES) &&
+    validId(body.invocationId, MAX_INVOCATION_ID_BYTES) &&
+    commandFromRequest(body as SubagentControlRequest) != null
+  );
+};
+
 const commandReceiptFields = (command: SubagentTaskControlCommand) => ({
   ...(command.action === 'cancel_message' ? { controlId: command.controlId } : {}),
   ...('message' in command ? { message: command.message } : {}),
@@ -139,8 +151,7 @@ export function createSubagentControlHandler(deps: Dependencies) {
       !validId(parentConversationId, MAX_THREAD_ID_BYTES) ||
       !validId(threadId, MAX_THREAD_ID_BYTES) ||
       parentConversationId === threadId ||
-      !validId(body.taskId, MAX_TASK_ID_BYTES) ||
-      !validId(body.invocationId, MAX_INVOCATION_ID_BYTES) ||
+      !isValidSubagentControlRequest(body) ||
       command == null
     ) {
       res.status(400).json({ error: 'Invalid subagent control request' });
@@ -193,7 +204,7 @@ export function createSubagentControlHandler(deps: Dependencies) {
           user: userId,
           conversationId: threadId,
           messageId: `${body.taskId}:user`,
-          ...(tenantId == null ? {} : { tenantId }),
+          ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
         },
         '+subagentTask',
       );

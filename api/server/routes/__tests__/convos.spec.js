@@ -7,8 +7,15 @@ const {
   generationJobManager,
   moderateText,
   moderatedTexts,
+  messageIpLimiter,
+  messageUserLimiter,
   subagentActivityHandlerInputs,
 } = require(MOCKS);
+
+const priorLimitMessageIp = process.env.LIMIT_MESSAGE_IP;
+const priorLimitMessageUser = process.env.LIMIT_MESSAGE_USER;
+process.env.LIMIT_MESSAGE_IP = 'true';
+process.env.LIMIT_MESSAGE_USER = 'true';
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () =>
@@ -90,6 +97,13 @@ describe('Convos Routes', () => {
     app.use('/api/convos', convosRouter);
   });
 
+  afterAll(() => {
+    if (priorLimitMessageIp == null) delete process.env.LIMIT_MESSAGE_IP;
+    else process.env.LIMIT_MESSAGE_IP = priorLimitMessageIp;
+    if (priorLimitMessageUser == null) delete process.env.LIMIT_MESSAGE_USER;
+    else process.env.LIMIT_MESSAGE_USER = priorLimitMessageUser;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     moderatedTexts.length = 0;
@@ -119,6 +133,8 @@ describe('Convos Routes', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(messageIpLimiter).toHaveBeenCalledTimes(1);
+    expect(messageUserLimiter).toHaveBeenCalledTimes(1);
     expect(moderateText).toHaveBeenCalledTimes(1);
     expect(moderatedTexts).toEqual(['Guide the child.']);
 
@@ -133,6 +149,30 @@ describe('Convos Routes', () => {
 
     expect(blocked.status).toBe(400);
     expect(blocked.body).toEqual({ error: 'content_filter_block' });
+    expect(moderateText).not.toHaveBeenCalled();
+
+    moderateText.mockClear();
+    const oversized = await request(app)
+      .post('/api/convos/parent/subagents/child/control')
+      .send({
+        taskId: 'task-1',
+        invocationId: 'invocation-3',
+        action: 'queue',
+        message: 'x'.repeat(4 * 1024 + 1),
+      });
+
+    expect(oversized.status).toBe(400);
+    expect(oversized.body).toEqual({ error: 'Invalid subagent control request' });
+    expect(moderateText).not.toHaveBeenCalled();
+
+    const cancelled = await request(app).post('/api/convos/parent/subagents/child/control').send({
+      taskId: 'task-1',
+      invocationId: 'invocation-4',
+      action: 'cancel',
+      text: 'This unused field must not reach moderation.',
+    });
+
+    expect(cancelled.status).toBe(200);
     expect(moderateText).not.toHaveBeenCalled();
   });
 
