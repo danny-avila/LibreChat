@@ -59,15 +59,23 @@ export default function EventSubagentActivityGroup({
       });
   }, [byMessageId, parentMessageIds]);
   const fullWidth = useRecoilValue(store.maximizeChatSpace);
+  const siblingParentMessageIds = useMemo(
+    () => Array.from(new Set(parentMessageIds)),
+    [parentMessageIds],
+  );
   if (children.length === 0) return null;
   return (
     <div
       className={cn(
-        'mx-auto min-w-0 flex-1 transition-[max-width] duration-theme-normal motion-reduce:transition-none',
+        'mx-auto min-w-0 flex-1 px-4 transition-[max-width] duration-theme-normal motion-reduce:transition-none sm:px-0',
         getMessageRowWidthClass({ fullWidth }),
       )}
     >
-      <EventSubagentRows conversationId={conversationId} eventChildren={children} />
+      <EventSubagentRows
+        conversationId={conversationId}
+        eventChildren={children}
+        siblingParentMessageIds={siblingParentMessageIds}
+      />
     </div>
   );
 }
@@ -75,9 +83,11 @@ export default function EventSubagentActivityGroup({
 function EventSubagentRows({
   conversationId,
   eventChildren,
+  siblingParentMessageIds,
 }: {
   conversationId: string;
   eventChildren: ParentSubagentSummary[];
+  siblingParentMessageIds: string[];
 }) {
   const localize = useLocalize();
   const agentsMap = useAgentsMapContext();
@@ -87,10 +97,6 @@ function EventSubagentRows({
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
-  const siblingParentMessageIds = useMemo(
-    () => Array.from(new Set(eventChildren.map((child) => child.parentMessageId))),
-    [eventChildren],
-  );
   const counts = useMemo(() => {
     const result = new Map<ParentSubagentSummary['status'], number>();
     eventChildren.forEach((child) => result.set(child.status, (result.get(child.status) ?? 0) + 1));

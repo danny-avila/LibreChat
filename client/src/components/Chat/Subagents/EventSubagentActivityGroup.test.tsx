@@ -96,7 +96,7 @@ describe('EventSubagentActivityGroup', () => {
 
     expect(
       screen.getByRole('region', { name: 'com_ui_subagent_activity' }).parentElement,
-    ).toHaveClass('md:max-w-3xl', 'xl:max-w-4xl');
+    ).toHaveClass('px-4', 'sm:px-0', 'md:max-w-3xl', 'xl:max-w-4xl');
     expect(screen.queryByRole('button', { name: /Visible Agent/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /com_ui_subagent_activity/ }));
     fireEvent.click(screen.getByRole('button', { name: /Visible Agent/ }));
@@ -116,6 +116,32 @@ describe('EventSubagentActivityGroup', () => {
         },
       }),
     );
+  });
+
+  it('retains a merged anchor that has no children yet', () => {
+    let selection: ActiveSubagentPanel | null = null;
+    const Observer = () => {
+      selection = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+
+    render(
+      <RecoilRoot>
+        <Observer />
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageIds={['parent-message', 'empty-assistant-message']}
+        />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /com_ui_subagent_activity/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Visible Agent/ }));
+
+    expect((selection as ActiveSubagentPanel | null)?.event?.siblingParentMessageIds).toEqual([
+      'parent-message',
+      'empty-assistant-message',
+    ]);
   });
 
   it('preserves every merged message anchor and uses explicit plural status labels', () => {
