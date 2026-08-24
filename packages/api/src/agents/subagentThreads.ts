@@ -315,6 +315,11 @@ function serializeScope(scope: Omit<SubagentThreadScope, 'version'>): string {
   return JSON.stringify({ version: SCOPE_VERSION, ...scope });
 }
 
+/** Builds the trusted live-owner routing scope after parent authorization. */
+export function createSubagentThreadScopeId(scope: Omit<SubagentThreadScope, 'version'>): string {
+  return serializeScope(scope);
+}
+
 function matchesTenant(actual: string | undefined, expected: string | undefined): boolean {
   return actual === expected;
 }

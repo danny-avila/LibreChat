@@ -6,6 +6,7 @@ const {
   deleteAgentCheckpoints,
   createArchiveAllHandler,
   createSubagentActivityStreamHandler,
+  createSubagentControlHandler,
   createParentSubagentIndexHandler,
   createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
@@ -67,6 +68,13 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
     subscribe: subagentThreadTaskStore.subscribeActivity.bind(subagentThreadTaskStore),
   },
 );
+const subagentControlHandler = createSubagentControlHandler({
+  getConvoOwnership: db.getConvoOwnership,
+  getSubagentThreadForParent: db.getSubagentThreadForParent,
+  getSubagentTaskControlReceipt: db.getSubagentTaskControlReceipt,
+  recordSubagentTaskControlReceipt: db.recordSubagentTaskControlReceipt,
+  store: subagentThreadTaskStore,
+});
 router.use(requireJwtAuth);
 
 const isValidProjectFilter = (projectId) =>
@@ -117,6 +125,7 @@ router.get(
   '/:parentConversationId/subagents/:threadId/tasks/:taskId/activity',
   subagentActivityStreamHandler,
 );
+router.post('/:parentConversationId/subagents/:threadId/control', subagentControlHandler);
 router.get('/:parentConversationId/subagents', parentSubagentIndexHandler);
 router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);
 

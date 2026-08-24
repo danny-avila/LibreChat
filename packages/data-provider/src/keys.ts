@@ -103,6 +103,7 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  subagentControl = 'subagentControl',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',

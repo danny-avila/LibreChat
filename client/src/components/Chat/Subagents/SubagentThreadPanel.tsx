@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, MessagesSquare, X } from 'lucide-react';
+import { v4 } from 'uuid';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { Bot, CornerDownRight, ListEnd, MessagesSquare, OctagonX, X, Zap } from 'lucide-react';
 import {
   Button,
+  Alert,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Textarea,
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
-import type { ParentSubagentTaskSummary } from 'librechat-data-provider';
+import type {
+  ParentSubagentTaskSummary,
+  SubagentControlAction,
+  SubagentControlReceipt,
+  SubagentControlRequest,
+} from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   ACTIVE_THREAD_REFRESH_MS,
   subagentThreadHasTaskEvidence,
   useForkConvoMutation,
+  useSubagentControlMutation,
   useSubagentThreadQuery,
 } from '~/data-provider';
 import {
@@ -36,6 +45,17 @@ import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 
 const EVENT_TASK_PAGE_SIZE = 3;
+
+const responseStatus = (error: unknown): number | undefined =>
+  typeof error === 'object' &&
+  error != null &&
+  'response' in error &&
+  typeof error.response === 'object' &&
+  error.response != null &&
+  'status' in error.response &&
+  typeof error.response.status === 'number'
+    ? error.response.status
+    : undefined;
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
@@ -168,6 +188,134 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
     },
   });
+  const controlTask = useSubagentControlMutation();
+  const [controlMessage, setControlMessage] = useState('');
+  const [transientControl, setTransientControl] = useState<
+    | (Omit<SubagentControlReceipt, 'status'> & {
+        status: SubagentControlReceipt['status'] | 'submitted';
+      })
+    | null
+  >(null);
+  const [retryControl, setRetryControl] = useState<SubagentControlRequest | null>(null);
+  const [controlInaccessible, setControlInaccessible] = useState(false);
+  const [controlsClosed, setControlsClosed] = useState(false);
+  const controlInFlightRef = useRef(false);
+  const controlSelectionRef = useRef(`${threadId}\u0000${taskId}`);
+  useEffect(() => {
+    controlSelectionRef.current = `${threadId}\u0000${taskId}`;
+    setControlMessage('');
+    setTransientControl(null);
+    setRetryControl(null);
+    setControlInaccessible(false);
+    setControlsClosed(false);
+    controlInFlightRef.current = false;
+  }, [taskId, threadId]);
+
+  useEffect(() => {
+    if (
+      transientControl == null ||
+      !data?.controlReceipts?.some(
+        (receipt) => receipt.invocationId === transientControl.invocationId,
+      )
+    ) {
+      return;
+    }
+    /** The durable view is authoritative after refresh. Drop mutation-only state
+     * once the same invocation appears there so stale failure/retry UI cannot
+     * outlive a successfully persisted receipt. */
+    setTransientControl(null);
+    setRetryControl(null);
+  }, [data?.controlReceipts, transientControl]);
+
+  const submitControl = useCallback(
+    (action: SubagentControlAction, controlId?: string, retry?: SubagentControlRequest) => {
+      if (selection.durable == null || controlTask.isLoading || controlInFlightRef.current) return;
+      let command: SubagentControlRequest;
+      if (retry != null) {
+        command = retry;
+      } else if (action === 'cancel_message') {
+        command = {
+          taskId: selection.durable.taskId,
+          invocationId: v4(),
+          action,
+          controlId,
+        };
+      } else if (action === 'cancel') {
+        command = {
+          taskId: selection.durable.taskId,
+          invocationId: v4(),
+          action,
+        };
+      } else {
+        command = {
+          taskId: selection.durable.taskId,
+          invocationId: v4(),
+          action,
+          message: controlMessage.trim(),
+        };
+      }
+      if (
+        action !== 'cancel' &&
+        action !== 'cancel_message' &&
+        (command.message == null || command.message === '')
+      ) {
+        return;
+      }
+      const now = new Date().toISOString();
+      setTransientControl({
+        invocationId: command.invocationId,
+        ...(command.controlId == null ? {} : { controlId: command.controlId }),
+        action: command.action,
+        status: 'submitted',
+        createdAt: now,
+        updatedAt: now,
+        ...(command.message == null ? {} : { message: command.message }),
+      });
+      setRetryControl(command);
+      controlInFlightRef.current = true;
+      const submittedSelection = `${selection.durable.threadId}\u0000${selection.durable.taskId}`;
+      controlTask.mutate(
+        {
+          parentConversationId: selection.parentConversationId,
+          threadId: selection.durable.threadId,
+          command,
+        },
+        {
+          onSuccess: ({ receipt }) => {
+            if (controlSelectionRef.current !== submittedSelection) return;
+            controlInFlightRef.current = false;
+            setTransientControl(receipt);
+            if (receipt.reason === 'task_not_running') setControlsClosed(true);
+            if (receipt.status !== 'failed') setRetryControl(null);
+            if (receipt.status === 'accepted' || receipt.status === 'applied') {
+              setControlMessage('');
+            }
+          },
+          onError: (error) => {
+            if (controlSelectionRef.current !== submittedSelection) return;
+            controlInFlightRef.current = false;
+            const inaccessible = responseStatus(error) === 404;
+            if (inaccessible) {
+              setControlInaccessible(true);
+              setControlsClosed(true);
+              setRetryControl(null);
+            }
+            setTransientControl((current) =>
+              current == null
+                ? null
+                : {
+                    ...current,
+                    status: 'failed',
+                    updatedAt: new Date().toISOString(),
+                    reason: inaccessible ? 'task_inaccessible' : 'owner_unavailable',
+                  },
+            );
+          },
+        },
+      );
+    },
+    [controlMessage, controlTask, selection.durable, selection.parentConversationId],
+  );
 
   const close = useCallback(() => {
     resetSelection();
@@ -215,25 +363,40 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const activity = useMemo(() => {
     if (selection.durable == null) return liveActivity;
     if (data == null) {
-      return progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
+      const activityWithoutData =
+        progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
+      return transientControl == null
+        ? activityWithoutData
+        : { ...activityWithoutData, controls: [transientControl] };
     }
     const durable = adaptDurableThreadActivity(data, selection.durable.taskId);
-    if (
+    const useLiveItems =
       (durable.status === 'running' || durable.status === 'dispatched') &&
-      liveActivity.items.length > 0
-    ) {
-      return {
-        ...durable,
-        prompt: durable.prompt ?? liveActivity.prompt,
-        items: liveActivity.items,
-      };
-    }
-    return {
+      liveActivity.items.length > 0;
+    const mergedItems =
+      !useLiveItems && durable.items.length > 0 ? durable.items : liveActivity.items;
+    const merged = {
       ...durable,
       prompt: durable.prompt ?? liveActivity.prompt,
-      items: durable.items.length > 0 ? durable.items : liveActivity.items,
+      items: mergedItems,
     };
-  }, [data, liveActivity, progress, selection.durable]);
+    if (
+      transientControl == null ||
+      (merged.controls ?? []).some(
+        (receipt) => receipt.invocationId === transientControl.invocationId,
+      )
+    ) {
+      return merged;
+    }
+    return { ...merged, controls: [...(merged.controls ?? []), transientControl] };
+  }, [data, liveActivity, progress, selection.durable, transientControl]);
+  const controlAvailable =
+    selection.durable != null &&
+    data?.status === 'running' &&
+    !controlInaccessible &&
+    !controlsClosed;
+  const controlPending = controlTask.isLoading || transientControl?.status === 'submitted';
+  const showControlFooter = controlAvailable || transientControl?.reason === 'task_inaccessible';
   const canContinueAsChat =
     selection.host === 'conversation' &&
     selection.durable != null &&
@@ -288,6 +451,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           activity={activity}
           state={panelState}
           embedded
+          onCancelControl={
+            controlAvailable ? (controlId) => submitControl('cancel_message', controlId) : undefined
+          }
         />
       );
     }
@@ -417,9 +583,98 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
             activity={activity}
             state={panelState}
+            onCancelControl={
+              controlAvailable
+                ? (controlId) => submitControl('cancel_message', controlId)
+                : undefined
+            }
           />
         )}
       </ApprovalProvider>
+      {showControlFooter && (
+        <div className="shrink-0 border-t border-border-light p-3">
+          {transientControl?.status === 'failed' && (
+            <Alert variant="error" className="mb-2 flex items-center gap-2">
+              <span className="min-w-0 flex-1">
+                {localize(
+                  transientControl.reason === 'task_inaccessible'
+                    ? 'com_ui_subagent_control_reason_task_inaccessible'
+                    : 'com_ui_subagent_control_reason_owner_unavailable',
+                )}
+              </span>
+              {retryControl != null && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={controlTask.isLoading}
+                  onClick={() =>
+                    submitControl(retryControl.action, retryControl.controlId, retryControl)
+                  }
+                >
+                  {localize('com_ui_retry')}
+                </Button>
+              )}
+            </Alert>
+          )}
+          {controlAvailable && (
+            <>
+              <Textarea
+                value={controlMessage}
+                onChange={(event) => setControlMessage(event.target.value)}
+                placeholder={localize('com_ui_subagent_control_placeholder')}
+                aria-label={localize('com_ui_subagent_control_message')}
+                maxLength={4 * 1024}
+                rows={2}
+                disabled={controlPending}
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={controlPending || controlMessage.trim() === ''}
+                  onClick={() => submitControl('steer')}
+                >
+                  <CornerDownRight size={14} aria-hidden />
+                  {localize('com_ui_steer')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={controlPending || controlMessage.trim() === ''}
+                  onClick={() => submitControl('queue')}
+                >
+                  <ListEnd size={14} aria-hidden />
+                  {localize('com_ui_queue')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={controlPending || controlMessage.trim() === ''}
+                  onClick={() => submitControl('interrupt')}
+                >
+                  <Zap size={14} aria-hidden />
+                  {localize('com_ui_subagent_interrupt')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={controlPending}
+                  onClick={() => submitControl('cancel')}
+                  className="ml-auto text-status-error"
+                >
+                  <OctagonX size={14} aria-hidden />
+                  {localize('com_ui_subagent_cancel_task')}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </aside>
   );
 }
@@ -442,7 +697,7 @@ function HistoricalEventTaskActivity({
   const activity = useMemo(
     () =>
       data == null
-        ? { title, status: task.status, items: [] }
+        ? { title, status: task.status, items: [], controls: [] }
         : adaptDurableThreadActivity(data, task.taskId),
     [data, task.status, task.taskId, title],
   );

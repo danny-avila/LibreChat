@@ -1,0 +1,307 @@
+import type { IConversation } from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
+import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import { createSubagentControlHandler } from './control';
+
+const parentConversationId = 'parent-conversation';
+const threadId = 'child-thread';
+const taskId = 'task-1';
+const parent = {
+  conversationId: parentConversationId,
+  user: 'user-1',
+  tenantId: 'tenant-1',
+} as IConversation;
+const child = {
+  conversationId: threadId,
+  user: 'user-1',
+  tenantId: 'tenant-1',
+  subagentThread: {
+    rootConversationId: parentConversationId,
+    parentConversationId,
+    parentMessageId: 'parent-message',
+    parentToolCallId: 'parent-tool-call',
+    parentAgentId: 'parent-agent',
+    subagentType: 'researcher',
+    subagentKind: 'agent',
+    depth: 1,
+  },
+  subagentThreadLease: {
+    token: 'lease-token',
+    taskId,
+    expiresAt: new Date('2099-08-24T12:00:00.000Z'),
+  },
+} as IConversation;
+
+const response = () => {
+  const json = jest.fn();
+  const status = jest.fn(() => ({ json }));
+  return { value: { status } as unknown as Response, status, json };
+};
+
+const request = (body: Record<string, unknown>): ServerRequest =>
+  ({
+    params: { parentConversationId, threadId },
+    body,
+    user: { id: 'user-1', tenantId: 'tenant-1' },
+  }) as ServerRequest;
+
+const dependencies = (controlTask = jest.fn()) => ({
+  getConvoOwnership: jest.fn().mockResolvedValue(parent),
+  getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+  getSubagentTaskControlReceipt: jest.fn().mockResolvedValue(null),
+  recordSubagentTaskControlReceipt: jest.fn().mockResolvedValue(true),
+  store: { controlTask },
+});
+
+describe('subagent control handler', () => {
+  it('returns one bounded public accepted receipt from the authorized live owner', async () => {
+    const controlTask = jest.fn().mockResolvedValue({
+      status: 'accepted',
+      controlId: 'control-1',
+      task: { taskId, threadId, status: 'running' },
+    });
+    const deps = dependencies(controlTask);
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Check the primary source.',
+      }),
+      res.value,
+    );
+
+    expect(controlTask).toHaveBeenCalledWith(
+      JSON.stringify({
+        version: 1,
+        userId: 'user-1',
+        parentConversationId,
+        tenantId: 'tenant-1',
+      }),
+      taskId,
+      { action: 'queue', message: 'Check the primary source.' },
+      'invocation-1',
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        controlId: 'control-1',
+        action: 'queue',
+        status: 'accepted',
+      }),
+    });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('task');
+  });
+
+  it('fails parent authorization closed without contacting a task owner', async () => {
+    const deps = dependencies();
+    deps.getConvoOwnership.mockResolvedValue(null);
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel_message',
+        controlId: 'queued-control',
+      }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('returns an authoritative rejection when the selected task is no longer live', async () => {
+    const deps = dependencies();
+    deps.getSubagentThreadForParent.mockResolvedValue({
+      ...child,
+      subagentThreadLease: undefined,
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel_message',
+        controlId: 'queued-control',
+      }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(deps.recordSubagentTaskControlReceipt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        conversationId: threadId,
+        taskId,
+        receipt: expect.objectContaining({
+          invocationId: 'invocation-1',
+          fingerprint: expect.any(String),
+          status: 'rejected',
+          reason: 'task_not_running',
+        }),
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        controlId: 'queued-control',
+        action: 'cancel_message',
+        status: 'rejected',
+        reason: 'task_not_running',
+      }),
+    });
+  });
+
+  it('replays the durable authoritative receipt before rejecting an expired lease', async () => {
+    const deps = dependencies();
+    deps.getSubagentThreadForParent.mockResolvedValue({
+      ...child,
+      subagentThreadLease: undefined,
+    });
+    deps.getSubagentTaskControlReceipt.mockResolvedValue({
+      invocationId: 'invocation-1',
+      fingerprint: controlFingerprint({ action: 'queue', message: 'Check the primary source.' }),
+      controlId: 'control-1',
+      action: 'queue',
+      status: 'applied',
+      createdAt: new Date('2026-08-24T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-24T12:00:01.000Z'),
+      boundary: 'turn',
+      message: 'Check the primary source.',
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Check the primary source.',
+      }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(deps.recordSubagentTaskControlReceipt).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'applied',
+        boundary: 'turn',
+      }),
+    });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('fingerprint');
+  });
+
+  it('rejects invocation-id reuse with different command content', async () => {
+    const deps = dependencies();
+    deps.getSubagentTaskControlReceipt.mockResolvedValue({
+      invocationId: 'invocation-1',
+      fingerprint: controlFingerprint({ action: 'queue', message: 'Original command.' }),
+      controlId: 'control-1',
+      action: 'queue',
+      status: 'accepted',
+      createdAt: new Date('2026-08-24T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+      message: 'Original command.',
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Different command.',
+      }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(deps.recordSubagentTaskControlReceipt).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'rejected',
+        reason: 'invalid_command',
+      }),
+    });
+  });
+
+  it('preserves a missing cancel_message target in the authoritative rejection', async () => {
+    const deps = dependencies(
+      jest.fn().mockResolvedValue({
+        status: 'control_not_found',
+        task: { taskId, threadId, status: 'running' },
+      }),
+    );
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel_message',
+        controlId: 'missing-control',
+      }),
+      res.value,
+    );
+
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        controlId: 'missing-control',
+        action: 'cancel_message',
+        status: 'rejected',
+        reason: 'control_not_found',
+      }),
+    });
+  });
+
+  it('makes owner unavailability explicit so the same invocation can be retried', async () => {
+    const deps = dependencies(jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()));
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({ taskId, invocationId: 'invocation-1', action: 'interrupt', message: 'Stop.' }),
+      res.value,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'failed',
+        reason: 'owner_unavailable',
+      }),
+    });
+  });
+
+  it('rejects malformed controls before authorization or routing', async () => {
+    const deps = dependencies();
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({ taskId, invocationId: 'invocation-1', action: 'steer', message: ' ' }),
+      res.value,
+    );
+
+    expect(deps.getConvoOwnership).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+});

@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Constants, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
+import type {
+  ParentSubagentIndex,
+  SubagentControlRequest,
+  SubagentControlResponse,
+  SubagentThreadView,
+} from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
 
 export const ACTIVE_THREAD_REFRESH_MS = 2_000;
@@ -117,4 +122,36 @@ export const useSubagentThreadQuery = (
     ...query,
     isReadinessPending: isSubagentReadinessPending(query.error, readiness.deadline),
   };
+};
+
+export type SubagentControlVariables = {
+  parentConversationId: string;
+  threadId: string;
+  command: SubagentControlRequest;
+};
+
+export const useSubagentControlMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation<SubagentControlResponse, Error, SubagentControlVariables>(
+    ({ parentConversationId, threadId, command }) =>
+      dataService.controlSubagentTask(parentConversationId, threadId, command),
+    {
+      mutationKey: [MutationKeys.subagentControl],
+      onSuccess: ({ receipt }, { parentConversationId, threadId, command }) => {
+        const key = [QueryKeys.subagentThread, parentConversationId, threadId, command.taskId];
+        queryClient.setQueryData<SubagentThreadView | undefined>(key, (current) => {
+          if (current == null) return current;
+          const receipts = current.controlReceipts ?? [];
+          return {
+            ...current,
+            controlReceipts: [
+              ...receipts.filter((candidate) => candidate.invocationId !== receipt.invocationId),
+              receipt,
+            ],
+          };
+        });
+        void queryClient.invalidateQueries(key);
+      },
+    },
+  );
 };

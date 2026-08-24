@@ -1,0 +1,233 @@
+import type {
+  SubagentControlAction,
+  SubagentControlReceipt,
+  SubagentControlRequest,
+  SubagentControlResponse,
+} from 'librechat-data-provider';
+import type { SubagentTaskControlCommand, SubagentTaskControlResult } from '@librechat/agents';
+import type {
+  ConversationMethods,
+  ISubagentTaskControlReceipt,
+  MessageMethods,
+} from '@librechat/data-schemas';
+import type { Response } from 'express';
+import type { ServerRequest } from '~/types';
+import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
+import { createSubagentThreadScopeId } from './subagentThreads';
+
+const MAX_ID_BYTES = 512;
+const MAX_INVOCATION_ID_BYTES = 128;
+const MAX_CONTROL_MESSAGE_CHARS = 4 * 1024;
+
+type ControlStore = {
+  controlTask(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): Promise<SubagentTaskControlResult>;
+};
+
+type Dependencies = Pick<ConversationMethods, 'getConvoOwnership' | 'getSubagentThreadForParent'> &
+  Pick<MessageMethods, 'getSubagentTaskControlReceipt' | 'recordSubagentTaskControlReceipt'> & {
+    store: ControlStore;
+  };
+
+type Params = {
+  parentConversationId?: string;
+  threadId?: string;
+};
+
+const validId = (value: unknown, byteLimit = MAX_ID_BYTES): value is string =>
+  typeof value === 'string' && value.trim() !== '' && Buffer.byteLength(value, 'utf8') <= byteLimit;
+
+const validAction = (value: unknown): value is SubagentControlAction =>
+  value === 'steer' ||
+  value === 'queue' ||
+  value === 'interrupt' ||
+  value === 'cancel' ||
+  value === 'cancel_message';
+
+const commandFromRequest = (
+  body: SubagentControlRequest,
+): SubagentTaskControlCommand | undefined => {
+  if (!validAction(body.action)) return undefined;
+  if (body.action === 'cancel') return { action: 'cancel' };
+  if (body.action === 'cancel_message') {
+    return validId(body.controlId)
+      ? { action: 'cancel_message', controlId: body.controlId }
+      : undefined;
+  }
+  if (
+    typeof body.message !== 'string' ||
+    body.message.trim() === '' ||
+    body.message.length > MAX_CONTROL_MESSAGE_CHARS
+  ) {
+    return undefined;
+  }
+  return { action: body.action, message: body.message };
+};
+
+const commandReceiptFields = (command: SubagentTaskControlCommand) => ({
+  ...(command.action === 'cancel_message' ? { controlId: command.controlId } : {}),
+  ...('message' in command ? { message: command.message } : {}),
+});
+
+const responseReceipt = (
+  invocationId: string,
+  command: SubagentTaskControlCommand,
+  result: SubagentTaskControlResult,
+): SubagentControlReceipt => {
+  const now = new Date().toISOString();
+  let status: SubagentControlReceipt['status'] = 'rejected';
+  let reason: string | undefined;
+  if (result.status === 'accepted')
+    status = command.action === 'cancel_message' ? 'applied' : 'accepted';
+  if (result.status === 'cancelled') status = 'applied';
+  if (result.status === 'not_running') reason = 'task_not_running';
+  if (result.status === 'control_not_found') reason = 'control_not_found';
+  if (result.status === 'invalid') reason = 'invalid_command';
+  if (result.status === 'not_found') {
+    status = 'failed';
+    reason = 'owner_unavailable';
+  }
+  return {
+    invocationId,
+    ...commandReceiptFields(command),
+    ...(command.action !== 'cancel_message' &&
+    result.status === 'accepted' &&
+    result.controlId != null
+      ? { controlId: result.controlId }
+      : {}),
+    action: command.action,
+    status,
+    createdAt: now,
+    updatedAt: now,
+    ...(reason == null ? {} : { reason }),
+  };
+};
+
+const publicStoredReceipt = ({
+  fingerprint: _fingerprint,
+  createdAt,
+  updatedAt,
+  ...receipt
+}: ISubagentTaskControlReceipt): SubagentControlReceipt => ({
+  ...receipt,
+  createdAt: createdAt.toISOString(),
+  updatedAt: updatedAt.toISOString(),
+});
+
+/** Applies one parent-authorized control to the live owner and returns only its public receipt. */
+export function createSubagentControlHandler(deps: Dependencies) {
+  return async (req: ServerRequest, res: Response): Promise<void> => {
+    const userId = req.user?.id;
+    const tenantId = req.user?.tenantId || undefined;
+    const { parentConversationId, threadId } = req.params as Params;
+    const body = (req.body ?? {}) as Partial<SubagentControlRequest>;
+    const command = commandFromRequest(body as SubagentControlRequest);
+    if (
+      !userId ||
+      !validId(parentConversationId) ||
+      !validId(threadId) ||
+      parentConversationId === threadId ||
+      !validId(body.taskId) ||
+      !validId(body.invocationId, MAX_INVOCATION_ID_BYTES) ||
+      command == null
+    ) {
+      res.status(400).json({ error: 'Invalid subagent control request' });
+      return;
+    }
+
+    try {
+      const [parent, child] = await Promise.all([
+        deps.getConvoOwnership(userId, parentConversationId, tenantId ?? null),
+        deps.getSubagentThreadForParent({
+          user: userId,
+          parentConversationId,
+          conversationId: threadId,
+          ...(tenantId == null ? {} : { tenantId }),
+        }),
+      ]);
+      if (
+        parent == null ||
+        child?.subagentThread?.parentConversationId !== parentConversationId ||
+        parent.tenantId !== tenantId ||
+        child.tenantId !== tenantId
+      ) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      const fingerprint = controlFingerprint(command);
+      const existing = await deps.getSubagentTaskControlReceipt({
+        userId,
+        conversationId: threadId,
+        taskId: body.taskId,
+        invocationId: body.invocationId,
+        ...(tenantId == null ? {} : { tenantId }),
+      });
+      if (existing != null) {
+        const receipt =
+          existing.fingerprint === fingerprint
+            ? publicStoredReceipt(existing)
+            : responseReceipt(body.invocationId, command, {
+                status: 'invalid',
+                message: 'This control invocation id was already used for a different command.',
+              });
+        res.status(200).json({ receipt } satisfies SubagentControlResponse);
+        return;
+      }
+      if (
+        child.subagentThreadLease?.taskId !== body.taskId ||
+        child.subagentThreadLease.expiresAt.getTime() <= Date.now()
+      ) {
+        const now = new Date();
+        const storedReceipt: ISubagentTaskControlReceipt = {
+          invocationId: body.invocationId,
+          fingerprint,
+          ...commandReceiptFields(command),
+          action: command.action,
+          status: 'rejected',
+          createdAt: now,
+          updatedAt: now,
+          reason: 'task_not_running',
+        };
+        const persisted = await deps.recordSubagentTaskControlReceipt({
+          userId,
+          conversationId: threadId,
+          taskId: body.taskId,
+          receipt: storedReceipt,
+          ...(tenantId == null ? {} : { tenantId }),
+        });
+        if (!persisted) throw new SubagentTaskOwnerUnavailableError();
+        res
+          .status(200)
+          .json({ receipt: publicStoredReceipt(storedReceipt) } satisfies SubagentControlResponse);
+        return;
+      }
+      const scopeId = createSubagentThreadScopeId({
+        userId,
+        parentConversationId,
+        ...(tenantId == null ? {} : { tenantId }),
+      });
+      const result = await deps.store.controlTask(scopeId, body.taskId, command, body.invocationId);
+      const receipt = responseReceipt(body.invocationId, command, result);
+      res.status(200).json({ receipt } satisfies SubagentControlResponse);
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) {
+        const receipt: SubagentControlReceipt = {
+          invocationId: body.invocationId,
+          ...commandReceiptFields(command),
+          action: command.action,
+          status: 'failed',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          reason: 'owner_unavailable',
+        };
+        res.status(503).json({ receipt } satisfies SubagentControlResponse);
+        return;
+      }
+      res.status(500).json({ error: 'Failed to control subagent task' });
+    }
+  };
+}
