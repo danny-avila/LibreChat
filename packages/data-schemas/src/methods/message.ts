@@ -339,7 +339,7 @@ export interface MessageMethods {
     taskId: string;
     tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
-  }): Promise<boolean | 'conflict'>;
+  }): Promise<boolean | 'unchanged' | 'conflict'>;
   getSubagentTaskControlReceipt(input: {
     userId: string;
     conversationId: string;
@@ -964,7 +964,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     taskId: string;
     tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
-  }): Promise<boolean | 'conflict'> {
+  }): Promise<boolean | 'unchanged' | 'conflict'> {
     const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
     const validStatuses = new Set(['accepted', 'applied', 'rejected', 'failed']);
     if (
@@ -1012,7 +1012,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const current = currentMessage.subagentTask?.controlReceipts ?? [];
       const retained = retainSubagentControlReceipts(current, receipt);
       if (retained.status === 'conflict') return 'conflict';
-      if (retained.status === 'unchanged') return true;
+      if (retained.status === 'unchanged') return 'unchanged';
       const next = retained.receipts;
       const currentFilter =
         currentMessage.subagentTask?.controlReceipts == null
@@ -1159,15 +1159,25 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     })
       .select({ updatedAt: 1, 'subagentTask.status': 1, _id: 0 })
       .lean<Pick<IMessage, 'updatedAt' | 'subagentTask'> | null>();
+    /** A committed cancel receipt is itself the authoritative cancellation
+     * boundary. The terminal row is written asynchronously and may not exist if
+     * the owner exits between those two durable commits. */
+    const replayStatus =
+      terminal?.subagentTask?.status ??
+      (receipt.action === 'cancel' && receipt.status === 'applied' ? 'cancelled' : status);
     return {
       receipt,
       task: {
         taskId,
         threadId: input.conversationId,
         subagentType,
-        status: terminal?.subagentTask?.status ?? status,
+        status: replayStatus,
         createdAt: input.createdAt,
-        updatedAt: terminal?.updatedAt ?? input.updatedAt,
+        updatedAt:
+          terminal?.updatedAt ??
+          (receipt.action === 'cancel' && receipt.status === 'applied'
+            ? receipt.updatedAt
+            : input.updatedAt),
       },
     };
   }

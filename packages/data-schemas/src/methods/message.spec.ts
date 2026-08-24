@@ -2365,12 +2365,14 @@ describe('Message Operations', () => {
         }),
       ).resolves.toBe(true);
       /** A delayed accepted replay cannot downgrade the durable terminal receipt. */
-      await recordSubagentTaskControlReceipt({
-        userId: 'user123',
-        conversationId,
-        taskId: 'task-1',
-        receipt: accepted,
-      });
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe('unchanged');
       await expect(
         recordSubagentTaskControlReceipt({
           userId: 'another-user',
@@ -2583,6 +2585,59 @@ describe('Message Operations', () => {
           },
         }),
       ).resolves.toBe(false);
+    });
+
+    it('replays an applied cancellation as cancelled before its terminal row exists', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      await mongoose.models.Conversation.create({
+        user: 'user123',
+        conversationId,
+        title: 'Cancelling child thread',
+        endpoint: 'agents',
+        subagentThread: {
+          rootConversationId: 'parent-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      const now = new Date('2026-08-24T12:00:00.000Z');
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: 'cancel-invocation',
+            fingerprint: 'cancel-fingerprint',
+            action: 'cancel',
+            status: 'applied',
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        getSubagentTaskControlReplay({
+          userId: 'user123',
+          parentConversationId: 'parent-conversation',
+          taskId: 'task-1',
+          invocationId: 'cancel-invocation',
+        }),
+      ).resolves.toEqual({
+        receipt: expect.objectContaining({ invocationId: 'cancel-invocation' }),
+        task: expect.objectContaining({
+          taskId: 'task-1',
+          threadId: conversationId,
+          status: 'cancelled',
+          updatedAt: now,
+        }),
+      });
     });
 
     it('rejects an invocation fingerprint conflict without reporting persistence', async () => {
