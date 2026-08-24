@@ -90,14 +90,24 @@ jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
 
 jest.mock('./SubagentActivity', () => ({
   __esModule: true,
+  SubagentActivityScrollSurface: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="shared-scroll-surface">{children}</div>
+  ),
   default: ({
     activity,
+    activityId,
     state,
   }: {
     activity: { status: string; prompt?: string; items: Array<{ type: string; text?: string }> };
+    activityId?: string;
     state: string;
   }) => (
-    <div data-testid="shared-activity" data-state={state} data-status={activity.status}>
+    <div
+      data-testid="shared-activity"
+      data-activity-id={activityId}
+      data-state={state}
+      data-status={activity.status}
+    >
       {activity.prompt}
       {activity.items.map((item, index) => (
         <span key={index}>{item.text ?? item.type}</span>
@@ -550,6 +560,9 @@ describe('SubagentThreadPanel', () => {
       { refetchInterval: 2000 },
     );
     expect(mockUseSubagentActivityStream).toHaveBeenLastCalledWith(eventSelection, true);
+    expect(
+      screen.queryByRole('combobox', { name: 'com_ui_subagent_turn' }),
+    ).not.toBeInTheDocument();
     await waitFor(() => expect(refetch).toHaveBeenCalled());
   });
 
@@ -627,7 +640,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
   });
 
-  it('navigates event actors and exact durable turns through the same panel', () => {
+  it('navigates event actors and renders exact durable turns as one chronological thread', () => {
     const first: ParentSubagentSummary = {
       threadId: 'child-thread',
       parentMessageId: 'parent-message',
@@ -656,7 +669,10 @@ describe('SubagentThreadPanel', () => {
       tasks: [{ taskId: 'task-2', status: 'running' }],
       status: 'running',
     };
-    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByMessage = new Map([
+      ['parent-message', [first]],
+      ['assistant-message', [second]],
+    ]);
     mockParentChildrenByThread = new Map([
       [first.threadId, first],
       [second.threadId, second],
@@ -669,7 +685,11 @@ describe('SubagentThreadPanel', () => {
     });
     const eventSelection: ActiveSubagentPanel = {
       ...selection,
-      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+      event: {
+        actorId: 'actor-1',
+        progressKey: 'event-task:child-thread:task',
+        siblingParentMessageIds: ['parent-message', 'assistant-message'],
+      },
     };
     let active: ActiveSubagentPanel | null = eventSelection;
     const Observer = () => {
@@ -684,9 +704,19 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_earlier_turn' }));
-    expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
-    expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
+    expect(screen.queryByRole('button', { name: 'com_ui_subagent_turn' })).not.toBeInTheDocument();
+    const turns = screen.getAllByTestId('shared-activity');
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toHaveAttribute(
+      'data-activity-id',
+      'parent-message\u0000tool-call\u0000task-earlier',
+    );
+    expect(turns[1]).toHaveAttribute('data-activity-id', 'parent-message\u0000tool-call\u0000task');
+    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'task-earlier',
+    );
 
     fireEvent.click(screen.getByRole('option', { name: /Analyst Two/ }));
     expect(active).toEqual(
@@ -695,10 +725,115 @@ describe('SubagentThreadPanel', () => {
         event: {
           actorId: 'actor-2',
           progressKey: 'event-task:child-thread-2:task-2',
+          siblingParentMessageIds: ['parent-message', 'assistant-message'],
         },
         durable: { threadId: 'child-thread-2', taskId: 'task-2' },
       }),
     );
     expect(mockRefreshParentChildren).toHaveBeenCalled();
+  });
+
+  it('follows a newly appended latest turn while preserving the continuous history', async () => {
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'running',
+      latestTaskId: 'task-new',
+      tasks: [
+        { taskId: 'task-new', status: 'running' },
+        { taskId: 'task-old', status: 'completed' },
+      ],
+      tasksTruncated: false,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const staleSelection: ActiveSubagentPanel = {
+      ...selection,
+      durable: { threadId: 'child-thread', taskId: 'task-old' },
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task-old' },
+    };
+    let active: ActiveSubagentPanel | null = staleSelection;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, staleSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={staleSelection} />
+      </RecoilRoot>,
+    );
+
+    await waitFor(() =>
+      expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-new' }),
+    );
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(2);
+  });
+
+  it('loads retained event history in bounded pages and marks an omitted beginning', () => {
+    const tasks = Array.from({ length: 5 }, (_, index) => ({
+      taskId: `task-${5 - index}`,
+      status: 'completed' as const,
+    }));
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task-5',
+      tasks,
+      tasksTruncated: true,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      durable: { threadId: 'child-thread', taskId: 'task-5' },
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task-5' },
+    };
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(3);
+    expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
+      new Set(['task-5', 'task-4', 'task-3']),
+    );
+    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_load_more' }));
+
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(5);
+    expect(new Set(mockUseSubagentThreadQuery.mock.calls.map((call) => call[2]))).toEqual(
+      new Set(['task-5', 'task-4', 'task-3', 'task-2', 'task-1']),
+    );
+    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
   });
 });

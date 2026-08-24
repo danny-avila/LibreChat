@@ -1,8 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
-import SubagentActivity from './SubagentActivity';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -335,6 +335,44 @@ describe('SubagentActivity', () => {
     );
   });
 
+  it('renders an embedded turn without creating a nested scroll surface', () => {
+    const { container } = render(<SubagentActivity activity={base} embedded />);
+
+    expect(container.querySelector('[data-subagent-thread-turn]')).toBeInTheDocument();
+    expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(screen.getByText('Final answer.')).toBeInTheDocument();
+  });
+
+  it('keeps the shared scroll surface pinned when activity grows at the bottom', () => {
+    let resize!: ResizeObserverCallback;
+    const resizeObserver = window.ResizeObserver as unknown as jest.Mock;
+    const originalImplementation = resizeObserver.getMockImplementation();
+    resizeObserver.mockImplementation((callback: ResizeObserverCallback) => {
+      resize = callback;
+      return { observe: jest.fn(), disconnect: jest.fn(), unobserve: jest.fn() };
+    });
+
+    const { container, unmount } = render(
+      <SubagentActivityScrollSurface padded={false}>
+        {/* eslint-disable-next-line i18next/no-literal-string */}
+        <div>Growing timeline</div>
+      </SubagentActivityScrollSurface>,
+    );
+    const surface = container.querySelector<HTMLElement>('[data-subagent-activity-scroll-surface]');
+    expect(surface).not.toBeNull();
+    Object.defineProperty(surface, 'scrollHeight', { configurable: true, value: 640 });
+
+    act(() => resize([], {} as ResizeObserver));
+    expect(surface?.scrollTop).toBe(640);
+
+    unmount();
+    if (originalImplementation == null) {
+      resizeObserver.mockReset();
+    } else {
+      resizeObserver.mockImplementation(originalImplementation);
+    }
+  });
+
   it('renders a sanitized reasoning marker through regular ContentParts', () => {
     render(
       <SubagentActivity
@@ -382,11 +420,13 @@ describe('SubagentActivity', () => {
     expect(screen.queryByText('com_ui_subagent_waiting')).not.toBeInTheDocument();
   });
 
-  it.each([
-    ['error', 'com_ui_subagent_thread_load_error'],
-    ['ready', 'com_ui_subagent_empty_result'],
-  ] as const)('renders the %s state', (state, label) => {
-    render(<SubagentActivity activity={{ ...base, items: [] }} state={state} />);
-    expect(screen.getByText(label)).toBeInTheDocument();
+  it('renders the load error state', () => {
+    render(<SubagentActivity activity={{ ...base, items: [] }} state="error" />);
+    expect(screen.getByText('com_ui_subagent_thread_load_error')).toBeInTheDocument();
+  });
+
+  it('does not describe a completed tool-only child as missing a result', () => {
+    render(<SubagentActivity activity={{ ...base, status: 'completed', items: [] }} />);
+    expect(screen.queryByText('com_ui_subagent_empty_result')).not.toBeInTheDocument();
   });
 });

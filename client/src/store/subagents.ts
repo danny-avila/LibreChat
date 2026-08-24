@@ -271,6 +271,8 @@ export type ActiveSubagentPanel = {
     actorId: string;
     /** Task-specific live activity identity; the actor thread is reused across turns. */
     progressKey: string;
+    /** Message anchors merged into the same parent-owned activity group. */
+    siblingParentMessageIds?: string[];
   };
 };
 
