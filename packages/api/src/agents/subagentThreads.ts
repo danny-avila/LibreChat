@@ -831,7 +831,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       status: durableTask.status,
       createdAt: durableTask.createdAt.getTime(),
       updatedAt: durableTask.updatedAt.getTime(),
-      resultAvailable: durableTask.status !== 'running',
+      resultAvailable: durableTask.resultAvailable,
       resultClaimed: false,
       pendingControls: receipt.status === 'accepted' ? 1 : 0,
       ...(receipt.controlId != null &&

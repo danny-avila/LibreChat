@@ -360,6 +360,7 @@ export interface MessageMethods {
       threadId: string;
       subagentType: string;
       status: NonNullable<IMessage['subagentTask']>['status'];
+      resultAvailable: boolean;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -1094,6 +1095,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       threadId: string;
       subagentType: string;
       status: 'running' | 'completed' | 'error' | 'cancelled';
+      resultAvailable: boolean;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -1172,6 +1174,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         threadId: input.conversationId,
         subagentType,
         status: replayStatus,
+        resultAvailable: terminal != null,
         createdAt: input.createdAt,
         updatedAt:
           terminal?.updatedAt ??

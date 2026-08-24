@@ -2547,6 +2547,7 @@ describe('Message Operations', () => {
           threadId: conversationId,
           subagentType: 'researcher',
           status: 'completed',
+          resultAvailable: true,
         }),
       });
       await expect(
@@ -2635,6 +2636,7 @@ describe('Message Operations', () => {
           taskId: 'task-1',
           threadId: conversationId,
           status: 'cancelled',
+          resultAvailable: false,
           updatedAt: now,
         }),
       });
