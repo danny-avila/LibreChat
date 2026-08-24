@@ -44,6 +44,22 @@ const textTokens: Array<keyof IThemeRGB> = [
   'rgb-text-tertiary',
 ];
 
+/** `--surface-code` resolves to `surface-primary-alt` in light mode and
+ *  `presentation` in dark, so asserting against both covers either mode without
+ *  the table needing to know which one it is holding. */
+const codeSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-primary-alt', 'rgb-presentation'];
+
+const syntaxTokens: Array<keyof IThemeRGB> = [
+  'rgb-syntax-text',
+  'rgb-syntax-comment',
+  'rgb-syntax-meta',
+  'rgb-syntax-builtin',
+  'rgb-syntax-keyword',
+  'rgb-syntax-string',
+  'rgb-syntax-attr',
+  'rgb-syntax-title',
+];
+
 /** Painted with `text-text-on-status`, the per-mode label colour. Every feature
  *  call site reads that token; none hard-codes `text-white` any more. */
 const solidFills: Array<keyof IThemeRGB> = [
@@ -126,6 +142,14 @@ describe.each([
 
   it('keeps neutral text at WCAG AAA on every surface, hover and active fill', () => {
     expect(below(theme, WCAG_AAA_NORMAL, textTokens, surfaces)).toEqual([]);
+  });
+
+  /** The standard palettes are deliberately not held to this: their dark
+   *  `syntax-attr` and `syntax-title` measure 3.71:1 and 3.99:1 on the code
+   *  surface, a pre-existing gap that restyling every dark-mode code block
+   *  inside a contrast PR would not be the right way to close. */
+  it('keeps every syntax colour at WCAG AAA on the code surface', () => {
+    expect(below(theme, WCAG_AAA_NORMAL, syntaxTokens, codeSurfaces)).toEqual([]);
   });
 
   it('keeps warning and destructive text at WCAG AAA on the page', () => {

@@ -95,6 +95,20 @@ export interface IThemeRGB {
   'rgb-brand-purple'?: string;
 
   /**
+   * Code syntax highlighting. Declared here rather than left as literals in the
+   * stylesheet so a palette stays in one place, is covered by the registry's
+   * completeness check, and can be contrast-tested.
+   */
+  'rgb-syntax-text'?: string;
+  'rgb-syntax-comment'?: string;
+  'rgb-syntax-meta'?: string;
+  'rgb-syntax-builtin'?: string;
+  'rgb-syntax-keyword'?: string;
+  'rgb-syntax-string'?: string;
+  'rgb-syntax-attr'?: string;
+  'rgb-syntax-title'?: string;
+
+  /**
    * Categorical data-visualisation scale. Slots carry series identity only — the
    * order is the colour-vision-deficiency safety mechanism and must not be
    * reshuffled. Reserved status colors never appear here.
@@ -191,6 +205,15 @@ export interface IThemeVariables {
   '--status-neutral-border': string;
   '--text-on-status': string;
   '--brand-purple': string;
+
+  '--syntax-text': string;
+  '--syntax-comment': string;
+  '--syntax-meta': string;
+  '--syntax-builtin': string;
+  '--syntax-keyword': string;
+  '--syntax-string': string;
+  '--syntax-attr': string;
+  '--syntax-title': string;
 
   '--series-1': string;
   '--series-2': string;

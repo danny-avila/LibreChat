@@ -321,3 +321,48 @@ describe.each([
     expect(failures).toEqual([]);
   });
 });
+
+/** The syntax palette used to live as raw hex in `style.css`, which meant a
+ *  change had to be made twice and neither copy was checked. It is a registry
+ *  token map now, so the stylesheet is only allowed to restate it. */
+describe('syntax highlighting palette', () => {
+  const syntaxTokens = (
+    ['comment', 'meta', 'builtin', 'keyword', 'string', 'attr', 'title'] as const
+  ).map((role) => `rgb-syntax-${role}` as keyof IThemeRGB);
+
+  it('is declared in both bundled themes', () => {
+    syntaxTokens.forEach((token) => {
+      expect(() => toRgb(defaultTheme, token)).not.toThrow();
+      expect(() => toRgb(darkTheme, token)).not.toThrow();
+    });
+  });
+
+  it('keeps the app CSS defaults in step with the runtime themes', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+
+    syntaxTokens.forEach((token) => {
+      const property = token.slice(4);
+      const declared = [...appStyles.matchAll(new RegExp(`--${property}:\\s*([^;]+);`, 'g'))].map(
+        (match) => match[1].trim(),
+      );
+
+      /** `html` may alias a raw palette entry; `.dark` states the triplet. */
+      expect(declared).toHaveLength(2);
+      expect(declared[1]).toBe(darkTheme[token]);
+    });
+  });
+
+  it('leaves no hard-coded syntax hex behind in the stylesheet', () => {
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+    const hljsRules = [...appStyles.matchAll(/^\.hljs[^{]*\{([^}]*)\}/gm)].map((match) => match[1]);
+
+    expect(hljsRules.length).toBeGreaterThan(0);
+    expect(hljsRules.filter((body) => /#[0-9a-f]{3,8}|hsla?\(/i.test(body))).toEqual([]);
+  });
+});

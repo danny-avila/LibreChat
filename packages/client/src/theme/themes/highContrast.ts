@@ -114,6 +114,16 @@ export const highContrastLightTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '107 0 179', // #6b00b3
 
+  /** Code syntax highlighting at AAA on the white code surface. */
+  'rgb-syntax-text': '0 0 0', // #000000
+  'rgb-syntax-comment': '77 77 77', // #4d4d4d
+  'rgb-syntax-meta': '77 77 77', // #4d4d4d
+  'rgb-syntax-builtin': '107 61 0', // #6b3d00
+  'rgb-syntax-keyword': '0 61 153', // #003d99
+  'rgb-syntax-string': '0 86 61', // #00563d
+  'rgb-syntax-attr': '122 20 82', // #7a1452
+  'rgb-syntax-title': '143 26 16', // #8f1a10
+
   /** Categorical series scale. Every slot clears 7:1 on the white canvas and no
    *  two adjacent slots sit closer than CIE76 dE 50 under normal vision or dE 45
    *  under simulated deuteranopia. */
@@ -217,6 +227,16 @@ export const highContrastDarkTheme: IThemeRGB = {
 
   // Brand colors
   'rgb-brand-purple': '224 179 255', // #e0b3ff
+
+  /** Code syntax highlighting at AAA on the black code surface. */
+  'rgb-syntax-text': '255 255 255', // #ffffff
+  'rgb-syntax-comment': '179 179 179', // #b3b3b3
+  'rgb-syntax-meta': '179 179 179', // #b3b3b3
+  'rgb-syntax-builtin': '255 201 77', // #ffc94d
+  'rgb-syntax-keyword': '140 200 255', // #8cc8ff
+  'rgb-syntax-string': '127 240 179', // #7ff0b3
+  'rgb-syntax-attr': '255 153 194', // #ff99c2
+  'rgb-syntax-title': '255 143 143', // #ff8f8f
 
   /** Categorical series scale. Every slot clears 9.9:1 on the black canvas and no
    *  two adjacent slots sit closer than CIE76 dE 37 under normal vision or dE 42

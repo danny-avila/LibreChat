@@ -93,6 +93,19 @@ export const darkTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '171 104 255', // #ab68ff
 
+  /** Code syntax highlighting, measured against the `surface-code` fill. The
+   *  comment and meta values are the flattened equivalents of the alpha-blended
+   *  whites this palette used before it was tokenized: 50% and 60% white over
+   *  the #212121 code surface. */
+  'rgb-syntax-text': '255 255 255', // #fff (white)
+  'rgb-syntax-comment': '144 144 144', // #909090
+  'rgb-syntax-meta': '166 166 166', // #a6a6a6
+  'rgb-syntax-builtin': '233 149 12', // #e9950c
+  'rgb-syntax-keyword': '46 149 211', // #2e95d3
+  'rgb-syntax-string': '0 166 125', // #00a67d
+  'rgb-syntax-attr': '223 48 121', // #df3079
+  'rgb-syntax-title': '242 44 61', // #f22c3d
+
   /** Categorical series scale — the same seven hues stepped for the #212121
    *  surface: worst adjacent CVD ΔE 13.0, normal-vision ΔE 19.0, all ≥ 3:1. */
   'rgb-series-1': '9 140 238', // #098cee (cerulean)

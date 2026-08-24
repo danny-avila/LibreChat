@@ -93,6 +93,16 @@ export const defaultTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '126 34 206', // #7e22ce (purple-700)
 
+  /** Code syntax highlighting, measured against the `surface-code` fill. */
+  'rgb-syntax-text': '33 33 33', // #212121 (gray-800)
+  'rgb-syntax-comment': '89 89 89', // #595959 (gray-500)
+  'rgb-syntax-meta': '66 66 66', // #424242 (gray-600)
+  'rgb-syntax-builtin': '154 103 0', // #9a6700
+  'rgb-syntax-keyword': '5 80 174', // #0550ae
+  'rgb-syntax-string': '10 123 98', // #0a7b62
+  'rgb-syntax-attr': '154 47 106', // #9a2f6a
+  'rgb-syntax-title': '180 35 24', // #b42318
+
   /** Categorical series scale. Steps clear 3:1 against BOTH the popover surface
    *  and the #ececec meter track, with worst adjacent CVD ΔE 12.4 and worst
    *  adjacent normal-vision ΔE 19.0. Slot order is the CVD-safety mechanism. */

@@ -230,6 +230,16 @@ html {
   --series-6: 126 35 205;
   --series-7: 1 131 1;
 
+  /* Code syntax highlighting */
+  --syntax-text: var(--gray-800);
+  --syntax-comment: var(--gray-500);
+  --syntax-meta: var(--gray-600);
+  --syntax-builtin: 154 103 0;
+  --syntax-keyword: 5 80 174;
+  --syntax-string: 10 123 98;
+  --syntax-attr: 154 47 106;
+  --syntax-title: 180 35 24;
+
   --surface-inverted: var(--gray-850);
   --surface-inverted-hover: var(--gray-700);
   --text-inverted: var(--white);
@@ -337,6 +347,17 @@ html {
   --series-5: 213 82 130;
   --series-6: 171 104 254;
   --series-7: 80 167 49;
+
+  /* Code syntax highlighting. Comment and meta are the flattened equivalents of
+     the 50% and 60% alpha whites this palette used before it was tokenized. */
+  --syntax-text: var(--white);
+  --syntax-comment: 144 144 144;
+  --syntax-meta: 166 166 166;
+  --syntax-builtin: 233 149 12;
+  --syntax-keyword: 46 149 211;
+  --syntax-string: 0 166 125;
+  --syntax-attr: 223 48 121;
+  --syntax-title: 242 44 61;
 
   --surface-inverted: var(--white);
   --surface-inverted-hover: var(--gray-100);
@@ -529,85 +550,6 @@ html.high-contrast .markdown th:last-child,
 html.high-contrast .markdown td,
 html.high-contrast .markdown td:last-child {
   border-color: rgb(var(--border-medium));
-}
-/* The highlight.js palette is raw hex and tops out at AA: 4.87:1 for light
- * built-ins, 4.84:1 for dark attributes, and 5.32:1 for the 50%-alpha dark
- * comment. These reuse the palette's own hues at AAA on each canvas. */
-html.high-contrast .hljs-comment,
-html.high-contrast .hljs-meta {
-  color: #4d4d4d;
-}
-html.high-contrast .hljs-built_in,
-html.high-contrast .hljs-class .hljs-title {
-  color: #6b3d00;
-}
-html.high-contrast .hljs-doctag,
-html.high-contrast .hljs-formula,
-html.high-contrast .hljs-keyword,
-html.high-contrast .hljs-literal {
-  color: #003d99;
-}
-html.high-contrast .hljs-addition,
-html.high-contrast .hljs-attribute,
-html.high-contrast .hljs-meta-string,
-html.high-contrast .hljs-regexp,
-html.high-contrast .hljs-string {
-  color: #00563d;
-}
-html.high-contrast .hljs-attr,
-html.high-contrast .hljs-number,
-html.high-contrast .hljs-selector-attr,
-html.high-contrast .hljs-selector-class,
-html.high-contrast .hljs-selector-pseudo,
-html.high-contrast .hljs-template-variable,
-html.high-contrast .hljs-type,
-html.high-contrast .hljs-variable {
-  color: #7a1452;
-}
-html.high-contrast .hljs-bullet,
-html.high-contrast .hljs-link,
-html.high-contrast .hljs-selector-id,
-html.high-contrast .hljs-symbol,
-html.high-contrast .hljs-title {
-  color: #8f1a10;
-}
-html.high-contrast.dark .hljs-comment,
-html.high-contrast.dark .hljs-meta {
-  color: #b3b3b3;
-}
-html.high-contrast.dark .hljs-built_in,
-html.high-contrast.dark .hljs-class .hljs-title {
-  color: #ffc94d;
-}
-html.high-contrast.dark .hljs-doctag,
-html.high-contrast.dark .hljs-formula,
-html.high-contrast.dark .hljs-keyword,
-html.high-contrast.dark .hljs-literal {
-  color: #8cc8ff;
-}
-html.high-contrast.dark .hljs-addition,
-html.high-contrast.dark .hljs-attribute,
-html.high-contrast.dark .hljs-meta-string,
-html.high-contrast.dark .hljs-regexp,
-html.high-contrast.dark .hljs-string {
-  color: #7ff0b3;
-}
-html.high-contrast.dark .hljs-attr,
-html.high-contrast.dark .hljs-number,
-html.high-contrast.dark .hljs-selector-attr,
-html.high-contrast.dark .hljs-selector-class,
-html.high-contrast.dark .hljs-selector-pseudo,
-html.high-contrast.dark .hljs-template-variable,
-html.high-contrast.dark .hljs-type,
-html.high-contrast.dark .hljs-variable {
-  color: #ff99c2;
-}
-html.high-contrast.dark .hljs-bullet,
-html.high-contrast.dark .hljs-link,
-html.high-contrast.dark .hljs-selector-id,
-html.high-contrast.dark .hljs-symbol,
-html.high-contrast.dark .hljs-title {
-  color: #ff8f8f;
 }
 
 .text-token-text-primary {
@@ -1295,7 +1237,7 @@ code[class*='language-'],
 pre[class*='language-'] {
   word-wrap: normal;
   background: none;
-  color: rgb(var(--gray-800));
+  color: rgb(var(--syntax-text));
   -webkit-hyphens: none;
   hyphens: none;
   font-size: 0.85rem;
@@ -1317,27 +1259,27 @@ pre[class*='language-'] {
   white-space: normal;
 }
 .hljs-comment {
-  color: rgb(var(--gray-500));
+  color: rgb(var(--syntax-comment));
 }
 .hljs-meta {
-  color: rgb(var(--gray-600));
+  color: rgb(var(--syntax-meta));
 }
 .hljs-built_in,
 .hljs-class .hljs-title {
-  color: #9a6700;
+  color: rgb(var(--syntax-builtin));
 }
 .hljs-doctag,
 .hljs-formula,
 .hljs-keyword,
 .hljs-literal {
-  color: #0550ae;
+  color: rgb(var(--syntax-keyword));
 }
 .hljs-addition,
 .hljs-attribute,
 .hljs-meta-string,
 .hljs-regexp,
 .hljs-string {
-  color: #0a7b62;
+  color: rgb(var(--syntax-string));
 }
 .hljs-attr,
 .hljs-number,
@@ -1347,59 +1289,14 @@ pre[class*='language-'] {
 .hljs-template-variable,
 .hljs-type,
 .hljs-variable {
-  color: #9a2f6a;
+  color: rgb(var(--syntax-attr));
 }
 .hljs-bullet,
 .hljs-link,
 .hljs-selector-id,
 .hljs-symbol,
 .hljs-title {
-  color: #b42318;
-}
-.dark code.hljs,
-.dark code[class*='language-'],
-.dark pre[class*='language-'] {
-  color: #fff;
-}
-.dark .hljs-comment {
-  color: hsla(0, 0%, 100%, 0.5);
-}
-.dark .hljs-meta {
-  color: hsla(0, 0%, 100%, 0.6);
-}
-.dark .hljs-built_in,
-.dark .hljs-class .hljs-title {
-  color: #e9950c;
-}
-.dark .hljs-doctag,
-.dark .hljs-formula,
-.dark .hljs-keyword,
-.dark .hljs-literal {
-  color: #2e95d3;
-}
-.dark .hljs-addition,
-.dark .hljs-attribute,
-.dark .hljs-meta-string,
-.dark .hljs-regexp,
-.dark .hljs-string {
-  color: #00a67d;
-}
-.dark .hljs-attr,
-.dark .hljs-number,
-.dark .hljs-selector-attr,
-.dark .hljs-selector-class,
-.dark .hljs-selector-pseudo,
-.dark .hljs-template-variable,
-.dark .hljs-type,
-.dark .hljs-variable {
-  color: #df3079;
-}
-.dark .hljs-bullet,
-.dark .hljs-link,
-.dark .hljs-selector-id,
-.dark .hljs-symbol,
-.dark .hljs-title {
-  color: #f22c3d;
+  color: rgb(var(--syntax-title));
 }
 
 [role='button'],
