@@ -1,3 +1,5 @@
+const plugin = require('tailwindcss/plugin');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   theme: {
@@ -29,4 +31,17 @@ module.exports = {
       },
     },
   },
+  plugins: [
+    plugin(({ addVariant }) => {
+      /**
+       * Styling that applies only in the high contrast appearance modes, the
+       * same way `dark:` applies only under the `dark` class. Distinct from
+       * Tailwind's built-in `contrast-more:`, which is the raw
+       * `prefers-contrast: more` media query: this follows the resolved app
+       * mode, so it covers an explicit `high-contrast-light` /
+       * `high-contrast-dark` choice as well as the OS preference.
+       */
+      addVariant('high-contrast', 'html.high-contrast &');
+    }),
+  ],
 };
