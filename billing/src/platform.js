@@ -38,7 +38,7 @@ export async function notifyPlatform(order) {
 
   const body = await res.json();
   console.log(
-    `[billing] platform provisioned order ${order.orderNumber}: project=${body.project_id} state=${body.project_state}`,
+    `[billing] platform accepted order ${order.orderNumber}: subscription=${body.subscription_id} slot_free=${body.slot_free}`,
   );
   return true;
 }
