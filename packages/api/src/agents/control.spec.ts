@@ -291,6 +291,31 @@ describe('subagent control handler', () => {
     });
   });
 
+  it('returns a retryable failure when routing cannot resolve a live owner', async () => {
+    const deps = dependencies(
+      jest.fn().mockResolvedValue({
+        status: 'not_found',
+        task: { taskId, threadId, status: 'running' },
+      }),
+    );
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({ taskId, invocationId: 'invocation-1', action: 'queue', message: 'Continue.' }),
+      res.value,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'failed',
+        reason: 'owner_unavailable',
+      }),
+    });
+  });
+
   it('rejects malformed controls before authorization or routing', async () => {
     const deps = dependencies();
     const handler = createSubagentControlHandler(deps);

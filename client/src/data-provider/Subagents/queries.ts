@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import type {
   ParentSubagentIndex,
+  SubagentControlReceipt,
   SubagentControlRequest,
   SubagentControlResponse,
   SubagentThreadView,
@@ -130,6 +131,33 @@ export type SubagentControlVariables = {
   command: SubagentControlRequest;
 };
 
+const isTerminalControlReceipt = (receipt: SubagentControlReceipt): boolean =>
+  receipt.status === 'applied' || receipt.status === 'rejected' || receipt.status === 'failed';
+
+/** Reconciles a mutation response without allowing an older accepted projection
+ * to replace a terminal receipt delivered by the concurrent activity refresh. */
+export const reconcileSubagentControlReceipts = (
+  receipts: SubagentControlReceipt[],
+  incoming: SubagentControlReceipt,
+): SubagentControlReceipt[] => {
+  const index = receipts.findIndex((candidate) => candidate.invocationId === incoming.invocationId);
+  if (index === -1) return [...receipts, incoming];
+  const current = receipts[index];
+  const currentUpdatedAt = Date.parse(current.updatedAt);
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  if (
+    (isTerminalControlReceipt(current) && !isTerminalControlReceipt(incoming)) ||
+    (Number.isFinite(currentUpdatedAt) &&
+      Number.isFinite(incomingUpdatedAt) &&
+      currentUpdatedAt > incomingUpdatedAt)
+  ) {
+    return receipts;
+  }
+  return receipts.map((candidate, candidateIndex) =>
+    candidateIndex === index ? incoming : candidate,
+  );
+};
+
 export const useSubagentControlMutation = () => {
   const queryClient = useQueryClient();
   return useMutation<SubagentControlResponse, Error, SubagentControlVariables>(
@@ -141,13 +169,12 @@ export const useSubagentControlMutation = () => {
         const key = [QueryKeys.subagentThread, parentConversationId, threadId, command.taskId];
         queryClient.setQueryData<SubagentThreadView | undefined>(key, (current) => {
           if (current == null) return current;
-          const receipts = current.controlReceipts ?? [];
           return {
             ...current,
-            controlReceipts: [
-              ...receipts.filter((candidate) => candidate.invocationId !== receipt.invocationId),
+            controlReceipts: reconcileSubagentControlReceipts(
+              current.controlReceipts ?? [],
               receipt,
-            ],
+            ),
           };
         });
         void queryClient.invalidateQueries(key);

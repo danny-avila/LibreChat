@@ -45,6 +45,15 @@ import { eventSubagentSelection } from './eventSelection';
 import { useAgentsMapContext } from '~/Providers';
 
 const EVENT_TASK_PAGE_SIZE = 3;
+const TERMINAL_CONTROL_REASONS = new Set([
+  'task_not_running',
+  'task_completed',
+  'task_cancelled',
+  'task_failed',
+]);
+
+const isTerminalControlReason = (reason?: string): boolean =>
+  reason != null && TERMINAL_CONTROL_REASONS.has(reason);
 
 const responseStatus = (error: unknown): number | undefined =>
   typeof error === 'object' &&
@@ -227,9 +236,22 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     setRetryControl(null);
   }, [data?.controlReceipts, transientControl]);
 
+  useEffect(() => {
+    if (data?.controlReceipts?.some((receipt) => isTerminalControlReason(receipt.reason))) {
+      setControlsClosed(true);
+    }
+  }, [data?.controlReceipts]);
+
   const submitControl = useCallback(
     (action: SubagentControlAction, controlId?: string, retry?: SubagentControlRequest) => {
-      if (selection.durable == null || controlTask.isLoading || controlInFlightRef.current) return;
+      if (
+        selection.durable == null ||
+        controlTask.isLoading ||
+        controlInFlightRef.current ||
+        (retryControl != null && retry == null)
+      ) {
+        return;
+      }
       let command: SubagentControlRequest;
       if (retry != null) {
         command = retry;
@@ -285,9 +307,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             if (controlSelectionRef.current !== submittedSelection) return;
             controlInFlightRef.current = false;
             setTransientControl(receipt);
-            if (receipt.reason === 'task_not_running') setControlsClosed(true);
+            if (isTerminalControlReason(receipt.reason)) setControlsClosed(true);
             if (receipt.status !== 'failed') setRetryControl(null);
-            if (receipt.status === 'accepted' || receipt.status === 'applied') {
+            if (
+              command.action !== 'cancel_message' &&
+              (receipt.status === 'accepted' || receipt.status === 'applied')
+            ) {
               setControlMessage('');
             }
           },
@@ -314,7 +339,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         },
       );
     },
-    [controlMessage, controlTask, selection.durable, selection.parentConversationId],
+    [controlMessage, controlTask, retryControl, selection.durable, selection.parentConversationId],
   );
 
   const close = useCallback(() => {
@@ -395,7 +420,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     data?.status === 'running' &&
     !controlInaccessible &&
     !controlsClosed;
-  const controlPending = controlTask.isLoading || transientControl?.status === 'submitted';
+  const controlPending =
+    controlTask.isLoading || transientControl?.status === 'submitted' || retryControl != null;
   const showControlFooter = controlAvailable || transientControl?.reason === 'task_inaccessible';
   const canContinueAsChat =
     selection.host === 'conversation' &&
@@ -452,7 +478,9 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           state={panelState}
           embedded
           onCancelControl={
-            controlAvailable ? (controlId) => submitControl('cancel_message', controlId) : undefined
+            controlAvailable && !controlPending
+              ? (controlId) => submitControl('cancel_message', controlId)
+              : undefined
           }
         />
       );
@@ -584,7 +612,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
             activity={activity}
             state={panelState}
             onCancelControl={
-              controlAvailable
+              controlAvailable && !controlPending
                 ? (controlId) => submitControl('cancel_message', controlId)
                 : undefined
             }

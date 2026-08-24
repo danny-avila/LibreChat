@@ -128,6 +128,13 @@ jest.mock('./SubagentActivity', () => ({
       {activity.controls?.map((control) => (
         <span key={control.invocationId}>{control.status}</span>
       ))}
+      {onCancelControl != null && (
+        <button
+          type="button"
+          data-testid="withdraw-control"
+          onClick={() => onCancelControl('control-1')}
+        />
+      )}
     </div>
   ),
 }));
@@ -374,10 +381,60 @@ describe('SubagentThreadPanel', () => {
       mockControlMutate.mock.calls[0][1].onError({ response: { status: 503 } });
     });
 
+    expect(screen.getByLabelText('com_ui_subagent_control_message')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_subagent_cancel_task' })).toBeDisabled();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
+
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
 
     expect(mockControlMutate).toHaveBeenCalledTimes(2);
     expect(mockControlMutate.mock.calls[1][0].command).toEqual(firstCommand);
+  });
+
+  it('preserves drafted guidance when withdrawing an accepted control', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: {
+        ...completedView,
+        status: 'running',
+        controlReceipts: [
+          {
+            invocationId: 'accepted-control',
+            controlId: 'control-1',
+            action: 'queue',
+            status: 'accepted',
+            createdAt: '2026-08-24T12:00:00.000Z',
+            updatedAt: '2026-08-24T12:00:00.000Z',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, selection)}>
+        <SubagentThreadPanel selection={selection} />
+      </RecoilRoot>,
+    );
+
+    const composer = screen.getByLabelText('com_ui_subagent_control_message');
+    fireEvent.change(composer, { target: { value: 'Keep this draft.' } });
+    fireEvent.click(screen.getByTestId('withdraw-control'));
+    const command = mockControlMutate.mock.calls[0][0].command;
+    act(() => {
+      mockControlMutate.mock.calls[0][1].onSuccess({
+        receipt: {
+          invocationId: command.invocationId,
+          controlId: 'control-1',
+          action: 'cancel_message',
+          status: 'applied',
+          createdAt: '2026-08-24T12:00:01.000Z',
+          updatedAt: '2026-08-24T12:00:01.000Z',
+        },
+      });
+    });
+
+    expect(composer).toHaveValue('Keep this draft.');
   });
 
   it('clears transient retry state when refresh returns the same durable invocation', () => {
@@ -500,6 +557,8 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByText('applied')).toBeInTheDocument();
     expect(screen.getByText('rejected')).toBeInTheDocument();
     expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-status', 'running');
+    expect(screen.queryByLabelText('com_ui_subagent_control_message')).not.toBeInTheDocument();
+    expect(screen.getByTestId('shared-activity')).toHaveAttribute('data-can-withdraw', 'false');
   });
 
   it('does not expose task controls after the selected child is terminal', () => {

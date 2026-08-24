@@ -4,12 +4,12 @@ import type {
   SubagentControlRequest,
   SubagentControlResponse,
 } from 'librechat-data-provider';
-import type { SubagentTaskControlCommand, SubagentTaskControlResult } from '@librechat/agents';
 import type {
   ConversationMethods,
   ISubagentTaskControlReceipt,
   MessageMethods,
 } from '@librechat/data-schemas';
+import type { SubagentTaskControlCommand, SubagentTaskControlResult } from '@librechat/agents';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 import { controlFingerprint, SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
@@ -211,6 +211,9 @@ export function createSubagentControlHandler(deps: Dependencies) {
         ...(tenantId == null ? {} : { tenantId }),
       });
       const result = await deps.store.controlTask(scopeId, body.taskId, command, body.invocationId);
+      if (result.status === 'not_found') {
+        throw new SubagentTaskOwnerUnavailableError();
+      }
       const receipt = responseReceipt(body.invocationId, command, result);
       res.status(200).json({ receipt } satisfies SubagentControlResponse);
     } catch (error) {

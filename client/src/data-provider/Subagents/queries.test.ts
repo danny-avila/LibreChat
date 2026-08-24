@@ -3,6 +3,7 @@ import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-pro
 import {
   isSubagentReadinessPending,
   parentSubagentsRefetchInterval,
+  reconcileSubagentControlReceipts,
   subagentThreadHasTaskEvidence,
   subagentThreadRefetchInterval,
   useParentSubagentsQuery,
@@ -19,6 +20,23 @@ const view = (status: SubagentThreadView['status']): SubagentThreadView =>
   ({ status }) as SubagentThreadView;
 
 describe('subagent thread refresh policy', () => {
+  it('does not downgrade a refreshed terminal control receipt to accepted', () => {
+    const applied = {
+      invocationId: 'invocation-1',
+      action: 'queue',
+      status: 'applied',
+      createdAt: '2026-08-24T12:00:00.000Z',
+      updatedAt: '2026-08-24T12:00:02.000Z',
+    } as const;
+    const accepted = {
+      ...applied,
+      status: 'accepted',
+      updatedAt: '2026-08-24T12:00:01.000Z',
+    } as const;
+
+    expect(reconcileSubagentControlReceipts([applied], accepted)).toEqual([applied]);
+  });
+
   it('bounds child-readiness retries and keeps active work fresh', () => {
     expect(subagentThreadRefetchInterval(undefined, 1_000, 500)).toBe(2_000);
     expect(subagentThreadRefetchInterval(view('dispatched'), 1_000, 500)).toBe(2_000);
