@@ -122,10 +122,12 @@ export default function SubagentActivity({
   activity,
   activityId,
   state = 'ready',
+  embedded = false,
 }: {
   activity: ChildActivity;
   activityId?: string;
   state?: 'ready' | 'loading' | 'error';
+  embedded?: boolean;
 }) {
   const localize = useLocalize();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -197,22 +199,46 @@ export default function SubagentActivity({
     );
   }
 
+  const statusHeader = (
+    <div className="shrink-0 border-b border-border-light px-4 py-2">
+      <div
+        className={cn(
+          'flex items-center gap-1 text-xs text-text-secondary',
+          activity.status === 'failed' || activity.status === 'interrupted'
+            ? 'text-status-error'
+            : '',
+        )}
+        aria-live="polite"
+      >
+        <StatusIcon size={13} aria-hidden />
+        <span>{localize(subagentStatusLabelKey(activity.status))}</span>
+      </div>
+    </div>
+  );
+  const content = (
+    <div ref={contentRef} className="flex max-w-full flex-col gap-0">
+      {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
+      {activityTruncated && (
+        <div className="mb-3 text-xs italic text-text-secondary">
+          {localize('com_ui_subagent_thread_history_truncated')}
+        </div>
+      )}
+      {body}
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <section className="border-b border-border-light last:border-b-0" data-subagent-thread-turn>
+        {statusHeader}
+        <div className="px-4 py-4">{content}</div>
+      </section>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-border-light px-4 py-2">
-        <div
-          className={cn(
-            'flex items-center gap-1 text-xs text-text-secondary',
-            activity.status === 'failed' || activity.status === 'interrupted'
-              ? 'text-status-error'
-              : '',
-          )}
-          aria-live="polite"
-        >
-          <StatusIcon size={13} aria-hidden />
-          <span>{localize(subagentStatusLabelKey(activity.status))}</span>
-        </div>
-      </div>
+      {statusHeader}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -235,15 +261,7 @@ export default function SubagentActivity({
             <ArrowDown size={16} aria-hidden />
           </Button>
         )}
-        <div ref={contentRef} className="flex max-w-full flex-col gap-0">
-          {activity.prompt != null && <SubagentPrompt prompt={activity.prompt} />}
-          {activityTruncated && (
-            <div className="mb-3 text-xs italic text-text-secondary">
-              {localize('com_ui_subagent_thread_history_truncated')}
-            </div>
-          )}
-          {body}
-        </div>
+        {content}
       </div>
     </div>
   );

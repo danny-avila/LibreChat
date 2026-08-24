@@ -335,6 +335,14 @@ describe('SubagentActivity', () => {
     );
   });
 
+  it('renders an embedded turn without creating a nested scroll surface', () => {
+    const { container } = render(<SubagentActivity activity={base} embedded />);
+
+    expect(container.querySelector('[data-subagent-thread-turn]')).toBeInTheDocument();
+    expect(container.querySelector('.overflow-y-auto')).not.toBeInTheDocument();
+    expect(screen.getByText('Final answer.')).toBeInTheDocument();
+  });
+
   it('renders a sanitized reasoning marker through regular ContentParts', () => {
     render(
       <SubagentActivity

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -13,6 +12,7 @@ import {
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
+import type { ParentSubagentTaskSummary } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   ACTIVE_THREAD_REFRESH_MS,
@@ -26,18 +26,16 @@ import {
   subagentProgressKey,
 } from '~/store/subagents';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
-import { useClockFormat, useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
-import { eventSubagentSelection, eventTaskProgressKey } from './eventSelection';
+import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useParentSubagents } from './ParentSubagentsProvider';
+import { eventSubagentSelection } from './eventSelection';
 import SubagentActivity from './SubagentActivity';
 import { useAgentsMapContext } from '~/Providers';
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
-  const { i18n } = useTranslation();
-  const hour12 = useClockFormat();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -109,6 +107,21 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     if (selection.event == null || !eventTaskRunning || !durableTerminal) return;
     void refetch();
   }, [durableTerminal, eventTaskRunning, refetch, selection.event]);
+  useEffect(() => {
+    if (
+      selection.event == null ||
+      eventSummary?.latestTaskId == null ||
+      eventSummary.latestTaskId === taskId
+    ) {
+      return;
+    }
+    const nextSelection = eventSubagentSelection(
+      selection.parentConversationId,
+      eventSummary,
+      selection.event.siblingParentMessageIds,
+    );
+    if (nextSelection != null) setSelection(nextSelection);
+  }, [eventSummary, selection, setSelection, taskId]);
   const detachedLiveSubmitting =
     selection.durable != null &&
     progress != null &&
@@ -225,44 +238,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       setSelection,
     ],
   );
-  const selectTask = useCallback(
-    (nextTaskId: string) => {
-      if (selection.durable == null || selection.event == null) return;
-      const nextTask = eventSummary?.tasks.find((task) => task.taskId === nextTaskId);
-      setSelection({
-        ...selection,
-        durable: { ...selection.durable, taskId: nextTaskId },
-        event: {
-          ...selection.event,
-          progressKey: eventTaskProgressKey(selection.durable.threadId, nextTaskId),
-        },
-        initialProgress: nextTask?.status === 'completed' ? 1 : 0,
-        isSubmitting: nextTask?.status === 'running',
-      });
-    },
-    [eventSummary?.tasks, selection, setSelection],
-  );
-  const taskLabel = useCallback(
-    (task: NonNullable<typeof eventSummary>['tasks'][number], index: number) => {
-      if (index === 0) return localize('com_ui_subagent_latest_activity');
-      if (task.createdAt == null) {
-        return localize('com_ui_subagent_previous_activity', { 0: String(index) });
-      }
-      const createdAt = new Date(task.createdAt);
-      if (Number.isNaN(createdAt.getTime())) {
-        return localize('com_ui_subagent_previous_activity', { 0: String(index) });
-      }
-      const timestamp = new Intl.DateTimeFormat(i18n.language, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12,
-      }).format(createdAt);
-      return `${timestamp} · ${localize('com_ui_subagent_previous_activity', { 0: String(index) })}`;
-    },
-    [hour12, i18n.language, localize],
-  );
   let panelState: 'ready' | 'loading' | 'error' = 'ready';
   if (
     selection.durable != null &&
@@ -273,6 +248,27 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   } else if (selection.durable != null && liveActivity.items.length === 0 && isError) {
     panelState = 'error';
   }
+  const renderEventTask = (task: ParentSubagentTaskSummary) => {
+    if (task.taskId === taskId) {
+      return (
+        <SubagentActivity
+          key={task.taskId}
+          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+          activity={activity}
+          state={panelState}
+          embedded
+        />
+      );
+    }
+    return (
+      <HistoricalEventTaskActivity
+        key={task.taskId}
+        selection={selection}
+        task={task}
+        title={activity.title}
+      />
+    );
+  };
 
   return (
     <aside
@@ -342,22 +338,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
               </SelectContent>
             </Select>
           </div>
-          {(eventSummary?.tasks.length ?? 0) > 1 && (
-            <div className="w-44">
-              <Select value={taskId} onValueChange={selectTask}>
-                <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_turn')}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(eventSummary?.tasks ?? []).map((task, index) => (
-                    <SelectItem key={task.taskId} value={task.taskId}>
-                      {taskLabel(task, index)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
         </div>
       )}
 
@@ -367,13 +347,58 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       <ApprovalProvider
         key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
       >
-        <SubagentActivity
-          key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
-          activity={activity}
-          state={panelState}
-        />
+        {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
+          <div className="min-h-0 flex-1 overflow-y-auto" data-subagent-thread-timeline>
+            {[...(eventSummary?.tasks ?? [])].reverse().map(renderEventTask)}
+          </div>
+        ) : (
+          <SubagentActivity
+            key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activity={activity}
+            state={panelState}
+          />
+        )}
       </ApprovalProvider>
     </aside>
+  );
+}
+
+function HistoricalEventTaskActivity({
+  selection,
+  task,
+  title,
+}: {
+  selection: ActiveSubagentPanel;
+  task: ParentSubagentTaskSummary;
+  title: string;
+}) {
+  const threadId = selection.durable?.threadId ?? '';
+  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
+    selection.parentConversationId,
+    threadId,
+    task.taskId,
+  );
+  const activity = useMemo(
+    () =>
+      data == null
+        ? { title, status: task.status, items: [] }
+        : adaptDurableThreadActivity(data, task.taskId),
+    [data, task.status, task.taskId, title],
+  );
+  let state: 'ready' | 'loading' | 'error' = 'ready';
+  if (isError) {
+    state = 'error';
+  } else if (isLoading || isReadinessPending) {
+    state = 'loading';
+  }
+
+  return (
+    <SubagentActivity
+      activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+      activity={activity}
+      state={state}
+      embedded
+    />
   );
 }

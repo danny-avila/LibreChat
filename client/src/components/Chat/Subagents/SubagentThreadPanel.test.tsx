@@ -50,15 +50,9 @@ jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
   default: (...args: unknown[]) => mockUseSubagentActivityStream(...args),
 }));
 
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({ i18n: { language: 'fr' } }),
-}));
-
 jest.mock('~/hooks', () => ({
-  useClockFormat: () => false,
   useFocusTrap: jest.fn(),
-  useLocalize: () => (key: string, values?: Record<number, string>) =>
-    values?.[0] == null ? key : `${key} ${values[0]}`,
+  useLocalize: () => (key: string) => key,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
 }));
 
@@ -98,12 +92,19 @@ jest.mock('./SubagentActivity', () => ({
   __esModule: true,
   default: ({
     activity,
+    activityId,
     state,
   }: {
     activity: { status: string; prompt?: string; items: Array<{ type: string; text?: string }> };
+    activityId?: string;
     state: string;
   }) => (
-    <div data-testid="shared-activity" data-state={state} data-status={activity.status}>
+    <div
+      data-testid="shared-activity"
+      data-activity-id={activityId}
+      data-state={state}
+      data-status={activity.status}
+    >
       {activity.prompt}
       {activity.items.map((item, index) => (
         <span key={index}>{item.text ?? item.type}</span>
@@ -636,7 +637,7 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
   });
 
-  it('navigates event actors and exact durable turns through the same panel', () => {
+  it('navigates event actors and renders exact durable turns as one chronological thread', () => {
     const first: ParentSubagentSummary = {
       threadId: 'child-thread',
       parentMessageId: 'parent-message',
@@ -700,9 +701,19 @@ describe('SubagentThreadPanel', () => {
       </RecoilRoot>,
     );
 
-    fireEvent.click(screen.getByRole('option', { name: 'com_ui_subagent_previous_activity 1' }));
-    expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-earlier' });
-    expect(active?.event?.progressKey).toBe('event-task:child-thread:task-earlier');
+    expect(screen.queryByRole('button', { name: 'com_ui_subagent_turn' })).not.toBeInTheDocument();
+    const turns = screen.getAllByTestId('shared-activity');
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toHaveAttribute(
+      'data-activity-id',
+      'parent-message\u0000tool-call\u0000task-earlier',
+    );
+    expect(turns[1]).toHaveAttribute('data-activity-id', 'parent-message\u0000tool-call\u0000task');
+    expect(mockUseSubagentThreadQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      'child-thread',
+      'task-earlier',
+    );
 
     fireEvent.click(screen.getByRole('option', { name: /Analyst Two/ }));
     expect(active).toEqual(
@@ -719,11 +730,7 @@ describe('SubagentThreadPanel', () => {
     expect(mockRefreshParentChildren).toHaveBeenCalled();
   });
 
-  it('formats historical activity using the configured clock preference', () => {
-    const format = jest.fn(() => '23:05');
-    const dateTimeFormat = jest
-      .spyOn(Intl, 'DateTimeFormat')
-      .mockImplementation(() => ({ format }) as unknown as Intl.DateTimeFormat);
+  it('follows a newly appended latest turn while preserving the continuous history', async () => {
     const eventChild: ParentSubagentSummary = {
       threadId: 'child-thread',
       parentMessageId: 'parent-message',
@@ -733,12 +740,11 @@ describe('SubagentThreadPanel', () => {
       title: 'Actor',
       origin: 'event',
       actorId: 'actor-1',
-      status: 'completed',
-      latestTaskId: 'task',
+      status: 'running',
+      latestTaskId: 'task-new',
       tasks: [
-        { taskId: 'task', status: 'completed' },
-        { taskId: 'task-earlier', status: 'completed', createdAt: '2026-08-23T23:05:00Z' },
-        { taskId: 'task-oldest', status: 'completed', createdAt: '2026-08-23T23:05:00Z' },
+        { taskId: 'task-new', status: 'running' },
+        { taskId: 'task-old', status: 'completed' },
       ],
       tasksTruncated: false,
     };
@@ -750,24 +756,27 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     });
-    const eventSelection: ActiveSubagentPanel = {
+    const staleSelection: ActiveSubagentPanel = {
       ...selection,
-      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+      durable: { threadId: 'child-thread', taskId: 'task-old' },
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task-old' },
+    };
+    let active: ActiveSubagentPanel | null = staleSelection;
+    const Observer = () => {
+      active = useRecoilValue(activeSubagentPanel);
+      return null;
     };
 
     render(
-      <RecoilRoot>
-        <SubagentThreadPanel selection={eventSelection} />
+      <RecoilRoot initializeState={({ set }) => set(activeSubagentPanel, staleSelection)}>
+        <Observer />
+        <SubagentThreadPanel selection={staleSelection} />
       </RecoilRoot>,
     );
 
-    expect(
-      screen.getByRole('option', { name: '23:05 · com_ui_subagent_previous_activity 1' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('option', { name: '23:05 · com_ui_subagent_previous_activity 2' }),
-    ).toBeInTheDocument();
-    expect(dateTimeFormat).toHaveBeenCalledWith('fr', expect.objectContaining({ hour12: false }));
-    dateTimeFormat.mockRestore();
+    await waitFor(() =>
+      expect(active?.durable).toEqual({ threadId: 'child-thread', taskId: 'task-new' }),
+    );
+    expect(screen.getAllByTestId('shared-activity')).toHaveLength(2);
   });
 });
