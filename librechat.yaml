@@ -525,6 +525,10 @@ endpoints:
     - name: 'JetCode'
       apiKey: '${JETCODE_BRIDGE_KEY}'
       baseURL: 'http://jetcodem-app:8080/v1'
+      # The bridge resolves models per user from this header; 'jetcode' is a
+      # stable alias meaning "this user's current project".
+      headers:
+        X-User-Email: '{{LIBRECHAT_USER_EMAIL}}'
       models:
         default: ['jetcode']
         fetch: true
