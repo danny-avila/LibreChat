@@ -10,7 +10,7 @@ import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
-import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
+import { groupActivityPhases, lastCursorContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
@@ -33,18 +33,6 @@ const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean => {
   }
   const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
   return text.length === 0;
-};
-
-/** A trailing empty provider placeholder must not move the streaming cursor
- * away from text that is already visible. Keep the cursor on the preceding
- * visible part; the empty placeholder remains available for the initial
- * no-content waiting state handled below. */
-const lastCursorContentIdx = (content: Array<TMessageContentParts | undefined>): number => {
-  const lastIdx = lastVisibleContentIdx(content);
-  if (lastIdx > 0 && isEmptyTextPart(content[lastIdx])) {
-    return lastVisibleContentIdx(content.slice(0, lastIdx));
-  }
-  return lastIdx;
 };
 
 const getToolCallId = (part: TMessageContentParts): string =>

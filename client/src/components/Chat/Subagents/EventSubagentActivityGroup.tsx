@@ -13,6 +13,33 @@ import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+const STATUS_COUNT_LABEL_KEYS = {
+  dispatched: {
+    one: 'com_ui_subagent_count_dispatched_one',
+    other: 'com_ui_subagent_count_dispatched_other',
+  },
+  running: {
+    one: 'com_ui_subagent_count_running_one',
+    other: 'com_ui_subagent_count_running_other',
+  },
+  completed: {
+    one: 'com_ui_subagent_count_completed_one',
+    other: 'com_ui_subagent_count_completed_other',
+  },
+  failed: {
+    one: 'com_ui_subagent_count_failed_one',
+    other: 'com_ui_subagent_count_failed_other',
+  },
+  interrupted: {
+    one: 'com_ui_subagent_count_interrupted_one',
+    other: 'com_ui_subagent_count_interrupted_other',
+  },
+  cancelled: {
+    one: 'com_ui_subagent_count_cancelled_one',
+    other: 'com_ui_subagent_count_cancelled_other',
+  },
+} as const;
+
 export default function EventSubagentActivityGroup({
   conversationId,
   parentMessageIds,
@@ -60,6 +87,10 @@ function EventSubagentRows({
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
+  const siblingParentMessageIds = useMemo(
+    () => Array.from(new Set(eventChildren.map((child) => child.parentMessageId))),
+    [eventChildren],
+  );
   const counts = useMemo(() => {
     const result = new Map<ParentSubagentSummary['status'], number>();
     eventChildren.forEach((child) => result.set(child.status, (result.get(child.status) ?? 0) + 1));
@@ -70,14 +101,15 @@ function EventSubagentRows({
       eventChildren.length === 1 ? 'com_ui_subagent_agent_count' : 'com_ui_subagent_agents_count',
       { 0: String(eventChildren.length) },
     ),
-    ...Array.from(counts.entries()).map(
-      ([status, count]) =>
-        `${count} ${localize(subagentStatusLabelKey(status)).toLocaleLowerCase()}`,
+    ...Array.from(counts.entries()).map(([status, count]) =>
+      localize(STATUS_COUNT_LABEL_KEYS[status][count === 1 ? 'one' : 'other'], {
+        0: String(count),
+      }),
     ),
   ].join(' · ');
   const openChild = useCallback(
     (child: ParentSubagentSummary) => {
-      const selection = eventSubagentSelection(conversationId, child);
+      const selection = eventSubagentSelection(conversationId, child, siblingParentMessageIds);
       if (selection == null) return;
       resetCurrentArtifactId();
       setArtifactsVisible(false);
@@ -85,7 +117,11 @@ function EventSubagentRows({
       void refresh().then((index) => {
         const fresh = index?.children.find((candidate) => candidate.threadId === child.threadId);
         if (fresh == null || fresh.latestTaskId === child.latestTaskId) return;
-        const freshSelection = eventSubagentSelection(conversationId, fresh);
+        const freshSelection = eventSubagentSelection(
+          conversationId,
+          fresh,
+          siblingParentMessageIds,
+        );
         if (freshSelection != null) {
           setSelected((current) => {
             if (
@@ -99,7 +135,14 @@ function EventSubagentRows({
         }
       });
     },
-    [conversationId, refresh, resetCurrentArtifactId, setArtifactsVisible, setSelected],
+    [
+      conversationId,
+      refresh,
+      resetCurrentArtifactId,
+      setArtifactsVisible,
+      setSelected,
+      siblingParentMessageIds,
+    ],
   );
   return (
     <section

@@ -51,6 +51,7 @@ jest.mock('~/data-provider/Subagents/useSubagentActivityStream', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
+  useClockFormat: () => false,
   useFocusTrap: jest.fn(),
   useLocalize: () => (key: string) => key,
   useNavigateToConvo: () => ({ navigateToConvo: mockNavigateToConvo }),
@@ -659,7 +660,10 @@ describe('SubagentThreadPanel', () => {
       tasks: [{ taskId: 'task-2', status: 'running' }],
       status: 'running',
     };
-    mockParentChildrenByMessage = new Map([['parent-message', [first, second]]]);
+    mockParentChildrenByMessage = new Map([
+      ['parent-message', [first]],
+      ['assistant-message', [second]],
+    ]);
     mockParentChildrenByThread = new Map([
       [first.threadId, first],
       [second.threadId, second],
@@ -672,7 +676,11 @@ describe('SubagentThreadPanel', () => {
     });
     const eventSelection: ActiveSubagentPanel = {
       ...selection,
-      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+      event: {
+        actorId: 'actor-1',
+        progressKey: 'event-task:child-thread:task',
+        siblingParentMessageIds: ['parent-message', 'assistant-message'],
+      },
     };
     let active: ActiveSubagentPanel | null = eventSelection;
     const Observer = () => {
@@ -698,10 +706,60 @@ describe('SubagentThreadPanel', () => {
         event: {
           actorId: 'actor-2',
           progressKey: 'event-task:child-thread-2:task-2',
+          siblingParentMessageIds: ['parent-message', 'assistant-message'],
         },
         durable: { threadId: 'child-thread-2', taskId: 'task-2' },
       }),
     );
     expect(mockRefreshParentChildren).toHaveBeenCalled();
+  });
+
+  it('formats historical activity using the configured clock preference', () => {
+    const format = jest.fn(() => '23:05');
+    const dateTimeFormat = jest
+      .spyOn(Intl, 'DateTimeFormat')
+      .mockImplementation(() => ({ format }) as unknown as Intl.DateTimeFormat);
+    const eventChild: ParentSubagentSummary = {
+      threadId: 'child-thread',
+      parentMessageId: 'parent-message',
+      subagentType: 'agent-1',
+      subagentKind: 'agent',
+      agentId: 'agent-1',
+      title: 'Actor',
+      origin: 'event',
+      actorId: 'actor-1',
+      status: 'completed',
+      latestTaskId: 'task',
+      tasks: [
+        { taskId: 'task', status: 'completed' },
+        { taskId: 'task-earlier', status: 'completed', createdAt: '2026-08-23T23:05:00Z' },
+      ],
+      tasksTruncated: false,
+    };
+    mockParentChildrenByMessage = new Map([['parent-message', [eventChild]]]);
+    mockParentChildrenByThread = new Map([[eventChild.threadId, eventChild]]);
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const eventSelection: ActiveSubagentPanel = {
+      ...selection,
+      event: { actorId: 'actor-1', progressKey: 'event-task:child-thread:task' },
+    };
+
+    render(
+      <RecoilRoot>
+        <SubagentThreadPanel selection={eventSelection} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByRole('option', { name: '23:05' })).toBeInTheDocument();
+    expect(dateTimeFormat).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ hour12: false }),
+    );
+    dateTimeFormat.mockRestore();
   });
 });

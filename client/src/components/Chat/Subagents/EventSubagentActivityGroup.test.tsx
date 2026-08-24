@@ -21,17 +21,31 @@ const mockChild: ParentSubagentSummary = {
   tasks: [{ taskId: 'task-1', status: 'running' }],
   tasksTruncated: false,
 };
+const mockCompletedChild: ParentSubagentSummary = {
+  ...mockChild,
+  threadId: 'event-thread-2',
+  parentMessageId: 'assistant-message',
+  agentId: 'agent-2',
+  actorId: 'actor-b',
+  status: 'completed',
+  latestTaskId: 'task-2',
+  tasks: [{ taskId: 'task-2', status: 'completed' }],
+};
+let mockChildrenByMessage = new Map<string, ParentSubagentSummary[]>();
 
 jest.mock('./ParentSubagentsProvider', () => ({
   useParentSubagents: () => ({
-    byMessageId: new Map([['parent-message', [mockChild]]]),
+    byMessageId: mockChildrenByMessage,
     byThreadId: new Map([['event-thread', mockChild]]),
     refresh: mockRefresh,
   }),
 }));
 
 jest.mock('~/Providers', () => ({
-  useAgentsMapContext: () => ({ 'agent-1': { id: 'agent-1', name: 'Visible Agent' } }),
+  useAgentsMapContext: () => ({
+    'agent-1': { id: 'agent-1', name: 'Visible Agent' },
+    'agent-2': { id: 'agent-2', name: 'Completed Agent' },
+  }),
 }));
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
@@ -61,6 +75,7 @@ jest.mock('lucide-react', () => ({
 describe('EventSubagentActivityGroup', () => {
   beforeEach(() => {
     mockRefresh.mockReset().mockResolvedValue(undefined);
+    mockChildrenByMessage = new Map([['parent-message', [mockChild]]]);
   });
 
   it('opens the durable event child under its owning parent message', () => {
@@ -97,9 +112,55 @@ describe('EventSubagentActivityGroup', () => {
         event: {
           actorId: 'actor-a',
           progressKey: 'event-task:event-thread:task-1',
+          siblingParentMessageIds: ['parent-message'],
         },
       }),
     );
+  });
+
+  it('preserves every merged message anchor and uses explicit plural status labels', () => {
+    mockChildrenByMessage = new Map([
+      ['parent-message', [mockChild]],
+      [
+        'assistant-message',
+        [
+          mockCompletedChild,
+          {
+            ...mockCompletedChild,
+            threadId: 'event-thread-3',
+            actorId: 'actor-c',
+            agentId: undefined,
+            title: 'Third actor',
+          },
+        ],
+      ],
+    ]);
+    let selection: ActiveSubagentPanel | null = null;
+    const Observer = () => {
+      selection = useRecoilValue(activeSubagentPanel);
+      return null;
+    };
+
+    render(
+      <RecoilRoot>
+        <Observer />
+        <EventSubagentActivityGroup
+          conversationId="parent-conversation"
+          parentMessageIds={['parent-message', 'assistant-message']}
+        />
+      </RecoilRoot>,
+    );
+
+    const summary = screen.getByRole('button', { name: /com_ui_subagent_activity/ });
+    expect(summary).toHaveAccessibleName(/com_ui_subagent_count_running_one/);
+    expect(summary).toHaveAccessibleName(/com_ui_subagent_count_completed_other/);
+    fireEvent.click(summary);
+    fireEvent.click(screen.getByRole('button', { name: /Completed Agent/ }));
+
+    expect(selection?.event?.siblingParentMessageIds).toEqual([
+      'parent-message',
+      'assistant-message',
+    ]);
   });
 
   it('does not reopen a child after the user closes it while refresh is pending', async () => {

@@ -3,6 +3,7 @@ import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librec
 import {
   applyActivityLabelPart,
   groupActivityPhases,
+  lastCursorContentIdx,
   lastVisibleContentIdx,
   offsetActivityPhaseBoundary,
 } from '../activityLabels';
@@ -174,6 +175,21 @@ describe('lastVisibleContentIdx', () => {
     const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
 
     expect(lastVisibleContentIdx([tool, emptyText, child as never, phase as never])).toBe(3);
+  });
+});
+
+describe('lastCursorContentIdx', () => {
+  it('keeps the cursor on visible output before a trailing empty provider placeholder', () => {
+    const text = { type: ContentTypes.TEXT, text: 'Visible answer' } as TMessageContentParts;
+    const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
+
+    expect(lastCursorContentIdx([text, emptyText])).toBe(0);
+  });
+
+  it('retains a solitary empty placeholder for the initial waiting state', () => {
+    const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
+
+    expect(lastCursorContentIdx([emptyText])).toBe(0);
   });
 });
 

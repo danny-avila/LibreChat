@@ -4,7 +4,7 @@ import type { TMessageContentParts, SearchResultData, TAttachment } from 'librec
 import {
   getActivityLabelPart,
   getActivityLabelText,
-  lastVisibleContentIdx,
+  lastCursorContentIdx,
 } from '~/utils/activityLabels';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -261,7 +261,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
    *  filtered out of every lane, so counting it as last would leave NO
    *  rendered part with the last-part cursor until the label fills. */
-  const relativeLastContentIdx = lastVisibleContentIdx(content);
+  const relativeLastContentIdx = lastCursorContentIdx(content);
   const lastContentIdx =
     relativeLastContentIdx < 0
       ? -1
