@@ -247,10 +247,13 @@ export function createAgentTriggerDeliveryEngine(
   const workerId = deps.workerId ?? `${process.pid}-${randomUUID()}`;
   const controllers = new Map<AbortController, string>();
   let idleStreak = 0;
-  /** Earliest known future eligibility among deliveries this process has seen; the idle
-   *  timer never sleeps past it, so a retry or defer is claimed when due, not when the
-   *  backoff happens to wake. Cross-replica delays remain bounded by `maxIdleTickMs`. */
-  let nextEligibleAtMs: number | null = null;
+  /** Future eligibility times this process has seen (sorted, deduplicated, bounded); the
+   *  idle timer never sleeps past the earliest, so retries and defers are claimed when
+   *  due, not when the backoff happens to wake. On overflow the latest deadline is
+   *  dropped and that delivery degrades to idle-poll pickup, bounded by `maxIdleTickMs`
+   *  — the same bound that covers deliveries delayed by other replicas. */
+  const eligibleDeadlinesMs: number[] = [];
+  const MAX_TRACKED_DEADLINES = 64;
   const processing = new Set<Promise<void>>();
   const processingByUser = new Map<string, Set<Promise<void>>>();
   const cancelledUsers = new Set<string>();
@@ -584,11 +587,19 @@ export function createAgentTriggerDeliveryEngine(
     if (!Number.isFinite(eligibleAtMs) || stopped) {
       return;
     }
-    if (nextEligibleAtMs != null && eligibleAtMs >= nextEligibleAtMs) {
+    const insertAt = eligibleDeadlinesMs.findIndex((deadline) => deadline >= eligibleAtMs);
+    if (insertAt !== -1 && eligibleDeadlinesMs[insertAt] === eligibleAtMs) {
       return;
     }
-    nextEligibleAtMs = eligibleAtMs;
-    if (started) {
+    eligibleDeadlinesMs.splice(
+      insertAt === -1 ? eligibleDeadlinesMs.length : insertAt,
+      0,
+      eligibleAtMs,
+    );
+    if (eligibleDeadlinesMs.length > MAX_TRACKED_DEADLINES) {
+      eligibleDeadlinesMs.pop();
+    }
+    if (started && eligibleDeadlinesMs[0] === eligibleAtMs) {
       schedule();
     }
   }
@@ -614,15 +625,16 @@ export function createAgentTriggerDeliveryEngine(
       clearTimeout(timer);
     }
     let delay = Math.min(tickMs * 2 ** idleStreak, maxIdleTickMs);
-    if (nextEligibleAtMs != null) {
-      delay = Math.max(0, Math.min(delay, nextEligibleAtMs - now().getTime()));
+    if (eligibleDeadlinesMs.length > 0) {
+      delay = Math.max(0, Math.min(delay, eligibleDeadlinesMs[0] - now().getTime()));
     }
     timer = setTimeout(async () => {
       if (stopped) {
         return;
       }
-      if (nextEligibleAtMs != null && now().getTime() >= nextEligibleAtMs) {
-        nextEligibleAtMs = null;
+      const nowMs = now().getTime();
+      while (eligibleDeadlinesMs.length > 0 && eligibleDeadlinesMs[0] <= nowMs) {
+        eligibleDeadlinesMs.shift();
       }
       await claimAvailable().catch((error) =>
         logger.error('[agent-triggers] delivery claim pass failed:', error),

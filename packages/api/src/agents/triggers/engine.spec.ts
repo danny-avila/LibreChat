@@ -603,6 +603,72 @@ describe('createAgentTriggerDeliveryEngine', () => {
     }
   });
 
+  it('tracks several eligibility deadlines and interrupts a capped idle sleep for a new earliest', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(START);
+    try {
+      const handed = new Set<string>();
+      const pendingAt = new Map<string, number>([
+        ['claim-1', 0],
+        ['claim-2', 0],
+        ['retry-1', START.getTime() + 5_000],
+        ['retry-2', START.getTime() + 23_000],
+      ]);
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          for (const [token, at] of pendingAt) {
+            if (!handed.has(token) && Date.now() >= at) {
+              handed.add(token);
+              return delivery({ claimToken: token });
+            }
+          }
+          return null;
+        }),
+      });
+      const retryable = (retryAfter: string) =>
+        new AgentTriggerExecutionError('busy', {
+          mode: 'fire',
+          certainty: 'definite',
+          retryable: true,
+          code: 'RATE_LIMITED',
+          status: 429,
+          retryAfter,
+        });
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(retryable('5'))
+        .mockRejectedValueOnce(retryable('23'))
+        .mockImplementation(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => new Date(), workerId: 'worker-1' },
+        { concurrency: 2, tickMs: 1_000, maxIdleTickMs: 60_000 },
+      );
+
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(dispatch).toHaveBeenCalledTimes(2);
+
+      /** Both retry deadlines are tracked: the +5s one fires on time, and the +23s one
+       *  survives it — a single-slot tracker would discard it and idle to the cap. */
+      await jest.advanceTimersByTimeAsync(6_000);
+      expect(dispatch).toHaveBeenCalledTimes(3);
+      await jest.advanceTimersByTimeAsync(18_000);
+      expect(dispatch).toHaveBeenCalledTimes(4);
+
+      /** And a deadline learned while the timer already sleeps toward the idle cap
+       *  re-arms it: nothing new until the engine has idled well past base cadence. */
+      await jest.advanceTimersByTimeAsync(40_000);
+      pendingAt.set('late-arrival', Date.now() + 3_000);
+      engine.noteEligibleAt(new Date(Date.now() + 3_000));
+      await jest.advanceTimersByTimeAsync(4_000);
+      expect(dispatch).toHaveBeenCalledTimes(5);
+
+      await engine.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('coalesces overlapping ticks into one claim pass', async () => {
     let releaseClaim: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
