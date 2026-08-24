@@ -1014,7 +1014,18 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       control: (scopeId, taskId, command, invocationId) =>
         this.controlInvocationAndPersist(scopeId, taskId, command, invocationId),
       list: (scopeId) => super.list(scopeId),
-      cancelScope: (scopeId, threadIds) => this.cancelForScope(scopeId, threadIds),
+      cancelScope: (scopeId, threadIds, removedConversationIds = []) => {
+        const cancelled = this.cancelForScope(scopeId, threadIds);
+        if (removedConversationIds.length > 0) {
+          const scope = parseScope(scopeId);
+          this.dropDeletedControlReceiptWork(
+            scope.userId,
+            new Set(removedConversationIds),
+            scope.tenantId,
+          );
+        }
+        return cancelled;
+      },
     });
     this.taskControlTransport = transport;
   }
@@ -1609,9 +1620,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string = randomUUID(),
   ): Promise<SubagentTaskControlResult> {
-    /** The owner helper performs retained and durable replay exactly once before
-     * touching a local task. Avoid a second serial Mongo read for terminal tasks. */
-    const local = await this.controlInvocationAndPersist(scopeId, taskId, command, invocationId);
+    /** A requester that has neither the task nor a retained invocation cannot be
+     * authoritative. Route first so a remote control pays only the owner's durable
+     * preflight instead of repeating the same Mongo read on both replicas. */
+    const hasLocalAuthority =
+      this.get(scopeId, taskId) != null ||
+      this.retainedControlInvocation(scopeId, taskId, invocationId) != null;
+    const local = hasLocalAuthority
+      ? await this.controlInvocationAndPersist(scopeId, taskId, command, invocationId)
+      : ({ status: 'not_found' } as const);
     if (local.status !== 'not_found') {
       return local;
     }
@@ -1620,15 +1637,38 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       routed = await this.taskControlTransport?.control(scopeId, taskId, command, invocationId);
     } catch (error) {
       if (error instanceof SubagentTaskOwnerUnavailableError) {
-        const replay = await this.replayDurableControl(scopeId, taskId, command, invocationId);
+        const replay = await this.replayDurableControlAtBoundary(
+          scopeId,
+          taskId,
+          command,
+          invocationId,
+        );
         if (replay != null) return replay;
       }
       throw error;
     }
     if (routed != null && routed.status !== 'not_found') return routed;
     return (
-      (await this.replayDurableControl(scopeId, taskId, command, invocationId)) ?? routed ?? local
+      (await this.replayDurableControlAtBoundary(scopeId, taskId, command, invocationId)) ??
+      routed ??
+      local
     );
+  }
+
+  /** Durable receipt reads are part of the owner boundary. Storage ambiguity must
+   * remain retryable instead of escaping as an unrelated tool execution failure. */
+  private async replayDurableControlAtBoundary(
+    scopeId: string,
+    taskId: string,
+    command: SubagentTaskControlCommand,
+    invocationId: string,
+  ): Promise<SubagentTaskControlResult | undefined> {
+    try {
+      return await this.replayDurableControl(scopeId, taskId, command, invocationId);
+    } catch (error) {
+      if (error instanceof SubagentTaskOwnerUnavailableError) throw error;
+      throw new SubagentTaskOwnerUnavailableError();
+    }
   }
 
   private retainedControlInvocation(
@@ -1654,7 +1694,35 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         message: 'This control invocation id was already used for a different command.',
       };
     }
-    if (hasDurableControlReceipt(retained)) return retained.result;
+    if (hasDurableControlReceipt(retained)) {
+      /** Terminal materialization and one-shot collection can change after the
+       * receipt becomes durable. Refresh those flags from the exact durable row so
+       * same-owner replay agrees with replay after owner loss. */
+      if ('task' in retained.result && retained.result.task.status !== 'running') {
+        const current = this.get(scopeId, taskId);
+        if (current != null) {
+          retained.result = {
+            ...retained.result,
+            task: {
+              ...retained.result.task,
+              status: current.status,
+              updatedAt: current.updatedAt,
+              resultAvailable: current.resultAvailable,
+              resultClaimed: current.resultClaimed,
+            },
+          };
+        } else {
+          const durable = await this.replayDurableControlAtBoundary(
+            scopeId,
+            taskId,
+            command,
+            invocationId,
+          );
+          if (durable != null) retained.result = durable;
+        }
+      }
+      return retained.result;
+    }
     let persistenceFailed = false;
     try {
       await (retained.receiptPersistence ?? this.flushControlReceipts(scopeId, taskId));
@@ -1901,9 +1969,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         await persistence;
         /** A terminal SDK transition can replace the accepted projection while its
          * older write is awaiting Mongo. Mark only the exact generation awaited. */
-        if (invocation.receipt === persistedReceipt) {
-          invocation.receiptPersisted = true;
-        }
+        if (invocation.receipt === persistedReceipt) invocation.receiptPersisted = true;
+        /** Do not acknowledge an older generation while a newer authoritative SDK
+         * transition is still queued. There is no async gap after this loop, so the
+         * generation proven durable is the one returned to the caller. */
+        await this.awaitCurrentControlReceipt(scopeId, taskId, invocation);
       }
     } catch (error) {
       if (error instanceof SubagentControlReceiptConflictError) {
@@ -1937,7 +2007,22 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         invocation.receiptPersistence = undefined;
       }
     }
-    return result;
+    return invocation.result;
+  }
+
+  private async awaitCurrentControlReceipt(
+    scopeId: string,
+    taskId: string,
+    invocation: ControlInvocationRecord,
+  ): Promise<void> {
+    while (invocation.receipt != null && invocation.receiptPersisted !== true) {
+      const receipt = invocation.receipt;
+      const persistence =
+        invocation.receiptPersistence ?? this.flushControlReceipts(scopeId, taskId);
+      invocation.receiptPersistence = persistence;
+      await persistence;
+      if (invocation.receipt === receipt && hasDurableControlReceipt(invocation)) return;
+    }
   }
 
   /**
@@ -2142,9 +2227,16 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         }),
         threadIds: null,
       }));
-    const scopeCancellations = [...plan.scopes, ...cascadeScopes].map((scope) =>
-      cancelSlot(() => transport.cancelScope(scope.scopeId, scope.threadIds)),
-    );
+    const scopeCancellations = [...plan.scopes, ...cascadeScopes].map((scope) => {
+      const parsed = parseScope(scope.scopeId);
+      const removedForScope = [
+        ...(removed.has(parsed.parentConversationId) ? [parsed.parentConversationId] : []),
+        ...(scope.threadIds ?? []).filter((threadId) => removed.has(threadId)),
+      ];
+      return cancelSlot(() =>
+        transport.cancelScope(scope.scopeId, scope.threadIds, removedForScope),
+      );
+    });
     const leaseCancellations = plan.leases
       .filter(
         (lease) => removed.has(lease.parentConversationId) || removed.has(lease.conversationId),
@@ -2156,7 +2248,14 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             parentConversationId: lease.parentConversationId,
             ...(tenantId ? { tenantId } : {}),
           });
-          const stopped = await transport.cancelScope(scopeId, [lease.conversationId]);
+          const removedForLease = [lease.parentConversationId, lease.conversationId].filter((id) =>
+            removed.has(id),
+          );
+          const stopped = await transport.cancelScope(
+            scopeId,
+            [lease.conversationId],
+            removedForLease,
+          );
           if (stopped > 0 || this.cancelUnroutedTask == null) return stopped;
           return (await this.cancelUnroutedTask({
             userId,

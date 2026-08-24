@@ -110,10 +110,14 @@ class TestTaskControlTransport implements SubagentTaskControlTransport {
     return [...this.remoteOwners(scopeId)].flatMap((owner) => owner.handler?.list(scopeId) ?? []);
   }
 
-  async cancelScope(scopeId: string, threadIds: string[] | null): Promise<number> {
+  async cancelScope(
+    scopeId: string,
+    threadIds: string[] | null,
+    removedConversationIds?: string[],
+  ): Promise<number> {
     let cancelled = 0;
     for (const owner of this.remoteOwners(scopeId)) {
-      cancelled += owner.handler?.cancelScope(scopeId, threadIds) ?? 0;
+      cancelled += owner.handler?.cancelScope(scopeId, threadIds, removedConversationIds) ?? 0;
     }
     return cancelled;
   }
@@ -2215,6 +2219,147 @@ describe('SubagentThreadTaskStore', () => {
     await restartedStore.destroyTaskControlTransport();
   });
 
+  it('waits for a raced authoritative receipt generation before acknowledging control', async () => {
+    const userId = 'receipt-generation-race-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new ReceiptTestSubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let finish = (_value: { content: string }): void => undefined;
+    const result = new Promise<{ content: string }>((resolve) => (finish = resolve));
+    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the generation-race task seed',
+    );
+
+    const originalRecord = methods.recordSubagentTaskControlReceipt.bind(methods);
+    let releaseAccepted!: () => void;
+    let releaseApplied!: () => void;
+    let acceptedEntered!: () => void;
+    let appliedEntered!: () => void;
+    const acceptedGate = new Promise<void>((resolve) => (releaseAccepted = resolve));
+    const appliedGate = new Promise<void>((resolve) => (releaseApplied = resolve));
+    const sawAccepted = new Promise<void>((resolve) => (acceptedEntered = resolve));
+    const sawApplied = new Promise<void>((resolve) => (appliedEntered = resolve));
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockImplementation(async (args) => {
+        if (args.receipt.status === 'accepted') {
+          acceptedEntered();
+          await acceptedGate;
+        } else if (args.receipt.status === 'applied') {
+          appliedEntered();
+          await appliedGate;
+        }
+        return originalRecord(args);
+      });
+
+    const control = store.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'queue', message: 'Apply at the next boundary.' },
+      'generation-race-invocation',
+    );
+    await sawAccepted;
+    const controlId = store.get(config.scopeId, taskId)?.controlReceipts?.[0]?.controlId;
+    expect(controlId).toBeDefined();
+    store.emitControlReceiptForTest(config.scopeId, taskId, {
+      controlId: controlId as string,
+      action: 'queue',
+      status: 'applied',
+      createdAt: Date.now() - 1,
+      updatedAt: Date.now(),
+      boundary: 'turn',
+    });
+    releaseAccepted();
+    await sawApplied;
+    let acknowledged = false;
+    void control.then(() => (acknowledged = true));
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+
+    releaseApplied();
+    await expect(control).resolves.toMatchObject({
+      status: 'accepted',
+      task: { pendingControls: 0 },
+    });
+
+    persistence.mockRestore();
+    finish({ content: 'Done.' });
+    await waitForSettled(store, config.scopeId, started);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('refreshes retained cancellation result flags after durable collection', async () => {
+    const userId = 'retained-control-claim-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (runtime) =>
+          new Promise((_resolve, reject) => {
+            runtime.signal.addEventListener('abort', () => reject(runtime.signal.reason), {
+              once: true,
+            });
+          }),
+      }),
+    );
+    const taskId = requireAccepted(started).task.taskId;
+    const threadId = requireThreadId(started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages(
+            { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+            '+subagentTask',
+          )
+        ).length === 1,
+      'the cancellation replay task seed',
+    );
+
+    await expect(
+      store.controlTask(config.scopeId, taskId, { action: 'cancel' }, 'cancel-invocation'),
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    await waitForSettled(store, config.scopeId, started);
+    await waitUntil(
+      async () =>
+        (
+          await methods.getMessages({
+            user: userId,
+            conversationId: threadId,
+            messageId: `${taskId}:assistant`,
+          })
+        ).length === 1,
+      'the durable cancelled result',
+    );
+    await expect(store.claimTask(config.scopeId, taskId, 'poll-invocation')).resolves.toMatchObject(
+      {
+        status: 'cancelled',
+        task: { resultClaimed: true },
+      },
+    );
+
+    await expect(
+      store.controlTask(config.scopeId, taskId, { action: 'cancel' }, 'cancel-invocation'),
+    ).resolves.toMatchObject({
+      status: 'cancelled',
+      task: { resultAvailable: false, resultClaimed: true },
+    });
+
+    await store.destroyTaskControlTransport();
+  });
+
   it('normalizes terminal replay storage failures at the owner boundary', async () => {
     const userId = 'terminal-replay-storage-user';
     const parentConversationId = randomUUID();
@@ -3593,9 +3738,11 @@ describe('SubagentThreadTaskStore', () => {
     expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'local-1')).toMatchObject({
       status: 'accepted',
     });
+    const replayLookup = jest.spyOn(methods, 'getSubagentTaskControlReplay');
 
     /** The window holds a live task's record and cannot be swept, but a task this
-     * replica never owned is the remote owner's to refuse or apply. */
+     * replica never owned is the remote owner's to refuse or apply. Only that owner
+     * performs the durable preflight; the requester does not repeat the Mongo read. */
     await expect(
       store.controlTask(config.scopeId, 'remote-task', { action: 'cancel' }, 'remote-1'),
     ).resolves.toEqual(remoteResult);
@@ -3605,9 +3752,36 @@ describe('SubagentThreadTaskStore', () => {
       { action: 'cancel' },
       'remote-1',
     );
+    expect(replayLookup).not.toHaveBeenCalled();
+    replayLookup.mockRestore();
 
     finish({ content: 'done' });
     await waitForSettled(store, config.scopeId, live);
+    await store.destroyTaskControlTransport();
+  });
+
+  it('normalizes a storage outage after routed owner loss', async () => {
+    const userId = 'remote-fallback-outage-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const { scopeId } = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    await store.configureTaskControlTransport({
+      ...replayTransport({ status: 'not_found' }),
+      control: async () => {
+        throw new SubagentTaskOwnerUnavailableError();
+      },
+    });
+    const replayLookup = jest
+      .spyOn(methods, 'getSubagentTaskControlReplay')
+      .mockRejectedValue(new Error('database unavailable'));
+
+    await expect(
+      store.controlTask(scopeId, 'remote-task', { action: 'cancel' }, 'remote-outage'),
+    ).rejects.toBeInstanceOf(SubagentTaskOwnerUnavailableError);
+    expect(replayLookup).toHaveBeenCalledTimes(1);
+
+    replayLookup.mockRestore();
     await store.destroyTaskControlTransport();
   });
 
@@ -3878,7 +4052,10 @@ describe('SubagentThreadTaskStore', () => {
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const hub = new TestTaskRoutingHub();
-    const ownerStore = new SubagentThreadTaskStore(methods);
+    const ownerStore = new ReceiptTestSubagentThreadTaskStore(methods, {
+      controlReceiptRetryMs: 60_000,
+      shutdownControlReceiptBackoffMs: 1,
+    });
     const deletingStore = new SubagentThreadTaskStore(methods);
     await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
     await deletingStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
@@ -3903,16 +4080,37 @@ describe('SubagentThreadTaskStore', () => {
     }
     expect(await methods.getConvo(userId, threadId)).not.toBeNull();
 
+    const accepted = await ownerStore.controlTask(
+      config.scopeId,
+      taskId,
+      { action: 'queue', message: 'Persist this before the child is deleted.' },
+      'remote-deleted-receipt',
+    );
+    const controlId = accepted.status === 'accepted' ? accepted.controlId : undefined;
+    expect(controlId).toBeDefined();
+    const persistence = jest
+      .spyOn(methods, 'recordSubagentTaskControlReceipt')
+      .mockRejectedValue(new Error('receipt target deleted'));
+    ownerStore.emitControlReceiptForTest(config.scopeId, taskId, {
+      controlId: controlId as string,
+      action: 'queue',
+      status: 'applied',
+      createdAt: Date.now() - 1,
+      updatedAt: Date.now(),
+      boundary: 'turn',
+    });
+    await waitUntil(() => persistence.mock.calls.length > 0, 'the remote receipt write to fail');
+
     /** The parent survives this deletion, so the child's own thread is the only target. */
     const plan = await deletingStore.planCancellationForConversations(userId, [threadId]);
-    await expect(deletingStore.cancelPlan(plan)).resolves.toBe(1);
+    await methods.deleteConvos(userId, { conversationId: threadId });
+    await expect(deletingStore.cancelPlan(plan, [threadId])).resolves.toBe(1);
     await waitForSettled(ownerStore, config.scopeId, started);
     expect(ownerStore.get(config.scopeId, taskId)).toMatchObject({ status: 'cancelled' });
+    persistence.mockRestore();
 
-    await Promise.all([
-      ownerStore.destroyTaskControlTransport(),
-      deletingStore.destroyTaskControlTransport(),
-    ]);
+    await expect(ownerStore.destroyTaskControlTransport()).resolves.toBeUndefined();
+    await deletingStore.destroyTaskControlTransport();
   });
 
   it('cancels a child admitted after the deletion snapshot from its durable lease', async () => {
