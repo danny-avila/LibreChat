@@ -207,6 +207,14 @@ describe('subagent thread parent-scoped view', () => {
   it('returns bounded authoritative control receipts without private fingerprints', async () => {
     const input = message('task-1:user', 'running', true);
     input.subagentTask!.controlReceipts = [
+      ...Array.from({ length: 32 }, (_, index) => ({
+        invocationId: `earlier-${index}`,
+        fingerprint: `private-${index}`,
+        action: 'queue' as const,
+        status: 'applied' as const,
+        createdAt: new Date(`2026-08-21T10:00:${String(index).padStart(2, '0')}.000Z`),
+        updatedAt: new Date(`2026-08-21T10:00:${String(index).padStart(2, '0')}.000Z`),
+      })),
       {
         invocationId: 'invocation-1',
         fingerprint: 'private-fingerprint',
@@ -231,17 +239,25 @@ describe('subagent thread parent-scoped view', () => {
     await handler(createRequest({}, { taskId: 'task-1' }), response);
 
     const view = json.mock.calls[0][0];
-    expect(view.controlReceipts).toEqual([
-      expect.objectContaining({
-        invocationId: 'invocation-1',
-        controlId: 'control-1',
-        action: 'steer',
-        status: 'applied',
-        boundary: 'tool',
-        messageTruncated: true,
-      }),
-    ]);
-    expect(Buffer.byteLength(view.controlReceipts[0].message, 'utf8')).toBeLessThanOrEqual(512);
+    expect(view.controlReceipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          invocationId: 'invocation-1',
+          controlId: 'control-1',
+          action: 'steer',
+          status: 'applied',
+          boundary: 'tool',
+          messageTruncated: true,
+        }),
+      ]),
+    );
+    const projected = view.controlReceipts.find(
+      (receipt: { invocationId: string }) => receipt.invocationId === 'invocation-1',
+    );
+    expect(projected).toBeDefined();
+    expect(Buffer.byteLength(projected?.message ?? '', 'utf8')).toBeLessThanOrEqual(512);
+    expect(view.controlReceipts).toHaveLength(32);
+    expect(view.controlReceiptsTruncated).toBe(true);
     expect(JSON.stringify(view)).not.toContain('private-fingerprint');
   });
 

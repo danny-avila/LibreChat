@@ -1,5 +1,10 @@
 export type SubagentThreadStatus =
-  'dispatched' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
+  | 'dispatched'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+  | 'cancelled';
 
 export type ParentSubagentTaskSummary = {
   taskId: string;
@@ -99,6 +104,8 @@ export type SubagentThreadView = {
   activityTruncated: boolean;
   /** Bounded authoritative parent-to-child command receipts for this task. */
   controlReceipts?: SubagentControlReceipt[];
+  /** True when older authoritative command receipts were omitted from this view. */
+  controlReceiptsTruncated?: boolean;
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
   updatedAt?: string;

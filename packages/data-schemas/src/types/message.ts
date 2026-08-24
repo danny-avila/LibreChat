@@ -6,7 +6,11 @@ import type {
 import type { Document } from 'mongoose';
 
 export type SubagentTaskControlAction =
-  'steer' | 'queue' | 'interrupt' | 'cancel' | 'cancel_message';
+  | 'steer'
+  | 'queue'
+  | 'interrupt'
+  | 'cancel'
+  | 'cancel_message';
 
 export type SubagentTaskControlReceiptStatus = 'accepted' | 'applied' | 'rejected' | 'failed';
 

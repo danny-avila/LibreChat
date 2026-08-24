@@ -122,13 +122,13 @@ const publicMessage = (
 const publicControlReceipts = (
   messages: SubagentThreadViewMessageRecord[],
   taskId: string,
-): SubagentControlReceipt[] => {
+): { receipts: SubagentControlReceipt[]; truncated: boolean } => {
   const input = messages.find((message) => message.messageId === `${taskId}:user`);
   const stored = input?.subagentTask?.controlReceipts ?? [];
   const accepted = stored.filter((receipt) => receipt.status === 'accepted');
   const terminal = stored.filter((receipt) => receipt.status !== 'accepted');
   const terminalLimit = Math.max(0, MAX_PUBLIC_CONTROL_RECEIPTS - accepted.length);
-  return [...accepted, ...(terminalLimit === 0 ? [] : terminal.slice(-terminalLimit))]
+  const retained = [...accepted, ...(terminalLimit === 0 ? [] : terminal.slice(-terminalLimit))]
     .slice(0, MAX_PUBLIC_CONTROL_RECEIPTS)
     .map((receipt) => {
       const message =
@@ -154,6 +154,7 @@ const publicControlReceipts = (
           : {}),
       };
     });
+  return { receipts: retained, truncated: retained.length < stored.length };
 };
 
 const publicStatus = (
@@ -484,6 +485,10 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         projectedNewestFirst.push(projected.message);
         remainingTextBytes -= projected.bytes;
       }
+      const projectedControls =
+        requestedTaskId == null
+          ? { receipts: [], truncated: false }
+          : publicControlReceipts(newestFirst, requestedTaskId);
       const view: SubagentThreadView = {
         threadId,
         parentConversationId,
@@ -501,8 +506,8 @@ export function createSubagentThreadViewHandler(deps: SubagentThreadViewDependen
         status: publicStatus(newestFirst, activeLeaseTaskId, requestedTaskId),
         activity: projectedActivity.activity,
         activityTruncated: projectedActivity.truncated,
-        controlReceipts:
-          requestedTaskId == null ? [] : publicControlReceipts(newestFirst, requestedTaskId),
+        controlReceipts: projectedControls.receipts,
+        ...(projectedControls.truncated ? { controlReceiptsTruncated: true } : {}),
         messages: projectedNewestFirst.reverse(),
         historyTruncated: historyTruncated || projectedNewestFirst.length < newestFirst.length,
         ...(isoDate(child.updatedAt) == null ? {} : { updatedAt: isoDate(child.updatedAt) }),

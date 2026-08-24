@@ -997,7 +997,10 @@ export class RedisSubagentTaskControlTransport implements SubagentTaskControlTra
     let serialized: string;
     try {
       let result:
-        SubagentTaskClaim | SubagentTaskControlResult | RoutedTaskList | RoutedCancelResult;
+        | SubagentTaskClaim
+        | SubagentTaskControlResult
+        | RoutedTaskList
+        | RoutedCancelResult;
       /** A claim that consumed nothing stays uncached so a later poll still observes
        * the task's live status. */
       let replayable = replay != null;

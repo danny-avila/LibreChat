@@ -289,6 +289,7 @@ export interface MessageMethods {
     userId: string;
     conversationId: string;
     taskId: string;
+    tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
   }): Promise<boolean>;
   bulkSaveMessages(
@@ -883,11 +884,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     userId,
     conversationId,
     taskId,
+    tenantId,
     receipt,
   }: {
     userId: string;
     conversationId: string;
     taskId: string;
+    tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
   }): Promise<boolean> {
     const validActions = new Set(['steer', 'queue', 'interrupt', 'cancel', 'cancel_message']);
@@ -917,6 +920,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       {
         user: userId,
         conversationId,
+        ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
         messageId: `${taskId}:user`,
         'subagentTask.status': 'running',
       },
@@ -995,11 +999,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                               $let: {
                                 vars: {
                                   accepted: {
-                                    $filter: {
-                                      input: '$$merged',
-                                      as: 'candidate',
-                                      cond: { $eq: ['$$candidate.status', 'accepted'] },
-                                    },
+                                    /** The supported task store admits at most 32 live
+                                     * controls. Keep a defensive storage bound here so
+                                     * custom callers cannot grow the private projection. */
+                                    $slice: [
+                                      {
+                                        $filter: {
+                                          input: '$$merged',
+                                          as: 'candidate',
+                                          cond: { $eq: ['$$candidate.status', 'accepted'] },
+                                        },
+                                      },
+                                      -MAX_SUBAGENT_CONTROL_RECEIPTS,
+                                    ],
                                   },
                                 },
                                 in: {
@@ -1008,10 +1020,90 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                                     {
                                       $slice: [
                                         {
-                                          $filter: {
-                                            input: '$$merged',
-                                            as: 'candidate',
-                                            cond: { $ne: ['$$candidate.status', 'accepted'] },
+                                          /** DocumentDB 5 does not support $sortArray.
+                                           * Insert each bounded receipt into a stable
+                                           * createdAt/invocationId order using baseline
+                                           * aggregation expressions instead. */
+                                          $reduce: {
+                                            input: {
+                                              $filter: {
+                                                input: '$$merged',
+                                                as: 'candidate',
+                                                cond: {
+                                                  $ne: ['$$candidate.status', 'accepted'],
+                                                },
+                                              },
+                                            },
+                                            initialValue: [],
+                                            in: {
+                                              $concatArrays: [
+                                                {
+                                                  $filter: {
+                                                    input: '$$value',
+                                                    as: 'ordered',
+                                                    cond: {
+                                                      $or: [
+                                                        {
+                                                          $lt: [
+                                                            '$$ordered.createdAt',
+                                                            '$$this.createdAt',
+                                                          ],
+                                                        },
+                                                        {
+                                                          $and: [
+                                                            {
+                                                              $eq: [
+                                                                '$$ordered.createdAt',
+                                                                '$$this.createdAt',
+                                                              ],
+                                                            },
+                                                            {
+                                                              $lte: [
+                                                                '$$ordered.invocationId',
+                                                                '$$this.invocationId',
+                                                              ],
+                                                            },
+                                                          ],
+                                                        },
+                                                      ],
+                                                    },
+                                                  },
+                                                },
+                                                ['$$this'],
+                                                {
+                                                  $filter: {
+                                                    input: '$$value',
+                                                    as: 'ordered',
+                                                    cond: {
+                                                      $or: [
+                                                        {
+                                                          $gt: [
+                                                            '$$ordered.createdAt',
+                                                            '$$this.createdAt',
+                                                          ],
+                                                        },
+                                                        {
+                                                          $and: [
+                                                            {
+                                                              $eq: [
+                                                                '$$ordered.createdAt',
+                                                                '$$this.createdAt',
+                                                              ],
+                                                            },
+                                                            {
+                                                              $gt: [
+                                                                '$$ordered.invocationId',
+                                                                '$$this.invocationId',
+                                                              ],
+                                                            },
+                                                          ],
+                                                        },
+                                                      ],
+                                                    },
+                                                  },
+                                                },
+                                              ],
+                                            },
                                           },
                                         },
                                         {
