@@ -98,12 +98,23 @@ export function collectQuotelessAppliedSteerIds(values: unknown[] | undefined): 
   return ids;
 }
 
+/** Max excerpts staged at once; mirrors the backend `QUOTE_MAX_COUNT` cap so
+ *  every displayed chip actually reaches the model on the next send. */
+export const MAX_QUOTE_COUNT = 10;
+
 /** Dedupe-appends re-staged excerpts onto the composer's pending-quote chips,
  * returning `prev` untouched when nothing new lands (Recoil referential
  * stability). The dedupe also makes the multiple restore triggers — ACK echo,
- * applied event, reconnect settle — idempotent for the same excerpts. */
+ * applied event, reconnect settle — idempotent for the same excerpts. Capped
+ * at `MAX_QUOTE_COUNT` with the already-staged chips winning: a restored tail
+ * that cannot ride the next send is dropped explicitly rather than displayed
+ * as a chip the submission would silently discard. */
 export function mergeRestagedQuotes(prev: string[], quotes: string[]): string[] {
-  const fresh = quotes.filter((quote) => !prev.includes(quote));
+  const room = MAX_QUOTE_COUNT - prev.length;
+  if (room <= 0) {
+    return prev;
+  }
+  const fresh = quotes.filter((quote) => !prev.includes(quote)).slice(0, room);
   return fresh.length > 0 ? [...prev, ...fresh] : prev;
 }
 

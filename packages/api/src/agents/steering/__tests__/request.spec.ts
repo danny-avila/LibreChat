@@ -314,6 +314,33 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(queued[0].quotes).toEqual(['kept excerpt', 'second']);
   });
 
+  it('honors a mid-request capability downgrade (same-generation HITL handover)', async () => {
+    // A resume rewrites steerQuotesCapable WITHOUT changing createdAt, so the
+    // enqueue fence cannot catch a capable→legacy handover that lands while
+    // the admission awaits run. The last-moment re-read must.
+    const streamId = 'steer-req-quotes-downgrade';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
+
+    const result = await handleSteerRequest(
+      user,
+      { conversationId: streamId, text: 'about the selection', quotes: ['the excerpt'] },
+      {
+        checkAgentAccess: async () => {
+          const stored = await GenerationJobManager.getJobStore().getJob(streamId);
+          (stored as { steerQuotesCapable?: boolean }).steerQuotesCapable = false;
+          return true;
+        },
+      },
+    );
+
+    expect(result.status).toBe(202);
+    expect(result.body).not.toHaveProperty('quotesAccepted');
+    const queued = await GenerationJobManager.steering.peek(streamId);
+    expect(queued[0]).not.toHaveProperty('quotes');
+  });
+
   it('drops quotes without the echo when the generation owner cannot merge them', async () => {
     // The job was created by a pre-quotes replica (no capability flag): an
     // upgraded admission replica must not store quotes its owning drain would

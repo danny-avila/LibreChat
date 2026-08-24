@@ -601,8 +601,22 @@ async function handleSteerRequestInternal(
    * them at injection. Dropping here keeps the durable item and the
    * `quotesAccepted` echo consistent — the missing echo makes the client
    * re-stage the excerpts, and a later HITL handover to a capable owner
-   * cannot double-deliver context the client already restored. */
-  const ownerAcceptsQuotes = owner.metadata?.steerQuotesCapable === true;
+   * cannot double-deliver context the client already restored.
+   *
+   * Re-read at the last moment, paid for only by quote-bearing requests: a
+   * HITL resume rewrites this flag WITHOUT changing the generation's
+   * `createdAt`, so the enqueue fence cannot see a handover that landed
+   * while the awaits above ran. A handover between this read and the
+   * enqueue commit remains the same irreducible race `preemptCapable`
+   * documents. A missing or replaced live job keeps the earlier value —
+   * the fenced enqueue below refuses those on its own. */
+  let ownerAcceptsQuotes = owner.metadata?.steerQuotesCapable === true;
+  if (quotes != null) {
+    const liveOwner = await GenerationJobManager.getJob(streamId);
+    if (liveOwner?.createdAt === owner.createdAt) {
+      ownerAcceptsQuotes = liveOwner.metadata?.steerQuotesCapable === true;
+    }
+  }
   const item: SteerQueueItem = {
     steerId: randomUUID(),
     ...(protocol.value === 2 && typeof clientSteerId === 'string' && { clientSteerId }),

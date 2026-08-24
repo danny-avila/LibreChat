@@ -227,6 +227,18 @@ describe('mergeRestagedQuotes', () => {
     expect(mergeRestagedQuotes(prev, ['kept'])).toBe(prev);
     expect(mergeRestagedQuotes(prev, ['kept', 'new'])).toEqual(['kept', 'new']);
   });
+
+  it('never grows past the sendable cap, letting already-staged chips win', () => {
+    // A chip beyond MAX_QUOTE_COUNT would render but silently miss the next
+    // send (both ends keep only the first 10) — drop the overflow explicitly.
+    const staged = Array.from({ length: 9 }, (_, i) => `staged-${i}`);
+    expect(mergeRestagedQuotes(staged, ['restored-a', 'restored-b'])).toEqual([
+      ...staged,
+      'restored-a',
+    ]);
+    const full = Array.from({ length: 10 }, (_, i) => `staged-${i}`);
+    expect(mergeRestagedQuotes(full, ['restored-a'])).toBe(full);
+  });
 });
 
 describe('collectDroppedSteerQuotes', () => {
