@@ -314,10 +314,13 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(queued[0].quotes).toEqual(['kept excerpt', 'second']);
   });
 
-  it('honors a mid-request capability downgrade (same-generation HITL handover)', async () => {
-    // A resume rewrites steerQuotesCapable WITHOUT changing createdAt, so the
-    // enqueue fence cannot catch a capable→legacy handover that lands while
-    // the admission awaits run. The last-moment re-read must.
+  it('atomically strips quotes when a legacy HITL handover races the admission', async () => {
+    // A resume keeps createdAt, so the enqueue fence cannot see the handover.
+    // A LEGACY resumer rewrites providerExecutionId without knowing the quote
+    // marker, which invalidates the previous owner's assertion; the enqueue
+    // transaction evaluates that equality against the LIVE job — after the
+    // admission's own capability read already said capable — and the returned
+    // persisted item keeps the echo honest.
     const streamId = 'steer-req-quotes-downgrade';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {
       initialMetadata: { steerQuotesCapable: true },
@@ -329,7 +332,7 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
       {
         checkAgentAccess: async () => {
           const stored = await GenerationJobManager.getJobStore().getJob(streamId);
-          (stored as { steerQuotesCapable?: boolean }).steerQuotesCapable = false;
+          (stored as { providerExecutionId?: string }).providerExecutionId = 'legacy-resume-exec';
           return true;
         },
       },

@@ -348,7 +348,7 @@ describe('RedisJobStore', () => {
       promptTokens: 0,
       discoveredTools: [],
       preemptCapable: true,
-      steerQuotesCapable: true,
+      steerQuotesExecutionId: 'exec-1',
       generationProtocolVersion: 2,
       resolvedAskUserQuestions: [
         {
@@ -371,7 +371,7 @@ describe('RedisJobStore', () => {
      * degrading to ordinary steering in every Redis deployment.
      */
     expect(job.preemptCapable).toBe(true);
-    expect(job.steerQuotesCapable).toBe(true);
+    expect(job.steerQuotesExecutionId).toBe('exec-1');
     expect(job.generationProtocolVersion).toBe(2);
     expect(job.checkpointNamespace).toBe(String(job.createdAt));
     expect(job.resolvedAskUserQuestions).toEqual([

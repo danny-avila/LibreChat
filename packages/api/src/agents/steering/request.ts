@@ -595,28 +595,19 @@ async function handleSteerRequestInternal(
   if (isAborted(deps.signal)) {
     return { status: 499, body: { code: 'STEER_ABORTED' } };
   }
-  /** The OWNER's recorded capability, exactly like `preemptCapable`: an
-   * upgraded admission replica must not store quotes (and claim them
-   * accepted) for a generation whose older owning drain would silently drop
-   * them at injection. Dropping here keeps the durable item and the
-   * `quotesAccepted` echo consistent — the missing echo makes the client
-   * re-stage the excerpts, and a later HITL handover to a capable owner
-   * cannot double-deliver context the client already restored.
-   *
-   * Re-read at the last moment, paid for only by quote-bearing requests: a
-   * HITL resume rewrites this flag WITHOUT changing the generation's
-   * `createdAt`, so the enqueue fence cannot see a handover that landed
-   * while the awaits above ran. A handover between this read and the
-   * enqueue commit remains the same irreducible race `preemptCapable`
-   * documents. A missing or replaced live job keeps the earlier value —
-   * the fenced enqueue below refuses those on its own. */
-  let ownerAcceptsQuotes = owner.metadata?.steerQuotesCapable === true;
-  if (quotes != null) {
-    const liveOwner = await GenerationJobManager.getJob(streamId);
-    if (liveOwner?.createdAt === owner.createdAt) {
-      ownerAcceptsQuotes = liveOwner.metadata?.steerQuotesCapable === true;
-    }
-  }
+  /** The OWNER's execution-bound capability: an upgraded admission replica
+   * must not store quotes (and claim them accepted) for a generation whose
+   * owning drain would silently drop them at injection. This read is only
+   * the FAST PATH — the enqueue transaction re-evaluates the same
+   * marker-equals-execution predicate atomically against the live job and
+   * strips `item.quotes` itself, so a HITL handover landing after this read
+   * (same `createdAt`, invisible to the enqueue fence) cannot smuggle
+   * quotes past a legacy owner. The returned persisted item reflects any
+   * strip, keeping the `quotesAccepted` echo honest; on a missing echo the
+   * client re-stages the excerpts. */
+  const ownerAcceptsQuotes =
+    owner.metadata?.steerQuotesExecutionId != null &&
+    owner.metadata.steerQuotesExecutionId === owner.metadata.providerExecutionId;
   const item: SteerQueueItem = {
     steerId: randomUUID(),
     ...(protocol.value === 2 && typeof clientSteerId === 'string' && { clientSteerId }),

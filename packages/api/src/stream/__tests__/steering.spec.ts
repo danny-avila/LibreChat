@@ -297,6 +297,73 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('execution-bound quote capability', () => {
+    function pauseAction(streamId: string) {
+      const payload = buildToolApprovalPayload([
+        { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_qc' },
+      ]);
+      return buildPendingAction(payload, {
+        streamId,
+        conversationId: streamId,
+        runId: 'run-qc',
+        responseMessageId: 'msg-qc',
+      });
+    }
+
+    test('a capable resume re-binds the marker to its own execution', async () => {
+      const streamId = 'steer-quote-capability-resume';
+      const job = await manager.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { steerQuotesCapable: true },
+      });
+      expect(await manager.approvals.pause(streamId, pauseAction(streamId))).toBe(true);
+
+      expect(
+        await manager.approvals.resolve(
+          streamId,
+          undefined,
+          { steerQuotesCapable: true, providerExecutionId: 'resumed-exec', providerDrained: true },
+          job.createdAt,
+        ),
+      ).toBe(true);
+
+      const resumed = await manager.getJob(streamId);
+      expect(resumed?.metadata.steerQuotesExecutionId).toBe('resumed-exec');
+      const depth = await manager.steering.enqueue(streamId, {
+        ...buildSteer('quoted after resume'),
+        quotes: ['kept excerpt'],
+      });
+      expect(depth).toBe(1);
+      const [queued] = await manager.steering.peek(streamId);
+      expect(queued.quotes).toEqual(['kept excerpt']);
+    });
+
+    test('a legacy resume (no assertion) invalidates the previous marker atomically', async () => {
+      const streamId = 'steer-quote-capability-legacy-resume';
+      const job = await manager.createJob(streamId, 'user-1', undefined, {
+        initialMetadata: { steerQuotesCapable: true },
+      });
+      expect(await manager.approvals.pause(streamId, pauseAction(streamId))).toBe(true);
+
+      // A pre-quotes replica's patch rewrites the execution id but cannot
+      // know the marker field — exactly the omit-not-clear shape.
+      expect(
+        await manager.approvals.resolve(
+          streamId,
+          undefined,
+          { providerExecutionId: 'legacy-exec', providerDrained: true },
+          job.createdAt,
+        ),
+      ).toBe(true);
+
+      await manager.steering.enqueue(streamId, {
+        ...buildSteer('quoted after legacy resume'),
+        quotes: ['dropped excerpt'],
+      });
+      const [queued] = await manager.steering.peek(streamId);
+      expect(queued).not.toHaveProperty('quotes');
+    });
+  });
+
   describe('recovered-steer payload proof', () => {
     const { buildRecoveredSteerPayload, recoveredSteerPayloadMatches } =
       jest.requireActual<typeof import('~/stream/SteerRecovery')>('~/stream/SteerRecovery');

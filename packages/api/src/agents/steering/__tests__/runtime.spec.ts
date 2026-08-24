@@ -205,7 +205,9 @@ describe('createSteerDrainHook', () => {
 
   it('merges quoted excerpts into text-only injections (media path merges its own)', async () => {
     const streamId = `drain-quotes-${Date.now()}`;
-    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
     await GenerationJobManager.steering.enqueue(streamId, {
       ...buildSteer('s1', 'what does this mean?'),
       quotes: ['selected passage'],
@@ -225,7 +227,9 @@ describe('createSteerDrainHook', () => {
 
   it('keeps quotes in the injection when media encoding degrades to text', async () => {
     const streamId = `drain-quotes-degrade-${Date.now()}`;
-    const job = await GenerationJobManager.createJob(streamId, 'user-1');
+    const job = await GenerationJobManager.createJob(streamId, 'user-1', undefined, {
+      initialMetadata: { steerQuotesCapable: true },
+    });
     await GenerationJobManager.steering.enqueue(streamId, {
       ...buildSteer('s1', 'and the doc?'),
       files: [{ file_id: 'f1', type: 'image/png' }],

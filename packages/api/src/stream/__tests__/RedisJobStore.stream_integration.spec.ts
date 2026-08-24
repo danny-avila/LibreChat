@@ -4181,6 +4181,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
 
@@ -4271,6 +4272,7 @@ describe('RedisJobStore Integration Tests', () => {
           {
             text: item.text,
             fileIds: (item.files ?? []).flatMap((file) => file.file_id ?? []).sort(),
+            quotes: item.quotes ?? [],
           },
         );
         await expect(

@@ -168,15 +168,23 @@ export interface SerializableJobData {
    */
   preemptCapable?: boolean;
   /**
-   * Whether the owning replica's drain merges `SteerQueueItem.quotes` into
-   * the injected turn and persists them on the steer part. Recorded at
-   * createJob (and rewritten on HITL handover) for the same reason as
-   * `preemptCapable`: a steer admitted by an upgraded replica must not store
-   * and acknowledge quotes an older owner would silently drop. Absent reads
-   * as incapable — admission then drops the quotes and omits the
-   * `quotesAccepted` echo, so the client re-stages them.
+   * Transient owner assertion that this replica's drain merges
+   * `SteerQueueItem.quotes` into the injected turn. Never stored as-is:
+   * createJob and `ApprovalLifecycle.resolve` translate it into
+   * `steerQuotesExecutionId` bound to the asserting owner's execution.
    */
   steerQuotesCapable?: boolean;
+  /**
+   * The `providerExecutionId` of the owner that asserted quote capability.
+   * Valid only while it equals the LIVE `providerExecutionId`: a legacy
+   * replica winning a HITL resume rewrites the execution id but cannot know
+   * this field, so its stale assertion self-invalidates — which a bare
+   * boolean could not do (an old resume patch omits rather than clears it).
+   * The fenced enqueue evaluates the equality atomically and strips
+   * `item.quotes` on mismatch, keeping the persisted item and the
+   * `quotesAccepted` echo honest; the client re-stages dropped excerpts.
+   */
+  steerQuotesExecutionId?: string;
 
   /** Explicitly false until the provider-owning replica has installed its
    * generation-fenced abort subscription. Missing is conservative legacy
@@ -394,6 +402,7 @@ export type JobMetadataPatch = Partial<
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'steerQuotesCapable'
+    | 'steerQuotesExecutionId'
     | 'providerExecutionId'
     | 'providerDrained'
     | 'generationProtocolVersion'

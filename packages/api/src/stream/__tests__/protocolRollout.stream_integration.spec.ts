@@ -135,7 +135,7 @@ describe('Redis generation protocol rollout bridge', () => {
       undefined,
       undefined,
       undefined,
-      { text: leased.text, fileIds: [] },
+      { text: leased.text, fileIds: [], quotes: [] },
     );
 
     const downgraded = await store.claimParkedSteersDetailed(streamId, 'user-1', undefined, 1);
