@@ -166,6 +166,25 @@ describe('Conversation Operations', () => {
       expect(savedConvo?.title).toBe('Test Conversation');
     });
 
+    it('persists priority processing', async () => {
+      const result = await saveConvo(mockCtx, {
+        ...mockConversationData,
+        priorityProcessing: true,
+      });
+
+      expect(result).toMatchObject({
+        priorityProcessing: true,
+      });
+
+      const savedConvo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+      }).lean();
+      expect(savedConvo).toMatchObject({
+        priorityProcessing: true,
+      });
+    });
+
     it('should query messages when saving a conversation', async () => {
       // Mock messages as ObjectIds
       const mockMessages = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];

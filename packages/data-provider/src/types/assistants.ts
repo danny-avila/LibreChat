@@ -1,5 +1,11 @@
 import type { OpenAPIV3 } from 'openapi-types';
-import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
+import type {
+  AgentProvider,
+  AssistantsEndpoint,
+  MemoryScope,
+  ReasoningContext,
+  ReasoningMode,
+} from 'src/schemas';
 import type { StatefulCodeEnvironment } from '../stateful-code';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
@@ -165,7 +171,7 @@ export type File = {
 
 /* Agent types */
 
-export type AgentParameterValue = number | string | null;
+export type AgentParameterValue = boolean | number | string | null;
 
 export type AgentModelParameters = {
   model?: string;
@@ -176,6 +182,10 @@ export type AgentModelParameters = {
   top_p: AgentParameterValue;
   frequency_penalty: AgentParameterValue;
   presence_penalty: AgentParameterValue;
+  reasoning_mode?: ReasoningMode | null;
+  reasoning_context?: ReasoningContext | null;
+  priorityProcessing?: boolean;
+  promptCache?: boolean;
   useResponsesApi?: boolean;
 };
 

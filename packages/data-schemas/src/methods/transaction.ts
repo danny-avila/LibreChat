@@ -11,6 +11,7 @@ type MultiplierParams = {
   tokenType?: 'prompt' | 'completion';
   inputTokenCount?: number;
   endpointTokenConfig?: Record<string, Record<string, number>>;
+  serviceTier?: 'default' | 'priority';
 };
 
 type CacheMultiplierParams = {
@@ -18,6 +19,7 @@ type CacheMultiplierParams = {
   model?: string;
   endpointTokenConfig?: Record<string, Record<string, number>>;
   inputTokenCount?: number;
+  serviceTier?: 'default' | 'priority';
 };
 
 /** Fields read/written by the internal token value calculators */
@@ -25,6 +27,7 @@ interface InternalTxDoc {
   valueKey?: string;
   tokenType?: 'prompt' | 'completion' | 'credits';
   model?: string;
+  serviceTier?: 'default' | 'priority';
   endpointTokenConfig?: Record<string, Record<string, number>> | null;
   inputTokenCount?: number;
   rawAmount?: number;
@@ -42,6 +45,7 @@ export interface TxData {
   user: string | Types.ObjectId;
   conversationId?: string;
   model?: string;
+  serviceTier?: 'default' | 'priority';
   context?: string;
   tokenType?: 'prompt' | 'completion' | 'credits';
   rawAmount?: number;
@@ -103,12 +107,13 @@ export function createTransactionMethods(
 } {
   /** Calculate and set the tokenValue for a transaction */
   function calculateTokenValue(txn: InternalTxDoc) {
-    const { valueKey, tokenType, model, endpointTokenConfig, inputTokenCount } = txn;
+    const { valueKey, tokenType, model, serviceTier, endpointTokenConfig, inputTokenCount } = txn;
     const multiplier = Math.abs(
       txMethods.getMultiplier({
         valueKey,
         tokenType: tokenType as 'prompt' | 'completion' | undefined,
         model,
+        serviceTier,
         endpointTokenConfig: endpointTokenConfig ?? undefined,
         inputTokenCount,
       }),
@@ -128,13 +133,14 @@ export function createTransactionMethods(
       return;
     }
 
-    const { model, endpointTokenConfig, inputTokenCount } = txn;
+    const { model, serviceTier, endpointTokenConfig, inputTokenCount } = txn;
     const etConfig = endpointTokenConfig ?? undefined;
 
     if (txn.tokenType === 'prompt') {
       const inputMultiplier = txMethods.getMultiplier({
         tokenType: 'prompt',
         model,
+        serviceTier,
         endpointTokenConfig: etConfig,
         inputTokenCount,
       });
@@ -142,6 +148,7 @@ export function createTransactionMethods(
         txMethods.getCacheMultiplier({
           cacheType: 'write',
           model,
+          serviceTier,
           endpointTokenConfig: etConfig,
           inputTokenCount,
         }) ?? inputMultiplier;
@@ -149,6 +156,7 @@ export function createTransactionMethods(
         txMethods.getCacheMultiplier({
           cacheType: 'read',
           model,
+          serviceTier,
           endpointTokenConfig: etConfig,
           inputTokenCount,
         }) ?? inputMultiplier;
@@ -185,6 +193,7 @@ export function createTransactionMethods(
       const multiplier = txMethods.getMultiplier({
         tokenType: txn.tokenType,
         model,
+        serviceTier,
         endpointTokenConfig: etConfig,
         inputTokenCount,
       });

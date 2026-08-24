@@ -1741,6 +1741,29 @@ describe('createResponse controller', () => {
         }),
       );
     });
+
+    it('should pass endpoint token config from primaryConfig', async () => {
+      const api = require('@librechat/api');
+      const endpointTokenConfig = {
+        'gpt-5.6-sol-fast:priority': { prompt: 8, completion: 40, context: 1050000 },
+      };
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6-sol',
+        model_parameters: { model: 'gpt-5.6-sol-fast', service_tier: 'priority' },
+        endpointTokenConfig,
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [],
+      });
+
+      await createResponse(req, res);
+
+      expect(mockRecordCollectedUsage).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ endpointTokenConfig }),
+      );
+    });
   });
 
   describe('agent context parity with UI path', () => {
@@ -1889,6 +1912,38 @@ describe('createResponse controller', () => {
             }),
           ]),
         }),
+      );
+    });
+
+    it('passes the provider-reported tier for authoritative normalization', async () => {
+      const api = require('@librechat/api');
+      const { contextualizeModelUsage } = require('~/server/controllers/agents/callbacks');
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.6',
+        model_parameters: { model: 'gpt-5.6', service_tier: 'fast' },
+        toolRegistry: {},
+        edges: [],
+        agentContextAttachments: [],
+      });
+      api.createRun.mockImplementation(async ({ customHandlers }) => ({
+        processStream: jest.fn().mockImplementation(async () => {
+          customHandlers.on_chat_model_end.handle('on_chat_model_end', {
+            output: {
+              usage_metadata: { input_tokens: 150, output_tokens: 75 },
+              response_metadata: { service_tier: 'default' },
+            },
+          });
+        }),
+      }));
+
+      await createResponse(req, res);
+
+      expect(contextualizeModelUsage).toHaveBeenCalledWith(
+        { input_tokens: 150, output_tokens: 75 },
+        undefined,
+        { clientOptions: { model: 'gpt-5.6', service_tier: 'fast' } },
+        { service_tier: 'default' },
       );
     });
 

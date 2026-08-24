@@ -108,4 +108,55 @@ describe('encodeAndFormat - request memory guard', () => {
     expect(result.image_urls).toHaveLength(1);
     expect(result.image_urls[0].image_url.url).toBe(`data:image/png;base64,${localBase64}`);
   });
+
+  it('prefers a validated image-detail override over the raw request value', async () => {
+    const localBase64 = Buffer.from('local-image').toString('base64');
+    mockPrepareImagePayload.mockResolvedValue([
+      { source: FileSources.local, type: 'image/png' },
+      localBase64,
+    ]);
+    const req = makeReq();
+    req.body.imageDetail = 'original';
+    const file = {
+      source: FileSources.local,
+      height: 10,
+      width: 10,
+      type: 'image/png',
+      file_id: 'f-local',
+      filepath: 'local/p.png',
+      filename: 'p.png',
+      bytes: 555,
+    };
+
+    const result = await encodeAndFormat(req, [file], {
+      endpoint: 'openai',
+      imageDetail: 'auto',
+    });
+
+    expect(result.image_urls[0].image_url.detail).toBe('auto');
+  });
+
+  it('does not accept original detail from the raw request without a validated override', async () => {
+    const localBase64 = Buffer.from('local-image').toString('base64');
+    mockPrepareImagePayload.mockResolvedValue([
+      { source: FileSources.local, type: 'image/png' },
+      localBase64,
+    ]);
+    const req = makeReq();
+    req.body.imageDetail = 'original';
+    const file = {
+      source: FileSources.local,
+      height: 10,
+      width: 10,
+      type: 'image/png',
+      file_id: 'f-local',
+      filepath: 'local/p.png',
+      filename: 'p.png',
+      bytes: 555,
+    };
+
+    const result = await encodeAndFormat(req, [file], { endpoint: 'openai' });
+
+    expect(result.image_urls[0].image_url.detail).toBe('auto');
+  });
 });

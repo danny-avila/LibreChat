@@ -150,7 +150,12 @@ class ModelEndHandler {
       if (!usage) {
         return this.finalize(errorMessage);
       }
-      let taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
+      let taggedUsage = contextualizeModelUsage(
+        usage,
+        metadata,
+        agentContext,
+        data?.output?.response_metadata,
+      );
       /** Hidden intermediate sequential-agent calls are billed but never shown.
        *  Tag them non-primary on the COLLECTED usage too (not just the emit) so
        *  recordCollectedUsage excludes their output from the parent's tokenCount
@@ -187,6 +192,7 @@ class ModelEndHandler {
                 : undefined,
             model: taggedUsage.model,
             provider: taggedUsage.provider,
+            serviceTier: taggedUsage.serviceTier,
             usage_type: taggedUsage.usage_type,
             /** Producing agent for per-endpoint pricing; consumed by the emit
              *  cost resolver and not included in the emitted/persisted payload. */
@@ -1490,12 +1496,22 @@ function markSummarizationUsage(usage, metadata) {
   return usage;
 }
 
+function normalizeServiceTier(serviceTier) {
+  if (serviceTier === 'default') {
+    return 'default';
+  }
+  if (serviceTier === 'fast' || serviceTier === 'priority') {
+    return 'priority';
+  }
+  return undefined;
+}
+
 /**
  * Stamps provider/model/agent identity onto one model call before billing or
  * API response aggregation. The graph owns this context; provider payloads do
  * not consistently include it, and cache normalization depends on it.
  */
-function contextualizeModelUsage(usage, metadata, agentContext = {}) {
+function contextualizeModelUsage(usage, metadata, agentContext = {}, responseMetadata) {
   const taggedUsage = { ...usage };
   const context = agentContext ?? {};
   const invokedProvider = metadata?.__invoked_provider;
@@ -1515,6 +1531,19 @@ function contextualizeModelUsage(usage, metadata, agentContext = {}) {
   }
   if (context.agentId) {
     taggedUsage.agentId = context.agentId;
+  }
+  const reportedServiceTier = responseMetadata?.service_tier;
+  const requestedServiceTier = normalizeServiceTier(context.clientOptions?.service_tier);
+  if (reportedServiceTier === 'default' || reportedServiceTier === 'priority') {
+    taggedUsage.serviceTier = reportedServiceTier;
+    delete taggedUsage.serviceTierInferred;
+  } else if (requestedServiceTier) {
+    taggedUsage.serviceTier = requestedServiceTier;
+    taggedUsage.serviceTierInferred = true;
+    logger.warn('[ModelEndHandler] Provider omitted service_tier; using requested tier', {
+      model: taggedUsage.model,
+      requestedServiceTier,
+    });
   }
   return markSummarizationUsage(taggedUsage, metadata);
 }

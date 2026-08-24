@@ -155,6 +155,7 @@ describe('initializeOpenAI – SSRF guard wiring', () => {
     params.req.config = {
       endpoints: {
         [EModelEndpoint.azureOpenAI]: {
+          priorityModels: [],
           modelGroupMap: {
             'gpt-4o': { group: 'serverless-group' },
           },
@@ -265,5 +266,249 @@ describe('initializeOpenAI – custom headers', () => {
     const options = mockGetOpenAIConfig.mock.calls[0][1] as { headers?: Record<string, string> };
     // Left unresolved here; request-time resolveConfigHeaders resolves it once
     expect(options.headers).toEqual({ 'X-Global': '{{LIBRECHAT_USER_ID}}' });
+  });
+});
+
+describe('initializeOpenAI – GPT-5.6 managed fields', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('generates private safety and cache identifiers only for official OpenAI', async () => {
+    const params = createParams({
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_REVERSE_PROXY: 'https://api.openai.com/v1',
+      CREDS_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    params.model_parameters = {
+      model: 'gpt-5.6-sol',
+      promptCache: true,
+      priorityProcessing: true,
+    };
+    params.req.user = {
+      id: 'user-raw-id',
+      tenantId: 'tenant-raw-id',
+    } as BaseInitializeParams['req']['user'];
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const options = mockGetOpenAIConfig.mock.calls[0][1] as {
+      modelOptions: Record<string, unknown>;
+    };
+    expect(options.modelOptions).toMatchObject({
+      firstPartyOpenAI: true,
+      promptCacheExplicit: true,
+    });
+    expect(options.modelOptions).not.toHaveProperty('user');
+    expect(options.modelOptions.safety_identifier).toMatch(/^[a-f0-9]{64}$/);
+    expect(options.modelOptions.promptCacheKey).toMatch(/^[a-f0-9]{64}$/);
+    expect(options.modelOptions.safety_identifier).not.toContain('user-raw-id');
+    expect(options.modelOptions.promptCacheKey).not.toContain('tenant-raw-id');
+  });
+
+  it('keeps cache keys stable and changes them with the stable prompt signature', async () => {
+    const params = createParams({
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_REVERSE_PROXY: 'https://api.openai.com/v1',
+      CREDS_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    params.model_parameters = { model: 'gpt-5.6', promptCache: true };
+    params.req.body = {
+      agent: { id: 'agent-1', instructions: 'Be concise.', tools: ['tool-a'] },
+    } as BaseInitializeParams['req']['body'];
+
+    try {
+      await initializeOpenAI(params);
+      await initializeOpenAI(params);
+      params.req.body = {
+        agent: { id: 'agent-1', instructions: 'Be concise.', tools: ['tool-b'] },
+      } as BaseInitializeParams['req']['body'];
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const cacheKeys = mockGetOpenAIConfig.mock.calls.map(
+      (call) => (call[1] as { modelOptions: Record<string, unknown> }).modelOptions.promptCacheKey,
+    );
+    expect(cacheKeys[0]).toBe(cacheKeys[1]);
+    expect(cacheKeys[2]).not.toBe(cacheKeys[0]);
+  });
+
+  it('does not generate managed identifiers for an OpenAI-compatible proxy', async () => {
+    const params = createParams({
+      OPENAI_API_KEY: 'sk-test',
+      OPENAI_REVERSE_PROXY: 'https://compatible.example.com/v1',
+    });
+    params.model_parameters = {
+      model: 'gpt-5.6',
+      promptCache: true,
+      priorityProcessing: true,
+    };
+
+    try {
+      await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const options = mockGetOpenAIConfig.mock.calls[0][1] as {
+      modelOptions: Record<string, unknown>;
+    };
+    expect(options.modelOptions.firstPartyOpenAI).toBe(false);
+    expect(options.modelOptions).toHaveProperty('user');
+    expect(options.modelOptions).not.toHaveProperty('safety_identifier');
+    expect(options.modelOptions).not.toHaveProperty('promptCacheKey');
+    expect(options.modelOptions).not.toHaveProperty('promptCacheExplicit');
+  });
+
+  it('selects each Azure route and retains both billing configs internally', async () => {
+    mockGetOpenAIConfig
+      .mockReturnValueOnce({
+        llmConfig: { model: 'gpt-5.6' },
+        configOptions: {},
+      })
+      .mockReturnValueOnce({
+        llmConfig: { model: 'gpt-5.6' },
+        configOptions: {},
+      });
+    const params = createParams({
+      AZURE_API_KEY: 'az-env-key',
+      CREDS_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    params.endpoint = EModelEndpoint.azureOpenAI;
+    params.model_parameters = {
+      model: 'gpt-5.6',
+      priorityProcessing: true,
+      promptCache: true,
+    };
+    params.req.config = {
+      endpoints: {
+        [EModelEndpoint.azureOpenAI]: {
+          priorityModels: ['gpt-5.6'],
+          tokenConfig: {
+            'gpt-5.6': {
+              prompt: 4,
+              completion: 20,
+              context: 1050000,
+              cacheRead: 0.4,
+              cacheWrite: 5,
+            },
+          },
+          modelGroupMap: {
+            'gpt-5.6': { group: 'primary' },
+          },
+          groupMap: {
+            primary: {
+              apiKey: 'standard-key',
+              instanceName: 'standard-instance',
+              deploymentName: 'standard-deployment',
+              version: 'v1',
+              models: {
+                'gpt-5.6': {
+                  priority: {
+                    apiKey: 'priority-key',
+                    instanceName: 'priority-instance',
+                    deploymentName: 'priority-deployment',
+                    tokenConfig: {
+                      prompt: 8,
+                      completion: 40,
+                      context: 1050000,
+                      cacheRead: 0.8,
+                      cacheWrite: 10,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as unknown as BaseInitializeParams['req']['config'];
+
+    let priorityResult!: Awaited<ReturnType<typeof initializeOpenAI>>;
+    let standardResult!: Awaited<ReturnType<typeof initializeOpenAI>>;
+    try {
+      priorityResult = await initializeOpenAI(params);
+      params.model_parameters = { ...params.model_parameters, priorityProcessing: false };
+      standardResult = await initializeOpenAI(params);
+    } finally {
+      (params as unknown as { _restore: () => void })._restore();
+    }
+
+    const [apiKey, options] = mockGetOpenAIConfig.mock.calls[0] as [
+      string,
+      { azure?: Record<string, string>; modelOptions: Record<string, unknown> },
+    ];
+    expect(apiKey).toBe('priority-key');
+    expect(options.azure).toMatchObject({
+      azureOpenAIApiInstanceName: 'priority-instance',
+      azureOpenAIApiDeploymentName: 'priority-deployment',
+    });
+    expect(options.modelOptions).toMatchObject({
+      firstPartyOpenAI: true,
+      priorityProcessingAvailable: true,
+      promptCacheExplicit: false,
+    });
+    expect(priorityResult.endpointTokenConfig).toEqual({
+      'gpt-5.6': {
+        prompt: 4,
+        completion: 20,
+        context: 1050000,
+        read: 0.4,
+        write: 5,
+      },
+      'gpt-5.6:priority': {
+        prompt: 8,
+        completion: 40,
+        context: 1050000,
+        read: 0.8,
+        write: 10,
+      },
+      'priority-deployment': {
+        prompt: 4,
+        completion: 20,
+        context: 1050000,
+        read: 0.4,
+        write: 5,
+      },
+      'priority-deployment:priority': {
+        prompt: 8,
+        completion: 40,
+        context: 1050000,
+        read: 0.8,
+        write: 10,
+      },
+    });
+
+    const [standardApiKey, standardOptions] = mockGetOpenAIConfig.mock.calls[1] as [
+      string,
+      { azure?: Record<string, string> },
+    ];
+    expect(standardApiKey).toBe('standard-key');
+    expect(standardOptions.azure).toMatchObject({
+      azureOpenAIApiInstanceName: 'standard-instance',
+      azureOpenAIApiDeploymentName: 'standard-deployment',
+    });
+    expect(standardResult.endpointTokenConfig).toMatchObject({
+      'gpt-5.6:priority': {
+        prompt: 8,
+        completion: 40,
+        context: 1050000,
+        read: 0.8,
+        write: 10,
+      },
+      'standard-deployment:priority': {
+        prompt: 8,
+        completion: 40,
+        context: 1050000,
+        read: 0.8,
+        write: 10,
+      },
+    });
   });
 });

@@ -226,6 +226,7 @@ export function computeUsageCostUSD(
     context: 'message',
     conversationId: '',
     model: usage.model,
+    serviceTier: usage.serviceTier,
     endpointTokenConfig,
   };
   const entries =
@@ -681,6 +682,7 @@ export async function recordCollectedUsage(
           : endpointTokenConfig,
         context: usageContext,
         model: usage.model ?? model,
+        serviceTier: usage.serviceTier,
       };
 
       if (useBulk) {

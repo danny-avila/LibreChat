@@ -94,6 +94,7 @@ const blobStorageSources = new Set([
  * @param {object} params - Object containing provider/endpoint information
  * @param {Providers | EModelEndpoint | string} [params.provider] - The provider for the image
  * @param {string} [params.endpoint] - Optional: The endpoint for the image
+ * @param {ImageDetail} [params.imageDetail] - Optional validated image detail override
  * @param {string} [mode] - Optional: The endpoint mode for the image.
  * @returns {Promise<{ files: MongoFile[]; image_urls: MessageContentImageUrl[] }>} - A promise that resolves to the result object containing the encoded images and file details.
  */
@@ -159,7 +160,10 @@ async function encodeAndFormat(req, files, params, mode) {
     promises.push(preparePayload(req, file));
   }
 
-  const detail = req.body.imageDetail ?? ImageDetail.auto;
+  const requestedDetail = req.body.imageDetail ?? ImageDetail.auto;
+  const detail =
+    params.imageDetail ??
+    (requestedDetail === ImageDetail.original ? ImageDetail.auto : requestedDetail);
 
   /** @type {Array<[MongoFile, string]>} */
   const formattedImages = await Promise.all(promises);
