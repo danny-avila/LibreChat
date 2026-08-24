@@ -29,7 +29,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PR pushes supersede each other (per-PR canceling group). Push events get a PER-COMMIT group:
+  # dev-push runs are the post-merge safety net and the full-run baseline, and with a shared
+  # canceling group closely spaced merges cancel each other's runs — observed live on 2026-08-23,
+  # when three consecutive dev merges cancelled the runs that would have caught #15142's red
+  # (Codex P2 on #15145).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 env:
