@@ -1,10 +1,5 @@
 export type SubagentThreadStatus =
-  | 'dispatched'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'interrupted'
-  | 'cancelled';
+  'dispatched' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled';
 
 export type ParentSubagentTaskSummary = {
   taskId: string;
@@ -66,6 +61,19 @@ export type SubagentActivityItem =
       outputTruncated?: boolean;
     };
 
+export type SubagentControlReceipt = {
+  invocationId: string;
+  controlId?: string;
+  action: 'steer' | 'queue' | 'interrupt' | 'cancel' | 'cancel_message';
+  status: 'accepted' | 'applied' | 'rejected' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  boundary?: 'preempt' | 'tool' | 'turn';
+  reason?: string;
+  message?: string;
+  messageTruncated?: boolean;
+};
+
 export type SubagentThreadMessage = {
   messageId: string;
   parentMessageId: string | null;
@@ -89,6 +97,8 @@ export type SubagentThreadView = {
   /** Activity for the exact task requested by the parent card, when retained. */
   activity: SubagentActivityItem[];
   activityTruncated: boolean;
+  /** Bounded authoritative parent-to-child command receipts for this task. */
+  controlReceipts?: SubagentControlReceipt[];
   messages: SubagentThreadMessage[];
   historyTruncated: boolean;
   updatedAt?: string;

@@ -64,6 +64,7 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     getConvo: db.getConvo,
     getMessages: db.getMessages,
     listActiveSubagentThreadLeases: db.listActiveSubagentThreadLeases,
+    recordSubagentTaskControlReceipt: db.recordSubagentTaskControlReceipt,
     releaseSubagentThreadLease: db.releaseSubagentThreadLease,
     reserveSubagentThread: db.reserveSubagentThread,
     renewSubagentThreadLease: db.renewSubagentThreadLease,

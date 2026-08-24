@@ -53,6 +53,24 @@ class TestTaskRoutingHub {
   }
 }
 
+class ReceiptTestSubagentThreadTaskStore extends SubagentThreadTaskStore {
+  emitControlReceiptForTest(
+    scopeId: string,
+    taskId: string,
+    receipt: {
+      controlId: string;
+      action: 'steer' | 'queue' | 'interrupt';
+      status: 'accepted' | 'applied' | 'rejected' | 'failed';
+      createdAt: number;
+      updatedAt: number;
+      boundary?: 'preempt' | 'tool' | 'turn';
+      reason?: 'withdrawn' | 'task_completed' | 'task_cancelled' | 'task_failed';
+    },
+  ): void {
+    this.onControlReceipt(scopeId, taskId, receipt);
+  }
+}
+
 class TestTaskControlTransport implements SubagentTaskControlTransport {
   private handler?: SubagentTaskControlHandler;
   readonly registrations: Array<{ scopeId: string; taskId: string; ttlMs: number }> = [];
@@ -1991,7 +2009,7 @@ describe('SubagentThreadTaskStore', () => {
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const hub = new TestTaskRoutingHub();
-    const ownerStore = new SubagentThreadTaskStore(methods);
+    const ownerStore = new ReceiptTestSubagentThreadTaskStore(methods);
     const requesterStore = new SubagentThreadTaskStore(methods);
     await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
     await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
@@ -2006,11 +2024,34 @@ describe('SubagentThreadTaskStore', () => {
       }),
     );
     const taskId = requireAccepted(started).task.taskId;
-    await Promise.resolve();
+    const threadId = requireThreadId(started);
+    let durableInput: IMessage | undefined;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      [durableInput] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      if (durableInput != null) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(durableInput).toBeDefined();
 
     const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
     const routed = await requesterStore.controlTask(config.scopeId, taskId, steer, 'invocation-1');
     expect(routed).toMatchObject({ status: 'accepted' });
+
+    [durableInput] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(durableInput?.subagentTask?.controlReceipts).toEqual([
+      expect.objectContaining({
+        invocationId: 'invocation-1',
+        action: 'queue',
+        status: 'accepted',
+        message: steer.message,
+      }),
+    ]);
 
     /** The same invocation reaching the owner directly replays that result rather than
      * queueing a second steer, so local and routed callers agree. */
@@ -2018,6 +2059,49 @@ describe('SubagentThreadTaskStore', () => {
       ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
     ).resolves.toEqual(routed);
     expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+
+    const acceptedControlId =
+      routed.status === 'accepted' && routed.controlId != null ? routed.controlId : undefined;
+    expect(acceptedControlId).toBeDefined();
+    const transitionTime = Date.now();
+    ownerStore.emitControlReceiptForTest(config.scopeId, taskId, {
+      controlId: acceptedControlId as string,
+      action: 'queue',
+      status: 'applied',
+      createdAt: transitionTime - 1,
+      updatedAt: transitionTime,
+      boundary: 'turn',
+    });
+    await waitUntil(
+      () => ownerStore.get(config.scopeId, taskId) != null,
+      'the owner task to remain available',
+    );
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      [durableInput] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      if (durableInput?.subagentTask?.controlReceipts?.[0]?.status === 'applied') break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    expect(durableInput?.subagentTask?.controlReceipts).toEqual([
+      expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'applied',
+        boundary: 'turn',
+      }),
+    ]);
+
+    /** A delayed retry can replay accepted in memory but cannot downgrade the
+     * already-applied durable receipt. */
+    await expect(
+      ownerStore.controlTask(config.scopeId, taskId, steer, 'invocation-1'),
+    ).resolves.toEqual(routed);
+    [durableInput] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(durableInput?.subagentTask?.controlReceipts?.[0]?.status).toBe('applied');
 
     /** Reusing one invocation id for different content is a caller error, not a retry. */
     await expect(

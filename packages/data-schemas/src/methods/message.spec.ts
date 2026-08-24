@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { RetentionMode } from 'librechat-data-provider';
+import { Constants, RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
 import {
@@ -39,6 +39,9 @@ let updateMessageText: ReturnType<typeof createMessageMethods>['updateMessageTex
 let deleteMessagesSince: ReturnType<typeof createMessageMethods>['deleteMessagesSince'];
 let recordMessage: ReturnType<typeof createMessageMethods>['recordMessage'];
 let claimSubagentTaskResult: ReturnType<typeof createMessageMethods>['claimSubagentTaskResult'];
+let recordSubagentTaskControlReceipt: ReturnType<
+  typeof createMessageMethods
+>['recordSubagentTaskControlReceipt'];
 let releaseSubagentTaskResultClaim: ReturnType<
   typeof createMessageMethods
 >['releaseSubagentTaskResultClaim'];
@@ -64,6 +67,7 @@ beforeAll(async () => {
   deleteMessagesSince = methods.deleteMessagesSince;
   recordMessage = methods.recordMessage;
   claimSubagentTaskResult = methods.claimSubagentTaskResult;
+  recordSubagentTaskControlReceipt = methods.recordSubagentTaskControlReceipt;
   releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
 
   await mongoose.connect(mongoUri);
@@ -2298,6 +2302,153 @@ describe('Message Operations', () => {
       expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
     });
   });
+  describe('recordSubagentTaskControlReceipt', () => {
+    const createTaskInput = async (conversationId: string, taskId = 'task-1') => {
+      await Message.create({
+        user: 'user123',
+        conversationId,
+        messageId: `${taskId}:user`,
+        parentMessageId: Constants.NO_PARENT,
+        sender: 'User',
+        text: 'Do the work',
+        endpoint: 'agents',
+        isCreatedByUser: true,
+        subagentTask: {
+          attemptKey: `attempt-${taskId}`,
+          status: 'running',
+        },
+      });
+    };
+
+    it('advances one invocation monotonically and enforces ownership', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const accepted = {
+        invocationId: 'invocation-1',
+        fingerprint: 'fingerprint-1',
+        controlId: 'control-1',
+        action: 'steer' as const,
+        status: 'accepted' as const,
+        createdAt: new Date('2026-08-24T12:00:00.000Z'),
+        updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+        message: 'Use the primary source.',
+      };
+
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            ...accepted,
+            status: 'applied',
+            boundary: 'tool',
+            updatedAt: new Date('2026-08-24T12:00:01.000Z'),
+          },
+        }),
+      ).resolves.toBe(true);
+      /** A delayed accepted replay cannot downgrade the durable terminal receipt. */
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: accepted,
+      });
+      await expect(
+        recordSubagentTaskControlReceipt({
+          userId: 'another-user',
+          conversationId,
+          taskId: 'task-1',
+          receipt: accepted,
+        }),
+      ).resolves.toBe(false);
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.status).toBe('running');
+      expect(stored.subagentTask?.controlReceipts).toEqual([
+        expect.objectContaining({
+          invocationId: 'invocation-1',
+          action: 'steer',
+          status: 'applied',
+          boundary: 'tool',
+        }),
+      ]);
+    });
+
+    it('retains accepted commands while bounding terminal receipt history', async () => {
+      const conversationId = uuidv4();
+      await createTaskInput(conversationId);
+      const createdAt = new Date('2026-08-24T12:00:00.000Z');
+      await recordSubagentTaskControlReceipt({
+        userId: 'user123',
+        conversationId,
+        taskId: 'task-1',
+        receipt: {
+          invocationId: 'pending',
+          fingerprint: 'pending-fingerprint',
+          controlId: 'pending-control',
+          action: 'queue',
+          status: 'accepted',
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+      for (let index = 0; index < 70; index += 1) {
+        await recordSubagentTaskControlReceipt({
+          userId: 'user123',
+          conversationId,
+          taskId: 'task-1',
+          receipt: {
+            invocationId: `terminal-${index}`,
+            fingerprint: `fingerprint-${index}`,
+            controlId: `control-${index}`,
+            action: 'steer',
+            status: 'applied',
+            createdAt: new Date(createdAt.getTime() + index + 1),
+            updatedAt: new Date(createdAt.getTime() + index + 1),
+            boundary: 'tool',
+          },
+        });
+      }
+
+      const stored = await Message.findOne({
+        user: 'user123',
+        conversationId,
+        messageId: 'task-1:user',
+      })
+        .select('+subagentTask')
+        .lean<IMessage>();
+      expect(stored).not.toBeNull();
+      if (stored == null) throw new Error('Expected the durable task input.');
+      expect(stored.subagentTask?.controlReceipts).toHaveLength(64);
+      expect(stored.subagentTask?.controlReceipts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ invocationId: 'pending', status: 'accepted' }),
+          expect.objectContaining({ invocationId: 'terminal-69', status: 'applied' }),
+        ]),
+      );
+      expect(stored.subagentTask?.controlReceipts).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ invocationId: 'terminal-0' })]),
+      );
+    });
+  });
+
   describe('claimSubagentTaskResult', () => {
     const terminalResult = async (taskId: string, conversationId: string, status: string) =>
       saveMessage({ userId: 'user123' }, {
