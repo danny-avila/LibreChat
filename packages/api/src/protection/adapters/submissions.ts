@@ -187,6 +187,7 @@ export interface StoredMessagePartInput {
   readonly original?: string;
   readonly updated?: string;
   readonly steer?: string;
+  readonly quotes?: readonly (string | { readonly text?: string } | null | undefined)[];
   readonly error?: string;
   readonly image_url?: string | { readonly url?: string };
   readonly video_url?: { readonly url?: string };
@@ -368,6 +369,7 @@ const STORED_MESSAGE_HANDLED_PART_PATH_SUFFIXES = new Set([
   '/original',
   '/updated',
   '/steer',
+  '/quotes',
   '/error',
   '/image_url',
   '/video_url',
@@ -1564,7 +1566,30 @@ function extractStoredMessageContentWithBudget(
             part?.files,
             STORED_MESSAGE_ATTACHMENT_ARRAY_SCOPES,
           );
+          /** Steer parts persist their quoted excerpts under `quotes`, exactly
+           *  like the top-level `message.quotes`: model-bound user text that
+           *  import and share preflights must inspect as quote fragments. */
+          const partQuotes = captureBoundedArray<string | { readonly text?: string }>(
+            part?.quotes,
+            STORED_MESSAGE_QUOTE_ARRAY_SCOPES,
+          );
           const toolCall = part?.tool_call;
+          withReservedTraversalWork(
+            hasArrayValues(nestedContent) + hasArrayValues(partFiles) + (toolCall != null ? 1 : 0),
+            () =>
+              visitBoundedArray<string | { readonly text?: string }>(
+                partQuotes,
+                STORED_MESSAGE_QUOTE_ARRAY_SCOPES,
+                (quote, quoteIndex) => {
+                  pushString(fragments, typeof quote === 'string' ? quote : quote?.text, {
+                    id: `stored-message.content.${index}.quote.${quoteIndex}`,
+                    path: `/content/${index}/quotes/${quoteIndex}`,
+                    source: 'message',
+                    field: 'quote',
+                  });
+                },
+              ),
+          );
           withReservedTraversalWork(hasArrayValues(partFiles) + (toolCall != null ? 1 : 0), () =>
             visitBoundedArray<{
               readonly text?: string | { readonly value?: string };

@@ -151,7 +151,7 @@ export async function buildSteerMedia({
   });
 }
 
-interface SteerStampTarget {
+export interface SteerStampTarget {
   message: { id?: string; messageId?: string; content?: unknown };
   part: SteerPart;
   index: number;
@@ -159,14 +159,17 @@ interface SteerStampTarget {
   encodeFiles: boolean;
 }
 
-type SteerStampPayload = Array<{
+export type SteerStampPayload = Array<{
   id?: string;
   messageId?: string;
   role?: string;
   content?: unknown;
 }>;
 
-function collectSteerStampTargets(
+/** One pass over the payload for everything the stamp needs. Callers check
+ *  `.length` for the zero-await fast path and hand the result to
+ *  `stampSteerPartMedia`, so the history is never scanned twice. */
+export function collectSteerStampTargets(
   payload: SteerStampPayload,
   resendFiles: boolean,
 ): SteerStampTarget[] {
@@ -188,15 +191,6 @@ function collectSteerStampTargets(
     }
   }
   return targets;
-}
-
-/**
- * Synchronous stamp-target probe so `buildMessages` can keep its zero-await
- * path to the parallel context kickoff: `stampSteerPartMedia` is only awaited
- * when a steer part actually needs re-encoding or a quote re-merge.
- */
-export function hasSteerStampTargets(payload: SteerStampPayload, resendFiles: boolean): boolean {
-  return collectSteerStampTargets(payload, resendFiles).length > 0;
 }
 
 /**
@@ -224,6 +218,7 @@ export async function stampSteerPartMedia({
   client,
   user,
   payload,
+  targets,
   docsById,
   getFiles,
   resendFiles = true,
@@ -231,11 +226,14 @@ export async function stampSteerPartMedia({
   client: SteerMediaClient;
   user: SteerRequestUser | undefined;
   payload: SteerStampPayload;
+  /** Pre-collected via `collectSteerStampTargets` so the caller's zero-await
+   *  probe and this stamp share one payload scan; collected here otherwise. */
+  targets?: SteerStampTarget[];
   docsById?: Map<string, IMongoFile>;
   getFiles: SteerFileFetcher;
   resendFiles?: boolean;
 }): Promise<StampedSteerMedia[]> {
-  const stampTargets = collectSteerStampTargets(payload, resendFiles);
+  const stampTargets = targets ?? collectSteerStampTargets(payload, resendFiles);
   if (stampTargets.length === 0) {
     return [];
   }

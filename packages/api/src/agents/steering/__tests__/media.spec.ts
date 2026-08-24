@@ -1,7 +1,7 @@
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { SteerFileFetcher } from '../request';
 import type { SteerMediaClient } from '../media';
-import { buildSteerMedia, hasSteerStampTargets, stampSteerPartMedia } from '../media';
+import { buildSteerMedia, collectSteerStampTargets, stampSteerPartMedia } from '../media';
 
 jest.spyOn(console, 'log').mockImplementation();
 
@@ -362,21 +362,39 @@ describe('stampSteerPartMedia', () => {
     ]);
   });
 
-  it('reports stamp targets synchronously so steer-free payloads skip the await', () => {
+  it('collects stamp targets synchronously so steer-free payloads skip the await', () => {
     const plain = [
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
     ];
-    expect(hasSteerStampTargets(plain, true)).toBe(false);
+    expect(collectSteerStampTargets(plain, true)).toHaveLength(0);
 
     const filesOnly = [
       { role: 'assistant', content: [{ type: 'steer', steer: 's', files: [{ file_id: 'f1' }] }] },
     ];
-    expect(hasSteerStampTargets(filesOnly, true)).toBe(true);
-    expect(hasSteerStampTargets(filesOnly, false)).toBe(false);
+    expect(collectSteerStampTargets(filesOnly, true)).toHaveLength(1);
+    expect(collectSteerStampTargets(filesOnly, false)).toHaveLength(0);
 
     const quoted = [{ role: 'assistant', content: [{ type: 'steer', steer: 's', quotes: ['q'] }] }];
-    expect(hasSteerStampTargets(quoted, false)).toBe(true);
+    expect(collectSteerStampTargets(quoted, false)).toHaveLength(1);
+  });
+
+  it('consumes pre-collected targets without re-scanning the payload', async () => {
+    const getFiles: SteerFileFetcher = jest.fn(async () => []);
+    const steerPart = { type: 'steer', steer: 'quoted turn', steerId: 's8', quotes: ['kept'] };
+    const message = { role: 'assistant', content: [steerPart] };
+    const targets = collectSteerStampTargets([message], false);
+
+    const stamped = await stampSteerPartMedia({
+      client: createClient(),
+      user,
+      payload: [message],
+      targets,
+      getFiles,
+      resendFiles: false,
+    });
+
+    expect(stamped[0].media).toEqual([{ type: 'text', text: '> kept\n\nquoted turn' }]);
   });
 
   it('replays quotes without encoding files when resendFiles is off', async () => {
