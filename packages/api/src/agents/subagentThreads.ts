@@ -2561,6 +2561,7 @@ const REQUIRED_THREAD_METHODS = [
   'getConvo',
   'getMessages',
   'listActiveSubagentThreadLeases',
+  'recordSubagentTaskControlReceipt',
   'releaseSubagentThreadLease',
   'renewSubagentThreadLease',
   'reserveSubagentThread',
@@ -2583,7 +2584,11 @@ export function createSubagentThreadTaskStore(
   > &
     Pick<
       MessageMethods,
-      'claimSubagentTaskResult' | 'deleteMessages' | 'getMessages' | 'saveMessage'
+      | 'claimSubagentTaskResult'
+      | 'deleteMessages'
+      | 'getMessages'
+      | 'recordSubagentTaskControlReceipt'
+      | 'saveMessage'
     >,
   options?: SubagentThreadTaskStoreOptions,
 ): SubagentThreadTaskStore {
