@@ -209,8 +209,8 @@ const processVisionRequest = async (client, currentAction) => {
       user: client.req.user.id,
       model: client.req.body.model,
       conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
-      transactions: getTransactionsConfig(client.req.config),
       ...completion.usage,
+      transactions: getTransactionsConfig(client.req.config),
     });
   }
   const output = completion?.choices?.[0]?.message?.content ?? 'No image details found.';
