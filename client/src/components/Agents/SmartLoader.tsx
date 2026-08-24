@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AgentListResponse } from 'librechat-data-provider';
+import type { AgentListResponse } from 'librechat-data-provider';
 
 interface SmartLoaderProps {
   /** Whether the content is currently loading */
@@ -74,9 +74,9 @@ export const useHasData = (data: AgentListResponse | undefined): boolean => {
   // Type guard for object data
   if (typeof data === 'object' && data !== null) {
     // Check for agent list data (AgentListResponse shape, e.g. marketplace pages)
-    if ('data' in data) {
-      const agents = (data as AgentListResponse).data;
-      return Array.isArray(agents) && agents.length > 0;
+    const agents = data.data;
+    if (Array.isArray(agents)) {
+      return agents.length > 0;
     }
 
     // Check for agent list data
