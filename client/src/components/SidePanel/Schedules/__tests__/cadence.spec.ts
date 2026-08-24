@@ -59,3 +59,47 @@ describe('buildTimezoneOptions', () => {
     }
   });
 });
+
+describe('clock format and week start', () => {
+  const weekly = (daysOfWeek: number[]): TScheduleCadence => ({
+    frequency: 'weekly',
+    hour: 21,
+    minute: 5,
+    daysOfWeek,
+  });
+
+  it('forces 24-hour notation regardless of locale when the clock is 24-hour', () => {
+    expect(
+      describeCadence({ frequency: 'daily', hour: 21, minute: 5 }, localize, 'en-US', false),
+    ).toContain('"time":"21:05"');
+  });
+
+  it('forces a meridiem regardless of locale when the clock is 12-hour', () => {
+    expect(
+      describeCadence({ frequency: 'daily', hour: 21, minute: 5 }, localize, 'de-DE', true),
+    ).toMatch(/9:05\s*PM/i);
+  });
+
+  it('falls back to the locale default when no preference is given', () => {
+    expect(
+      describeCadence({ frequency: 'daily', hour: 21, minute: 5 }, localize, 'de-DE'),
+    ).toContain('"time":"21:05"');
+  });
+
+  it('reads a wrap-around day selection in the user own week order', () => {
+    // Sat(6) + Sun(0) + Mon(1) is a wrap-around selection: ascending-by-index reads
+    // "Sun, Mon, Sat", but in a Monday-first week the calendar order is Mon, Sat, Sun.
+    expect(describeCadence(weekly([6, 0, 1]), localize, 'en-US', undefined, 0)).toContain(
+      '"days":"Sunday, Monday, Saturday"',
+    );
+    expect(describeCadence(weekly([6, 0, 1]), localize, 'en-US', undefined, 1)).toContain(
+      '"days":"Monday, Saturday, Sunday"',
+    );
+  });
+
+  it('formats a previewed occurrence in the preferred clock format', () => {
+    const instant = new Date('2026-01-15T21:05:00Z');
+    expect(formatRunInstant(instant, 'UTC', 'en-US', false)).toContain('21:05');
+    expect(formatRunInstant(instant, 'UTC', 'en-US', false)).not.toMatch(/PM/i);
+  });
+});

@@ -182,7 +182,7 @@ type ContentPartsProps = {
  * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
  * For multi-agent parallel execution, it uses ParallelContentRenderer to show columns.
  */
-const ContentParts = memo(function ContentParts({
+const ContentPartsBody = memo(function ContentPartsBody({
   edit,
   isLast,
   content,
@@ -507,7 +507,7 @@ const ContentParts = memo(function ContentParts({
       key: string,
     ) => {
       return (
-        <ContentParts
+        <ContentPartsBody
           key={key}
           content={segmentContent}
           messageId={messageId}
@@ -682,6 +682,10 @@ const ContentParts = memo(function ContentParts({
     return sequentialContent;
   }
   return <ApprovalProvider>{sequentialContent}</ApprovalProvider>;
+});
+
+const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
+  return <ContentPartsBody {...props} />;
 });
 
 export default ContentParts;

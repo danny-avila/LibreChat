@@ -15,7 +15,7 @@ import type { TUserMemory } from 'librechat-data-provider';
 import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { getMemoryAddress, getMemoryUpdateAddress } from './address';
-import { useLocalize, useHasAccess } from '~/hooks';
+import { useLocalize, useHasAccess, useClockFormat } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
 
 interface MemoryEditDialogProps {
@@ -26,13 +26,14 @@ interface MemoryEditDialogProps {
   triggerRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
-const formatDateTime = (dateString: string): string => {
+const formatDateTime = (dateString: string, hour12?: boolean): string => {
   return new Date(dateString).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12,
   });
 };
 
@@ -46,6 +47,7 @@ export default function MemoryEditDialog({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data: memData } = useMemoriesQuery();
+  const hour12 = useClockFormat();
 
   const hasUpdateAccess = useHasAccess({
     permissionType: PermissionTypes.MEMORIES,
@@ -168,7 +170,7 @@ export default function MemoryEditDialog({
 
                 {/* Date - Center */}
                 <span className="text-xs text-text-secondary">
-                  {formatDateTime(memory.updated_at)}
+                  {formatDateTime(memory.updated_at, hour12)}
                 </span>
 
                 {/* Usage badge - Right (memory-specific) */}

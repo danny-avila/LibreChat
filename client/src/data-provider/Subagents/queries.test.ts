@@ -1,9 +1,11 @@
 import { renderHook } from '@testing-library/react';
-import type { SubagentThreadView } from 'librechat-data-provider';
+import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
 import {
   isSubagentReadinessPending,
+  parentSubagentsRefetchInterval,
   subagentThreadHasTaskEvidence,
   subagentThreadRefetchInterval,
+  useParentSubagentsQuery,
   useSubagentThreadQuery,
 } from './queries';
 
@@ -98,5 +100,38 @@ describe('subagent thread refresh policy', () => {
       'task-2',
     ]);
     expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it('refreshes active parent children quickly and discovers idle actors at a bounded cadence', () => {
+    expect(
+      parentSubagentsRefetchInterval({
+        parentConversationId: 'parent-conversation',
+        childrenTruncated: false,
+        children: [{ status: 'running' }],
+      } as ParentSubagentIndex),
+    ).toBe(2_000);
+    expect(
+      parentSubagentsRefetchInterval({
+        parentConversationId: 'parent-conversation',
+        childrenTruncated: false,
+        children: [{ status: 'dispatched' }],
+      } as ParentSubagentIndex),
+    ).toBe(10_000);
+    expect(parentSubagentsRefetchInterval(undefined)).toBe(10_000);
+
+    mockUseQuery.mockReturnValue({ data: undefined, error: null, refetch: jest.fn() });
+
+    renderHook(() => useParentSubagentsQuery('parent-conversation'));
+
+    expect(mockUseQuery.mock.calls.at(-1)?.[0]).toEqual(['parentSubagents', 'parent-conversation']);
+    expect(mockUseQuery.mock.calls.at(-1)?.[2]).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        refetchOnWindowFocus: true,
+        refetchInterval: parentSubagentsRefetchInterval,
+        refetchIntervalInBackground: false,
+        staleTime: 5_000,
+      }),
+    );
   });
 });

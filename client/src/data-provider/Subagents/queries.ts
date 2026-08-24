@@ -1,11 +1,37 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { QueryKeys, dataService } from 'librechat-data-provider';
+import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import type { ParentSubagentIndex, SubagentThreadView } from 'librechat-data-provider';
 import type { UseQueryOptions, QueryObserverResult } from '@tanstack/react-query';
-import type { SubagentThreadView } from 'librechat-data-provider';
 
-const ACTIVE_THREAD_REFRESH_MS = 2_000;
+export const ACTIVE_THREAD_REFRESH_MS = 2_000;
+const IDLE_PARENT_REFRESH_MS = 10_000;
 const CHILD_READY_POLL_WINDOW_MS = 60_000;
+
+export const parentSubagentsRefetchInterval = (index: ParentSubagentIndex | undefined): number =>
+  index?.children.some((child) => child.status === 'running') === true
+    ? ACTIVE_THREAD_REFRESH_MS
+    : IDLE_PARENT_REFRESH_MS;
+
+export const useParentSubagentsQuery = (
+  parentConversationId: string,
+  config?: UseQueryOptions<ParentSubagentIndex>,
+) =>
+  useQuery<ParentSubagentIndex>(
+    [QueryKeys.parentSubagents, parentConversationId],
+    () => dataService.getParentSubagents(parentConversationId),
+    {
+      enabled:
+        parentConversationId !== '' &&
+        parentConversationId !== Constants.NEW_CONVO &&
+        parentConversationId !== Constants.PENDING_CONVO,
+      staleTime: 5_000,
+      refetchOnWindowFocus: true,
+      refetchInterval: parentSubagentsRefetchInterval,
+      refetchIntervalInBackground: false,
+      ...config,
+    },
+  );
 
 const isTerminal = (status: SubagentThreadView['status']): boolean =>
   status === 'completed' ||

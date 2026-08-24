@@ -465,6 +465,96 @@ describe('subagent activity stream authorization', () => {
     res.emit('close');
   });
 
+  it('redacts private event-binding identity from live child activity', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue({
+          ...child,
+          actorId: 'actor-a',
+          subagentThread: {
+            ...child.subagentThread,
+            parentToolCallId: 'event-binding:private-binding-id',
+          },
+        }),
+        getMessages: jest.fn().mockResolvedValue([]),
+      },
+      stream,
+    );
+    const res = response();
+
+    await handler(request(), res);
+    await stream.publish(
+      threadId,
+      taskId,
+      update({
+        parentToolCallId: 'event-binding:private-binding-id',
+        ancestry: [
+          {
+            subagentRunId: 'parent-run',
+            subagentType: 'parent',
+            subagentKind: 'agent',
+            subagentAgentId: 'parent-agent',
+            parentRunId: 'root-run',
+            parentToolCallId: 'event-binding:private-ancestor-id',
+          },
+        ],
+      }),
+    );
+
+    const output = res.chunks.join('');
+    expect(output).toContain('event-thread:child-thread');
+    expect(output).not.toContain('private-binding-id');
+    expect(output).not.toContain('private-ancestor-id');
+    res.emit('close');
+  });
+
+  it('recognizes an ordinary persisted event assistant row as terminal', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest
+          .fn()
+          .mockResolvedValue([{ messageId: `${taskId}:assistant`, error: false }]),
+      },
+      stream,
+    );
+    const res = response();
+
+    await handler(request(), res);
+
+    expect(res.chunks.join('')).toContain('"status":"completed"');
+    expect(transport.handlers.size).toBe(0);
+  });
+
+  it('keeps streaming through an unfinished snapshot while the exact lease is active', async () => {
+    const transport = new TestTransport();
+    const stream = new SubagentActivityStream(transport);
+    const handler = createSubagentActivityStreamHandler(
+      {
+        getConvoOwnership: jest.fn().mockResolvedValue(parent),
+        getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+        getMessages: jest
+          .fn()
+          .mockResolvedValue([{ messageId: `${taskId}:assistant`, unfinished: true }]),
+      },
+      stream,
+    );
+    const res = response();
+
+    await handler(request(), res);
+
+    expect(res.chunks.join('')).toContain('"ready":true');
+    expect(res.chunks.join('')).not.toContain('"final":true');
+    expect(transport.handlers.size).toBe(1);
+    res.emit('close');
+  });
+
   it('returns the same 404 for a mismatched task without subscribing', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);

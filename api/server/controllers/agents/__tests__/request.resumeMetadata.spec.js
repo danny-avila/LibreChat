@@ -3649,7 +3649,14 @@ describe('ResumableAgentController resume metadata', () => {
     );
     expect(mockGenerationJobManager.createJob).toHaveBeenCalledTimes(1);
     expect(mockAcquireEventChildGenerationLease).toHaveBeenCalledWith(
-      expect.objectContaining({ retentionExpiresAt: expiredAt }),
+      expect.objectContaining({ taskId: 'req-event', retentionExpiresAt: expiredAt }),
+    );
+    const eventJobOptions = mockGenerationJobManager.createJob.mock.calls[0][3];
+    expect(eventJobOptions.initialMetadata).toEqual(
+      expect.objectContaining({
+        responseMessageId: 'req-event:assistant',
+        userMessage: expect.objectContaining({ messageId: 'req-event:user' }),
+      }),
     );
   });
 

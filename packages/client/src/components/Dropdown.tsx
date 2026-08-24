@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { matchSorter } from 'match-sorter';
 import * as Select from '@ariakit/react/select';
@@ -67,6 +67,7 @@ const Dropdown: React.FC<DropdownProps> = ({
   searchPlaceholder,
   searchEmptyText,
 }) => {
+  const valueId = `${useId()}value`;
   const [searchValue, setSearchValue] = useState('');
 
   const handleChange = (value: string) => {
@@ -158,12 +159,19 @@ const Dropdown: React.FC<DropdownProps> = ({
         )}
         data-testid={testId}
         aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
+        // `aria-labelledby` REPLACES the trigger's child text, and that text is the
+        // selected option: pointing it at the field label alone announced "Clock
+        // Format" with no way to hear which format is selected. Naming the value span
+        // alongside the caller's label keeps both. Not in `iconOnly` mode, where the
+        // span does not render and the id would dangle.
+        aria-labelledby={
+          ariaLabelledBy == null || iconOnly ? ariaLabelledBy : `${ariaLabelledBy} ${valueId}`
+        }
       >
         <div className={cn('flex items-center gap-2', iconOnly ? 'shrink-0' : 'w-full')}>
           {icon}
           {!iconOnly && (
-            <span className="block truncate">
+            <span id={valueId} className="block truncate">
               {label}
               {(() => {
                 const matchedOption = getOptionObject(selectedValue);
@@ -182,6 +190,12 @@ const Dropdown: React.FC<DropdownProps> = ({
         portalElement={portalElement}
         store={selectProps}
         className={cn(
+          // `className` sizes the TRIGGER only (applied above on Select.Select).
+          // Forwarding it here too meant a caller's trigger height (e.g. `h-10`)
+          // became the popover's height as well, clipping every option below the
+          // first out of view. `sizeClasses` is the popover's own sizing prop; the
+          // shared `.popover-ui` class already caps height to the viewport via
+          // `--popover-available-height` and scrolls, so nothing else is needed here.
           'popover-ui z-40 text-sm',
           '[pointer-events:auto]', // Override body's pointer-events:none when in modal
           sizeClasses,

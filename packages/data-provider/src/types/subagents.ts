@@ -6,6 +6,41 @@ export type SubagentThreadStatus =
   | 'interrupted'
   | 'cancelled';
 
+export type ParentSubagentTaskSummary = {
+  taskId: string;
+  status: SubagentThreadStatus;
+  createdAt?: string;
+};
+
+/**
+ * Bounded discovery projection for one child owned by a parent conversation.
+ * Event-delivery identities stay private; `actorId` is the only event-binding
+ * field intentionally exposed to the parent's UI.
+ */
+export type ParentSubagentSummary = {
+  threadId: string;
+  parentMessageId: string;
+  /** Present only for ordinary tool-spawned children. */
+  parentToolCallId?: string;
+  subagentType: string;
+  subagentKind: 'agent' | 'graph';
+  agentId?: string;
+  title: string;
+  origin: 'tool' | 'event';
+  actorId?: string;
+  status: SubagentThreadStatus;
+  updatedAt?: string;
+  latestTaskId?: string;
+  tasks: ParentSubagentTaskSummary[];
+  tasksTruncated: boolean;
+};
+
+export type ParentSubagentIndex = {
+  parentConversationId: string;
+  children: ParentSubagentSummary[];
+  childrenTruncated: boolean;
+};
+
 /**
  * A bounded, presentation-safe description of child work. This deliberately
  * models user-visible activity instead of the LangChain messages, SSE events,

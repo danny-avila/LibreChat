@@ -7,8 +7,13 @@ import type { TSchedule } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import ScheduleDialog from '../ScheduleDialog';
 
+const mockUseClockFormat = jest.fn(() => true);
+const mockUseWeekStart = jest.fn(() => 0);
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  useClockFormat: () => mockUseClockFormat(),
+  useWeekStart: () => mockUseWeekStart(),
 }));
 
 /** `@librechat/client` primitives localize through their own `useLocalize`, so the
@@ -116,6 +121,8 @@ describe('ScheduleDialog', () => {
   afterEach(() => {
     jest.clearAllMocks();
     mockLimits = { maxPerUser: 10, minIntervalMinutes: 0, requireProject: false };
+    mockUseClockFormat.mockReturnValue(true);
+    mockUseWeekStart.mockReturnValue(0);
     mockFetchedProject = undefined;
   });
 
@@ -226,11 +233,12 @@ describe('ScheduleDialog', () => {
       const user = userEvent.setup();
       renderDialog();
 
-      expect(screen.getByTestId('schedule-hour-select')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^com_ui_schedule_time/ })).toBeInTheDocument();
       await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_cron' }));
 
-      expect(screen.queryByTestId('schedule-hour-select')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('schedule-minute-select')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /^com_ui_schedule_time/ }),
+      ).not.toBeInTheDocument();
       expect(screen.getByTestId('schedule-cron-input')).toBeInTheDocument();
     });
 
@@ -412,6 +420,84 @@ describe('ScheduleDialog', () => {
       // The summary must not contradict that message by describing the Monday
       // fallback `buildCadence` substitutes for the empty set.
       expect(screen.queryByTestId('schedule-summary')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('clock and week preferences', () => {
+    it('orders the day pills from the preferred first day of the week', async () => {
+      const user = userEvent.setup();
+      mockUseWeekStart.mockReturnValue(1);
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_weekly' }));
+
+      const pills = screen
+        .getAllByRole('button')
+        .filter((button) => button.dataset.testid?.startsWith('schedule-day-'));
+      // The VALUES stay Sunday-first (the indices the cadence stores); only the
+      // presentation rotates, so Monday leads and Sunday trails.
+      expect(pills.map((pill) => pill.getAttribute('aria-label'))).toEqual([
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ]);
+    });
+  });
+
+  describe('time picker', () => {
+    it('announces the selected time, not just the field label', () => {
+      renderDialog(storedSchedule({ cadence: { frequency: 'daily', hour: 8, minute: 30 } }));
+
+      // `aria-labelledby` REPLACES a button's child text, so naming the trigger after
+      // the field alone left the selected time unreadable without opening the columns.
+      expect(
+        screen.getByRole('button', { name: /^com_ui_schedule_time.*8:30/ }),
+      ).toBeInTheDocument();
+    });
+
+    it('sets hour and minute together, so a half-applied time cannot submit', async () => {
+      const user = userEvent.setup();
+      renderDialog(storedSchedule({ cadence: { frequency: 'daily', hour: 8, minute: 0 } }));
+
+      await user.click(screen.getByRole('button', { name: /^com_ui_schedule_time/ }));
+      const minutes = screen.getByRole('radiogroup', { name: 'com_ui_schedule_minute' });
+      await user.click(within(minutes).getByRole('radio', { name: '45' }));
+
+      await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+      await waitFor(() => expect(mockMutate).toHaveBeenCalled());
+      expect(mockMutate.mock.calls[0][0].payload.cadence).toEqual({
+        frequency: 'daily',
+        hour: 8,
+        minute: 45,
+      });
+    });
+
+    it('drops to a single minutes column for an hourly cadence', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.click(screen.getByRole('radio', { name: 'com_ui_schedule_hourly' }));
+
+      await user.click(screen.getByRole('button', { name: /^com_ui_schedule_minutes_past_hour/ }));
+      expect(
+        screen.getByRole('radiogroup', { name: 'com_ui_schedule_minute' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('radiogroup', { name: 'com_ui_schedule_hour' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('follows the clock format preference into the columns', async () => {
+      const user = userEvent.setup();
+      mockUseClockFormat.mockReturnValue(false);
+      renderDialog();
+
+      await user.click(screen.getByRole('button', { name: /^com_ui_schedule_time/ }));
+      expect(
+        screen.queryByRole('radiogroup', { name: 'com_ui_schedule_meridiem' }),
+      ).not.toBeInTheDocument();
     });
   });
 

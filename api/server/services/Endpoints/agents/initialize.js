@@ -1372,6 +1372,25 @@ const initializeClient = async ({
       fallback: usageCost.endpointTokenConfig,
     });
 
+  const eventTaskId = req._agentEventTaskId;
+  const eventChildActivity =
+    req._agentEventBindingParentConversationId != null &&
+    typeof conversationId === 'string' &&
+    conversationId !== '' &&
+    typeof eventTaskId === 'string' &&
+    eventTaskId !== ''
+      ? {
+          runId: streamId ?? eventTaskId,
+          parentRunId: req._agentEventBindingParentConversationId,
+          subagentRunId: eventTaskId,
+          subagentType: primaryConfig.id,
+          subagentAgentId: primaryConfig.id,
+          parentAgentId: req._agentEventBindingParentAgentId,
+          publish: (event) =>
+            subagentThreadTaskStore.publishTaskActivity(conversationId, eventTaskId, event),
+        }
+      : null;
+
   const eventHandlers = getDefaultHandlers({
     res,
     contentParts,
@@ -1389,6 +1408,7 @@ const initializeClient = async ({
     usageCost,
     contextUsageSink,
     usageEmitSink,
+    eventChildActivity,
   });
 
   const client = new AgentClient({

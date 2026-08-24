@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue, useResetRecoilState } from 'recoil';
-import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
+import { EModelEndpoint, FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArtifactsOnConversationChange';
+import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
@@ -26,6 +27,8 @@ export default function Presentation({ children }: { children: React.ReactNode }
   // (gated on `isSubmitting`), restoring the legacy streaming UX.
   const currentArtifactId = useRecoilValue(store.currentArtifactId);
   const conversationId = useRecoilValue(store.conversationIdByIndex(0));
+  const conversationEndpoint = useRecoilValue(store.effectiveEndpointByIndex(0));
+  const conversationAgentId = useRecoilValue(store.conversationAgentIdByIndex(0));
   const selectedSubagent = useRecoilValue(activeSubagentPanel);
   const resetSelectedSubagent = useResetRecoilState(activeSubagentPanel);
   const previousConversationIdRef = useRef<string | null>(null);
@@ -114,11 +117,16 @@ export default function Presentation({ children }: { children: React.ReactNode }
 
   return (
     <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
-      <SidePanelGroup panel={panelElement}>
-        <main className="flex h-full flex-col overflow-y-auto" role="main">
-          {children}
-        </main>
-      </SidePanelGroup>
+      <ParentSubagentsProvider
+        conversationId={conversationId ?? ''}
+        enabled={conversationEndpoint === EModelEndpoint.agents && conversationAgentId != null}
+      >
+        <SidePanelGroup panel={panelElement}>
+          <main className="flex h-full flex-col overflow-y-auto" role="main">
+            {children}
+          </main>
+        </SidePanelGroup>
+      </ParentSubagentsProvider>
     </DragDropWrapper>
   );
 }
