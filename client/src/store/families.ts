@@ -38,6 +38,17 @@ const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   default: null,
 });
 
+/**
+ * Epoch ms when the current generation started (send, regenerate, continue, or
+ * resume attach). Anchors the streaming elapsed-time indicator so it survives
+ * message-row remounts (new-conversation id hydration, navigation) that would
+ * reset a component-local timestamp.
+ */
+const submissionStartFamily = atomFamily<number | null, string | number>({
+  key: 'submissionStartByIndex',
+  default: null,
+});
+
 const submissionKeysSelector = selector<(string | number)[]>({
   key: 'submissionKeysSelector',
   get: ({ get }) => {
@@ -683,6 +694,7 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
+  submissionStartFamily,
   textByIndex,
   showStopButtonByIndex,
   abortScrollFamily,

@@ -17,6 +17,7 @@ import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
 import HoverButtons from './HoverButtons';
+import Elapsed from './Elapsed';
 import SubRow from './SubRow';
 import store from '~/store';
 
@@ -134,6 +135,9 @@ function MessageParts(props: TMessageProps) {
                   isSubmitting && messageId === latestMessageId && revealOnRowHoverClasses,
                 )}
               />
+              {isSubmitting && messageId === latestMessageId && isCreatedByUser !== true && (
+                <Elapsed index={index} />
+              )}
               <HoverButtons
                 index={index}
                 isEditing={edit}

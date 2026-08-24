@@ -16,6 +16,7 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import Elapsed from '~/components/Chat/Messages/Elapsed';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -180,6 +181,9 @@ const MessageRender = memo(function MessageRender({
               isSubmitting && isLatestMessage && revealOnRowHoverClasses,
             )}
           />
+          {isSubmitting && isLatestMessage && msg.isCreatedByUser !== true && (
+            <Elapsed index={index} />
+          )}
           <HoverButtons
             index={index}
             isEditing={edit}

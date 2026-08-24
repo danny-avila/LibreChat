@@ -1223,6 +1223,8 @@
   "com_ui_edited_file": "Edited {{0}}",
   "com_ui_editing_file": "Editing {{0}}",
   "com_ui_editor_instructions": "Drag the image to reposition • Use zoom slider or buttons to adjust size",
+  "com_ui_elapsed_minutes_seconds": "{{minutes}}m {{seconds}}s",
+  "com_ui_elapsed_seconds": "{{seconds}}s",
   "com_ui_empty_category": "-",
   "com_ui_enabled": "Enabled",
   "com_ui_endpoint": "Endpoint",
