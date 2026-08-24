@@ -1,0 +1,1 @@
+export { createRoleAdminService } from './service';
