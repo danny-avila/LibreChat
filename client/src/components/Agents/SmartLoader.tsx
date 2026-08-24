@@ -73,6 +73,12 @@ export const useHasData = (data: AgentListResponse | undefined): boolean => {
 
   // Type guard for object data
   if (typeof data === 'object' && data !== null) {
+    // Check for agent list data (AgentListResponse shape, e.g. marketplace pages)
+    if ('data' in data) {
+      const agents = (data as AgentListResponse).data;
+      return Array.isArray(agents) && agents.length > 0;
+    }
+
     // Check for agent list data
     if ('agents' in data) {
       const agents = (data as any).agents;
