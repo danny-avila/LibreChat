@@ -565,6 +565,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly controlReservationSlot = createConcurrencyLimiter(
     CONTROL_RESERVATION_CONCURRENCY,
   );
+
   private controlPersistenceStopping = false;
   private controlCommandAdmissionClosed = false;
 
