@@ -9,6 +9,10 @@ describe('isImageURL', () => {
     'assets/company.png',
     'assets/icon.svg',
     'assets/company.svg#mark',
+    'assets/provider.avif',
+    'assets/provider.apng',
+    'assets/provider.bmp',
+    'assets/provider.jfif',
     'data:image/png;base64,iVBORw0KGgo=',
   ])('accepts image URL %s', (iconURL) => {
     expect(isImageURL(iconURL)).toBe(true);

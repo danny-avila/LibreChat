@@ -1,5 +1,5 @@
 import { ProviderId } from 'librechat-data-provider';
-import { resolveEndpointProviderId } from './providers';
+import { providerHosts, resolveEndpointProviderId } from './providers';
 
 describe('resolveEndpointProviderId', () => {
   it('prefers an iconURL that names a provider', () => {
@@ -85,5 +85,27 @@ describe('resolveEndpointProviderId', () => {
     expect(resolveEndpointProviderId({ name: 'Cohere', baseURL: 'not a url' })).toBe(
       ProviderId.cohere,
     );
+  });
+  it.each([
+    ['https://team.openai.azure.com/openai/v1', ProviderId.azure],
+    ['https://team.cognitiveservices.azure.com/openai/v1', ProviderId.azure],
+    ['https://generativelanguage.googleapis.com/v1beta', ProviderId.google],
+    ['https://aiplatform.googleapis.com/v1', ProviderId.google],
+  ])('brands %s from its host alone', (baseURL, expected) => {
+    expect(resolveEndpointProviderId({ name: 'Team Gateway', baseURL })).toBe(expected);
+  });
+
+  it('carries a host for every provider that one can identify', () => {
+    /** Host-unresolvable by nature: bedrock is region-scoped under a shared AWS suffix,
+     *  and mlx and ollama are served from the operator's own machine. Anything else added
+     *  to ProviderId without a host silently falls through to the generic mark. */
+    const hostUnresolvable: ProviderId[] = [ProviderId.bedrock, ProviderId.mlx, ProviderId.ollama];
+    const covered = new Set(providerHosts.map(([, provider]) => provider));
+
+    const missing = Object.values(ProviderId).filter(
+      (provider) => !covered.has(provider) && !hostUnresolvable.includes(provider),
+    );
+
+    expect(missing).toEqual([]);
   });
 });

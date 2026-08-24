@@ -1,6 +1,6 @@
 import { ProviderId, resolveProviderId } from 'librechat-data-provider';
 
-const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
+export const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['openrouter.ai', ProviderId.openrouter],
   ['api.openai.com', ProviderId.openai],
   ['api.anthropic.com', ProviderId.anthropic],
@@ -23,7 +23,17 @@ const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['helicone.ai', ProviderId.helicone],
   ['ai-gateway.vercel.sh', ProviderId.vercel],
   ['dashscope.aliyuncs.com', ProviderId.qwen],
+  ['openai.azure.com', ProviderId.azure],
+  ['cognitiveservices.azure.com', ProviderId.azure],
+  ['generativelanguage.googleapis.com', ProviderId.google],
+  ['aiplatform.googleapis.com', ProviderId.google],
 ];
+
+/**
+ * The remaining providers cannot be identified by host: bedrock's runtime hostname
+ * carries a region segment under the shared `amazonaws.com` suffix, and mlx and ollama
+ * are served from the operator's own machine. They resolve by iconURL, provider or name.
+ */
 
 function providerFromBaseURL(baseURL?: string): ProviderId | undefined {
   if (!baseURL) {

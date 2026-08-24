@@ -1,4 +1,6 @@
-const IMAGE_EXTENSION = /\.(png|jpe?g|gif|svg|webp|ico)(?:[?#].*)?$/i;
+/** Every image format browsers render, so a configured path is never mistaken for a provider name. */
+const IMAGE_EXTENSION =
+  /\.(apng|avif|bmp|cur|gif|ico|jfif|jpe?g|pjp|pjpeg|png|svg|webp)(?:[?#].*)?$/i;
 
 export function isImageURL(iconURL?: string | null): iconURL is string {
   if (!iconURL) {
