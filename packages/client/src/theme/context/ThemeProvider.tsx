@@ -10,14 +10,26 @@ import React, {
 import { JSX } from 'react/jsx-runtime';
 import type { IThemeRGB, ThemeDefinition, ThemeMode } from '../types';
 import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/applyTheme';
-import { fromLegacyTheme, resolveTheme, validateThemeDefinition } from '../registry';
+import {
+  fromLegacyTheme,
+  highContrastTheme,
+  resolveTheme,
+  validateThemeDefinition,
+} from '../registry';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';
 const THEME_NAME_KEY = 'theme-name';
 const THEME_DEFINITION_KEY = 'theme-definition';
 const THEME_SOURCE_KEY = 'theme-source';
-const themeModes = ['light', 'dark', 'system'] as const;
+const HIGH_CONTRAST_CLASS = 'high-contrast';
+const themeModes = [
+  'light',
+  'dark',
+  'system',
+  'high-contrast-light',
+  'high-contrast-dark',
+] as const;
 
 type AppearanceMode = (typeof themeModes)[number];
 
@@ -34,6 +46,7 @@ type ThemeDOMSnapshot = {
 type ThemeClassSnapshot = {
   dark: boolean;
   light: boolean;
+  highContrast: boolean;
 };
 
 type ThemePropSnapshot = Pick<
@@ -76,8 +89,28 @@ export const isDark = (theme: string): boolean => {
   if (theme === 'system') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
-  return theme === 'dark';
+  return theme === 'dark' || theme === 'high-contrast-dark';
 };
+
+/**
+ * Whether the appearance mode explicitly asks for high contrast. `system` is
+ * excluded here and resolved separately through `prefers-contrast`, because
+ * this predicate answers "what did the user pick", which is what the theme
+ * toggle has to preserve when it flips the colour scheme.
+ */
+export const isHighContrast = (theme: string): boolean =>
+  theme === 'high-contrast-light' || theme === 'high-contrast-dark';
+
+/**
+ * `system` follows the OS for contrast the same way it already follows it for
+ * the colour scheme, so a user who has switched on "Increase contrast" gets the
+ * accessible palette without first discovering this setting.
+ */
+const prefersMoreContrast = (): boolean => window.matchMedia('(prefers-contrast: more)').matches;
+
+/** The resolved contrast for an appearance mode, explicit choice or OS request. */
+export const resolvesToHighContrast = (theme: string): boolean =>
+  isHighContrast(theme) || (theme === 'system' && prefersMoreContrast());
 
 const isAppearanceMode = (value: string): value is AppearanceMode =>
   themeModes.includes(value as AppearanceMode);
@@ -498,32 +531,39 @@ export function ThemeProvider({
     (currentTheme: AppearanceMode) => {
       const root = window.document.documentElement;
       const mode: ThemeMode = isDark(currentTheme) ? 'dark' : 'light';
+      const highContrast = resolvesToHighContrast(currentTheme);
 
       if (!themeClassSnapshot.current) {
         themeClassSnapshot.current = {
           dark: root.classList.contains('dark'),
           light: root.classList.contains('light'),
+          highContrast: root.classList.contains(HIGH_CONTRAST_CLASS),
         };
       }
 
       root.classList.toggle('dark', mode === 'dark');
       root.classList.toggle('light', mode === 'light');
+      root.classList.toggle(HIGH_CONTRAST_CLASS, highContrast);
 
-      if (!themeDefinition) {
+      /** A contrast mode is an accessibility need, so it outranks both a
+       *  deployment's custom definition and the legacy RGB colors. */
+      const definition = highContrast ? highContrastTheme : themeDefinition;
+
+      if (!definition) {
         restoreAppliedTheme(root);
         return;
       }
 
       prepareThemeDOM(root);
 
-      if (legacyThemeRGB) {
+      if (!highContrast && legacyThemeRGB) {
         applyTheme(legacyThemeRGB, root);
-        root.dataset.theme = themeDefinition.name;
+        root.dataset.theme = definition.name;
         return;
       }
 
       try {
-        applyResolvedTheme(resolveTheme(themeDefinition, mode), root);
+        applyResolvedTheme(resolveTheme(definition, mode), root);
       } catch (error) {
         restoreAppliedTheme(root);
         console.error('Unable to apply theme definition', error);
@@ -541,10 +581,14 @@ export function ThemeProvider({
       return;
     }
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    /** `system` tracks both OS preferences it resolves against. */
+    const queries = [
+      window.matchMedia('(prefers-color-scheme: dark)'),
+      window.matchMedia('(prefers-contrast: more)'),
+    ];
     const handleChange = () => applyThemeMode('system');
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    queries.forEach((query) => query.addEventListener('change', handleChange));
+    return () => queries.forEach((query) => query.removeEventListener('change', handleChange));
   }, [applyThemeMode, theme]);
 
   useEffect(
@@ -554,6 +598,7 @@ export function ThemeProvider({
       if (themeClassSnapshot.current) {
         root.classList.toggle('dark', themeClassSnapshot.current.dark);
         root.classList.toggle('light', themeClassSnapshot.current.light);
+        root.classList.toggle(HIGH_CONTRAST_CLASS, themeClassSnapshot.current.highContrast);
         themeClassSnapshot.current = undefined;
       }
     },

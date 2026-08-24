@@ -4,6 +4,7 @@ import type { IThemeRGB } from './types';
 import { createTailwindColors } from './utils/createTailwindColors';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 
 const sharedComponents = [
   'AnimatedSearchInput.tsx',
@@ -220,6 +221,8 @@ function belowAA(
 describe.each([
   ['default', defaultTheme],
   ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
 ])('%s theme text contrast', (_name, theme: IThemeRGB) => {
   it('keeps neutral text at WCAG AA on every surface it renders on', () => {
     expect(belowAA(theme, neutralTextTokens, [...canvasSurfaces, 'rgb-surface-tertiary'])).toEqual(
@@ -304,6 +307,8 @@ describe('categorical series scale', () => {
 describe.each([
   ['default', defaultTheme],
   ['dark', darkTheme],
+  ['high contrast light', highContrastLightTheme],
+  ['high contrast dark', highContrastDarkTheme],
 ])('%s series contrast', (_name, theme: IThemeRGB) => {
   it('keeps every series slot at the 3:1 mark floor on the track and the panel', () => {
     const failures = seriesTokens.flatMap((token) =>

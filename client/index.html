@@ -34,7 +34,9 @@
 
       if (theme === 'dark') {
         backgroundColor = '#0d0d0d';
-      } else if (theme === 'light') {
+      } else if (theme === 'high-contrast-dark') {
+        backgroundColor = '#000000';
+      } else if (theme === 'light' || theme === 'high-contrast-light') {
         backgroundColor = '#ffffff';
       } else if (theme === 'system') {
         const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)').matches;

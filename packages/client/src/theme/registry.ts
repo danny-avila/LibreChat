@@ -10,6 +10,7 @@ import type {
 } from './types';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
+import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
 export const THEME_VERSION = 1 as const;
 
 /**
@@ -89,6 +90,24 @@ export const libreChatTheme: ThemeDefinition = Object.freeze({
     dark: { colors: darkTheme },
   },
   brands: defaultBrands,
+});
+
+/**
+ * Built-in accessibility theme behind the `high-contrast-light` and
+ * `high-contrast-dark` appearance modes. `HIGH_CONTRAST_THEME_NAME` is what
+ * `applyResolvedTheme` stamps onto `data-theme`, and what the `high-contrast`
+ * class on `<html>` mirrors for the CSS-only variables the token layer cannot
+ * reach (see the `html.high-contrast` block in `client/src/style.css`).
+ */
+export const HIGH_CONTRAST_THEME_NAME = 'high-contrast' as const;
+
+export const highContrastTheme: ThemeDefinition = Object.freeze({
+  version: THEME_VERSION,
+  name: HIGH_CONTRAST_THEME_NAME,
+  modes: {
+    light: { colors: highContrastLightTheme },
+    dark: { colors: highContrastDarkTheme },
+  },
 });
 
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;

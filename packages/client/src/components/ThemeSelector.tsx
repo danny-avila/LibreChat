@@ -1,8 +1,8 @@
 import { useContext, useCallback, useEffect, useState } from 'react';
 import { JSX } from 'react/jsx-runtime';
-import { Sun, Moon, Monitor } from 'lucide';
+import { Sun, Moon, Monitor, Contrast } from 'lucide';
 import type { IconNode } from './MorphIcon';
-import { ThemeContext, isDark } from '../theme';
+import { ThemeContext, isDark, isHighContrast } from '../theme';
 import { MorphIcon } from './MorphIcon';
 import { useLocalize } from '../hooks';
 import { Button } from './Button';
@@ -13,18 +13,22 @@ declare global {
   }
 }
 
-type ThemeType = 'system' | 'dark' | 'light';
+type ThemeType = 'system' | 'dark' | 'light' | 'high-contrast-light' | 'high-contrast-dark';
 
 const themeIcons: Record<ThemeType, IconNode> = {
   system: Monitor,
   dark: Moon,
   light: Sun,
+  'high-contrast-light': Contrast,
+  'high-contrast-dark': Contrast,
 };
 
 const Theme = ({ theme, onChange }: { theme: string; onChange: (value: string) => void }) => {
   const localize = useLocalize();
 
-  const nextTheme = isDark(theme) ? 'light' : 'dark';
+  const nextScheme = isDark(theme) ? 'light' : 'dark';
+  /** The toggle flips the colour scheme without discarding a contrast choice. */
+  const nextTheme = isHighContrast(theme) ? `high-contrast-${nextScheme}` : nextScheme;
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -68,6 +72,14 @@ const ThemeSelector = ({ returnThemeOnly }: { returnThemeOnly?: boolean }): JSX.
       window.lastThemeChange = now;
 
       setTheme(value);
+      if (isHighContrast(value)) {
+        setAnnouncement(
+          isDark(value)
+            ? localize('com_ui_high_contrast_dark_theme_enabled')
+            : localize('com_ui_high_contrast_light_theme_enabled'),
+        );
+        return;
+      }
       setAnnouncement(
         isDark(value)
           ? localize('com_ui_dark_theme_enabled')
