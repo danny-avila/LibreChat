@@ -6,10 +6,9 @@ import type {
 } from '@librechat/agents';
 import type { SteerQueueItem } from '~/stream/interfaces/IJobStore';
 
-/** Mirrors runtime.ts's local extension — the field predates the SDK pin bump. */
-type SteerDrainOutput = PostToolBatchHookOutput & {
-  injectedMessages?: Array<{ role: string; content: string; source: string }>;
-};
+/** The pinned SDK's hook output declares `injectedMessages` natively; a
+ *  narrower local re-declaration would no longer be assignable from it. */
+type SteerDrainOutput = PostToolBatchHookOutput;
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
