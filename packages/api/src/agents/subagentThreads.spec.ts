@@ -2168,21 +2168,21 @@ describe('SubagentThreadTaskStore', () => {
     ).resolves.toMatchObject({ status: 'accepted' });
     finish({ content: 'Done.' });
     await waitForSettled(ownerStore, config.scopeId, started);
-    await waitUntil(async () => {
-      const [input] = await methods.getMessages(
-        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
-        '+subagentTask',
-      );
-      return (
-        input?.subagentTask?.controlReceipts?.some(
-          (receipt) =>
-            receipt.invocationId === 'durable-invocation' &&
-            receipt.status === 'rejected' &&
-            receipt.reason === 'task_completed',
-        ) === true
-      );
-    }, 'the terminal control receipt to become durable');
+    /** Owner shutdown is the production durability boundary. Awaiting it is both
+     * stronger and less load-sensitive than polling Mongo while the async receipt
+     * tail is still settling under Jest coverage instrumentation. */
     await ownerStore.destroyTaskControlTransport();
+    const [settledInput] = await methods.getMessages(
+      { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+      '+subagentTask',
+    );
+    expect(settledInput?.subagentTask?.controlReceipts).toContainEqual(
+      expect.objectContaining({
+        invocationId: 'durable-invocation',
+        status: 'rejected',
+        reason: 'task_completed',
+      }),
+    );
 
     const restartedStore = new SubagentThreadTaskStore(methods);
     (
