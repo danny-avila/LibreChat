@@ -888,7 +888,35 @@ describe('generation protocol bridge for steering mutations', () => {
     expect(publishUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('treats quotes as part of the idempotency fingerprint', async () => {
+  it('keeps receipt fingerprints quote-independent so legacy replicas can replay them', async () => {
+    // The 3-field hash is the one shape EVERY deployed version computes: a
+    // lost-ACK retry of a quoted steer routed through a pre-quotes replica
+    // must replay the receipt, not 409 accepted words as a conflict.
+    const streamId = 'steer-protocol-v2-legacy-replayable';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 2, steerQuotesCapable: true },
+    });
+    const base = { conversationId: streamId, text: 'identical words' };
+
+    await handleSteerRequest(
+      user,
+      { ...base, clientSteerId: 'client-quoted', quotes: ['the excerpt'] },
+      { generationProtocolVersion: 2 },
+    );
+    await handleSteerRequest(
+      user,
+      { ...base, clientSteerId: 'client-plain' },
+      { generationProtocolVersion: 2 },
+    );
+
+    const quoted = await GenerationJobManager.steering.getReceipt(streamId, 'client-quoted');
+    const plain = await GenerationJobManager.steering.getReceipt(streamId, 'client-plain');
+    expect(quoted?.fingerprint).toBe(plain?.fingerprint);
+    expect(typeof quoted?.requestedQuotesFingerprint).toBe('string');
+    expect(plain?.requestedQuotesFingerprint).toBeUndefined();
+  });
+
+  it('treats quotes as part of the idempotency identity', async () => {
     const streamId = 'steer-protocol-v2-quote-fingerprint';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {
       initialMetadata: { generationProtocolVersion: 2, steerQuotesCapable: true },

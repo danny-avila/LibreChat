@@ -235,25 +235,41 @@ function hasTenantMismatch(
   return metadata?.tenantId != null && metadata.tenantId !== user.tenantId;
 }
 
-/** Quotes join the hash only when present so quote-less steers keep the exact
- *  pre-quotes fingerprint — durable receipts written before this field shipped
- *  must still replay for their retries instead of 409ing as conflicts. */
+/** DELIBERATELY quote-independent: this exact 3-field hash is what EVERY
+ *  deployed replica version computes, so a lost-ACK retry can replay its
+ *  receipt no matter which replica wrote it or reads it. Quote identity is
+ *  enforced separately via `SteerReceipt.requestedQuotesFingerprint`, which
+ *  only quote-aware readers consult. */
 function steerFingerprint(
   text: string,
   files: Partial<TFile>[] | undefined,
   preempt: boolean,
-  quotes?: string[] | null,
 ): string {
   return createHash('sha256')
-    .update(
-      JSON.stringify({
-        text,
-        files: files ?? [],
-        preempt,
-        ...(quotes != null && quotes.length > 0 && { quotes }),
-      }),
-    )
+    .update(JSON.stringify({ text, files: files ?? [], preempt }))
     .digest('base64url');
+}
+
+/** Normalized-quote identity stored beside (never inside) the fingerprint. */
+function quotesFingerprint(quotes: string[]): string {
+  return createHash('sha256').update(JSON.stringify(quotes)).digest('base64url');
+}
+
+/** Whether a receipt's recorded quote identity accepts this request's quotes.
+ *  An ABSENT record means the receipt was written by a pre-quotes replica (or
+ *  for a quote-less request) — quotes were never part of its contract, so any
+ *  retry of the same words replays (the item carries no quotes; the missing
+ *  `quotesAccepted` echo keeps the client's copy on its chip). A present
+ *  record must match exactly: reusing a clientSteerId with different quotes
+ *  is the same conflict a content-hash mismatch signals. */
+function receiptQuotesCompatible(
+  recorded: string | undefined,
+  requested: string[] | null,
+): boolean {
+  if (recorded == null) {
+    return true;
+  }
+  return requested != null && quotesFingerprint(requested) === recorded;
 }
 
 function receiptResponse(conversationId: string, receipt: SteerReceipt): SteerRequestResult {
@@ -431,15 +447,7 @@ async function handleSteerRequestInternal(
   /** streamId === conversationId for resumable agent jobs */
   const streamId = conversationId;
   const wantsPreempt = body.preempt === true;
-  const fingerprint = steerFingerprint(text, files, wantsPreempt, quotes);
-  /** A receipt written by a pre-quotes replica hashed only text/files/preempt.
-   * A retry of the SAME words that now carries quotes must replay that receipt
-   * rather than 409 as a conflict: the words are already durably accepted, and
-   * the replayed 202's missing `quotesAccepted` echo tells the client to
-   * re-stage the dropped excerpts instead of exposing duplicate-send controls. */
-  const acceptsStoredFingerprint = (stored: string): boolean =>
-    stored === fingerprint ||
-    (quotes != null && stored === steerFingerprint(text, files, wantsPreempt));
+  const fingerprint = steerFingerprint(text, files, wantsPreempt);
 
   /** A durable receipt is authoritative even after its accepting job was
    * deleted or replaced. Read it before capping to the current job marker:
@@ -465,7 +473,10 @@ async function handleSteerRequestInternal(
       ) {
         return { status: 409, body: { code: 'RUN_REPLACED' } };
       }
-      if (!acceptsStoredFingerprint(receipt.fingerprint)) {
+      if (
+        receipt.fingerprint !== fingerprint ||
+        !receiptQuotesCompatible(receipt.requestedQuotesFingerprint, quotes)
+      ) {
         return { status: 409, body: { code: 'STEER_IDEMPOTENCY_CONFLICT' } };
       }
       if (
@@ -637,6 +648,7 @@ async function handleSteerRequestInternal(
       {
         clientSteerId,
         fingerprint,
+        ...(quotes != null && { requestedQuotesFingerprint: quotesFingerprint(quotes) }),
         userId: user.id ?? '',
         ...(user.tenantId && { tenantId: user.tenantId }),
         ...(job.metadata?.agent_id && { agentId: job.metadata.agent_id }),
@@ -649,7 +661,11 @@ async function handleSteerRequestInternal(
     if (typeof result === 'number') {
       depth = result;
     } else {
-      if (!('fingerprint' in result) || !acceptsStoredFingerprint(result.fingerprint)) {
+      if (
+        !('fingerprint' in result) ||
+        result.fingerprint !== fingerprint ||
+        !receiptQuotesCompatible(result.requestedQuotesFingerprint, quotes)
+      ) {
         return { status: 409, body: { code: 'STEER_IDEMPOTENCY_CONFLICT' } };
       }
       if (result.userId !== (user.id ?? '') || hasTenantMismatch(result, user)) {

@@ -466,7 +466,16 @@ export interface SteerQueueItem {
  * the same instruction twice after drain, terminal cleanup, or replacement. */
 export interface SteerReceipt {
   clientSteerId: string;
+  /** Quote-INDEPENDENT content hash (text/files/preempt) — the one shape every
+   * replica version computes, so lost-ACK retries replay across a rolling
+   * deploy in both directions. */
   fingerprint: string;
+  /** Identity of the REQUESTED quotes (pre any owner-capability strip),
+   * recorded beside the fingerprint so quote-aware readers enforce quote
+   * identity without making the fingerprint unreadable to legacy admission.
+   * Absent on receipts written by pre-quotes replicas or for quote-less
+   * requests. */
+  requestedQuotesFingerprint?: string;
   userId: string;
   tenantId?: string;
   agentId?: string;
