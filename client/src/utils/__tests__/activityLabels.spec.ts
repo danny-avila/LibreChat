@@ -191,6 +191,12 @@ describe('lastCursorContentIdx', () => {
 
     expect(lastCursorContentIdx([emptyText])).toBe(0);
   });
+
+  it('retains a sparse empty placeholder when no visible output precedes it', () => {
+    const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
+
+    expect(lastCursorContentIdx([undefined, emptyText])).toBe(1);
+  });
 });
 
 describe('offsetActivityPhaseBoundary', () => {

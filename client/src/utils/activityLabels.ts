@@ -379,7 +379,8 @@ export function lastCursorContentIdx(
   const parts = content ?? [];
   const lastIdx = lastVisibleContentIdx(parts);
   if (lastIdx > 0 && isEmptyTextContentPart(parts[lastIdx])) {
-    return lastVisibleContentIdx(parts.slice(0, lastIdx));
+    const precedingIdx = lastVisibleContentIdx(parts.slice(0, lastIdx));
+    return precedingIdx >= 0 ? precedingIdx : lastIdx;
   }
   return lastIdx;
 }
