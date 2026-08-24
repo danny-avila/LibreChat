@@ -157,7 +157,7 @@ describe('EventSubagentActivityGroup', () => {
     fireEvent.click(summary);
     fireEvent.click(screen.getByRole('button', { name: /Completed Agent/ }));
 
-    expect(selection?.event?.siblingParentMessageIds).toEqual([
+    expect((selection as ActiveSubagentPanel | null)?.event?.siblingParentMessageIds).toEqual([
       'parent-message',
       'assistant-message',
     ]);
