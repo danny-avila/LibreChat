@@ -30,7 +30,7 @@ type ControlStore = {
 };
 
 type Dependencies = Pick<ConversationMethods, 'getConvoOwnership' | 'getSubagentThreadForParent'> &
-  Pick<MessageMethods, 'getSubagentTaskControlReceipt'> & {
+  Pick<MessageMethods, 'getMessages' | 'getSubagentTaskControlReceipt'> & {
     store: ControlStore;
   };
 
@@ -55,7 +55,7 @@ const commandFromRequest = (
   if (!validAction(body.action)) return undefined;
   if (body.action === 'cancel') return { action: 'cancel' };
   if (body.action === 'cancel_message') {
-    return validId(body.controlId)
+    return validId(body.controlId, MAX_TASK_ID_BYTES)
       ? { action: 'cancel_message', controlId: body.controlId }
       : undefined;
   }
@@ -176,6 +176,20 @@ export function createSubagentControlHandler(deps: Dependencies) {
                 message: 'This control invocation id was already used for a different command.',
               });
         res.status(200).json({ receipt } satisfies SubagentControlResponse);
+        return;
+      }
+      const [taskInput] = await deps.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${body.taskId}:user` },
+        '+subagentTask',
+      );
+      if (taskInput?.subagentTask == null) {
+        if (
+          child.subagentThreadLease?.taskId === body.taskId &&
+          child.subagentThreadLease.expiresAt.getTime() > Date.now()
+        ) {
+          throw new SubagentTaskOwnerUnavailableError();
+        }
+        res.status(404).json({ error: 'Conversation not found' });
         return;
       }
       const scopeId = createSubagentThreadScopeId({

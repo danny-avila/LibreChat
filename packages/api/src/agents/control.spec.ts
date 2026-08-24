@@ -49,6 +49,9 @@ const request = (body: Record<string, unknown>): ServerRequest =>
 const dependencies = (controlTask = jest.fn()) => ({
   getConvoOwnership: jest.fn().mockResolvedValue(parent),
   getSubagentThreadForParent: jest.fn().mockResolvedValue(child),
+  getMessages: jest
+    .fn()
+    .mockResolvedValue([{ messageId: `${taskId}:user`, subagentTask: { status: 'running' } }]),
   getSubagentTaskControlReceipt: jest.fn().mockResolvedValue(null),
   recordSubagentTaskControlReceipt: jest.fn().mockResolvedValue(true),
   store: { controlTask },
@@ -322,6 +325,11 @@ describe('subagent control handler', () => {
     );
     const handler = createSubagentControlHandler(deps);
     const res = response();
+    deps.getSubagentThreadForParent.mockResolvedValue({
+      ...child,
+      subagentThreadLease: undefined,
+    });
+    deps.getMessages.mockResolvedValue([]);
 
     await handler(
       request({ taskId, invocationId: 'invocation-1', action: 'queue', message: 'Continue.' }),
@@ -330,6 +338,29 @@ describe('subagent control handler', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(res.json).toHaveBeenCalledWith({ error: 'Conversation not found' });
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+  });
+
+  it('keeps a live pre-seed control retryable without applying it', async () => {
+    const deps = dependencies();
+    deps.getMessages.mockResolvedValue([]);
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({ taskId, invocationId: 'invocation-1', action: 'queue', message: 'Continue.' }),
+      res.value,
+    );
+
+    expect(deps.store.controlTask).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'failed',
+        reason: 'owner_unavailable',
+      }),
+    });
   });
 
   it('rejects malformed controls before authorization or routing', async () => {
@@ -356,6 +387,25 @@ describe('subagent control handler', () => {
         taskId: 't'.repeat(257),
         invocationId: 'invocation-1',
         action: 'cancel',
+      }),
+      res.value,
+    );
+
+    expect(deps.getConvoOwnership).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('rejects control ids beyond the durable receipt bound before authorization', async () => {
+    const deps = dependencies();
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'cancel_message',
+        controlId: 'c'.repeat(257),
       }),
       res.value,
     );

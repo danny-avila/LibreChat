@@ -71,8 +71,8 @@ const subagentActivityStreamHandler = createSubagentActivityStreamHandler(
 const subagentControlHandler = createSubagentControlHandler({
   getConvoOwnership: db.getConvoOwnership,
   getSubagentThreadForParent: db.getSubagentThreadForParent,
+  getMessages: db.getMessages,
   getSubagentTaskControlReceipt: db.getSubagentTaskControlReceipt,
-  recordSubagentTaskControlReceipt: db.recordSubagentTaskControlReceipt,
   store: subagentThreadTaskStore,
 });
 router.use(requireJwtAuth);
