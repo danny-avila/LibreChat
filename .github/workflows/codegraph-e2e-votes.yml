@@ -174,7 +174,11 @@ jobs:
       - name: Vote — run the full mock suite (cannot fail the branch)
         continue-on-error: true
         env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: pw-results.json
+          # Absolute on purpose: Playwright resolves a relative PLAYWRIGHT_JSON_OUTPUT_NAME
+          # against the CONFIG directory (e2e/), not the working directory — the first live run
+          # wrote e2e/pw-results.json while the ledger looked in the repo root and logged zero
+          # trials (fail-safe, but a silent no-op).
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/pw-results.json
         run: npx playwright test --config=e2e/playwright.config.mock.ts --reporter=line,json
 
       - name: Ledger — log the specs that actually executed
@@ -187,8 +191,8 @@ jobs:
           # under this job's default env — counting them as covered would mint phantom trials,
           # the exact bug this workflow revision exists to kill (Codex P1 on #15162). A spec is
           # covered iff at least one of its tests reached a non-skipped outcome.
-          if jq -e '.suites' pw-results.json >/dev/null 2>&1; then
-            jq -r '[.suites[] | recurse(.suites[]?) | .specs[]? | select([.tests[]?.status] | any(. != "skipped")) | .file] | unique | .[]' pw-results.json \
+          if jq -e '.suites' "$GITHUB_WORKSPACE/pw-results.json" >/dev/null 2>&1; then
+            jq -r '[.suites[] | recurse(.suites[]?) | .specs[]? | select([.tests[]?.status] | any(. != "skipped")) | .file] | unique | .[]' "$GITHUB_WORKSPACE/pw-results.json" \
               | sed 's|^|specs/mock/|' > covered.txt
             N=$(wc -l < covered.txt | tr -d ' ')
             echo "codegraph-votes: running $N specs (executed, full suite)"
