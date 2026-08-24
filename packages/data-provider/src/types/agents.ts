@@ -204,7 +204,8 @@ export namespace Agents {
     groupId?: number; // #new
     stepDetails: StepDetails;
     summary?: SummaryContentPart;
-    usage: null | object;
+    /** Optional to mirror the agents SDK, which omits usage until a step reports it. */
+    usage?: null | object;
     /** Epoch ms the step was opened. Emitted by `@librechat/agents` >= 3.4.6. */
     created_at?: number;
     status?: RunStepStatus;
