@@ -199,7 +199,10 @@ async function waitForSettled(
   started: SubagentTaskStartResult,
 ): Promise<void> {
   const accepted = requireAccepted(started);
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  /** Coverage shards can briefly starve this polling loop while Mongo-backed
+   * suites build indexes in parallel. Keep the assertion bounded without
+   * treating two seconds of runner contention as a task-lifecycle failure. */
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
     const task = store.get(scopeId, accepted.task.taskId);
     if (task != null && task.status !== 'running') {
       return;
@@ -3739,6 +3742,7 @@ describe('SubagentThreadTaskStore', () => {
 
     finish({ content: 'done' });
     await waitForSettled(store, config.scopeId, live);
+    await store.destroyTaskControlTransport();
   });
 
   it('caps the merged local and remote task list the poll tool reads', async () => {
