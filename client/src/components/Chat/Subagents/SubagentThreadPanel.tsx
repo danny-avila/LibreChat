@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { Bot, MessagesSquare, X } from 'lucide-react';
 import { ForkOptions } from 'librechat-data-provider';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
@@ -14,6 +13,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { ParentSubagentTaskSummary } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel } from '~/store/subagents';
 import {
   ACTIVE_THREAD_REFRESH_MS,
