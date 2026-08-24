@@ -213,6 +213,43 @@ describe('subagent control handler', () => {
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('fingerprint');
   });
 
+  it('never exposes a private reservation as an accepted public receipt', async () => {
+    const controlTask = jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError());
+    const deps = dependencies(controlTask);
+    deps.getSubagentTaskControlReceipt.mockResolvedValue({
+      invocationId: 'invocation-1',
+      fingerprint: controlFingerprint({ action: 'queue', message: 'Check the primary source.' }),
+      action: 'queue',
+      status: 'reserved',
+      createdAt: new Date('2026-08-24T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-24T12:00:00.000Z'),
+      message: 'Check the primary source.',
+    });
+    const handler = createSubagentControlHandler(deps);
+    const res = response();
+
+    await handler(
+      request({
+        taskId,
+        invocationId: 'invocation-1',
+        action: 'queue',
+        message: 'Check the primary source.',
+      }),
+      res.value,
+    );
+
+    expect(controlTask).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      receipt: expect.objectContaining({
+        invocationId: 'invocation-1',
+        status: 'failed',
+        reason: 'owner_unavailable',
+      }),
+    });
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('reserved');
+  });
+
   it('rejects invocation-id reuse with different command content', async () => {
     const deps = dependencies();
     deps.getSubagentTaskControlReceipt.mockResolvedValue({

@@ -112,12 +112,19 @@ const publicStoredReceipt = ({
   fingerprint: _fingerprint,
   createdAt,
   updatedAt,
+  status,
   ...receipt
-}: ISubagentTaskControlReceipt): SubagentControlReceipt => ({
-  ...receipt,
-  createdAt: createdAt.toISOString(),
-  updatedAt: updatedAt.toISOString(),
-});
+}: ISubagentTaskControlReceipt): SubagentControlReceipt => {
+  if (status === 'reserved') {
+    throw new SubagentTaskOwnerUnavailableError();
+  }
+  return {
+    ...receipt,
+    status,
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
+  };
+};
 
 /** Applies one parent-authorized control to the live owner and returns only its public receipt. */
 export function createSubagentControlHandler(deps: Dependencies) {
@@ -167,7 +174,10 @@ export function createSubagentControlHandler(deps: Dependencies) {
         invocationId: body.invocationId,
         ...(tenantId == null ? {} : { tenantId }),
       });
-      if (existing != null) {
+      /** `reserved` is a server-private at-most-once fence, not an authoritative
+       * public receipt. Re-enter the task store so it can return owner-unavailable
+       * without exposing false acceptance or reapplying the command. */
+      if (existing != null && existing.status !== 'reserved') {
         const receipt =
           existing.fingerprint === fingerprint
             ? publicStoredReceipt(existing)
