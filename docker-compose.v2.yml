@@ -92,6 +92,8 @@ services:
       - PUBLIC_URL=${DOMAIN_CLIENT:-https://librechat-v2.aidstlab.top}
       - MONGO_URI=mongodb://mongodb:27017/LibreChat
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      # JetCode platform callback: provisions the client on paid orders.
+      - PLATFORM_URL=http://jetcodem-app:8080
       # Staging stays on the mock payment driver; no live AlfaPay credentials.
       - ALFAPAY_DRIVER=${ALFAPAY_DRIVER:-mock}
       - ALFAPAY_BASE_URL=${ALFAPAY_BASE_URL:-}

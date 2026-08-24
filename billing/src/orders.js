@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Balance, Order, Transaction } from './db.js';
 import { alfapay } from './alfapay.js';
 import { config } from './config.js';
+import { notifyPlatform } from './platform.js';
 
 export function newOrderNumber(userId) {
   const ts = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 12);
@@ -30,7 +31,22 @@ export async function creditOrder(order) {
     model: null,
   });
   console.log(`[billing] credited order ${order.orderNumber}: +${order.tariff.credits} to ${order.userEmail}`);
+  await notifyPlatformOnce(order);
   return true;
+}
+
+// Platform provisioning callback. Never blocks crediting: a failure only
+// leaves platformNotifiedAt unset, and the poller keeps retrying — the
+// platform side is idempotent by order_id.
+export async function notifyPlatformOnce(order) {
+  if (!config.platformUrl || order.platformNotifiedAt) return;
+  try {
+    if (await notifyPlatform(order)) {
+      await Order.updateOne({ _id: order._id }, { $set: { platformNotifiedAt: new Date() } });
+    }
+  } catch (e) {
+    console.error(`[billing] platform notify failed for ${order.orderNumber}: ${e.message}`);
+  }
 }
 
 // Deducts credits after a refund (may drive the balance negative on purpose —
@@ -90,6 +106,15 @@ export function startPoller() {
         createdAt: { $gte: cutoff },
       }).select('_id').lean();
       for (const { _id } of open) await syncOrder(_id);
+      // retry paid orders whose platform callback did not land yet
+      if (config.platformUrl) {
+        const unnotified = await Order.find({
+          status: 'paid',
+          credited: true,
+          platformNotifiedAt: { $exists: false },
+        }).limit(20);
+        for (const order of unnotified) await notifyPlatformOnce(order);
+      }
     } catch (e) {
       console.error('[billing] poller error:', e.message);
     }

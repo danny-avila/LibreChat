@@ -65,6 +65,8 @@ const orderSchema = new mongoose.Schema(
     },
     credited: { type: Boolean, default: false },
     creditedAt: Date,
+    // set once the JetCode platform accepted the paid-order callback
+    platformNotifiedAt: Date,
     refundedAt: Date,
     lastSyncAt: Date,
     failReason: String,

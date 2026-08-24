@@ -18,6 +18,8 @@ export const config = {
     apiKey: process.env.ALFAPAY_API_KEY || '',
     projectId: process.env.ALFAPAY_PROJECT_ID || '',
   },
+  // JetCode platform base URL for the paid-order callback; empty disables it.
+  platformUrl: (process.env.PLATFORM_URL || '').replace(/\/$/, ''),
   // How often pending orders are re-checked against the gateway (webhook backup).
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS || '60000', 10),
   // Orders older than this stop being polled and are marked expired.
