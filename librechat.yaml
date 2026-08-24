@@ -156,6 +156,7 @@ interface:
   # both roles to the same values on every restart.
   bookmarks: false
   multiConvo: false
+  temporaryChat: false
   peoplePicker:
     users: true
     groups: true
