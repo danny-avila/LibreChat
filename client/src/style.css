@@ -388,6 +388,228 @@ html {
   --border-xheavy: 217 217 227;
 }
 
+/* High contrast appearance modes.
+ *
+ * Every `IThemeRGB` token is delivered by the theme registry as an inline custom
+ * property on <html> (see packages/client/src/theme/themes/highContrast.ts), so
+ * this block only covers what the token layer cannot reach: the CSS-only
+ * variables, the UA-rendered chrome that follows `color-scheme`, and the
+ * hard-coded literals elsewhere in this stylesheet. Every ratio quoted below is
+ * measured against the mode's own canvas, pure white or pure black. */
+html.high-contrast {
+  color-scheme: light;
+  /* The stock 58%/40% tracks land at 2.9:1 and 2.2:1 against the page. These
+   * clear 3:1 three ways at once: against the page, against the
+   * `surface-primary` thumb, and against the checked `surface-inverted` track. */
+  --switch-unchecked: 0 0% 40%;
+  /* A 0.5rem bar is a small target to hit and a thin thing to see. */
+  --scrollbar-size: 0.75rem;
+}
+html.high-contrast.dark {
+  color-scheme: dark;
+  --switch-unchecked: 0 0% 50%;
+}
+html.high-contrast ::-webkit-scrollbar-thumb {
+  /* The 10%-alpha thumb is invisible against a pure black or white canvas. */
+  background-color: rgb(var(--border-heavy));
+}
+html.high-contrast ::-webkit-scrollbar-track {
+  border: 1px solid rgb(var(--border-light));
+}
+html.high-contrast * {
+  scrollbar-color: rgb(var(--border-heavy)) rgb(var(--surface-primary));
+  /* Controls that halve their own ring (`ring-opacity-50`, `ring-opacity-20`)
+   * keep it at full strength here. The outline rules below cover the controls
+   * that blank it outright. */
+  --tw-ring-opacity: 1;
+}
+/* Popover elevation is a black shadow, which carries no separation at all
+ * against a pure black surface. */
+html.high-contrast .popover-ui,
+html.high-contrast .tooltip {
+  border: 1px solid rgb(var(--border-medium));
+  box-shadow: none;
+}
+/* `.dark body`/`.dark html` pin the page to #212121, which would leave a
+ * near-black canvas behind the pure black surfaces. */
+html.high-contrast,
+html.high-contrast body,
+html.high-contrast.dark,
+html.high-contrast.dark body {
+  background-color: rgb(var(--surface-primary));
+}
+/* Selection is otherwise left to the UA's system colours, which no theme
+ * controls. Inverting the canvas guarantees 21:1 for the selected run. */
+html.high-contrast ::selection {
+  background-color: rgb(var(--text-primary));
+  color: rgb(var(--surface-primary));
+}
+/* WCAG 2.4.13 wants a 2px perimeter as the floor; a contrast mode should exceed
+ * it. The global pair below hard-codes #000/#fff instead of reading the ink
+ * token, and the keyboard-modality rule for text fields sits at 2px. */
+html.high-contrast :focus-visible,
+html.high-contrast.dark :focus-visible {
+  outline: 3px solid rgb(var(--text-primary));
+  outline-offset: 2px;
+}
+html[data-input-modality='keyboard'].high-contrast
+  :where(
+    input:not([type]),
+    input:is(
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='password'],
+      [type='url'],
+      [type='tel'],
+      [type='number'],
+      [type='date'],
+      [type='datetime-local'],
+      [type='month'],
+      [type='week'],
+      [type='time']
+    ),
+    textarea
+  ):not(.lc-field):focus-visible {
+  outline: 3px solid rgb(var(--text-primary)) !important;
+  outline-offset: 2px !important;
+}
+/* WCAG 1.4.1: prose links must not be distinguished by colour alone. App chrome
+ * is deliberately excluded, since a nav row is not a link in running text. */
+html.high-contrast .markdown a,
+html.high-contrast .prose a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+/* The whole `@tailwindcss/typography` variable block is hard-coded hex, and
+ * message content carries `prose dark:prose-invert`, so the invert half is what
+ * dark mode reads. Both halves are remapped: the light set puts prose links at
+ * #0066cc, which is 3.77:1 on a black canvas and 5.40:1 on a white one, and
+ * every rule and border in the set (#cdcdcd, #e5e7eb, #424242, #4b5563) sits
+ * below the 3:1 non-text floor in one mode or the other. */
+html.high-contrast .prose {
+  --tw-prose-body: rgb(var(--text-primary));
+  --tw-prose-headings: rgb(var(--text-primary));
+  --tw-prose-lead: rgb(var(--text-primary));
+  --tw-prose-links: rgb(var(--link));
+  --tw-prose-bold: rgb(var(--text-primary));
+  --tw-prose-counters: rgb(var(--text-primary));
+  --tw-prose-bullets: rgb(var(--text-primary));
+  --tw-prose-hr: rgb(var(--border-medium));
+  --tw-prose-quotes: rgb(var(--text-primary));
+  --tw-prose-quote-borders: rgb(var(--border-medium));
+  --tw-prose-captions: rgb(var(--text-primary));
+  --tw-prose-code: rgb(var(--text-primary));
+  --tw-prose-pre-code: rgb(var(--text-primary));
+  --tw-prose-pre-bg: rgb(var(--surface-code));
+  --tw-prose-th-borders: rgb(var(--border-medium));
+  --tw-prose-td-borders: rgb(var(--border-medium));
+  --tw-prose-invert-body: rgb(var(--text-primary));
+  --tw-prose-invert-headings: rgb(var(--text-primary));
+  --tw-prose-invert-lead: rgb(var(--text-primary));
+  --tw-prose-invert-links: rgb(var(--link));
+  --tw-prose-invert-bold: rgb(var(--text-primary));
+  --tw-prose-invert-counters: rgb(var(--text-primary));
+  --tw-prose-invert-bullets: rgb(var(--text-primary));
+  --tw-prose-invert-hr: rgb(var(--border-medium));
+  --tw-prose-invert-quotes: rgb(var(--text-primary));
+  --tw-prose-invert-quote-borders: rgb(var(--border-medium));
+  --tw-prose-invert-captions: rgb(var(--text-primary));
+  --tw-prose-invert-code: rgb(var(--text-primary));
+  --tw-prose-invert-pre-code: rgb(var(--text-primary));
+  --tw-prose-invert-pre-bg: rgb(var(--surface-code));
+  --tw-prose-invert-th-borders: rgb(var(--border-medium));
+  --tw-prose-invert-td-borders: rgb(var(--border-medium));
+}
+/* Markdown structure borders are drawn from the raw grey palette, which lands
+ * at 1.6:1 on white and 2.1:1 on black, under the 3:1 non-text floor. */
+html.high-contrast .markdown blockquote,
+html.high-contrast .markdown th,
+html.high-contrast .markdown th:last-child,
+html.high-contrast .markdown td,
+html.high-contrast .markdown td:last-child {
+  border-color: rgb(var(--border-medium));
+}
+/* The highlight.js palette is raw hex and tops out at AA: 4.87:1 for light
+ * built-ins, 4.84:1 for dark attributes, and 5.32:1 for the 50%-alpha dark
+ * comment. These reuse the palette's own hues at AAA on each canvas. */
+html.high-contrast .hljs-comment,
+html.high-contrast .hljs-meta {
+  color: #4d4d4d;
+}
+html.high-contrast .hljs-built_in,
+html.high-contrast .hljs-class .hljs-title {
+  color: #6b3d00;
+}
+html.high-contrast .hljs-doctag,
+html.high-contrast .hljs-formula,
+html.high-contrast .hljs-keyword,
+html.high-contrast .hljs-literal {
+  color: #003d99;
+}
+html.high-contrast .hljs-addition,
+html.high-contrast .hljs-attribute,
+html.high-contrast .hljs-meta-string,
+html.high-contrast .hljs-regexp,
+html.high-contrast .hljs-string {
+  color: #00563d;
+}
+html.high-contrast .hljs-attr,
+html.high-contrast .hljs-number,
+html.high-contrast .hljs-selector-attr,
+html.high-contrast .hljs-selector-class,
+html.high-contrast .hljs-selector-pseudo,
+html.high-contrast .hljs-template-variable,
+html.high-contrast .hljs-type,
+html.high-contrast .hljs-variable {
+  color: #7a1452;
+}
+html.high-contrast .hljs-bullet,
+html.high-contrast .hljs-link,
+html.high-contrast .hljs-selector-id,
+html.high-contrast .hljs-symbol,
+html.high-contrast .hljs-title {
+  color: #8f1a10;
+}
+html.high-contrast.dark .hljs-comment,
+html.high-contrast.dark .hljs-meta {
+  color: #b3b3b3;
+}
+html.high-contrast.dark .hljs-built_in,
+html.high-contrast.dark .hljs-class .hljs-title {
+  color: #ffc94d;
+}
+html.high-contrast.dark .hljs-doctag,
+html.high-contrast.dark .hljs-formula,
+html.high-contrast.dark .hljs-keyword,
+html.high-contrast.dark .hljs-literal {
+  color: #8cc8ff;
+}
+html.high-contrast.dark .hljs-addition,
+html.high-contrast.dark .hljs-attribute,
+html.high-contrast.dark .hljs-meta-string,
+html.high-contrast.dark .hljs-regexp,
+html.high-contrast.dark .hljs-string {
+  color: #7ff0b3;
+}
+html.high-contrast.dark .hljs-attr,
+html.high-contrast.dark .hljs-number,
+html.high-contrast.dark .hljs-selector-attr,
+html.high-contrast.dark .hljs-selector-class,
+html.high-contrast.dark .hljs-selector-pseudo,
+html.high-contrast.dark .hljs-template-variable,
+html.high-contrast.dark .hljs-type,
+html.high-contrast.dark .hljs-variable {
+  color: #ff99c2;
+}
+html.high-contrast.dark .hljs-bullet,
+html.high-contrast.dark .hljs-link,
+html.high-contrast.dark .hljs-selector-id,
+html.high-contrast.dark .hljs-symbol,
+html.high-contrast.dark .hljs-title {
+  color: #ff8f8f;
+}
+
 .text-token-text-primary {
   color: #171717;
   color: rgb(var(--text-primary));
@@ -2233,13 +2455,11 @@ html {
   padding-right: 0.5rem;
   font-size: 1rem;
   line-height: 1.5rem;
-  color: black;
+  color: rgb(var(--text-primary));
   box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.25);
 }
 
 .tooltip:where(.dark, .dark *) {
-  background-color: rgb(var(--surface-primary));
-  color: white;
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
 }
 
@@ -2343,7 +2563,7 @@ html[data-input-modality='keyboard']
 
 .popover-ui:focus-visible,
 .popover-ui[data-focus-visible] {
-  outline: var(--bg-surface-hover);
+  outline: 2px solid rgb(var(--text-primary));
   outline-offset: -1px;
 }
 
