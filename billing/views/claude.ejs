@@ -1,0 +1,39 @@
+<%- include('partials/head', { title: 'Подключение Claude', user, nav: 'claude' }) %>
+
+<h1>Подключение Claude</h1>
+<p class="muted">К каждому проекту привязывается ваш собственный аккаунт Claude с подпиской Pro или Max.
+Чаты проекта работают от лимитов этого аккаунта.</p>
+
+<% if (linked) { %>
+  <div class="card" style="border-color:#2e7d32"><p>Аккаунт привязан — проект готов к работе. Откройте чат на сайте.</p></div>
+<% } %>
+<% if (error) { %>
+  <div class="card" style="border-color:#c62828"><p><%= error %></p></div>
+<% } %>
+
+<section>
+  <% if (!projects.length) { %>
+    <p class="muted">Проектов пока нет.
+      <% if (freeSlots > 0) { %>Создайте проект на <a href="/">сайте</a> — оплаченный тариф уже ждёт.<% }
+         else { %>Сначала <a href="<%= basePath %>">оплатите тариф</a>, затем создайте проект на сайте.<% } %>
+    </p>
+  <% } %>
+  <% projects.forEach((p) => { %>
+    <div class="card">
+      <h2><%= p.display_name %></h2>
+      <p class="muted small"><%= p.project_id %></p>
+      <% if (p.state === 'READY') { %>
+        <p>Аккаунт привязан (<%= p.credential_kind %><%= p.credential_expires_at ? ', действует до ' + new Date(p.credential_expires_at).toLocaleDateString('ru-RU') : '' %>). Проект работает.</p>
+      <% } else if (p.state === 'AWAITING_CREDENTIAL') { %>
+        <p>Ожидает привязки вашего аккаунта Claude.</p>
+        <form method="post" action="<%= basePath %>/claude/<%= p.project_id %>/link">
+          <button class="btn primary" type="submit">Привязать аккаунт</button>
+        </form>
+      <% } else { %>
+        <p class="muted">Состояние: <%= p.state %></p>
+      <% } %>
+    </div>
+  <% }) %>
+</section>
+
+<%- include('partials/foot') %>

@@ -13,6 +13,7 @@
     <a class="brand" href="/">← Вернуться в чат</a>
     <nav class="topnav">
       <a href="<%= basePath %>" class="<%= nav === 'billing' ? 'active' : '' %>">Оплата</a>
+      <a href="<%= basePath %>/claude" class="<%= nav === 'claude' ? 'active' : '' %>">Claude</a>
       <% if (user && user.role === 'ADMIN') { %>
         <a href="<%= basePath %>/admin" class="<%= nav === 'admin-orders' ? 'active' : '' %>">Платежи</a>
         <a href="<%= basePath %>/admin/tariffs" class="<%= nav === 'admin-tariffs' ? 'active' : '' %>">Тарифы</a>

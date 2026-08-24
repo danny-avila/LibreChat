@@ -6,6 +6,7 @@ import { config } from './src/config.js';
 import { connectDb, Tariff } from './src/db.js';
 import { startPoller } from './src/orders.js';
 import { userRoutes } from './src/routes/user.js';
+import { claudeRoutes } from './src/routes/claude.js';
 import { adminRoutes } from './src/routes/admin.js';
 import { webhookRoutes } from './src/routes/webhook.js';
 
@@ -41,6 +42,7 @@ app.use(`${config.basePath}/static`, express.static(path.join(__dirname, 'public
 app.get(`${config.basePath}/healthz`, (req, res) => res.json({ ok: true }));
 app.use(config.basePath, webhookRoutes);
 app.use(config.basePath, adminRoutes);
+app.use(config.basePath, claudeRoutes);
 app.use(config.basePath, userRoutes);
 app.use((req, res) => res.redirect(config.basePath));
 

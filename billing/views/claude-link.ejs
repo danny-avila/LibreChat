@@ -1,0 +1,22 @@
+<%- include('partials/head', { title: 'Привязка аккаунта Claude', user, nav: 'claude' }) %>
+
+<h1>Привязка аккаунта Claude</h1>
+
+<div class="card">
+  <p><strong>Шаг 1.</strong> Откройте ссылку и войдите в аккаунт Claude с подпиской,
+  который будет работать в этом проекте:</p>
+  <p><a class="btn primary" href="<%= authUrl %>" target="_blank" rel="noopener">Войти в Claude и получить код</a></p>
+  <p class="muted small">Ссылка действует до <%= new Date(expiresAt).toLocaleTimeString('ru-RU') %>. Если время вышло — вернитесь и начните заново.</p>
+</div>
+
+<div class="card">
+  <p><strong>Шаг 2.</strong> Скопируйте код со страницы и вставьте его сюда:</p>
+  <form method="post" action="<%= basePath %>/claude/<%= projectId %>/code">
+    <input type="text" name="code" placeholder="Код авторизации" required
+           style="width:100%;max-width:480px;padding:8px;margin-bottom:8px" autocomplete="off">
+    <div><button class="btn primary" type="submit">Привязать</button>
+    <a class="btn" href="<%= basePath %>/claude">Отмена</a></div>
+  </form>
+</div>
+
+<%- include('partials/foot') %>
