@@ -17,8 +17,9 @@ export function Toast(): JSX.Element {
 
   return (
     <RadixToast.Root
+      key={toast.id}
       open={toast.open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(open) => onOpenChange(open, toast.id)}
       duration={toast.duration}
       className="toast-root"
       style={{

@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import { Provider } from 'jotai';
 import * as RadixToast from '@radix-ui/react-toast';
 import { render, act, fireEvent } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { useToast } from '~/hooks';
 import { Toast } from '../Toast';
 
 const MESSAGE = 'The file is too large.';
+const REPLACEMENT = 'The upload finished.';
 
 function ShowOnMount({ duration }: { duration?: number }): null {
   const { showToast } = useToast(0);
@@ -19,11 +21,25 @@ function ShowOnMount({ duration }: { duration?: number }): null {
   return null;
 }
 
-function setup(duration?: number): void {
+function ShowTwice({ duration, gap }: { duration: number; gap: number }): null {
+  const { showToast } = useToast(0);
+
+  /** One pair per mount, for the same reason ShowOnMount runs once. */
+  useEffect(() => {
+    showToast({ message: MESSAGE, duration });
+    const timer = window.setTimeout(() => showToast({ message: REPLACEMENT, duration }), gap);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return null;
+}
+
+function renderToast(trigger: ReactElement): void {
   render(
     <Provider>
       <RadixToast.Provider>
-        <ShowOnMount duration={duration} />
+        {trigger}
         <Toast />
         <RadixToast.Viewport />
       </RadixToast.Provider>
@@ -31,10 +47,18 @@ function setup(duration?: number): void {
   );
 }
 
+function setup(duration?: number): void {
+  renderToast(<ShowOnMount duration={duration} />);
+}
+
 /** Radix removes the root once it has closed, so an absent node and a node
  *  marked closed are the same observable outcome. */
 function state(): string {
   return document.querySelector('.toast-root')?.getAttribute('data-state') ?? 'unmounted';
+}
+
+function message(): string {
+  return document.querySelector('.toast-root')?.textContent ?? '';
 }
 
 function advance(ms: number): void {
@@ -101,5 +125,21 @@ describe('Toast duration', () => {
     advance(0);
 
     expect(document.querySelector('[aria-label="com_ui_close"]')).toBeNull();
+  });
+
+  test('restarts the deadline when a toast replaces one that is still open', () => {
+    renderToast(<ShowTwice duration={3000} gap={2000} />);
+    advance(0);
+    expect(state()).toBe('open');
+
+    advance(2001);
+    expect(message()).toContain(REPLACEMENT);
+
+    /** Past the first toast's deadline: the replacement keeps its own full duration. */
+    advance(1200);
+    expect(state()).toBe('open');
+
+    advance(2000);
+    expect(state()).not.toBe('open');
   });
 });
