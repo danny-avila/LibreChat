@@ -2187,7 +2187,10 @@ describe('SubagentThreadTaskStore', () => {
     const restartedStore = new SubagentThreadTaskStore(methods);
     (
       restartedStore as unknown as {
-        taskControlTransport: { control: () => Promise<never> };
+        taskControlTransport: {
+          control: () => Promise<never>;
+          destroy: () => Promise<void>;
+        };
       }
     ).taskControlTransport = {
       control: async () => {
