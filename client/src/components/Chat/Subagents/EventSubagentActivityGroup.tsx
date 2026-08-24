@@ -1,8 +1,9 @@
 import { useCallback, useId, useMemo, useState } from 'react';
-import { Bot, ChevronDown } from 'lucide-react';
 import { Button, cn } from '@librechat/client';
+import { Bot, ChevronDown } from 'lucide-react';
 import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
 import type { ParentSubagentSummary } from 'librechat-data-provider';
+import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
 import { subagentStatusIcon, subagentStatusLabelKey } from './status';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import { eventSubagentSelection } from './eventSelection';
@@ -11,7 +12,6 @@ import { useAgentsMapContext } from '~/Providers';
 import { renderAgentAvatar } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { getMessageRowWidthClass } from '~/components/Chat/Messages/ui/MessageRow';
 
 export default function EventSubagentActivityGroup({
   conversationId,
