@@ -1,0 +1,72 @@
+import { memo, useEffect, useState } from 'react';
+import { useRecoilValue } from 'recoil';
+import { useTranslation } from 'react-i18next';
+import { getElapsedDurationLabels } from '~/utils';
+import { useLocalize } from '~/hooks';
+import store from '~/store';
+
+const elapsedSeconds = (start: number): number =>
+  Math.max(0, Math.floor((Date.now() - start) / 1000));
+
+type ElapsedVisibility = {
+  isSubmitting: boolean;
+  isLatestMessage: boolean;
+  isCreatedByUser?: boolean;
+  siblingIdx?: number;
+  siblingCount?: number;
+};
+
+/**
+ * Whether the elapsed indicator belongs under a row: the latest assistant row
+ * while its generation streams — but only at the newest sibling position.
+ * `latestMessageId` follows the SELECTED branch, so during a regeneration a
+ * settled older sibling the reader paged to mid-stream would otherwise satisfy
+ * the same latest+submitting gate the withheld hover actions use, and a
+ * counting timer under settled content misleads in a way hidden buttons don't.
+ */
+export const shouldShowElapsed = ({
+  isSubmitting,
+  isLatestMessage,
+  isCreatedByUser,
+  siblingIdx,
+  siblingCount,
+}: ElapsedVisibility): boolean =>
+  isSubmitting &&
+  isLatestMessage &&
+  isCreatedByUser !== true &&
+  (siblingIdx ?? 0) === (siblingCount ?? 1) - 1;
+
+/**
+ * Elapsed generation time under the actively streaming response, in the footer
+ * slot the hover actions occupy once the answer lands. The once-per-second tick
+ * is component-local state, so parents that re-render per streaming token never
+ * re-render on its account. The compact reading is hidden from assistive
+ * technology in favor of a spoken equivalent; neither is an `aria-live` region,
+ * so the tick never announces.
+ */
+const Elapsed = memo(function Elapsed({ index }: { index: number }) {
+  const localize = useLocalize();
+  const { i18n } = useTranslation();
+  const submissionStart = useRecoilValue(store.submissionStartFamily(index));
+  const [mountTime] = useState(() => Date.now());
+  const start = submissionStart ?? mountTime;
+  const [seconds, setSeconds] = useState(() => elapsedSeconds(start));
+
+  useEffect(() => {
+    setSeconds(elapsedSeconds(start));
+    const intervalId = setInterval(() => setSeconds(elapsedSeconds(start)), 1000);
+    return () => clearInterval(intervalId);
+  }, [start]);
+
+  const labels = getElapsedDurationLabels(seconds * 1000, i18n.language);
+  return (
+    <span className="flex items-center text-text-secondary">
+      <span aria-hidden="true" className="tabular-nums" data-testid="stream-elapsed">
+        {localize(labels.key, labels.values)}
+      </span>
+      <span className="sr-only">{localize(labels.announcedKey, labels.announcedValues)}</span>
+    </span>
+  );
+});
+
+export default Elapsed;

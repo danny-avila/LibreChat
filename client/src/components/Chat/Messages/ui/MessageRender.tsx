@@ -9,6 +9,7 @@ import {
   getMessageAriaLabel,
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
+import Elapsed, { shouldShowElapsed } from '~/components/Chat/Messages/Elapsed';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
@@ -180,6 +181,13 @@ const MessageRender = memo(function MessageRender({
               isSubmitting && isLatestMessage && revealOnRowHoverClasses,
             )}
           />
+          {shouldShowElapsed({
+            isSubmitting,
+            isLatestMessage,
+            isCreatedByUser: msg.isCreatedByUser,
+            siblingIdx,
+            siblingCount,
+          }) && <Elapsed index={index} />}
           <HoverButtons
             index={index}
             isEditing={edit}

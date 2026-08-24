@@ -219,6 +219,7 @@ export default function useChatFunctions({
   const isTemporary = useRecoilValue(store.isTemporary);
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
   const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
+  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
@@ -712,6 +713,7 @@ export default function useChatFunctions({
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
+    setSubmissionStart(Date.now());
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });
   };
