@@ -89,6 +89,15 @@ const mockGetSafeErrorMetadata = jest.fn((error) => {
     ...(Number.isInteger(status) && status >= 100 && status <= 599 && { status }),
   };
 });
+const mockUsageBreakdown = {
+  prompt_tokens: 1020,
+  completion_tokens: 740,
+  total_tokens: 1760,
+  completion_tokens_details: { reasoning_tokens: 22 },
+  primary: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
+  subagent: { prompt_tokens: 900, completion_tokens: 700, total_tokens: 1600 },
+};
+const mockCompletionUsageBreakdown = jest.fn().mockReturnValue(mockUsageBreakdown);
 const mockBuildSkillPrimedIdsByName = jest.fn((manualSkillPrimes, alwaysApplySkillPrimes) => {
   const primed = {};
   for (const skill of alwaysApplySkillPrimes ?? []) {
@@ -223,6 +232,7 @@ jest.mock('@librechat/api', () => ({
   createSafeUser: jest.fn().mockReturnValue({ id: 'user-123' }),
   initializeAgent: jest.fn().mockResolvedValue({
     id: 'agent-123',
+    provider: 'anthropic',
     model: 'claude-3',
     model_parameters: {},
     toolRegistry: {},
@@ -257,6 +267,7 @@ jest.mock('@librechat/api', () => ({
   resolveAgentTokenConfig: jest.fn(({ agentId, byAgentId, fallback }) =>
     agentId != null && byAgentId?.has(agentId) ? byAgentId.get(agentId) : fallback,
   ),
+  completionUsageBreakdown: mockCompletionUsageBreakdown,
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -1738,6 +1749,48 @@ describe('createResponse controller', () => {
         expect.any(Object),
         expect.objectContaining({
           model: 'claude-3',
+        }),
+      );
+    });
+
+    it('reports non-streaming usage from collected usage totals', async () => {
+      const api = require('@librechat/api');
+      api.createRun.mockImplementationOnce(async ({ customHandlers }) => ({
+        processStream: jest.fn().mockImplementation(async () => {
+          customHandlers.on_chat_model_end.handle(
+            'on_chat_model_end',
+            {
+              output: {
+                usage_metadata: {
+                  input_tokens: 150,
+                  output_tokens: 75,
+                  input_token_details: { cache_read: 25 },
+                },
+              },
+            },
+            {},
+          );
+        }),
+      }));
+
+      await createResponse(req, res);
+
+      expect(mockCompletionUsageBreakdown).toHaveBeenCalledWith([
+        expect.objectContaining({
+          input_tokens: 150,
+          output_tokens: 75,
+          provider: 'anthropic',
+        }),
+      ]);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          usage: {
+            input_tokens: 1020,
+            output_tokens: 740,
+            total_tokens: 1760,
+            input_tokens_details: { cached_tokens: 0 },
+            output_tokens_details: { reasoning_tokens: 22 },
+          },
         }),
       );
     });

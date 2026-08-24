@@ -150,6 +150,26 @@ function createToolLoader(signal, definitionsOnly = true) {
 }
 
 /**
+ * Resolves the provider for a model-end event from the producing agent.
+ * Falls back to the primary provider when the metadata cannot identify a child.
+ * @param {Map<string, { provider?: string }> | undefined} agentConfigs
+ * @param {unknown} metadata
+ * @param {string | undefined} defaultProvider
+ * @returns {string | undefined}
+ */
+function resolveCollectedUsageProvider(agentConfigs, metadata, defaultProvider) {
+  const node = metadata?.langgraph_node;
+  if (typeof node === 'string' && agentConfigs?.size) {
+    for (const [agentId, config] of agentConfigs) {
+      if (node.endsWith(agentId) && config?.provider) {
+        return config.provider;
+      }
+    }
+  }
+  return defaultProvider;
+}
+
+/**
  * Convert content part to internal format
  * @param {Object} part - Content part
  * @returns {Object} Converted part
@@ -915,6 +935,14 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
+            const provider = resolveCollectedUsageProvider(
+              handoffAgentConfigs,
+              metadata,
+              primaryConfig.provider ?? agent.provider,
+            );
+            if (provider) {
+              usage.provider = provider;
+            }
             collectedUsage.push(markSummarizationUsage(usage, metadata));
           }
         },

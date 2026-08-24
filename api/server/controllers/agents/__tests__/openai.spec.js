@@ -213,6 +213,7 @@ jest.mock('@librechat/api', () => ({
     .mockReturnValue({ request: { model: 'agent-123', messages: [], stream: false } }),
   initializeAgent: jest.fn().mockResolvedValue({
     id: 'agent-123',
+    provider: 'openAI',
     model: 'gpt-4',
     model_parameters: {},
     toolRegistry: {},
@@ -1228,6 +1229,36 @@ describe('OpenAIChatCompletionController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(createErrorResponse).toHaveBeenCalledWith(message, 'invalid_request_error', null);
       expect(initializeAgent).not.toHaveBeenCalled();
+  describe('usage collection', () => {
+    it('stamps provider on collected primary usage before usage breakdown', async () => {
+      const api = require('@librechat/api');
+      api.createRun.mockImplementationOnce(async ({ customHandlers }) => ({
+        processStream: jest.fn().mockImplementation(async () => {
+          customHandlers.on_chat_model_end.handle(
+            'on_chat_model_end',
+            {
+              output: {
+                usage_metadata: {
+                  input_tokens: 150,
+                  output_tokens: 75,
+                  input_token_details: { cache_read: 25 },
+                },
+              },
+            },
+            {},
+          );
+        }),
+      }));
+
+      await OpenAIChatCompletionController(req, res);
+
+      expect(mockCompletionUsageBreakdown).toHaveBeenCalledWith([
+        expect.objectContaining({
+          input_tokens: 150,
+          output_tokens: 75,
+          provider: 'openAI',
+        }),
+      ]);
     });
   });
 
