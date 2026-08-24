@@ -297,6 +297,36 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
   });
 
+  describe('recovered-steer payload proof', () => {
+    const { buildRecoveredSteerPayload, recoveredSteerPayloadMatches } =
+      jest.requireActual<typeof import('~/stream/SteerRecovery')>('~/stream/SteerRecovery');
+
+    test('binds normalized quotes into the proof (empty when none)', () => {
+      expect(buildRecoveredSteerPayload('words', undefined)).toEqual({
+        text: 'words',
+        fileIds: [],
+        quotes: [],
+      });
+      expect(buildRecoveredSteerPayload('words', undefined, ['  kept  ', ''])).toEqual({
+        text: 'words',
+        fileIds: [],
+        quotes: ['kept'],
+      });
+    });
+
+    test('a recovery matches only when the quotes match, order-significant', () => {
+      const item = { text: 'words', quotes: ['first', 'second'] };
+      const proofFor = (quotes?: unknown) => buildRecoveredSteerPayload('words', undefined, quotes);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['first', 'second'])!)).toBe(true);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['second', 'first'])!)).toBe(false);
+      expect(recoveredSteerPayloadMatches(item, proofFor(['first'])!)).toBe(false);
+      // A stale client omitting the quotes must not consume the parked source.
+      expect(recoveredSteerPayloadMatches(item, proofFor(undefined)!)).toBe(false);
+      // Quote-less sources keep matching quote-less recoveries (pre-quotes parity).
+      expect(recoveredSteerPayloadMatches({ text: 'words' }, proofFor(undefined)!)).toBe(true);
+    });
+  });
+
   describe('park / claim (no-subscriber recovery)', () => {
     const owner = { userId: 'user-1' };
 
@@ -441,7 +471,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       const failedRecovery = await manager.createJob(streamId, 'user-1', undefined, {
         recoveredSteerId: 'p3',
-        recoveredSteerPayload: { text: 'stale', fileIds: [] },
+        recoveredSteerPayload: { text: 'stale', fileIds: [], quotes: [] },
       });
       expect(await manager.steering.claim(streamId, owner)).toEqual([]);
 
@@ -454,7 +484,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
 
       const persistedRecovery = await manager.createJob(streamId, 'user-1', undefined, {
         recoveredSteerId: 'p3',
-        recoveredSteerPayload: { text: 'stale', fileIds: [] },
+        recoveredSteerPayload: { text: 'stale', fileIds: [], quotes: [] },
       });
       expect(
         await manager.steering.consumeRecovered(streamId, 'p3', owner, persistedRecovery.createdAt),

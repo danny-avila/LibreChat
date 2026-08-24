@@ -2052,6 +2052,7 @@ describe('useSteering', () => {
           chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+          markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -2342,6 +2343,41 @@ describe('useSteering', () => {
       expect(chip).toMatchObject({ steerId: 'srv-q-old', status: 'pending' });
       expect(chip.quotes).toBeUndefined();
       expect(chip.queuedOrigin?.item.quotes).toBeUndefined();
+    });
+
+    it('never re-stages quotes a terminal conversion already moved to the queue', () => {
+      // A pre-quotes server's run-end leftover event converts the chip (with
+      // its quotes) into a queued follow-up and marks the ids applied BEFORE
+      // the delayed no-echo 202 lands. The reclaim must find no surviving chip
+      // and leave the queued copy as the single owner of the excerpts.
+      let deferredOnSuccess: ((response: unknown) => void) | undefined;
+      mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
+        deferredOnSuccess = onSuccess;
+      });
+      const { result } = setupWithContext({}, stageContext);
+      act(() => {
+        result.current.steering.steerFromComposer('converted before ACK');
+      });
+      const localId = result.current.chips[0].steerId;
+      act(() => {
+        result.current.markApplied((prev) => [...prev, localId]);
+        result.current.steering.convertSteerToQueue(localId, 'converted before ACK', undefined, {
+          quotes: ['quoted excerpt'],
+        });
+      });
+      expect(result.current.queue[0]).toMatchObject({ quotes: ['quoted excerpt'] });
+      act(() => {
+        deferredOnSuccess?.({
+          steerId: 'srv-converted',
+          status: 'queued',
+          position: 1,
+          conversationId: CONVO_ID,
+        });
+      });
+      // No re-mint, no re-stage: the queued follow-up remains the only copy.
+      expect(result.current.chips).toEqual([]);
+      expect(result.current.pendingQuotes).toEqual([]);
+      expect(result.current.queue).toHaveLength(1);
     });
 
     it('re-stages quotes on a settled receipt replay that never carried them', () => {

@@ -444,7 +444,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
   const isRecoveredSteerRequest = recoveredSteerId != null;
   const recoveryUserMessageId = rawOverrideUserMessageId;
   const recoveredSteerPayload = isRecoveredSteerRequest
-    ? buildRecoveredSteerPayload(text, req.body?.files)
+    ? buildRecoveredSteerPayload(text, req.body?.files, req.body?.quotes)
     : undefined;
   /** A recovered steer is handed off as a new ordinary user turn. Edit,
    * regenerate, continue, and arbitrary override-id shapes can reuse an

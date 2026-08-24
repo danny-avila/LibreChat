@@ -642,27 +642,25 @@ export default function useSteering({
     [conversationId],
   );
 
-  /** Returns a steer's excerpts to the composer chips when the accepting
-   *  server proved — by omitting the `quotesAccepted` echo — that it dropped
-   *  them (a pre-quotes replica during a rolling deploy). Re-staging restores
-   *  the pre-steer behavior exactly: the excerpts ride the next send instead
-   *  of vanishing behind a 202. Chips staged since the drain are kept. */
-  const restageQuotes = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, quotes: string[]) => {
-        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
-      },
-    [],
-  );
-
-  /** Drops the carried excerpts from a surviving chip whose server rejected
-   *  them — including the copy inside its captured queue-origin item — so the
-   *  restaged composer chips are their single representation: neither a later
-   *  terminal conversion of the chip nor a reclaim's origin restore may
-   *  duplicate them. */
-  const stripSteerChipQuotes = useRecoilCallback(
-    ({ set }) =>
+  /** Returns rejected excerpts to the composer chips from the SURVIVING steer
+   *  chip only — the accepting server proved, by omitting the `quotesAccepted`
+   *  echo, that it dropped them (a pre-quotes replica). When no chip remains
+   *  under these ids, another path already owns the excerpts: a terminal
+   *  conversion moved them onto the queued follow-up, or the applied-event
+   *  reconciliation restaged them — re-staging again would double-deliver.
+   *  The surviving chip is stripped in the same update (including its captured
+   *  queue-origin copy), so the restaged composer chips stay their single
+   *  representation through any later conversion or reclaim. */
+  const reclaimRejectedChipQuotes = useRecoilCallback(
+    ({ snapshot, set }) =>
       (convoId: string, steerIds: string[]) => {
+        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(convoId)).getValue();
+        const chip = chips.find((steer) => steerIds.includes(steer.steerId));
+        const quotes = chip?.quotes ?? chip?.queuedOrigin?.item.quotes;
+        if (quotes == null || quotes.length === 0) {
+          return;
+        }
+        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           let changed = false;
           const next = prev.map((steer) => {
@@ -1027,11 +1025,10 @@ export default function useSteering({
                  *  the words but dropped the excerpts. Both origins re-stage
                  *  them as composer chips — a queued-origin item is already
                  *  consumed and its text will inject bare, so the composer is
-                 *  the excerpts' only remaining home. The strip below also
-                 *  clears the chip's captured origin copy, keeping the
-                 *  restaged chips their single representation. */
-                const rejectedQuotes =
-                  response.quotesAccepted !== true ? carried.quotes : undefined;
+                 *  the excerpts' only remaining home. The reclaim reads the
+                 *  SURVIVING chip, so a terminal conversion that already moved
+                 *  the excerpts onto a queued follow-up is never duplicated. */
+                const quotesRejected = carried.quotes != null && response.quotesAccepted !== true;
                 const canUseV2Receipt =
                   targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
                 if (canUseV2Receipt && response.settled === true) {
@@ -1051,10 +1048,10 @@ export default function useSteering({
                       ...carried,
                     });
                   } else {
-                    settleReceiptReplay(conversationId, localId, response.steerId);
-                    if (rejectedQuotes) {
-                      restageQuotes(conversationId, rejectedQuotes);
+                    if (quotesRejected) {
+                      reclaimRejectedChipQuotes(conversationId, [localId, response.steerId]);
                     }
+                    settleReceiptReplay(conversationId, localId, response.steerId);
                   }
                   return;
                 }
@@ -1085,9 +1082,8 @@ export default function useSteering({
                    *  follow-up that sends via `ask` — the carried quotes ride
                    *  it there, so nothing is re-staged. */
                   queueRecoveredSteer(acknowledged);
-                } else if (rejectedQuotes) {
-                  restageQuotes(conversationId, rejectedQuotes);
-                  stripSteerChipQuotes(conversationId, [localId, response.steerId]);
+                } else if (quotesRejected) {
+                  reclaimRejectedChipQuotes(conversationId, [localId, response.steerId]);
                 }
               } finally {
                 settleDispatch();
@@ -1210,8 +1206,7 @@ export default function useSteering({
       acknowledgeSteer,
       settleReceiptReplay,
       queueRecoveredSteer,
-      restageQuotes,
-      stripSteerChipQuotes,
+      reclaimRejectedChipQuotes,
       steerMessage,
       sendNow,
       enqueue,
