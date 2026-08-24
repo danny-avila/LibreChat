@@ -15,6 +15,9 @@ const MAX_STORED_USER_SUBMITTED_FIELD_PATHS = MAX_NORMALIZED_USER_SUBMITTED_PATH
 const MAX_USER_SUBMITTED_PATH_LENGTH = 2048;
 const MAX_SUBAGENT_CONTROL_RECEIPTS = 64;
 const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
+/** One owner admits at most 32 live control invocations. Two attempts per
+ * admitted writer lets a full-window burst converge while remaining bounded. */
+const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
 const PROVENANCE_PATHS_UNION_FIELD = '__lcProvenancePathsUnion';
 const PROVENANCE_FIELD_PATHS_UNION_FIELD = '__lcProvenanceFieldPathsUnion';
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
@@ -117,6 +120,48 @@ function getStrictPipelineUpdate(Message: Model<IMessage>, update: Record<string
   delete candidate._id;
   delete candidate.tenantId;
   return Message.castObject(candidate) as unknown as Record<string, unknown>;
+}
+
+type StoredSubagentControlReceipt = NonNullable<
+  NonNullable<IMessage['subagentTask']>['controlReceipts']
+>[number];
+
+const terminalControlReceipt = (receipt: StoredSubagentControlReceipt): boolean =>
+  receipt.status === 'applied' || receipt.status === 'rejected' || receipt.status === 'failed';
+
+function retainSubagentControlReceipts(
+  current: StoredSubagentControlReceipt[],
+  receipt: StoredSubagentControlReceipt,
+): StoredSubagentControlReceipt[] {
+  const existingIndex = current.findIndex(
+    (candidate) => candidate.invocationId === receipt.invocationId,
+  );
+  let merged: StoredSubagentControlReceipt[];
+  if (existingIndex < 0) {
+    merged = [...current, receipt];
+  } else {
+    const existing = current[existingIndex];
+    if (terminalControlReceipt(existing) || existing.fingerprint !== receipt.fingerprint) {
+      return current;
+    }
+    merged = current.map((candidate, index) => (index === existingIndex ? receipt : candidate));
+  }
+  const accepted = merged
+    .filter((candidate) => candidate.status === 'accepted')
+    .slice(-MAX_SUBAGENT_CONTROL_RECEIPTS);
+  const terminalAllowance = Math.max(0, MAX_SUBAGENT_CONTROL_RECEIPTS - accepted.length);
+  const terminal =
+    terminalAllowance === 0
+      ? []
+      : merged
+          .filter((candidate) => candidate.status !== 'accepted')
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() ||
+              left.invocationId.localeCompare(right.invocationId),
+          )
+          .slice(-terminalAllowance);
+  return [...accepted, ...terminal];
 }
 
 /**
@@ -292,6 +337,13 @@ export interface MessageMethods {
     tenantId?: string;
     receipt: NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number];
   }): Promise<boolean>;
+  getSubagentTaskControlReceipt(input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<NonNullable<NonNullable<IMessage['subagentTask']>['controlReceipts']>[number] | null>;
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
     overrideTimestamp?: boolean,
@@ -915,233 +967,87 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       throw new TypeError('Invalid subagent task control receipt');
     }
     const Message = mongoose.models.Message as Model<IMessage>;
-    const terminalStatuses = ['applied', 'rejected', 'failed'];
-    const updated = await Message.findOneAndUpdate(
-      {
-        user: userId,
-        conversationId,
-        ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
-        messageId: `${taskId}:user`,
-        'subagentTask.status': 'running',
-      },
-      [
-        {
-          $set: {
-            'subagentTask.controlReceipts': {
-              $let: {
-                vars: {
-                  current: {
-                    $cond: [
-                      { $isArray: '$subagentTask.controlReceipts' },
-                      '$subagentTask.controlReceipts',
-                      [],
-                    ],
-                  },
-                },
-                in: {
-                  $let: {
-                    vars: {
-                      existing: {
-                        $arrayElemAt: [
-                          {
-                            $filter: {
-                              input: '$$current',
-                              as: 'candidate',
-                              cond: { $eq: ['$$candidate.invocationId', receipt.invocationId] },
-                            },
-                          },
-                          0,
-                        ],
-                      },
-                    },
-                    in: {
-                      $let: {
-                        vars: {
-                          next: {
-                            $cond: [
-                              {
-                                $or: [
-                                  {
-                                    $in: [{ $ifNull: ['$$existing.status', ''] }, terminalStatuses],
-                                  },
-                                  {
-                                    $and: [
-                                      { $ne: [{ $ifNull: ['$$existing', null] }, null] },
-                                      { $ne: ['$$existing.fingerprint', receipt.fingerprint] },
-                                    ],
-                                  },
-                                ],
-                              },
-                              '$$existing',
-                              { $literal: receipt },
-                            ],
-                          },
-                        },
-                        in: {
-                          $let: {
-                            vars: {
-                              merged: {
-                                $concatArrays: [
-                                  {
-                                    $filter: {
-                                      input: '$$current',
-                                      as: 'candidate',
-                                      cond: {
-                                        $ne: ['$$candidate.invocationId', receipt.invocationId],
-                                      },
-                                    },
-                                  },
-                                  ['$$next'],
-                                ],
-                              },
-                            },
-                            in: {
-                              $let: {
-                                vars: {
-                                  accepted: {
-                                    /** The supported task store admits at most 32 live
-                                     * controls. Keep a defensive storage bound here so
-                                     * custom callers cannot grow the private projection. */
-                                    $slice: [
-                                      {
-                                        $filter: {
-                                          input: '$$merged',
-                                          as: 'candidate',
-                                          cond: { $eq: ['$$candidate.status', 'accepted'] },
-                                        },
-                                      },
-                                      -MAX_SUBAGENT_CONTROL_RECEIPTS,
-                                    ],
-                                  },
-                                },
-                                in: {
-                                  $concatArrays: [
-                                    '$$accepted',
-                                    {
-                                      $slice: [
-                                        {
-                                          /** DocumentDB 5 does not support $sortArray.
-                                           * Insert each bounded receipt into a stable
-                                           * createdAt/invocationId order using baseline
-                                           * aggregation expressions instead. */
-                                          $reduce: {
-                                            input: {
-                                              $filter: {
-                                                input: '$$merged',
-                                                as: 'candidate',
-                                                cond: {
-                                                  $ne: ['$$candidate.status', 'accepted'],
-                                                },
-                                              },
-                                            },
-                                            initialValue: [],
-                                            in: {
-                                              $concatArrays: [
-                                                {
-                                                  $filter: {
-                                                    input: '$$value',
-                                                    as: 'ordered',
-                                                    cond: {
-                                                      $or: [
-                                                        {
-                                                          $lt: [
-                                                            '$$ordered.createdAt',
-                                                            '$$this.createdAt',
-                                                          ],
-                                                        },
-                                                        {
-                                                          $and: [
-                                                            {
-                                                              $eq: [
-                                                                '$$ordered.createdAt',
-                                                                '$$this.createdAt',
-                                                              ],
-                                                            },
-                                                            {
-                                                              $lte: [
-                                                                '$$ordered.invocationId',
-                                                                '$$this.invocationId',
-                                                              ],
-                                                            },
-                                                          ],
-                                                        },
-                                                      ],
-                                                    },
-                                                  },
-                                                },
-                                                ['$$this'],
-                                                {
-                                                  $filter: {
-                                                    input: '$$value',
-                                                    as: 'ordered',
-                                                    cond: {
-                                                      $or: [
-                                                        {
-                                                          $gt: [
-                                                            '$$ordered.createdAt',
-                                                            '$$this.createdAt',
-                                                          ],
-                                                        },
-                                                        {
-                                                          $and: [
-                                                            {
-                                                              $eq: [
-                                                                '$$ordered.createdAt',
-                                                                '$$this.createdAt',
-                                                              ],
-                                                            },
-                                                            {
-                                                              $gt: [
-                                                                '$$ordered.invocationId',
-                                                                '$$this.invocationId',
-                                                              ],
-                                                            },
-                                                          ],
-                                                        },
-                                                      ],
-                                                    },
-                                                  },
-                                                },
-                                              ],
-                                            },
-                                          },
-                                        },
-                                        {
-                                          $multiply: [
-                                            -1,
-                                            {
-                                              $max: [
-                                                0,
-                                                {
-                                                  $subtract: [
-                                                    MAX_SUBAGENT_CONTROL_RECEIPTS,
-                                                    { $size: '$$accepted' },
-                                                  ],
-                                                },
-                                              ],
-                                            },
-                                          ],
-                                        },
-                                      ],
-                                    },
-                                  ],
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      ],
-      { new: true, projection: { messageId: 1 } },
-    ).lean<{ messageId: string } | null>();
-    return updated != null;
+    const recordsTerminalRejection =
+      receipt.status === 'rejected' && receipt.reason === 'task_not_running';
+    const identity = {
+      user: userId,
+      conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      /** A genuinely new command can arrive after its task settles or its final
+       * lease expires. Persist that authoritative rejection for retries; every
+       * command that could still be applied remains fenced to a running task. */
+      ...(recordsTerminalRejection
+        ? { 'subagentTask.status': { $in: ['running', 'completed', 'error', 'cancelled'] } }
+        : { 'subagentTask.status': 'running' }),
+    };
+    /** Amazon DocumentDB does not support aggregation-pipeline updates. Use a
+     * bounded optimistic compare-and-swap: the read is small, the write uses
+     * only plain operators, and concurrent writers retry rather than overwrite. */
+    for (let attempt = 0; attempt < MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS; attempt += 1) {
+      const currentMessage = await Message.findOne(identity)
+        .select({ 'subagentTask.controlReceipts': 1, _id: 0 })
+        .lean<Pick<IMessage, 'subagentTask'> | null>();
+      if (currentMessage == null) return false;
+      const current = currentMessage.subagentTask?.controlReceipts ?? [];
+      const next = retainSubagentControlReceipts(current, receipt);
+      if (next === current) return true;
+      const currentFilter =
+        currentMessage.subagentTask?.controlReceipts == null
+          ? { 'subagentTask.controlReceipts': { $exists: false } }
+          : { 'subagentTask.controlReceipts': current };
+      const updated = await Message.findOneAndUpdate(
+        { ...identity, ...currentFilter },
+        { $set: { 'subagentTask.controlReceipts': next } },
+        { new: false, projection: { messageId: 1 } },
+      ).lean<{ messageId: string } | null>();
+      if (updated != null) return true;
+    }
+    throw new Error('Subagent control receipt write contention exceeded its retry bound.');
+  }
+
+  /** Reads one bounded authoritative receipt by its exact durable task identity.
+   * The stored projection is already capped, and no task/runtime metadata leaves
+   * this method. Authorization remains part of the Mongo identity. */
+  async function getSubagentTaskControlReceipt({
+    userId,
+    conversationId,
+    taskId,
+    invocationId,
+    tenantId,
+  }: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+    invocationId: string;
+    tenantId?: string;
+  }): Promise<StoredSubagentControlReceipt | null> {
+    if (
+      userId.length === 0 ||
+      conversationId.length === 0 ||
+      conversationId.length > 256 ||
+      taskId.length === 0 ||
+      taskId.length > 256 ||
+      invocationId.length === 0 ||
+      invocationId.length > 128
+    ) {
+      throw new TypeError('Invalid subagent task control receipt identity');
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const input = await Message.findOne({
+      user: userId,
+      conversationId,
+      ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
+      messageId: `${taskId}:user`,
+      'subagentTask.controlReceipts.invocationId': invocationId,
+    })
+      .select({ 'subagentTask.controlReceipts': 1, _id: 0 })
+      .lean<Pick<IMessage, 'subagentTask'> | null>();
+    return (
+      input?.subagentTask?.controlReceipts?.find(
+        (receipt) => receipt.invocationId === invocationId,
+      ) ?? null
+    );
   }
 
   /** Atomically assigns one durable terminal child result to either its
@@ -1749,6 +1655,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     updateToolCallResult,
     updateMessage,
     recordSubagentTaskControlReceipt,
+    getSubagentTaskControlReceipt,
     claimSubagentTaskResult,
     releaseSubagentTaskResultClaim,
     deleteMessagesSince,

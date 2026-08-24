@@ -156,6 +156,7 @@ type ControlInvocationRecord = {
   invocationId: string;
   fingerprint: string;
   command: SubagentTaskControlCommand;
+  commandMessageTruncated: boolean;
   result: SubagentTaskControlResult;
   createdAt: number;
   /** Last authoritative SDK transition, retained for idempotent retries even
@@ -164,6 +165,7 @@ type ControlInvocationRecord = {
 };
 
 interface TaskThreadLease {
+  scopeId: string;
   idempotencyKey: string;
   taskId: string;
   running: boolean;
@@ -477,13 +479,19 @@ function controlReceiptKey(scopeId: string, taskId: string, controlId: string): 
   return `${scopeId}\u0000${taskId}\u0000${controlId}`;
 }
 
-function boundedControlMessage(command: SubagentTaskControlCommand): {
+function boundedControlMessage(
+  command: SubagentTaskControlCommand,
+  alreadyTruncated = false,
+): {
   message?: string;
   messageTruncated?: boolean;
 } {
   if (!('message' in command)) return {};
   if (command.message.length <= MAX_DURABLE_CONTROL_MESSAGE_CHARS) {
-    return { message: command.message };
+    return {
+      message: command.message,
+      ...(alreadyTruncated ? { messageTruncated: true } : {}),
+    };
   }
   return {
     message: command.message.slice(0, MAX_DURABLE_CONTROL_MESSAGE_CHARS),
@@ -532,6 +540,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly controlPersistenceTails = new Map<string, Promise<void>>();
   private readonly controlPersistenceRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private controlPersistenceStopping = false;
+  private controlCommandAdmissionClosed = false;
 
   private readonly parentPersistence = new Map<string, Promise<unknown>>();
   private readonly maxThreadDepth: number;
@@ -627,7 +636,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       updatedAt: new Date(receipt.updatedAt),
       ...(receipt.boundary == null ? {} : { boundary: receipt.boundary }),
       ...(receipt.reason == null ? {} : { reason: receipt.reason }),
-      ...boundedControlMessage(invocation.command),
+      ...boundedControlMessage(invocation.command, invocation.commandMessageTruncated),
     };
   }
 
@@ -655,7 +664,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         status: 'accepted',
         createdAt: new Date(invocation.createdAt),
         updatedAt: new Date(invocation.createdAt),
-        ...boundedControlMessage(command),
+        ...boundedControlMessage(command, invocation.commandMessageTruncated),
       };
     }
     const now = new Date();
@@ -681,7 +690,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       createdAt: new Date(invocation.createdAt),
       updatedAt: now,
       ...(reason == null ? {} : { reason }),
-      ...boundedControlMessage(command),
+      ...boundedControlMessage(command, invocation.commandMessageTruncated),
     };
   }
 
@@ -756,7 +765,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
    * while this process still owns the task; restart durability remains AI-1737. */
   private scheduleControlReceiptRetry(scopeId: string, taskId: string): void {
     const key = controlTaskKey(scopeId, taskId);
-    if (this.get(scopeId, taskId) == null) {
+    const localTask = this.get(scopeId, taskId);
+    if (localTask == null) {
       this.pendingControlReceipts.delete(key);
       return;
     }
@@ -800,6 +810,15 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   }
 
   async destroyTaskControlTransport(): Promise<void> {
+    /** Close command admission and synchronously cancel every locally-owned child
+     * before the first await. The SDK emits all pending-control transitions while
+     * cancelling, so no receipt producer can race the final persistence snapshot. */
+    this.controlCommandAdmissionClosed = true;
+    for (const lease of this.activeThreads.values()) {
+      if (lease.taskId !== '' && this.get(lease.scopeId, lease.taskId)?.status === 'running') {
+        super.control(lease.scopeId, lease.taskId, { action: 'cancel' });
+      }
+    }
     this.controlPersistenceStopping = true;
     for (const timer of this.controlPersistenceRetryTimers.values()) clearTimeout(timer);
     this.controlPersistenceRetryTimers.clear();
@@ -934,6 +953,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
 
     const lease: TaskThreadLease = active ?? {
+      scopeId: request.scopeId,
       idempotencyKey,
       taskId: '',
       running: false,
@@ -1335,6 +1355,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string,
   ): SubagentTaskControlResult {
+    if (this.controlCommandAdmissionClosed) {
+      return { status: 'invalid', message: 'Subagent task controls are shutting down.' };
+    }
     const key = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
     const fingerprint = controlFingerprint(command);
     const applied = this.controlInvocations.get(key);
@@ -1348,10 +1371,16 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             message: 'This control invocation id was already used for a different command.',
           };
     }
-    if (this.get(scopeId, taskId) == null) {
+    const localTask = this.get(scopeId, taskId);
+    if (localTask == null) {
       /** Not this replica's task. Refusing here would keep the command from ever
        * reaching its owner, so local load cannot veto a remote cancellation: the
        * owner applies its own window to the routed request. */
+      return this.control(scopeId, taskId, command);
+    }
+    if (localTask.status !== 'running') {
+      /** Terminal controls are side-effect free and can be recomputed on retry;
+       * retaining them would let rejected traffic exhaust the replay window. */
       return this.control(scopeId, taskId, command);
     }
     if (!this.makeRoomForInvocation()) {
@@ -1365,7 +1394,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       };
     }
     const result = this.control(scopeId, taskId, command);
-    if (result.status === 'not_found') {
+    if (result.status === 'not_found' || result.status === 'invalid') {
+      return result;
+    }
+    if (result.status !== 'accepted' && result.status !== 'cancelled') {
       return result;
     }
     const invocation: ControlInvocationRecord = {
@@ -1374,6 +1406,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       invocationId,
       fingerprint,
       command: boundedControlCommand(command),
+      commandMessageTruncated:
+        'message' in command && command.message.length > MAX_DURABLE_CONTROL_MESSAGE_CHARS,
       result,
       createdAt: Date.now(),
     };
@@ -1397,20 +1431,34 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
     invocationId: string,
   ): Promise<SubagentTaskControlResult> {
+    const invocationKey = `${scopeId}\u0000${taskId}\u0000${invocationId}`;
     const result = this.controlInvocation(scopeId, taskId, command, invocationId);
-    const invocation = this.controlInvocations.get(
-      `${scopeId}\u0000${taskId}\u0000${invocationId}`,
-    );
+    const retainedInvocation = this.controlInvocations.get(invocationKey);
+    const invocation: ControlInvocationRecord | undefined =
+      retainedInvocation ??
+      (result.status === 'not_found' || result.status === 'invalid'
+        ? undefined
+        : {
+            scopeId,
+            taskId,
+            invocationId,
+            fingerprint: controlFingerprint(command),
+            command: boundedControlCommand(command),
+            commandMessageTruncated:
+              'message' in command && command.message.length > MAX_DURABLE_CONTROL_MESSAGE_CHARS,
+            result,
+            createdAt: Date.now(),
+          });
     const threadId = 'task' in result ? result.task.threadId : undefined;
     if (invocation == null || threadId == null) return result;
     const receipt = this.controlResultReceipt(invocation);
-    if (receipt != null) {
-      try {
+    try {
+      if (receipt != null) {
         await this.queueControlReceipt(scopeId, taskId, threadId, receipt);
-      } catch (error) {
-        logger.warn('[subagentThreads] Failed to durably accept a child control', error);
-        throw new SubagentTaskOwnerUnavailableError();
       }
+    } catch (error) {
+      logger.warn('[subagentThreads] Failed to durably accept a child control', error);
+      throw new SubagentTaskOwnerUnavailableError();
     }
     return result;
   }

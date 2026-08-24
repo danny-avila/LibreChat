@@ -2228,6 +2228,13 @@ describe('SubagentThreadTaskStore', () => {
       action: 'queue',
       message: 'x'.repeat(4 * 1024),
     });
+    await waitUntil(async () => {
+      const [input] = await methods.getMessages(
+        { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
+        '+subagentTask',
+      );
+      return input?.subagentTask?.controlReceipts?.[0]?.messageTruncated === true;
+    }, 'the bounded receipt truncation marker');
     await expect(
       store.controlTask(
         config.scopeId,
@@ -2475,7 +2482,7 @@ describe('SubagentThreadTaskStore', () => {
     }
   });
 
-  it('flushes a pending control receipt once during graceful shutdown', async () => {
+  it('quiesces receipt producers and flushes their final transition during shutdown', async () => {
     const userId = 'receipt-shutdown-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
@@ -2484,15 +2491,17 @@ describe('SubagentThreadTaskStore', () => {
     });
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
     let runtime: SubagentTaskRuntime | undefined;
-    let finish = (_value: { content: string }): void => undefined;
-    const result = new Promise<{ content: string }>((resolve) => {
-      finish = resolve;
-    });
     const started = store.start(
       taskRequest(config.scopeId, {
         run: async (taskRuntime) => {
           runtime = taskRuntime;
-          return result;
+          return await new Promise<{ content: string }>((_resolve, reject) => {
+            taskRuntime.signal.addEventListener(
+              'abort',
+              () => reject(new Error('provider stopped after task cancellation')),
+              { once: true },
+            );
+          });
         },
       }),
     );
@@ -2512,30 +2521,23 @@ describe('SubagentThreadTaskStore', () => {
       .spyOn(methods, 'recordSubagentTaskControlReceipt')
       .mockRejectedValueOnce(new Error('database temporarily unavailable'))
       .mockImplementation(persistReceipt);
-    const controlId = accepted.status === 'accepted' ? accepted.controlId : undefined;
-    expect(controlId).toBeDefined();
-    store.emitControlReceiptForTest(config.scopeId, taskId, {
-      controlId: controlId as string,
-      action: 'queue',
-      status: 'applied',
-      createdAt: Date.now() - 1,
-      updatedAt: Date.now(),
-      boundary: 'turn',
-    });
-    await waitUntil(() => persistence.mock.calls.length === 1, 'the failed receipt write');
 
     await store.destroyTaskControlTransport();
+    expect(runtime?.signal.aborted).toBe(true);
     const [input] = await methods.getMessages(
       { user: userId, conversationId: threadId, messageId: `${taskId}:user` },
       '+subagentTask',
     );
     expect(input?.subagentTask?.controlReceipts).toContainEqual(
-      expect.objectContaining({ invocationId: 'shutdown-invocation', status: 'applied' }),
+      expect.objectContaining({
+        invocationId: 'shutdown-invocation',
+        status: 'rejected',
+        reason: 'task_cancelled',
+      }),
     );
     expect(persistence).toHaveBeenCalledTimes(2);
 
     persistence.mockRestore();
-    finish({ content: 'Done.' });
     await waitForSettled(store, config.scopeId, started);
   });
 
@@ -2900,7 +2902,7 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
-  it('keeps a live task’s control invocation when settled tasks fill the window', async () => {
+  it('does not spend live replay slots on controls rejected by settled tasks', async () => {
     const userId = 'invocation-eviction-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
@@ -2924,7 +2926,16 @@ describe('SubagentThreadTaskStore', () => {
     const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
     const applied = store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live');
     expect(applied).toMatchObject({ status: 'accepted' });
-    store.controlInvocation(config.scopeId, settledTaskId, steer, 'invocation-settled');
+    expect(
+      store.controlInvocation(config.scopeId, settledTaskId, steer, 'invocation-settled'),
+    ).toMatchObject({ status: 'not_running' });
+    expect(
+      (
+        store as unknown as {
+          controlInvocations: Map<string, unknown>;
+        }
+      ).controlInvocations.size,
+    ).toBe(1);
 
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (store.get(config.scopeId, settledTaskId) == null) {
@@ -2934,9 +2945,8 @@ describe('SubagentThreadTaskStore', () => {
     }
     expect(store.get(config.scopeId, settledTaskId)).toBeUndefined();
 
-    /** The window is full, so admitting another invocation sweeps the records of tasks
-     * this store no longer holds. The live task's record survives, so a caller
-     * retrying it replays instead of steering that child a second time. */
+    /** A second live invocation fills the window. The first live record survives, so
+     * a caller retrying it replays instead of steering that child a second time. */
     store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-later');
     expect(store.controlInvocation(config.scopeId, liveTaskId, steer, 'invocation-live')).toEqual(
       applied,
