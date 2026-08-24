@@ -3,6 +3,7 @@ import { Run, Providers, GraphEvents } from '@librechat/agents';
 import { AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import { Tools, MemoryScope, EModelEndpoint, AgentCapabilities } from 'librechat-data-provider';
 import type { FiltersConfig } from 'librechat-data-provider';
+import type { RuntimeProviderName } from '@librechat/agents';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
@@ -223,7 +224,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve environment variables in custom endpoint headers', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -258,7 +259,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve user placeholders in custom endpoint headers', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -293,7 +294,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should handle mixed environment variables and user placeholders', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
@@ -330,7 +331,7 @@ describe('Memory Agent Header Resolution', () => {
 
   it('should resolve env vars when user is undefined', async () => {
     const llmConfig = {
-      provider: 'custom',
+      provider: 'custom' as RuntimeProviderName,
       model: 'gpt-4o-mini',
       configuration: {
         defaultHeaders: {
