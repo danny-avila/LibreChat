@@ -111,7 +111,7 @@ function Login() {
       )}
       {/* BKL: 가입 링크 대신 AD 계정 안내 — @bkl.co.kr 는 자동으로 붙는다 (LoginForm) */}
       <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">
-        이메일 주소에는 AD 계정만 입력하셔도 됩니다.
+        아이디에는 AD 계정을 입력해주세요.
       </p>
     </>
   );

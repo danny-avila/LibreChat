@@ -112,7 +112,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               type="text"
               id="email"
               autoComplete={useUsernameLogin ? 'username' : 'email'}
-              aria-label={localize('com_auth_email')}
+              aria-label="아이디"
               disabled={isBklMaintenance}
               {...register('email', {
                 required: localize('com_auth_email_required'),
@@ -132,9 +132,8 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               htmlFor="email"
               className="absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-autofill:top-1.5 peer-autofill:-translate-y-4 peer-autofill:scale-75 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-gray-700 dark:peer-focus:text-gray-300 rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4"
             >
-              {useUsernameLogin
-                ? localize('com_auth_username').replace(/ \(.*$/, '')
-                : localize('com_auth_email_address')}
+              {/* BKL: AD 계정 로그인 — "이메일 주소" 대신 "아이디" */}
+              아이디
             </label>
           </div>
           {renderError('email')}
