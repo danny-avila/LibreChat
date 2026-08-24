@@ -132,7 +132,10 @@ const terminalControlReceipt = (receipt: StoredSubagentControlReceipt): boolean 
 function retainSubagentControlReceipts(
   current: StoredSubagentControlReceipt[],
   receipt: StoredSubagentControlReceipt,
-): { status: 'updated' | 'unchanged' | 'conflict'; receipts: StoredSubagentControlReceipt[] } {
+): {
+  status: 'updated' | 'unchanged' | 'conflict' | 'capacity';
+  receipts: StoredSubagentControlReceipt[];
+} {
   const existingIndex = current.findIndex(
     (candidate) => candidate.invocationId === receipt.invocationId,
   );
@@ -153,11 +156,17 @@ function retainSubagentControlReceipts(
     }
     merged = current.map((candidate, index) => (index === existingIndex ? receipt : candidate));
   }
-  const accepted = merged
-    .filter((candidate) => candidate.status === 'reserved' || candidate.status === 'accepted')
-    .slice(-MAX_SUBAGENT_CONTROL_RECEIPTS);
+  const accepted = merged.filter(
+    (candidate) => candidate.status === 'reserved' || candidate.status === 'accepted',
+  );
+  /** Reserved and accepted receipts are idempotency fences for commands that can
+   * still take effect. Never evict one to admit another receipt: report capacity
+   * so the caller refuses the command before mutating the live task. */
+  if (accepted.length > MAX_SUBAGENT_CONTROL_RECEIPTS) {
+    return { status: 'capacity', receipts: current };
+  }
   const terminalAllowance = Math.max(0, MAX_SUBAGENT_CONTROL_RECEIPTS - accepted.length);
-  const terminal =
+  let terminal =
     terminalAllowance === 0
       ? []
       : merged
@@ -168,7 +177,35 @@ function retainSubagentControlReceipts(
               left.invocationId.localeCompare(right.invocationId),
           )
           .slice(-terminalAllowance);
-  return { status: 'updated', receipts: [...accepted, ...terminal] };
+  const advancesActiveFence =
+    existingIndex >= 0 &&
+    !terminalControlReceipt(current[existingIndex]) &&
+    terminalControlReceipt(receipt);
+  if (
+    advancesActiveFence &&
+    !terminal.some((candidate) => candidate.invocationId === receipt.invocationId)
+  ) {
+    /** A terminal transition for an active fence must outrank unrelated terminal
+     * history even though it retains the command's older occurrence timestamp. */
+    const otherAllowance = Math.max(0, terminalAllowance - 1);
+    terminal = [
+      ...(otherAllowance === 0
+        ? []
+        : terminal
+            .filter((candidate) => candidate.invocationId !== receipt.invocationId)
+            .slice(-otherAllowance)),
+      receipt,
+    ].sort(
+      (left, right) =>
+        left.createdAt.getTime() - right.createdAt.getTime() ||
+        left.invocationId.localeCompare(right.invocationId),
+    );
+  }
+  const receipts = [...accepted, ...terminal];
+  if (!receipts.some((candidate) => candidate.invocationId === receipt.invocationId)) {
+    return { status: 'capacity', receipts: current };
+  }
+  return { status: 'updated', receipts };
 }
 
 /**
@@ -366,6 +403,7 @@ export interface MessageMethods {
       status: NonNullable<IMessage['subagentTask']>['status'];
       resultAvailable: boolean;
       resultClaimed: boolean;
+      pendingControls: number;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -1019,6 +1057,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const retained = retainSubagentControlReceipts(current, receipt);
       if (retained.status === 'conflict') return 'conflict';
       if (retained.status === 'unchanged') return 'unchanged';
+      if (retained.status === 'capacity') return false;
       const next = retained.receipts;
       const currentFilter =
         currentMessage.subagentTask?.controlReceipts == null
@@ -1103,6 +1142,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       status: 'running' | 'completed' | 'error' | 'cancelled';
       resultAvailable: boolean;
       resultClaimed: boolean;
+      pendingControls: number;
       createdAt: Date;
       updatedAt: Date;
     };
@@ -1148,7 +1188,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       return null;
     }
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    const conversation = await Conversation.findOne({
+    const conversationQuery = Conversation.findOne({
       user: userId,
       conversationId: input.conversationId,
       ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
@@ -1157,9 +1197,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     })
       .select({ 'subagentThread.subagentType': 1, _id: 0 })
       .lean<Pick<IConversation, 'subagentThread'> | null>();
-    const subagentType = conversation?.subagentThread?.subagentType;
-    if (subagentType == null || subagentType === '') return null;
-    const terminal = await Message.findOne({
+    const terminalQuery = Message.findOne({
       user: userId,
       conversationId: input.conversationId,
       ...(tenantId == null ? { tenantId: { $exists: false } } : { tenantId }),
@@ -1168,6 +1206,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     })
       .select({ updatedAt: 1, 'subagentTask.status': 1, 'subagentTask.resultClaim': 1, _id: 0 })
       .lean<Pick<IMessage, 'updatedAt' | 'subagentTask'> | null>();
+    const [conversation, terminal] = await Promise.all([conversationQuery, terminalQuery]);
+    const subagentType = conversation?.subagentThread?.subagentType;
+    if (subagentType == null || subagentType === '') return null;
     /** A committed cancel receipt is itself the authoritative cancellation
      * boundary. The terminal row is written asynchronously and may not exist if
      * the owner exits between those two durable commits. */
@@ -1183,6 +1224,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         status: replayStatus,
         resultAvailable: terminal != null,
         resultClaimed: terminal?.subagentTask?.resultClaim != null,
+        pendingControls:
+          input.subagentTask?.controlReceipts?.filter(
+            (candidate) => candidate.status === 'accepted',
+          ).length ?? 0,
         createdAt: input.createdAt,
         updatedAt:
           terminal?.updatedAt ??

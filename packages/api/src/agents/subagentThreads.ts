@@ -660,7 +660,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (invocation == null || threadId == null) return undefined;
     const durable = this.durableReceipt(invocation, receipt);
     invocation.receipt = durable;
-    invocation.result = this.controlResultFromReceipt(invocation, durable);
+    invocation.result = this.controlResultFromReceipt(
+      invocation,
+      durable,
+      this.get(scopeId, taskId)?.pendingControls,
+    );
     if (receipt.status !== 'accepted') {
       this.controlInvocationByReceipt.delete(controlReceiptKey(scopeId, taskId, receipt.controlId));
     }
@@ -681,6 +685,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private controlResultFromReceipt(
     invocation: ControlInvocationRecord,
     receipt: ISubagentTaskControlReceipt,
+    pendingControls?: number,
   ): SubagentTaskControlResult {
     const current = invocation.result;
     if (!('task' in current)) return current;
@@ -702,7 +707,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       /** A receipt can make cancellation authoritative before the assistant row
        * exists. Preserve actual result materialization rather than inferring it. */
       resultAvailable: current.task.resultAvailable,
-      pendingControls: receipt.status === 'accepted' ? 1 : 0,
+      pendingControls: pendingControls ?? current.task.pendingControls,
     };
     if (receipt.status === 'accepted') {
       return {
@@ -850,7 +855,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       updatedAt: durableTask.updatedAt.getTime(),
       resultAvailable: durableTask.resultAvailable,
       resultClaimed: durableTask.resultClaimed,
-      pendingControls: receipt.status === 'accepted' ? 1 : 0,
+      pendingControls: durableTask.pendingControls,
       ...(receipt.controlId != null &&
       (receipt.action === 'steer' || receipt.action === 'queue' || receipt.action === 'interrupt')
         ? {

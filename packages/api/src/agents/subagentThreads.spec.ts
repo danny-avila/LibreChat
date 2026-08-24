@@ -2033,7 +2033,7 @@ describe('SubagentThreadTaskStore', () => {
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
     const hub = new TestTaskRoutingHub();
-    const ownerStore = new ReceiptTestSubagentThreadTaskStore(methods);
+    const ownerStore = new SubagentThreadTaskStore(methods);
     const requesterStore = new SubagentThreadTaskStore(methods);
     await ownerStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
     await requesterStore.configureTaskControlTransport(new TestTaskControlTransport(hub));
@@ -2042,9 +2042,13 @@ describe('SubagentThreadTaskStore', () => {
     const result = new Promise<{ content: string }>((resolve) => {
       finish = resolve;
     });
+    let runtime: SubagentTaskRuntime | undefined;
     const started = ownerStore.start(
       taskRequest(config.scopeId, {
-        run: async () => result,
+        run: async (taskRuntime) => {
+          runtime = taskRuntime;
+          return result;
+        },
       }),
     );
     const taskId = requireAccepted(started).task.taskId;
@@ -2059,6 +2063,7 @@ describe('SubagentThreadTaskStore', () => {
       await new Promise<void>((resolve) => setTimeout(resolve, 10));
     }
     expect(durableInput).toBeDefined();
+    await waitUntil(() => runtime != null, 'the controlled child runtime');
 
     const steer = { action: 'queue' as const, message: 'Verify the primary source too.' };
     const routed = await requesterStore.controlTask(config.scopeId, taskId, steer, 'invocation-1');
@@ -2091,15 +2096,9 @@ describe('SubagentThreadTaskStore', () => {
       ownerStore as unknown as { controlInvocationByReceipt: Map<string, unknown> }
     ).controlInvocationByReceipt;
     expect(receiptIndex.size).toBe(1);
-    const transitionTime = Date.now();
-    ownerStore.emitControlReceiptForTest(config.scopeId, taskId, {
-      controlId: acceptedControlId as string,
-      action: 'queue',
-      status: 'applied',
-      createdAt: transitionTime - 1,
-      updatedAt: transitionTime,
-      boundary: 'turn',
-    });
+    expect(runtime?.drain('turn')).toEqual([
+      expect.objectContaining({ content: steer.message, source: 'steer' }),
+    ]);
     expect(receiptIndex.size).toBe(0);
     await waitUntil(
       () => ownerStore.get(config.scopeId, taskId) != null,
@@ -2144,7 +2143,7 @@ describe('SubagentThreadTaskStore', () => {
         'invocation-1',
       ),
     ).resolves.toMatchObject({ status: 'invalid' });
-    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(1);
+    expect(ownerStore.get(config.scopeId, taskId)?.pendingControls).toBe(0);
 
     finish({ content: 'Cross-replica result.' });
     await waitForSettled(ownerStore, config.scopeId, started);
@@ -2227,15 +2226,65 @@ describe('SubagentThreadTaskStore', () => {
     await restartedStore.destroyTaskControlTransport();
   });
 
+  it('replays the task-wide durable pending-control count after owner loss', async () => {
+    const store = new SubagentThreadTaskStore(methods);
+    const { scopeId } = buildSubagentThreadTaskConfig(store, {
+      userId: 'durable-pending-count-user',
+      parentConversationId: randomUUID(),
+    });
+    const command = { action: 'queue' as const, message: 'Keep both queued instructions.' };
+    const now = new Date('2026-08-24T12:00:00.000Z');
+    const replay = jest.spyOn(methods, 'getSubagentTaskControlReplay').mockResolvedValue({
+      receipt: {
+        invocationId: 'pending-count-invocation',
+        fingerprint: controlFingerprint(command),
+        controlId: 'pending-count-control',
+        action: 'queue',
+        status: 'accepted',
+        createdAt: now,
+        updatedAt: now,
+      },
+      task: {
+        taskId: 'pending-count-task',
+        threadId: randomUUID(),
+        subagentType: 'researcher',
+        status: 'running',
+        resultAvailable: false,
+        resultClaimed: false,
+        pendingControls: 2,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+
+    await expect(
+      store.controlTask(scopeId, 'pending-count-task', command, 'pending-count-invocation'),
+    ).resolves.toMatchObject({
+      status: 'accepted',
+      task: { pendingControls: 2 },
+    });
+
+    replay.mockRestore();
+    await store.destroyTaskControlTransport();
+  });
+
   it('waits for a raced authoritative receipt generation before acknowledging control', async () => {
     const userId = 'receipt-generation-race-user';
     const parentConversationId = randomUUID();
     await saveParent(userId, parentConversationId);
-    const store = new ReceiptTestSubagentThreadTaskStore(methods);
+    const store = new SubagentThreadTaskStore(methods);
     const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
     let finish = (_value: { content: string }): void => undefined;
     const result = new Promise<{ content: string }>((resolve) => (finish = resolve));
-    const started = store.start(taskRequest(config.scopeId, { run: async () => result }));
+    let runtime: SubagentTaskRuntime | undefined;
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async (taskRuntime) => {
+          runtime = taskRuntime;
+          return result;
+        },
+      }),
+    );
     const taskId = requireAccepted(started).task.taskId;
     const threadId = requireThreadId(started);
     await waitUntil(
@@ -2248,6 +2297,7 @@ describe('SubagentThreadTaskStore', () => {
         ).length === 1,
       'the generation-race task seed',
     );
+    await waitUntil(() => runtime != null, 'the generation-race child runtime');
 
     const originalRecord = methods.recordSubagentTaskControlReceipt.bind(methods);
     let releaseAccepted!: () => void;
@@ -2278,20 +2328,7 @@ describe('SubagentThreadTaskStore', () => {
       'generation-race-invocation',
     );
     await sawAccepted;
-    const controlId = (
-      store.get(config.scopeId, taskId) as
-        | (SubagentTaskSnapshot & { controlReceipts?: Array<{ controlId: string }> })
-        | undefined
-    )?.controlReceipts?.[0]?.controlId;
-    expect(controlId).toBeDefined();
-    store.emitControlReceiptForTest(config.scopeId, taskId, {
-      controlId: controlId as string,
-      action: 'queue',
-      status: 'applied',
-      createdAt: Date.now() - 1,
-      updatedAt: Date.now(),
-      boundary: 'turn',
-    });
+    expect(runtime?.drain('turn')).toHaveLength(1);
     releaseAccepted();
     await sawApplied;
     let acknowledged = false;
