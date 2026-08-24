@@ -203,6 +203,7 @@ const JOB_CAS_LUA =
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
   'if item.files then clientItem.files = item.files end ' +
+  'if item.quotes then clientItem.quotes = item.quotes end ' +
   'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem ' +
@@ -693,7 +694,8 @@ const STALE_JOB_DELETE_LUA =
   'if item.steerId and not seen[item.steerId] then seen[item.steerId] = true fullItems[#fullItems + 1] = item ' +
   'local clientItem = { steerId = item.steerId, text = item.text, createdAt = item.createdAt } ' +
   'if item.clientSteerId then clientItem.clientSteerId = item.clientSteerId end ' +
-  'if item.files then clientItem.files = item.files end if item.preempt then clientItem.preempt = item.preempt end ' +
+  'if item.files then clientItem.files = item.files end if item.quotes then clientItem.quotes = item.quotes end ' +
+  'if item.preempt then clientItem.preempt = item.preempt end ' +
   'if item.preemptRevision then clientItem.preemptRevision = item.preemptRevision end ' +
   'projected[#projected + 1] = clientItem end ' +
   'if generationProtocol == 2 and item.clientSteerId then local raw = redis.call("HGET", KEYS[8], item.clientSteerId) ' +

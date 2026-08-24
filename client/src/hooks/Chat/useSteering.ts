@@ -643,14 +643,18 @@ export default function useSteering({
   );
 
   /** Returns rejected excerpts to the composer chips from the SURVIVING steer
-   *  chip only — the accepting server proved, by omitting the `quotesAccepted`
-   *  echo, that it dropped them (a pre-quotes replica). When no chip remains
-   *  under these ids, another path already owns the excerpts: a terminal
-   *  conversion moved them onto the queued follow-up, or the applied-event
-   *  reconciliation restaged them — re-staging again would double-deliver.
-   *  The surviving chip is stripped in the same update (including its captured
-   *  queue-origin copy), so the restaged composer chips stay their single
-   *  representation through any later conversion or reclaim. */
+   *  chip — used ONLY for a settled receipt replay, where the steer already
+   *  injected in the source generation and no future applied event or
+   *  terminal conversion will ever re-home the chip's quotes. An ordinary
+   *  no-echo ACK deliberately does NOT reclaim: its steer is still queued, so
+   *  the quotes stay carried on the pending chip — the applied-event
+   *  reconciliation re-stages them at the actual moment of loss, while a
+   *  terminal leftover conversion moves them onto the recovered row, which
+   *  sends via `ask` where quotes work on any server. When no chip remains,
+   *  another path already owns the excerpts and re-staging would
+   *  double-deliver. The chip is stripped in the same update (including its
+   *  captured queue-origin copy) so the restaged composer chips stay their
+   *  single representation. */
   const reclaimRejectedChipQuotes = useRecoilCallback(
     ({ snapshot, set }) =>
       (convoId: string, steerIds: string[]) => {
@@ -1021,13 +1025,15 @@ export default function useSteering({
           {
             onSuccess: (response) => {
               try {
-                /** A 202 without the echo means a pre-quotes replica accepted
-                 *  the words but dropped the excerpts. Both origins re-stage
-                 *  them as composer chips — a queued-origin item is already
-                 *  consumed and its text will inject bare, so the composer is
-                 *  the excerpts' only remaining home. The reclaim reads the
-                 *  SURVIVING chip, so a terminal conversion that already moved
-                 *  the excerpts onto a queued follow-up is never duplicated. */
+                /** A 202 without the echo means a pre-quotes replica queued
+                 *  the words without their excerpts. The quotes are NOT
+                 *  re-staged here — the steer has not injected yet, so they
+                 *  stay carried on the pending chip: a quote-less applied
+                 *  event re-stages them at the actual loss, and a terminal
+                 *  leftover conversion carries them onto the recovered row
+                 *  instead (its normal send delivers quotes on any server).
+                 *  Only a settled replay — an already-injected steer with no
+                 *  future event to re-home the chip — reclaims immediately. */
                 const quotesRejected = carried.quotes != null && response.quotesAccepted !== true;
                 const canUseV2Receipt =
                   targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
@@ -1082,8 +1088,6 @@ export default function useSteering({
                    *  follow-up that sends via `ask` — the carried quotes ride
                    *  it there, so nothing is re-staged. */
                   queueRecoveredSteer(acknowledged);
-                } else if (quotesRejected) {
-                  reclaimRejectedChipQuotes(conversationId, [localId, response.steerId]);
                 }
               } finally {
                 settleDispatch();

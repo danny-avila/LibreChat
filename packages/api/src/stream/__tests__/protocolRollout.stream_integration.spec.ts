@@ -191,7 +191,7 @@ describe('Redis generation protocol rollout bridge', () => {
         undefined,
         undefined,
         undefined,
-        { text: 'legacy words', fileIds: [] },
+        { text: 'legacy words', fileIds: [], quotes: [] },
       ),
     ).rejects.toMatchObject({ code: 'RECOVERY_PAYLOAD_MISMATCH' });
   });

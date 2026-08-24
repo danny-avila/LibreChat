@@ -560,8 +560,8 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
     });
 
     test.each([
-      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'] }],
-      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'] }],
+      ['changed text', { text: 'forged words', fileIds: ['file-a', 'file-b'], quotes: [] }],
+      ['changed files', { text: 'original words', fileIds: ['file-a', 'file-c'], quotes: [] }],
     ])(
       'refuses recovery with %s without leasing or consuming the source',
       async (_label, proof) => {

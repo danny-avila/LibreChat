@@ -2272,11 +2272,14 @@ describe('useSteering', () => {
       ]);
     });
 
-    it('re-stages composer quotes when the ACK omits the quotes echo (old server)', () => {
-      // A pre-quotes replica 202s the words but drops the excerpts. The chips
-      // were already drained, so the ACK's missing echo is the only proof —
-      // restore them as composer chips (the pre-steer behavior) and strip the
-      // pending chip so a later terminal conversion cannot duplicate them.
+    it('keeps rejected quotes carried on the pending chip (old-server ACK)', () => {
+      // A pre-quotes replica 202s the words without their excerpts, but the
+      // steer has NOT injected yet — the quotes must stay attached to the
+      // words: a later quote-less applied event re-stages them at the actual
+      // loss, while a terminal leftover conversion carries them onto the
+      // recovered row (whose normal send delivers quotes on any server).
+      // Re-staging at the ACK would let that leftover auto-send bare text
+      // while the excerpts glue onto an unrelated composer draft.
       mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
         onSuccess({ steerId: 'srv-old', status: 'queued', position: 1, conversationId: CONVO_ID });
       });
@@ -2284,11 +2287,14 @@ describe('useSteering', () => {
       act(() => {
         result.current.steering.steerFromComposer('quoted for an old server');
       });
-      expect(result.current.pendingQuotes).toEqual(['quoted excerpt']);
+      expect(result.current.pendingQuotes).toEqual([]);
       expect(result.current.chips).toEqual([
-        expect.objectContaining({ steerId: 'srv-old', status: 'pending' }),
+        expect.objectContaining({
+          steerId: 'srv-old',
+          status: 'pending',
+          quotes: ['quoted excerpt'],
+        }),
       ]);
-      expect(result.current.chips[0].quotes).toBeUndefined();
     });
 
     it('keeps quotes drained when the ACK confirms they were accepted', () => {
@@ -2312,11 +2318,11 @@ describe('useSteering', () => {
       });
     });
 
-    it("re-stages a queued item's quotes when Send now hits an old server", () => {
-      // The queue row is consumed and the words will inject bare, so the
-      // composer is the excerpts' only remaining home. The chip's captured
-      // origin copy is stripped too — a reclaim or terminal conversion must
-      // not duplicate what was just re-staged.
+    it("keeps a queued item's quotes on its chip when Send now hits an old server", () => {
+      // The pending chip and its captured origin retain the quotes so every
+      // later outcome preserves them with the words: a quote-less applied
+      // event re-stages, a leftover conversion restores the exact row, and a
+      // reclaim hands them back to the composer.
       mockMutate.mockImplementationOnce((_params, { onSuccess }) => {
         onSuccess({
           steerId: 'srv-q-old',
@@ -2338,11 +2344,14 @@ describe('useSteering', () => {
         result.current.steering.sendQueuedNow(item);
       });
       expect(result.current.queue).toEqual([]);
-      expect(result.current.pendingQuotes).toEqual(['queued excerpt']);
+      expect(result.current.pendingQuotes).toEqual([]);
       const chip = result.current.chips[0];
-      expect(chip).toMatchObject({ steerId: 'srv-q-old', status: 'pending' });
-      expect(chip.quotes).toBeUndefined();
-      expect(chip.queuedOrigin?.item.quotes).toBeUndefined();
+      expect(chip).toMatchObject({
+        steerId: 'srv-q-old',
+        status: 'pending',
+        quotes: ['queued excerpt'],
+      });
+      expect(chip.queuedOrigin?.item.quotes).toEqual(['queued excerpt']);
     });
 
     it('never re-stages quotes a terminal conversion already moved to the queue', () => {
