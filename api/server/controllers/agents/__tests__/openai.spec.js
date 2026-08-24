@@ -11,14 +11,6 @@ const mockSpendStructuredTokens = jest.fn().mockResolvedValue({});
 const mockRecordCollectedUsage = jest
   .fn()
   .mockResolvedValue({ input_tokens: 100, output_tokens: 50 });
-const mockUsageBreakdown = {
-  prompt_tokens: 1020,
-  completion_tokens: 740,
-  total_tokens: 1760,
-  primary: { prompt_tokens: 120, completion_tokens: 40, total_tokens: 160 },
-  subagent: { prompt_tokens: 900, completion_tokens: 700, total_tokens: 1600 },
-};
-const mockCompletionUsageBreakdown = jest.fn().mockReturnValue(mockUsageBreakdown);
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockResolveMemoryAvailability = jest.fn().mockResolvedValue(true);
@@ -213,7 +205,6 @@ jest.mock('@librechat/api', () => ({
     .mockReturnValue({ request: { model: 'agent-123', messages: [], stream: false } }),
   initializeAgent: jest.fn().mockResolvedValue({
     id: 'agent-123',
-    provider: 'openAI',
     model: 'gpt-4',
     model_parameters: {},
     toolRegistry: {},
@@ -224,7 +215,9 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
-  completionUsageBreakdown: mockCompletionUsageBreakdown,
+  resolveAgentTokenConfig: jest.fn(({ agentId, byAgentId, fallback }) =>
+    agentId != null && byAgentId?.has(agentId) ? byAgentId.get(agentId) : fallback,
+  ),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -1229,36 +1222,6 @@ describe('OpenAIChatCompletionController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(createErrorResponse).toHaveBeenCalledWith(message, 'invalid_request_error', null);
       expect(initializeAgent).not.toHaveBeenCalled();
-  describe('usage collection', () => {
-    it('stamps provider on collected primary usage before usage breakdown', async () => {
-      const api = require('@librechat/api');
-      api.createRun.mockImplementationOnce(async ({ customHandlers }) => ({
-        processStream: jest.fn().mockImplementation(async () => {
-          customHandlers.on_chat_model_end.handle(
-            'on_chat_model_end',
-            {
-              output: {
-                usage_metadata: {
-                  input_tokens: 150,
-                  output_tokens: 75,
-                  input_token_details: { cache_read: 25 },
-                },
-              },
-            },
-            {},
-          );
-        }),
-      }));
-
-      await OpenAIChatCompletionController(req, res);
-
-      expect(mockCompletionUsageBreakdown).toHaveBeenCalledWith([
-        expect.objectContaining({
-          input_tokens: 150,
-          output_tokens: 75,
-          provider: 'openAI',
-        }),
-      ]);
     });
   });
 
@@ -1323,13 +1286,13 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       const [, params] = mockRecordCollectedUsage.mock.calls[0];
-      expect(mockCompletionUsageBreakdown).toHaveBeenCalledWith(params.collectedUsage);
+      expect(mockBuildCompletionUsage).toHaveBeenCalledWith(params.collectedUsage);
       expect(buildNonStreamingResponse).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        mockUsageBreakdown,
+        mockCompletionUsage,
       );
     });
 
@@ -1341,7 +1304,7 @@ describe('OpenAIChatCompletionController', () => {
 
       await OpenAIChatCompletionController(req, res);
 
-      expect(sendFinalChunk).toHaveBeenCalledWith(expect.anything(), 'stop', mockUsageBreakdown);
+      expect(sendFinalChunk).toHaveBeenCalledWith(expect.anything(), 'stop', mockCompletionUsage);
     });
 
     it('should include model from primaryConfig in recordCollectedUsage params', async () => {

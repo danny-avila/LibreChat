@@ -40,8 +40,6 @@ const {
   extractToolArgumentContent,
   contentFilterBlockResponse,
   contentFilterUninspectableResponse,
-  completionUsageBreakdown,
-  findPiiMatchInMessages,
   discoverConnectedAgents,
   getBlockedOpaqueFileField,
   getContentTraversalFragments,
@@ -274,42 +272,6 @@ function extractResponseRequestContent(request, messageFragments) {
   }
 
   return fragments;
-}
-
-/**
-* Resolves the provider for a model-end event from the producing agent.
- * Falls back to the primary provider when the metadata cannot identify a child.
- * @param {Map<string, { provider?: string }> | undefined} agentConfigs
- * @param {unknown} metadata
- * @param {string | undefined} defaultProvider
- * @returns {string | undefined}
- */
-function resolveCollectedUsageProvider(agentConfigs, metadata, defaultProvider) {
-  const node = metadata?.langgraph_node;
-  if (typeof node === 'string' && agentConfigs?.size) {
-    for (const [agentId, config] of agentConfigs) {
-      if (node.endsWith(agentId) && config?.provider) {
-        return config.provider;
-      }
-    }
-  }
-  return defaultProvider;
-}
-
-/**
- * Converts the OpenAI-style completion breakdown into Responses API usage.
- * @param {import('@librechat/api').CompletionUsage} usage
- */
-function buildResponsesUsage(usage) {
-  return {
-    input_tokens: usage.prompt_tokens,
-    output_tokens: usage.completion_tokens,
-    total_tokens: usage.total_tokens,
-    input_tokens_details: { cached_tokens: 0 },
-    output_tokens_details: {
-      reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens ?? 0,
-    },
-  };
 }
 
 /**
@@ -1107,15 +1069,8 @@ const executeResponse = async (envelope, { req, res }) => {
             responsesHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const provider = resolveCollectedUsageProvider(
-                handoffAgentConfigs,
-                metadata,
-                primaryConfig.provider ?? agent.provider,
-              );
-              if (provider) {
-                usage.provider = provider;
-              }
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1210,11 +1165,6 @@ const executeResponse = async (envelope, { req, res }) => {
       });
 
       const usage = buildResponsesUsage(collectedUsage);
-      const usage = buildResponsesUsage(completionUsageBreakdown(collectedUsage));
-      tracker.usage.inputTokens = usage.input_tokens;
-      tracker.usage.outputTokens = usage.output_tokens;
-      tracker.usage.reasoningTokens = usage.output_tokens_details.reasoning_tokens;
-      tracker.usage.cachedTokens = usage.input_tokens_details.cached_tokens;
 
       // Finalize the stream
       finalizeStream(usage);
@@ -1234,8 +1184,14 @@ const executeResponse = async (envelope, { req, res }) => {
 
           // Build response for saving (use tracker with buildResponse for streaming)
           const finalResponse = buildResponse(context, tracker, 'completed');
-          finalResponse.usage = usage;
-          await saveResponseOutput(req, conversationId, responseId, finalResponse, agentId);
+          await saveResponseOutput(
+            req,
+            conversationId,
+            responseId,
+            finalResponse,
+            agentId,
+            tracker.usage.outputTokens,
+          );
 
           logger.debug(
             `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1309,15 +1265,8 @@ const executeResponse = async (envelope, { req, res }) => {
             aggregatorHandlers.on_chat_model_end.handle(event, data);
             const usage = data?.output?.usage_metadata;
             if (usage) {
-              const provider = resolveCollectedUsageProvider(
-                handoffAgentConfigs,
-                metadata,
-                primaryConfig.provider ?? agent.provider,
-              );
-              if (provider) {
-                usage.provider = provider;
-              }
-              const taggedUsage = markSummarizationUsage(usage, metadata);
+              const agentContext = graph?.getAgentContext?.(metadata);
+              const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
               collectedUsage.push(taggedUsage);
             }
           },
@@ -1409,8 +1358,6 @@ const executeResponse = async (envelope, { req, res }) => {
         logger.error('[Responses API] Error recording usage:', getSafeErrorMetadata(err));
       });
 
-      const usage = buildResponsesUsage(completionUsageBreakdown(collectedUsage));
-
       if (artifactPromises.length > 0) {
         try {
           await Promise.all(artifactPromises);
@@ -1427,8 +1374,6 @@ const executeResponse = async (envelope, { req, res }) => {
         aggregator,
         buildResponsesUsage(collectedUsage),
       );
-      const response = buildAggregatedResponse(context, aggregator);
-      response.usage = usage;
 
       if (request.store === true) {
         try {

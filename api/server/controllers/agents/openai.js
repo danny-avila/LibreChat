@@ -56,7 +56,6 @@ const {
   createToolExecuteHandler,
   buildNonStreamingResponse,
   createOpenAIStreamTracker,
-  completionUsageBreakdown,
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
@@ -147,26 +146,6 @@ function createToolLoader(signal, definitionsOnly = true) {
       logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));
     }
   };
-}
-
-/**
- * Resolves the provider for a model-end event from the producing agent.
- * Falls back to the primary provider when the metadata cannot identify a child.
- * @param {Map<string, { provider?: string }> | undefined} agentConfigs
- * @param {unknown} metadata
- * @param {string | undefined} defaultProvider
- * @returns {string | undefined}
- */
-function resolveCollectedUsageProvider(agentConfigs, metadata, defaultProvider) {
-  const node = metadata?.langgraph_node;
-  if (typeof node === 'string' && agentConfigs?.size) {
-    for (const [agentId, config] of agentConfigs) {
-      if (node.endsWith(agentId) && config?.provider) {
-        return config.provider;
-      }
-    }
-  }
-  return defaultProvider;
 }
 
 /**
@@ -929,21 +908,14 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }
       }),
 
-      /* Usage tracking: `collectedUsage` is the single source for both billing
-         and the reported totals, so no separate tracker/aggregator counting. */
+      // Usage tracking
       on_chat_model_end: {
         handle: (_event, data, metadata, graph) => {
           const usage = data?.output?.usage_metadata;
           if (usage) {
-            const provider = resolveCollectedUsageProvider(
-              handoffAgentConfigs,
-              metadata,
-              primaryConfig.provider ?? agent.provider,
-            );
-            if (provider) {
-              usage.provider = provider;
-            }
-            collectedUsage.push(markSummarizationUsage(usage, metadata));
+            const agentContext = graph?.getAgentContext?.(metadata);
+            const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
+            collectedUsage.push(taggedUsage);
           }
         },
       },
@@ -1079,10 +1051,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
     });
 
-    /* Reported from `collectedUsage` rather than the tracker/aggregator so
-       isolated subagent child runs — billed above, but never seen by
-       `on_chat_model_end` — are part of the totals the client receives. */
-    const usage = completionUsageBreakdown(collectedUsage);
+    const usage = buildCompletionUsage(collectedUsage);
 
     // Finalize response
     const duration = Date.now() - requestStartTime;
