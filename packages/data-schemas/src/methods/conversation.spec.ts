@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import mongoose, { type FilterQuery } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
 import type {
@@ -114,6 +114,7 @@ describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockConversationData: {
@@ -960,6 +961,85 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('saveConvo appendMessageIds', () => {
+    const ctx = { userId: 'append-user' };
+    const conversationId = 'append-conversation';
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({ user: ctx.userId });
+      getMessages.mockClear();
+    });
+
+    it('appends the provided ids without reading the messages collection', async () => {
+      const seeded = [new mongoose.Types.ObjectId(), new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(seeded.map((_id) => ({ _id })));
+      await saveConvo(ctx, { conversationId, title: 'seeded' });
+      expect(getMessages).toHaveBeenCalledTimes(1);
+
+      const appended = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'appended' },
+        { appendMessageIds: [appended] },
+      );
+
+      expect(getMessages).toHaveBeenCalledTimes(1);
+      expect(result?.title).toBe('appended');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([...seeded, appended].map(String));
+    });
+
+    it('does not duplicate an id that is already recorded', async () => {
+      const id = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('creates the conversation with the appended id when it does not exist yet', async () => {
+      const id = new mongoose.Types.ObjectId();
+      const result = await saveConvo(
+        ctx,
+        { conversationId, title: 'first turn' },
+        { appendMessageIds: [id] },
+      );
+
+      expect(result?.conversationId).toBe(conversationId);
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('ignores a caller-supplied messages field so $set cannot conflict with the append', async () => {
+      const kept = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [kept] });
+
+      const appended = new mongoose.Types.ObjectId();
+      await saveConvo(
+        ctx,
+        { conversationId, messages: [new mongoose.Types.ObjectId()] },
+        { appendMessageIds: [appended] },
+      );
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([kept, appended].map(String));
+    });
+
+    it('still rebuilds the array from the database when the option is absent', async () => {
+      const rebuilt = [new mongoose.Types.ObjectId()];
+      getMessages.mockResolvedValueOnce(rebuilt.map((_id) => ({ _id })));
+
+      await saveConvo(ctx, { conversationId, title: 'rebuild' });
+
+      expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
+    });
+  });
+
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
       mockCtx.interfaceConfig = { temporaryChatRetention: 24 };
@@ -982,6 +1062,18 @@ describe('Conversation Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         new Date(afterSave.getTime() + 24 * 60 * 60 * 1000 + 1000).getTime(),
       );
+    });
+
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveConvo(mockCtx, mockConversationData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
     });
 
     it('should save a conversation without expiredAt when isTemporary is false', async () => {
@@ -1521,6 +1613,17 @@ describe('Conversation Operations', () => {
       expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
     });
 
+    it('hides retention-expired conversations before TTL cleanup', async () => {
+      await Conversation.create({
+        conversationId: 'expired-owner',
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+      });
+
+      await expect(methods.getConvoOwnership('user123', 'expired-owner')).resolves.toBeNull();
+    });
+
     it('includes child-thread identity without materializing conversation content', async () => {
       await Conversation.create({
         conversationId: 'child-conversation',
@@ -1727,17 +1830,99 @@ describe('Conversation Operations', () => {
         },
       ]);
       deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 3 });
+      const beforeDelete = jest.fn(async (conversationIds: string[]) => {
+        expect(
+          await Conversation.countDocuments({ conversationId: { $in: conversationIds } }),
+        ).toBe(conversationIds.length);
+      });
 
-      const result = await deleteConvos('user123', { conversationId: parentId });
+      const result = await deleteConvos('user123', { conversationId: parentId }, { beforeDelete });
 
       expect(result.deletedCount).toBe(3);
       expect(result.conversationIds).toEqual([parentId, childId, grandchildId]);
+      expect(beforeDelete.mock.calls).toEqual([[[parentId]], [[childId]], [[grandchildId]]]);
       expect(deleteMessages).toHaveBeenCalledWith({
         conversationId: { $in: [parentId, childId, grandchildId] },
         user: 'user123',
       });
       expect(await Conversation.find({ user: 'user123' })).toHaveLength(0);
       expect(await Conversation.findOne({ conversationId: otherUsersChildId })).not.toBeNull();
+    });
+
+    it('reports a partial cascade failure instead of silently succeeding', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const project = await ChatProject.create({
+        user: 'user123',
+        name: 'Partial Cascade',
+        conversationCount: 1,
+        lastConversationId: parentId,
+      });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 1, position: 1 });
+      await Conversation.create([
+        {
+          conversationId: parentId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          chatProjectId: project._id!.toString(),
+          tags: ['work'],
+        },
+        {
+          conversationId: childId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            rootConversationId: parentId,
+            parentConversationId: parentId,
+            parentMessageId: 'message-1',
+            parentToolCallId: 'tool-1',
+            subagentType: 'agent-child',
+            subagentKind: 'agent',
+            depth: 1,
+          },
+        },
+      ]);
+      const realFind = Conversation.find.bind(Conversation);
+      const findSpy = jest.spyOn(Conversation, 'find').mockImplementation(((filter) => {
+        if (
+          filter != null &&
+          Object.prototype.hasOwnProperty.call(filter, 'subagentThread.parentConversationId')
+        ) {
+          return {
+            select: () => ({ lean: () => Promise.reject(new Error('stepdown')) }),
+          };
+        }
+        return realFind(filter as FilterQuery<IConversation>);
+      }) as typeof Conversation.find);
+
+      await expect(deleteConvos('user123', { conversationId: parentId })).rejects.toThrow(
+        'stepdown',
+      );
+      expect(findSpy).toHaveBeenCalledTimes(4);
+      expect(await Conversation.findOne({ conversationId: parentId })).toBeNull();
+      expect(await Conversation.findOne({ conversationId: childId })).not.toBeNull();
+      expect(deleteMessages).not.toHaveBeenCalled();
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect(
+        (await ChatProject.findById(project._id).lean<IChatProject>())?.conversationCount,
+      ).toBe(0);
+
+      findSpy.mockRestore();
+      deleteMessages.mockResolvedValue({ acknowledged: true, deletedCount: 2 });
+      const recovered = await deleteConvos('user123', { conversationId: parentId });
+
+      expect(recovered.conversationIds).toEqual([parentId, childId]);
+      expect(await Conversation.findOne({ conversationId: childId })).toBeNull();
+      expect(deleteMessages).toHaveBeenCalledWith({
+        conversationId: { $in: [parentId, childId] },
+        user: 'user123',
+      });
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      findSpy.mockRestore();
     });
 
     it('does not delete a parent when deleting one child thread', async () => {
@@ -3491,6 +3676,253 @@ describe('Conversation Operations', () => {
       ).resolves.toBeNull();
       expect(await methods.getConvo('view-user', conversationId)).not.toHaveProperty(
         'subagentThreadLease',
+      );
+    });
+
+    it('lists bounded child metadata while collapsing private event bindings to actor identity', async () => {
+      const parentConversationId = uuidv4();
+      const eventThreadId = uuidv4();
+      const toolThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: eventThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'agent-event',
+          subagentThread: lineage('event-binding:private'),
+          subagentThreadLease: {
+            token: 'private-token',
+            taskId: 'task-live',
+            expiresAt: new Date('2099-08-21T12:00:00.000Z'),
+          },
+          agentEventBinding: {
+            bindingId: `evtbind_${'b'.repeat(48)}`,
+            sourceKeyId: 'private-key',
+            actorId: 'actor-a',
+          },
+        },
+        {
+          conversationId: toolThreadId,
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('tool-call-a'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-b',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-tenant'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'different-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('wrong-user'),
+        },
+        {
+          conversationId: uuidv4(),
+          user: 'index-user',
+          tenantId: 'tenant-a',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: {
+            ...lineage('wrong-parent'),
+            parentConversationId: uuidv4(),
+          },
+        },
+      ]);
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'index-user',
+        tenantId: 'tenant-a',
+        parentConversationId,
+        limit: 10,
+      });
+
+      expect(records.map((record) => record.conversationId).sort()).toEqual(
+        [eventThreadId, toolThreadId].sort(),
+      );
+      expect(records.find((record) => record.conversationId === eventThreadId)).toEqual(
+        expect.objectContaining({
+          actorId: 'actor-a',
+          subagentThreadLease: expect.objectContaining({ taskId: 'task-live' }),
+        }),
+      );
+      expect(records).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ agentEventBinding: expect.anything() })]),
+      );
+      expect(JSON.stringify(records)).not.toContain('private-key');
+      expect(JSON.stringify(records)).not.toContain(`evtbind_${'b'.repeat(48)}`);
+    });
+
+    it('hides retention-expired children before TTL cleanup', async () => {
+      const parentConversationId = uuidv4();
+      const expiredThreadId = uuidv4();
+      await Conversation.create({
+        conversationId: expiredThreadId,
+        user: 'expired-child-user',
+        endpoint: EModelEndpoint.agents,
+        expiredAt: new Date(Date.now() - 60_000),
+        subagentThread: {
+          rootConversationId: parentConversationId,
+          parentConversationId,
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getSubagentThreadForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          conversationId: expiredThreadId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.listSubagentThreadsForParent({
+          user: 'expired-child-user',
+          parentConversationId,
+          limit: 10,
+        }),
+      ).resolves.toEqual([]);
+    });
+
+    it('keeps an older child with a live lease inside the bounded parent index', async () => {
+      const parentConversationId = uuidv4();
+      const activeThreadId = uuidv4();
+      const recentThreadId = uuidv4();
+      const lineage = (parentToolCallId: string) => ({
+        rootConversationId: parentConversationId,
+        parentConversationId,
+        parentMessageId: 'parent-message',
+        parentToolCallId,
+        subagentType: 'researcher',
+        subagentKind: 'agent' as const,
+        depth: 1,
+      });
+      await Conversation.create([
+        {
+          conversationId: activeThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('active-tool'),
+        },
+        {
+          conversationId: recentThreadId,
+          user: 'active-index-user',
+          endpoint: EModelEndpoint.agents,
+          subagentThread: lineage('recent-tool'),
+        },
+      ]);
+      await Conversation.updateOne(
+        { conversationId: activeThreadId },
+        { $set: { updatedAt: new Date('2026-08-20T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await Conversation.updateOne(
+        { conversationId: recentThreadId },
+        { $set: { updatedAt: new Date('2026-08-21T10:00:00.000Z') } },
+        { timestamps: false },
+      );
+      await methods.acquireSubagentThreadLease({
+        user: 'active-index-user',
+        conversationId: activeThreadId,
+        token: 'private-token',
+        taskId: 'active-task',
+        now: new Date('2026-08-22T10:00:00.000Z'),
+        expiresAt: new Date('2026-08-22T10:00:30.000Z'),
+      });
+
+      const records = await methods.listSubagentThreadsForParent({
+        user: 'active-index-user',
+        parentConversationId,
+        limit: 1,
+      });
+
+      expect(records).toEqual([
+        expect.objectContaining({
+          conversationId: activeThreadId,
+          subagentThreadLease: expect.objectContaining({ taskId: 'active-task' }),
+        }),
+      ]);
+    });
+
+    it('resolves an event binding only through its owner, tenant, and API key', async () => {
+      const conversationId = uuidv4();
+      const bindingId = `evtbind_${'a'.repeat(48)}`;
+      await Conversation.create({
+        conversationId,
+        user: 'binding-user',
+        tenantId: 'tenant-a',
+        endpoint: EModelEndpoint.agents,
+        agent_id: 'agent-player',
+        agentEventBinding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+        subagentThread: {
+          rootConversationId: 'parent',
+          parentConversationId: 'parent',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'event-binding',
+          parentAgentId: 'agent-director',
+          subagentType: 'agent-player',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toMatchObject({
+        conversationId,
+        agentId: 'agent-player',
+        binding: { bindingId, sourceKeyId: 'key-a', actorId: 'player-a' },
+      });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-b',
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-b',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      await Conversation.updateOne({ conversationId }, { expiredAt: new Date(0) });
+      await expect(
+        methods.getAgentEventBinding({
+          user: 'binding-user',
+          tenantId: 'tenant-a',
+          bindingId,
+          sourceKeyId: 'key-a',
+        }),
+      ).resolves.toBeNull();
+      expect(await methods.getConvo('binding-user', conversationId)).not.toHaveProperty(
+        'agentEventBinding',
       );
     });
 

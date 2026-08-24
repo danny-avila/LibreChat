@@ -4,7 +4,15 @@ const request = require('supertest');
 const MOCKS = '../__test-utils__/convos-route-mocks';
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
-jest.mock('@librechat/api', () => require(MOCKS).api({ limiterCache: jest.fn(() => undefined) }));
+jest.mock('@librechat/api', () =>
+  require(MOCKS).api({
+    limiterCache: jest.fn(() => undefined),
+    createContentFilter: jest.fn(() => (req, res, next) => next()),
+    inspectContent: jest.fn(() => null),
+    extractConversationTitleContent: jest.fn(() => []),
+    contentFilterBlockResponse: jest.fn(),
+  }),
+);
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () =>
   require(MOCKS).dataProvider({ ViolationTypes: { FILE_UPLOAD_LIMIT: 'file_upload_limit' } }),

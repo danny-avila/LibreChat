@@ -13,7 +13,9 @@ import type {
   ModelContent,
   InputItem,
   Response,
+  Usage,
 } from './types';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import {
   writeDone,
   emitResponseCompleted,
@@ -36,6 +38,7 @@ import {
   emitReasoningItemDone,
   type StreamHandlerConfig,
 } from './handlers';
+import { aggregateCollectedUsage } from '../usage';
 
 interface ResponseUsageAccumulator {
   inputTokens: number;
@@ -361,7 +364,7 @@ interface StreamState {
 export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
-  finalizeStream: () => void;
+  finalizeStream: (usage?: Usage) => void;
 } {
   const state: StreamState = {
     messageStarted: false,
@@ -587,9 +590,9 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   /**
    * Finalize the stream - close open items and emit completed
    */
-  const finalizeStream = (): void => {
+  const finalizeStream = (usage?: Usage): void => {
     closeOpenStreams();
-    emitResponseCompleted(config);
+    emitResponseCompleted(config, usage);
     writeDone(config.res);
   };
 
@@ -661,6 +664,7 @@ export function createResponseAggregator(): ResponseAggregator {
 export function buildAggregatedResponse(
   context: ResponseContext,
   aggregator: ResponseAggregator,
+  usageOverride?: Usage,
 ): Response {
   const output: Response['output'] = [];
 
@@ -736,7 +740,7 @@ export function buildAggregatedResponse(
     top_logprobs: 0,
     reasoning: null,
     user: null,
-    usage: {
+    usage: usageOverride ?? {
       input_tokens: aggregator.usage.inputTokens,
       output_tokens: aggregator.usage.outputTokens,
       total_tokens: aggregator.usage.inputTokens + aggregator.usage.outputTokens,
@@ -751,6 +755,30 @@ export function buildAggregatedResponse(
     metadata: {},
     safety_identifier: null,
     prompt_cache_key: null,
+  };
+}
+
+/** Build provider-normalized Responses API usage from every billed call. */
+export function buildResponsesUsage(
+  collectedUsage: ReadonlyArray<UsageMetadata | null | undefined>,
+): Usage {
+  const { total, primary, subagent } = aggregateCollectedUsage(collectedUsage);
+  return {
+    input_tokens: total.inputTokens,
+    output_tokens: total.outputTokens,
+    total_tokens: total.totalTokens,
+    input_tokens_details: { cached_tokens: total.cacheReadTokens },
+    output_tokens_details: { reasoning_tokens: total.reasoningTokens },
+    primary: {
+      input_tokens: primary.inputTokens,
+      output_tokens: primary.outputTokens,
+      total_tokens: primary.totalTokens,
+    },
+    subagent: {
+      input_tokens: subagent.inputTokens,
+      output_tokens: subagent.outputTokens,
+      total_tokens: subagent.totalTokens,
+    },
   };
 }
 

@@ -185,6 +185,35 @@ export const getExistingConversationAbortMessages = ({
   return [...sourceMessages];
 };
 
+export const mergeErrorMessages = ({
+  messages,
+  regenerateMessages,
+  userMessage,
+  errorMessage,
+  isRegenerate = false,
+}: Pick<EventSubmission, 'messages' | 'regenerateMessages' | 'userMessage' | 'isRegenerate'> & {
+  errorMessage: TMessage;
+}): TMessage[] => {
+  if (isRegenerate) {
+    const finalMessages: TMessage[] = [];
+    let replaced = false;
+    for (const message of regenerateMessages ?? messages) {
+      if (message.messageId === errorMessage.messageId) {
+        finalMessages.push(errorMessage);
+        replaced = true;
+      } else {
+        finalMessages.push(message);
+      }
+    }
+    if (!replaced) {
+      finalMessages.push(errorMessage);
+    }
+    return finalMessages;
+  }
+
+  return [...messages, userMessage, errorMessage];
+};
+
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
   runIndex?: number;
@@ -346,6 +375,8 @@ export default function useEventHandlers({
     stepHandler,
     clearStepMaps,
     resetSubagentAtoms,
+    resetPtcAtoms,
+    prunePtcTraces,
     syncStepMessage,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
@@ -391,8 +422,12 @@ export default function useEventHandlers({
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
       resetSubagentAtoms();
+      /** PTC traces are live-only for the same reason and share the boundary:
+       *  keep them through a run so a finished program stays auditable, drop
+       *  them when the conversation changes. */
+      resetPtcAtoms();
     }
-  }, [paramId, resetSubagentAtoms]);
+  }, [paramId, resetSubagentAtoms, resetPtcAtoms]);
 
   /** Final cleanup on component unmount. `useStepHandler` keeps the
    *  set of known atom keys in a ref; when the hook unmounts (user
@@ -403,8 +438,9 @@ export default function useEventHandlers({
   useEffect(
     () => () => {
       resetSubagentAtoms();
+      resetPtcAtoms();
     },
-    [resetSubagentAtoms],
+    [resetSubagentAtoms, resetPtcAtoms],
   );
 
   const messageHandler = useCallback(
@@ -945,14 +981,14 @@ export default function useEventHandlers({
 
   const errorHandler = useCallback(
     ({ data, submission }: { data?: TResData; submission: EventSubmission }) => {
-      const { messages, userMessage, initialResponse } = submission;
+      const { userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
       const setErrorMessages = (convoId: string, errorMessage: TMessage) => {
-        const finalMessages: TMessage[] = [...messages, userMessage, errorMessage];
+        const finalMessages = mergeErrorMessages({ ...submission, errorMessage });
         setMessages(finalMessages);
         queryClient.setQueryData<TMessage[]>([QueryKeys.messages, convoId], finalMessages);
       };
@@ -1176,6 +1212,7 @@ export default function useEventHandlers({
     createdHandler,
     titleHandler,
     syncStepMessage,
+    prunePtcTraces,
     cancelPendingDeltaFlush,
     flushPendingDeltas,
     attachmentHandler,

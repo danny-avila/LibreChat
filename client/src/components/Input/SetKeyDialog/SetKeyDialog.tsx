@@ -19,7 +19,7 @@ import {
   OGDialogTrigger,
 } from '@librechat/client';
 import type { TDialogProps } from '~/common';
-import { useUserKey, useLocalize } from '~/hooks';
+import { useUserKey, useLocalize, useClockFormat } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { formatKeyExpiryLabel } from './utils';
 import CustomConfig from './CustomEndpoint';
@@ -364,11 +364,12 @@ const SetKeyDialog = ({
 
   const EndpointComponent = endpointComponents[configuredEndpoint] ?? endpointComponents['default'];
   const expiryTime = getExpiry();
+  const hour12 = useClockFormat();
   let currentExpiryLabel: string | null = null;
   if (expiryTime === 'never') {
     currentExpiryLabel = localize('com_endpoint_config_key_never_expires');
   } else if (expiryTime !== undefined) {
-    currentExpiryLabel = formatKeyExpiryLabel(localize, expiryTime);
+    currentExpiryLabel = formatKeyExpiryLabel(localize, expiryTime, hour12);
   }
 
   return (

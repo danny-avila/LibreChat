@@ -195,6 +195,33 @@ describe('performSync() - syncThreshold logic', () => {
     expect(Conversation.syncWithMeili).not.toHaveBeenCalled();
   });
 
+  test('reconciles attempted indexing failures below syncThreshold', async () => {
+    Message.getSyncProgress.mockResolvedValue({
+      totalProcessed: 100,
+      totalDocuments: 101,
+      pendingIndexing: 1,
+      isComplete: false,
+    });
+    Conversation.getSyncProgress.mockResolvedValue({
+      totalProcessed: 50,
+      totalDocuments: 51,
+      pendingIndexing: 1,
+      isComplete: false,
+    });
+    Message.syncWithMeili.mockResolvedValue(undefined);
+    Conversation.syncWithMeili.mockResolvedValue(undefined);
+
+    process.env.MEILI_SYNC_THRESHOLD = '1000';
+
+    const indexSync = require('./indexSync');
+    await indexSync();
+
+    expect(Message.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(Conversation.syncWithMeili).toHaveBeenCalledTimes(1);
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting message sync (1 unindexed)');
+    expect(mockLogger.info).toHaveBeenCalledWith('[indexSync] Starting convos sync (1 unindexed)');
+  });
+
   test('respects syncThreshold at boundary (exactly at threshold)', async () => {
     // Arrange: 1000 unindexed messages = 1000 threshold (NOT greater than)
     Message.getSyncProgress.mockResolvedValue({

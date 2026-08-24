@@ -110,6 +110,29 @@ describe('buildSteerMedia', () => {
     expect(result?.files?.map((file) => file.file_id)).toEqual(['f2', 'f1']);
   });
 
+  it('preflights hydrated files before encoding them', async () => {
+    const getFiles: SteerFileFetcher = jest.fn(async () => [imageDoc]);
+    const client = createClient({ image_urls: [imagePart] });
+    const blocked = new Error('blocked by content policy');
+    const assertFilesAllowed = jest.fn(() => {
+      throw blocked;
+    });
+
+    await expect(
+      buildSteerMedia({
+        client,
+        user,
+        item: steerItem([{ file_id: 'f1' }]),
+        getFiles,
+        assertFilesAllowed,
+      }),
+    ).rejects.toBe(blocked);
+
+    expect(assertFilesAllowed).toHaveBeenCalledWith([imageDoc]);
+    expect(client.addFileContextToMessage).not.toHaveBeenCalled();
+    expect(client.processAttachments).not.toHaveBeenCalled();
+  });
+
   it('prepends extracted file context to the steer text', async () => {
     const getFiles: SteerFileFetcher = jest.fn(async () => [
       { file_id: 'f2', type: 'text/plain' } as unknown as IMongoFile,
@@ -171,7 +194,8 @@ describe('stampSteerPartMedia', () => {
     };
     const otherPart = { type: 'text', text: 'assistant text' };
     const originalContent = [otherPart, steerPart];
-    const message: { role: string; content: unknown } = {
+    const message: { messageId: string; role: string; content: unknown } = {
+      messageId: 'assistant-source',
       role: 'assistant',
       content: originalContent,
     };
@@ -189,6 +213,8 @@ describe('stampSteerPartMedia', () => {
     expect(stamped).toEqual([
       {
         index: 1,
+        sourceMessageId: 'assistant-source',
+        fileIds: ['f1'],
         media: [{ type: 'text', text: 'inline steer' }, imagePart],
         steerText: 'inline steer',
       },

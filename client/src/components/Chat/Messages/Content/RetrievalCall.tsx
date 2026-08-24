@@ -23,6 +23,7 @@ interface FileSource {
   pageRelevance: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -68,6 +69,7 @@ function extractFileSources(attachments?: TAttachment[]): FileSource[] {
           pageRelevance: source.pageRelevance || {},
           fileType: (meta?.fileType as string) || undefined,
           fileBytes: (meta?.fileBytes as number) || undefined,
+          fileSource: (meta?.storageType as string) || undefined,
           metadata: meta,
         });
       }
@@ -92,6 +94,7 @@ interface DisplayResult {
   pageRelevance?: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
 }
 
 interface FileMatch {
@@ -99,6 +102,7 @@ interface FileMatch {
   fileName: string;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
 }
 
 function normalizeFilename(filename: string): string {
@@ -142,6 +146,7 @@ function buildFileLookup(
       fileName: source.fileName,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      fileSource: source.fileSource,
     });
   }
 
@@ -160,6 +165,7 @@ function buildFileLookup(
       fileName: file.filename,
       fileType: file.type ?? undefined,
       fileBytes: file.bytes,
+      fileSource: file.source ?? undefined,
     });
   }
 
@@ -181,6 +187,7 @@ function mergeRetrievalResults(
       pageRelevance: source.pageRelevance,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      fileSource: source.fileSource,
     }));
   }
 
@@ -197,6 +204,7 @@ function mergeRetrievalResults(
       content: result.content,
       fileType: match?.fileType,
       fileBytes: match?.fileBytes,
+      fileSource: match?.fileSource,
     };
   });
 }
@@ -424,6 +432,7 @@ export default function RetrievalCall({
       pages: result.pages,
       pageRelevance: result.pageRelevance,
       fileType: result.fileType,
+      fileSource: result.fileSource,
     };
   }, [displayResults, previewIndex]);
 
@@ -522,6 +531,7 @@ export default function RetrievalCall({
         pages={previewData?.pages}
         pageRelevance={previewData?.pageRelevance}
         fileType={previewData?.fileType}
+        fileSource={previewData?.fileSource}
       />
     </div>
   );

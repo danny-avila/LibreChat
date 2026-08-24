@@ -3,7 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
-import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
+import {
+  createMessageMethods,
+  CLIENT_MESSAGE_SELECT,
+  SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
+} from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 import logger from '~/config/winston';
@@ -24,6 +28,9 @@ let getMessages: ReturnType<typeof createMessageMethods>['getMessages'];
 let getMessagesForSubagentThreadView: ReturnType<
   typeof createMessageMethods
 >['getMessagesForSubagentThreadView'];
+let listSubagentTasksForThreads: ReturnType<
+  typeof createMessageMethods
+>['listSubagentTasksForThreads'];
 let updateMessage: ReturnType<typeof createMessageMethods>['updateMessage'];
 let updateToolCallResult: ReturnType<typeof createMessageMethods>['updateToolCallResult'];
 let deleteMessages: ReturnType<typeof createMessageMethods>['deleteMessages'];
@@ -48,6 +55,7 @@ beforeAll(async () => {
   saveMessage = methods.saveMessage;
   getMessages = methods.getMessages;
   getMessagesForSubagentThreadView = methods.getMessagesForSubagentThreadView;
+  listSubagentTasksForThreads = methods.listSubagentTasksForThreads;
   updateMessage = methods.updateMessage;
   updateToolCallResult = methods.updateToolCallResult;
   deleteMessages = methods.deleteMessages;
@@ -70,6 +78,7 @@ describe('Message Operations', () => {
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;
+    expiredAt?: Date;
     interfaceConfig?: { temporaryChatRetention?: number; retentionMode?: RetentionMode };
   };
   let mockMessageData: Partial<IMessage> = {
@@ -112,6 +121,156 @@ describe('Message Operations', () => {
       const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(savedMessage).toBeTruthy();
       expect(savedMessage?.text).toBe('Hello, world!');
+      expect(savedMessage?.isUserSubmitted).toBeUndefined();
+    });
+
+    it('should persist optional user-submitted provenance independently of message role', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+
+      expect(result?.isCreatedByUser).toBe(false);
+      expect(result?.isUserSubmitted).toBe(true);
+      expect(result?.userSubmittedPaths).toEqual(['/content/0/text']);
+
+      const savedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
+      expect(savedMessage?.isCreatedByUser).toBe(false);
+      expect(savedMessage?.isUserSubmitted).toBe(true);
+      expect(savedMessage?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+      });
+
+      expect(result?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-explicit-submitted',
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+
+      const pathScoped = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        messageId: 'msg-path-scoped',
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/content/0/text'],
+      });
+      expect(pathScoped?.isUserSubmitted).toBe(false);
+      expect(pathScoped?.userSubmittedPaths).toEqual(['/content/0/text']);
+    });
+
+    it('bounds and validates stored user-submitted provenance paths', async () => {
+      const submittedPaths = [
+        'not-a-pointer',
+        ...Array.from({ length: 300 }, (_, index) => `/content/${index}/text`),
+      ];
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: submittedPaths,
+      });
+
+      expect(result?.userSubmittedPaths).toHaveLength(256);
+      expect(result?.userSubmittedPaths).not.toContain('not-a-pointer');
+      expect(result?.userSubmittedPaths?.[0]).toBe('/content/0/text');
+      expect(result?.isUserSubmitted).toBe(true);
+    });
+
+    it('validates and atomically preserves exact HITL field provenance', async () => {
+      const first = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'tool-1', output: 'Human response' },
+          },
+        ],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: '/content/0/tool_call/output', field: 'answer' },
+          { path: 'not-a-pointer', field: 'decision_reason' },
+        ],
+      });
+
+      expect(first?.userSubmittedMessageFieldPaths).toEqual([
+        expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+      ]);
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/0/tool_call/output', field: 'decision_response' },
+        ],
+      });
+
+      const stored = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(stored?.userSubmittedMessageFieldPaths).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: '/content/0/tool_call/output', field: 'answer' }),
+          expect.objectContaining({
+            path: '/content/0/tool_call/output',
+            field: 'decision_response',
+          }),
+        ]),
+      );
+      expect(stored?.userSubmittedMessageFieldPaths).toHaveLength(2);
+    });
+
+    it('adds semantic steer paths without replacing existing field provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        userSubmittedPaths: ['/text'],
+      });
+
+      const result = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [
+          { type: 'text', text: 'Model response' },
+          { type: 'steer', steer: 'User direction' },
+        ],
+      });
+
+      expect(result?.userSubmittedPaths).toEqual(expect.arrayContaining(['/text', '/content/1']));
+      expect(result?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('persists dollar-prefixed message values literally while merging provenance', async () => {
+      const created = await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: '$PATH',
+        content: [{ type: 'text', text: '$CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(created?.text).toBe('$PATH');
+      expect(created?.content).toEqual([expect.objectContaining({ text: '$CONTENT' })]);
+
+      const updated = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        text: '$UPDATED_PATH',
+        content: [{ type: 'text', text: '$UPDATED_CONTENT' }],
+        userSubmittedPaths: ['/text', '/content/0/text'],
+      });
+
+      expect(updated?.text).toBe('$UPDATED_PATH');
+      expect(
+        await Message.findOne({ messageId: 'msg123', user: 'user123' })
+          .lean()
+          .then((message) => message?.content),
+      ).toEqual([expect.objectContaining({ text: '$UPDATED_CONTENT' })]);
     });
 
     it('should throw an error for unauthenticated user', async () => {
@@ -136,6 +295,120 @@ describe('Message Operations', () => {
       );
       expect(logger.info).not.toHaveBeenCalled();
     });
+  });
+
+  describe('bulkSaveMessages', () => {
+    it('preserves unknown provenance when cloning an unmarked assistant row', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-unmarked-assistant',
+          conversationId,
+          isCreatedByUser: false,
+        },
+        {
+          user: 'user123',
+          messageId: 'bulk-user-submitted',
+          conversationId,
+          isCreatedByUser: false,
+          isUserSubmitted: true,
+        },
+      ]);
+
+      const rows = await Message.find({ conversationId }).lean();
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-unmarked-assistant'),
+      ).not.toHaveProperty('isUserSubmitted');
+      expect(
+        rows.find(({ messageId }) => messageId === 'bulk-user-submitted')?.isUserSubmitted,
+      ).toBe(true);
+    });
+
+    it('caps exact field provenance without promoting model output to whole-message provenance', async () => {
+      const conversationId = uuidv4();
+      await bulkSaveMessages([
+        {
+          user: 'user123',
+          messageId: 'bulk-exact-overflow',
+          conversationId,
+          isCreatedByUser: false,
+          userSubmittedMessageFieldPaths: Array.from({ length: 300 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        },
+      ]);
+
+      const row = await Message.findOne({ messageId: 'bulk-exact-overflow' }).lean();
+      expect(row?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    });
+  });
+
+  describe('recordMessage', () => {
+    it('stamps native model output without overriding explicit provenance', async () => {
+      const conversationId = uuidv4();
+      const modelOutput = await recordMessage({
+        user: 'user123',
+        messageId: 'record-model-output',
+        conversationId,
+        isCreatedByUser: false,
+      });
+      expect(modelOutput?.isUserSubmitted).toBe(false);
+
+      const explicitlySubmitted = await recordMessage({
+        user: 'user123',
+        messageId: 'record-user-submitted',
+        conversationId,
+        isCreatedByUser: false,
+        isUserSubmitted: true,
+      });
+      expect(explicitlySubmitted?.isUserSubmitted).toBe(true);
+    });
+  });
+
+  it('preserves unknown provenance when message savers update legacy assistant rows', async () => {
+    const conversationId = uuidv4();
+    const messageIds = ['legacy-save', 'legacy-bulk', 'legacy-record'];
+    await Message.collection.insertMany(
+      messageIds.map((messageId) => ({
+        user: 'user123',
+        messageId,
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Legacy assistant output',
+      })),
+    );
+
+    await saveMessage(mockCtx, {
+      messageId: 'legacy-save',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+    await bulkSaveMessages([
+      {
+        user: 'user123',
+        messageId: 'legacy-bulk',
+        conversationId,
+        isCreatedByUser: false,
+        text: 'Updated assistant output',
+      },
+    ]);
+    await recordMessage({
+      user: 'user123',
+      messageId: 'legacy-record',
+      conversationId,
+      isCreatedByUser: false,
+      text: 'Updated assistant output',
+    });
+
+    const rows = await Message.find({ messageId: { $in: messageIds } }).lean();
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('isUserSubmitted');
+    }
   });
 
   describe('updateMessageText', () => {
@@ -168,6 +441,97 @@ describe('Message Operations', () => {
       // Verify in database
       const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' });
       expect(updatedMessage?.text).toBe('Updated text');
+    });
+
+    it('atomically merges provenance from concurrent edits to distinct fields', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          text: 'Human-edited text',
+          userSubmittedPaths: ['/text'],
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          content: [{ type: 'text', text: 'Human-edited content' }],
+          userSubmittedPaths: ['/content/0/text'],
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.text).toBe('Human-edited text');
+      expect(updatedMessage?.content).toEqual([
+        expect.objectContaining({ type: 'text', text: 'Human-edited content' }),
+      ]);
+      expect(updatedMessage?.userSubmittedPaths).toEqual(
+        expect.arrayContaining(['/text', '/content/0/text']),
+      );
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(2);
+    });
+
+    it('atomically caps repeated provenance unions and promotes overflow to whole-message provenance', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await Promise.all([
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+        updateMessage(mockCtx.userId, {
+          messageId: 'msg123',
+          userSubmittedPaths: Array.from({ length: 200 }, (_, index) => `/path/${index + 200}`),
+          userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+            path: `/decision/${index + 200}`,
+            field: 'decision_response' as const,
+          })),
+        }),
+      ]);
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(256);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(true);
+    });
+
+    it('keeps repeated exact-field overflow scoped instead of promoting the whole message', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        isCreatedByUser: false,
+        content: [{ type: 'text', text: 'Model content' }],
+      });
+
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index}`,
+          field: 'decision_response' as const,
+        })),
+      });
+      await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        userSubmittedMessageFieldPaths: Array.from({ length: 200 }, (_, index) => ({
+          path: `/decision/${index + 200}`,
+          field: 'decision_response' as const,
+        })),
+      });
+
+      const updatedMessage = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+      expect(updatedMessage?.userSubmittedPaths).toHaveLength(0);
+      expect(updatedMessage?.userSubmittedMessageFieldPaths).toHaveLength(257);
+      expect(updatedMessage?.isUserSubmitted).toBe(false);
     });
 
     it('returns the generation-time Langfuse routing decisions with feedback updates', async () => {
@@ -712,6 +1076,333 @@ describe('Message Operations', () => {
       expect(messages[0]).not.toHaveProperty('user');
       expect(messages[0]).not.toHaveProperty('conversationId');
     });
+
+    it('projects the private transcript only for the explicitly selected task', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-a:assistant',
+        conversationId,
+        text: 'A',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-a',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"A"}}]',
+        },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-b:assistant',
+        conversationId,
+        text: 'B',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-b',
+          mode: 'append',
+          messagesJson: '[{"type":"ai","data":{"content":"B"}}]',
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 10,
+        textCodePointLimit: 8_192,
+        taskId: 'task-a',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toHaveProperty('messageId', 'task-a:assistant');
+      expect(messages[0]).toHaveProperty('subagentTranscript.taskId', 'task-a');
+    });
+
+    it('omits an oversized private transcript before returning the application result', async () => {
+      const conversationId = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-large:assistant',
+        conversationId,
+        text: 'The bounded public answer remains available.',
+        user: 'user123',
+        subagentTranscript: {
+          taskId: 'task-large',
+          mode: 'append',
+          messagesJson: JSON.stringify([
+            {
+              type: 'ai',
+              data: { content: 'x'.repeat(SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT + 1) },
+            },
+          ]),
+        },
+      });
+
+      const messages = await getMessagesForSubagentThreadView({
+        user: 'user123',
+        conversationId,
+        limit: 1,
+        textCodePointLimit: 8_192,
+        taskId: 'task-large',
+      });
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].text).toBe('The bounded public answer remains available.');
+      expect(messages[0]).not.toHaveProperty('subagentTranscript');
+      expect(messages[0].subagentTranscriptProjectionTruncated).toBe(true);
+    });
+  });
+
+  describe('listSubagentTasksForThreads', () => {
+    it('derives event task status from ordinary durable turn rows', async () => {
+      const conversationId = uuidv4();
+      await Message.create([
+        {
+          user: 'user123',
+          messageId: 'delivery-running:user',
+          conversationId,
+          isCreatedByUser: true,
+          createdAt: new Date('2026-08-21T10:00:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-complete:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          createdAt: new Date('2026-08-21T10:01:00.000Z'),
+        },
+        {
+          user: 'user123',
+          messageId: 'delivery-error:assistant',
+          conversationId,
+          isCreatedByUser: false,
+          error: true,
+          createdAt: new Date('2026-08-21T10:02:00.000Z'),
+        },
+      ]);
+
+      const [record] = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [conversationId],
+        limitPerThread: 3,
+      });
+
+      expect(record.tasks).toEqual([
+        expect.objectContaining({
+          messageId: 'delivery-error:assistant',
+          status: 'error',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-complete:assistant',
+          status: 'completed',
+          statusDerived: true,
+        }),
+        expect.objectContaining({
+          messageId: 'delivery-running:user',
+          status: 'running',
+          statusDerived: true,
+        }),
+      ]);
+    });
+
+    it('batches threads, deduplicates task rows, and bounds each newest task list', async () => {
+      const firstThread = uuidv4();
+      const secondThread = uuidv4();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:user',
+        conversationId: firstThread,
+        text: 'Start old task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'old', status: 'running' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-old:assistant',
+        conversationId: firstThread,
+        text: 'Finish old task',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'old', status: 'completed' },
+      });
+      await waitForTimestampTick();
+      await saveMessage(mockCtx, {
+        messageId: 'task-new:user',
+        conversationId: firstThread,
+        text: 'Start new task',
+        isCreatedByUser: true,
+        subagentTask: { attemptKey: 'new', status: 'running' },
+      });
+      await saveMessage(mockCtx, {
+        messageId: 'task-other:assistant',
+        conversationId: secondThread,
+        text: 'Other result',
+        isCreatedByUser: false,
+        subagentTask: { attemptKey: 'other', status: 'cancelled' },
+      });
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [firstThread, secondThread],
+        limitPerThread: 2,
+      });
+
+      const first = records.find((record) => record.conversationId === firstThread);
+      expect(first?.tasks).toHaveLength(2);
+      expect(first?.tasks[0]).toEqual(
+        expect.objectContaining({ messageId: 'task-new:user', status: 'running' }),
+      );
+      expect(first?.tasks[1]).toEqual(
+        expect.objectContaining({ messageId: 'task-old:assistant', status: 'completed' }),
+      );
+      expect(records.find((record) => record.conversationId === secondThread)?.tasks).toEqual([
+        expect.objectContaining({ messageId: 'task-other:assistant', status: 'cancelled' }),
+      ]);
+      expect(records.every((record) => record.sourceTruncated !== true)).toBe(true);
+    });
+
+    it('marks every selected child truncated when one busy child fills the shared source window', async () => {
+      const quietThread = uuidv4();
+      const busyThread = uuidv4();
+      await Message.create([
+        ...['quiet-old', 'quiet-new'].map((taskId, index) => ({
+          user: 'user123',
+          messageId: `${taskId}:assistant`,
+          conversationId: quietThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          updatedAt: new Date(`2026-08-20T10:0${index}:00.000Z`),
+          subagentTask: { attemptKey: taskId, status: 'completed' },
+        })),
+        ...Array.from({ length: 9 }, (_, index) => ({
+          user: 'user123',
+          messageId: `busy-${index}:assistant`,
+          conversationId: busyThread,
+          isCreatedByUser: false,
+          createdAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          updatedAt: new Date(`2026-08-21T10:${String(index).padStart(2, '0')}:00.000Z`),
+          subagentTask: { attemptKey: `busy-${index}`, status: 'completed' },
+        })),
+      ]);
+
+      const records = await listSubagentTasksForThreads({
+        user: 'user123',
+        conversationIds: [quietThread, busyThread],
+        limitPerThread: 2,
+      });
+
+      expect(records.find((record) => record.conversationId === quietThread)).toEqual(
+        expect.objectContaining({
+          sourceTruncated: true,
+          tasks: [expect.objectContaining({ messageId: 'quiet-new:assistant' })],
+        }),
+      );
+      expect(records.find((record) => record.conversationId === busyThread)?.sourceTruncated).toBe(
+        true,
+      );
+    });
+
+    it('preserves a newer recent task when the latest-per-thread snapshot is stale', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-old:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-new:user',
+                  createdAt: new Date('2026-08-21T11:00:00.000Z'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        await expect(
+          listSubagentTasksForThreads({
+            user: 'user123',
+            conversationIds: [conversationId],
+            limitPerThread: 2,
+          }),
+        ).resolves.toEqual([
+          {
+            conversationId,
+            tasks: [
+              expect.objectContaining({ messageId: 'task-new:user' }),
+              expect.objectContaining({ messageId: 'task-old:assistant' }),
+            ],
+          },
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
+
+    it('preserves Mongo occurrence ordering when task timestamps tie', async () => {
+      const conversationId = uuidv4();
+      const aggregate = jest.spyOn(Message, 'aggregate') as unknown as jest.Mock;
+      aggregate
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              tasks: [
+                {
+                  messageId: 'task-b:user',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000002'),
+                  status: 'running',
+                },
+              ],
+            },
+          ]),
+        )
+        .mockReturnValueOnce(
+          Promise.resolve([
+            {
+              conversationId,
+              sourceRows: 1,
+              tasks: [
+                {
+                  messageId: 'task-a:assistant',
+                  createdAt: new Date('2026-08-21T10:00:00.000Z'),
+                  occurrenceId: new mongoose.Types.ObjectId('000000000000000000000001'),
+                  status: 'completed',
+                },
+              ],
+            },
+          ]),
+        );
+
+      try {
+        const [record] = await listSubagentTasksForThreads({
+          user: 'user123',
+          conversationIds: [conversationId],
+          limitPerThread: 2,
+        });
+
+        expect(record.tasks.map((task) => task.messageId)).toEqual([
+          'task-b:user',
+          'task-a:assistant',
+        ]);
+      } finally {
+        aggregate.mockRestore();
+      }
+    });
   });
 
   describe('deleteMessages', () => {
@@ -878,6 +1569,18 @@ describe('Message Operations', () => {
       expect(actualExpirationTime.getTime()).toBeLessThanOrEqual(
         new Date(afterSave.getTime() + 24 * 60 * 60 * 1000 + 1000).getTime(),
       );
+    });
+
+    it('preserves an exact inherited expiration instead of recomputing retention', async () => {
+      const inheritedExpiration = new Date('2026-08-22T03:04:05.000Z');
+      mockCtx.isTemporary = true;
+      mockCtx.expiredAt = inheritedExpiration;
+      mockCtx.interfaceConfig = { temporaryChatRetention: 48 };
+
+      const result = await saveMessage(mockCtx, mockMessageData);
+
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toEqual(inheritedExpiration);
     });
 
     it('should save a message without expiredAt when isTemporary is false', async () => {
@@ -1510,7 +2213,13 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       const result = await saveMessage(
         { userId: 'user123' },
-        { messageId, conversationId, text: 'Tenant test', tenantId: 'malicious-tenant' },
+        {
+          messageId,
+          conversationId,
+          text: 'Tenant test',
+          tenantId: 'malicious-tenant',
+          userSubmittedPaths: ['/text'],
+        },
       );
 
       expect(result).not.toBeNull();
@@ -1574,15 +2283,19 @@ describe('Message Operations', () => {
       const conversationId = uuidv4();
       await saveMessage({ userId: 'user123' }, { messageId, conversationId, text: 'Original' });
 
-      await updateMessage('user123', {
+      const updateWithUnknownField = {
         messageId,
         text: 'Updated',
         tenantId: 'malicious-tenant',
-      });
+        unknownPipelineField: 'malicious-value',
+        userSubmittedPaths: ['/text'],
+      };
+      await updateMessage('user123', updateWithUnknownField);
 
       const doc = await Message.findOne({ messageId }).lean();
       expect(doc?.text).toBe('Updated');
       expect(doc?.tenantId).toBeUndefined();
+      expect((doc as Record<string, unknown> | null)?.unknownPipelineField).toBeUndefined();
     });
   });
   describe('claimSubagentTaskResult', () => {

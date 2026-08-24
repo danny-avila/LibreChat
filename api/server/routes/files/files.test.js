@@ -940,6 +940,160 @@ describe('File Routes - Delete with Agent Access', () => {
         }),
       );
     });
+
+    it('serves stored text for text-source files instead of streaming', async () => {
+      const userFileId = uuidv4();
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'screenshot.png',
+        filepath: FileSources.mistral_ocr,
+        bytes: 70,
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'Extracted OCR text',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.headers['content-disposition']).toContain('screenshot.png.txt');
+      expect(response.text).toBe('Extracted OCR text');
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
+      expect(metadata).toMatchObject({ file_id: userFileId, source: FileSources.text });
+      expect(metadata).not.toHaveProperty('text');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
+    it('does not append .txt when the text-source filename already ends in .txt', async () => {
+      const userFileId = uuidv4();
+      getStrategyFunctions.mockReturnValue({});
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'NOTES.TXT',
+        filepath: FileSources.mistral_ocr,
+        bytes: 20,
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'plain text notes',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-disposition']).toContain('filename="NOTES.TXT"');
+      expect(response.headers['content-disposition']).not.toContain('NOTES.TXT.txt');
+      expect(response.text).toBe('plain text notes');
+    });
+
+    it('returns 404 for text-source files without stored text', async () => {
+      const userFileId = uuidv4();
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'empty.png',
+        filepath: FileSources.mistral_ocr,
+        bytes: 0,
+        type: 'text/plain',
+        source: FileSources.text,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(404);
+      expect(response.text).toBe('No file content found');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
+    it('serves a valid empty stored-text result', async () => {
+      const userFileId = uuidv4();
+      const getDownloadStream = jest.fn();
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'empty.txt',
+        filepath: '/uploads/empty.txt',
+        bytes: 0,
+        type: 'text/plain',
+        source: FileSources.text,
+        text: '',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.text).toBe('');
+      expect(getDownloadStream).not.toHaveBeenCalled();
+    });
+
+    it('responds with 500 when the download stream errors before data is sent', async () => {
+      const userFileId = uuidv4();
+      const erroringStream = new Readable({
+        read() {
+          this.destroy(new Error('ENOENT: no such file or directory'));
+        },
+      });
+      const getDownloadStream = jest.fn().mockResolvedValue(erroringStream);
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'gone.bin',
+        filepath: '/uploads/user/gone.bin',
+        bytes: 5,
+        type: 'application/octet-stream',
+        source: FileSources.local,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+    });
+
+    it('aborts the response when the download stream errors mid-transfer', async () => {
+      const userFileId = uuidv4();
+      let pushed = false;
+      const erroringStream = new Readable({
+        read() {
+          if (!pushed) {
+            pushed = true;
+            this.push('partial content');
+            return;
+          }
+          this.destroy(new Error('read failed mid-stream'));
+        },
+      });
+      const getDownloadStream = jest.fn().mockResolvedValue(erroringStream);
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'truncated.bin',
+        filepath: '/uploads/user/truncated.bin',
+        bytes: 100,
+        type: 'application/octet-stream',
+        source: FileSources.local,
+      });
+
+      await expect(
+        request(app).get(`/files/download/${otherUserId}/${userFileId}`),
+      ).rejects.toThrow(/aborted|socket hang up|ECONNRESET/i);
+    });
   });
 
   describe('POST /files/usage', () => {

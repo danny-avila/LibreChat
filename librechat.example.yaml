@@ -361,6 +361,10 @@ registration:
 #     - '127.0.0.1:8080'
 
 # rateLimits:
+#   # Authenticated agent-event admission has its own API-key-principal bucket.
+#   agentEvents:
+#     userMax: 40
+#     userWindowInMinutes: 1
 #   fileUploads:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
@@ -559,6 +563,14 @@ endpoints:
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #   # (optional) Process-wide event-driven agent rollout controls. Deploy support to
+  #   # every API replica before enabling either producer during a subsequent rollout.
+  #   eventDriven:
+  #     childTurns: false
+  #     completionWakeups: false
+  #     # Optional trusted origin for internal trigger delivery. By default, LibreChat
+  #     # uses its own bound listener; override only for an internal TLS/front-door route.
+  #     # selfUrl: 'https://librechat.internal'
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
@@ -1112,11 +1124,90 @@ endpoints:
 #     # model_parameters:
 #     #   temperature: 0.1
 
-# Reject chat messages whose text matches credential-shaped patterns
-# before they reach moderation, the model, or persistence. Filter
-# types live under `messageFilter.<type>`; today only `pii` ships, but
-# the namespace is structured so future filter types can plug in.
-# Omit the whole section to disable.
+# Apply opt-in content filters to source-classified submitted and reusable content.
+# `filters` is base-config-only: database overrides and tombstones cannot add,
+# change, or remove this policy for individual users, groups, or roles.
+# In multi-replica deployments, use a coordinated deploy or restart and verify
+# every replica loaded the same base config before considering policy active;
+# local cache invalidation is not a rollout barrier.
+# Omit `filters` or a source to leave that scope disabled. Omitting a source's
+# `pii` block disables its source-aware detectors; for messages, `inspect` can
+# still change how an enabled legacy `messageFilter.pii` attributes old rows.
+# Omit `fields` to filter every supported field for an enabled source.
+# `starterPatterns` and `customPatterns` can be configured independently
+# under any source so each input surface can use a different policy. Starter
+# ids are closed to the catalog below. Custom regexes use bounded,
+# linear-time syntax; unsupported constructs are rejected at config load.
+# Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
+# to disable starters while retaining any configured custom patterns.
+# Enabling or changing this policy does not rewrite or delete stored records.
+# Current policy rechecks protected fields when they are resubmitted and when
+# records are copied, shared, or become model-bound. Safe partial metadata edits
+# can succeed so records remain repairable, but persisted protected fields remain
+# unusable on those paths until repaired. Protected prompt or preset fields may
+# be blanked with `contentFilterBlocked: true` in management views. Prompt-group
+# metadata blocked by policy returns an explicit error on direct GET, while
+# collection and reuse responses omit that group.
+# Automatic memory maintenance may log and skip a rejected background update
+# while allowing the main chat response to continue.
+# Legacy assistant rows without provenance default to `model_output`, preserving
+# legacy behavior. Inventory or migrate those records before relying on retroactive
+# enforcement. Opting into `inspect` treats otherwise unattributed assistant content,
+# including selected attachment projections, as submitted; explicit model provenance
+# remains exempt.
+# Roll out strict file inspection deliberately: `uninspectable: block` can make
+# older opaque files unavailable for reuse until inspectable text is present.
+# filters:
+#   messages:
+#     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
+#     pii:
+#       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
+#       starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#       customPatterns:
+#         - id: organization_identifier
+#           label: Organization identifier
+#           regex: "ORG-[A-Z0-9]{12}"
+#   prompts:
+#     pii:
+#       fields: [name, description, oneliner, category, command, text, preset_text, system, context, instructions, additional_instructions, greeting, example_input, example_output]
+#   agentInstructions:
+#     pii:
+#       fields: [name, category, description, instructions, additional_instructions, edge_description, edge_prompt, edge_prompt_key, artifacts, support_contact_name, support_contact_email]
+#   conversationStarters:
+#     pii:
+#       fields: [text]
+#   conversationTitles:
+#     pii:
+#       fields: [title]
+#   feedback:
+#     pii:
+#       fields: [text]
+#   skills:
+#     pii:
+#       fields: [name, display_title, description, category, frontmatter, instructions, imported_text, file_name, file_text]
+#   memories:
+#     pii:
+#       fields: [key, value, summary]
+#   files:
+#     pii:
+#       fields: [name, content, extracted_text, transcript, uri]
+#       # `allow` is the compatibility default. `block` rejects opaque or
+#       # oversized selected file content before provider/storage side effects.
+#       uninspectable: block
+#   toolArguments:
+#     pii:
+#       fields: [name, arguments, output]
+#   modelParameters:
+#     pii:
+#       fields: [stop, request_fields, response_format, metadata]
+#   actionMetadata:
+#     pii:
+#       fields: [raw_spec, domain, privacy_policy_url, authorization_type, custom_auth_header, authorization_content_type, authorization_url, client_url, scope, token_exchange_method, api_key, oauth_client_id, oauth_client_secret]
+
+# Legacy message-only filter configuration. Existing deployments can continue
+# using this shape while migrating message policy into `filters.messages`.
+# When both shapes are configured, both policies apply. Prefer
+# `filters.messages` for centrally managed source-aware policy.
 # messageFilter:
 #   pii:
 #     # (optional) Pick a subset of the starter catalog by id; omit to

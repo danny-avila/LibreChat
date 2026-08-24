@@ -1,14 +1,18 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
-import type { Agents } from 'librechat-data-provider';
+import type { Agents, PartMetadata } from 'librechat-data-provider';
 import {
   getSubmittedAskAnswer,
   parseAskUserQuestionArgs,
   parseAskUserQuestionsArgs,
 } from '~/utils/approval';
 import AskUserQuestionProgress from './AskUserQuestionProgress';
+import { useLocalize, useExpandCollapse } from '~/hooks';
+import ProgressText from './ProgressText';
 import EmptyText from './Parts/EmptyText';
-import { useLocalize } from '~/hooks';
 import Container from './Container';
+import store from '~/store';
 
 /**
  * Static rendering of a COMPLETED (or abandoned) `ask_user_question` tool call —
@@ -16,23 +20,53 @@ import Container from './Container';
  * is wrong here: it labels a no-output call "cancelled" and shows raw JSON args.
  * The interactive card ({@link AskUserQuestion}) renders only while the pause is
  * live; this component owns the part everywhere else (history, reload, exports).
+ *
+ * Settled, it is history — so it reads as one collapsed tool-call line (status
+ * label plus the question itself) and opens on demand, under the same
+ * `autoExpandTools` preference every other tool card follows. Answers are
+ * frequently long, multi-paragraph text; left expanded they buried the reply
+ * that followed them.
  */
 export default function AskUserQuestionCall({
   args,
   output,
   toolCallId,
   isSubmitting = false,
+  runStepStatus,
   failed = false,
   showCursor = false,
+  onExpand,
 }: {
   args: string | Record<string, unknown> | undefined;
   output: string;
   toolCallId?: string;
   isSubmitting?: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
   failed?: boolean;
   showCursor?: boolean;
+  onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const [expanded, setExpanded] = useState(autoExpand);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(expanded);
+
+  useEffect(() => {
+    if (autoExpand) {
+      setExpanded(true);
+    }
+  }, [autoExpand]);
+
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  }, [onExpand]);
+
   const question = parseAskUserQuestionArgs(args);
   const batch = parseAskUserQuestionsArgs(args);
   /**
@@ -55,8 +89,9 @@ export default function AskUserQuestionCall({
       return null;
     }
   })();
+  const terminalFailure = failed || runStepStatus === 'failed';
   const answered =
-    !failed &&
+    !terminalFailure &&
     (batch != null
       ? batch.questions.every((item) => typeof batchAnswers?.[item.id] === 'string')
       : effectiveOutput.length > 0);
@@ -71,7 +106,7 @@ export default function AskUserQuestionCall({
    * immediately; an abandoned pause only shows its "no answer" state after
    * the turn is no longer submitting.
    */
-  if (!answered && !failed && isSubmitting) {
+  if (!answered && !terminalFailure && runStepStatus == null && isSubmitting) {
     return <AskUserQuestionProgress args={args} toolCallId={toolCallId} />;
   }
 
@@ -88,137 +123,169 @@ export default function AskUserQuestionCall({
       </Container>
     ) : null;
 
-  if (batch != null) {
-    let statusLabel = localize('com_ui_asking');
-    if (failed) {
-      statusLabel = localize('com_ui_question_failed');
-    } else if (answered) {
-      statusLabel = localize('com_ui_asked');
+  const count = batch?.questions.length ?? 1;
+  /**
+   * Past tense unconditionally: a live, unanswered pause returns above, so
+   * every state that reaches this header is settled — answered, abandoned
+   * (the run stopped before an answer), or rejected. An abandoned pause was
+   * still ASKED; it explains itself with "no answer" inside the panel, and a
+   * present-tense summary would strand it as permanently in-flight now that
+   * the panel starts closed. Matches `ToolCallGroup`, which settles its own
+   * question header on `!isSubmitting`.
+   */
+  const statusLabel = (() => {
+    if (terminalFailure) {
+      return localize('com_ui_question_failed');
     }
-    return (
-      <>
-        <div className="my-2 flex w-full flex-col rounded-lg border border-border-light bg-surface-secondary">
-          <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-secondary">
-            {failed ? (
-              <TriangleAlert className="h-4 w-4 text-text-warning" aria-hidden="true" />
+    return count > 1
+      ? localize('com_ui_asked_n_questions', { 0: String(count) })
+      : localize('com_ui_asked');
+  })();
+  /** A batch is summarized by its count; a lone question is summarized by
+   *  itself, so the collapsed line still says what was asked. */
+  const summary = count > 1 ? undefined : (batch?.questions[0]?.question ?? question?.question);
+
+  return (
+    <>
+      <div
+        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
+        data-testid="ask-user-question-call"
+      >
+        <ProgressText
+          phase="completed"
+          onClick={toggleExpanded}
+          inProgressText={statusLabel}
+          finishedText={statusLabel}
+          subtitle={summary}
+          icon={
+            terminalFailure ? (
+              <TriangleAlert className="size-4 shrink-0 text-text-warning" aria-hidden="true" />
             ) : (
-              <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
-            )}
-            {statusLabel}
-          </div>
-          <div className="px-3 pb-3">
-            {batch.questions.map((item, index) => {
-              const answer = batchAnswers?.[item.id];
-              return (
-                <div key={item.id} className={index > 0 ? 'border-t border-border-light pt-3' : ''}>
+              <MessageCircleQuestion
+                className="size-4 shrink-0 text-text-secondary"
+                aria-hidden="true"
+              />
+            )
+          }
+          isExpanded={expanded}
+        />
+      </div>
+      {/* A rejected call is the one state the reader did not ask for and
+          cannot see coming. The explanation lives in the panel, which starts
+          closed and is `inert` while it is — so the announcement has to sit
+          outside the disclosure to reach the accessibility tree at all. */}
+      {terminalFailure && (
+        <span className="sr-only" role="status">
+          {`${statusLabel}. ${localize('com_ui_question_failed_description')}`}
+        </span>
+      )}
+      <div style={expandStyle}>
+        <div className="overflow-hidden" ref={expandRef}>
+          <div className="my-2 flex w-full flex-col gap-4 rounded-lg border border-border-light bg-surface-secondary p-4">
+            {batch != null ? (
+              batch.questions.map((item, index) => (
+                <div
+                  key={item.id}
+                  className={index > 0 ? 'border-t border-border-light pt-4' : undefined}
+                >
                   {item.header != null && (
-                    <p className="text-xs font-medium text-text-secondary">{item.header}</p>
+                    <p className="mb-1 text-xs font-medium text-text-secondary">{item.header}</p>
                   )}
-                  <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
-                    {item.question}
-                  </p>
-                  {item.description != null && (
-                    <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
-                      {item.description}
-                    </p>
-                  )}
-                  {typeof answer === 'string' && (
-                    <p className="mt-1 text-sm text-text-primary [overflow-wrap:anywhere]">
-                      <span className="font-medium text-text-secondary">
-                        {localize('com_ui_you_answered')}
-                      </span>{' '}
-                      {formatAnswerLabel(item, answer)}
-                    </p>
-                  )}
-                  {typeof answer !== 'string' && !failed && (
-                    <p className="mt-1 text-sm italic text-text-secondary">
-                      {localize('com_ui_question_unanswered')}
-                    </p>
-                  )}
+                  <QuestionBody
+                    question={item.question}
+                    description={item.description}
+                    answer={batchAnswers?.[item.id]}
+                    options={item.options}
+                    multiSelect={item.multiSelect}
+                    failed={terminalFailure}
+                  />
                 </div>
-              );
-            })}
-            {failed && (
-              <p className="mt-3 text-sm text-text-secondary">
+              ))
+            ) : (
+              <QuestionBody
+                question={question?.question ?? ''}
+                description={question?.description}
+                answer={answered ? effectiveOutput : undefined}
+                options={question?.options}
+                multiSelect={question?.multiSelect}
+                failed={terminalFailure}
+              />
+            )}
+            {terminalFailure && (
+              <p className="text-sm leading-relaxed text-text-secondary">
                 {localize('com_ui_question_failed_description')}
               </p>
             )}
           </div>
         </div>
-        {resumingCursor}
-      </>
-    );
-  }
-
-  if (failed) {
-    return (
-      <>
-        <div
-          className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3"
-          role="status"
-        >
-          <div className="flex items-center gap-2 text-xs font-medium text-text-warning">
-            <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-            {localize('com_ui_question_failed')}
-          </div>
-          {question?.question != null && (
-            <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
-              {question.question}
-            </p>
-          )}
-          <p className="text-sm text-text-secondary">
-            {localize('com_ui_question_failed_description')}
-          </p>
-        </div>
-        {resumingCursor}
-      </>
-    );
-  }
-
-  /**
-   * Prefer the picked option's label over its wire value when they differ.
-   * Multi-select answers are option values joined by ", " — map the segments
-   * back to labels only when EVERY segment matches an option: values may
-   * legally contain ", " themselves, and a partial mapping could mis-split
-   * such a value into fragments that relabel as options the user never
-   * picked. When any segment misses, show the raw answer untouched.
-   */
-  const answerLabel =
-    question == null ? effectiveOutput : formatAnswerLabel(question, effectiveOutput);
-
-  return (
-    <>
-      <div className="my-2 flex w-full flex-col gap-1.5 rounded-lg border border-border-light bg-surface-secondary p-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-text-secondary">
-          <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
-          {answered ? localize('com_ui_asked') : localize('com_ui_asking')}
-        </div>
-        <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
-          {question?.question ?? (answered ? localize('com_ui_asked') : localize('com_ui_asking'))}
-        </p>
-        {question?.description != null && question.description.length > 0 && (
-          <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
-            {question.description}
-          </p>
-        )}
-        {answered ? (
-          <p className="text-sm text-text-primary [overflow-wrap:anywhere]">
-            <span className="font-medium text-text-secondary">
-              {localize('com_ui_you_answered')}
-            </span>{' '}
-            {answerLabel}
-          </p>
-        ) : (
-          <p className="text-sm italic text-text-secondary">
-            {localize('com_ui_question_unanswered')}
-          </p>
-        )}
       </div>
       {resumingCursor}
     </>
   );
 }
 
+/**
+ * One question and its answer. Every text slot here is authored — by the model
+ * or by the user — so line breaks are content, not whitespace: `pre-wrap`
+ * keeps a numbered or paragraphed answer legible instead of collapsing it into
+ * one wall of text. The answer sits under its own label behind a rule rather
+ * than running on from it, so the eye can find where the reply starts.
+ */
+function QuestionBody({
+  question,
+  description,
+  answer,
+  options,
+  multiSelect,
+  failed,
+}: {
+  question: string;
+  description?: string;
+  answer?: string;
+  options?: Agents.AskUserQuestionRequest['options'];
+  multiSelect?: boolean;
+  failed: boolean;
+}) {
+  const localize = useLocalize();
+  return (
+    <div className="min-w-0">
+      {question.length > 0 && (
+        <p className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-text-primary [overflow-wrap:anywhere]">
+          {question}
+        </p>
+      )}
+      {description != null && description.length > 0 && (
+        <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary [overflow-wrap:anywhere]">
+          {description}
+        </p>
+      )}
+      {typeof answer === 'string' && (
+        <div className="mt-2.5 border-l-2 border-border-medium pl-3">
+          <p className="text-xs font-medium text-text-secondary">
+            {localize('com_ui_you_answered')}
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-text-primary [overflow-wrap:anywhere]">
+            {formatAnswerLabel({ question, options, multiSelect }, answer)}
+          </p>
+        </div>
+      )}
+      {typeof answer !== 'string' && !failed && (
+        <p className="mt-2.5 text-sm italic text-text-secondary">
+          {localize('com_ui_question_unanswered')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Prefer the picked option's label over its wire value when they differ.
+ * Multi-select answers are option values joined by ", " — map the segments
+ * back to labels only when EVERY segment matches an option: values may
+ * legally contain ", " themselves, and a partial mapping could mis-split
+ * such a value into fragments that relabel as options the user never
+ * picked. When any segment misses, show the raw answer untouched.
+ */
 function formatAnswerLabel(question: Agents.AskUserQuestionRequest, answer: string): string {
   const exactLabel = question.options?.find((option) => option.value === answer)?.label;
   if (exactLabel != null || question.multiSelect !== true || question.options == null) {

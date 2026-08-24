@@ -1,5 +1,18 @@
 import { Schema } from 'mongoose';
+import { SCHEDULE_CRON_MAX_LENGTH } from 'librechat-data-provider';
 import type { IScheduleDocument } from '~/types/schedule';
+
+/** `cadence` is a nested path rather than a subdocument, so a validator on
+ *  `cadence.hour` is called with the DOCUMENT as `this`, not the cadence object.
+ *  Reading `this.frequency` there is always undefined, which made every cadence
+ *  look like a structured one and rejected every cron write. */
+interface CadenceValidatorDocument {
+  cadence?: { frequency?: string };
+}
+
+function isStructuredCadence(this: CadenceValidatorDocument): boolean {
+  return this.cadence?.frequency !== 'cron';
+}
 
 const scheduleSchema: Schema<IScheduleDocument> = new Schema(
   {
@@ -35,12 +48,40 @@ const scheduleSchema: Schema<IScheduleDocument> = new Schema(
     cadence: {
       frequency: {
         type: String,
-        enum: ['hourly', 'daily', 'weekdays', 'weekly'],
+        enum: ['hourly', 'daily', 'weekdays', 'weekly', 'cron'],
         required: true,
       },
-      hour: { type: Number, min: 0, max: 23, required: true },
-      minute: { type: Number, min: 0, max: 59, required: true },
+      /**
+       * Required for the structured cadences only. A cron row carries its hour and
+       * minute inside `expression`, so a blanket `required: true` here would reject
+       * every cron write; the function form keeps the guarantee for the four
+       * structured frequencies, where a missing hour would silently fire at 00:00.
+       */
+      hour: {
+        type: Number,
+        min: 0,
+        max: 23,
+        required: isStructuredCadence,
+      },
+      minute: {
+        type: Number,
+        min: 0,
+        max: 59,
+        required: isStructuredCadence,
+      },
       daysOfWeek: { type: [Number], default: undefined },
+      /** The mirror of the rule above: a cron row IS its expression, so persisting
+       *  one without it arms a schedule the engine cannot compile a next run from. */
+      expression: {
+        type: String,
+        default: undefined,
+        /** Mirrors the zod gate, so a methods-layer writer bypassing the handlers
+         *  cannot persist an expression the engine then refuses to compile. */
+        maxlength: SCHEDULE_CRON_MAX_LENGTH,
+        required: function (this: CadenceValidatorDocument) {
+          return !isStructuredCadence.call(this);
+        },
+      },
     },
     timezone: {
       type: String,

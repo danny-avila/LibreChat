@@ -43,6 +43,7 @@ const {
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  configureAgentEventRuntime,
   createScheduleWriteGate,
   waitForKeyvRedisClient,
 } = require('@librechat/api');
@@ -175,6 +176,7 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   initializeFileStorage(appConfig);
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;

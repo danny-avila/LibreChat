@@ -69,6 +69,8 @@ export interface DiscoverConnectedAgentsParams {
   requestFiles?: InitializeAgentParams['requestFiles'];
   conversationId?: string | null;
   parentMessageId?: string | null;
+  /** Normalized runtime request metadata forwarded to MCP tool loading. */
+  requestBody?: InitializeAgentParams['requestBody'];
   /**
    * ResourceType to check each sub-agent's access against. Defaults to
    * `AGENT` for the in-app chat flow. Callers whose entry-point gates on
@@ -230,6 +232,7 @@ async function initializeReferencedAgent(
       requestFiles: params.requestFiles,
       conversationId: params.conversationId,
       parentMessageId: params.parentMessageId,
+      requestBody: params.requestBody,
       endpointOption: {
         ...(params.endpointOption ?? {}),
         endpoint: EModelEndpoint.agents,

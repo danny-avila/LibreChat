@@ -258,7 +258,12 @@ export async function fireSchedule(
     // Enforce a raised interval floor at fire time: create/update reject too-frequent
     // cadences, but an admin raising the floor later must also stop an already-enabled
     // schedule that now runs more often than policy allows.
-    if (cadenceIntervalMinutes(schedule.cadence) < ownerLimits.minIntervalMinutes) {
+    // The schedule's own zone, because a cron cadence's tightest gap is a wall-clock
+    // question: spring-forward compresses a pair that straddles it, and the structured
+    // branches ignore the argument entirely.
+    if (
+      cadenceIntervalMinutes(schedule.cadence, schedule.timezone) < ownerLimits.minIntervalMinutes
+    ) {
       await methods.disableSchedule(schedule.id, 'invalid_schedule', claimToken);
       await advance();
       return { fired: false, skipped: 'disabled' as const };

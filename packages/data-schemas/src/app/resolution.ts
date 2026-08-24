@@ -14,7 +14,8 @@ type AnyObject = { [key: string]: unknown };
 
 const MAX_MERGE_DEPTH = 10;
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
+/** Filters are a fail-closed security boundary even during mixed-package rollouts. */
+const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(['filters', ...BASE_ONLY_CONFIG_SECTIONS]);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 
 /**
@@ -64,6 +65,10 @@ function remapOverridePath(path: string): string {
   const [first, ...rest] = path.split('.');
   const mappedFirst = OVERRIDE_KEY_MAP[first as keyof typeof OVERRIDE_KEY_MAP] ?? first;
   return [mappedFirst, ...rest].join('.');
+}
+
+function isBaseOnlyOverridePath(path: string): boolean {
+  return BASE_ONLY_OVERRIDE_SECTIONS.has(path.split('.')[0]);
 }
 
 function deletePath<T extends AnyObject>(target: T, path: string): T {
@@ -290,6 +295,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
       for (const path of config.tombstones) {
         if (
           typeof path === 'string' &&
+          !isBaseOnlyOverridePath(path) &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
           merged = deleteConfigPath(merged, remapOverridePath(path));

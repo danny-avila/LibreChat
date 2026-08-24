@@ -116,8 +116,13 @@ export const conversations = (params: q.ConversationListParams) => {
 
 export const conversationById = (id: string) => `${conversationsRoot}/${id}`;
 
-export const subagentThread = (parentConversationId: string, threadId: string) =>
-  `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}`;
+export const parentSubagents = (parentConversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents`;
+
+export const subagentThread = (parentConversationId: string, threadId: string, taskId?: string) => {
+  const endpoint = `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}`;
+  return taskId == null ? endpoint : `${endpoint}?taskId=${encodeURIComponent(taskId)}`;
+};
 
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
@@ -513,6 +518,8 @@ export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
 export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string, agentId?: string) =>
   `${memories()}/${encodeURIComponent(key)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
+export const memoryById = (id: string, agentId?: string) =>
+  `${memories()}/id/${encodeURIComponent(id)}${agentId ? `?agentId=${encodeURIComponent(agentId)}` : ''}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {

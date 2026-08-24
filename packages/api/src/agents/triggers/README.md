@@ -14,6 +14,8 @@ envelope and calls `enqueueAgentTrigger`; the adapter does not invoke an agent r
 - Use `continue` only with a persisted `conversationId` and exact `parentMessageId`. The host defers
   that delivery while the parent generation is still running or paused, so it cannot replace the
   generation it is meant to follow.
+- External sources never supply a child `conversationId`, `parentMessageId`, or `agentId` on a
+  continue delivery. Register an event binding once, then address only its opaque binding id.
 - Use `orderingKey` only when deliveries must remain ordered across different event sources.
   Without an override, ordering is scoped to the user, source, mode, agent, and conversation.
 
@@ -68,3 +70,97 @@ await enqueueAgentTrigger(
 
 `getAgentTriggerDeadLetters` and `requeueAgentTrigger` are intentionally trusted in-process
 operations. Exposing them through an admin API requires a separate authorization and audit layer.
+
+## Remote event ingress
+
+Authenticated controllers and source adapters can enqueue the same durable envelope through
+`POST /api/agents/v1/events`. The endpoint uses Remote Agents API-key authentication, the remote
+agents feature permission, and the target agent's existing remote-view ACL. Send exactly one
+`Idempotency-Key` header and keep it stable when retrying the same source-event-to-target delivery.
+The authenticated user, tenant, API-key source identity, request id, and receive time are always
+supplied by LibreChat. Remote callers do not choose `event.source`; provider-specific webhook
+adapters may verify their native signature and map verified provider metadata into the trusted
+in-process adapter contract above.
+
+```http
+POST /api/agents/v1/events
+Authorization: Bearer <remote-agents-api-key>
+Idempotency-Key: webhook-42-resource-7
+Content-Type: application/json
+
+{
+  "mode": "fire",
+  "event": {
+    "id": "resource-7-ready-3",
+    "type": "resource.ready",
+    "occurredAt": 1786967999000,
+    "payload": { "resourceId": "resource-7" }
+  },
+  "target": { "agentId": "agent-id" },
+  "input": "Resource resource-7 is ready. Inspect it and report the result.",
+  "orderingKey": "resource-7"
+}
+```
+
+A successful admission returns `202 Accepted`, an opaque delivery `id`, and a `Location` header.
+Poll that location to read `pending`, `leased`, `succeeded`, or `dead` state. Successful fire
+results include the conversation and generation identity needed for a later `steer` event. Status
+responses never expose the stored source payload, ordering key, retry history, or worker identity.
+Callers must sanitize `event.payload`; credentials and transport secrets must not be persisted.
+
+### Event-driven child actors
+
+Register a direct child agent once under the same Remote Agents API key that will deliver events.
+The parent must be an ordinary agent conversation, and the target must be enabled in that parent
+agent's direct `subagents.agent_ids` list (or be an allowed self-spawn). The reserved child
+conversation is hidden from conversation lists and remains read-only to human chat routes.
+`endpoints.agents.eventDriven.childTurns` defaults to false; enable it only after every API replica
+runs a release that understands bound child continuations, otherwise an older worker could
+permanently reject a new envelope during a rolling deployment. The legacy
+`ENABLE_AGENT_EVENT_CHILD_TURNS` environment variable remains a compatibility fallback.
+`AGENT_TRIGGERS_SELF_URL` likewise remains a compatibility fallback for
+`endpoints.agents.eventDriven.selfUrl`; most deployments should omit both and use the bound
+listener.
+
+```http
+POST /api/agents/v1/events/bindings
+Authorization: Bearer <remote-agents-api-key>
+Idempotency-Key: championship-7-player-hanae
+Content-Type: application/json
+
+{
+  "actorId": "hanae-kobayashi",
+  "parentConversationId": "director-conversation-id",
+  "parentMessageId": "director-message-id",
+  "target": { "agentId": "agent-hanae" }
+}
+```
+
+The response contains an opaque `id` and the child `threadId`. Store the binding id with the
+source actor. Deliver every later turn with a source-stable event id and the same API key:
+
+```http
+POST /api/agents/v1/events
+Authorization: Bearer <remote-agents-api-key>
+Idempotency-Key: game-12-ply-17-hanae
+Content-Type: application/json
+
+{
+  "mode": "continue",
+  "bindingId": "evtbind_…",
+  "event": {
+    "id": "game-12-ply-17",
+    "type": "chess.turn.ready",
+    "occurredAt": 1786968000000,
+    "source": { "id": "speed-chess", "type": "mcp" },
+    "payload": { "gameId": "game-12", "expectedPly": 17 }
+  },
+  "input": "Your clock is running. Read the position and submit one legal move."
+}
+```
+
+LibreChat resolves the bound agent and child conversation from `(user, tenant, API key, binding)`;
+caller-supplied target fields are discarded. It also resolves the latest assistant branch leaf
+immediately before dispatch, so queued events do not persist stale chat topology. Each actor binding
+is its default ordering lane. A short-lived internal trigger token plus a second binding lookup is
+required to pass the child-thread write guard; possessing a binding id alone grants no access.

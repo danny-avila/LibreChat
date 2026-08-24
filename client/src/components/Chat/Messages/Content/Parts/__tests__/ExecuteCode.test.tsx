@@ -1,6 +1,9 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render } from '@testing-library/react';
+import type { PtcTraceEntry } from '~/store/ptc';
+import { ptcTraceByToolCallId, ptcTraceKey } from '~/store/ptc';
+import { MessageContext } from '~/Providers/MessageContext';
 import ExecuteCode from '../ExecuteCode';
 import store from '~/store';
 
@@ -55,8 +58,13 @@ jest.mock('../useLazyHighlight', () => {
 });
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual<typeof import('~/utils/toolLabels')>('~/utils/toolLabels'),
+  ...jest.requireActual<typeof import('~/utils/runStepDuration')>('~/utils/runStepDuration'),
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
 }));
+
+jest.mock('react-i18next', () => ({ useTranslation: () => ({ i18n: { language: 'en' } }) }));
+jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => [] }));
 
 /**
  * jsdom has no layout, so the capped pane's scroll geometry is stubbed:
@@ -132,5 +140,45 @@ describe('ExecuteCode streaming follow-scroll', () => {
     rerender(finishedCall('print(1)\nprint(2)'));
 
     expect(state.writes).toHaveLength(0);
+  });
+});
+
+describe('ExecuteCode programmatic tool trace', () => {
+  const TOOL_CALL_ID = 'call_ptc_1';
+  const MESSAGE_ID = 'response-msg-1';
+
+  const renderWithTrace = (entries: PtcTraceEntry[]) =>
+    render(
+      <RecoilRoot
+        initializeState={({ set }) => {
+          set(store.autoExpandTools, true);
+          set(ptcTraceByToolCallId(ptcTraceKey(MESSAGE_ID, TOOL_CALL_ID)), { entries, dropped: 0 });
+        }}
+      >
+        <MessageContext.Provider value={{ messageId: MESSAGE_ID, isExpanded: true }}>
+          <ExecuteCode
+            initialProgress={0.5}
+            isSubmitting={true}
+            toolCallId={TOOL_CALL_ID}
+            args={{ lang: 'py', code: 'print(1)' }}
+            output=""
+          />
+        </MessageContext.Provider>
+      </RecoilRoot>,
+    );
+
+  it('lists the inner tool calls the running program has made', () => {
+    const { getByText } = renderWithTrace([
+      { callId: 'a', name: 'read_file', status: 'success', args: 'path=a.ts', durationMs: 1200 },
+    ]);
+
+    expect(getByText('read_file')).toBeInTheDocument();
+    expect(getByText('path=a.ts')).toBeInTheDocument();
+  });
+
+  it('adds nothing to a plain code execution that made no inner calls', () => {
+    const { queryByText } = renderWithTrace([]);
+
+    expect(queryByText('com_ui_ptc_trace_title')).not.toBeInTheDocument();
   });
 });

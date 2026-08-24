@@ -1,53 +1,188 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useResetRecoilState } from 'recoil';
-import { Button, Spinner, useMediaQuery } from '@librechat/client';
-import { AlertCircle, Bot, CheckCircle2, Clock3, X, XCircle } from 'lucide-react';
-import type { SubagentThreadStatus } from 'librechat-data-provider';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bot, MessagesSquare, X } from 'lucide-react';
+import { ForkOptions } from 'librechat-data-provider';
+import { useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  useMediaQuery,
+  useToastContext,
+} from '@librechat/client';
+import type { ParentSubagentTaskSummary } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { ActiveSubagentPanel } from '~/store/subagents';
-import type { TranslationKeys } from '~/hooks';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import { useSubagentThreadQuery } from '~/data-provider';
-import { activeSubagentPanel } from '~/store/subagents';
-import { useFocusTrap, useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import {
+  ACTIVE_THREAD_REFRESH_MS,
+  subagentThreadHasTaskEvidence,
+  useForkConvoMutation,
+  useSubagentThreadQuery,
+} from '~/data-provider';
+import {
+  activeSubagentPanel,
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/store/subagents';
+import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
+import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
+import { adaptDurableThreadActivity, adaptLivePersistedActivity } from './adapters';
+import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
+import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
+import { useParentSubagents } from './ParentSubagentsProvider';
+import { eventSubagentSelection } from './eventSelection';
+import { useAgentsMapContext } from '~/Providers';
 
-const statusIcon = (status: SubagentThreadStatus) => {
-  if (status === 'completed') return CheckCircle2;
-  if (status === 'failed' || status === 'interrupted') return AlertCircle;
-  if (status === 'cancelled') return XCircle;
-  return Clock3;
-};
-
-const statusLabels: Record<SubagentThreadStatus, TranslationKeys> = {
-  dispatched: 'com_ui_subagent_thread_status_dispatched',
-  running: 'com_ui_subagent_thread_status_running',
-  completed: 'com_ui_subagent_thread_status_completed',
-  failed: 'com_ui_subagent_thread_status_failed',
-  interrupted: 'com_ui_subagent_thread_status_interrupted',
-  cancelled: 'com_ui_subagent_thread_status_cancelled',
-};
+const EVENT_TASK_PAGE_SIZE = 3;
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
   const localize = useLocalize();
+  const { showToast } = useToastContext();
+  const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
   const resetSelection = useResetRecoilState(activeSubagentPanel);
-  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
-    selection.parentConversationId,
-    selection.threadId,
-    selection.taskId,
+  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const agentsMap = useAgentsMapContext();
+  const { byMessageId, byThreadId, refresh } = useParentSubagents();
+  const progress = useRecoilValue(
+    subagentProgressByToolCallId(
+      subagentProgressKey(
+        selection.parentMessageId,
+        selection.event?.progressKey ?? selection.toolCallId,
+        selection.partIndex,
+      ),
+    ),
   );
+  const foregroundTitle =
+    selection.subagentType === 'self'
+      ? localize('com_ui_subagent_dialog_title_self')
+      : localize('com_ui_subagent_dialog_title', { 0: selection.subagentType });
+  const threadId = selection.durable?.threadId ?? '';
+  const taskId = selection.durable?.taskId ?? '';
+  const eventSummary = selection.event == null ? undefined : byThreadId.get(threadId);
+  const eventTaskCount = eventSummary?.tasks.length ?? 0;
+  const [eventTaskWindow, setEventTaskWindow] = useState(() => ({
+    threadId,
+    count: EVENT_TASK_PAGE_SIZE,
+    taskCount: eventSummary == null ? null : eventTaskCount,
+  }));
+  useEffect(() => {
+    setEventTaskWindow((current) => {
+      if (current.threadId !== threadId || current.taskCount == null) {
+        return { threadId, count: EVENT_TASK_PAGE_SIZE, taskCount: eventTaskCount };
+      }
+      const appended = Math.max(0, eventTaskCount - current.taskCount);
+      return {
+        threadId,
+        count: Math.min(eventTaskCount, current.count + appended),
+        taskCount: eventTaskCount,
+      };
+    });
+  }, [eventTaskCount, threadId]);
+  const visibleEventTaskCount = Math.min(
+    eventTaskCount,
+    eventTaskWindow.threadId === threadId ? eventTaskWindow.count : EVENT_TASK_PAGE_SIZE,
+  );
+  const visibleEventTasks = useMemo(
+    () => (eventSummary?.tasks ?? []).slice(0, visibleEventTaskCount).reverse(),
+    [eventSummary?.tasks, visibleEventTaskCount],
+  );
+  const hasEarlierRetainedTasks = visibleEventTaskCount < eventTaskCount;
+  const eventTaskRunning =
+    eventSummary?.tasks.find((task) => task.taskId === taskId)?.status === 'running';
+  const eventSiblings = useMemo(() => {
+    if (selection.event == null) return [];
+    const seen = new Set<string>();
+    return (selection.event.siblingParentMessageIds ?? [selection.parentMessageId])
+      .flatMap((parentMessageId) => byMessageId.get(parentMessageId) ?? [])
+      .filter((child) => {
+        if (seen.has(child.threadId)) return false;
+        seen.add(child.threadId);
+        return true;
+      });
+  }, [byMessageId, selection.event, selection.parentMessageId]);
+  const { data, isLoading, isError, isReadinessPending, refetch } = useSubagentThreadQuery(
+    selection.parentConversationId,
+    threadId,
+    taskId,
+    eventTaskRunning ? { refetchInterval: ACTIVE_THREAD_REFRESH_MS } : undefined,
+  );
+  const durableTerminal =
+    subagentThreadHasTaskEvidence(data, taskId) &&
+    (data?.status === 'completed' ||
+      data?.status === 'failed' ||
+      data?.status === 'interrupted' ||
+      data?.status === 'cancelled');
+  const priorTerminalRef = useRef(false);
+  useSubagentActivityStream(selection, !durableTerminal || eventTaskRunning);
+
+  useEffect(() => {
+    if (selection.event == null) return;
+    void refresh();
+  }, [refresh, selection.event, threadId]);
+
+  useEffect(() => {
+    priorTerminalRef.current = false;
+  }, [taskId, threadId]);
+
+  useEffect(() => {
+    if (selection.event == null) return;
+    if (durableTerminal && !priorTerminalRef.current) void refresh();
+    priorTerminalRef.current = durableTerminal;
+  }, [durableTerminal, refresh, selection.event]);
+
+  useEffect(() => {
+    if (selection.event == null || !eventTaskRunning || !durableTerminal) return;
+    void refetch();
+  }, [durableTerminal, eventTaskRunning, refetch, selection.event]);
+  useEffect(() => {
+    if (
+      selection.event == null ||
+      eventSummary?.latestTaskId == null ||
+      eventSummary.latestTaskId === taskId
+    ) {
+      return;
+    }
+    const nextSelection = eventSubagentSelection(
+      selection.parentConversationId,
+      eventSummary,
+      selection.event.siblingParentMessageIds,
+    );
+    if (nextSelection != null) setSelection(nextSelection);
+  }, [eventSummary, selection, setSelection, taskId]);
+  const detachedLiveSubmitting =
+    selection.durable != null &&
+    progress != null &&
+    progress.status !== 'stop' &&
+    progress.status !== 'error';
+
+  const continueChat = useForkConvoMutation({
+    onSuccess: (result) => {
+      resetSelection();
+      navigateToConvo(result.conversation);
+    },
+    onError: () => {
+      showToast({ message: localize('com_ui_continue_chat_error'), status: 'error' });
+    },
+  });
 
   const close = useCallback(() => {
     resetSelection();
     requestAnimationFrame(() => {
       const trigger = Array.from(
         document.querySelectorAll<HTMLElement>('[data-subagent-tool-call]'),
-      ).find((element) => element.dataset.subagentToolCall === selection.toolCallId);
+      ).find(
+        (element) =>
+          element.dataset.subagentToolCall === selection.toolCallId &&
+          element.dataset.subagentParentMessage === selection.parentMessageId &&
+          element.dataset.subagentPartIndex === String(selection.partIndex),
+      );
       trigger?.focus();
     });
-  }, [resetSelection, selection.toolCallId]);
+  }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);
 
   useFocusTrap(panelRef, isMobile, close);
 
@@ -59,64 +194,136 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
     };
   }, [isMobile]);
 
-  const status = data?.status ?? 'dispatched';
-  const StatusIcon = statusIcon(status);
-  const title = data?.title ?? selection.subagentType;
-  let panelBody: ReactNode;
-  if (isLoading || isReadinessPending) {
-    panelBody = (
-      <div className="flex h-full items-center justify-center" role="status">
-        <Spinner className="text-text-secondary" />
+  const liveActivity = useMemo(
+    () =>
+      adaptLivePersistedActivity({
+        title: foregroundTitle,
+        prompt: selection.prompt,
+        progress,
+        persistedContent: selection.persistedContent,
+        isDetached: selection.durable != null,
+        legacyOutput: selection.legacyOutput,
+        // A detached parent tool step closes as soon as dispatch succeeds;
+        // its terminal status does not describe the still-running child.
+        initialProgress: selection.durable == null ? selection.initialProgress : 0,
+        isSubmitting: selection.durable == null ? selection.isSubmitting : detachedLiveSubmitting,
+        runStepStatus: selection.durable == null ? selection.runStepStatus : undefined,
+        reasoningVisibility: selection.durable == null ? 'visible' : 'marker',
+      }),
+    [detachedLiveSubmitting, foregroundTitle, progress, selection],
+  );
+  const activity = useMemo(() => {
+    if (selection.durable == null) return liveActivity;
+    if (data == null) {
+      return progress == null ? { ...liveActivity, status: 'dispatched' as const } : liveActivity;
+    }
+    const durable = adaptDurableThreadActivity(data, selection.durable.taskId);
+    if (
+      (durable.status === 'running' || durable.status === 'dispatched') &&
+      liveActivity.items.length > 0
+    ) {
+      return {
+        ...durable,
+        prompt: durable.prompt ?? liveActivity.prompt,
+        items: liveActivity.items,
+      };
+    }
+    return {
+      ...durable,
+      prompt: durable.prompt ?? liveActivity.prompt,
+      items: durable.items.length > 0 ? durable.items : liveActivity.items,
+    };
+  }, [data, liveActivity, progress, selection.durable]);
+  const canContinueAsChat =
+    selection.host === 'conversation' &&
+    selection.durable != null &&
+    data?.subagentKind === 'agent' &&
+    data.agentId != null &&
+    data.status === 'completed' &&
+    subagentThreadHasTaskEvidence(data, taskId) &&
+    data.messages.some((message) => message.messageId === `${taskId}:assistant`);
+
+  const continueAsChat = useCallback(() => {
+    if (!canContinueAsChat || selection.durable == null) return;
+    continueChat.mutate({
+      conversationId: selection.durable.threadId,
+      messageId: `${selection.durable.taskId}:assistant`,
+      option: ForkOptions.DIRECT_PATH,
+    });
+  }, [canContinueAsChat, continueChat, selection.durable]);
+  const selectActor = useCallback(
+    (nextThreadId: string) => {
+      const next = eventSiblings.find((child) => child.threadId === nextThreadId);
+      if (next == null) return;
+      const nextSelection = eventSubagentSelection(
+        selection.parentConversationId,
+        next,
+        selection.event?.siblingParentMessageIds,
+      );
+      if (nextSelection != null) setSelection(nextSelection);
+    },
+    [
+      eventSiblings,
+      selection.event?.siblingParentMessageIds,
+      selection.parentConversationId,
+      setSelection,
+    ],
+  );
+  let panelState: 'ready' | 'loading' | 'error' = 'ready';
+  if (
+    selection.durable != null &&
+    liveActivity.items.length === 0 &&
+    (isLoading || isReadinessPending)
+  ) {
+    panelState = 'loading';
+  } else if (selection.durable != null && liveActivity.items.length === 0 && isError) {
+    panelState = 'error';
+  }
+  const renderEventTask = (task: ParentSubagentTaskSummary) => {
+    if (task.taskId === taskId) {
+      return (
+        <SubagentActivity
+          key={task.taskId}
+          activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+          activity={activity}
+          state={panelState}
+          embedded
+        />
+      );
+    }
+    return (
+      <HistoricalEventTaskActivity
+        key={task.taskId}
+        selection={selection}
+        task={task}
+        title={activity.title}
+      />
+    );
+  };
+  const loadEarlierEventTasks = () => {
+    setEventTaskWindow({
+      threadId,
+      count: Math.min(eventTaskCount, visibleEventTaskCount + EVENT_TASK_PAGE_SIZE),
+      taskCount: eventTaskCount,
+    });
+  };
+  let timelinePrefix: ReactNode = null;
+  if (hasEarlierRetainedTasks) {
+    timelinePrefix = (
+      <div className="flex justify-center border-b border-border-light px-4 py-2">
+        <Button type="button" variant="ghost" size="sm" onClick={loadEarlierEventTasks}>
+          {localize('com_ui_load_more')}
+        </Button>
       </div>
     );
-  } else if (isError) {
-    panelBody = (
-      <div className="rounded-lg border border-status-error-border bg-status-error-subtle p-3 text-sm text-status-error">
-        {localize('com_ui_subagent_thread_load_error')}
+  } else if (eventSummary?.tasksTruncated) {
+    timelinePrefix = (
+      <div
+        role="note"
+        className="border-b border-border-light px-4 py-3 text-sm text-text-secondary"
+      >
+        {localize('com_ui_subagent_thread_history_truncated')}
       </div>
-    );
-  } else if (data?.messages.length === 0) {
-    panelBody = (
-      <div className="rounded-lg border border-border-light bg-surface-secondary p-3 text-sm text-text-secondary">
-        {localize('com_ui_subagent_thread_empty')}
-      </div>
-    );
-  } else {
-    panelBody = (
-      <ol className="relative space-y-4 before:absolute before:bottom-3 before:left-[0.4375rem] before:top-3 before:w-px before:bg-border-medium">
-        {data?.historyTruncated === true && (
-          <li className="relative pl-7 text-xs text-text-secondary">
-            <span className="absolute left-1 top-1 h-2 w-2 rounded-full bg-border-heavy" />
-            {localize('com_ui_subagent_thread_history_truncated')}
-          </li>
-        )}
-        {data?.messages.map((message) => (
-          <li key={message.messageId} className="relative pl-7">
-            <span
-              className={cn(
-                'absolute left-0 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full ring-4 ring-surface-primary',
-                message.role === 'user' ? 'bg-status-info' : 'bg-status-success',
-              )}
-              aria-hidden="true"
-            />
-            <article className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
-              <div className="mb-1 text-xs font-medium text-text-secondary">
-                {message.role === 'user'
-                  ? localize('com_ui_subagent_thread_task')
-                  : localize('com_ui_subagent_thread_response')}
-              </div>
-              <div className="prose-sm max-w-none break-words text-sm text-text-primary">
-                <MarkdownLite content={message.text} codeExecution={false} />
-              </div>
-              {message.textTruncated === true && (
-                <div className="mt-2 text-xs italic text-text-secondary">
-                  {localize('com_ui_subagent_thread_message_truncated')}
-                </div>
-              )}
-            </article>
-          </li>
-        ))}
-      </ol>
     );
   }
 
@@ -133,20 +340,24 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           <Bot size={17} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" title={title}>
-            {title}
+          <h2 className="truncate text-sm font-semibold" title={activity.title}>
+            {activity.title}
           </h2>
-          <div
-            className={cn(
-              'mt-0.5 flex items-center gap-1 text-xs text-text-secondary',
-              status === 'failed' || status === 'interrupted' ? 'text-status-error' : '',
-            )}
-            aria-live="polite"
-          >
-            <StatusIcon size={13} aria-hidden="true" />
-            <span>{localize(statusLabels[status])}</span>
-          </div>
         </div>
+        {canContinueAsChat && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={continueAsChat}
+            disabled={continueChat.isLoading}
+            aria-label={localize('com_ui_continue_chat')}
+            className="h-8 shrink-0 gap-1.5"
+          >
+            <MessagesSquare size={15} aria-hidden="true" />
+            <span className="hidden sm:inline">{localize('com_ui_continue_chat')}</span>
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"
@@ -159,7 +370,95 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         </Button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{panelBody}</div>
+      {selection.event != null && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-light px-4 py-2">
+          <div className="min-w-0 flex-1">
+            <Select value={threadId} onValueChange={selectActor}>
+              <SelectTrigger className="h-8" aria-label={localize('com_ui_subagent_actor')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {eventSiblings.map((child) => (
+                  <SelectItem
+                    key={child.threadId}
+                    value={child.threadId}
+                    disabled={!child.latestTaskId}
+                  >
+                    {child.agentId != null && agentsMap?.[child.agentId]?.name
+                      ? agentsMap[child.agentId]?.name
+                      : child.actorId || child.title}
+                    {child.actorId != null && agentsMap?.[child.agentId ?? '']?.name
+                      ? ` · ${child.actorId}`
+                      : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
+      {/* Keep the foreground panel's existing nested-tool approval controls
+          coordinated within this invocation. Detached activity projections
+          never include approval payloads. */}
+      <ApprovalProvider
+        key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+      >
+        {selection.event != null && (eventSummary?.tasks.length ?? 0) > 1 ? (
+          <SubagentActivityScrollSurface padded={false}>
+            <div data-subagent-thread-timeline>
+              {timelinePrefix}
+              {visibleEventTasks.map(renderEventTask)}
+            </div>
+          </SubagentActivityScrollSurface>
+        ) : (
+          <SubagentActivity
+            key={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${selection.partIndex}`}
+            activity={activity}
+            state={panelState}
+          />
+        )}
+      </ApprovalProvider>
     </aside>
+  );
+}
+
+function HistoricalEventTaskActivity({
+  selection,
+  task,
+  title,
+}: {
+  selection: ActiveSubagentPanel;
+  task: ParentSubagentTaskSummary;
+  title: string;
+}) {
+  const threadId = selection.durable?.threadId ?? '';
+  const { data, isLoading, isError, isReadinessPending } = useSubagentThreadQuery(
+    selection.parentConversationId,
+    threadId,
+    task.taskId,
+  );
+  const activity = useMemo(
+    () =>
+      data == null
+        ? { title, status: task.status, items: [] }
+        : adaptDurableThreadActivity(data, task.taskId),
+    [data, task.status, task.taskId, title],
+  );
+  let state: 'ready' | 'loading' | 'error' = 'ready';
+  if (isError) {
+    state = 'error';
+  } else if (isLoading || isReadinessPending) {
+    state = 'loading';
+  }
+
+  return (
+    <SubagentActivity
+      activityId={`${selection.parentMessageId}\u0000${selection.toolCallId}\u0000${task.taskId}`}
+      activity={activity}
+      state={state}
+      embedded
+    />
   );
 }

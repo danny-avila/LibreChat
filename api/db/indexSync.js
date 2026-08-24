@@ -243,10 +243,16 @@ async function performSync(flowManager, flowId, flowType) {
         const messageCount = messageProgress.totalDocuments;
         const messagesIndexed = messageProgress.totalProcessed;
         const unindexedMessages = messageCount - messagesIndexed;
+        const messagesPendingIndexing = messageProgress.pendingIndexing ?? 0;
         const messagesPendingCleanup = messageProgress.pendingCleanup ?? 0;
         const noneIndexed = messagesIndexed === 0 && unindexedMessages > 0;
 
-        if (settingsUpdated || noneIndexed || unindexedMessages > syncThreshold) {
+        if (
+          settingsUpdated ||
+          noneIndexed ||
+          messagesPendingIndexing > 0 ||
+          unindexedMessages > syncThreshold
+        ) {
           if (noneIndexed && !settingsUpdated) {
             logger.info('[indexSync] No messages marked as indexed, forcing full sync');
           }
@@ -291,10 +297,16 @@ async function performSync(flowManager, flowId, flowType) {
       const convoCount = convoProgress.totalDocuments;
       const convosIndexed = convoProgress.totalProcessed;
       const unindexedConvos = convoCount - convosIndexed;
+      const convosPendingIndexing = convoProgress.pendingIndexing ?? 0;
       const convosPendingCleanup = convoProgress.pendingCleanup ?? 0;
       const noneConvosIndexed = convosIndexed === 0 && unindexedConvos > 0;
 
-      if (settingsUpdated || noneConvosIndexed || unindexedConvos > syncThreshold) {
+      if (
+        settingsUpdated ||
+        noneConvosIndexed ||
+        convosPendingIndexing > 0 ||
+        unindexedConvos > syncThreshold
+      ) {
         if (noneConvosIndexed && !settingsUpdated) {
           logger.info('[indexSync] No conversations marked as indexed, forcing full sync');
         }
