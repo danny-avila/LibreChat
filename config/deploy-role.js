@@ -136,6 +136,7 @@ async function main() {
   const db = require('~/models');
   const connect = require('./connect');
 
+  mongoose.set('autoIndex', false);
   createModels(mongoose);
 
   let exitCode = 0;
